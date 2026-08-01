@@ -633,3 +633,41 @@ P34.4D 的协作 harness 只验证内容摘要、Git ref 元数据和追加事�
 **失败恢复**
 
 将 Workspace 协作面切为只读，保留冲突事件与摘要证据，撤销现有 authority 后由人工选择可信链并以新 epoch 恢复。不得删除冲突、改写旧摘要或自动合并两条权威链。
+
+## INV-017 sandbox-default-deny
+
+**权威源码**
+
+- `backend/src/omnibase/sandbox/contracts.py`
+- `backend/src/omnibase/sandbox/provider.py`
+- `backend/tests/test_p34_5_sandbox_foundation.py`
+
+**为何存在**
+
+P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次操作都必须重新绑定 tenant、Workspace、Run、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。缺少可信 verifier/provider 时必须拒绝，A0 fake harness 只能演练内存状态机，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
+
+**允许的改法**
+
+- 收紧 `SandboxOperationRequest`、资源配额、相对路径、结构化 argv、只读 root、non-root、`no_new_privileges`、capability drop 和默认拒绝网络契约。
+- 新增真实 provider 前先保持 `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 为默认，并以显式可信 wiring 注入实现。
+- 使用 test-only `InMemorySandboxAuthorizer` 和 `FakeInMemorySandboxProvider` 验证完整 binding、过期、撤销、stale fencing、状态转换、provider-owned snapshot provenance 和 restore-new-identity；同一 Run 即使 runtime 已销毁也不得重新 create/restore，`exec`/`cancel` 必须继续返回 `sandbox_execution_not_unlocked`。
+- 将未来 Linux provider 放在独立 Runner 进程/节点，且每次 mutation 在副作用前完成在线 lease/capability verification。
+
+**禁止的改法**
+
+- 把 Browser JWT、请求体字段、raw capability token、来源 IP、provider handle 或“runtime 已存在”当作授权事实。
+- 在 Core API/Celery 进程中执行 workspace 命令，或给 Sandbox/Runner 注入 PostgreSQL、MinIO、Redis、JWT、签名 key、宿主 `.env`、Docker/Podman socket、宿主目录或成员 Overlay identity。
+- 在 A0 fake/provider 中调用 Docker、subprocess、shell、socket、外部 HTTP、文件系统或真实 runtime/network provider，并将 metadata-only 状态误报为代码已执行。
+- 允许绝对路径、Windows drive、`..`、symlink 逃逸、shell command string、任意 env、host mount、device、runtime socket、非 deny-all 网络或无界 CPU/内存/PID/磁盘/inode/输出/时间。
+- restore 复用旧 Run、generation、workload identity、token、进程、PID、socket、连接或 runtime handle。
+- 接受调用方伪造或篡改的 snapshot metadata，或让已产生过 runtime 的 terminal Run 重新 create/restore。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_5_sandbox_foundation.py`
+- `docker compose run --rm --no-deps backend mypy src/omnibase/sandbox`
+- 对新增真实 provider 运行 P34.5 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；A0 单元测试不能替代目标 Linux isolation Gate。
+
+**失败恢复**
+
+立即撤下真实 provider wiring，恢复 `UnavailableSandboxProvider` 与 `RejectingSandboxAuthorizer`，撤销受影响 Run Lease/capability/workload identity，并停止对应 Runner。保留 runtime、lease、fencing、审计和 provider 证据；无法证明副作用前完成在线验证时一律视为未授权。不得通过放宽路径、网络、资源或身份检查恢复服务，也不得把普通 Docker smoke 当作敌对代码隔离证明。

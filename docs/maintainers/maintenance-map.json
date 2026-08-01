@@ -2,7 +2,7 @@
   "schema_version": 1,
   "purpose": "Machine-readable repair map for local AI maintainers. Paths are repository-relative and commands are run from the repository root unless a command changes directory explicitly.",
   "frozen_boundaries": [
-    "P34.5 real Sandbox isolation and runtime execution",
+    "P34.5 real Sandbox isolation and untrusted runtime execution beyond the fail-closed A0 contracts and metadata-only harness",
     "Real Overlay adapters, member networking and Workspace data channels",
     "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
@@ -241,6 +241,17 @@
       "test_paths": [
         "backend/tests/test_p34_4_overlay_collaboration.py",
         "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-017",
+      "title": "Sandbox authorization, isolation policy and execution default deny",
+      "document": "docs/maintainers/security-invariants.md#inv-017-sandbox-default-deny",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_5_sandbox_foundation.py"
       ]
     }
   ],
@@ -524,6 +535,50 @@
         "Preserve Workspace aggregate -> locked membership/Node -> domain-row lock order; revoke affected grants, leases, Nodes and authority records without lowering generation, Node/Run/Network fencing token or authority epoch.",
         "Treat network_lease_cursors as the persistent Network fencing source; never delete or reset a cursor to make an old logical lease current again.",
         "Treat fake/local providers as metadata harnesses only; do not connect them to real networks, credentials, tenant data or untrusted code."
+      ]
+    },
+    {
+      "id": "sandbox-foundation",
+      "name": "P34.5A0 fail-closed Sandbox contracts and metadata-only lifecycle harness",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/sandbox/contracts.py:SandboxProvider",
+        "backend/src/omnibase/sandbox/contracts.py:RejectingSandboxAuthorizer",
+        "backend/src/omnibase/sandbox/provider.py:UnavailableSandboxProvider",
+        "backend/src/omnibase/sandbox/provider.py:FakeInMemorySandboxProvider"
+      ],
+      "public_interfaces": [
+        "Internal SandboxProvider protocol; not mounted on Browser or Gateway ASGI",
+        "RejectingSandboxAuthorizer and UnavailableSandboxProvider production defaults",
+        "Test-only InMemorySandboxAuthorizer and metadata-only lifecycle harness"
+      ],
+      "depends_on": [
+        "workspace-control-plane",
+        "capability-ledger"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-010",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-017"
+      ],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/sandbox",
+        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py",
+        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py"
+      ],
+      "recovery": [
+        "Use UnavailableSandboxProvider and RejectingSandboxAuthorizer; do not install a provider when live P34.4 lease/fencing and P34.2 capability verification cannot be proven.",
+        "Treat FakeInMemorySandboxProvider as metadata-only; its exec/cancel paths must remain hard-disabled and it must never gain Docker, socket, subprocess, host path, network or data-store integration.",
+        "Real execution remains blocked until a Linux isolation profile, Runner identity, default-deny network, resource enforcement and the P34.5 attack matrix are independently verified."
       ]
     },
     {
