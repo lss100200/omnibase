@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0 契约基线
+> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5 及真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -362,6 +362,8 @@ operation 必须有进度、deadline、取消点、重试上限、结果引用�
 - 每次执行拥有独立 `run_id`、`runtime_instance_id`、workload identity、lease 和 fencing token；
 - Run 只引用 Workspace 的逻辑资源和当前 generation，不成为长期权限容器；
 - Run 终止后必须撤销临时 capability、关闭连接、终止进程并释放 writable runtime layer；
+- Run lease 必须同时绑定当前 Workspace generation、Run fencing token、Node identity 与 Node fencing token，并在 heartbeat/状态提交时重新验证未过期的 attestation；
+- `stopped|succeeded|failed|cancelled` 是不可复活终态：进入终态时关闭或撤销 lease、清除 runtime/workload identity，旧 holder 不得把状态改回 starting/running；
 - Interactive Session 只是可交互 Run，不得获得比普通 Run 更宽的默认能力；
 - Workspace 可以没有任何活跃 Run；同一 Workspace 的并发 Run 数由显式配额控制。
 
@@ -498,7 +500,7 @@ AI/workspace 发起的 R2+ 请求必须等待人类决定。审批不能扩大�
 | ZeroTier | 成熟虚拟网络和跨平台能力 | 自有网络模型，策略与 OmniBase capability 映射需验证 | 可选兼容 adapter |
 | libp2p/自研 P2P | 可塑性与去中心化能力强 | 协议、安全、NAT、中继、升级和可观测性工程极大 | 远期研究，不进入 P34.4 关键路径 |
 
-P34.4 首先冻结 `PeerOverlayProvider` 契约和 fake/local harness，再选择一个自托管 adapter 做最小闭环；选型 Gate 包括 Windows/Linux 客户端、NAT/relay、密钥轮换、节点撤销、ACL 映射、离线行为、升级兼容和元数据泄露。无论采用哪种 Overlay，Sandbox 都只经 Network Broker 接入，不直接成为 Overlay peer。
+P34.4 已封板并实现 `PeerOverlayProvider` 契约和 fake/local harness；选择并接入首个自托管 adapter 属于 P34.5，选型 Gate 包括 Windows/Linux 客户端、NAT/relay、密钥轮换、节点撤销、ACL 映射、离线行为、升级兼容和元数据泄露。无论采用哪种 Overlay，Sandbox 都只经 Network Broker 接入，不直接成为 Overlay peer。
 
 ## 12. P34.0–P34.7 批次
 
@@ -528,6 +530,10 @@ Gate：SQL/identifier 注入、无条件 mutation、锁/statement timeout、roll
 
 ### P34.4：Workspace 控制面
 
+**当前实施状态（2026-08-01）**：P34.4A–D 已完成工程 Gate。实现入口集中在 `backend/src/omnibase/workspaces/`，global migration 为 `0007_p34_4_workspace_control_plane.py`，Browser 治理面位于 `/api/v1/workspaces*` 与 `/api/v1/workspace-templates`。Node attestation、lease heartbeat、fencing、Overlay adapter 与 collaboration authority 仍是内部 typed service；它们不挂到 Browser API。当前 reconciler、独立 Overlay provider 和 collaboration 的可运行实现均为 metadata-only fake/local harness，生产缺失真实组件时 fail-closed，不创建容器、不运行代码、不打开成员网络、不访问真实 Tenant/RAG 数据。尤其是 `acquire_network_lease()` 只签发数据库中的逻辑授权，不调用真实或 fake provider。
+
+`0007` 只在 global `omnibase_meta` 创建 17 张 P34.4 表：`workspace_templates`、`workspaces`、`workspace_memberships`、`resource_scope_bindings`、`workspace_scope_grants`、`workspace_runs`、`run_leases`、`workspace_snapshots`、`workspace_nodes`、`node_attestations`、`peer_grants`、`service_advertisements`、`network_lease_cursors`、`network_leases`、`workspace_authorities`、`collaboration_artifacts`、`collaboration_events`。tenant scope 明确 no-op，存在 P34.4 数据时 downgrade fail-closed。
+
 拆成四个可独立验收的增量，仍属于同一个 P34.4：
 
 1. **P34.4A — AI Space 权限与资源域**：统一 AI Space/Workspace 命名；实现 membership、Workspace RBAC、user-private/workspace-private/tenant-shared scope、资源树和跨 scope grant。
@@ -535,7 +541,16 @@ Gate：SQL/identifier 注入、无条件 mutation、锁/statement timeout、roll
 3. **P34.4C — 成员节点与 Overlay 控制面**：Node Registry、Node Attestation、Peer Grant、Service Advertisement、Network Lease、`PeerOverlayProvider`、fake/local provider 和撤销状态机；不连接 Sandbox。
 4. **P34.4D — 无真实数据协作 harness**：在受信 Node Daemon 之间验证点对点 Artifact/Git/事件同步、authority node 离线行为和冲突拒绝；不执行不可信代码，不开放数据库或规范 RAG。
 
-Gate：同 Tenant 跨 Workspace 默认拒绝；重复 create/run/pause/archive 幂等；旧 fencing token 无法提交；失败可恢复；撤销后不可调度/不可发布服务；restore 产生新 generation 且无 token/进程/连接；模板无凭据/活跃数据；伪造 Node/Peer/Service/Network Lease 全部 fail-closed；authority 离线时不产生双写。
+实现边界：
+
+- membership mutation 使用 tenant-bound Workspace 行作为 aggregate mutex，随后在锁内重新授权 actor、锁 target 并判断 last-owner；maintainer 不能修改 owner，两个 owner 的并发降级不能留下零 owner。
+- `WorkspaceTemplate` 只保存版本化、安全校验后的逻辑 spec/digest；注册入口保留实时 `require_tenant_admin`，并在 caller-owned transaction 内再次锁定、重验 active tenant-admin User 后写脱敏 Audit。`(tenant_id, template_key, version)` 通过 PostgreSQL `ON CONFLICT DO NOTHING` 实现并发自然幂等；spec/display name/supersedes/digest 任一差异均冲突。模板不保存凭据、活跃数据、宿主路径、command/env、数据库/对象存储 locator 或 provider handle。
+- `Workspace` 是长期 identity；`WorkspaceRun` 绑定创建时 generation，`RunLease` 使用 DB clock、heartbeat、单调 Run fencing、当前 Node fencing 与实时 attestation。terminal Run 关闭/撤销 lease并清除 runtime/workload identity，不能被旧 holder 复活。restore 创建新的 Workspace identity 与更高 generation，不复活旧 token、进程、PID、socket、连接或 runtime handle。
+- `WorkspaceNode`、`NodeAttestation`、`PeerGrant`、`ServiceAdvertisement`、`NetworkLeaseCursor`、`NetworkLease` 只形成逻辑控制记录；每次使用都重新检查 live attestation。Network cursor 持久化当前/下一 fencing token，logical Network Lease 签发不调用 provider；`PeerOverlayProvider` 的 fake 实现只是独立内存 harness，不能被描述为真实 VPN/Overlay。
+- authority claim/commit、Peer Grant、Service Advertisement、Network Lease 和 Node revoke 的权威写阶段统一使用 Workspace aggregate → 按稳定 ID 锁 live-attested Node → 锁 authority/peer/service/cursor/lease 的顺序。Node revoke 提高 Node fencing，并在同一事务撤销 Run/Peer/Service/Network/Authority，防止撤销与新签发交叉穿越。
+- `WorkspaceAuthority`、`CollaborationArtifact`、`CollaborationEvent` 与 `SyncEnvelope` 只验证内容摘要、Git ref 元数据和追加事件。authority 离线/过期时新写 fail-closed；sequence、epoch 或 digest chain 冲突不自动 merge。
+
+Gate：同 Tenant 跨 Workspace 默认拒绝；membership aggregate 并发不能移除最后 owner；重复 create/run/pause/archive 幂等；Run/Node/Network 旧 fencing token 无法提交；实时 attestation 过期后 holder 失效；terminal Run 不可复活；过期/撤销 lease 无法续租或提交；logical Network Lease 签发无 provider 副作用；撤销 Node 后不可调度/发布/使用 peer/service/network/authority；restore 产生新 identity/generation 且无 token/进程/连接；模板事务内 admin 撤权与并发自然键冲突 fail-closed；authority 离线时不产生双写。最终证据为 focused `83 passed`（Workspace service `48` + Overlay/Collaboration `27` + API contract `8`）、Backend 非 integration `767 passed / 9 skipped / 11 deselected`、Mypy `105 source files / 0 issues`，以及 fresh R6 的 migration `1 passed`、P34.4 foundation `4 passed`、完整 integration `57 passed / 1 deselected`。这些结果只证明 metadata control plane 和 synthetic harness，不证明真实 Overlay 或 Sandbox。验证入口见维护者地图的 `workspace-control-plane` 模块；普通业务数据库不得用于 migration 验收。
 
 ### P34.5：Sandbox Runtime
 

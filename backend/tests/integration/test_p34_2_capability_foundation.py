@@ -197,7 +197,7 @@ def test_0005_creates_only_global_capability_tables_and_revocation_trigger(db_en
                 "AND NOT t.tgisinternal"
             )
         ).scalar_one_or_none()
-    assert revision == "0006"
+    assert revision == "0007"
     assert {
         "capability_signing_keys",
         "capability_grants",

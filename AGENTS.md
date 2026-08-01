@@ -46,8 +46,23 @@ runtime evidence; then correct the stale documentation in the same change.
 - Migration scope is a closed set: `global` or `tenant`. Unknown or missing
   scope must fail closed. Production recovery is forward-fix or restore into a
   new `omnibase_restore_*` database, never destructive in-place guessing.
-- P34.4/P34.5 Workspace Runtime, Sandbox, Overlay Network, and Agent Runtime are
+- P34.4 Workspace governance, lifecycle metadata, lease/fencing, trusted-node
+  control records, and the fake/local collaboration harness are explicitly
+  unlocked. P34.5 real Sandbox isolation, a real Overlay adapter or member
+  network, real tenant/RAG data access, and Agent Runtime/orchestration remain
   frozen until the roadmap and handover explicitly unlock them.
+- P34.4 membership mutations serialize on the tenant-bound Workspace aggregate,
+  then re-lock the actor and target membership before evaluating the active-owner
+  invariant. Template registration revalidates the live tenant administrator in
+  the caller-owned transaction and uses the PostgreSQL natural key for exact
+  concurrent replay. Do not replace either rule with a pre-transaction role
+  snapshot, an unlocked owner count, or catch-and-ignore `IntegrityError`.
+- Run and Network leases are independently fenced. A Run lease is bound to the
+  current Node fencing token and a Network lease is a logical authorization
+  allocated from `network_lease_cursors`; P34.4 never activates a provider while
+  signing that logical Network lease. Every use revalidates the current live
+  attestation. Terminal Runs cannot return to a running state or retain runtime
+  or workload identity metadata.
 
 ## Safe change workflow
 

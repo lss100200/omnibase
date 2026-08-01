@@ -294,6 +294,7 @@ Capability 必须同时绑定 issuer/audience、Tenant、Workspace、Runtime、w
 - `backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py`
 - `backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py`
 - `backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py`
+- `backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py`
 
 **为何存在**
 
@@ -319,6 +320,7 @@ OmniBase 同时迁移 global registry 和 tenant schema。迁移若猜测 scope�
 - `backend/tests/integration/test_p34_1_control_plane_foundation.py`
 - `backend/tests/integration/test_p34_2_capability_foundation.py`
 - `backend/tests/integration/test_p34_3_controlled_data_foundation.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
 - `backend/tests/test_destructive_test_safety.py`
 
 **失败恢复**
@@ -410,3 +412,224 @@ OmniBase 是可下载、可重建的开源项目。修复必须完整存在于�
 **失败恢复**
 
 撤销不可复现的环境内改动，从源码重新应用最小修复并重建 clean 环境。若只有运行环境中的修改有效，应将其视为尚未修复：先提取可审计的源码差异和测试，再销毁临时环境重验；不得把临时容器或本机缓存发布为权威交付物。
+
+## INV-011 workspace-scope-membership
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/models.py`
+- `backend/src/omnibase/workspaces/service.py`
+- `backend/src/omnibase/workspaces/router.py`
+- `backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py`
+
+**为何存在**
+
+Tenant 只是根信任域，不是 Workspace 内容的通行证。Workspace 私有资源必须同时满足实时用户、Tenant、membership/RBAC、资源 scope 和显式 scope grant；同 Tenant、已知逻辑 UUID 或 tenant-admin 身份均不能自动得到另一个 Workspace 的私有资源访问权。
+
+**允许的改法**
+
+- 从实时 `TenantContext` 派生 actor，再以 `(tenant_id, workspace_id, user_id)` 查询 active membership。
+- 收窄角色、动作或 scope；新增跨 scope 分享时使用结构化、限时、可撤销 grant。
+- 在数据库增加 workspace/tenant 复合外键、部分唯一索引和闭集 CHECK。
+- membership mutation 必须先锁 tenant-bound Workspace aggregate，再在锁内重新读取并锁定 actor/target membership，最后判断 active-owner 不变量；不得用事务外角色快照或未串行化的 owner count 决定写入。改变现有 owner 只能由当前 owner 执行，且不能留下零个 active owner。
+- 模板注册仅允许实时 tenant admin；Browser dependency 只做早期拒绝，`register_template()` 还必须在同一 caller-owned transaction 锁定并重验 active tenant-admin User。模板、membership 与 scope-grant mutation 必须在该事务写脱敏 Audit。scope-grant action 当前只允许 `resource.read|resource.list`。
+- 模板自然幂等使用 PostgreSQL `(tenant_id, template_key, version)` 唯一键与 `INSERT ... ON CONFLICT DO NOTHING`；只有 `template_spec/display_name/supersedes_template_id` 和 canonical digest 全部一致才 replay，同 key/version 的任何语义差异必须返回 conflict，不能靠捕获并吞掉 `IntegrityError`。
+
+**禁止的改法**
+
+- 信任 JWT、Header、请求体或 query 中的 tenant/workspace/role 声明。
+- 把 tenant-admin、资源 owner 字段或知道 UUID 等同于 Workspace membership。
+- 缺失 membership/scope binding 时回退到 tenant-wide allow。
+- 在锁 Workspace aggregate 之前按旧 actor membership 执行成员写入，或让两个 owner 并发通过未锁定的 last-owner 检查。
+- 在公共 DTO、错误或 Audit 中暴露物理 locator、宿主路径、provider handle 或凭据。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_workspace_service.py`
+- `backend/tests/test_p34_4_api_contract.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+立即关闭 `/api/v1/workspaces*` 受影响写入口，撤销可疑 scope grant，并保留 append-only Audit。先在 fresh sentinel 中复现同 Tenant 跨 Workspace 场景并恢复复合约束；不得用 tenant-wide fallback 或删除 membership 历史止血。
+
+## INV-012 run-generation-lifecycle
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/contracts.py`
+- `backend/src/omnibase/workspaces/models.py`
+- `backend/src/omnibase/workspaces/service.py`
+
+**为何存在**
+
+Workspace 是长期逻辑资源，Run 是短期、可销毁的执行意图。desired/observed state、generation、版本和幂等状态转换必须阻止重复启动、stale reconciler 覆盖新状态，以及把 Run 或 runtime identity 误当成长期权限事实。P34.4 reconciler 只允许推进元数据，不运行不可信代码。
+
+**允许的改法**
+
+- 使用命名 lifecycle action、expected version、caller-owned transaction 和幂等 replay。
+- 新建 Workspace 必须默认 stopped；创建逻辑资源不能隐式启动 runtime、分配 lease 或调用 provider。
+- 通过 `WorkspaceReconciler` 注入实现；生产默认保持 `UnavailableWorkspaceReconciler`，测试只使用 `FakeMetadataWorkspaceReconciler`。
+- restore 创建新的 Workspace identity/generation，并只恢复安全模板、摘要和元数据引用。
+- Run lease 必须绑定创建时的 Workspace generation、当前 Node fencing token 和当前仍有效的 Node attestation；Node 重新 fencing 后旧 Run lease 立即失效。
+- Run 进入 `stopped|succeeded|failed|cancelled` 后必须关闭或撤销 lease，清除 `runtime_instance_id` 与 `workload_identity_digest`，并拒绝旧 holder 把 observed state 恢复到 starting/running。
+
+**禁止的改法**
+
+- 提供任意 `PATCH state`、忽略 generation/version 或让多个 active Run 绕过唯一约束。
+- 允许 terminal Run 回到非终态，或让 stale holder 在终态后继续 heartbeat、提交结果或保留 runtime/workload identity。
+- 把 Celery、普通 Docker 或 fake reconciler 描述为安全 Sandbox Runner。
+- 在 Run/模板/snapshot 中保存 command、env、JWT、数据库 URL、宿主路径、进程、PID、socket、连接或 runtime/provider handle。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_workspace_service.py`
+- `backend/tests/test_p34_4_api_contract.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+切回拒绝型 reconciler，停止新的 Run claim，将异常 Workspace 标为可审计的 failed/stopped 目标并撤销活跃 lease。不得手工降低 generation、复用旧 Run 身份或把 observed state 伪改为成功。
+
+## INV-013 trusted-node-attestation
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/overlay.py`
+- `backend/src/omnibase/workspaces/models.py`
+- `backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py`
+
+**为何存在**
+
+成员 Node、Peer Grant、Service Advertisement 和 Network Lease 是内部受信 Node Daemon 控制事实，不是 Browser 身份。建立了加密连接、拥有 IP 或客户端提供 node ID 都不能证明授权；撤销 Node 后，其 peer、service、network 和 authority 能力必须立即失效。
+
+**允许的改法**
+
+- 只从受信 attestation 上下文注册节点，并保存 thumbprint/evidence digest 等非秘密证明；每次 Run/Network/Authority/Peer/Service 使用都必须按数据库时钟重新确认仍存在未过期的 verified attestation，不能只信 `WorkspaceNode.attestation_state` 快照。
+- 让 `PeerOverlayProvider` 保持可替换；生产缺少真实 adapter 时使用拒绝型实现，测试只使用不打开 socket 的 fake/local provider。
+- authority claim/commit、Peer Grant、Service Advertisement、Network Lease 与 Node revoke 的权威锁阶段统一先锁 Workspace，再按稳定 node ID 顺序锁当前 live-attested Node，最后锁 authority/peer/service/cursor/lease 等领域记录。Node revoke 还必须在同一调用方事务中提高 Node fencing 并级联撤销逻辑授权、Run lease 和 authority。
+- `acquire_network_lease()` 只签发逻辑授权并从 `network_lease_cursors` 分配单调 fencing token；它不得调用真实或 fake provider 的 activate/revoke。`PeerOverlayProvider` 只是隔离的 P34.5 adapter 契约/fake harness，不是 P34.4 Network Lease 签发的一部分。
+
+**禁止的改法**
+
+- 在 Browser API 暴露 attestation、heartbeat、lease、fencing 或 provider activation。
+- 保存私钥、原始敏感 attestation、IP/route、VPN credential 或 provider handle。
+- 只检查 Node 行的 `verified` 字段而不复核 attestation expiry，或在签发逻辑 Network Lease 时产生 socket、route、VPN/Overlay peer 等副作用。
+- 让 Sandbox 成为成员 Overlay peer，或把 Overlay membership 当成 Workspace RBAC。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_overlay_collaboration.py`
+- `backend/tests/test_p34_4_api_contract.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+撤销受影响 Node 并级联关闭其 peer/service/network/authority 逻辑状态，保持真实 adapter 未装配或停用。不得通过重用旧 attestation、放宽到来源 IP 或跳过 Workspace 绑定恢复服务。
+
+## INV-014 lease-expiry-binding
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/service.py`
+- `backend/src/omnibase/workspaces/overlay.py`
+- `backend/src/omnibase/workspaces/collaboration.py`
+- `backend/src/omnibase/workspaces/models.py`
+
+**为何存在**
+
+Run、Network 和 Workspace authority lease 都是短期授权。每次 heartbeat、状态提交、网络使用或协作提交必须重新验证 tenant/workspace、主体、generation/epoch、状态、实时 attestation 和数据库时钟内的有效期。Run Lease 还绑定 Node fencing token；Network Lease 同时绑定 `network_lease_cursors.current_fencing_token`。持有旧 lease UUID 不能在 Node 重新 fencing、cursor 前进、到期或撤销后继续工作。
+
+**允许的改法**
+
+- 缩短 TTL、收紧续租窗口、使用数据库时钟并在锁内复核当前状态。
+- 为每类 lease 维持最多一个 active holder 的部分唯一约束。
+- Run claim 将当前 `WorkspaceNode.fencing_token` 固化到 `RunLease.node_fencing_token`；Network claim 在锁定 cursor 后分配并推进当前/下一 fencing token，使用时同时比较 lease 与 cursor。
+- 将过期、撤销和 holder 不匹配转换为稳定、无敏感信息的拒绝。
+
+**禁止的改法**
+
+- 依赖调用方时钟、缓存中的 expiry 或异步最终撤销。
+- heartbeat 时只按 lease ID 查询而省略 tenant/workspace/run/node/generation/epoch。
+- Run heartbeat 忽略 `node_fencing_token`/实时 attestation，或 Network Lease 只比较 lease token 而不比较 cursor 当前 token。
+- 到期后隐式续租、复活或复用同一 authority epoch。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_workspace_service.py`
+- `backend/tests/test_p34_4_overlay_collaboration.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+停止新 claim/heartbeat，标记受影响 lease 为 revoked/expired，并保持下游提交 fail-closed；在 fresh sentinel 中验证 DB clock 和唯一 active 约束后再开放。不得延长旧 lease 伪造连续性。
+
+## INV-015 monotonic-fencing
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/service.py`
+- `backend/src/omnibase/workspaces/overlay.py`
+- `backend/src/omnibase/workspaces/collaboration.py`
+- `backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py`
+
+**为何存在**
+
+分布式 holder 可能在暂停、网络分区或进程恢复后继续提交。Run、Node/Network 和 authority 的 fencing token/epoch 必须单调增加，并与当前 generation、实时 attestation 和 active lease 原子校验。Run lease 固化 Node fencing；Network lease token 由持久化 cursor 分配。旧 holder 即使重新上线也不能覆盖新状态、复活 terminal Run 或制造双写。
+
+**允许的改法**
+
+- 在锁住权威 aggregate 后分配下一 token，并让数据库唯一约束拒绝重复 token。
+- 所有提交同时携带并验证逻辑 ID、generation/epoch、lease、holder Node fencing 和当前 cursor/authority token。
+- 对 stale token 返回冲突并写 code-only Audit/安全事件。
+
+**禁止的改法**
+
+- 重置、递减、复用或由客户端选择 fencing token/authority epoch。
+- 从 `max(existing token)` 临时猜测 Network token，或删除 `network_lease_cursors` 后从 1 重新签发。
+- 先执行副作用再验证 token，或只比较“较新时间戳”。
+- restore 后沿用旧 token、holder 或 runtime identity。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_workspace_service.py`
+- `backend/tests/test_p34_4_overlay_collaboration.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+冻结相关 mutation，撤销所有无法证明当前性的 holder，并以更高 token/epoch 创建新的显式 lease。不得修改历史 token、删除冲突记录或让两个 authority 临时并行写入。
+
+## INV-016 authority-single-writer
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/collaboration.py`
+- `backend/src/omnibase/workspaces/models.py`
+- `backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py`
+
+**为何存在**
+
+P34.4D 的协作 harness 只验证内容摘要、Git ref 元数据和追加事件的单写协议。每个 Workspace 最多一个 active authority；authority 离线、lease 过期、摘要链或 sequence 冲突时必须只读/拒绝，不自动选举、自动 merge 或产生双写。
+
+**允许的改法**
+
+- 在 DB clock 确认旧 authority 过期后显式 claim 更高 epoch。
+- 验证 `previous_digest`、单调 sequence、event type 和当前 authority lease。
+- authority claim/commit 先锁 tenant-bound Workspace aggregate，再锁当前 live-attested authority Node，最后锁 authority/event chain；Node revoke 使用相同的 Workspace→Node 前缀，因此撤销和新 claim/commit 不能交叉穿越。
+- fake/local transport 只保存合成元数据，不接触真实 Git credential、文件内容、业务数据库、MinIO、Redis 或 canonical RAG。
+
+**禁止的改法**
+
+- authority 离线时由多个 Node 乐观写入或无一致性协议自动接管。
+- 对同 sequence 不同 digest、错误 previous digest 或旧 epoch 自动 last-write-wins。
+- 将 P34.4D harness 接入真实成员网络、真实用户数据或不可信代码执行。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_4_overlay_collaboration.py`
+- `backend/tests/integration/test_p34_4_workspace_foundation.py`
+
+**失败恢复**
+
+将 Workspace 协作面切为只读，保留冲突事件与摘要证据，撤销现有 authority 后由人工选择可信链并以新 epoch 恢复。不得删除冲突、改写旧摘要或自动合并两条权威链。

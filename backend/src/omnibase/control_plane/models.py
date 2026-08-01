@@ -14,6 +14,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -65,6 +66,20 @@ class ResourceRecord(Base):
             name="resource_registry_policy_class_check",
         ),
         CheckConstraint("version >= 1", name="resource_registry_version_check"),
+        UniqueConstraint(
+            "id",
+            "tenant_id",
+            name="resource_registry_id_tenant_uq",
+        ),
+        ForeignKeyConstraint(
+            ["parent_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.resource_registry.id",
+                f"{GLOBAL_SCHEMA}.resource_registry.tenant_id",
+            ],
+            name="resource_registry_parent_tenant_fk",
+            ondelete="RESTRICT",
+        ),
         Index(
             "resource_registry_tenant_kind_state_idx",
             "tenant_id",
@@ -108,7 +123,6 @@ class ResourceRecord(Base):
     owner_id: Mapped[str | None] = mapped_column(_UUID, nullable=True)
     parent_id: Mapped[str | None] = mapped_column(
         _UUID,
-        ForeignKey(f"{GLOBAL_SCHEMA}.resource_registry.id", ondelete="SET NULL"),
         nullable=True,
     )
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -178,6 +192,24 @@ class ResourceLineage(Base):
             "derived_resource_id",
             "relation",
             name="resource_lineage_edge_uq",
+        ),
+        ForeignKeyConstraint(
+            ["source_resource_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.resource_registry.id",
+                f"{GLOBAL_SCHEMA}.resource_registry.tenant_id",
+            ],
+            name="resource_lineage_source_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["derived_resource_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.resource_registry.id",
+                f"{GLOBAL_SCHEMA}.resource_registry.tenant_id",
+            ],
+            name="resource_lineage_derived_tenant_fk",
+            ondelete="RESTRICT",
         ),
         Index(
             "resource_lineage_tenant_source_idx",
