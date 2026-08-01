@@ -1,4 +1,4 @@
-"""Fail-closed P34.5A1 runner and termination contracts.
+"""Fail-closed P34.5A1-A2 Runner and termination contracts.
 
 This module does not start processes or contact a container runtime.  It only
 defines what a later, independently deployed Linux Runner must receive after
@@ -7,6 +7,8 @@ authorization and durable-operation reservation have succeeded.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -66,6 +68,24 @@ class RunnerIsolationProfile:
             or self.bounded_kill_seconds > 30
         ):
             raise ValueError("bounded_kill_seconds is outside the safe range")
+
+    def digest(self) -> str:
+        payload = json.dumps(
+            {
+                "bounded_kill_seconds": self.bounded_kill_seconds,
+                "cgroup_v2": self.cgroup_v2,
+                "lsm_profile_digest": self.lsm_profile_digest,
+                "mount_namespace": self.mount_namespace,
+                "network_namespace": self.network_namespace,
+                "pid_namespace": self.pid_namespace,
+                "platform": self.platform.value,
+                "seccomp_profile_digest": self.seccomp_profile_digest,
+                "user_namespace": self.user_namespace,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

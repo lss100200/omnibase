@@ -641,23 +641,31 @@ P34.4D 的协作 harness 只验证内容摘要、Git ref 元数据和追加事�
 - `backend/src/omnibase/sandbox/contracts.py`
 - `backend/src/omnibase/sandbox/authorization.py`
 - `backend/src/omnibase/sandbox/control.py`
+- `backend/src/omnibase/sandbox/coordinator.py`
+- `backend/src/omnibase/sandbox/host.py`
 - `backend/src/omnibase/sandbox/operations.py`
 - `backend/src/omnibase/sandbox/provider.py`
 - `backend/src/omnibase/sandbox/runner.py`
+- `backend/src/omnibase/sandbox/transport.py`
+- `backend/src/omnibase/workspaces/service.py`
+- `scripts/sandbox/probe_runner_host.py`
 - `backend/tests/test_p34_5_sandbox_foundation.py`
 - `backend/tests/test_p34_5_sandbox_a1_control.py`
+- `backend/tests/test_p34_5_sandbox_a2_dispatch.py`
 
 **为何存在**
 
-P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次普通操作都必须重新绑定 tenant、Workspace、Run、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。紧急 stop/destroy 必须使用独立可信 controller authorization，不能依赖已经撤销的 workload grant，也不能因为 workload 已撤销就匿名放行。缺少可信 verifier/provider/controller/Runner 时必须拒绝，A0/A1 的 in-memory harness 只能演练授权与状态机，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
+P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次普通操作都必须重新绑定 tenant、Workspace、Run、runtime instance、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。紧急 stop/destroy 必须使用独立可信 controller authorization，不能依赖已经撤销的 workload grant，也不能因为 workload 已撤销就匿名放行。任何副作用前还必须存在 durable operation reservation、当前 Runner host/profile 证明和独立 transport；dispatch 结果不确定时禁止自动重放。缺少可信 verifier/store/provider/controller/host/transport/Runner 时必须拒绝，A0-A2 的 in-memory harness 只能演练授权、状态机与调度顺序，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
 
 **允许的改法**
 
 - 收紧 `SandboxOperationRequest`、资源配额、相对路径、结构化 argv、只读 root、non-root、`no_new_privileges`、capability drop 和默认拒绝网络契约。
 - 新增真实 provider 前先保持 `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 为默认，并以显式可信 wiring 注入实现。
 - 使用 `ComposedSandboxAuthorizer` 组合独立的 live P34.4 lease/Node/fencing verifier 与 P34.2 capability verifier；任一结果缺失、过期或 binding 不一致都拒绝。
+- 使用 `SqlAlchemySandboxLeaseVerifier` 在每次操作的新数据库事务中调用 `verify_run_lease_for_sandbox()`，同时重验 Run Lease、实时 Node attestation、Workspace generation、Run/Node fencing、runtime instance 与 workload identity；禁止缓存上一次接受结果。
 - 让 emergency stop/destroy 使用 `SandboxControlRequest`、独立 `SandboxControlAuthorizer`、controller identity、deadline、runtime handle、generation 与 Run/Node fencing；默认 `RejectingSandboxControlAuthorizer`。
 - 在任何 Runner/provider 副作用前按 operation ID 与 request/spec digest 预留 durable operation；exact replay 返回原记录，payload drift 冲突，ambiguous outcome 进入 reconciliation-required 且不得自动重放，terminal operation 不可复活。
+- 使用 `SandboxExecutionCoordinator` 固定 operation reservation → live authorization → Runner host attestation → dispatch marker → independent transport → receipt binding 的顺序；宿主 fencing/profile/evidence 不一致或 receipt operation ID 漂移必须 fail-closed。
 - 保持 `UnavailableSandboxRunner` 为生产默认；Runner isolation profile 只有在目标 Linux 上真实证明 cgroup v2、user/PID/mount/network namespace、seccomp、LSM 和有界强杀后才能装配。
 - 使用 test-only `InMemorySandboxAuthorizer` 和 `FakeInMemorySandboxProvider` 验证完整 binding、过期、撤销、stale fencing、状态转换、provider-owned snapshot provenance 和 restore-new-identity；同一 Run 即使 runtime 已销毁也不得重新 create/restore，`exec`/`cancel` 必须继续返回 `sandbox_execution_not_unlocked`。
 - 将未来 Linux provider 放在独立 Runner 进程/节点，且每次 mutation 在副作用前完成在线 lease/capability verification。
@@ -665,6 +673,7 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 **禁止的改法**
 
 - 把 Browser JWT、请求体字段、raw capability token、来源 IP、provider handle 或“runtime 已存在”当作授权事实。
+- 省略 `runtime_instance_id`、复用旧 runtime identity、缓存 lease verifier 结果，或用 P34.2 现有只读 data/RAG capability 冒充 `sandbox.*` lifecycle capability。
 - 使用 workload capability 代替 emergency controller authorization，或在没有可信 controller identity/current fencing/deadline 时执行 stop/destroy。
 - 对 ambiguous provider outcome 自动重跑、复用同一 operation ID 搭配不同 request/spec，或让 terminal operation/runtime 回到 dispatching/running。
 - 在 Core API/Celery 进程中执行 workspace 命令，或给 Sandbox/Runner 注入 PostgreSQL、MinIO、Redis、JWT、签名 key、宿主 `.env`、Docker/Podman socket、宿主目录或成员 Overlay identity。
@@ -677,7 +686,10 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 
 - `backend/tests/test_p34_5_sandbox_foundation.py`
 - `backend/tests/test_p34_5_sandbox_a1_control.py`
-- `docker compose run --rm --no-deps backend mypy src/omnibase/sandbox`
+- `backend/tests/test_p34_5_sandbox_a2_dispatch.py`
+- `backend/tests/test_p34_4_workspace_service.py`
+- `docker compose run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces`
+- `python scripts/sandbox/probe_runner_host.py`；结果不 ready 时不得通过降低 profile 或省略控制强行装配 provider。
 - 对新增真实 provider 运行 P34.5 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；A0 单元测试不能替代目标 Linux isolation Gate。
 
 **失败恢复**

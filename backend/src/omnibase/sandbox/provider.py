@@ -187,6 +187,7 @@ class _AuthorizationRecord:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     node_id: UUID
     lease_id: UUID
     workspace_generation: int
@@ -225,6 +226,7 @@ class InMemorySandboxAuthorizer:
             tenant_id=request.tenant_id,
             workspace_id=request.workspace_id,
             run_id=request.run_id,
+            runtime_instance_id=request.runtime_instance_id,
             node_id=request.node_id,
             lease_id=request.lease_id,
             workspace_generation=request.workspace_generation,
@@ -243,6 +245,7 @@ class InMemorySandboxAuthorizer:
             tenant_id=record.tenant_id,
             workspace_id=record.workspace_id,
             run_id=record.run_id,
+            runtime_instance_id=record.runtime_instance_id,
             node_id=record.node_id,
             lease_id=record.lease_id,
             workspace_generation=record.workspace_generation,
@@ -265,6 +268,7 @@ class InMemorySandboxAuthorizer:
             record.tenant_id,
             record.workspace_id,
             record.run_id,
+            record.runtime_instance_id,
             record.node_id,
             record.lease_id,
             record.workspace_generation,
@@ -276,6 +280,7 @@ class InMemorySandboxAuthorizer:
             request.tenant_id,
             request.workspace_id,
             request.run_id,
+            request.runtime_instance_id,
             request.node_id,
             request.lease_id,
             request.workspace_generation,
@@ -310,6 +315,7 @@ class _RuntimeRecord:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     node_id: UUID
     lease_id: UUID
     workspace_generation: int
@@ -355,6 +361,7 @@ class FakeInMemorySandboxProvider:
             record.tenant_id,
             record.workspace_id,
             record.run_id,
+            record.runtime_instance_id,
             record.node_id,
             record.lease_id,
             record.workspace_generation,
@@ -366,6 +373,7 @@ class FakeInMemorySandboxProvider:
             request.tenant_id,
             request.workspace_id,
             request.run_id,
+            request.runtime_instance_id,
             request.node_id,
             request.lease_id,
             request.workspace_generation,
@@ -384,6 +392,7 @@ class FakeInMemorySandboxProvider:
             tenant_id=record.tenant_id,
             workspace_id=record.workspace_id,
             run_id=record.run_id,
+            runtime_instance_id=record.runtime_instance_id,
             workspace_generation=record.workspace_generation,
             workload_identity_thumbprint=record.workload_identity_thumbprint,
             state=record.state,
@@ -419,6 +428,7 @@ class FakeInMemorySandboxProvider:
             tenant_id=request.tenant_id,
             workspace_id=request.workspace_id,
             run_id=request.run_id,
+            runtime_instance_id=request.runtime_instance_id,
             node_id=request.node_id,
             lease_id=request.lease_id,
             workspace_generation=request.workspace_generation,
@@ -521,8 +531,10 @@ class FakeInMemorySandboxProvider:
             {
                 "metadata_only": True,
                 "run_id": str(record.run_id),
+                "runtime_instance_id": str(record.runtime_instance_id),
                 "snapshot_id": str(snapshot_id),
                 "spec_digest": _spec_digest(record.spec),
+                "workload_identity_thumbprint": record.workload_identity_thumbprint,
                 "workspace_generation": record.workspace_generation,
             }
         )
@@ -531,6 +543,7 @@ class FakeInMemorySandboxProvider:
             tenant_id=record.tenant_id,
             workspace_id=record.workspace_id,
             source_run_id=record.run_id,
+            source_runtime_instance_id=record.runtime_instance_id,
             source_generation=record.workspace_generation,
             source_workload_identity_thumbprint=record.workload_identity_thumbprint,
             manifest_digest=manifest_digest,
@@ -552,6 +565,7 @@ class FakeInMemorySandboxProvider:
             request.tenant_id != snapshot.tenant_id
             or request.workspace_id != snapshot.workspace_id
             or request.run_id == snapshot.source_run_id
+            or request.runtime_instance_id == snapshot.source_runtime_instance_id
             or request.workspace_generation <= snapshot.source_generation
             or request.workload_identity_thumbprint == snapshot.source_workload_identity_thumbprint
         ):
@@ -564,6 +578,7 @@ class FakeInMemorySandboxProvider:
             tenant_id=request.tenant_id,
             workspace_id=request.workspace_id,
             run_id=request.run_id,
+            runtime_instance_id=request.runtime_instance_id,
             node_id=request.node_id,
             lease_id=request.lease_id,
             workspace_generation=request.workspace_generation,

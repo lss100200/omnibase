@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -24,7 +25,7 @@ from omnibase.control_plane.service import (
     reserve_idempotency,
 )
 from omnibase.db.tenant import User
-from omnibase.workspaces.contracts import WorkspaceReconciler
+from omnibase.workspaces.contracts import VerifiedRunLeaseFacts, WorkspaceReconciler
 from omnibase.workspaces.models import (
     NetworkLease,
     NodeAttestation,
@@ -1454,6 +1455,112 @@ def heartbeat_run_lease(
     return lease
 
 
+def bind_run_runtime_identity(
+    session: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+    lease_id: str,
+    node_id: str,
+    generation: int,
+    fencing_token: int,
+    runtime_instance_id: str,
+    workload_identity_digest: str,
+) -> WorkspaceRun:
+    """Bind one fresh runtime identity while holding the live fenced Run lease."""
+    try:
+        canonical_runtime_instance_id = str(UUID(runtime_instance_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise LeaseRejected("runtime instance identity is invalid") from exc
+    _validate_digest(workload_identity_digest, "workload_identity_digest")
+    run, _, _ = _validated_run_lease(
+        session,
+        tenant_id=tenant_id,
+        run_id=run_id,
+        lease_id=lease_id,
+        node_id=node_id,
+        generation=generation,
+        fencing_token=fencing_token,
+    )
+    existing = (run.runtime_instance_id, run.workload_identity_digest)
+    supplied = (canonical_runtime_instance_id, workload_identity_digest)
+    if existing == supplied:
+        return run
+    if existing != (None, None):
+        raise LeaseRejected("run runtime identity is already bound")
+    if run.observed_state != "leased":
+        raise LeaseRejected("run runtime identity requires leased state")
+    run.runtime_instance_id = canonical_runtime_instance_id
+    run.workload_identity_digest = workload_identity_digest
+    run.version += 1
+    session.flush()
+    return run
+
+
+def verify_run_lease_for_sandbox(
+    session: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+    runtime_instance_id: str,
+    lease_id: str,
+    node_id: str,
+    generation: int,
+    fencing_token: int,
+    workload_identity_digest: str,
+) -> VerifiedRunLeaseFacts:
+    """Return current DB-backed Run/Node/fencing facts for a Sandbox verifier."""
+    try:
+        canonical_runtime_instance_id = str(UUID(runtime_instance_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise LeaseRejected("runtime instance identity is invalid") from exc
+    _validate_digest(workload_identity_digest, "workload_identity_digest")
+    run, lease, now = _validated_run_lease(
+        session,
+        tenant_id=tenant_id,
+        run_id=run_id,
+        lease_id=lease_id,
+        node_id=node_id,
+        generation=generation,
+        fencing_token=fencing_token,
+    )
+    if (
+        run.runtime_instance_id != canonical_runtime_instance_id
+        or run.workload_identity_digest != workload_identity_digest
+    ):
+        raise LeaseRejected("run runtime identity is stale or unbound")
+    verification_digest = canonical_digest(
+        {
+            "lease_id": lease.id,
+            "node_fencing_token": lease.node_fencing_token,
+            "node_id": lease.node_id,
+            "run_fencing_token": lease.fencing_token,
+            "run_id": run.id,
+            "runtime_instance_id": run.runtime_instance_id,
+            "tenant_id": run.tenant_id,
+            "verified_at": now.isoformat(),
+            "workload_identity_digest": run.workload_identity_digest,
+            "workspace_generation": run.generation,
+            "workspace_id": run.workspace_id,
+        }
+    )
+    return VerifiedRunLeaseFacts(
+        tenant_id=run.tenant_id,
+        workspace_id=run.workspace_id,
+        run_id=run.id,
+        runtime_instance_id=canonical_runtime_instance_id,
+        node_id=lease.node_id,
+        lease_id=lease.id,
+        workspace_generation=run.generation,
+        run_fencing_token=lease.fencing_token,
+        node_fencing_token=lease.node_fencing_token,
+        workload_identity_digest=workload_identity_digest,
+        verified_at=now,
+        expires_at=lease.expires_at,
+        verification_digest=verification_digest,
+    )
+
+
 def submit_run_state(
     session: Session,
     *,
@@ -1662,6 +1769,7 @@ __all__ = [
     "WorkspaceNotFound",
     "WorkspacePolicyDenied",
     "authorize_workspace_action",
+    "bind_run_runtime_identity",
     "canonical_digest",
     "claim_run_lease",
     "create_run",
@@ -1682,4 +1790,5 @@ __all__ = [
     "submit_run_state",
     "upsert_membership",
     "validate_template_spec",
+    "verify_run_lease_for_sandbox",
 ]

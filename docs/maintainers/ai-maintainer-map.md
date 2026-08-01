@@ -307,12 +307,12 @@ trusted Node/Reconciler context
 - Node/lease/fencing/authority 不挂到 Browser ASGI，不从 Browser Header/JSON 构造可信 Node 或 holder。
 - P34.4 不访问真实 Workspace 文件、Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG，也不开放 Workspace/Agent data write capability。
 
-### 6.5 P34.5A0-A1 Sandbox 控制骨架：双授权、可恢复 operation，仍不执行代码
+### 6.5 P34.5A0-A2 Sandbox 控制骨架：在线 lease、宿主证明与防重放调度，仍不执行代码
 
 `backend/src/omnibase/sandbox/` 是 P34.5 的预启动安全缝隙，不是可运行任意代码的 Runtime：
 
 ```text
-server-owned P34.4 Run/Node/lease/fencing facts
+server-owned P34.4 Run/runtime/Node/lease/fencing facts
         + P34.2 capability verification adapter
                          │
                          ▼
@@ -335,26 +335,37 @@ trusted controller identity + current generation/fencing
       default RejectingSandboxControlAuthorizer
                          │
                          ▼
-       durable operation reservation/reconciliation
+       SandboxOperationStore reservation/reconciliation
                          │
                          ▼
-                  SandboxRunner
-          default UnavailableSandboxRunner
+              RunnerHostAttestor
+       profile + identity + Node fencing proof
+                         │
+                         ▼
+           SandboxExecutionCoordinator
+                         │
+                         ▼
+                RunnerTransport
+        default UnavailableRunnerTransport
 ```
 
 关键入口：
 
-- `sandbox.contracts.SandboxOperationRequest`：只携带待在线复核的 tenant/workspace/run/node/lease/generation/Run fencing/Node fencing/workload identity/action；它不是 bearer token，调用方持有这些值不产生授权。
+- `sandbox.contracts.SandboxOperationRequest`：只携带待在线复核的 tenant/workspace/run/runtime instance/node/lease/generation/Run fencing/Node fencing/workload identity/action；它不是 bearer token，调用方持有这些值不产生授权。
 - `sandbox.contracts.SandboxRuntimeSpec`：强制资源上限、只读 root、non-root、`no_new_privileges`、drop-all capabilities、无 host mount/device/runtime socket，并且 P34.5A0 网络只能 `deny_all`。
 - `sandbox.contracts.SandboxCommandSpec` 与 `SandboxRelativePath`：只允许 immutable argv 与 canonical Workspace-relative POSIX path；不接受 shell string、env、绝对/drive/traversal/保留凭据路径。
 - `sandbox.provider.UnavailableSandboxProvider`：生产默认全部 unavailable，不能因为 provider 缺失回退到 Core API、Celery、Docker 或宿主 shell。
 - `sandbox.provider.FakeInMemorySandboxProvider`：只在内存中演练 create/start/stop/destroy、空 logs/stats、provider-owned metadata-only snapshot 与 restore-new-generation；拒绝伪造 snapshot、同一 Run 的销毁后重建和 restore 重放，`exec`/`cancel` 永久拒绝，没有进程、文件、socket、网络、容器、挂载或 provider side effect。
-- `sandbox.authorization.ComposedSandboxAuthorizer`：将可信调用方实现的 live P34.4 lease/Node/attestation/fencing verifier 与 P34.2 capability verifier 合并；不接收 raw token，不自己持有 DB session，任一 binding/expiry 不一致即拒绝。
+- `workspaces.service.bind_run_runtime_identity` 与 `verify_run_lease_for_sandbox`：只在 live fenced Run lease 下单次绑定 runtime instance/workload identity，并在每次 Sandbox 操作时重新验证 Workspace/Run/Node/Lease/generation/Run+Node fencing、实时 attestation 和 DB clock。
+- `sandbox.authorization.SqlAlchemySandboxLeaseVerifier`：每次验证创建并关闭一个新 SQLAlchemy transaction，把 P34.4 server-owned facts 映射为无 bearer material 的 lease proof；拒绝 stale/unbound runtime identity。`ComposedSandboxAuthorizer` 再与 P34.2 capability proof 做完整 binding 与有效期交集。
 - `sandbox.control.SandboxControlRequest`：仅用于可信 controller 的 emergency stop/destroy，独立于 workload capability，绑定 controller identity、runtime handle、generation、Run/Node fencing、reason 与 deadline；缺少控制授权时默认拒绝。
-- `sandbox.operations.InMemorySandboxOperationStore`：A1 的 test-only append-only operation 语义模型；同 operation ID 的 exact replay 返回原记录，request/spec drift 冲突，ambiguous outcome 只能进入 reconciliation，terminal 不复活。生产 durable store 尚未实现。
+- `sandbox.operations.SandboxOperationStore`：A2 的 production durable seam；默认 `UnavailableSandboxOperationStore`。`InMemorySandboxOperationStore` 仍是 test-only append-only 语义模型；生产数据库持久化尚未实现。
+- `sandbox.host.RunnerHostAttestor`：绑定 Runner/Node identity、Node fencing、isolation profile digest、有效期和 evidence digest；默认拒绝。`scripts/sandbox/probe_runner_host.py` 只读探测宿主控制，不会降低目标 profile。
+- `sandbox.coordinator.SandboxExecutionCoordinator`：按 durable reservation → live authorization → host attestation → dispatch marker → transport → receipt binding 排序；terminal exact replay 不重复 dispatch，崩溃后的 dispatching 与 transport timeout/receipt drift 都进入 ambiguous/reconciliation-required。
+- `sandbox.transport.RunnerTransport`：Core 与独立 Runner 的传输 seam；默认 unavailable，Core 文件不导入 Docker、socket、subprocess、HTTP client 或 host filesystem control。
 - `sandbox.runner.UnavailableSandboxRunner`：真实独立 Linux Runner 的拒绝默认。`RunnerIsolationProfile` 冻结 cgroup v2、user/PID/mount/network namespace、seccomp、LSM 和有界 kill 契约，但不声称宿主已经实现这些控制。
 
-该包没有 Router、migration、Docker socket、真实 RuntimeDriver、独立 Linux Runner 进程、production durable operation store、mTLS identity、Gateway 数据通道或真实 Sandbox 网络。任何未来 provider/Runner 都必须在副作用前完成在线双验证与 operation reservation，并单独通过 P34.5 Linux isolation/攻击 Gate；不能把 A0/A1 focused tests 当成敌对代码隔离证明。
+该包没有 Router、migration、Docker socket、真实 RuntimeDriver、独立 Linux Runner 进程、production durable operation store、production Sandbox capability verifier、mTLS identity、Gateway 数据通道或真实 Sandbox 网络。P34.2 当前 capability 闭集只覆盖只读 data/RAG，不得冒充 `sandbox.*` lifecycle 权限。任何未来 provider/Runner 都必须在副作用前完成在线双验证、operation reservation 与宿主证明，并单独通过 P34.5 Linux isolation/攻击 Gate；不能把 A0-A2 focused tests 当成敌对代码隔离证明。
 
 ## 7. 数据库与 migration 边界
 
@@ -433,7 +444,7 @@ trusted controller identity + current generation/fencing
 | `capability_gateway/**` | 独立 workload read surface | Capability ledger、Control Plane、RAG/data adapters、OpenAPI snapshot、两种 SDK | INV-003, INV-004, INV-005, INV-006 |
 | `controlled_data/**` | User-RBAC mutation、内部 CRUD/DDL、atomic lifecycle | Principal、Control Plane、Capability FK、0006、integration concurrency/timeout | INV-002–INV-007 |
 | `workspaces/**` | Workspace aggregate membership/scope、PostgreSQL-natural-idempotent template、lifecycle、Node-fenced Run lease、logical Network lease cursor、实时 attestation、authority/collaboration metadata | Principal、Control Plane、0007、Browser OpenAPI、P34.5 冻结边界 | INV-001–INV-008, INV-011–INV-016 |
-| `sandbox/**` | P34.5A0-A1 strict runtime DTO、live lease+capability 组合授权、独立 emergency control、durable operation/reconciliation、拒绝型 Runner/provider 与 metadata-only lifecycle harness | Workspace Run/Node/lease/fencing、Capability ledger、未来 production operation store/Linux Runner/RuntimeDriver | INV-003–INV-005, INV-010, INV-012–INV-015, INV-017 |
+| `sandbox/**`, `scripts/sandbox/**` | P34.5A0-A2 strict runtime DTO、DB-backed live Run lease/runtime identity proof、capability 组合 seam、emergency control、durable operation/host attestation/transport/no-replay coordinator 与拒绝型 Runner/provider | Workspace Run/Node/lease/fencing、Capability ledger、未来 production operation store/Sandbox capability vocabulary/Linux Runner/RuntimeDriver | INV-003–INV-005, INV-010, INV-012–INV-015, INV-017 |
 | `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
 | `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
@@ -542,24 +553,37 @@ docker compose run --rm --no-deps backend ruff format --check `
 
 `0007`、17 表清单、复合 tenant/workspace FK、partial unique active lease/authority、Network lease cursor fencing 和 populated downgrade 必须在 fresh `omnibase_test_*` sentinel PostgreSQL 中验证。使用 guarded destructive target；不得把普通业务数据库作为 migration 或 downgrade 目标。P34.4 tests 通过只证明 metadata control plane、逻辑授权和 fake harness，不证明 P34.5 Sandbox、VPN 或真实 Overlay 安全。
 
-### 11.6 P34.5A0-A1 Sandbox 控制与拒绝骨架
+### 11.6 P34.5A0-A2 Sandbox 调度与拒绝骨架
 
 ```powershell
 docker compose run --rm --no-deps backend pytest `
   tests/test_p34_5_sandbox_foundation.py `
-  tests/test_p34_5_sandbox_a1_control.py -q
-docker compose run --rm --no-deps backend mypy src/omnibase/sandbox
+  tests/test_p34_5_sandbox_a1_control.py `
+  tests/test_p34_5_sandbox_a2_dispatch.py `
+  tests/test_p34_4_workspace_service.py -q
+docker compose run --rm --no-deps backend mypy `
+  src/omnibase/sandbox `
+  src/omnibase/workspaces
 docker compose run --rm --no-deps backend ruff check `
   src/omnibase/sandbox `
+  src/omnibase/workspaces/contracts.py `
+  src/omnibase/workspaces/service.py `
   tests/test_p34_5_sandbox_foundation.py `
-  tests/test_p34_5_sandbox_a1_control.py
+  tests/test_p34_5_sandbox_a1_control.py `
+  tests/test_p34_5_sandbox_a2_dispatch.py `
+  tests/test_p34_4_workspace_service.py
 docker compose run --rm --no-deps backend ruff format --check `
   src/omnibase/sandbox `
+  src/omnibase/workspaces/contracts.py `
+  src/omnibase/workspaces/service.py `
   tests/test_p34_5_sandbox_foundation.py `
-  tests/test_p34_5_sandbox_a1_control.py
+  tests/test_p34_5_sandbox_a1_control.py `
+  tests/test_p34_5_sandbox_a2_dispatch.py `
+  tests/test_p34_4_workspace_service.py
+python scripts/sandbox/probe_runner_host.py
 ```
 
-这些命令只验证 strict DTO、live lease+capability 组合 binding、独立 controller authorization、exact replay/payload drift/ambiguous reconciliation、拒绝型 Runner/provider、metadata-only 状态机和 `exec` hard deny。它们不创建或验证真实容器、进程、cgroup、namespace、seccomp/AppArmor、网络、mTLS、production operation store 或 Gateway 通道；不得据此声明 P34.5A/P34.5B 或任意敌对代码隔离完成。
+这些命令只验证 strict DTO、DB-backed P34.4 live lease/runtime identity binding、capability 组合 seam、独立 controller authorization、durable operation 协议、Runner host proof、transport/no-replay coordinator、拒绝型 Runner/provider、metadata-only 状态机和 `exec` hard deny。宿主探针不 ready 是部署阻断，不是测试失败后降低要求的理由。它们不创建或验证真实容器、进程、cgroup、namespace、seccomp/AppArmor、网络、mTLS、production operation store、Sandbox capability ledger 或 Gateway 通道；不得据此声明 P34.5A/P34.5B 或任意敌对代码隔离完成。
 
 ### 11.7 SDK contracts
 
@@ -648,7 +672,7 @@ pnpm build
 截至当前源码和交接状态：
 
 - P34.4A–D 已完成工程 Gate：`backend/src/omnibase/workspaces/`、migration `0007` 的 17 张 global metadata 表、Browser Workspace governance、Node-fenced Run lease、cursor-fenced logical Network Lease、实时 attestation、Node/Peer/Service/Authority 统一锁序与无真实数据 authority/collaboration harness 已实现。
-- P34.5A0-A1 已实现 strict Sandbox contracts、live 双验证组合 seam、独立 emergency control、durable operation/reconciliation 语义、拒绝型 Runner/provider、deny-all network policy 与 metadata-only fake lifecycle；它的 `exec`/`cancel` hard deny，只是预启动安全与控制骨架。
+- P34.5A0-A2 已实现 strict Sandbox contracts、DB-backed P34.4 lease/runtime identity proof、live capability 组合 seam、独立 emergency control、durable operation/host proof/transport/no-replay dispatch 语义、拒绝型 Runner/provider、deny-all network policy 与 metadata-only fake lifecycle；它的 `exec`/`cancel` hard deny，只是预启动安全与调度骨架。
 - P34.5A filesystem/process/resource isolation、独立 Linux Runner/RuntimeDriver、有界强杀，P34.5B network namespace/Workspace Network Broker/短期 mTLS identity，P34.5C 真实 Overlay adapter 与 P34.5D Gateway 只读闭环仍未进入真实实施和攻击 Gate。
 - P34.4 的 fake/local reconciler、独立 Overlay provider harness 与 collaboration transport 只处理合成元数据；logical Network Lease 签发不调用 provider。它们不执行代码、不打开真实 peer/socket、不接真实 Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG。
 - 主 Compose 的 bridge network、tenant schema 隔离、P34.4 logical Network Lease 或 fake provider 都不能被表述为 P34.5 已交付。

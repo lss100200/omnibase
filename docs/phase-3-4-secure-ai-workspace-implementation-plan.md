@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A1 fail-closed Sandbox、双验证、独立 emergency control、durable operation 与拒绝型 Runner 契约已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A2 fail-closed Sandbox、DB-backed Run lease/runtime proof、独立 emergency control、durable dispatch/host attestation/transport 契约已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -433,18 +433,21 @@ destroy(runtime_handle)
 - provider handle 是内部定位，不得进入公开 API 或 capability；
 - provider 失败不得导致 capability、资源配额或 workspace state fail-open。
 
-P34.5A0-A1 现在只实现上述接口的**拒绝型安全与控制骨架**：
+P34.5A0-A2 现在只实现上述接口的**拒绝型安全、控制与调度骨架**：
 
 - `backend/src/omnibase/sandbox/contracts.py` 定义严格的 `SandboxProvider`、在线 `SandboxAuthorizer`、Workspace/Run/Node/Lease/generation/fencing/workload identity 绑定、结构化 argv、相对 POSIX path、资源上限、只读 root/non-root/no-new-privileges/capability-drop 与 `deny_all` 网络策略；
 - `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 是默认装配，缺失可信 P34.4/P34.2 在线验证或真实 provider 时所有操作拒绝；
 - `FakeInMemorySandboxProvider` 只演练 create/start/stop/destroy、空 logs/stats 和 metadata-only snapshot/restore-new-generation；`exec`/`cancel` 永久返回 `sandbox_execution_not_unlocked`，不创建进程、文件、容器、socket、网络、挂载或 provider 资源；
 - test-only `InMemorySandboxAuthorizer` 只模拟服务器拥有的 lease/capability ledger，验证完整 binding、expiry、revocation 和 stale fencing；它不接受 raw token，也不是生产实现。
 - `ComposedSandboxAuthorizer` 要求可信 wiring 分别返回 live P34.4 Run Lease/Node attestation/fencing 与 P34.2 capability 结果，再做完整 binding、action 和交集 expiry 复核；默认 lease/capability verifier 都拒绝。
+- `bind_run_runtime_identity()` 在 live fenced lease 下单次绑定 runtime instance/workload identity；`SqlAlchemySandboxLeaseVerifier` 每次使用新事务重新读取 P34.4 Workspace/Run/Node/Lease、DB clock、generation、Run/Node fencing、实时 attestation 和 runtime binding。
 - emergency stop/destroy 不复用 workload grant，而使用独立 `SandboxControlAuthorizer`、controller identity、runtime handle、generation/fencing、reason 与 deadline；生产默认拒绝，test-only authorizer 只验证语义。
-- `InMemorySandboxOperationStore` 冻结 append-only durable operation 语义：exact replay、payload/spec drift conflict、dispatch 前 authorization evidence、ambiguous outcome 不自动重跑、显式 reconciliation、terminal 不复活。它不是生产持久化或审计实现。
+- `SandboxOperationStore` 冻结 production durable seam，默认 `UnavailableSandboxOperationStore`；`InMemorySandboxOperationStore` 只演练 append-only 语义，不是生产持久化或审计实现。
+- `RunnerHostAttestor` 绑定 Runner/Node identity、Node fencing、isolation profile digest、expiry 与 evidence；`RunnerTransport` 隔离 Core 与未来独立 Runner；两者默认拒绝。
+- `SandboxExecutionCoordinator` 固定 operation reservation → live authorization → host attestation → dispatch marker → transport → receipt binding 顺序；terminal exact replay 不重复 dispatch，dispatching crash、timeout 和 receipt drift 都进入 ambiguous/reconciliation-required。
 - `SandboxRunner`/`RunnerIsolationProfile` 冻结独立 Linux Runner 接口及 cgroup v2、user/PID/mount/network namespace、seccomp、LSM、有界强杀要求；`UnavailableSandboxRunner` 是生产默认，不运行命令。
 
-该骨架不等于 P34.5A Runner/执行隔离已完成；没有独立 Linux Runner 进程、production DB-backed authorizer/operation ledger、cgroup、seccomp/AppArmor/gVisor/Kata、真实 writable layer、真实有界强杀、workload mTLS 或 Gateway 通道。任何真实执行 wiring 仍由 P34.5A 攻击 Gate 阻断。
+该骨架不等于 P34.5A Runner/执行隔离已完成；当前 Docker Desktop 探针缺少 rootless/userns 与 LSM，且尚无独立 Linux Runner 进程、production Sandbox capability verifier/operation ledger、真实 Provider、cgroup/namespace/LSM 攻击证明、writable layer、有界强杀、workload mTLS 或 Gateway 通道。P34.2 capability 闭集仍只有只读 data/RAG，扩展 `sandbox.*` lifecycle vocabulary 需要单独 migration 与 Gate。任何真实执行 wiring 仍由 P34.5A 攻击 Gate 阻断。
 
 ## 10. 风险与审批矩阵
 

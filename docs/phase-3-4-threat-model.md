@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A1 拒绝型 Sandbox、双验证、独立 emergency control、durable operation 与 Runner 契约已落地，真实执行与网络隔离继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A2 已落地拒绝型 Sandbox、DB-backed Run lease/runtime proof、独立 emergency control、durable dispatch/host attestation/transport 契约，真实执行与网络隔离继续冻结
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -200,7 +200,7 @@ P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模�
 - `restore_new_generation` 创建新 workload identity，旧 token、进程、连接、PID、socket 和 runtime handle 一律失效。
 - provider handle 只存内部控制面，不进入公开 API、token、日志或 workspace。
 
-P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。P34.5A1 又增加 live lease + capability 组合授权 seam、独立于 workload grant 的 emergency stop/destroy controller authorization、operation ID/request-spec digest exact replay、ambiguous outcome reconciliation 状态机、目标 Linux isolation profile 合约与 `UnavailableSandboxRunner`。这些实现仍不创建进程、文件、容器、socket、网络、挂载或 provider 资源；只证明缺少真实实现时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现。
+P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。P34.5A1 又增加 live lease + capability 组合授权 seam、独立于 workload grant 的 emergency stop/destroy controller authorization、operation ID/request-spec digest exact replay、ambiguous outcome reconciliation 状态机、目标 Linux isolation profile 合约与 `UnavailableSandboxRunner`。P34.5A2 进一步加入 runtime instance 单次绑定、每次新事务重验 P34.4 Run/Node/Lease/fencing/attestation 的 SQLAlchemy verifier、Runner host/profile/identity attestation、独立 transport 和 no-auto-replay coordinator；当前 Docker Desktop 探针明确缺少 rootless/userns 与 LSM，因此 provider 仍不装配。P34.2 现有 capability 词汇只覆盖只读 data/RAG，不能冒充 `sandbox.*` lifecycle capability。这些实现仍不创建进程、文件、容器、socket、网络、挂载或 provider 资源；只证明缺少真实实现时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现。
 
 ### 4.9 文件系统与 Artifact
 
@@ -333,6 +333,10 @@ P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型�
 | SBX-A1-02 | workload grant 撤销后继续普通 lifecycle，或伪造 controller 请求 destroy | 普通路径拒绝；只有独立可信 controller + current generation/fencing/deadline 可授权 emergency control | unit | P34.5A1 |
 | SBX-A1-03 | 同 operation ID payload/spec drift、ambiguous provider outcome 自动重跑、terminal operation 复活 | conflict；只能显式 reconciliation；terminal 不可转换 | unit | P34.5A1 |
 | SBX-A1-04 | 未装配真实 Linux Runner 或 isolation profile 不完整时 execute/terminate | `sandbox_runner_unavailable`/构造期拒绝，零 runtime side effect | contract/source audit | P34.5A1 |
+| SBX-A2-01 | Run Lease 当前但 runtime instance/workload identity 未绑定、已漂移或终态已清除 | DB-backed verifier 拒绝，transport 前无副作用 | unit | P34.5A2 |
+| SBX-A2-02 | Runner host 的 Node fencing、profile digest、identity、有效期或 evidence 不匹配 | host attestation 拒绝，operation 记为 failed，不 dispatch | unit/probe | P34.5A2 |
+| SBX-A2-03 | dispatch 后 timeout、进程崩溃或 receipt operation ID 漂移 | operation 标记 ambiguous/reconciliation-required，同 operation ID 禁止自动重放 | unit | P34.5A2 |
+| SBX-A2-04 | Docker Desktop 缺少 rootless/userns 或 LSM 仍尝试装配 hardened provider | host probe not-ready，保持 provider/transport unavailable，不降低 profile | operator/source audit | P34.5A2 |
 | RUN-03 | Runner 尝试直连 DB/MinIO/Redis | 网络和凭据均不可用 | sandbox harness | P34.5 |
 | RUN-04 | Runner task 夹带 JWT/locator/凭据 | 控制面拒绝，审计脱敏 | contract/security | P34.5 |
 | FS-01 | `../`/绝对路径/编码绕过 | 拒绝，root 外无变化 | sandbox harness | P34.5 |

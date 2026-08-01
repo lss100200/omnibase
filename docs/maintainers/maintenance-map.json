@@ -489,6 +489,8 @@
         "backend/src/omnibase/workspaces/service.py:authorize_workspace_action",
         "backend/src/omnibase/workspaces/service.py:get_active_attested_node",
         "backend/src/omnibase/workspaces/service.py:claim_run_lease",
+        "backend/src/omnibase/workspaces/service.py:bind_run_runtime_identity",
+        "backend/src/omnibase/workspaces/service.py:verify_run_lease_for_sandbox",
         "backend/src/omnibase/workspaces/service.py:restore_snapshot_new_workspace",
         "backend/src/omnibase/workspaces/overlay.py:register_attested_node",
         "backend/src/omnibase/workspaces/overlay.py:validate_network_lease",
@@ -539,28 +541,35 @@
     },
     {
       "id": "sandbox-foundation",
-      "name": "P34.5A0-A1 fail-closed Sandbox, live authorization, emergency control and Runner contracts",
+      "name": "P34.5A0-A2 fail-closed Sandbox authorization, host proof and durable dispatch contracts",
       "source_paths": [
-        "backend/src/omnibase/sandbox/**"
+        "backend/src/omnibase/sandbox/**",
+        "scripts/sandbox/**"
       ],
       "entrypoints": [
         "backend/src/omnibase/sandbox/contracts.py:SandboxProvider",
         "backend/src/omnibase/sandbox/contracts.py:RejectingSandboxAuthorizer",
         "backend/src/omnibase/sandbox/authorization.py:ComposedSandboxAuthorizer",
+        "backend/src/omnibase/sandbox/authorization.py:SqlAlchemySandboxLeaseVerifier",
         "backend/src/omnibase/sandbox/control.py:SandboxControlAuthorizer",
         "backend/src/omnibase/sandbox/control.py:RejectingSandboxControlAuthorizer",
+        "backend/src/omnibase/sandbox/operations.py:SandboxOperationStore",
         "backend/src/omnibase/sandbox/operations.py:InMemorySandboxOperationStore",
+        "backend/src/omnibase/sandbox/coordinator.py:SandboxExecutionCoordinator",
+        "backend/src/omnibase/sandbox/host.py:RunnerHostAttestor",
+        "backend/src/omnibase/sandbox/transport.py:RunnerTransport",
         "backend/src/omnibase/sandbox/provider.py:UnavailableSandboxProvider",
         "backend/src/omnibase/sandbox/provider.py:FakeInMemorySandboxProvider",
         "backend/src/omnibase/sandbox/runner.py:SandboxRunner",
-        "backend/src/omnibase/sandbox/runner.py:UnavailableSandboxRunner"
+        "backend/src/omnibase/sandbox/runner.py:UnavailableSandboxRunner",
+        "scripts/sandbox/probe_runner_host.py:main"
       ],
       "public_interfaces": [
         "Internal SandboxProvider protocol; not mounted on Browser or Gateway ASGI",
-        "Composed live P34.4 lease/fencing plus P34.2 capability authorization seam; rejecting verifiers remain defaults",
+        "DB-backed P34.4 Run lease/runtime identity verifier plus composed P34.2 capability seam; unsupported capability vocabulary remains rejecting",
         "Independent emergency stop/destroy controller contract; RejectingSandboxControlAuthorizer is the default",
-        "Append-only durable operation/idempotency and ambiguous-outcome reconciliation contract",
-        "UnavailableSandboxProvider and UnavailableSandboxRunner production defaults",
+        "Durable operation protocol, host attestation binding, independent Runner transport and no-auto-replay dispatch coordinator",
+        "Unavailable operation store, transport, provider and Runner production defaults",
         "Test-only in-memory authorizers, operation store and metadata-only lifecycle harness"
       ],
       "depends_on": [
@@ -579,13 +588,15 @@
         "INV-017"
       ],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/sandbox",
-        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py",
-        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py"
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces",
+        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py",
+        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py",
+        "python scripts/sandbox/probe_runner_host.py"
       ],
       "recovery": [
-        "Use UnavailableSandboxProvider, UnavailableSandboxRunner and all rejecting authorizers/verifiers; do not install a provider when live P34.4 lease/fencing and P34.2 capability verification cannot be proven.",
+        "Use UnavailableSandboxOperationStore, UnavailableRunnerTransport, UnavailableSandboxProvider, UnavailableSandboxRunner and rejecting capability/controller/host defaults; do not dispatch when any proof is unavailable.",
+        "Keep SqlAlchemySandboxLeaseVerifier scoped to a fresh transaction per verification and require the exact runtime_instance_id/workload identity binding; never cache lease acceptance across operations.",
         "Keep emergency stop/destroy on an independently authenticated controller path; workload revocation must not authorize control, and missing controller authorization must reject.",
         "Ambiguous provider outcomes require explicit reconciliation and must never be automatically replayed under the same operation ID.",
         "Treat FakeInMemorySandboxProvider as metadata-only; its exec/cancel paths must remain hard-disabled and it must never gain Docker, socket, subprocess, host path, network or data-store integration.",

@@ -1,4 +1,4 @@
-"""P34.5A fail-closed Sandbox foundation and A1 control contracts.
+"""P34.5A fail-closed Sandbox foundation and A1-A2 dispatch contracts.
 
 No implementation in this package executes code or contacts a runtime,
 container engine, network provider, data store or host control socket.
@@ -8,6 +8,7 @@ from omnibase.sandbox.authorization import (
     ComposedSandboxAuthorizer,
     RejectingSandboxCapabilityVerifier,
     RejectingSandboxLeaseVerifier,
+    SqlAlchemySandboxLeaseVerifier,
     VerifiedSandboxCapability,
     VerifiedSandboxLease,
 )
@@ -32,6 +33,7 @@ from omnibase.sandbox.contracts import (
     SandboxRuntimeView,
     SandboxSnapshot,
     SandboxUnavailable,
+    VerifiedSandboxAuthorization,
 )
 from omnibase.sandbox.control import (
     InMemorySandboxControlAuthorizer,
@@ -40,10 +42,21 @@ from omnibase.sandbox.control import (
     SandboxControlRequest,
     VerifiedSandboxControlAuthorization,
 )
+from omnibase.sandbox.coordinator import (
+    SandboxDispatchResult,
+    SandboxExecutionCoordinator,
+)
+from omnibase.sandbox.host import (
+    RejectingRunnerHostAttestor,
+    RunnerHostAttestor,
+    VerifiedRunnerHost,
+)
 from omnibase.sandbox.operations import (
     InMemorySandboxOperationStore,
     SandboxOperationIntent,
     SandboxOperationState,
+    SandboxOperationStore,
+    UnavailableSandboxOperationStore,
 )
 from omnibase.sandbox.provider import (
     FakeInMemorySandboxProvider,
@@ -54,8 +67,14 @@ from omnibase.sandbox.runner import (
     RunnerExecutionPlan,
     RunnerIsolationProfile,
     RunnerPlatform,
+    RunnerReceipt,
     RunnerTerminationPlan,
     UnavailableSandboxRunner,
+)
+from omnibase.sandbox.transport import (
+    RunnerOutcomeUnknown,
+    RunnerTransport,
+    UnavailableRunnerTransport,
 )
 
 __all__ = [
@@ -64,20 +83,27 @@ __all__ = [
     "InMemorySandboxAuthorizer",
     "InMemorySandboxControlAuthorizer",
     "InMemorySandboxOperationStore",
+    "RejectingRunnerHostAttestor",
     "RejectingSandboxAuthorizer",
     "RejectingSandboxCapabilityVerifier",
     "RejectingSandboxControlAuthorizer",
     "RejectingSandboxLeaseVerifier",
     "RunnerExecutionPlan",
+    "RunnerHostAttestor",
     "RunnerIsolationProfile",
+    "RunnerOutcomeUnknown",
     "RunnerPlatform",
+    "RunnerReceipt",
     "RunnerTerminationPlan",
+    "RunnerTransport",
     "SandboxAction",
     "SandboxAuthorizer",
     "SandboxCommandSpec",
     "SandboxConflict",
     "SandboxControlAction",
     "SandboxControlRequest",
+    "SandboxDispatchResult",
+    "SandboxExecutionCoordinator",
     "SandboxExecutionDisabled",
     "SandboxIsolationPolicy",
     "SandboxNetworkMode",
@@ -85,6 +111,7 @@ __all__ = [
     "SandboxOperationIntent",
     "SandboxOperationRequest",
     "SandboxOperationState",
+    "SandboxOperationStore",
     "SandboxProvider",
     "SandboxRejected",
     "SandboxRelativePath",
@@ -95,8 +122,13 @@ __all__ = [
     "SandboxRuntimeView",
     "SandboxSnapshot",
     "SandboxUnavailable",
+    "SqlAlchemySandboxLeaseVerifier",
+    "UnavailableRunnerTransport",
+    "UnavailableSandboxOperationStore",
     "UnavailableSandboxProvider",
     "UnavailableSandboxRunner",
+    "VerifiedRunnerHost",
+    "VerifiedSandboxAuthorization",
     "VerifiedSandboxCapability",
     "VerifiedSandboxControlAuthorization",
     "VerifiedSandboxLease",

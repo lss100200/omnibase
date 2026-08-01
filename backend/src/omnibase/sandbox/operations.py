@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from itertools import pairwise
+from typing import NoReturn, Protocol
 from uuid import UUID
 
-from omnibase.sandbox.contracts import SandboxConflict, utc_now
+from omnibase.sandbox.contracts import SandboxConflict, SandboxUnavailable, utc_now
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_]{2,99}$")
@@ -128,6 +129,104 @@ class SandboxOperationRecord:
     @property
     def state(self) -> SandboxOperationState:
         return self.transitions[-1].state
+
+
+class SandboxOperationStore(Protocol):
+    """Durable operation seam required before any Runner dispatch."""
+
+    def begin(self, intent: SandboxOperationIntent) -> SandboxOperationRecord: ...
+
+    def authorize(
+        self,
+        operation_id: UUID,
+        *,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord: ...
+
+    def claim_dispatch(self, operation_id: UUID) -> SandboxOperationRecord: ...
+
+    def succeed(
+        self,
+        operation_id: UUID,
+        *,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord: ...
+
+    def fail(self, operation_id: UUID, *, reason_code: str) -> SandboxOperationRecord: ...
+
+    def mark_ambiguous(self, operation_id: UUID) -> SandboxOperationRecord: ...
+
+    def require_reconciliation(self, operation_id: UUID) -> SandboxOperationRecord: ...
+
+    def reconcile(
+        self,
+        operation_id: UUID,
+        *,
+        succeeded: bool,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord: ...
+
+    def get(self, operation_id: UUID) -> SandboxOperationRecord: ...
+
+
+def _store_unavailable() -> NoReturn:
+    raise SandboxUnavailable("sandbox_operation_store_unavailable")
+
+
+class UnavailableSandboxOperationStore:
+    """Production-safe default until append-only durable storage is installed."""
+
+    def begin(self, intent: SandboxOperationIntent) -> SandboxOperationRecord:
+        del intent
+        _store_unavailable()
+
+    def authorize(
+        self,
+        operation_id: UUID,
+        *,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord:
+        del operation_id, evidence_digest
+        _store_unavailable()
+
+    def claim_dispatch(self, operation_id: UUID) -> SandboxOperationRecord:
+        del operation_id
+        _store_unavailable()
+
+    def succeed(
+        self,
+        operation_id: UUID,
+        *,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord:
+        del operation_id, evidence_digest
+        _store_unavailable()
+
+    def fail(self, operation_id: UUID, *, reason_code: str) -> SandboxOperationRecord:
+        del operation_id, reason_code
+        _store_unavailable()
+
+    def mark_ambiguous(self, operation_id: UUID) -> SandboxOperationRecord:
+        del operation_id
+        _store_unavailable()
+
+    def require_reconciliation(self, operation_id: UUID) -> SandboxOperationRecord:
+        del operation_id
+        _store_unavailable()
+
+    def reconcile(
+        self,
+        operation_id: UUID,
+        *,
+        succeeded: bool,
+        evidence_digest: str,
+    ) -> SandboxOperationRecord:
+        del operation_id, succeeded, evidence_digest
+        _store_unavailable()
+
+    def get(self, operation_id: UUID) -> SandboxOperationRecord:
+        del operation_id
+        _store_unavailable()
 
 
 class InMemorySandboxOperationStore:
@@ -270,5 +369,7 @@ __all__ = [
     "SandboxOperationIntent",
     "SandboxOperationRecord",
     "SandboxOperationState",
+    "SandboxOperationStore",
     "SandboxOperationTransition",
+    "UnavailableSandboxOperationStore",
 ]

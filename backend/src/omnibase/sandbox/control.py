@@ -49,6 +49,7 @@ class SandboxControlRequest:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     node_id: UUID
     runtime_handle: SandboxRuntimeHandle
     workspace_generation: int
@@ -64,6 +65,7 @@ class SandboxControlRequest:
             self.tenant_id,
             self.workspace_id,
             self.run_id,
+            self.runtime_instance_id,
             self.node_id,
         )
         if any(not isinstance(value, UUID) for value in identifiers):
@@ -168,6 +170,7 @@ class InMemorySandboxControlAuthorizer:
             expected.tenant_id,
             expected.workspace_id,
             expected.run_id,
+            expected.runtime_instance_id,
             expected.node_id,
             expected.runtime_handle,
             expected.workspace_generation,
@@ -184,6 +187,7 @@ class InMemorySandboxControlAuthorizer:
             request.tenant_id,
             request.workspace_id,
             request.run_id,
+            request.runtime_instance_id,
             request.node_id,
             request.runtime_handle,
             request.workspace_generation,

@@ -11,10 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
+
+from sqlalchemy.orm import Session
 
 from omnibase.sandbox.contracts import (
     SandboxAction,
@@ -25,6 +28,7 @@ from omnibase.sandbox.contracts import (
     VerifiedSandboxAuthorization,
     utc_now,
 )
+from omnibase.workspaces.service import LeaseRejected, verify_run_lease_for_sandbox
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -46,6 +50,7 @@ class VerifiedSandboxLease:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     node_id: UUID
     lease_id: UUID
     workspace_generation: int
@@ -61,6 +66,7 @@ class VerifiedSandboxLease:
             self.tenant_id,
             self.workspace_id,
             self.run_id,
+            self.runtime_instance_id,
             self.node_id,
             self.lease_id,
         )
@@ -90,6 +96,7 @@ class VerifiedSandboxCapability:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     workload_identity_thumbprint: str
     action: SandboxAction
     verified_at: datetime
@@ -99,7 +106,12 @@ class VerifiedSandboxCapability:
     def __post_init__(self) -> None:
         if any(
             not isinstance(value, UUID)
-            for value in (self.tenant_id, self.workspace_id, self.run_id)
+            for value in (
+                self.tenant_id,
+                self.workspace_id,
+                self.run_id,
+                self.runtime_instance_id,
+            )
         ):
             raise TypeError("verified capability identifiers must be UUID values")
         if _SHA256_RE.fullmatch(self.workload_identity_thumbprint) is None:
@@ -138,6 +150,45 @@ class RejectingSandboxCapabilityVerifier:
         raise SandboxUnavailable("sandbox_capability_verifier_unavailable")
 
 
+class SqlAlchemySandboxLeaseVerifier:
+    """Production adapter for current P34.4 Run/Node/fencing database facts."""
+
+    def __init__(self, *, session_factory: Callable[[], Session]) -> None:
+        self._session_factory = session_factory
+
+    def verify(self, request: SandboxOperationRequest) -> VerifiedSandboxLease:
+        try:
+            with self._session_factory() as session, session.begin():
+                facts = verify_run_lease_for_sandbox(
+                    session,
+                    tenant_id=str(request.tenant_id),
+                    run_id=str(request.run_id),
+                    runtime_instance_id=str(request.runtime_instance_id),
+                    lease_id=str(request.lease_id),
+                    node_id=str(request.node_id),
+                    generation=request.workspace_generation,
+                    fencing_token=request.run_fencing_token,
+                    workload_identity_digest=request.workload_identity_thumbprint,
+                )
+        except LeaseRejected as exc:
+            raise SandboxRejected("sandbox_live_lease_rejected") from exc
+        return VerifiedSandboxLease(
+            tenant_id=UUID(facts.tenant_id),
+            workspace_id=UUID(facts.workspace_id),
+            run_id=UUID(facts.run_id),
+            runtime_instance_id=UUID(facts.runtime_instance_id),
+            node_id=UUID(facts.node_id),
+            lease_id=UUID(facts.lease_id),
+            workspace_generation=facts.workspace_generation,
+            run_fencing_token=facts.run_fencing_token,
+            node_fencing_token=facts.node_fencing_token,
+            workload_identity_thumbprint=facts.workload_identity_digest,
+            verified_at=facts.verified_at,
+            expires_at=facts.expires_at,
+            verification_digest=facts.verification_digest,
+        )
+
+
 class ComposedSandboxAuthorizer(SandboxAuthorizer):
     """Require matching live P34.4 and P34.2 results on every operation."""
 
@@ -161,6 +212,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             lease.tenant_id,
             lease.workspace_id,
             lease.run_id,
+            lease.runtime_instance_id,
             lease.node_id,
             lease.lease_id,
             lease.workspace_generation,
@@ -172,6 +224,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             request.tenant_id,
             request.workspace_id,
             request.run_id,
+            request.runtime_instance_id,
             request.node_id,
             request.lease_id,
             request.workspace_generation,
@@ -183,6 +236,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             capability.tenant_id,
             capability.workspace_id,
             capability.run_id,
+            capability.runtime_instance_id,
             capability.workload_identity_thumbprint,
             capability.action,
         )
@@ -190,6 +244,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             request.tenant_id,
             request.workspace_id,
             request.run_id,
+            request.runtime_instance_id,
             request.workload_identity_thumbprint,
             request.action,
         )
@@ -220,6 +275,7 @@ __all__ = [
     "RejectingSandboxLeaseVerifier",
     "SandboxCapabilityVerifier",
     "SandboxLeaseVerifier",
+    "SqlAlchemySandboxLeaseVerifier",
     "VerifiedSandboxCapability",
     "VerifiedSandboxLease",
 ]
