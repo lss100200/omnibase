@@ -7,8 +7,9 @@
 
 > [!IMPORTANT]
 > OmniBase 当前以 **Public Preview** 形式开放源码：认证、租户边界、受控数据、
-> Capability Gateway、SDK、RAG 与维护者地图已经形成可验证基础设施；任意代码
-> Sandbox、Overlay Network 和 Agent Runtime 尚未交付。请勿把普通 Docker 容器
+> Capability Gateway、SDK、RAG、维护者地图，以及 P34.4 Workspace/Run/Node
+> 元数据控制面已形成可验证基础设施；任意代码 Sandbox、真实 Overlay Network、
+> 真实数据通道和 Agent Runtime 尚未交付。请勿把普通 Docker 容器或 P34.4 fake harness
 > 当作可以安全运行敌对代码的生产沙箱。当前真实状态与已验证证据见
 > [交接报告](docs/handover-report.md)；首次公开发布条件见
 > [Public Preview Release Checklist](docs/public-preview-release-checklist.md)。
@@ -81,7 +82,7 @@ Next.js Web UI
     │  same-origin /api/v1
     ▼
 Main FastAPI ── Auth / Tenant / Documents / Browser RAG
-    │          Control Plane / Controlled Data (feature-gated)
+    │          Control Plane / Controlled Data / Workspace governance
     ├── PostgreSQL + pgvector
     ├── MinIO
     └── Redis + Celery
@@ -93,10 +94,18 @@ Independent Capability Gateway (rejecting by default)
     └── logical Resource resolution + bounded read adapters + audit
 ```
 
-Main API 与 Capability Gateway 是两个独立 ASGI 边界。当前不存在已交付的
-Agent Runtime、任意代码 Sandbox、Overlay Network 或公共任意 SQL 接口；这些
-能力仍被冻结在 P34.4/P34.5 之后。详见
+Main API 与 Capability Gateway 是两个独立 ASGI 边界。P34.4 已解冻 Browser
+Workspace 治理 API，以及内部 lease/fencing、Node/Overlay 逻辑控制记录和无真实数据
+协作 harness；这些组件不运行代码、不打开真实成员网络，也不连接真实 Workspace/RAG
+数据。Agent Runtime、任意代码 Sandbox、真实 Overlay adapter/成员网络和公共任意 SQL
+仍被冻结在 P34.5 及后续阶段。详见
 [AI 维护者地图](docs/maintainers/ai-maintainer-map.md)。
+
+P34.4 当前的 Network Lease 只是由 `network_lease_cursors` 单调分配 fencing token 的
+逻辑授权，签发时不会调用任何真实或 fake provider。Run Lease 还绑定当前 Node fencing
+token，并在使用时重新验证未过期的 attestation；Run 一旦进入 stopped/succeeded/failed/
+cancelled 终态便不能被旧 holder 复活。上述控制面安全事实不等于已经交付 VPN、Overlay
+数据面、Sandbox 或代码执行环境。
 
 ## 🗺 路线图
 
@@ -107,7 +116,7 @@ Agent Runtime、任意代码 Sandbox、Overlay Network 或公共任意 SQL 接�
 | **Phase 1.5** | RAG 硬化（异步 worker、可靠重试、生命周期保护、SSE 韧性、评估接缝） | ✅ 完成：确定性测试、异步摄取及 provider-backed SSE/citation 运行时验收通过 |
 | **Phase 1.6** | Embedding/Index 双通道工程（BGE-M3/1024d 评估） | ✅ 工程与 CPU benchmark 完成；V1 仍为权威主通道，生产 V2 回填/cutover 冻结 |
 | **Phase 2** | API 基础设施硬化（`/api/v1`、Request ID、请求边界、限流、实时主体/RBAC） | ✅ 已完成并本地封板 |
-| **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform**（受控数据、API/SDK 解耦、模板、沙箱、能力网关、审批与审计） | 🚧 P34.1–P34.3 已完成并封板；P34.4/P34.5 Workspace/Sandbox/Overlay/Agent Runtime 继续冻结 |
+| **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform**（受控数据、API/SDK 解耦、模板、沙箱、能力网关、审批与审计） | 🚧 P34.1–P34.3 已完成并封板；P34.4A–D 的 17 表 metadata control plane、Browser governance、lease/fencing 与 synthetic collaboration harness 已完成工程 Gate；P34.5 Sandbox/真实 Overlay/数据通道与 Agent Runtime 继续冻结 |
 | Phase 5 | Agent 编排（作为工作空间内的受约束负载运行） | ⏳ 必须等待 Phase 3-4 总 Gate |
 | Phase 6 | Skill + MCP 扩展生态 | ⏳ 待 Phase 3-4/5 |
 | Phase 7 | 开源与发布工程（文档、Demo、部署脚本、版本治理） | 🚧 Public Preview 已启动，持续完善 |
@@ -122,8 +131,8 @@ OmniBase 将“换模型后仍能修复、下载源码后仍能恢复”视为�
 本地 AI 或新维护者应按以下顺序建立上下文：
 
 1. [`AGENTS.md`](AGENTS.md)：仓库级维护契约、冻结边界和安全工作流。
-2. [`maintenance-map.json`](docs/maintainers/maintenance-map.json)：12 个模块、入口、依赖、验证命令和恢复路径的机器可读地图。
-3. [`security-invariants.md`](docs/maintainers/security-invariants.md)：10 条不可破坏的安全不变量。
+2. [`maintenance-map.json`](docs/maintainers/maintenance-map.json)：13 个模块、入口、依赖、验证命令和恢复路径的机器可读地图。
+3. [`security-invariants.md`](docs/maintainers/security-invariants.md)：16 条不可破坏的安全不变量。
 4. [`ai-maintainer-map.md`](docs/maintainers/ai-maintainer-map.md)：调用链、API/鉴权/解耦入口、影响矩阵和故障恢复说明。
 5. [`handover-report.md`](docs/handover-report.md)：当前阶段状态与实际验证证据。
 

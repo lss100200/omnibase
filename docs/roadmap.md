@@ -19,7 +19,7 @@
 | 前端性能 + 认证 | ✅ 100% | Bootstrap singleton, 节流, 分页, 生产镜像 |
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 100%（待提交） | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC、离线模型边界；工程验收已通过，尚待原子提交 |
-| Phase 3-4 安全 AI 工作空间与能力平台 | ⬜ 0% | 当前只有只读数据库元数据浏览；受控数据、API/SDK、模板、沙箱、能力网关与工作空间 UI 待建设 |
+| Phase 3-4 安全 AI 工作空间与能力平台 | 🚧 基础设施阶段 | P34.1–P34.3 已封板；P34.4 的 17 表 Workspace metadata control plane、Browser governance、Node/Run/Network fencing 与 synthetic collaboration harness 已通过工程 Gate；P34.5 真实 Sandbox、Overlay adapter、数据通道和 Agent Runtime 仍冻结 |
 | Agent 编排 | ⬜ 0% | 仅 Celery 摄取任务 |
 | Skill/MCP 扩展 | ⬜ 0% | 无插件系统、无 MCP |
 
@@ -100,12 +100,12 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.1 安全状态基座** | HIGH | Resource Registry、append-only Audit、Operation 状态机、Approval 和 Idempotency Ledger；本增量不开放 CRUD/DDL |
 | **P34.2 只读网关与 SDK 契约** | HIGH | 只开放 data schema/rows read、`rag.search`/citation；每次调用复核 RBAC/tenant/capability，冻结 TS/Python 只读契约 |
 | **P34.3 结构化写入** | HIGH | 参数化 CRUD、DDL plan/apply、风险审批、幂等执行、Operation 跟踪和失败补偿；继续禁止任意 SQL |
-| **P34.4 模板与空沙箱控制面** | HIGH | workspace 作为长期逻辑资源，run/session 作为可销毁执行实例；版本化模板、生命周期和无真实数据的空沙箱 |
+| **P34.4 Workspace 控制面** | HIGH | ✅ 工程 Gate：17 张 global metadata 表；Workspace aggregate 串行化 membership/last-owner；模板事务内实时 admin 重验与 PostgreSQL 自然幂等；Run Lease 绑定 Node fencing 和实时 attestation；终态 Run 不可复活；Network Lease 仅签逻辑授权且不调用 provider；Node/Peer/Service/Authority 统一锁序与撤销；不执行代码、不接真实网络或数据 |
 | **P34.5 沙箱隔离后接只读网关** | HIGH | 文件/网络/进程/身份/资源隔离 Gate 先通过，再接 P34.2 只读能力；普通 Docker 仅作开发基线 |
 | **P34.6 私有写入与 promotion** | HIGH | workspace 私有表/索引/记忆、完整 lineage，以及经审批、幂等和补偿进入规范资源的 promotion 流程 |
 | **P34.7 生产总验收** | HIGH | 快照恢复、完整 UI/SDK、攻击矩阵、配额/撤销/补偿和生产 smoke；P34.7 通过前不得启动 Agent |
 
-**不可跳过 Gate**：P34.0–P34.7 可以分批演示，但不能绕过前一增量的安全契约直接开放高权限能力；P34.7 未通过前，不得启动 Phase 5 Agent 编排。
+**不可跳过 Gate**：P34.0–P34.7 可以分批演示，但不能绕过前一增量的安全契约直接开放高权限能力；当前只解冻 P34.4 控制面元数据和 fake/local harness。P34.5 真实 Sandbox 隔离、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据通道与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
 
 长期硬约束：workspace 保存身份、配置、资源意图和私有状态，是长期逻辑资源；run/session 是带短期凭据与配额、可随时销毁重建的执行实例。普通 Docker 容器只能作为开发和生命周期验证基线，不代表能够安全运行任意敌对代码；未通过 P34.5 隔离 Gate 的运行时不得连接真实数据。
 

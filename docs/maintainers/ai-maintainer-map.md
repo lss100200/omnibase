@@ -33,8 +33,10 @@ flowchart LR
     Main --> RAG
     Main --> CP["P34.1 Control Plane"]
     Main --> CD["P34.3 Controlled Data\ndefault 503 until executor injection"]
+    Main --> WS["P34.4 Workspace governance\nBrowser API + metadata control plane"]
     CD --> CP
     CD --> Cap["P34.2 Capability ledger models"]
+    WS --> CP
 
     Workload["Trusted workload client / SDK"] -->|"/gateway/v1"| Gateway["Independent Gateway ASGI\ncreate_gateway_app()"]
     Gateway --> Attest["Workload attestation + capability verification"]
@@ -49,6 +51,7 @@ flowchart LR
     CP --> PG
     Cap --> PG
     CD --> PG
+    WS --> PG
     Data --> PG
 ```
 
@@ -83,8 +86,9 @@ flowchart LR
 | RAG | `/api/v1/rag/search`, `/playground`, `/ask` | `get_current_tenant` + RAG rate limit | Browser 用户通道；`ask` 使用 SSE，和 workload Gateway 通道不同 |
 | P34.1 Control Plane | `/api/v1/control-plane/resources`, `/operations`, `/approvals`, `/audit/events` 及单项读取 | tenant admin + tenant DB | 当前 HTTP 面只读；跨 tenant ID 与不存在统一按 404 处理 |
 | P34.3 Controlled Data | `/api/v1/controlled-data/rows/mutate` | `get_current_principal` | 只接受逻辑 Resource/Column UUID 和结构化 mutation；默认未安装 executor 时稳定 503 |
+| P34.4 Workspace governance | `/api/v1/workspace-templates`, `/api/v1/workspaces...` | `get_current_tenant` + tenant DB；模板 POST 额外要求实时 tenant admin；其余按 Workspace membership/RBAC | Browser 只管理模板注册/读取、Workspace、成员、scope grant、命名 lifecycle、Run、snapshot/restore；不暴露 Node attestation、lease、fencing、Overlay activation 或 authority |
 
-当前没有公开的任意 SQL、公开 DDL apply、浏览器 Capability 签发、Workspace Runtime 或 Agent Runtime 路由。
+当前没有公开的任意 SQL、公开 DDL apply、浏览器 Capability 签发、Node/lease/fencing/Overlay 内部入口、真实 Workspace Runtime 或 Agent Runtime 路由。
 
 ## 4. Auth、Principal 与 Tenant schema 链
 
@@ -171,7 +175,7 @@ Gateway RAG：
 - Gateway adapter 可以复用 canonical retriever/reranker，但身份、预算、审计和响应 DTO 仍由 Gateway 强制执行；
 - Browser JWT、前端 localStorage token 和 Gateway capability 不可互换。
 
-## 6. P34.1–P34.3 调用方向
+## 6. P34.1–P34.4 调用方向
 
 ### 6.1 P34.1 Control Plane：治理事实底座
 
@@ -258,25 +262,71 @@ Gateway adapters
 不得形成：Adapter -> 绕过 Gateway 的公共入口，或 Controlled Data -> 接受公共 physical locator。
 ```
 
+### 6.4 P34.4 Workspace 控制面：治理、生命周期与 fake/local harness
+
+Browser 调用方向：
+
+```text
+/api/v1/workspace-templates + /api/v1/workspaces/*
+  -> live TenantContext / tenant-bound Session
+  -> template registration re-locks and revalidates the live tenant admin in the write transaction
+  -> Workspace aggregate lock + locked actor/target membership + closed role/action matrix
+  -> template/scope/generation/version validation
+  -> named lifecycle or aggregate service
+  -> Resource/Idempotency/Audit facts in caller-owned transaction
+  -> strict logical DTO (no tenant self-claim, locator, secret, provider handle or fencing)
+```
+
+内部 trusted-service 方向：
+
+```text
+trusted Node/Reconciler context
+  -> Run lease + heartbeat + generation + Node fencing + live attestation validation
+  -> Node attestation / Peer Grant / Service Advertisement / logical Network Lease cursor
+  -> Workspace authority epoch + SyncEnvelope digest/sequence validation
+  -> unavailable production component or isolated metadata-only fake/local harness
+```
+
+关键入口：
+
+- `workspaces.router`：`template_router`、`register_template_version` 与 Browser `router`；模板 POST 是 tenant-admin-only。
+- `workspaces.service`：`register_template`、`create_workspace`、`authorize_workspace_action`、`request_workspace_state`、`reconcile_workspace`、`create_run`、`claim_run_lease`、`heartbeat_run_lease`、`submit_run_state`、`get_active_attested_node`、`create_snapshot`、`restore_snapshot_new_workspace`。
+- `workspaces.overlay`：`register_attested_node`、`revoke_node`、`create_peer_grant`、`publish_service`、`acquire_network_lease`、`validate_network_lease` 与可替换 `PeerOverlayProvider`。
+- `workspaces.collaboration`：`claim_workspace_authority`、`heartbeat_workspace_authority`、`mark_workspace_authority_offline`、`validate_sync_envelope`、`commit_sync_envelope`。
+
+必须保留的边界：
+
+- 同 Tenant 不自动跨 Workspace；membership/scope/grant 缺失时 fail-closed。
+- membership mutation 先锁 tenant-bound Workspace aggregate，再锁后重验 actor 与 target；改变 active owner 时才在该串行化边界内判断 last-owner，不能使用事务外角色快照或未串行化 owner count。
+- scope grant 公共 action allowlist 只有 `resource.read` 与 `resource.list`；模板、membership 与 scope-grant mutation 都必须写脱敏 Audit。
+- 模板 POST 保留实时 `require_tenant_admin` 早期拒绝，并在 `register_template()` 的 caller-owned transaction 中再次锁定、重验 active tenant-admin User；PostgreSQL `(tenant_id, template_key, version)` 自然键通过 `ON CONFLICT DO NOTHING` 支持并发 exact replay，spec/display name/supersedes/digest 任一不同均冲突。
+- 新建 Workspace 默认 stopped；创建逻辑治理资源不得隐式启动 runtime、分配 lease 或调用 provider。
+- Run Lease 同时绑定 Workspace/Run generation、单调 run fencing token、当前 Node fencing token与实时未过期 attestation；Node 重新 fencing 后旧 lease 失效。Run 进入 stopped/succeeded/failed/cancelled 后关闭或撤销 lease、清除 runtime/workload identity，不能被旧 holder 复活。
+- `acquire_network_lease()` 只在数据库事务中推进 `network_lease_cursors` 并签发逻辑授权，不调用真实或 fake provider。production default 不运行代码、不创建 socket/peer/runtime；fake/local provider 只是独立测试 harness。
+- authority、Peer Grant、Service Advertisement、Network Lease 与 Node revoke 的权威锁阶段使用共同前缀：Workspace aggregate → 按稳定 ID 的 live-attested Node → authority/peer/service/cursor/lease。撤销 Node 会提高 Node fencing，并级联撤销 Run/Peer/Service/Network/Authority。
+- Node/lease/fencing/authority 不挂到 Browser ASGI，不从 Browser Header/JSON 构造可信 Node 或 holder。
+- P34.4 不访问真实 Workspace 文件、Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG，也不开放 Workspace/Agent data write capability。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
 
 | 区域 | 当前数据 |
 |---|---|
-| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations |
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 共 17 张表：`workspace_templates`、`workspaces`、`workspace_memberships`、`resource_scope_bindings`、`workspace_scope_grants`、`workspace_runs`、`run_leases`、`workspace_snapshots`、`workspace_nodes`、`node_attestations`、`peer_grants`、`service_advertisements`、`network_lease_cursors`、`network_leases`、`workspace_authorities`、`collaboration_artifacts`、`collaboration_events` |
 | 每个 `tenant_*` schema | users、documents、V1/V2 embeddings、RAG index state，以及 P34.3 `controlled_data_operation_payloads` 和受控动态业务表 |
 | MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
 | Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
 
 ### 7.2 Alembic 方向
 
-- migration 链当前为 `0001` 至 `0006`。
+- migration 链当前为 `0001` 至 `0007`。
 - `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
 - 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
 - `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
 - offline `--sql` 只生成 global SQL，不能代替 tenant online staging 演练。
 - `0006` downgrade 在存在动态资源、payload、outbox 或 compensation 状态时会拒绝执行，避免静默丢失数据。
+- `0007` 只在 global scope 创建 17 张 P34.4 控制面表（包括持久化 Network fencing 的 `network_lease_cursors`）并收紧现有 Resource tenant 复合绑定；ResourceScopeBinding→Workspace/Run、Workspace→restore snapshot、CollaborationEvent→artifact/parent event 均使用 tenant/workspace 复合 FK。tenant scope 为显式 no-op。populated downgrade fail-closed，避免静默丢失 Workspace/lease/authority 元数据。
 - ORM 模型、迁移约束和运行服务必须同步审查；只修改 ORM 不会改变已部署数据库。
 - 普通业务数据库 migration、downgrade、restore、cleanup 都需要部署所有者明确授权。单元测试或 sentinel integration 通过不等于已经迁移业务数据库。
 
@@ -312,14 +362,14 @@ Gateway adapters
 判断“系统实际上做什么”时使用以下顺序：
 
 1. 当前运行路径的源码和数据库级约束/trigger。
-2. Alembic `0001`–`0006`，包括 upgrade、downgrade 和 scope guard。
+2. Alembic `0001`–`0007`，包括 upgrade、downgrade 和 scope guard。
 3. OpenAPI 与 SDK contract snapshot，以及严格 DTO parser。
 4. 与目标行为对应且刚刚通过的单元测试、HTTP contract 测试和 disposable PostgreSQL integration tests。
 5. `security-invariants.md` 和 `maintenance-map.json` 中的维护契约。
 6. `handover-report.md` 中的阶段状态、授权边界和历史验证证据。
 7. Roadmap/实施计划中的未来设计。
 
-未来设计不能证明当前实现已经存在。例如实施计划中的 Workspace、Node Registry、Network Broker、Overlay adapter、Sandbox Runtime 和 Agent orchestration 仍是冻结方向；当前 tenant schema、Resource `workspace_id` 字段或普通 Docker bridge 都不等于这些能力已交付。
+未来设计不能证明当前实现已经存在。P34.4 已交付的是 Workspace/Run/Node/lease/fencing/authority **逻辑控制面和 fake/local harness**；它不等于 Network Broker、真实 Overlay adapter、Sandbox Runtime、真实数据通道或 Agent orchestration 已交付。普通 Docker bridge、fake provider 或 metadata-only reconciler 不能作为这些后续能力的证据。
 
 ## 10. 模块改动影响矩阵
 
@@ -333,6 +383,7 @@ Gateway adapters
 | `capabilities/**` | Grant、token、delegation、revocation、usage budget | Gateway security/service、authorization contexts、SDK contract | INV-003, INV-004, INV-005, INV-006 |
 | `capability_gateway/**` | 独立 workload read surface | Capability ledger、Control Plane、RAG/data adapters、OpenAPI snapshot、两种 SDK | INV-003, INV-004, INV-005, INV-006 |
 | `controlled_data/**` | User-RBAC mutation、内部 CRUD/DDL、atomic lifecycle | Principal、Control Plane、Capability FK、0006、integration concurrency/timeout | INV-002–INV-007 |
+| `workspaces/**` | Workspace aggregate membership/scope、PostgreSQL-natural-idempotent template、lifecycle、Node-fenced Run lease、logical Network lease cursor、实时 attestation、authority/collaboration metadata | Principal、Control Plane、0007、Browser OpenAPI、P34.5 冻结边界 | INV-001–INV-008, INV-011–INV-016 |
 | `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
 | `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
@@ -415,7 +466,33 @@ make test-destructive
 
 不得把该命令指向普通业务数据库，也不得删掉 sentinel、数据库名或受限角色 guard。
 
-### 11.5 SDK contracts
+### 11.5 P34.4 Workspace 控制面
+
+```powershell
+docker compose run --rm --no-deps backend pytest `
+  tests/test_p34_4_api_contract.py `
+  tests/test_p34_4_workspace_service.py `
+  tests/test_p34_4_overlay_collaboration.py -q
+docker compose run --rm --no-deps backend mypy src/omnibase/workspaces
+docker compose run --rm --no-deps backend ruff check `
+  src/omnibase/workspaces `
+  src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py `
+  tests/test_p34_4_api_contract.py `
+  tests/test_p34_4_workspace_service.py `
+  tests/test_p34_4_overlay_collaboration.py `
+  tests/integration/test_p34_4_workspace_foundation.py
+docker compose run --rm --no-deps backend ruff format --check `
+  src/omnibase/workspaces `
+  src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py `
+  tests/test_p34_4_api_contract.py `
+  tests/test_p34_4_workspace_service.py `
+  tests/test_p34_4_overlay_collaboration.py `
+  tests/integration/test_p34_4_workspace_foundation.py
+```
+
+`0007`、17 表清单、复合 tenant/workspace FK、partial unique active lease/authority、Network lease cursor fencing 和 populated downgrade 必须在 fresh `omnibase_test_*` sentinel PostgreSQL 中验证。使用 guarded destructive target；不得把普通业务数据库作为 migration 或 downgrade 目标。P34.4 tests 通过只证明 metadata control plane、逻辑授权和 fake harness，不证明 P34.5 Sandbox、VPN 或真实 Overlay 安全。
+
+### 11.6 SDK contracts
 
 ```powershell
 Set-Location backend
@@ -431,7 +508,7 @@ node --test sdk/typescript/tests/client.test.mjs
 & ./frontend/node_modules/.bin/tsc.cmd -p sdk/typescript/tsconfig.json --noEmit
 ```
 
-### 11.6 Frontend
+### 11.7 Frontend
 
 ```powershell
 cd frontend
@@ -489,16 +566,25 @@ pnpm build
 - Frontend 可独立回退到上一 production build；不要通过放宽后端授权来兼容 UI。
 - Gateway 契约不兼容时先恢复原 OpenAPI/DTO，或显式升级 contract version并同步两种 SDK；不要只修改生成产物或关闭严格 parser。
 
-## 13. 明确冻结：P34.4 与 P34.5
+### 12.7 P34.4 Workspace/Run/Node/authority 风险
+
+1. 关闭 `/api/v1/workspaces*` 与 `/api/v1/workspace-templates` 受影响入口；保留 Resource、Idempotency 和 append-only Audit 证据。
+2. runtime 路径切回 `UnavailableWorkspaceReconciler`，真实 Overlay adapter 保持未装配/拒绝；P34.4 的 logical Network Lease 签发本来就不调用 provider，也不应启动容器、打开 socket 或连接真实数据。
+3. 撤销可疑 Workspace scope grant、Run/Network lease、Node/Peer/Service 和 Workspace authority；过期/旧 fencing holder 不得续租或提交。
+4. generation/fencing/authority 冲突时进入 stopped/failed/只读，不手工降低 generation/token/epoch，不改写旧 collaboration digest/sequence。
+5. 在 fresh sentinel 重跑跨 Workspace、复合 FK、partial unique、lease expiry、fencing、authority conflict、restore-new-identity 和 populated downgrade Gate 后再开放。
+
+## 13. 解冻与继续冻结边界：P34.4 / P34.5+
 
 截至当前源码和交接状态：
 
-- P34.4 Workspace lifecycle、模板、空 Sandbox、Node Registry、Workspace membership、Peer Grant、Service Advertisement、Network Lease 和 `PeerOverlayProvider` 仍未进入实施。
+- P34.4A–D 已完成工程 Gate：`backend/src/omnibase/workspaces/`、migration `0007` 的 17 张 global metadata 表、Browser Workspace governance、Node-fenced Run lease、cursor-fenced logical Network Lease、实时 attestation、Node/Peer/Service/Authority 统一锁序与无真实数据 authority/collaboration harness 已实现。
 - P34.5 filesystem/network/process/identity/resource isolation Gate、独立 Sandbox network namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter 和攻击矩阵仍未进入实施。
-- 主 Compose 的 bridge network、tenant schema 隔离、Control Plane 的 `workspace_id` 字段、Capability 的 workspace/runtime claim 结构，都不能被表述为 P34.4/P34.5 已交付。
+- P34.4 的 fake/local reconciler、独立 Overlay provider harness 与 collaboration transport 只处理合成元数据；logical Network Lease 签发不调用 provider。它们不执行代码、不打开真实 peer/socket、不接真实 Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG。
+- 主 Compose 的 bridge network、tenant schema 隔离、P34.4 logical Network Lease 或 fake provider 都不能被表述为 P34.5 已交付。
 - 当前没有可安全运行任意敌对代码的生产 Sandbox 声明，也没有“成员无中心服务器协作”的已实现虚拟局域网。
 - 在 P34.5 隔离 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
-- P34.4/P34.5 解冻需要 roadmap 与 handover 明确更新，并同时交付源码入口、迁移、身份/网络契约、拒绝型默认、测试矩阵和恢复路径。概念设计或字段预留不能解冻实现。
+- P34.5 及后续解冻仍需要 roadmap 与 handover 明确更新，并同时交付源码入口、迁移、身份/网络契约、拒绝型默认、攻击测试矩阵和恢复路径。P34.4 的逻辑记录或字段预留不能自动解冻真实实现。
 
 Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。
 
@@ -511,7 +597,7 @@ Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent �
 3. 哪些命令实际通过，包含测试数量/退出状态。
 4. 哪些 Gate 未执行，以及原因。
 5. 是否修改数据库、运行中容器、外部服务或业务数据；若没有，明确写没有。
-6. 当前 fail-closed 状态是否保持，例如 Gateway rejecting defaults、Controlled Data 默认 503、V1 authoritative lane、P34.4/P34.5 freeze。
+6. 当前 fail-closed 状态是否保持，例如 Gateway rejecting defaults、Controlled Data 默认 503、V1 authoritative lane、P34.4 metadata-only/fake 边界与 P34.5+ freeze。
 7. 出现故障时应先禁用哪个入口、撤销什么凭据、保留哪些证据，以及采用 forward-fix 还是 restore-to-new。
 
 本地 AI 的正确目标不是“让当前机器暂时能跑”，而是让干净 checkout 能从源码、锁文件、迁移、测试和公开维护文档中重建同一行为。

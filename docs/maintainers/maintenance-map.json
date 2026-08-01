@@ -2,13 +2,13 @@
   "schema_version": 1,
   "purpose": "Machine-readable repair map for local AI maintainers. Paths are repository-relative and commands are run from the repository root unless a command changes directory explicitly.",
   "frozen_boundaries": [
-    "P34.4 AI Workspace Runtime",
-    "P34.5 Sandbox and Overlay Network",
-    "Agent Runtime orchestration beyond the existing control/capability/data foundation"
+    "P34.5 real Sandbox isolation and runtime execution",
+    "Real Overlay adapters, member networking and Workspace data channels",
+    "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0006",
+    "Alembic migrations 0001 through 0007",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -120,10 +120,12 @@
         "backend/src/omnibase/migrations/env.py",
         "backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py",
         "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
-        "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py"
+        "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py",
+        "backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py"
       ],
       "test_paths": [
         "backend/tests/test_migration_scope_fail_closed.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py",
         "backend/tests/test_destructive_test_safety.py"
       ]
     },
@@ -152,6 +154,93 @@
       "test_paths": [
         "scripts/maintenance/validate_maintainer_map.py",
         ".github/workflows/infrastructure-gates.yml"
+      ]
+    },
+    {
+      "id": "INV-011",
+      "title": "Workspace membership and scope isolation",
+      "document": "docs/maintainers/security-invariants.md#inv-011-workspace-scope-membership",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/models.py",
+        "backend/src/omnibase/workspaces/service.py",
+        "backend/src/omnibase/workspaces/router.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_workspace_service.py",
+        "backend/tests/test_p34_4_api_contract.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-012",
+      "title": "Workspace and Run generation lifecycle",
+      "document": "docs/maintainers/security-invariants.md#inv-012-run-generation-lifecycle",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/contracts.py",
+        "backend/src/omnibase/workspaces/models.py",
+        "backend/src/omnibase/workspaces/service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_workspace_service.py",
+        "backend/tests/test_p34_4_api_contract.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-013",
+      "title": "Trusted Node attestation and revocation",
+      "document": "docs/maintainers/security-invariants.md#inv-013-trusted-node-attestation",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/overlay.py",
+        "backend/src/omnibase/workspaces/models.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_overlay_collaboration.py",
+        "backend/tests/test_p34_4_api_contract.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-014",
+      "title": "Lease expiry and holder binding",
+      "document": "docs/maintainers/security-invariants.md#inv-014-lease-expiry-binding",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/service.py",
+        "backend/src/omnibase/workspaces/overlay.py",
+        "backend/src/omnibase/workspaces/collaboration.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_workspace_service.py",
+        "backend/tests/test_p34_4_overlay_collaboration.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-015",
+      "title": "Monotonic fencing across holders",
+      "document": "docs/maintainers/security-invariants.md#inv-015-monotonic-fencing",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/service.py",
+        "backend/src/omnibase/workspaces/overlay.py",
+        "backend/src/omnibase/workspaces/collaboration.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_workspace_service.py",
+        "backend/tests/test_p34_4_overlay_collaboration.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-016",
+      "title": "Single-writer Workspace authority",
+      "document": "docs/maintainers/security-invariants.md#inv-016-authority-single-writer",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/collaboration.py",
+        "backend/src/omnibase/workspaces/models.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_4_overlay_collaboration.py",
+        "backend/tests/integration/test_p34_4_workspace_foundation.py"
       ]
     }
   ],
@@ -375,6 +464,69 @@
       ]
     },
     {
+      "id": "workspace-control-plane",
+      "name": "P34.4 Workspace governance, lifecycle, Node overlay metadata and collaboration authority",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/workspaces/router.py:router",
+        "backend/src/omnibase/workspaces/router.py:template_router",
+        "backend/src/omnibase/workspaces/router.py:register_template_version",
+        "backend/src/omnibase/workspaces/service.py:register_template",
+        "backend/src/omnibase/workspaces/service.py:create_workspace",
+        "backend/src/omnibase/workspaces/service.py:authorize_workspace_action",
+        "backend/src/omnibase/workspaces/service.py:get_active_attested_node",
+        "backend/src/omnibase/workspaces/service.py:claim_run_lease",
+        "backend/src/omnibase/workspaces/service.py:restore_snapshot_new_workspace",
+        "backend/src/omnibase/workspaces/overlay.py:register_attested_node",
+        "backend/src/omnibase/workspaces/overlay.py:validate_network_lease",
+        "backend/src/omnibase/workspaces/collaboration.py:claim_workspace_authority",
+        "backend/src/omnibase/workspaces/collaboration.py:commit_sync_envelope"
+      ],
+      "public_interfaces": [
+        "HTTP GET/POST /api/v1/workspace-templates",
+        "HTTP /api/v1/workspaces/*",
+        "Internal WorkspaceReconciler and Node-fenced Run lease services",
+        "Internal trusted Node, live attestation and logical Network lease cursor services",
+        "Isolated PeerOverlayProvider contract/fake harness; logical Network lease signing does not activate it",
+        "Internal SyncEnvelope and Workspace authority collaboration services"
+      ],
+      "depends_on": [
+        "runtime-composition",
+        "identity-tenancy",
+        "control-plane",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-003",
+        "INV-005",
+        "INV-006",
+        "INV-008",
+        "INV-011",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-016"
+      ],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/workspaces",
+        "docker compose run --rm --no-deps backend ruff check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
+        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Disable Browser workspace governance routes and restore UnavailableWorkspaceReconciler and rejecting overlay defaults before repairing authorization or lifecycle drift.",
+        "Preserve Workspace aggregate -> locked membership/Node -> domain-row lock order; revoke affected grants, leases, Nodes and authority records without lowering generation, Node/Run/Network fencing token or authority epoch.",
+        "Treat network_lease_cursors as the persistent Network fencing source; never delete or reset a cursor to make an old logical lease current again.",
+        "Treat fake/local providers as metadata harnesses only; do not connect them to real networks, credentials, tenant data or untrusted code."
+      ]
+    },
+    {
       "id": "migrations",
       "name": "Global and tenant Alembic migration chain",
       "source_paths": [
@@ -389,7 +541,7 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0006",
+        "Alembic revisions 0001-0007",
         "make test-destructive",
         "omnibase migrate"
       ],

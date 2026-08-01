@@ -32,6 +32,8 @@ from omnibase.database.router import router as database_router
 from omnibase.documents.router import router as documents_router
 from omnibase.rag.router import router as rag_router
 from omnibase.tenants.router import router as tenants_router
+from omnibase.workspaces.router import router as workspaces_router
+from omnibase.workspaces.router import template_router as workspace_templates_router
 
 
 # -----------------------------------------------------------
@@ -195,6 +197,8 @@ def create_app() -> FastAPI:
     api_router.include_router(database_router)
     api_router.include_router(rag_router)
     api_router.include_router(control_plane_router)
+    api_router.include_router(workspace_templates_router)
+    api_router.include_router(workspaces_router)
     api_router.include_router(controlled_data_router)
 
     # Convenience: /health at root too (without /api prefix) for simple probes

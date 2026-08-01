@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0 安全契约
+> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5 真实执行与网络隔离继续冻结
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -182,6 +182,8 @@ Zone E 只能经 Zone D 调用逻辑能力；Zone D 不相信 E 提供的 tenant
 - purge 前资源清单和 retention；
 - snapshot 使用一致性 barrier，明确 FS/DB/RAG 边界。
 
+P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模板、membership/RBAC/scope grant、desired/observed state、generation、Run/Node/Network fencing、snapshot metadata 与 restore-new-identity。Membership mutation 先锁 Workspace aggregate，再锁后重验 actor/target，避免并发移除最后 owner。Run Lease 绑定当前 Node fencing 和实时未过期 attestation；terminal Run 关闭/撤销 lease、清除 runtime/workload identity 后不可复活。`FakeMetadataWorkspaceReconciler` 不创建 runtime；生产默认 `UnavailableWorkspaceReconciler` fail-closed。文件、进程、网络和数据一致性 barrier 仍属于 P34.5/P34.6，不得由 P34.4 的 metadata-only snapshot 冒充。
+
 ### 4.8 Sandbox Runner 与 RuntimeDriver
 
 威胁：把 Celery 当作不可信代码执行器、Runner 持有核心凭据、旧 lease 重复提交、双 Runner 控制同一 Run、stale runtime 越权、provider handle 泄露、restore 复活旧身份。
@@ -191,11 +193,14 @@ Zone E 只能经 Zone D 调用逻辑能力；Zone D 不相信 E 提供的 tenant
 - Celery 只执行受信任核心任务；不运行 workspace 生成代码。
 - 独立 Sandbox Runner 部署在 Linux 节点，无 DB/MinIO/Redis/JWT/provider/signing-key 凭据。
 - Runner 只 pull lease，周期 heartbeat；所有 mutation 携带 generation 和单调 fencing token。
-- 旧 fencing token、过期 lease 或 workspace generation 不匹配时拒绝结果并终止 runtime。
+- 旧 Run fencing、Node fencing、过期 attestation、过期 lease 或 workspace generation 不匹配时拒绝结果并终止 runtime。
+- terminal Run 不接受任何回到 starting/running 的状态提交；终态转换关闭/撤销 lease并清除 runtime/workload identity。
 - Runner 通过可替换 `SandboxProvider`/`RuntimeDriver` 执行 `prepare/create/start/exec/cancel/logs/stats/snapshot/restore_new_generation/stop/destroy`。
 - sandbox 只访问 Capability Gateway；Runner 不代理任意数据库、对象存储或 Redis 命令。
 - `restore_new_generation` 创建新 workload identity，旧 token、进程、连接、PID、socket 和 runtime handle 一律失效。
 - provider handle 只存内部控制面，不进入公开 API、token、日志或 workspace。
+
+本节除 Run lease/generation/fencing 的控制面契约外仍未解冻。P34.4 不包含独立 Runner、RuntimeDriver、SandboxProvider、workload identity、容器或代码执行；这些控制必须等待 P34.5 在目标 Linux isolation profile 上实现并通过攻击 Gate。
 
 ### 4.9 文件系统与 Artifact
 
@@ -257,6 +262,7 @@ Zone E 只能经 Zone D 调用逻辑能力；Zone D 不相信 E 提供的 tenant
 控制：
 
 - 镜像/template digest 固定、签名、SBOM 和扫描；
+- 模板 POST 在 caller-owned transaction 内锁定并重验 active tenant admin；`(tenant_id, template_key, version)` 使用 PostgreSQL 原子 conflict handling，仅完整相同语义可 replay。
 - 生成器 allowlist，不复制活跃目录；
 - secret scan；
 - 模板只读，workspace copy-on-write；
@@ -306,7 +312,19 @@ Zone E 只能经 Zone D 调用逻辑能力；Zone D 不相信 E 提供的 tenant
 | LIFE-02 | pause/archive 与任务竞态 | 撤销、停调度、有界终止 | fault test | P34.4 |
 | LIFE-03 | stale reconciler generation | 不覆盖新状态 | integration | P34.4 |
 | RUN-01 | 两个 Runner 获取/续租同一 Run | 仅最高 fencing token 可提交 | concurrency/fault | P34.4 |
-| RUN-02 | lease 过期 Runner 提交结果 | 拒绝并有界终止旧 runtime | integration | P34.4 |
+| RUN-02 | lease/attestation 过期或 Node 已重新 fencing 的 Runner 提交结果 | 拒绝并有界终止旧 runtime | integration | P34.4 |
+| RUN-TERM-01 | terminal Run 被旧 holder 改回 starting/running | 409；lease 已关闭/撤销，runtime/workload identity 已清除 | unit/integration | P34.4 |
+| WS-01 | 同 Tenant 成员读取其他 Workspace | 404/fail-closed，无隐式 membership | unit/integration | P34.4 |
+| WS-OWNER-01 | 两个 owner 并发自降级/互相停用 | Workspace aggregate 串行化；至少保留一个 active owner | concurrency/integration | P34.4 |
+| WS-02 | 模板/snapshot 夹带凭据、宿主路径或 runtime handle | 422/拒绝，安全元数据不落入危险字段 | contract/unit | P34.4 |
+| WS-TPL-01 | 已通过依赖检查的 admin 在写事务前被撤权，或两个请求并发复用同 key/version | 事务内重验；只有完整相同语义 replay，不同内容 409 | concurrency/integration | P34.4 |
+| NODE-01 | Browser/Header 伪造 Node attestation | 无内部 Node/lease 路由；typed service 拒绝 | contract/unit | P34.4 |
+| NODE-02 | 撤销 Node 与新 authority/peer/service/lease 并发 | Workspace→Node→领域记录统一锁序；Run/peer/service/network/authority 同步失效 | unit/integration | P34.4 |
+| LEASE-01 | 过期/撤销/错误 holder 续租或提交 | 409/fail-closed，DB clock 为准 | unit/integration | P34.4 |
+| NET-LEASE-01 | 旧 logical Network Lease token 重放或签发时诱导 provider 副作用 | cursor 当前 token 不匹配即拒绝；签发不调用 provider、不产生 socket/route/peer | unit/integration | P34.4 |
+| FENCE-01 | 旧 token/epoch 在新 holder 后提交 | 409，不能覆盖新状态 | concurrency/unit | P34.4 |
+| AUTH-01 | authority 离线或过期后两个 Node 写入 | 只读/拒绝，不自动选举、不双写 | unit/integration | P34.4 |
+| AUTH-02 | 同 sequence 不同 digest 或错误 previous digest | conflict/fail-closed，不自动 merge | unit | P34.4 |
 | RUN-03 | Runner 尝试直连 DB/MinIO/Redis | 网络和凭据均不可用 | sandbox harness | P34.5 |
 | RUN-04 | Runner task 夹带 JWT/locator/凭据 | 控制面拒绝，审计脱敏 | contract/security | P34.5 |
 | FS-01 | `../`/绝对路径/编码绕过 | 拒绝，root 外无变化 | sandbox harness | P34.5 |
@@ -340,7 +358,16 @@ P34.1–P34.3：
 - mutation 审计、幂等闭环；
 - PostgreSQL 锁、查询和磁盘风险有界。
 
-P34.4–P34.6：
+P34.4：
+
+- Workspace membership/RBAC/scope grant 与同 Tenant 跨 Workspace默认拒绝通过；
+- Workspace aggregate last-owner、模板事务内 admin 重验/PostgreSQL 自然幂等、desired/observed state、generation、Node-fenced Run lease、terminal 不可复活、snapshot metadata 和 restore-new-identity Gate 通过；
+- 实时 attestation、Network lease cursor、无 provider 副作用的逻辑签发、Node/Peer/Service/Network/Authority 统一锁序撤销与无真实数据协作冲突 Gate 通过；
+- Browser API 不暴露 attestation、heartbeat、lease、fencing、provider activation 或 authority；
+- 不执行不可信代码，不访问真实成员网络、业务数据、MinIO、Redis 或 canonical RAG。
+- 当前验证证据为 focused `83 passed`（Workspace service `48` + Overlay/Collaboration `27` + API contract `8`）、Backend 非 integration `767 passed / 9 skipped / 11 deselected`、Mypy `105 source files / 0 issues`、fresh R6 `1 + 4 + 57 passed / 1 deselected`；这些数字不构成真实 Overlay、VPN 或 Sandbox 安全声明。
+
+P34.5–P34.6：
 
 - 生命周期并发和撤销稳定；
 - sandbox 逃逸、网络、文件、进程、资源矩阵全绿；
