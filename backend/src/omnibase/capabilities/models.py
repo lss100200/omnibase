@@ -94,10 +94,19 @@ class CapabilityGrant(Base):
             name="capability_grants_state_check",
         ),
         CheckConstraint(
-            "cardinality(actions) > 0 AND actions <@ ARRAY["
+            "cardinality(actions) > 0 AND ((actions <@ ARRAY["
             "'data.schema.read', 'data.rows.read', 'rag.search', "
-            "'rag.citation.read']::varchar[]",
-            name="capability_grants_read_actions_check",
+            "'rag.citation.read']::varchar[] AND workload_identity_digest IS NULL) "
+            "OR (actions <@ ARRAY["
+            "'sandbox.prepare', 'sandbox.create', 'sandbox.start', "
+            "'sandbox.exec', 'sandbox.cancel', 'sandbox.logs', "
+            "'sandbox.stats', 'sandbox.snapshot', 'sandbox.restore', "
+            "'sandbox.stop', 'sandbox.destroy']::varchar[] AND "
+            "workload_identity_digest IS NOT NULL AND "
+            "workload_identity_digest ~ '^[0-9a-f]{64}$' AND "
+            "cardinality(resource_ids) = 1 AND delegation_depth = 0 AND "
+            "delegation_depth_limit = 0))",
+            name="capability_grants_action_profile_check",
         ),
         CheckConstraint(
             "cardinality(resource_ids) > 0",
@@ -173,6 +182,7 @@ class CapabilityGrant(Base):
     )
     workspace_id: Mapped[str] = mapped_column(_UUID, nullable=False)
     runtime_instance_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    workload_identity_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     actor_user_id: Mapped[str] = mapped_column(_UUID, nullable=False)
     parent_grant_id: Mapped[str | None] = mapped_column(
         _UUID,
@@ -252,6 +262,62 @@ class CapabilityUsage(Base):
     )
 
 
+class CapabilityUsageReservation(Base):
+    """Append-only idempotent budget reservation for one Sandbox operation."""
+
+    __tablename__ = "capability_usage_reservations"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('sandbox.prepare', 'sandbox.create', 'sandbox.start', "
+            "'sandbox.exec', 'sandbox.cancel', 'sandbox.logs', 'sandbox.stats', "
+            "'sandbox.snapshot', 'sandbox.restore', 'sandbox.stop', 'sandbox.destroy')",
+            name="capability_usage_reservations_action_check",
+        ),
+        CheckConstraint(
+            "calls = 1 AND cost_units = 1",
+            name="capability_usage_reservations_budget_check",
+        ),
+        ForeignKeyConstraint(
+            ["grant_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.capability_grants.id",
+                f"{GLOBAL_SCHEMA}.capability_grants.tenant_id",
+            ],
+            name="capability_usage_reservations_grant_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "capability_usage_reservations_tenant_grant_created_idx",
+            "tenant_id",
+            "grant_id",
+            "created_at",
+        ),
+        {"comment": "P34.5 append-only idempotent capability budget reservations"},
+    )
+
+    operation_id: Mapped[str] = mapped_column(_UUID, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        _UUID,
+        ForeignKey(f"{GLOBAL_SCHEMA}.tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    grant_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    runtime_instance_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    calls: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("1"))
+    cost_units: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        server_default=text("1"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
 class CapabilityRevocation(Base):
     """Append-only online deny record for an entire grant or one token JTI."""
 
@@ -320,4 +386,5 @@ __all__ = [
     "CapabilityRevocation",
     "CapabilitySigningKey",
     "CapabilityUsage",
+    "CapabilityUsageReservation",
 ]

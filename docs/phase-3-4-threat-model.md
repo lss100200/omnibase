@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A2 已落地拒绝型 Sandbox、DB-backed Run lease/runtime proof、独立 emergency control、durable dispatch/host attestation/transport 契约，真实执行与网络隔离继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A3 已落地拒绝型 Sandbox、DB-backed Run lease/runtime proof、互斥 Sandbox capability、幂等预算与 SQLAlchemy durable operation/transition/Audit，真实执行与网络隔离继续冻结
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -200,7 +200,7 @@ P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模�
 - `restore_new_generation` 创建新 workload identity，旧 token、进程、连接、PID、socket 和 runtime handle 一律失效。
 - provider handle 只存内部控制面，不进入公开 API、token、日志或 workspace。
 
-P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。P34.5A1 又增加 live lease + capability 组合授权 seam、独立于 workload grant 的 emergency stop/destroy controller authorization、operation ID/request-spec digest exact replay、ambiguous outcome reconciliation 状态机、目标 Linux isolation profile 合约与 `UnavailableSandboxRunner`。P34.5A2 进一步加入 runtime instance 单次绑定、每次新事务重验 P34.4 Run/Node/Lease/fencing/attestation 的 SQLAlchemy verifier、Runner host/profile/identity attestation、独立 transport 和 no-auto-replay coordinator；当前 Docker Desktop 探针明确缺少 rootless/userns 与 LSM，因此 provider 仍不装配。P34.2 现有 capability 词汇只覆盖只读 data/RAG，不能冒充 `sandbox.*` lifecycle capability。这些实现仍不创建进程、文件、容器、socket、网络、挂载或 provider 资源；只证明缺少真实实现时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现。
+P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。P34.5A1 又增加 live lease + capability 组合授权 seam、独立于 workload grant 的 emergency stop/destroy controller authorization、operation ID/request-spec digest exact replay、ambiguous outcome reconciliation 状态机、目标 Linux isolation profile 合约与 `UnavailableSandboxRunner`。P34.5A2 进一步加入 runtime instance 单次绑定、每次新事务重验 P34.4 Run/Node/Lease/fencing/attestation 的 SQLAlchemy verifier、Runner host/profile/identity attestation、独立 transport 和 no-auto-replay coordinator。P34.5A3 用 `0008` 将 read 与 Sandbox lifecycle capability profile 变成数据库级互斥闭集，Sandbox Grant 强制单 Workspace、runtime/workload-bound、不可委派、最长五分钟且不能签发 Gateway bearer token；`capability_usage_reservations` 按 operation ID 幂等扣费，`SqlAlchemySandboxOperationStore` 将 current pointer、append-only transition 与 redacted Audit 同事务持久化，并以 tenant/Workspace/Run/Grant 复合外键和数据库 trigger 拒绝漂移、更新与删除。当前 Docker Desktop 探针仍明确缺少 rootless/userns 与 LSM，因此 provider 仍不装配。这些实现仍不创建进程、文件、容器、socket、网络、挂载或 provider 资源；只证明缺少真实实现时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现。
 
 ### 4.9 文件系统与 Artifact
 
@@ -337,6 +337,10 @@ P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型�
 | SBX-A2-02 | Runner host 的 Node fencing、profile digest、identity、有效期或 evidence 不匹配 | host attestation 拒绝，operation 记为 failed，不 dispatch | unit/probe | P34.5A2 |
 | SBX-A2-03 | dispatch 后 timeout、进程崩溃或 receipt operation ID 漂移 | operation 标记 ambiguous/reconciliation-required，同 operation ID 禁止自动重放 | unit | P34.5A2 |
 | SBX-A2-04 | Docker Desktop 缺少 rootless/userns 或 LSM 仍尝试装配 hardened provider | host probe not-ready，保持 provider/transport unavailable，不降低 profile | operator/source audit | P34.5A2 |
+| SBX-A3-01 | 在同一 Grant 混合 read 与 Sandbox action、缺少 workload digest、扩大到多 Workspace 或委派 Sandbox Grant | service 与 `0008` CHECK 双重拒绝；Sandbox Grant 不签发 Gateway bearer token | unit/sentinel PostgreSQL | P34.5A3 |
+| SBX-A3-02 | 同 operation ID 重放导致重复扣 budget，或复用 operation ID 搭配不同 tenant/grant/workspace/runtime/action | exact replay 只保留一条 reservation/一次 calls+cost；binding drift 拒绝 | unit/concurrency sentinel | P34.5A3 |
+| SBX-A3-03 | 跨 tenant/Workspace/Run 写 operation、并发重复 claim dispatch、直接修改/删除 transition/reservation | 复合 FK、行锁状态机、append-only trigger；并发只有一个 dispatch winner | sentinel PostgreSQL | P34.5A3 |
+| SBX-A3-04 | operation transition 成功但 Audit 丢失，或 populated `0008` 被降级抹去证据 | transition/current pointer/Audit 同事务；存在 Grant/reservation/operation/transition 时 downgrade fail-closed | sentinel PostgreSQL | P34.5A3 |
 | RUN-03 | Runner 尝试直连 DB/MinIO/Redis | 网络和凭据均不可用 | sandbox harness | P34.5 |
 | RUN-04 | Runner task 夹带 JWT/locator/凭据 | 控制面拒绝，审计脱敏 | contract/security | P34.5 |
 | FS-01 | `../`/绝对路径/编码绕过 | 拒绝，root 外无变化 | sandbox harness | P34.5 |

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "purpose": "Machine-readable repair map for local AI maintainers. Paths are repository-relative and commands are run from the repository root unless a command changes directory explicitly.",
   "frozen_boundaries": [
-    "P34.5 real Sandbox isolation and untrusted runtime execution beyond the fail-closed A0 contracts and metadata-only harness",
+    "P34.5 real Sandbox isolation and untrusted runtime execution beyond the fail-closed A0-A3 contracts, durable ledger and metadata-only harness",
     "Real Overlay adapters, member networking and Workspace data channels",
     "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
@@ -397,17 +397,20 @@
     },
     {
       "id": "capability-ledger",
-      "name": "Capability grants, delegation, tokens, revocation and budgets",
+      "name": "Disjoint read/Sandbox capability grants, delegation, tokens, revocation and operation-idempotent budgets",
       "source_paths": ["backend/src/omnibase/capabilities/**"],
       "entrypoints": [
         "backend/src/omnibase/capabilities/service.py:create_grant",
+        "backend/src/omnibase/capabilities/service.py:create_sandbox_grant",
         "backend/src/omnibase/capabilities/service.py:delegate_grant",
         "backend/src/omnibase/capabilities/service.py:verify_capability",
+        "backend/src/omnibase/capabilities/service.py:verify_and_reserve_sandbox_capability",
         "backend/src/omnibase/capabilities/service.py:consume_budget"
       ],
       "public_interfaces": [
         "Internal trusted issuer service",
-        "Signed capability token contract"
+        "Signed read-capability token contract",
+        "Token-free runtime/workload-bound Sandbox lifecycle verification and idempotent budget reservation"
       ],
       "depends_on": ["control-plane", "identity-tenancy"],
       "invariants": ["INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
@@ -417,7 +420,9 @@
       ],
       "recovery": [
         "Revoke affected grants and rotate signing keys through an audited forward-fix; do not relax claim validation.",
-        "Budget or ancestry uncertainty must reject the capability."
+        "Budget or ancestry uncertainty must reject the capability.",
+        "Keep read and sandbox action profiles mutually exclusive; Sandbox grants are non-delegable, short-lived and must never be issued as Gateway bearer tokens.",
+        "Preserve capability_usage_reservations as append-only operation evidence; exact replay must not consume budget twice and binding drift must fail closed."
       ]
     },
     {
@@ -541,7 +546,7 @@
     },
     {
       "id": "sandbox-foundation",
-      "name": "P34.5A0-A2 fail-closed Sandbox authorization, host proof and durable dispatch contracts",
+      "name": "P34.5A0-A3 fail-closed Sandbox authorization, capability reservation and durable dispatch ledger",
       "source_paths": [
         "backend/src/omnibase/sandbox/**",
         "scripts/sandbox/**"
@@ -550,11 +555,13 @@
         "backend/src/omnibase/sandbox/contracts.py:SandboxProvider",
         "backend/src/omnibase/sandbox/contracts.py:RejectingSandboxAuthorizer",
         "backend/src/omnibase/sandbox/authorization.py:ComposedSandboxAuthorizer",
+        "backend/src/omnibase/sandbox/authorization.py:SqlAlchemySandboxCapabilityVerifier",
         "backend/src/omnibase/sandbox/authorization.py:SqlAlchemySandboxLeaseVerifier",
         "backend/src/omnibase/sandbox/control.py:SandboxControlAuthorizer",
         "backend/src/omnibase/sandbox/control.py:RejectingSandboxControlAuthorizer",
         "backend/src/omnibase/sandbox/operations.py:SandboxOperationStore",
         "backend/src/omnibase/sandbox/operations.py:InMemorySandboxOperationStore",
+        "backend/src/omnibase/sandbox/persistence.py:SqlAlchemySandboxOperationStore",
         "backend/src/omnibase/sandbox/coordinator.py:SandboxExecutionCoordinator",
         "backend/src/omnibase/sandbox/host.py:RunnerHostAttestor",
         "backend/src/omnibase/sandbox/transport.py:RunnerTransport",
@@ -566,9 +573,9 @@
       ],
       "public_interfaces": [
         "Internal SandboxProvider protocol; not mounted on Browser or Gateway ASGI",
-        "DB-backed P34.4 Run lease/runtime identity verifier plus composed P34.2 capability seam; unsupported capability vocabulary remains rejecting",
+        "DB-backed P34.4 Run lease/runtime identity verifier plus token-free P34.2 Sandbox lifecycle verifier with operation-idempotent budget reservation",
         "Independent emergency stop/destroy controller contract; RejectingSandboxControlAuthorizer is the default",
-        "Durable operation protocol, host attestation binding, independent Runner transport and no-auto-replay dispatch coordinator",
+        "SQLAlchemy durable operation/transition/Audit store, host attestation binding, independent Runner transport and no-auto-replay dispatch coordinator",
         "Unavailable operation store, transport, provider and Runner production defaults",
         "Test-only in-memory authorizers, operation store and metadata-only lifecycle harness"
       ],
@@ -588,14 +595,16 @@
         "INV-017"
       ],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces",
-        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py",
-        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_4_workspace_service.py",
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py tests/test_p34_4_workspace_service.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces",
+        "docker compose run --rm --no-deps backend ruff check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
+        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
+        "make test-destructive",
         "python scripts/sandbox/probe_runner_host.py"
       ],
       "recovery": [
         "Use UnavailableSandboxOperationStore, UnavailableRunnerTransport, UnavailableSandboxProvider, UnavailableSandboxRunner and rejecting capability/controller/host defaults; do not dispatch when any proof is unavailable.",
+        "Preserve SqlAlchemySandboxOperationStore transitions and Audit in one transaction; never repair ambiguous or terminal state by UPDATE/DELETE, and never reset a capability reservation to regain budget.",
         "Keep SqlAlchemySandboxLeaseVerifier scoped to a fresh transaction per verification and require the exact runtime_instance_id/workload identity binding; never cache lease acceptance across operations.",
         "Keep emergency stop/destroy on an independently authenticated controller path; workload revocation must not authorize control, and missing controller authorization must reject.",
         "Ambiguous provider outcomes require explicit reconciliation and must never be automatically replayed under the same operation ID.",
@@ -618,7 +627,7 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0007",
+        "Alembic revisions 0001-0008",
         "make test-destructive",
         "omnibase migrate"
       ],

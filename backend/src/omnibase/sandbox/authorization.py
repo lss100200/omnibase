@@ -17,8 +17,13 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from omnibase.capabilities.service import (
+    CapabilityError,
+    verify_and_reserve_sandbox_capability,
+)
 from omnibase.sandbox.contracts import (
     SandboxAction,
     SandboxAuthorizer,
@@ -97,6 +102,7 @@ class VerifiedSandboxCapability:
     workspace_id: UUID
     run_id: UUID
     runtime_instance_id: UUID
+    grant_id: UUID
     workload_identity_thumbprint: str
     action: SandboxAction
     verified_at: datetime
@@ -111,6 +117,7 @@ class VerifiedSandboxCapability:
                 self.workspace_id,
                 self.run_id,
                 self.runtime_instance_id,
+                self.grant_id,
             )
         ):
             raise TypeError("verified capability identifiers must be UUID values")
@@ -148,6 +155,43 @@ class RejectingSandboxCapabilityVerifier:
     def verify(self, request: SandboxOperationRequest) -> VerifiedSandboxCapability:
         del request
         raise SandboxUnavailable("sandbox_capability_verifier_unavailable")
+
+
+class SqlAlchemySandboxCapabilityVerifier:
+    """Production adapter for operation-idempotent P34.2 Sandbox grants."""
+
+    def __init__(self, *, session_factory: Callable[[], Session]) -> None:
+        self._session_factory = session_factory
+
+    def verify(self, request: SandboxOperationRequest) -> VerifiedSandboxCapability:
+        try:
+            with self._session_factory() as session, session.begin():
+                facts = verify_and_reserve_sandbox_capability(
+                    session,
+                    operation_id=str(request.operation_id),
+                    grant_id=str(request.capability_grant_id),
+                    expected_tenant_id=str(request.tenant_id),
+                    expected_workspace_id=str(request.workspace_id),
+                    expected_runtime_instance_id=str(request.runtime_instance_id),
+                    expected_workload_identity_digest=request.workload_identity_thumbprint,
+                    action=request.action.value,
+                )
+        except CapabilityError as exc:
+            raise SandboxRejected("sandbox_live_capability_rejected") from exc
+        except SQLAlchemyError as exc:
+            raise SandboxUnavailable("sandbox_capability_verifier_unavailable") from exc
+        return VerifiedSandboxCapability(
+            tenant_id=UUID(facts.tenant_id),
+            workspace_id=UUID(facts.workspace_id),
+            run_id=request.run_id,
+            runtime_instance_id=UUID(facts.runtime_instance_id),
+            grant_id=UUID(facts.grant_id),
+            workload_identity_thumbprint=facts.workload_identity_digest,
+            action=SandboxAction(facts.action),
+            verified_at=facts.verified_at,
+            expires_at=facts.expires_at,
+            verification_digest=facts.verification_digest,
+        )
 
 
 class SqlAlchemySandboxLeaseVerifier:
@@ -237,6 +281,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             capability.workspace_id,
             capability.run_id,
             capability.runtime_instance_id,
+            capability.grant_id,
             capability.workload_identity_thumbprint,
             capability.action,
         )
@@ -245,6 +290,7 @@ class ComposedSandboxAuthorizer(SandboxAuthorizer):
             request.workspace_id,
             request.run_id,
             request.runtime_instance_id,
+            request.capability_grant_id,
             request.workload_identity_thumbprint,
             request.action,
         )
@@ -275,6 +321,7 @@ __all__ = [
     "RejectingSandboxLeaseVerifier",
     "SandboxCapabilityVerifier",
     "SandboxLeaseVerifier",
+    "SqlAlchemySandboxCapabilityVerifier",
     "SqlAlchemySandboxLeaseVerifier",
     "VerifiedSandboxCapability",
     "VerifiedSandboxLease",

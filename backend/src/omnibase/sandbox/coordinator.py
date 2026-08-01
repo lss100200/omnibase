@@ -124,9 +124,33 @@ class SandboxExecutionCoordinator:
         command: SandboxCommandSpec,
         isolation_profile: RunnerIsolationProfile,
     ) -> SandboxDispatchResult:
-        if intent.operation_id != request.operation_id:
+        intent_binding = (
+            intent.operation_id,
+            intent.tenant_id,
+            intent.workspace_id,
+            intent.run_id,
+            intent.runtime_instance_id,
+            intent.capability_grant_id,
+            intent.workspace_generation,
+            intent.run_fencing_token,
+            intent.node_fencing_token,
+            intent.action,
+        )
+        request_binding = (
+            request.operation_id,
+            request.tenant_id,
+            request.workspace_id,
+            request.run_id,
+            request.runtime_instance_id,
+            request.capability_grant_id,
+            request.workspace_generation,
+            request.run_fencing_token,
+            request.node_fencing_token,
+            request.action.value,
+        )
+        if intent_binding != request_binding:
             raise ValueError("dispatch operation binding mismatch")
-        if intent.action != request.action.value or request.action.value != "sandbox.exec":
+        if request.action.value != "sandbox.exec":
             raise ValueError("dispatch action binding mismatch")
         if intent.spec_digest is None:
             raise ValueError("dispatch requires a spec digest")

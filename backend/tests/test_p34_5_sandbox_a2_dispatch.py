@@ -59,6 +59,7 @@ def _request() -> SandboxOperationRequest:
         workspace_id=uuid4(),
         run_id=uuid4(),
         runtime_instance_id=uuid4(),
+        capability_grant_id=uuid4(),
         node_id=uuid4(),
         lease_id=uuid4(),
         workspace_generation=3,
@@ -112,6 +113,14 @@ def _command() -> SandboxCommandSpec:
 def _intent(request: SandboxOperationRequest) -> SandboxOperationIntent:
     return SandboxOperationIntent(
         operation_id=request.operation_id,
+        tenant_id=request.tenant_id,
+        workspace_id=request.workspace_id,
+        run_id=request.run_id,
+        runtime_instance_id=request.runtime_instance_id,
+        capability_grant_id=request.capability_grant_id,
+        workspace_generation=request.workspace_generation,
+        run_fencing_token=request.run_fencing_token,
+        node_fencing_token=request.node_fencing_token,
         action=request.action.value,
         request_digest=_A,
         spec_digest=_B,
@@ -322,6 +331,48 @@ def test_a2_defaults_reject_before_runner_dispatch() -> None:
             request=request,
             profile=_profile(),
         )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"tenant_id": uuid4()},
+        {"workspace_id": uuid4()},
+        {"run_id": uuid4()},
+        {"runtime_instance_id": uuid4()},
+        {"capability_grant_id": uuid4()},
+        {"workspace_generation": 4},
+        {"run_fencing_token": 6},
+        {"node_fencing_token": 8},
+    ],
+)
+def test_dispatch_rejects_durable_intent_binding_drift_before_store_or_transport(
+    drift: dict[str, object],
+) -> None:
+    now = datetime(2026, 8, 1, 16, tzinfo=UTC)
+    request = _request()
+    profile = _profile()
+    store = InMemorySandboxOperationStore(clock=lambda: now)
+    transport = _RecordingTransport()
+    coordinator = _coordinator(
+        request=request,
+        profile=profile,
+        store=store,
+        transport=transport,
+        now=now,
+    )
+    with pytest.raises(ValueError, match="dispatch operation binding mismatch"):
+        coordinator.execute(
+            intent=replace(_intent(request), **drift),
+            request=request,
+            runtime_handle=SandboxRuntimeHandle(uuid4()),
+            runtime_spec=_runtime_spec(),
+            command=_command(),
+            isolation_profile=profile,
+        )
+    with pytest.raises(SandboxConflict, match="sandbox_operation_not_found"):
+        store.get(request.operation_id)
+    assert transport.calls == []
 
 
 def test_successful_dispatch_is_durable_and_exact_replay_does_not_redispatch() -> None:

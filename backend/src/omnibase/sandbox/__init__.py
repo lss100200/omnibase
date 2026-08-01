@@ -8,6 +8,7 @@ from omnibase.sandbox.authorization import (
     ComposedSandboxAuthorizer,
     RejectingSandboxCapabilityVerifier,
     RejectingSandboxLeaseVerifier,
+    SqlAlchemySandboxCapabilityVerifier,
     SqlAlchemySandboxLeaseVerifier,
     VerifiedSandboxCapability,
     VerifiedSandboxLease,
@@ -58,6 +59,7 @@ from omnibase.sandbox.operations import (
     SandboxOperationStore,
     UnavailableSandboxOperationStore,
 )
+from omnibase.sandbox.persistence import SqlAlchemySandboxOperationStore
 from omnibase.sandbox.provider import (
     FakeInMemorySandboxProvider,
     InMemorySandboxAuthorizer,
@@ -122,7 +124,9 @@ __all__ = [
     "SandboxRuntimeView",
     "SandboxSnapshot",
     "SandboxUnavailable",
+    "SqlAlchemySandboxCapabilityVerifier",
     "SqlAlchemySandboxLeaseVerifier",
+    "SqlAlchemySandboxOperationStore",
     "UnavailableRunnerTransport",
     "UnavailableSandboxOperationStore",
     "UnavailableSandboxProvider",

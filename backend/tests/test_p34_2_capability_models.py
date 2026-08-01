@@ -7,6 +7,7 @@ from omnibase.capabilities.models import (
     CapabilityRevocation,
     CapabilitySigningKey,
     CapabilityUsage,
+    CapabilityUsageReservation,
 )
 from omnibase.db.models import GLOBAL_SCHEMA
 
@@ -24,12 +25,18 @@ def test_capability_models_are_global_and_tenant_scoped_where_required() -> None
         CapabilitySigningKey: "capability_signing_keys",
         CapabilityGrant: "capability_grants",
         CapabilityUsage: "capability_usage",
+        CapabilityUsageReservation: "capability_usage_reservations",
         CapabilityRevocation: "capability_revocations",
     }
     for model, table_name in expected.items():
         assert model.__table__.name == table_name
         assert model.__table__.schema == GLOBAL_SCHEMA
-    for model in (CapabilityGrant, CapabilityUsage, CapabilityRevocation):
+    for model in (
+        CapabilityGrant,
+        CapabilityUsage,
+        CapabilityUsageReservation,
+        CapabilityRevocation,
+    ):
         assert model.__table__.columns.tenant_id.nullable is False
 
 
@@ -44,13 +51,19 @@ def test_signing_key_registry_cannot_store_private_key_or_remote_url_fields() ->
     )
 
 
-def test_grant_database_contract_is_read_only_explicit_and_server_issued() -> None:
+def test_grant_database_contract_has_disjoint_read_and_sandbox_profiles() -> None:
     checks = _checks(CapabilityGrant)
-    action_check = checks["capability_grants_read_actions_check"]
+    action_check = checks["capability_grants_action_profile_check"]
     assert "data.schema.read" in action_check
     assert "data.rows.read" in action_check
     assert "rag.search" in action_check
     assert "rag.citation.read" in action_check
+    assert "sandbox.prepare" in action_check
+    assert "sandbox.destroy" in action_check
+    assert "workload_identity_digest" in action_check
+    assert "cardinality(resource_ids) = 1" in action_check
+    assert "delegation_depth = 0" in action_check
+    assert "delegation_depth_limit = 0" in action_check
     assert "rows.insert" not in action_check
     assert "schema.apply" not in action_check
     assert "'*'" not in action_check
@@ -62,8 +75,8 @@ def test_grant_database_contract_is_read_only_explicit_and_server_issued() -> No
     assert "BETWEEN 1 AND 5000" in timeout_check
 
 
-def test_usage_and_revocation_bind_grant_to_same_tenant() -> None:
-    for model in (CapabilityUsage, CapabilityRevocation):
+def test_usage_reservation_and_revocation_bind_grant_to_same_tenant() -> None:
+    for model in (CapabilityUsage, CapabilityUsageReservation, CapabilityRevocation):
         composite_fks = [
             constraint
             for constraint in model.__table__.constraints
@@ -97,6 +110,7 @@ def test_capability_tables_have_no_locator_sql_or_credential_columns() -> None:
         CapabilitySigningKey,
         CapabilityGrant,
         CapabilityUsage,
+        CapabilityUsageReservation,
         CapabilityRevocation,
     ):
         assert forbidden.isdisjoint(model.__table__.columns.keys())

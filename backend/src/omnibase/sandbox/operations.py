@@ -15,6 +15,27 @@ from omnibase.sandbox.contracts import SandboxConflict, SandboxUnavailable, utc_
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_]{2,99}$")
+_WORKLOAD_ACTIONS = frozenset(
+    {
+        "sandbox.prepare",
+        "sandbox.create",
+        "sandbox.start",
+        "sandbox.exec",
+        "sandbox.cancel",
+        "sandbox.logs",
+        "sandbox.stats",
+        "sandbox.snapshot",
+        "sandbox.restore",
+        "sandbox.stop",
+        "sandbox.destroy",
+    }
+)
+_CONTROL_ACTIONS = frozenset(
+    {
+        "sandbox.control.emergency_stop",
+        "sandbox.control.emergency_destroy",
+    }
+)
 
 
 class SandboxOperationState(StrEnum):
@@ -61,18 +82,51 @@ _TRANSITIONS = {
 }
 
 
+def transition_allowed(
+    current: SandboxOperationState,
+    target: SandboxOperationState,
+) -> bool:
+    return target in _TRANSITIONS.get(current, frozenset())
+
+
 @dataclass(frozen=True, slots=True)
 class SandboxOperationIntent:
     operation_id: UUID
+    tenant_id: UUID
+    workspace_id: UUID
+    run_id: UUID
+    runtime_instance_id: UUID
+    capability_grant_id: UUID | None
+    workspace_generation: int
+    run_fencing_token: int
+    node_fencing_token: int
     action: str
     request_digest: str
     spec_digest: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.operation_id, UUID):
-            raise TypeError("operation_id must be UUID")
-        if not self.action.startswith("sandbox.") or len(self.action) > 100:
+        identifiers = (
+            self.operation_id,
+            self.tenant_id,
+            self.workspace_id,
+            self.run_id,
+            self.runtime_instance_id,
+        )
+        if any(not isinstance(value, UUID) for value in identifiers):
+            raise TypeError("operation intent identifiers must be UUID values")
+        if self.capability_grant_id is not None and not isinstance(self.capability_grant_id, UUID):
+            raise TypeError("capability_grant_id must be UUID or None")
+        for name, value in (
+            ("workspace_generation", self.workspace_generation),
+            ("run_fencing_token", self.run_fencing_token),
+            ("node_fencing_token", self.node_fencing_token),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.action not in _WORKLOAD_ACTIONS | _CONTROL_ACTIONS:
             raise ValueError("operation action is invalid")
+        if (self.action in _CONTROL_ACTIONS) != (self.capability_grant_id is None):
+            raise ValueError("operation capability binding is invalid")
         if _SHA256_RE.fullmatch(self.request_digest) is None:
             raise ValueError("request_digest must be sha256")
         if self.spec_digest is not None and _SHA256_RE.fullmatch(self.spec_digest) is None:
@@ -123,7 +177,7 @@ class SandboxOperationRecord:
         if self.transitions[0].state is not SandboxOperationState.ACCEPTED:
             raise ValueError("operation must start in accepted state")
         for previous, current in pairwise(self.transitions):
-            if current.state not in _TRANSITIONS.get(previous.state, frozenset()):
+            if not transition_allowed(previous.state, current.state):
                 raise ValueError("operation transition history is invalid")
 
     @property
@@ -329,7 +383,7 @@ class InMemorySandboxOperationStore:
         record = self.get(operation_id)
         if record.state in _TERMINAL:
             raise SandboxConflict("sandbox_operation_terminal")
-        if state not in _TRANSITIONS.get(record.state, frozenset()):
+        if not transition_allowed(record.state, state):
             raise SandboxConflict("sandbox_operation_transition_rejected")
         transition = self._transition_value(
             sequence=len(record.transitions) + 1,
@@ -372,4 +426,5 @@ __all__ = [
     "SandboxOperationStore",
     "SandboxOperationTransition",
     "UnavailableSandboxOperationStore",
+    "transition_allowed",
 ]

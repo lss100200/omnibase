@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A2 fail-closed Sandbox、DB-backed Run lease/runtime proof、独立 emergency control、durable dispatch/host attestation/transport 契约已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A3 fail-closed Sandbox、DB-backed Run lease/runtime proof、互斥 Sandbox capability、幂等预算与 SQLAlchemy durable operation/transition/Audit 已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -433,7 +433,7 @@ destroy(runtime_handle)
 - provider handle 是内部定位，不得进入公开 API 或 capability；
 - provider 失败不得导致 capability、资源配额或 workspace state fail-open。
 
-P34.5A0-A2 现在只实现上述接口的**拒绝型安全、控制与调度骨架**：
+P34.5A0-A3 现在只实现上述接口的**拒绝型安全、控制与持久调度骨架**：
 
 - `backend/src/omnibase/sandbox/contracts.py` 定义严格的 `SandboxProvider`、在线 `SandboxAuthorizer`、Workspace/Run/Node/Lease/generation/fencing/workload identity 绑定、结构化 argv、相对 POSIX path、资源上限、只读 root/non-root/no-new-privileges/capability-drop 与 `deny_all` 网络策略；
 - `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 是默认装配，缺失可信 P34.4/P34.2 在线验证或真实 provider 时所有操作拒绝；
@@ -443,11 +443,14 @@ P34.5A0-A2 现在只实现上述接口的**拒绝型安全、控制与调度骨�
 - `bind_run_runtime_identity()` 在 live fenced lease 下单次绑定 runtime instance/workload identity；`SqlAlchemySandboxLeaseVerifier` 每次使用新事务重新读取 P34.4 Workspace/Run/Node/Lease、DB clock、generation、Run/Node fencing、实时 attestation 和 runtime binding。
 - emergency stop/destroy 不复用 workload grant，而使用独立 `SandboxControlAuthorizer`、controller identity、runtime handle、generation/fencing、reason 与 deadline；生产默认拒绝，test-only authorizer 只验证语义。
 - `SandboxOperationStore` 冻结 production durable seam，默认 `UnavailableSandboxOperationStore`；`InMemorySandboxOperationStore` 只演练 append-only 语义，不是生产持久化或审计实现。
+- `0008_p34_5_sandbox_dispatch.py` 将 read 与 Sandbox lifecycle capability profile 设为数据库级互斥闭集；Sandbox Grant 单 Workspace、runtime/workload-bound、不可委派、最长五分钟，并明确禁止通过 Gateway bearer token 使用。
+- `verify_and_reserve_sandbox_capability()` 与 `SqlAlchemySandboxCapabilityVerifier` 在新事务中按 operation ID 幂等预留 calls/cost；exact replay 不重复扣费，operation/tenant/grant/workspace/runtime/action drift 拒绝。
+- `SqlAlchemySandboxOperationStore` 已实现 production durable operation pointer、append-only transition 与 redacted Audit 同事务持久化；Workspace/Run/Grant 由复合 tenant 外键约束，并发 dispatch claim 单赢家，ambiguous outcome 只允许显式 reconciliation。
 - `RunnerHostAttestor` 绑定 Runner/Node identity、Node fencing、isolation profile digest、expiry 与 evidence；`RunnerTransport` 隔离 Core 与未来独立 Runner；两者默认拒绝。
 - `SandboxExecutionCoordinator` 固定 operation reservation → live authorization → host attestation → dispatch marker → transport → receipt binding 顺序；terminal exact replay 不重复 dispatch，dispatching crash、timeout 和 receipt drift 都进入 ambiguous/reconciliation-required。
 - `SandboxRunner`/`RunnerIsolationProfile` 冻结独立 Linux Runner 接口及 cgroup v2、user/PID/mount/network namespace、seccomp、LSM、有界强杀要求；`UnavailableSandboxRunner` 是生产默认，不运行命令。
 
-该骨架不等于 P34.5A Runner/执行隔离已完成；当前 Docker Desktop 探针缺少 rootless/userns 与 LSM，且尚无独立 Linux Runner 进程、production Sandbox capability verifier/operation ledger、真实 Provider、cgroup/namespace/LSM 攻击证明、writable layer、有界强杀、workload mTLS 或 Gateway 通道。P34.2 capability 闭集仍只有只读 data/RAG，扩展 `sandbox.*` lifecycle vocabulary 需要单独 migration 与 Gate。任何真实执行 wiring 仍由 P34.5A 攻击 Gate 阻断。
+该骨架不等于 P34.5A Runner/执行隔离已完成；当前 Docker Desktop 探针缺少 rootless/userns 与 LSM，且尚无独立 Linux Runner 进程、真实 Provider、cgroup/namespace/LSM 攻击证明、writable layer、有界强杀、workload mTLS 或 Gateway 通道。Sandbox capability 与 durable ledger 已完成副作用前的控制闭环，但任何真实执行 wiring 仍由 P34.5A Linux isolation/攻击 Gate 阻断。
 
 ## 10. 风险与审批矩阵
 
@@ -571,6 +574,8 @@ Gate：同 Tenant 跨 Workspace 默认拒绝；membership aggregate 并发不能
 ### P34.5：Sandbox Runtime
 
 **P34.5A0 — fail-closed 预启动骨架（2026-08-01 已完成局部工程 Gate）**：实现严格 Sandbox DTO、在线授权 seam、拒绝型默认、`deny_all` 网络、metadata-only 状态机与负向测试。focused 单测、Ruff 和 Mypy 通过只证明“默认不会执行/联网且危险输入被拒绝”，不证明任何真实 runtime 隔离等级。
+
+**P34.5A1-A3 — 控制与持久调度闭环（2026-08-02 已完成工程 Gate）**：A1/A2 完成 DB-backed live Run lease/runtime identity、独立 emergency control、host attestation、transport 与 no-auto-replay coordinator；A3 完成互斥 Sandbox capability profile、operation-idempotent budget reservation、SQLAlchemy durable operation/transition/Audit 与 `0008` sentinel migration Gate。完成口径仍只是“副作用前授权、预算、状态和证据闭环”，不是 Runner 或敌对代码隔离完成。
 
 拆成四个可独立验收的增量，仍属于同一个 P34.5：
 

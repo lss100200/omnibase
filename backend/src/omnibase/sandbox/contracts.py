@@ -293,6 +293,7 @@ class SandboxOperationRequest:
     workspace_id: UUID
     run_id: UUID
     runtime_instance_id: UUID
+    capability_grant_id: UUID
     node_id: UUID
     lease_id: UUID
     workspace_generation: int
@@ -307,6 +308,7 @@ class SandboxOperationRequest:
             "workspace_id": self.workspace_id,
             "run_id": self.run_id,
             "runtime_instance_id": self.runtime_instance_id,
+            "capability_grant_id": self.capability_grant_id,
             "node_id": self.node_id,
             "lease_id": self.lease_id,
         }

@@ -57,6 +57,7 @@ def _request(action: SandboxAction = SandboxAction.START) -> SandboxOperationReq
         workspace_id=uuid4(),
         run_id=uuid4(),
         runtime_instance_id=uuid4(),
+        capability_grant_id=uuid4(),
         node_id=uuid4(),
         lease_id=uuid4(),
         workspace_generation=7,
@@ -127,6 +128,7 @@ def test_composed_authorizer_requires_matching_live_lease_and_capability() -> No
         verification_digest=_DIGEST_A,
     )
     capability = VerifiedSandboxCapability(
+        grant_id=request.capability_grant_id,
         tenant_id=request.tenant_id,
         workspace_id=request.workspace_id,
         run_id=request.run_id,
@@ -201,6 +203,14 @@ def test_durable_operation_exact_replay_drift_and_ambiguous_reconciliation() -> 
     store = InMemorySandboxOperationStore(clock=lambda: now)
     intent = SandboxOperationIntent(
         operation_id=uuid4(),
+        tenant_id=uuid4(),
+        workspace_id=uuid4(),
+        run_id=uuid4(),
+        runtime_instance_id=uuid4(),
+        capability_grant_id=uuid4(),
+        workspace_generation=7,
+        run_fencing_token=11,
+        node_fencing_token=13,
         action=SandboxAction.START.value,
         request_digest=_DIGEST_A,
         spec_digest=_DIGEST_B,
@@ -243,6 +253,14 @@ def test_runner_default_is_unavailable_after_valid_control_authorization() -> No
     verified = authorizer.authorize(control_request)
     intent = SandboxOperationIntent(
         operation_id=control_request.operation_id,
+        tenant_id=control_request.tenant_id,
+        workspace_id=control_request.workspace_id,
+        run_id=control_request.run_id,
+        runtime_instance_id=control_request.runtime_instance_id,
+        capability_grant_id=None,
+        workspace_generation=control_request.workspace_generation,
+        run_fencing_token=control_request.run_fencing_token,
+        node_fencing_token=control_request.node_fencing_token,
         action=control_request.action.value,
         request_digest=_DIGEST_A,
     )

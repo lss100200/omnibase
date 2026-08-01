@@ -1,9 +1,9 @@
 # OmniBase 工作交接报告
 
-> **日期**：2026-08-01
-> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3 受控能力/数据基线、P34.4A–D Workspace 元数据逻辑控制面和 P34.5A0 fail-closed Sandbox 基础已经进入公开仓库；P34.5A1-A2 的 live authorization、DB-backed P34.4 Run lease/runtime identity proof、独立 emergency control、durable operation/host attestation/transport/no-replay coordinator 已在当前工作树通过局部工程 Gate，尚未因此解冻真实执行。公开仓库 `https://github.com/lss100200/omnibase` 的 `main` 已启用强制 PR/CI、Secret Scanning/Push Protection 与 Dependabot；普通业务数据库 migration、真实敌对代码执行、真实 Sandbox/Overlay/成员网络和真实数据通道继续关闭。
+> **日期**：2026-08-02
+> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3 受控能力/数据基线、P34.4A–D Workspace 元数据逻辑控制面和 P34.5A0 fail-closed Sandbox 基础已经进入公开仓库；P34.5A1-A3 的 live authorization、DB-backed P34.4 Run lease/runtime identity proof、独立 emergency control、互斥 Sandbox capability、幂等预算、SQLAlchemy durable operation/transition/Audit、host attestation/transport/no-replay coordinator 已在当前工作树通过工程 Gate，尚未因此解冻真实执行。公开仓库 `https://github.com/lss100200/omnibase` 的 `main` 已启用强制 PR/CI、Secret Scanning/Push Protection 与 Dependabot；普通业务数据库 migration、真实敌对代码执行、真实 Sandbox/Overlay/成员网络和真实数据通道继续关闭。
 > **模型基准状态**：Plan A `deepseek-v4-pro` 只能保持暂定 L2，confirmation 因长会话 Markdown JSON fence 失败，write round 未授权；Plan B B1 `qwen3-32b` 因零工具读取、伪造源码证据并触发 Audit lifecycle 与 in-place restore 两个既有安全 veto，正式为 `L0 Unsafe`；Plan B B2 `deepseek-v4-flash` 已确认为 `L2 Triage Confirmed`，证明经济型模型在真实读取维护者地图时可以稳定分诊，但证据真实性与 schema 纪律不足以进入 L3；B3 首选不同家族的 `glm-4.7-flash`，尚未执行。Plan C 两个 3B Q4_K_M 制品完整，但 native tool gate 失败，正式 screening 未启动，benchmark passed=false。
-> **冻结边界**：P34.5A0-A2 只解冻协议、DB-backed P34.4 lease verifier、capability 组合 seam、独立 emergency control、durable dispatch/host proof/transport 语义、拒绝默认和无副作用测试骨架。P34.2 Sandbox lifecycle capability vocabulary、production durable operation ledger、独立 Linux Runner 进程、真实 RuntimeDriver、cgroup/namespace/seccomp/AppArmor 或 stronger runtime、默认拒绝网络 namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据接入、Agent Runtime 与 Agent 编排继续冻结；Public Preview 不得声称普通 Docker 或 metadata-only provider 可以安全运行任意敌对代码。
+> **冻结边界**：P34.5A0-A3 只解冻协议、DB-backed P34.4 lease verifier、互斥 Sandbox lifecycle capability、operation-idempotent budget reservation、独立 emergency control、SQLAlchemy durable operation/transition/Audit、host proof/transport 语义、拒绝默认和无副作用测试骨架。独立 Linux Runner 进程、真实 RuntimeDriver、cgroup/namespace/seccomp/AppArmor 或 stronger runtime、默认拒绝网络 namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据接入、Agent Runtime 与 Agent 编排继续冻结；Public Preview 不得声称普通 Docker 或 metadata-only provider 可以安全运行任意敌对代码。
 > **项目路径**：`<repository-root>`
 > **Git 状态**：PR `#6` 的 P34.5A0 功能基线 merge commit 为 `2843468e24f2fa02fa040234c001e3667eb2111e`；宣传页、Plan B B3 方案、P34.5A0 和本报告均已进入公开 `main`。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准，版本化报告不硬编码后续纯文档 merge 的自身 hash，避免循环修订。
 
@@ -1443,8 +1443,44 @@ git diff --check：passed
    - Mypy：`Success: no issues found in 115 source files`；本次触及文件 Ruff check 全绿，`16 files already formatted`。
    - maintainer map：`17 invariants / 14 modules / 123 path specs / 755 matched files / 71 entrypoints / 14 discovered HTTP entrypoints / 39 verification commands`，PASS；benchmark validator：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`，PASS；`docker compose config --quiet` exit 0。
    - 全仓 `ruff check src` 仍会报告既有、非 A2 范围的 RAG 中文全角标点/unused import 和 worker 动态 SQL `S608` 基线债；本轮未扩大范围修改这些模块，也不把该宽门误报为通过。
-   - 仍未完成：production Sandbox capability verifier、production durable operation/audit store、Runner process/deployment、真实 RuntimeDriver/Provider、cgroup/namespace/LSM 攻击证明、有界强杀、网络 namespace、Broker、mTLS、Overlay 与任何真实 Tenant/RAG/数据库接入。
+   - A2 当时仍未完成 production Sandbox capability verifier 与 durable operation/audit store；这两项已由下方 A3 补齐。继续未完成的是 Runner process/deployment、真实 RuntimeDriver/Provider、cgroup/namespace/LSM 攻击证明、有界强杀、网络 namespace、Broker、mTLS、Overlay 与任何真实 Tenant/RAG/数据库接入。
    - 根 `.env` 未读取；没有数据库 migration、destructive test、真实 runtime side effect、Git push。
+
+### P34.5A3 Sandbox capability 与 production durable ledger（2026-08-02）
+
+> 完成口径：A3 只完成真实 Runner 副作用前的 lifecycle capability、幂等预算、持久 operation/transition/Audit 和 `0008` 数据库闭环；没有装配 Provider/Runner，没有执行 workspace 或敌对代码，也没有迁移普通业务数据库。
+
+1. **read 与 Sandbox capability profile 数据库级互斥**
+
+   - P34.2 `READ_ACTIONS` 保持 `data.schema.read`、`data.rows.read`、`rag.search`、`rag.citation.read`；新增独立 `SANDBOX_ACTIONS`：`prepare/create/start/exec/cancel/logs/stats/snapshot/restore/stop/destroy`。
+   - `create_sandbox_grant()` 强制单 Workspace resource、runtime instance、64 位 workload identity digest、不可委派、最长五分钟；read 与 Sandbox action 不能混合。
+   - `issue_token()` 拒绝 Sandbox Grant，避免 lifecycle 权限通过 Capability Gateway bearer token 暴露；emergency stop/destroy 继续只走独立可信 controller authorization，不进入 workload action vocabulary。
+   - `0008` 的 action profile CHECK 显式要求 read profile 的 workload digest 为 NULL、Sandbox profile 的 digest 非 NULL 且合法，修复 PostgreSQL CHECK 对 NULL 返回 unknown 时可能放行的边界。
+
+2. **operation-idempotent budget reservation**
+
+   - 新表 `capability_usage_reservations` 以 `operation_id` 为主键，只记录 tenant/grant/workspace/runtime/action、一次 calls 和一次 cost，不保存 token、credential、locator、SQL 或 provider payload。
+   - `verify_and_reserve_sandbox_capability()` 每次锁定并在线验证 Grant/Workspace，第一次 operation 才原子扣 `CapabilityUsage`；exact replay 读取原 reservation，不重复扣费。
+   - 同一 operation ID 搭配不同 tenant、grant、Workspace、runtime instance 或 action 时 fail-closed；verification digest 只包含稳定绑定和 Grant expiry/version，不包含实时 `verified_at`，因此合法重放不会被误判为 authorization drift。
+   - `SqlAlchemySandboxCapabilityVerifier` 每次使用新事务，Capability domain denial 映射为稳定拒绝，SQLAlchemy failure 映射为 unavailable，不把数据库故障解释为授权成功。
+
+3. **production durable Sandbox operation store**
+
+   - 新增 `sandbox_operations` current pointer 与 `sandbox_operation_transitions` append-only history；immutable intent 绑定 operation/tenant/Workspace/Run/runtime/Grant/action/request/spec digest、Workspace generation、Run/Node fencing。
+   - `SqlAlchemySandboxOperationStore` 以短事务实现 begin、authorize、claim dispatch、success/failure、ambiguous、reconciliation-required 和 reconciled terminal；exact begin/authorize 可幂等重放，payload/evidence drift 拒绝，terminal 不复活。
+   - operation 对 Workspace、Run 和 Grant 使用复合 tenant 外键；Run 还必须属于同一 Workspace。并发 claim dispatch 由行锁保证单赢家。
+   - 每次 transition 与 redacted Control Plane Audit 在同一事务提交；Audit 只存 code-like action/reason 和摘要，不把 Sandbox operation 冒充通用 `OperationRecord`。
+   - reservation 与 transition 安装共同 append-only trigger，UPDATE/DELETE 都拒绝；存在 Sandbox Grant、reservation、operation 或 transition 时，`0008 -> 0007` downgrade fail-closed。
+
+4. **验证与边界**
+
+   - focused capability/Sandbox 单测：`87 passed`；其中 A3 model/adapter 契约、Sandbox Grant 闭集、Gateway token 拒绝、幂等证据、Audit binding 错误映射和 coordinator 全 intent/request binding 均覆盖。
+   - guarded disposable PostgreSQL：`8 passed`，覆盖空库 `0001 -> 0008`、global-only 表、CHECK/FK、exact replay 一次扣费、durable state、并发 dispatch 单赢家、append-only trigger、Audit 数量和 populated downgrade 拒绝；Compose project、数据库、容器和临时卷已在测试后销毁。
+   - Backend 非 integration：`821 passed / 10 skipped / 11 deselected in 29.40s`；Mypy：`Success: no issues found in 117 source files`；本次 30 个触及 Python 文件 Ruff check 与 format check 全绿。
+   - migration/foundation 全链回归：空库 downgrade/re-upgrade `1 passed`，Phase 1.6、P34.1、P34.2、P34.3 foundation、P34.4、P34.5 其余 `34 passed / 1 deselected`。首次合并执行全部 integration 因外层五分钟超时且未返回结论，不计作通过；随后只对本次 schema/revision 影响面的 foundation 文件在全新 sentinel 中完成明确通过。
+   - maintainer map：`17 invariants / 14 modules / 123 path specs / 785 matched files / 75 entrypoints / 14 discovered HTTP entrypoints / 40 verification commands`，PASS；benchmark validator：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`，PASS；`docker compose config --quiet` 与 `git diff --check` 通过。
+   - 早期 sentinel 尝试只暴露 runner 入口和测试夹具问题，均在全新一次性库修复重跑；没有连接普通业务数据库。
+   - 当前 Docker Desktop host probe 仍为 `ready=false`，缺少 `rootless_or_userns` 与 `lsm`。因此 `UnavailableSandboxProvider`、`UnavailableRunnerTransport`、`UnavailableSandboxRunner` 与 rejecting host/controller defaults 继续保持，真实 Runner/Provider、网络和数据通道仍冻结。
 
 ### Phase 3-4 下一阶段执行契约
 
@@ -1453,7 +1489,7 @@ git diff --check：passed
 - **P34.2 ✅ 工程验收、待原子提交/业务 migration 授权**：只读 Capability Gateway、Capability Ledger 与 TypeScript/Python SDK 契约已完成；默认 attestor/verifier 仍 fail-closed，真实 runtime 身份接入等待 P34.4/P34.5。
 - **P34.3 ✅ 工程验收、待原子提交/业务 migration 授权**：Foundation、CRUD/DDL、create-table bootstrap、完整 aggregate 锁序、atomic lifecycle、User-RBAC structured write Router、真实 lock/statement timeout、状态竞态、并发 exact replay 和 fresh sentinel PostgreSQL Gate 已完成；Router 默认 503，Workspace/Agent write、任意 SQL与普通业务 migration 继续关闭。
 - **P34.4 ✅ 元数据逻辑控制面与 fake/local harness 工程封板**：17 张 global 表、版本化模板、Workspace aggregate membership/RBAC/scope、Workspace/Run 生命周期、Run/Node/Network fencing、实时 attestation、terminal Run 不可复活、Node/Peer/Service/Authority 统一锁序与 synthetic collaboration harness 已通过 Gate；logical Network Lease 不调用 provider。真实 Overlay/VPN、Sandbox、成员网络和真实数据接入不在该完成口径内。
-- **P34.5A0 ✅ 公开工程 Gate / P34.5A1-A2 ✅ 当前工作树局部 Gate**：A0 strict Sandbox contracts、拒绝型默认、`deny_all` 网络与 metadata-only harness 已进入公开 `main`；A1-A2 live authorization、DB-backed P34.4 lease/runtime proof、独立 emergency control、durable operation/host proof/transport/no-replay coordinator 已通过局部测试。真实执行和网络 side effect 仍为 hard deny。
+- **P34.5A0 ✅ 公开工程 Gate / P34.5A1-A3 ✅ 当前工作树工程 Gate**：A0 strict Sandbox contracts、拒绝型默认、`deny_all` 网络与 metadata-only harness 已进入公开 `main`；A1-A3 live authorization、DB-backed P34.4 lease/runtime proof、互斥 Sandbox lifecycle capability、幂等预算、独立 emergency control、SQLAlchemy durable operation/transition/Audit、host proof/transport/no-replay coordinator 已通过 focused 与 fresh sentinel PostgreSQL Gate。真实执行和网络 side effect 仍为 hard deny。
 - **P34.5A–D 冻结**：文件/网络/进程/身份/资源隔离与攻击 Gate 通过后，才把真实 run/session 接到 P34.2 只读网关；实现独立 Linux Runner、Sandbox network namespace、Workspace Network Broker、短期 mTLS workload identity 与首个 Overlay adapter。普通 Docker 仅作开发基线，Sandbox 不得直接加入成员设备 Overlay。
 - **P34.6**：workspace 私有表、派生索引、记忆、lineage，以及经审批、幂等和补偿进入规范资源的 promotion。
 - **P34.7**：快照恢复、完整 UI/SDK、真实最小闭环、攻击矩阵与生产总验收。

@@ -435,6 +435,175 @@ def test_cap02_timeout_constraint_is_required_before_db_access(
     session.execute.assert_not_called()
 
 
+def test_p345_sandbox_grant_is_closed_non_delegable_and_short_lived(monkeypatch) -> None:
+    ids = _ids()
+    captured: dict[str, object] = {}
+
+    def fake_create(*args, **kwargs):
+        del args
+        captured.update(kwargs)
+        return "sandbox-grant"
+
+    monkeypatch.setattr(service, "_create_grant", fake_create)
+    now = datetime.now(UTC)
+    result = service.create_sandbox_grant(
+        MagicMock(),
+        tenant_id=ids["tenant"],
+        workspace_id=ids["workspace"],
+        runtime_instance_id=ids["runtime"],
+        workload_identity_digest="a" * 64,
+        issuer_context=service.TrustedIssuerContext(
+            tenant_id=ids["tenant"],
+            system_actor_id=ids["issuer"],
+            originating_user_id=ids["user"],
+        ),
+        actions={"sandbox.start", "sandbox.stop"},
+        not_before=now,
+        expires_at=now + timedelta(minutes=5),
+        max_calls=2,
+        max_bytes=1,
+        max_cost_units=2,
+        constraints={"timeout_ms": 1000},
+    )
+    assert result == "sandbox-grant"
+    assert captured["resource_ids"] == frozenset({ids["workspace"]})
+    assert captured["delegation_depth"] == 0
+    assert captured["delegation_depth_limit"] == 0
+    assert captured["allowed_actions"] == service.SANDBOX_ACTIONS
+    assert captured["workload_identity_digest"] == "a" * 64
+
+    for actions in ({"data.rows.read"}, {"sandbox.start", "data.rows.read"}, {"*"}):
+        session = MagicMock()
+        monkeypatch.undo()
+        with pytest.raises(service.CapabilityScopeDenied):
+            service.create_sandbox_grant(
+                session,
+                tenant_id=ids["tenant"],
+                workspace_id=ids["workspace"],
+                runtime_instance_id=ids["runtime"],
+                workload_identity_digest="a" * 64,
+                issuer_context=service.TrustedIssuerContext(
+                    tenant_id=ids["tenant"],
+                    system_actor_id=ids["issuer"],
+                    originating_user_id=ids["user"],
+                ),
+                actions=actions,
+                not_before=now,
+                expires_at=now + timedelta(minutes=5),
+                max_calls=2,
+                max_bytes=1,
+                max_cost_units=2,
+                constraints={"timeout_ms": 1000},
+            )
+        session.execute.assert_not_called()
+
+
+def test_p345_sandbox_grant_ttl_and_gateway_token_are_fail_closed(monkeypatch) -> None:
+    ids = _ids()
+    now = datetime.now(UTC)
+    session = MagicMock()
+    with pytest.raises(service.CapabilityScopeDenied, match="five minutes"):
+        service.create_sandbox_grant(
+            session,
+            tenant_id=ids["tenant"],
+            workspace_id=ids["workspace"],
+            runtime_instance_id=ids["runtime"],
+            workload_identity_digest="a" * 64,
+            issuer_context=service.TrustedIssuerContext(
+                tenant_id=ids["tenant"],
+                system_actor_id=ids["issuer"],
+                originating_user_id=ids["user"],
+            ),
+            actions={"sandbox.start"},
+            not_before=now,
+            expires_at=now + timedelta(minutes=5, microseconds=1),
+            max_calls=1,
+            max_bytes=1,
+            max_cost_units=1,
+            constraints={"timeout_ms": 1000},
+        )
+    session.execute.assert_not_called()
+
+    grant = SimpleNamespace(
+        actions=["sandbox.start"],
+        actor_user_id=ids["user"],
+    )
+    monkeypatch.setattr(service, "get_grant", lambda *args, **kwargs: grant)
+    with pytest.raises(service.CapabilityScopeDenied, match="Gateway bearer"):
+        service.issue_token(
+            session,
+            tenant_id=ids["tenant"],
+            grant_id=ids["grant"],
+            kid="test-key-0001",
+            private_key_pem="unused",
+            workload_thumbprint="A" * 43,
+            issuer_context=service.TrustedIssuerContext(
+                tenant_id=ids["tenant"],
+                system_actor_id=ids["issuer"],
+                originating_user_id=ids["user"],
+            ),
+        )
+    session.execute.assert_not_called()
+
+
+def test_p345_operation_replay_reserves_budget_once_with_stable_evidence(monkeypatch) -> None:
+    ids = _ids()
+    operation_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    grant = SimpleNamespace(
+        id=ids["grant"],
+        tenant_id=ids["tenant"],
+        workspace_id=ids["workspace"],
+        runtime_instance_id=ids["runtime"],
+        workload_identity_digest="a" * 64,
+        parent_grant_id=None,
+        actions=["sandbox.start"],
+        resource_ids=[ids["workspace"]],
+        constraints={"timeout_ms": 1000},
+        version=1,
+        state="active",
+        not_before=now - timedelta(seconds=1),
+        expires_at=now + timedelta(minutes=4),
+        delegation_depth=0,
+        delegation_depth_limit=0,
+    )
+    reservation = SimpleNamespace(
+        tenant_id=ids["tenant"],
+        grant_id=ids["grant"],
+        workspace_id=ids["workspace"],
+        runtime_instance_id=ids["runtime"],
+        action="sandbox.start",
+    )
+    session = MagicMock()
+    session.execute.side_effect = [
+        _result(scalar=ids["workspace"]),
+        _result(scalar=operation_id),
+        _result(scalar=ids["workspace"]),
+        _result(scalar=None),
+        _result(scalar=reservation),
+    ]
+    monkeypatch.setattr(service, "get_grant", lambda *args, **kwargs: grant)
+    monkeypatch.setattr(service, "_assert_active_ancestry", lambda *args, **kwargs: grant)
+    reserve = MagicMock(return_value=SimpleNamespace())
+    monkeypatch.setattr(service, "_reserve_budget", reserve)
+    monkeypatch.setattr(service, "_now", MagicMock(side_effect=[now, now + timedelta(seconds=1)]))
+
+    kwargs = {
+        "operation_id": operation_id,
+        "grant_id": ids["grant"],
+        "expected_tenant_id": ids["tenant"],
+        "expected_workspace_id": ids["workspace"],
+        "expected_runtime_instance_id": ids["runtime"],
+        "expected_workload_identity_digest": "a" * 64,
+        "action": "sandbox.start",
+    }
+    first = service.verify_and_reserve_sandbox_capability(session, **kwargs)
+    replay = service.verify_and_reserve_sandbox_capability(session, **kwargs)
+    assert first.verification_digest == replay.verification_digest
+    assert first.verified_at != replay.verified_at
+    reserve.assert_called_once()
+
+
 def test_cap03_delegation_cannot_widen_action_or_resource_scope(monkeypatch) -> None:
     ids = _ids()
     parent = SimpleNamespace(
