@@ -16,6 +16,17 @@ jobs:
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      ENV: development
+      LOG_LEVEL: WARNING
+      DATABASE_URL: postgresql+psycopg://omnibase:ci-placeholder@localhost:5432/omnibase_test
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: ci-placeholder
+      MINIO_SECRET_KEY: ci-placeholder
+      MINIO_BUCKET: omnibase-test
+      REDIS_URL: redis://localhost:6379/15
+      RATE_LIMIT_ENABLED: "false"
+      JWT_SECRET: ci_placeholder_secret_at_least_32_characters_long
     defaults:
       run:
         working-directory: backend
