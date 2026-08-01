@@ -539,20 +539,29 @@
     },
     {
       "id": "sandbox-foundation",
-      "name": "P34.5A0 fail-closed Sandbox contracts and metadata-only lifecycle harness",
+      "name": "P34.5A0-A1 fail-closed Sandbox, live authorization, emergency control and Runner contracts",
       "source_paths": [
         "backend/src/omnibase/sandbox/**"
       ],
       "entrypoints": [
         "backend/src/omnibase/sandbox/contracts.py:SandboxProvider",
         "backend/src/omnibase/sandbox/contracts.py:RejectingSandboxAuthorizer",
+        "backend/src/omnibase/sandbox/authorization.py:ComposedSandboxAuthorizer",
+        "backend/src/omnibase/sandbox/control.py:SandboxControlAuthorizer",
+        "backend/src/omnibase/sandbox/control.py:RejectingSandboxControlAuthorizer",
+        "backend/src/omnibase/sandbox/operations.py:InMemorySandboxOperationStore",
         "backend/src/omnibase/sandbox/provider.py:UnavailableSandboxProvider",
-        "backend/src/omnibase/sandbox/provider.py:FakeInMemorySandboxProvider"
+        "backend/src/omnibase/sandbox/provider.py:FakeInMemorySandboxProvider",
+        "backend/src/omnibase/sandbox/runner.py:SandboxRunner",
+        "backend/src/omnibase/sandbox/runner.py:UnavailableSandboxRunner"
       ],
       "public_interfaces": [
         "Internal SandboxProvider protocol; not mounted on Browser or Gateway ASGI",
-        "RejectingSandboxAuthorizer and UnavailableSandboxProvider production defaults",
-        "Test-only InMemorySandboxAuthorizer and metadata-only lifecycle harness"
+        "Composed live P34.4 lease/fencing plus P34.2 capability authorization seam; rejecting verifiers remain defaults",
+        "Independent emergency stop/destroy controller contract; RejectingSandboxControlAuthorizer is the default",
+        "Append-only durable operation/idempotency and ambiguous-outcome reconciliation contract",
+        "UnavailableSandboxProvider and UnavailableSandboxRunner production defaults",
+        "Test-only in-memory authorizers, operation store and metadata-only lifecycle harness"
       ],
       "depends_on": [
         "workspace-control-plane",
@@ -570,13 +579,15 @@
         "INV-017"
       ],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py -q",
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py -q",
         "docker compose run --rm --no-deps backend mypy src/omnibase/sandbox",
-        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py",
-        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py"
+        "docker compose run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py",
+        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py"
       ],
       "recovery": [
-        "Use UnavailableSandboxProvider and RejectingSandboxAuthorizer; do not install a provider when live P34.4 lease/fencing and P34.2 capability verification cannot be proven.",
+        "Use UnavailableSandboxProvider, UnavailableSandboxRunner and all rejecting authorizers/verifiers; do not install a provider when live P34.4 lease/fencing and P34.2 capability verification cannot be proven.",
+        "Keep emergency stop/destroy on an independently authenticated controller path; workload revocation must not authorize control, and missing controller authorization must reject.",
+        "Ambiguous provider outcomes require explicit reconciliation and must never be automatically replayed under the same operation ID.",
         "Treat FakeInMemorySandboxProvider as metadata-only; its exec/cancel paths must remain hard-disabled and it must never gain Docker, socket, subprocess, host path, network or data-store integration.",
         "Real execution remains blocked until a Linux isolation profile, Runner identity, default-deny network, resource enforcement and the P34.5 attack matrix are independently verified."
       ]

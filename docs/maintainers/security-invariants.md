@@ -639,23 +639,34 @@ P34.4D 的协作 harness 只验证内容摘要、Git ref 元数据和追加事�
 **权威源码**
 
 - `backend/src/omnibase/sandbox/contracts.py`
+- `backend/src/omnibase/sandbox/authorization.py`
+- `backend/src/omnibase/sandbox/control.py`
+- `backend/src/omnibase/sandbox/operations.py`
 - `backend/src/omnibase/sandbox/provider.py`
+- `backend/src/omnibase/sandbox/runner.py`
 - `backend/tests/test_p34_5_sandbox_foundation.py`
+- `backend/tests/test_p34_5_sandbox_a1_control.py`
 
 **为何存在**
 
-P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次操作都必须重新绑定 tenant、Workspace、Run、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。缺少可信 verifier/provider 时必须拒绝，A0 fake harness 只能演练内存状态机，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
+P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次普通操作都必须重新绑定 tenant、Workspace、Run、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。紧急 stop/destroy 必须使用独立可信 controller authorization，不能依赖已经撤销的 workload grant，也不能因为 workload 已撤销就匿名放行。缺少可信 verifier/provider/controller/Runner 时必须拒绝，A0/A1 的 in-memory harness 只能演练授权与状态机，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
 
 **允许的改法**
 
 - 收紧 `SandboxOperationRequest`、资源配额、相对路径、结构化 argv、只读 root、non-root、`no_new_privileges`、capability drop 和默认拒绝网络契约。
 - 新增真实 provider 前先保持 `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 为默认，并以显式可信 wiring 注入实现。
+- 使用 `ComposedSandboxAuthorizer` 组合独立的 live P34.4 lease/Node/fencing verifier 与 P34.2 capability verifier；任一结果缺失、过期或 binding 不一致都拒绝。
+- 让 emergency stop/destroy 使用 `SandboxControlRequest`、独立 `SandboxControlAuthorizer`、controller identity、deadline、runtime handle、generation 与 Run/Node fencing；默认 `RejectingSandboxControlAuthorizer`。
+- 在任何 Runner/provider 副作用前按 operation ID 与 request/spec digest 预留 durable operation；exact replay 返回原记录，payload drift 冲突，ambiguous outcome 进入 reconciliation-required 且不得自动重放，terminal operation 不可复活。
+- 保持 `UnavailableSandboxRunner` 为生产默认；Runner isolation profile 只有在目标 Linux 上真实证明 cgroup v2、user/PID/mount/network namespace、seccomp、LSM 和有界强杀后才能装配。
 - 使用 test-only `InMemorySandboxAuthorizer` 和 `FakeInMemorySandboxProvider` 验证完整 binding、过期、撤销、stale fencing、状态转换、provider-owned snapshot provenance 和 restore-new-identity；同一 Run 即使 runtime 已销毁也不得重新 create/restore，`exec`/`cancel` 必须继续返回 `sandbox_execution_not_unlocked`。
 - 将未来 Linux provider 放在独立 Runner 进程/节点，且每次 mutation 在副作用前完成在线 lease/capability verification。
 
 **禁止的改法**
 
 - 把 Browser JWT、请求体字段、raw capability token、来源 IP、provider handle 或“runtime 已存在”当作授权事实。
+- 使用 workload capability 代替 emergency controller authorization，或在没有可信 controller identity/current fencing/deadline 时执行 stop/destroy。
+- 对 ambiguous provider outcome 自动重跑、复用同一 operation ID 搭配不同 request/spec，或让 terminal operation/runtime 回到 dispatching/running。
 - 在 Core API/Celery 进程中执行 workspace 命令，或给 Sandbox/Runner 注入 PostgreSQL、MinIO、Redis、JWT、签名 key、宿主 `.env`、Docker/Podman socket、宿主目录或成员 Overlay identity。
 - 在 A0 fake/provider 中调用 Docker、subprocess、shell、socket、外部 HTTP、文件系统或真实 runtime/network provider，并将 metadata-only 状态误报为代码已执行。
 - 允许绝对路径、Windows drive、`..`、symlink 逃逸、shell command string、任意 env、host mount、device、runtime socket、非 deny-all 网络或无界 CPU/内存/PID/磁盘/inode/输出/时间。
@@ -665,9 +676,10 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 **必须运行的测试**
 
 - `backend/tests/test_p34_5_sandbox_foundation.py`
+- `backend/tests/test_p34_5_sandbox_a1_control.py`
 - `docker compose run --rm --no-deps backend mypy src/omnibase/sandbox`
 - 对新增真实 provider 运行 P34.5 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；A0 单元测试不能替代目标 Linux isolation Gate。
 
 **失败恢复**
 
-立即撤下真实 provider wiring，恢复 `UnavailableSandboxProvider` 与 `RejectingSandboxAuthorizer`，撤销受影响 Run Lease/capability/workload identity，并停止对应 Runner。保留 runtime、lease、fencing、审计和 provider 证据；无法证明副作用前完成在线验证时一律视为未授权。不得通过放宽路径、网络、资源或身份检查恢复服务，也不得把普通 Docker smoke 当作敌对代码隔离证明。
+立即撤下真实 provider/Runner wiring，恢复 `UnavailableSandboxProvider`、`UnavailableSandboxRunner` 与全部 rejecting authorizer/verifier，撤销受影响 Run Lease/capability/workload identity，并通过独立可信控制通道停止对应 Runner。保留 operation transition、runtime、lease、fencing、审计和 provider 证据；ambiguous outcome 只允许 reconciliation，不允许猜测重放。无法证明副作用前完成在线验证时一律视为未授权。不得通过放宽路径、网络、资源或身份检查恢复服务，也不得把普通 Docker smoke 当作敌对代码隔离证明。

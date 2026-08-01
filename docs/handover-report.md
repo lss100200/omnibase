@@ -1,9 +1,9 @@
 # OmniBase 工作交接报告
 
 > **日期**：2026-08-01
-> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3 受控能力/数据基线、P34.4A–D Workspace 元数据逻辑控制面和 P34.5A0 fail-closed Sandbox 基础已经进入公开仓库；P34.5A0 提供 strict contracts、在线授权 seam、拒绝型默认、`deny_all` 网络契约与 metadata-only harness。公开仓库 `https://github.com/lss100200/omnibase` 的 `main` 已启用强制 PR/CI、Secret Scanning/Push Protection 与 Dependabot；普通业务数据库 migration、真实敌对代码执行、真实 Sandbox/Overlay/成员网络和真实数据通道继续关闭。
+> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3 受控能力/数据基线、P34.4A–D Workspace 元数据逻辑控制面和 P34.5A0 fail-closed Sandbox 基础已经进入公开仓库；P34.5A1 的 live lease + capability 组合授权 seam、独立 emergency control、durable operation/reconciliation 契约与拒绝型 Runner 已在当前工作树通过局部工程 Gate，尚未因此解冻真实执行。公开仓库 `https://github.com/lss100200/omnibase` 的 `main` 已启用强制 PR/CI、Secret Scanning/Push Protection 与 Dependabot；普通业务数据库 migration、真实敌对代码执行、真实 Sandbox/Overlay/成员网络和真实数据通道继续关闭。
 > **模型基准状态**：Plan A `deepseek-v4-pro` 只能保持暂定 L2，confirmation 因长会话 Markdown JSON fence 失败，write round 未授权；Plan B B1 `qwen3-32b` 因零工具读取、伪造源码证据并触发 Audit lifecycle 与 in-place restore 两个既有安全 veto，正式为 `L0 Unsafe`；Plan B B2 `deepseek-v4-flash` 已确认为 `L2 Triage Confirmed`，证明经济型模型在真实读取维护者地图时可以稳定分诊，但证据真实性与 schema 纪律不足以进入 L3；B3 首选不同家族的 `glm-4.7-flash`，尚未执行。Plan C 两个 3B Q4_K_M 制品完整，但 native tool gate 失败，正式 screening 未启动，benchmark passed=false。
-> **冻结边界**：P34.5A0 只解冻协议、拒绝默认和无副作用测试骨架。独立 Linux Runner、真实 RuntimeDriver、cgroup/namespace/seccomp/AppArmor 或 stronger runtime、默认拒绝网络 namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据接入、Agent Runtime 与 Agent 编排继续冻结；Public Preview 不得声称普通 Docker 或 metadata-only provider 可以安全运行任意敌对代码。
+> **冻结边界**：P34.5A0-A1 只解冻协议、双验证组合 seam、独立 emergency control、durable operation 语义、拒绝默认和无副作用测试骨架。独立 Linux Runner 进程、production DB-backed authorizer/operation ledger、真实 RuntimeDriver、cgroup/namespace/seccomp/AppArmor 或 stronger runtime、默认拒绝网络 namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据接入、Agent Runtime 与 Agent 编排继续冻结；Public Preview 不得声称普通 Docker 或 metadata-only provider 可以安全运行任意敌对代码。
 > **项目路径**：`<repository-root>`
 > **Git 状态**：PR `#6` 的 P34.5A0 功能基线 merge commit 为 `2843468e24f2fa02fa040234c001e3667eb2111e`；宣传页、Plan B B3 方案、P34.5A0 和本报告均已进入公开 `main`。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准，版本化报告不硬编码后续纯文档 merge 的自身 hash，避免循环修订。
 
@@ -1335,6 +1335,12 @@ git diff --check：passed
    - 页面明确区分已交付、P34.5 建设中和未承诺能力；不修改 `/`、登录、工作台路由或侧边栏，不引入远程图片、外部字体、追踪脚本或新依赖。
    - 子代理局部验证为 TypeScript、ESLint、43 个 frontend tests、桌面/390×844 移动端、HTTP 200、零 console error 和零横向溢出通过。移植到最新 Next `15.5.21` 的干净候选后，frozen-lockfile 安装、完整 `pnpm build`、13/13 static pages、43/43 tests、typecheck、lint 和 final production image build 全部通过；`/healthz` 与 `/public-preview` 在 read-only/cap-drop/no-new-privileges 候选容器中均为 HTTP 200，临时容器已精确停止并由 `--rm` 删除。旧 Next 14 工作树的全站预渲染失败由干净主线复验排除，但公开合并仍必须等待 GitHub required checks。
 
+5. **双语宣传页与公开域名**
+
+   - 当前工作树将 `/public-preview` 升级为英文优先、中文可切换的双语页面；英文为稳定 SSR 默认，中文浏览器首次访问可自动切换，用户选择保存在本地且同步 `<html lang>`，禁用 storage 时仍 fail-soft。没有新增依赖、远程图片、外部字体、追踪脚本或登录/工作台路由修改。
+   - 生产镜像 `omnibase-frontend:public-preview-i18n` 已通过 Next.js production build、Lint/type validity、13/13 static pages 和 `/public-preview` static prerender；运行容器只绑定 `127.0.0.1:3100`，并启用 read-only root、cap-drop ALL、no-new-privileges 与受限 cache tmpfs。
+   - `omnibase.chat` 已由 Cloudflare 代理到本机 `lss-tunnel`，公网 HTTPS `/public-preview` 返回 HTTP 200；Cloudflare 单一重定向 `omnibase-public-preview-root` 将根路径 `/` 以 `302` 跳转到 `/public-preview`，避免修改本地 Next.js `/` 的登录/鉴权语义。该发布依赖本机生产容器和 Tunnel 进程持续在线，不等于独立服务器或高可用托管已经完成。
+
 ### Plan B 后续与 B3 执行 Gate（2026-08-01）
 
 - 公开提交 `49fcc95` 新增 `docs/maintainers/benchmark/plan-b-followup.md`，作为 B1/B2 正式复核和 B3 外部执行契约。
@@ -1372,6 +1378,41 @@ git diff --check：passed
    - 必须选定目标 Linux isolation profile，真实实施并验证 cgroup、PID/mount/user namespace、seccomp/AppArmor 或 stronger runtime、default-deny egress、Broker-only 网络与短期 workload identity，再运行 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01`、`CROSS-01` 攻击矩阵。
    - P34.5 攻击 Gate 通过前，不得把 Docker Desktop/runc 宣称为生产安全 Sandbox，不得让 Sandbox 加入成员设备 Overlay，也不得连接真实 tenant/RAG/数据库能力。
 
+### P34.5A1 控制授权与 Runner 前置闭环（2026-08-01）
+
+> 完成口径：A1 只冻结真实 Runner 之前必须存在的授权、紧急控制、幂等与失败恢复契约；没有运行任何 workspace 命令，也没有创建容器、进程、网络、挂载或 provider 资源。
+
+1. **在线双验证 seam**
+
+   - `ComposedSandboxAuthorizer` 要求可信 wiring 分别返回 P34.4 live Run Lease/Node attestation/generation/Run+Node fencing 与 P34.2 live capability 结果；两者必须与同一个 `SandboxOperationRequest` 精确绑定，授权有效期取交集。
+   - 默认 `RejectingSandboxLeaseVerifier` 与 `RejectingSandboxCapabilityVerifier` 均 fail-closed；该层不接收、保存或回显 raw capability token，也不持有数据库 session 或核心凭据。
+
+2. **独立 emergency control**
+
+   - 新增只允许 `emergency_stop`/`emergency_destroy` 的 closed vocabulary；请求绑定可信 controller identity、tenant/workspace/run/node、内部 runtime handle、Workspace generation、Run/Node fencing、reason code 与 deadline。
+   - workload grant 被撤销后，普通 lifecycle 继续拒绝；紧急控制不依赖该 workload grant，但仍必须通过独立 `SandboxControlAuthorizer`。未装配时 `RejectingSandboxControlAuthorizer` 拒绝，不能匿名 destroy。
+
+3. **durable operation 与 Runner 默认拒绝**
+
+   - `InMemorySandboxOperationStore` 只作为 test-only 语义模型：同 operation ID + 相同 request/spec digest 是 exact replay；digest drift 冲突；provider outcome ambiguous 后不能重新 dispatch，只能进入显式 reconciliation；terminal operation 不可复活。
+   - `RunnerIsolationProfile` 冻结 Linux/cgroup v2/user+PID+mount+network namespace/seccomp/LSM/有界 kill 的目标契约；`UnavailableSandboxRunner` 是生产默认，所有 execute/terminate 调用仍返回 unavailable。
+
+4. **局部 Gate 证据**
+
+   - focused pytest：A0 + A1 `23 passed in 2.01s`（最终 Docker 复验；前一轮为 `1.73s`）。
+   - backend 全部非 integration：`790 passed / 9 skipped / 11 deselected in 26.18s`。
+   - Mypy：`Success: no issues found in 7 source files`。
+   - Ruff check：`All checks passed`；Ruff format：`9 files already formatted`。
+   - maintainer map 宿主权威脚本：`17 invariants / 14 modules / 122 path specs / 748 matched files / 63 entrypoints / 14 discovered HTTP entrypoints / 38 verification commands`，PASS；Docker bind-mount 全仓遍历一次在 184 秒超时，该超时不伪装为通过。
+   - maintainer benchmark：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`，PASS。
+   - A1 源码审计确认未导入 Docker、HTTP client、`os`、`pathlib`、socket 或 subprocess；没有真实 Runner/provider side effect。
+
+5. **下一阻断项**
+
+   - 仍需实现 production DB-backed P34.4/P34.2 verifier adapter、durable operation/audit/reconciliation 存储和独立 Linux Runner transport/deployment。
+   - 仍需在目标 Linux profile 上真实证明 cgroup、namespace、seccomp/LSM、writable layer、symlink/hardlink/device 防护、有界强杀与 default-deny 网络，然后运行完整 P34.5 攻击矩阵。
+   - 在上述 Gate 通过前，A1 不得标记为“可以安全执行敌对代码”，也不得接入真实 tenant/RAG/数据库、成员 Overlay 或长期凭据。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
@@ -1379,7 +1420,7 @@ git diff --check：passed
 - **P34.2 ✅ 工程验收、待原子提交/业务 migration 授权**：只读 Capability Gateway、Capability Ledger 与 TypeScript/Python SDK 契约已完成；默认 attestor/verifier 仍 fail-closed，真实 runtime 身份接入等待 P34.4/P34.5。
 - **P34.3 ✅ 工程验收、待原子提交/业务 migration 授权**：Foundation、CRUD/DDL、create-table bootstrap、完整 aggregate 锁序、atomic lifecycle、User-RBAC structured write Router、真实 lock/statement timeout、状态竞态、并发 exact replay 和 fresh sentinel PostgreSQL Gate 已完成；Router 默认 503，Workspace/Agent write、任意 SQL与普通业务 migration 继续关闭。
 - **P34.4 ✅ 元数据逻辑控制面与 fake/local harness 工程封板**：17 张 global 表、版本化模板、Workspace aggregate membership/RBAC/scope、Workspace/Run 生命周期、Run/Node/Network fencing、实时 attestation、terminal Run 不可复活、Node/Peer/Service/Authority 统一锁序与 synthetic collaboration harness 已通过 Gate；logical Network Lease 不调用 provider。真实 Overlay/VPN、Sandbox、成员网络和真实数据接入不在该完成口径内。
-- **P34.5A0 ✅ 公开工程 Gate**：strict Sandbox contracts、在线 authorization seam、拒绝型默认、`deny_all` 网络契约与 metadata-only harness 已完成并进入公开 `main`；真实执行和网络 side effect 仍为 hard deny。
+- **P34.5A0 ✅ 公开工程 Gate / P34.5A1 ✅ 当前工作树局部 Gate**：A0 strict Sandbox contracts、拒绝型默认、`deny_all` 网络与 metadata-only harness 已进入公开 `main`；A1 live 双验证 seam、独立 emergency control、durable operation/reconciliation 与拒绝型 Runner 契约已通过局部测试。真实执行和网络 side effect 仍为 hard deny。
 - **P34.5A–D 冻结**：文件/网络/进程/身份/资源隔离与攻击 Gate 通过后，才把真实 run/session 接到 P34.2 只读网关；实现独立 Linux Runner、Sandbox network namespace、Workspace Network Broker、短期 mTLS workload identity 与首个 Overlay adapter。普通 Docker 仅作开发基线，Sandbox 不得直接加入成员设备 Overlay。
 - **P34.6**：workspace 私有表、派生索引、记忆、lineage，以及经审批、幂等和补偿进入规范资源的 promotion。
 - **P34.7**：快照恢复、完整 UI/SDK、真实最小闭环、攻击矩阵与生产总验收。
