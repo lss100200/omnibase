@@ -1,0 +1,27 @@
+name: omnibase-destructive-tests
+
+services:
+  postgres-test:
+    image: pgvector/pgvector:0.8.5-pg15-bookworm
+    environment:
+      POSTGRES_USER: omnibase_test_owner
+      POSTGRES_PASSWORD: ${TEST_DATABASE_OWNER_PASSWORD:?TEST_DATABASE_OWNER_PASSWORD is required}
+      POSTGRES_DB: ${TEST_DATABASE_NAME:-omnibase_test_local}
+      TEST_DATABASE_ROLE: ${TEST_DATABASE_ROLE:-omnibase_test_runner}
+      TEST_DATABASE_PASSWORD: ${TEST_DATABASE_PASSWORD:?TEST_DATABASE_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${TEST_DATABASE_PORT:-55432}:5432"
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+      - ./backend/tests/postgres-init-destructive-tests.sh:/docker-entrypoint-initdb.d/10-destructive-tests.sh:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} && PGPASSWORD=$${TEST_DATABASE_PASSWORD} psql -U $${TEST_DATABASE_ROLE} -d $${POSTGRES_DB} -c 'SELECT 1' >/dev/null",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: "no"

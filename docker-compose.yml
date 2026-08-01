@@ -1,0 +1,285 @@
+# OmniBase - Docker Compose
+#
+# 一键启动 5 个服务：pgvector / MinIO / Redis / backend / frontend
+# 使用：make up  或  docker compose up -d
+#
+# 首次启动会拉镜像，约 3-5 分钟。后续启动秒级。
+
+name: omnibase
+
+services:
+  # ============================================================
+  # PostgreSQL 15 + pgvector 扩展
+  # 同时承载关系数据与向量数据（每租户独立 schema）
+  # ============================================================
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg15-bookworm
+    container_name: omnibase-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omnibase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required, see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-omnibase}
+      # 预留 pgvector 扩展（在每个租户 schema 首次迁移时通过 SQL 创建）
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # 仅开发环境暴露，生产环境应去掉
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnibase} -d ${POSTGRES_DB:-omnibase}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - omnibase-net
+    shm_size: 1g  # pgvector 官方推荐：并行 HNSW 索引构建需要足够共享内存
+
+  # ============================================================
+  # MinIO - S3 兼容对象存储
+  # 存放用户上传的原文件 + 解析中间产物
+  # ============================================================
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: omnibase-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-omnibase}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required, see .env.example}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"   # S3 API
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"  # Web Console
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - omnibase-net
+
+  # ============================================================
+  # MinIO 初始化 - 自动创建 bucket
+  # 一次性任务，MinIO 启动后运行一次即退出
+  # ============================================================
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-02T08-27-28Z
+    container_name: omnibase-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-omnibase} ${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/${MINIO_BUCKET:-omnibase-files};
+      mc anonymous set none local/${MINIO_BUCKET:-omnibase-files};
+      echo 'MinIO bucket initialized.';
+      "
+    networks:
+      - omnibase-net
+    restart: "no"
+
+  # ============================================================
+  # Redis - 缓存 + 任务队列 + Refresh Token 存储
+  # Phase 0 仅装好，Celery 在 Phase 1 启用
+  # ============================================================
+  redis:
+    image: redis:7.4-alpine
+    container_name: omnibase-redis
+    restart: unless-stopped
+    command: >
+      sh -c "
+      if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes
+      else
+        redis-server --appendonly yes
+      fi
+      "
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - omnibase-net
+
+  # ============================================================
+  # 后端 - FastAPI (Python 3.11)
+  # 提供 REST API + WebSocket + OpenAPI 文档
+  # ============================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnibase-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 数据库
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-omnibase}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-omnibase}
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-omnibase}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-omnibase-files}
+      MINIO_SECURE: "false"
+      # Redis
+      REDIS_URL: redis://${REDIS_PASSWORD:+:$REDIS_PASSWORD@}redis:6379/0
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required, see .env.example}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      TENANT_MANAGEMENT_API_ENABLED: ${TENANT_MANAGEMENT_API_ENABLED:-false}
+      PLATFORM_ADMIN_TOKEN: ${PLATFORM_ADMIN_TOKEN:-}
+      # 应用
+      ENV: ${ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      # 文件上传
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
+      PYTHONPATH: /app/src
+      # HuggingFace mirror (China-friendly)
+      HF_ENDPOINT: https://hf-mirror.com
+      MODEL_CACHE_DIR: /app/models
+      MODEL_DOWNLOAD_ENABLED: ${MODEL_DOWNLOAD_ENABLED:-false}
+      RERANKER_MODEL_PATH: ${RERANKER_MODEL_PATH:-/app/models/bge-reranker-v2-m3}
+      # LLM (Phase 1: RAG Q&A)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      # Embedding index write lanes
+      EMBEDDING_INDEX_VERSION: ${EMBEDDING_INDEX_VERSION:-v1}
+      EMBEDDING_SHADOW_INDEX_VERSION: ${EMBEDDING_SHADOW_INDEX_VERSION:-}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # 开发模式：源码挂载，修改即热重载
+      - ./backend:/app
+      # 隔离虚拟环境，避免被宿主机覆盖
+      - backend_venv:/app/.venv
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - omnibase-net
+
+  # ============================================================
+  # Celery Worker — 后台文档摄取任务
+  # 从 Redis 消费任务，执行 RAG 摄取管道
+  # ============================================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnibase-celery-worker
+    restart: unless-stopped
+    command: celery -A omnibase.workers.app.celery_app worker --loglevel=info --concurrency=2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 数据库
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-omnibase}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-omnibase}
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-omnibase}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-omnibase-files}
+      MINIO_SECURE: "false"
+      # Redis (Celery broker + result backend)
+      REDIS_URL: redis://${REDIS_PASSWORD:+:$REDIS_PASSWORD@}redis:6379/0
+      # JWT (needed for app init)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required, see .env.example}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # 应用
+      ENV: ${ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PYTHONPATH: /app/src
+      # HuggingFace mirror
+      HF_ENDPOINT: https://hf-mirror.com
+      MODEL_CACHE_DIR: /app/models
+      MODEL_DOWNLOAD_ENABLED: ${MODEL_DOWNLOAD_ENABLED:-false}
+      RERANKER_MODEL_PATH: ${RERANKER_MODEL_PATH:-/app/models/bge-reranker-v2-m3}
+      # LLM (RAG Q&A)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      # Embedding index write lanes
+      EMBEDDING_INDEX_VERSION: ${EMBEDDING_INDEX_VERSION:-v1}
+      EMBEDDING_SHADOW_INDEX_VERSION: ${EMBEDDING_SHADOW_INDEX_VERSION:-}
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+    networks:
+      - omnibase-net
+
+  # ============================================================
+  # 前端 - Next.js 14 (App Router)
+  # ============================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: omnibase-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      # Server-side API proxy target (used by next.config.js rewrites)
+      # Must point to the backend container hostname inside docker network
+      API_PROXY_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      # 开发模式：源码挂载，热重载
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - omnibase-net
+
+networks:
+  omnibase-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
+  backend_venv:
+  frontend_node_modules:
+  frontend_next:

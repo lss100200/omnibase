@@ -1,0 +1,132 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+*.whl
+pip-wheel-metadata/
+share/python-wheels/
+.installed.cfg
+MANIFEST
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- ML models (downloaded at runtime, not versioned) ---
+backend/models/
+.python-version
+
+# --- uv ---
+.uv-cache/
+
+# --- Testing & coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# --- Type checkers ---
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# --- Node / Next.js ---
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+.pnpm-store/
+
+# Next.js build output
+.next/
+out/
+build/
+next-env.d.ts
+
+# --- TypeScript ---
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Environment ---
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+!.env.example
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Database / runtime data ---
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+minio_data/
+redis_data/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Alembic (keep versions, ignore local state) ---
+backend/alembic.ini.local
+
+# --- Temporary ---
+*.tmp
+*.bak
+.cache/
+
+# --- Local agent/runtime state (never version) ---
+.omo/
+.zcode/
+.tmp/
+.tmp-docker-config/
+*_count_loc.py
+
+# Repository Skill evaluation output (definitions remain versioned)
+skills/_shared/eval-workspaces/

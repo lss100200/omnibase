@@ -1,0 +1,37 @@
+name: omnibase-frontend-production-benchmark
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        API_PROXY_URL: ${FRONTEND_PROD_API_PROXY_URL:-http://host.docker.internal:8000}
+    image: omnibase-frontend:production-benchmark
+    restart: "no"
+    init: true
+    environment:
+      API_PROXY_URL: ${FRONTEND_PROD_API_PROXY_URL:-http://host.docker.internal:8000}
+    ports:
+      - "127.0.0.1:${FRONTEND_PROD_PORT:-0}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=64m,uid=1001,gid=1001,mode=0750
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s

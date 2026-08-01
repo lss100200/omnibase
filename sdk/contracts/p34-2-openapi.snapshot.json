@@ -1,0 +1,36 @@
+{
+  "contract_version": 1,
+  "operations": {
+    "/gateway/v1/data/rows/read": {
+      "operation_id": "gateway_data_rows_read",
+      "request_schema": "DataRowsRequest",
+      "response_schema": "DataRowsResponse"
+    },
+    "/gateway/v1/data/schema/read": {
+      "operation_id": "gateway_data_schema_read",
+      "request_schema": "ResourceRequest",
+      "response_schema": "DataSchemaResponse"
+    },
+    "/gateway/v1/rag/citations/read": {
+      "operation_id": "gateway_rag_citations_read",
+      "request_schema": "CitationReadRequest",
+      "response_schema": "CitationReadResponse"
+    },
+    "/gateway/v1/rag/search": {
+      "operation_id": "gateway_rag_search",
+      "request_schema": "RagSearchRequest",
+      "response_schema": "RagSearchResponse"
+    }
+  },
+  "public_models": {
+    "CitationReadRequest": ["citation_ids", "max_bytes", "resource_id", "timeout_ms"],
+    "CitationReadResponse": ["bytes_out", "citations", "resource_id", "truncated"],
+    "DataRowsRequest": ["query", "resource_id"],
+    "DataRowsResponse": ["bytes_out", "next_cursor", "resource_id", "resource_version", "row_count", "rows", "truncated"],
+    "DataSchemaResponse": ["columns", "resource_id", "resource_version"],
+    "RagSearchRequest": ["max_bytes", "query", "resource_id", "timeout_ms", "top_k"],
+    "RagSearchResponse": ["bytes_out", "resource_id", "results", "total_found", "truncated"],
+    "ReadQuery": ["columns", "cursor", "filter", "limit", "max_bytes", "order_by", "timeout_ms"],
+    "ResourceRequest": ["resource_id"]
+  }
+}

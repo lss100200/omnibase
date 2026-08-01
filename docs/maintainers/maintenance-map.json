@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "purpose": "Machine-readable repair map for local AI maintainers. Paths are repository-relative and commands are run from the repository root unless a command changes directory explicitly.",
+  "frozen_boundaries": [
+    "P34.4 AI Workspace Runtime",
+    "P34.5 Sandbox and Overlay Network",
+    "Agent Runtime orchestration beyond the existing control/capability/data foundation"
+  ],
+  "sources_of_truth": [
+    "Runtime source and database constraints",
+    "Alembic migrations 0001 through 0006",
+    "OpenAPI and SDK contract snapshots",
+    "Passing unit and disposable-database integration tests",
+    "docs/maintainers/security-invariants.md",
+    "docs/handover-report.md for phase status and evidence"
+  ],
+  "invariants": [
+    {
+      "id": "INV-001",
+      "title": "Live principal revalidation",
+      "document": "docs/maintainers/security-invariants.md#inv-001-live-principal",
+      "source_paths": [
+        "backend/src/omnibase/auth/**",
+        "backend/src/omnibase/tenants/dependencies.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_tenants.py",
+        "backend/tests/integration/test_auth_e2e.py"
+      ]
+    },
+    {
+      "id": "INV-002",
+      "title": "Tenant and schema binding",
+      "document": "docs/maintainers/security-invariants.md#inv-002-tenant-schema-binding",
+      "source_paths": [
+        "backend/src/omnibase/tenants/**",
+        "backend/src/omnibase/db/tenant.py"
+      ],
+      "test_paths": [
+        "backend/tests/integration/test_phase_1_6_tenant_foundation.py",
+        "backend/tests/test_tenants.py"
+      ]
+    },
+    {
+      "id": "INV-003",
+      "title": "Logical identifiers only at public boundaries",
+      "document": "docs/maintainers/security-invariants.md#inv-003-logical-identifiers-only",
+      "source_paths": [
+        "backend/src/omnibase/control_plane/**",
+        "backend/src/omnibase/capability_gateway/contracts.py",
+        "backend/src/omnibase/controlled_data/contracts.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_2_gateway_api.py",
+        "backend/tests/test_p34_3_controlled_data_api.py",
+        "sdk/contracts/test_openapi_contract.py"
+      ]
+    },
+    {
+      "id": "INV-004",
+      "title": "Capability scope, lifetime and budget binding",
+      "document": "docs/maintainers/security-invariants.md#inv-004-capability-scope-budget",
+      "source_paths": [
+        "backend/src/omnibase/capabilities/**",
+        "backend/src/omnibase/capability_gateway/security.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_2_capability_service.py",
+        "backend/tests/integration/test_p34_2_capability_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-005",
+      "title": "Fail-closed boundaries",
+      "document": "docs/maintainers/security-invariants.md#inv-005-fail-closed-boundaries",
+      "source_paths": [
+        "backend/src/omnibase/core/rate_limit.py",
+        "backend/src/omnibase/capability_gateway/app.py",
+        "backend/src/omnibase/capability_gateway/security.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_rate_limit.py",
+        "backend/tests/test_p34_2_gateway_api.py",
+        "backend/tests/test_http_boundaries.py"
+      ]
+    },
+    {
+      "id": "INV-006",
+      "title": "Append-only audit",
+      "document": "docs/maintainers/security-invariants.md#inv-006-append-only-audit",
+      "source_paths": [
+        "backend/src/omnibase/control_plane/models.py",
+        "backend/src/omnibase/capability_gateway/audit.py",
+        "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py"
+      ],
+      "test_paths": [
+        "backend/tests/integration/test_p34_3_controlled_data_foundation.py",
+        "backend/tests/integration/test_p34_3_controlled_data_executor.py"
+      ]
+    },
+    {
+      "id": "INV-007",
+      "title": "Approval and operation binding",
+      "document": "docs/maintainers/security-invariants.md#inv-007-approval-operation-binding",
+      "source_paths": [
+        "backend/src/omnibase/control_plane/service.py",
+        "backend/src/omnibase/controlled_data/operation_service.py",
+        "backend/src/omnibase/controlled_data/execution_service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_1_control_plane_service.py",
+        "backend/tests/test_p34_3_controlled_data_execution_service.py"
+      ]
+    },
+    {
+      "id": "INV-008",
+      "title": "Migration scope closed set",
+      "document": "docs/maintainers/security-invariants.md#inv-008-migration-scope-closed-set",
+      "source_paths": [
+        "backend/src/omnibase/migrations/env.py",
+        "backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py",
+        "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
+        "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_migration_scope_fail_closed.py",
+        "backend/tests/test_destructive_test_safety.py"
+      ]
+    },
+    {
+      "id": "INV-009",
+      "title": "Restore only into a new database",
+      "document": "docs/maintainers/security-invariants.md#inv-009-restore-to-new-database",
+      "source_paths": [
+        "scripts/database/**",
+        "docs/runbooks/postgresql-backup-restore.md"
+      ],
+      "test_paths": [
+        "scripts/database/verify_restore.py",
+        "backend/tests/test_destructive_test_safety.py"
+      ]
+    },
+    {
+      "id": "INV-010",
+      "title": "Source-complete repairability",
+      "document": "docs/maintainers/security-invariants.md#inv-010-source-complete-repairability",
+      "source_paths": [
+        "AGENTS.md",
+        "docs/maintainers/**",
+        ".github/workflows/infrastructure-gates.yml"
+      ],
+      "test_paths": [
+        "scripts/maintenance/validate_maintainer_map.py",
+        ".github/workflows/infrastructure-gates.yml"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "id": "runtime-composition",
+      "name": "Browser API runtime and composition root",
+      "source_paths": [
+        "backend/src/omnibase/main.py",
+        "backend/src/omnibase/api/**",
+        "backend/src/omnibase/database/**",
+        "backend/src/omnibase/core/**",
+        "docker-compose.yml"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/main.py:create_app",
+        "backend/src/omnibase/main.py:app",
+        "backend/src/omnibase/api/health.py:router",
+        "backend/src/omnibase/database/router.py:router"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/*",
+        "HTTP /health",
+        "HTTP /api/v1/health"
+      ],
+      "depends_on": [],
+      "invariants": ["INV-005", "INV-010"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_health.py tests/test_http_boundaries.py -q",
+        "docker compose config --quiet"
+      ],
+      "recovery": [
+        "Revert router or middleware composition without bypassing RequestContextMiddleware or body limits.",
+        "Use /health only as a probe; do not turn it into an authorization bypass."
+      ]
+    },
+    {
+      "id": "identity-tenancy",
+      "name": "Authentication, live principal and tenant schema binding",
+      "source_paths": [
+        "backend/src/omnibase/auth/**",
+        "backend/src/omnibase/tenants/**",
+        "backend/src/omnibase/db/models.py",
+        "backend/src/omnibase/db/tenant.py"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/auth/router.py:router",
+        "backend/src/omnibase/tenants/router.py:router",
+        "backend/src/omnibase/tenants/dependencies.py:get_current_principal"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/auth/*",
+        "HTTP /api/v1/tenants/*",
+        "FastAPI dependency CurrentPrincipal"
+      ],
+      "depends_on": ["runtime-composition", "migrations"],
+      "invariants": ["INV-001", "INV-002", "INV-005"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Disable tenant-management API by configuration if platform-admin behavior is uncertain.",
+        "Never trust token schema or role claims instead of live registry and tenant reads."
+      ]
+    },
+    {
+      "id": "document-ingestion",
+      "name": "Document lifecycle, object storage and Celery ingestion",
+      "source_paths": [
+        "backend/src/omnibase/documents/**",
+        "backend/src/omnibase/storage/**",
+        "backend/src/omnibase/workers/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/documents/router.py:router",
+        "backend/src/omnibase/workers/app.py:celery_app",
+        "backend/src/omnibase/workers/tasks.py:ingest_document_task"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/documents/*",
+        "Celery task omnibase.workers.tasks.ingest_document_task"
+      ],
+      "depends_on": ["identity-tenancy", "rag-pipeline"],
+      "invariants": ["INV-001", "INV-002", "INV-005", "INV-010"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_documents.py tests/test_workers.py -q"
+      ],
+      "recovery": [
+        "Keep durable document state transitions authoritative; retries must not fabricate success.",
+        "Object storage failures must leave a repairable failed state and must not cross tenant prefixes."
+      ]
+    },
+    {
+      "id": "rag-pipeline",
+      "name": "Parsing, chunking, embedding, retrieval, reranking and answer APIs",
+      "source_paths": ["backend/src/omnibase/rag/**"],
+      "entrypoints": [
+        "backend/src/omnibase/rag/router.py:router",
+        "backend/src/omnibase/rag/ingest.py:ingest_document",
+        "backend/src/omnibase/rag/retriever.py:hybrid_search"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/rag/search",
+        "HTTP /api/v1/rag/playground",
+        "HTTP /api/v1/rag/ask"
+      ],
+      "depends_on": ["identity-tenancy", "document-ingestion"],
+      "invariants": ["INV-001", "INV-002", "INV-003", "INV-005", "INV-010"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_rag_store.py tests/test_rag_sse.py tests/test_reranker_boundary.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/rag"
+      ],
+      "recovery": [
+        "Keep model download disabled by default and preserve local_files_only boundaries.",
+        "If reranking is unavailable, retain the documented deterministic fallback instead of network download."
+      ]
+    },
+    {
+      "id": "control-plane",
+      "name": "Logical resources, operations, approvals, idempotency and audit ledger",
+      "source_paths": ["backend/src/omnibase/control_plane/**"],
+      "entrypoints": [
+        "backend/src/omnibase/control_plane/router.py:router",
+        "backend/src/omnibase/control_plane/service.py:authorize_operation"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/control-plane/resources/*",
+        "HTTP /api/v1/control-plane/operations/*",
+        "HTTP /api/v1/control-plane/approvals/*",
+        "HTTP /api/v1/control-plane/audit/events"
+      ],
+      "depends_on": ["identity-tenancy", "migrations"],
+      "invariants": ["INV-002", "INV-003", "INV-006", "INV-007"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_1_control_plane_api.py tests/test_p34_1_control_plane_models.py tests/test_p34_1_control_plane_service.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/control_plane"
+      ],
+      "recovery": [
+        "Do not repair operation state by direct row edits; use a forward-fix that preserves version and audit history.",
+        "Treat an approval/operation binding mismatch as a security incident and fail closed."
+      ]
+    },
+    {
+      "id": "capability-ledger",
+      "name": "Capability grants, delegation, tokens, revocation and budgets",
+      "source_paths": ["backend/src/omnibase/capabilities/**"],
+      "entrypoints": [
+        "backend/src/omnibase/capabilities/service.py:create_grant",
+        "backend/src/omnibase/capabilities/service.py:delegate_grant",
+        "backend/src/omnibase/capabilities/service.py:verify_capability",
+        "backend/src/omnibase/capabilities/service.py:consume_budget"
+      ],
+      "public_interfaces": [
+        "Internal trusted issuer service",
+        "Signed capability token contract"
+      ],
+      "depends_on": ["control-plane", "identity-tenancy"],
+      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/capabilities"
+      ],
+      "recovery": [
+        "Revoke affected grants and rotate signing keys through an audited forward-fix; do not relax claim validation.",
+        "Budget or ancestry uncertainty must reject the capability."
+      ]
+    },
+    {
+      "id": "capability-gateway",
+      "name": "Independent non-browser capability gateway",
+      "source_paths": ["backend/src/omnibase/capability_gateway/**"],
+      "entrypoints": [
+        "backend/src/omnibase/capability_gateway/app.py:create_gateway_app",
+        "backend/src/omnibase/capability_gateway/router.py:router",
+        "backend/src/omnibase/capability_gateway/service.py:GatewayService"
+      ],
+      "public_interfaces": [
+        "HTTP /gateway/v1/data/schema/read",
+        "HTTP /gateway/v1/data/rows/read",
+        "HTTP /gateway/v1/rag/search",
+        "HTTP /gateway/v1/rag/citations/read"
+      ],
+      "depends_on": ["capability-ledger", "control-plane", "rag-pipeline"],
+      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/capability_gateway",
+        "docker compose run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py -q"
+      ],
+      "recovery": [
+        "Return to RejectingCapabilityVerifier and RejectingWorkloadAttestor when trusted wiring is unavailable.",
+        "Never fall back to browser cookies, raw SQL, physical locators, or unaudited adapters."
+      ]
+    },
+    {
+      "id": "controlled-data",
+      "name": "Controlled DDL and CRUD execution lifecycle",
+      "source_paths": ["backend/src/omnibase/controlled_data/**"],
+      "entrypoints": [
+        "backend/src/omnibase/controlled_data/router.py:router",
+        "backend/src/omnibase/controlled_data/router.py:mutate_rows",
+        "backend/src/omnibase/controlled_data/create_table_bootstrap.py:bootstrap_create_table",
+        "backend/src/omnibase/controlled_data/executor.py:execute_controlled_crud",
+        "backend/src/omnibase/controlled_data/ddl.py:authorize_apply"
+      ],
+      "public_interfaces": [
+        "HTTP /api/v1/controlled-data/rows/mutate",
+        "Internal controlled DDL contracts"
+      ],
+      "depends_on": ["identity-tenancy", "control-plane", "capability-ledger", "migrations"],
+      "invariants": ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests -k p34_3 -q",
+        "docker compose run --rm --no-deps backend mypy src/omnibase/controlled_data",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Preserve lock order, transaction ownership, idempotency and audit coupling; revert the whole lifecycle change if any part is uncertain.",
+        "Do not expose or accept physical SQL identifiers as a repair shortcut."
+      ]
+    },
+    {
+      "id": "migrations",
+      "name": "Global and tenant Alembic migration chain",
+      "source_paths": [
+        "backend/src/omnibase/migrations/**",
+        "backend/alembic.ini",
+        "docker-compose.destructive-tests.yml",
+        "Makefile"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/migrations/env.py:run_migrations_offline",
+        "backend/src/omnibase/migrations/env.py:run_migrations_online",
+        "backend/src/omnibase/cli/main.py:main"
+      ],
+      "public_interfaces": [
+        "Alembic revisions 0001-0006",
+        "make test-destructive",
+        "omnibase migrate"
+      ],
+      "depends_on": [],
+      "invariants": ["INV-002", "INV-006", "INV-008", "INV-009"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest tests/test_migration_scope_fail_closed.py tests/test_destructive_test_safety.py -q",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Use forward-fix for P34 production failures.",
+        "For restore, create a new omnibase_restore_* database and verify before cutover."
+      ]
+    },
+    {
+      "id": "frontend",
+      "name": "Next.js browser application and API proxy",
+      "source_paths": [
+        "frontend/app/**",
+        "frontend/lib/**",
+        "frontend/next.config.js",
+        "frontend/Dockerfile",
+        "docker-compose.frontend-production.yml"
+      ],
+      "entrypoints": [
+        "frontend/app/layout.tsx:RootLayout",
+        "frontend/lib/api.ts:api"
+      ],
+      "public_interfaces": [
+        "Browser routes /login /register /dashboard /knowledge /database /chat /playground /settings",
+        "Next.js rewrite to backend /api/v1"
+      ],
+      "depends_on": ["runtime-composition", "identity-tenancy", "document-ingestion", "rag-pipeline"],
+      "invariants": ["INV-001", "INV-005", "INV-010"],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build"
+      ],
+      "recovery": [
+        "Keep browser API paths logical and same-origin; do not embed service credentials in client bundles.",
+        "Use the production Compose smoke configuration to distinguish dev-mode latency from production behavior."
+      ]
+    },
+    {
+      "id": "sdk-contracts",
+      "name": "OpenAPI contract and project-local Python/TypeScript SDKs",
+      "source_paths": ["sdk/**"],
+      "entrypoints": [
+        "sdk/python/src/omnibase_sdk/client.py:OmniBaseClient",
+        "sdk/typescript/src/client.ts:OmniBaseClient",
+        "sdk/contracts/test_openapi_contract.py:test_gateway_openapi_matches_frozen_snapshot"
+      ],
+      "public_interfaces": [
+        "Python package omnibase-sdk",
+        "TypeScript package @omnibase/sdk",
+        "P34.2 OpenAPI snapshot"
+      ],
+      "depends_on": ["capability-gateway"],
+      "invariants": ["INV-003", "INV-004", "INV-005", "INV-010"],
+      "verification": [
+        "docker compose run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q",
+        "cd sdk/typescript && npm ci --ignore-scripts && npm test && npm run typecheck"
+      ],
+      "recovery": [
+        "Regenerate and review contract snapshots only when the public interface intentionally changes.",
+        "Reject physical locator fields and unsafe extra response data in both SDKs."
+      ]
+    },
+    {
+      "id": "operations-recovery",
+      "name": "CI gates, backup, restore and operator runbooks",
+      "source_paths": [
+        ".github/workflows/infrastructure-gates.yml",
+        "scripts/database/**",
+        "scripts/maintenance/validate_maintainer_map.py",
+        "scripts/maintenance/validate_maintainer_benchmark.py",
+        "docs/maintainers/benchmark/**",
+        "docs/runbooks/**",
+        "Makefile"
+      ],
+      "entrypoints": [
+        "scripts/database/backup.py:main",
+        "scripts/database/restore_to_new_database.py:main",
+        "scripts/database/verify_restore.py:main",
+        "scripts/maintenance/validate_maintainer_map.py:main",
+        "scripts/maintenance/validate_maintainer_benchmark.py:main"
+      ],
+      "public_interfaces": [
+        "GitHub Actions infrastructure gates",
+        "Database operator CLI scripts",
+        "Migration and recovery runbooks",
+        "P34.3 maintainer-map benchmark protocol and suite"
+      ],
+      "depends_on": ["migrations", "runtime-composition", "sdk-contracts"],
+      "invariants": ["INV-008", "INV-009", "INV-010"],
+      "verification": [
+        "docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "python -m compileall -q scripts/database scripts/maintenance",
+        "docker compose config --quiet"
+      ],
+      "recovery": [
+        "Follow docs/runbooks/postgresql-backup-restore.md and verify the new database before cutover.",
+        "Do not weaken sentinel names, disposable Compose project guards, or cleanup confirmation words."
+      ]
+    }
+  ]
+}

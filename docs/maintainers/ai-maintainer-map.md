@@ -1,0 +1,517 @@
+# OmniBase 本地 AI 维护者地图
+
+本文面向未来在本地仓库中工作的 AI 维护者。目标不是复述产品愿景，而是给出一条可以从公开源码重建、定位、修改、验证和恢复 OmniBase 的最短可靠路径。
+
+本文只描述当前源码已经存在的边界。阶段完成情况和历史验证证据仍以 `docs/handover-report.md` 为准；本文中的模块关系不能代替源码、数据库约束、迁移、契约快照或测试结果。
+
+## 1. 开始任何修改前
+
+按以下顺序读取：
+
+1. `AGENTS.md`：仓库级维护契约、冻结边界和安全工作流。
+2. `docs/maintainers/maintenance-map.json`：机器可读模块、依赖、不变量、验证和恢复入口。
+3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-010 的权威维护约束。
+4. 本文：运行入口、调用方向、边界和影响矩阵。
+5. 目标模块源码，以及机器地图列出的迁移、契约和测试。
+6. `docs/handover-report.md`：当前阶段状态、最近验证证据和尚未授权的动作。
+
+发生冲突时，不要猜测。运行时源码、数据库约束、Alembic 迁移、OpenAPI/SDK 契约和通过的测试优先于叙述性文档；阶段是否解锁、是否迁移过业务数据库等历史事实则以交接报告中的直接证据为准。发现维护文档过期时，应在获得相应修改范围后同步修正，不能让本地记忆或私有对话成为隐藏的事实来源。
+
+## 2. 当前系统总图
+
+```mermaid
+flowchart LR
+    Browser["Browser / Next.js"] -->|"same-origin /api/v1"| Main["Main ASGI\nomnibase.main:app"]
+    Main --> Auth["Auth + live Principal"]
+    Auth --> Tenant["Tenant registry + tenant schema binding"]
+    Main --> Docs["Documents API"]
+    Docs --> MinIO["MinIO object storage"]
+    Docs --> Redis["Redis / Celery broker"]
+    Redis --> Worker["Celery worker"]
+    Worker --> MinIO
+    Worker --> RAG["Parse / chunk / embed / RAG store"]
+    Main --> RAG
+    Main --> CP["P34.1 Control Plane"]
+    Main --> CD["P34.3 Controlled Data\ndefault 503 until executor injection"]
+    CD --> CP
+    CD --> Cap["P34.2 Capability ledger models"]
+
+    Workload["Trusted workload client / SDK"] -->|"/gateway/v1"| Gateway["Independent Gateway ASGI\ncreate_gateway_app()"]
+    Gateway --> Attest["Workload attestation + capability verification"]
+    Attest --> Cap
+    Gateway --> CP
+    Gateway --> RAG
+    Gateway --> Data["Controlled read adapters"]
+
+    PG["PostgreSQL\nomnibase_meta + tenant schemas"]
+    Tenant --> PG
+    RAG --> PG
+    CP --> PG
+    Cap --> PG
+    CD --> PG
+    Data --> PG
+```
+
+图中的两个 HTTP 入口不是同一个应用：
+
+- 浏览器和用户 API 的组合根是 `backend/src/omnibase/main.py:app`，Dockerfile 当前以 `uvicorn omnibase.main:app ...` 启动。
+- Capability Gateway 由 `backend/src/omnibase/capability_gateway/app.py:create_gateway_app` 创建，是独立、非浏览器 ASGI 应用。当前源码没有把它挂载到 Main ASGI，也没有在主 `docker-compose.yml` 中定义 Gateway 服务。
+- Gateway 的默认 `RejectingWorkloadAttestor`、`RejectingCapabilityVerifier` 和 unavailable adapters 会拒绝或不可用；只有部署方显式注入可信 attestation、capability verifier、cursor secret 和 adapters 后才能开放对应能力。
+- 不得为了“先跑起来”把 Gateway 挂入 `/api/v1`、用浏览器 JWT/cookie 替代 workload identity，或让 SDK 直连数据库。
+
+## 3. Main ASGI 与 `/api/v1` 路由
+
+`backend/src/omnibase/main.py:create_app` 负责：
+
+- 初始化 Request Body Limit、CORS 和 Request Context middleware；
+- 在 lifespan 中预热数据库、确保 `omnibase_meta` schema 和 `public.vector` extension 存在，并检查 MinIO；
+- 把业务 Router 统一挂到 `APIRouter(prefix="/api/v1")`；
+- 提供根路径 `/health`、`/health/ready` 作为探针兼容入口；
+- 在开发环境开放 `/docs`、`/redoc` 和 `/openapi.json`，生产环境关闭这些入口。
+
+应用启动只确保基础 schema/extension 存在，不会代替完整 Alembic migration。数据库版本变更必须走受控 migration 流程。
+
+### 3.1 当前路由面
+
+| 路由族 | 当前入口 | 身份/权限 | 关键边界 |
+|---|---|---|---|
+| Health | `/health`, `/health/ready`, `/api/v1/health`, `/api/v1/health/ready` | 探针 | liveness 不访问依赖；readiness 检查 PostgreSQL、MinIO、Redis |
+| Auth | `/api/v1/auth/register`, `/login`, `/refresh`, `/me` | register/login/refresh 按各自契约；`me` 需用户身份 | Access token 只作为重新解析实时 Principal 的起点 |
+| Tenant 管理 | `/api/v1/tenants`, `/by-slug/{slug}`, `/{tenant_id}` | `require_platform_admin`；默认配置关闭时返回 404 | 平台管理 token 与用户 JWT 是不同边界；删除是停用，保留 schema |
+| Documents | `/api/v1/documents...` | `get_current_tenant` | 不接受 tenant 参数；MinIO key 以 tenant schema 命名空间隔离 |
+| Database browser | `/api/v1/database/tables` | `get_current_tenant` + tenant DB | 仅允许列出白名单表/列的 metadata；没有任意 SQL HTTP 接口 |
+| RAG | `/api/v1/rag/search`, `/playground`, `/ask` | `get_current_tenant` + RAG rate limit | Browser 用户通道；`ask` 使用 SSE，和 workload Gateway 通道不同 |
+| P34.1 Control Plane | `/api/v1/control-plane/resources`, `/operations`, `/approvals`, `/audit/events` 及单项读取 | tenant admin + tenant DB | 当前 HTTP 面只读；跨 tenant ID 与不存在统一按 404 处理 |
+| P34.3 Controlled Data | `/api/v1/controlled-data/rows/mutate` | `get_current_principal` | 只接受逻辑 Resource/Column UUID 和结构化 mutation；默认未安装 executor 时稳定 503 |
+
+当前没有公开的任意 SQL、公开 DDL apply、浏览器 Capability 签发、Workspace Runtime 或 Agent Runtime 路由。
+
+## 4. Auth、Principal 与 Tenant schema 链
+
+受保护的浏览器请求必须沿以下链路完成，不能删减为“JWT 验签通过”：
+
+```text
+Authorization: Bearer <access token>
+  -> auth.security.decode_access_token()
+     验证签名、过期时间和 access token 类型
+  -> 要求 token 含 tenant_id 与 sub
+  -> tenants.service.get_tenant_by_id()
+     从 omnibase_meta.tenants 重新读取当前有效 Tenant
+  -> validate_schema_name(tenant.schema_name)
+  -> set_current_schema() 写入请求 ContextVar
+  -> _load_active_user()
+     创建显式 tenant-bound Session，重新读取当前 active User 与角色
+  -> CurrentPrincipal(tenant, user, token)
+  -> get_current_tenant() / require_tenant_admin() / get_tenant_db()
+  -> SQLAlchemy after_begin hook
+     校验 ContextVar 与 Session schema 一致
+     SET LOCAL search_path TO tenant_schema, omnibase_meta, public
+```
+
+维护要点：
+
+- `tenant_id` 和 `sub` 来自已验证 token，但 tenant 是否启用、user 是否启用、user 当前角色必须重新查数据库。
+- token 中历史 `schema_name` 或角色信息不是当前授权事实。Refresh 也会重新解析 canonical Tenant 和 active User。
+- `get_tenant_db()` 同时设置 `TENANT_SCHEMA_SESSION_KEY` 与 `TENANT_CONTEXT_REQUIRED_SESSION_KEY`。缺少活跃 context、context/session 不一致或 schema 名不合法都必须失败。
+- 连接从池中 checkout 时先恢复 `omnibase_meta, public` baseline；tenant search path 使用事务级 `SET LOCAL`，避免连接复用残留。
+- 业务表 ORM 位于无固定 schema 的 `TENANT_METADATA`，因此正确的 tenant binding 是访问 `users`、`documents`、`embeddings` 等表的前置安全条件。
+- Login 在 tenant 尚未知时会遍历 active tenant schemas 查找用户，这是登录发现流程，不得复制为受保护请求的授权捷径。
+
+## 5. Documents、Celery 与 RAG
+
+### 5.1 上传和异步摄取
+
+当前调用方向：
+
+```text
+POST /api/v1/documents
+  -> documents.router.upload_endpoint
+  -> documents.service.upload_document
+     -> 校验 filename / MIME / size
+     -> MinIO put_object: <tenant_schema>/<document_id>/<filename>
+     -> tenant documents row: pending
+     -> 可选同步 PDF metadata 提取
+     -> 持久化 queued
+     -> enqueue_ingest() 只发送五个 durable identifiers
+  -> Redis broker
+  -> workers.tasks.ingest_document_task
+     -> 从 MinIO 下载对象
+     -> tenant_scope(schema_name)
+     -> documents row: processing
+     -> rag.ingest.ingest_document
+        -> parse -> chunk -> embedding
+        -> 删除该 document 的旧 V1 chunks
+        -> 写入 authoritative V1 embeddings
+        -> 配置允许时 best-effort 写入 V2 shadow lane
+     -> documents row: indexed 或 failed
+```
+
+关键语义：
+
+- 上传在 dispatch 前先持久化 `queued`，避免快速 Worker 把状态推进后又被上传线程覆盖。
+- Broker dispatch 失败只在 row 仍为 `queued` 时 compare-and-set 为 `failed`。
+- Celery task 只接收 `schema_name`、`document_id`、`minio_key`、`filename`、`mime_type`，不传文件字节、JWT、Header 或请求上下文。
+- Worker 对有限的基础设施异常做有界重试；终止错误写入安全裁剪后的 `failed` 状态，不能伪造 `indexed`。
+- 删除文档时，`pending`、`queued`、`processing` 状态会阻止删除；对象存储、数据库和 RAG chunks 的一致性修改必须一起审查。
+- Phase 1.6 当前仍以 V1 为唯一权威主通道。V2 是可重建 shadow lane；生产回填、cutover 和删除 V1 均冻结。
+
+### 5.2 Browser RAG 与 Gateway RAG
+
+Browser RAG：
+
+- `rag.router` 通过 `get_current_tenant` 获得 schema；
+- `hybrid_search()` 在同一个 index lane 中执行 vector 与 BM25，RRF 融合后可进入 reranker；
+- `/rag/ask` 把检索结果作为 citation context 交给 LLM，并以 SSE 输出 citations、chunks 和 done/error；
+- embedding/reranker/LLM 的可用性和降级语义由各自模块与测试约束，不能通过在线下载或无界线程绕过配置边界。
+
+Gateway RAG：
+
+- workload 只能调用 `/gateway/v1/rag/search` 和 `/gateway/v1/rag/citations/read`；
+- Gateway 先完成 workload attestation、capability verification、budget reservation、logical Resource 解析和 policy 检查，再调用 `CanonicalRagReadAdapter`；
+- Gateway adapter 可以复用 canonical retriever/reranker，但身份、预算、审计和响应 DTO 仍由 Gateway 强制执行；
+- Browser JWT、前端 localStorage token 和 Gateway capability 不可互换。
+
+## 6. P34.1–P34.3 调用方向
+
+### 6.1 P34.1 Control Plane：治理事实底座
+
+`backend/src/omnibase/control_plane` 定义和管理：
+
+- `resource_registry`：逻辑资源、tenant/workspace/owner、版本、状态与 policy class；
+- `resource_lineage`：资源派生关系；
+- `operations`：持久操作状态、版本、风险、进度和 deadline；
+- `approval_requests`：高风险审批及其 operation/resource/request hash 绑定；
+- `idempotency_records`：actor scope + operation name + key 的幂等事实；
+- `audit_events`：append-only 审计事件。
+
+Control Plane 是 Capability 与 Controlled Data 的上游，不应反向依赖具体 UI 或 SDK。当前 HTTP Router 只给 tenant admin 提供 tenant-scoped 读取；mutation service 保持内部调用。
+
+### 6.2 P34.2 Capability Ledger 与独立 Gateway：只读 workload 能力
+
+调用方向：
+
+```text
+Python/TypeScript SDK
+  -> 每次请求向 WorkloadCredentialProvider 取短期 credential
+  -> POST /gateway/v1/*
+  -> WorkloadAttestor
+  -> CapabilityVerifier
+     -> capabilities.service.verify_capability
+     -> grant ancestry / tenant / workspace / runtime / workload / action
+     -> resource/version / time window / revocation / online budgets
+  -> budget reservation commit
+  -> Resource Registry logical lookup
+  -> policy check
+  -> data or RAG read adapter
+  -> durable allowed/denied/error audit
+  -> bounded DTO response
+```
+
+公开 Gateway 动作只有：
+
+- `data.schema.read`
+- `data.rows.read`
+- `rag.search`
+- `rag.citation.read`
+
+Gateway 不接受任意 SQL、物理 schema/table/column、浏览器 cookie 或长期静态 service secret 作为授权替代。Capability grants、usage、revocations 和 signing-key registry 位于 `omnibase_meta`；revocation 是 append-only。
+
+### 6.3 P34.3 Controlled Data：结构化写入与内部 DDL
+
+当前浏览器写入调用方向：
+
+```text
+POST /api/v1/controlled-data/rows/mutate
+  -> live CurrentPrincipal
+  -> 必须存在显式安装且声明 supports_atomic_lifecycle 的 executor
+  -> server 在同一 lifecycle 中解析/锁定：
+     Tenant -> User -> Resource -> DataTableBinding -> DataColumnBindings
+     -> AuthorizationContext -> Operation -> Idempotency
+  -> 从 logical UUID 深冻结 TrustedMutationLocator
+  -> executor 在锁内重新验证 tenant/schema/resource/version/authorization
+  -> 参数化 INSERT / UPDATE / DELETE
+  -> mutation + Operation + Idempotency + success Audit 同事务提交
+  -> 失败时写事务回滚，再以独立事务写 code-only failure Audit
+```
+
+必须保留的边界：
+
+- HTTP 请求只接受逻辑 Resource/Column UUID、结构化 predicate、版本、幂等键和预算；不接受 SQL、schema、table、column、CTID、AuthorizationContext 或 Operation ID。
+- User-RBAC row mutation 当前直接从 Main ASGI 进入 Controlled Data lifecycle，不通过 Capability Gateway；它仍使用实时 tenant/user/role 复核。
+- `create_table_bootstrap`、DDL plan/authorize/apply、outbox 和 compensation 是内部服务契约，没有公开任意 DDL HTTP 面。
+- Workspace/Agent write capability 未开放。不能把现有 User-RBAC route 改名后当成 Agent 写入口。
+- Main ASGI 默认不安装 `controlled_crud_executor`；缺失或 marker 不可信时返回 `503 controlled_write_unavailable`。这是生产 feature gate，不是待删除的临时代码。
+
+P34 的依赖方向应保持为：
+
+```text
+Control Plane
+  -> Capability Ledger
+  -> Capability Gateway / SDK read path
+
+Control Plane + Capability model bindings + Tenant/Principal
+  -> Controlled Data CRUD/DDL lifecycle
+
+Gateway adapters
+  -> Controlled read/RAG implementation
+
+不得形成：Adapter -> 绕过 Gateway 的公共入口，或 Controlled Data -> 接受公共 physical locator。
+```
+
+## 7. 数据库与 migration 边界
+
+### 7.1 物理边界
+
+| 区域 | 当前数据 |
+|---|---|
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations |
+| 每个 `tenant_*` schema | users、documents、V1/V2 embeddings、RAG index state，以及 P34.3 `controlled_data_operation_payloads` 和受控动态业务表 |
+| MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
+| Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
+
+### 7.2 Alembic 方向
+
+- migration 链当前为 `0001` 至 `0006`。
+- `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
+- 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
+- `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
+- offline `--sql` 只生成 global SQL，不能代替 tenant online staging 演练。
+- `0006` downgrade 在存在动态资源、payload、outbox 或 compensation 状态时会拒绝执行，避免静默丢失数据。
+- ORM 模型、迁移约束和运行服务必须同步审查；只修改 ORM 不会改变已部署数据库。
+- 普通业务数据库 migration、downgrade、restore、cleanup 都需要部署所有者明确授权。单元测试或 sentinel integration 通过不等于已经迁移业务数据库。
+
+## 8. SDK、Frontend 与 Operator 边界
+
+### 8.1 Python/TypeScript SDK
+
+- `sdk/python` 与 `sdk/typescript` 只包装独立 Gateway 的四个 P34.2 只读动作。
+- SDK transport 只允许 `POST /gateway/v1/...`，每次请求重新获取 workload credential，并限制 base URL、deadline、响应大小和 DTO 类型。
+- SDK 不是 Browser API client，不负责 `/api/v1/auth`、Documents、Control Plane 或 Controlled Data User-RBAC。
+- `sdk/contracts/p34-2-openapi.snapshot.json` 是冻结契约证据。Gateway DTO 有意变更时必须同步 Gateway、snapshot、Python SDK、TypeScript SDK 和各自测试。
+- SDK 不能接受或输出物理 locator、数据库 URL、凭据字段、宽松数值转换或额外未声明字段。
+
+### 8.2 Next.js Frontend
+
+- `frontend/lib/api.ts` 使用同源 `/api/v1`，由 `next.config.js` rewrite 到 Main ASGI。
+- Frontend 当前消费 Auth、Documents、metadata-only Database 和 Browser RAG；未消费独立 Gateway SDK。
+- 浏览器 access/refresh token 当前保存在 localStorage，并由 Axios interceptor/Bootstrap 管理。这是用户会话实现，不是 workload credential 实现。
+- UI 隐藏不能代替后端授权。新增页面或按钮时，后端 route、Principal、tenant predicate 和错误边界仍是权威。
+- 主 Compose 的 backend 使用 Uvicorn reload、frontend 使用 Next dev；`docker-compose.frontend-production.yml` 是独立 frontend production smoke/benchmark 配置，不会把后端或 Gateway 自动变为生产部署。
+
+### 8.3 Operator、Compose 与恢复工具
+
+- 主 Compose 当前编排 PostgreSQL/pgvector、MinIO、Redis、Main backend、Celery worker 和开发 frontend；普通 `omnibase-net` 是开发 bridge，不是 P34.5 Sandbox 网络隔离证明。
+- 当前 Compose 没有 Capability Gateway、Workspace Runtime、Sandbox Broker、Overlay provider 或 Agent Runtime 服务。
+- `omnibase migrate`、Makefile migration targets 和 Alembic 是 schema 变更入口；应用 startup 不是 migration runner。
+- `scripts/database/backup.py`、`restore_to_new_database.py`、`verify_restore.py` 和 `docs/runbooks/*` 是 operator 恢复边界。
+- 恢复只能创建新的 `omnibase_restore_*` 数据库，校验后由人工切换；不能覆盖、自动删除或原地猜修普通业务数据库。
+- `.github/workflows/infrastructure-gates.yml`、锁文件、Dockerfile 和 Compose 是 clean checkout 可重建性的组成部分。直接修改 `.venv`、运行容器、`site-packages`、`node_modules` 或本地数据库不构成源码修复。
+
+## 9. Source of Truth 顺序
+
+判断“系统实际上做什么”时使用以下顺序：
+
+1. 当前运行路径的源码和数据库级约束/trigger。
+2. Alembic `0001`–`0006`，包括 upgrade、downgrade 和 scope guard。
+3. OpenAPI 与 SDK contract snapshot，以及严格 DTO parser。
+4. 与目标行为对应且刚刚通过的单元测试、HTTP contract 测试和 disposable PostgreSQL integration tests。
+5. `security-invariants.md` 和 `maintenance-map.json` 中的维护契约。
+6. `handover-report.md` 中的阶段状态、授权边界和历史验证证据。
+7. Roadmap/实施计划中的未来设计。
+
+未来设计不能证明当前实现已经存在。例如实施计划中的 Workspace、Node Registry、Network Broker、Overlay adapter、Sandbox Runtime 和 Agent orchestration 仍是冻结方向；当前 tenant schema、Resource `workspace_id` 字段或普通 Docker bridge 都不等于这些能力已交付。
+
+## 10. 模块改动影响矩阵
+
+| 修改区域 | 直接影响 | 必须联动检查 | 最容易破坏的不变量 |
+|---|---|---|---|
+| `main.py`, middleware, `core/config.py` | 所有 Browser API、health、CORS、request ID、body limit | Frontend proxy、HTTP boundary、Compose healthcheck | INV-005, INV-010 |
+| `auth/**`, `tenants/**`, `core/db.py` | 所有受保护路由、tenant schema、当前角色 | Documents、RAG、Database、Control Plane、Controlled Data、Celery tenant scope | INV-001, INV-002, INV-005 |
+| `documents/**`, `storage/**`, `workers/**` | 上传、MinIO、durable status、异步 ingest | RAG chunks、delete 一致性、Redis/Celery、tenant object prefix | INV-002, INV-005, INV-010 |
+| `rag/**`, embedding/index config | Browser RAG、Gateway RAG、V1/V2 lane | Workers、Gateway adapter、citations、reranker/LLM fallback | INV-002, INV-003, INV-005 |
+| `control_plane/**` | Resource、Operation、Approval、Idempotency、Audit | Capability ledger、Gateway resolver/policy、Controlled Data lifecycle、0004/0006 | INV-003, INV-006, INV-007 |
+| `capabilities/**` | Grant、token、delegation、revocation、usage budget | Gateway security/service、authorization contexts、SDK contract | INV-003, INV-004, INV-005, INV-006 |
+| `capability_gateway/**` | 独立 workload read surface | Capability ledger、Control Plane、RAG/data adapters、OpenAPI snapshot、两种 SDK | INV-003, INV-004, INV-005, INV-006 |
+| `controlled_data/**` | User-RBAC mutation、内部 CRUD/DDL、atomic lifecycle | Principal、Control Plane、Capability FK、0006、integration concurrency/timeout | INV-002–INV-007 |
+| `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
+| `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
+| `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
+| Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
+
+跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
+
+## 11. 最小验证命令
+
+命令默认从仓库根目录运行。项目以容器为首选执行环境，宿主机没有 Python 不应成为跳过 Backend Gate 的理由。
+
+### 11.1 任意维护者地图或共享 Backend 边界改动
+
+```powershell
+docker compose run --rm --no-deps -v "${PWD}:/workspace" -w /workspace backend `
+  python scripts/maintenance/validate_maintainer_map.py --repo-root .
+docker compose config --quiet
+docker compose run --rm --no-deps backend mypy src
+docker compose run --rm --no-deps backend pytest -m "not integration" -q
+```
+
+维护者地图 validator 还会对 `backend/src/omnibase` 做保守的 source→map
+反向 HTTP 入口审计。扫描范围只包括 AST 可无歧义确认的顶层
+`APIRouter`/`FastAPI` 赋值、直接创建并返回 `FastAPI` 的顶层应用工厂，以及
+同文件对该工厂的顶层实例化；发现项必须被某个 module `entrypoints` 覆盖。
+它有意不枚举所有 public function、dependency 或被 router decorator 修饰的
+handler，避免把实现细节误报为架构入口。新增未映射入口时，错误会列出完整的
+`relative/path.py:symbol`。
+
+Ruff 当前由 `.github/workflows/infrastructure-gates.yml` 维护精确的基础设施
+路径 Gate；各模块的最小路径在 `maintenance-map.json` 中。维护者必须将明确
+的本次修改路径传给 `ruff check` 与 `ruff format --check`，不能把占位符直接
+交给 shell。未实际运行并通过 `ruff check src tests` 时，不得声称全仓 Ruff
+已清零。
+
+### 11.2 Identity/Tenant
+
+```powershell
+docker compose run --rm --no-deps backend pytest `
+  tests/test_auth_service.py `
+  tests/test_auth_security.py `
+  tests/test_tenants.py `
+  tests/test_p0_exposure_lockdown.py -q
+```
+
+### 11.3 Documents/Celery/RAG
+
+```powershell
+docker compose run --rm --no-deps backend pytest `
+  tests/test_documents.py `
+  tests/test_document_lifecycle.py `
+  tests/test_workers.py `
+  tests/test_rag_store.py `
+  tests/test_rag_sse.py `
+  tests/test_reranker_boundary.py -q
+```
+
+### 11.4 P34.1/P34.2/P34.3
+
+```powershell
+docker compose run --rm --no-deps backend pytest `
+  tests/test_p34_1_control_plane_api.py `
+  tests/test_p34_1_control_plane_models.py `
+  tests/test_p34_1_control_plane_service.py `
+  tests/test_p34_2_capability_models.py `
+  tests/test_p34_2_capability_service.py `
+  tests/test_p34_2_gateway_api.py `
+  tests/test_p34_2_gateway_query.py `
+  tests/test_p34_3_controlled_data_api.py `
+  tests/test_p34_3_controlled_data_crud.py `
+  tests/test_p34_3_controlled_data_executor.py `
+  tests/test_p34_3_controlled_data_execution_service.py -q
+```
+
+涉及 migration、锁、并发、timeout、append-only trigger、真实 PostgreSQL transaction 或 downgrade 的修改，还必须运行受 sentinel/一次性数据库保护的：
+
+```powershell
+make test-destructive
+```
+
+不得把该命令指向普通业务数据库，也不得删掉 sentinel、数据库名或受限角色 guard。
+
+### 11.5 SDK contracts
+
+```powershell
+Set-Location backend
+uv run pytest ../sdk/contracts/test_openapi_contract.py -q
+$env:PYTHONPATH = "../sdk/python/src"
+uv run pytest ../sdk/python/tests -q
+Set-Location ../sdk/python
+& ../../backend/.venv/Scripts/ruff.exe check .
+Set-Location ../..
+pnpm --dir frontend install --frozen-lockfile
+& ./frontend/node_modules/.bin/tsc.cmd -p sdk/typescript/tsconfig.json
+node --test sdk/typescript/tests/client.test.mjs
+& ./frontend/node_modules/.bin/tsc.cmd -p sdk/typescript/tsconfig.json --noEmit
+```
+
+### 11.6 Frontend
+
+```powershell
+cd frontend
+pnpm test
+pnpm typecheck
+pnpm lint
+$env:NODE_ENV = "production"
+pnpm build
+```
+
+只报告实际运行过的命令、退出码和测试数量。未执行 disposable integration、production build、restore rehearsal 或业务 migration 时必须明确写“未执行”。
+
+## 12. 故障恢复路径
+
+### 12.1 身份或跨 Tenant 风险
+
+1. 立即关闭受影响 Router 或恢复严格的 `get_current_principal`/tenant-bound dependency。
+2. 撤销可能仍有效的用户会话和相关 capabilities；保留日志与数据库证据。
+3. 在隔离数据库中复现 inactive user、role downgrade、same UUID、decoy schema 和 mismatched session/context。
+4. 恢复实时 Tenant/User/role 复核和显式 tenant predicate 后再开放。
+5. 禁止以默认 Tenant、管理员 fallback 或延长 token TTL 止血。
+
+### 12.2 Capability Gateway 风险
+
+1. 切回 `RejectingWorkloadAttestor`、`RejectingCapabilityVerifier` 和 unavailable adapters。
+2. 撤销受影响 grant/JTI；若 signing key 可能泄露，走审计化 key rotation/forward-fix。
+3. 停止真实 adapter，验证 ancestry、revocation、budget race、resource/version 和 workload binding。
+4. Gateway 不可用时返回稳定拒绝/503；不得回退到浏览器 JWT、cookie、raw identifier 或直连数据库。
+
+### 12.3 Controlled Data 风险
+
+1. 移除或不安装 `controlled_crud_executor`，让 HTTP 写入口恢复默认 503。
+2. 停止新的 operation dispatch，保留 Operation、Approval、Idempotency、Audit、outbox 和 compensation 证据。
+3. 不直接 UPDATE operation/approval/audit 行；修复必须保持锁序、version、request hash 和同事务 success audit。
+4. 在 fresh sentinel PostgreSQL 中重跑 CRUD/DDL、wrong schema、timeout、concurrency、replay 和 audit rollback Gate。
+5. 无法证明 atomic lifecycle 完整时，回退整个 lifecycle 变更，而不是只保留 mutation。
+
+### 12.4 Documents/Celery/RAG 风险
+
+1. 停止 Celery consumer 或对应 queue，防止继续推进错误状态。
+2. 以 `documents.status`、MinIO object 和 tenant RAG rows 作为取证对象；不要把未知状态直接标为 indexed。
+3. 修复后仅使用 durable identifiers 重新入队；保留有界重试和 tenant prefix。
+4. V2 shadow/backfill 异常时关闭 shadow lane，继续使用 V1；不得删除或覆盖 V1。
+
+### 12.5 Migration 或数据库故障
+
+1. 停止 migration 和新版本写流量，记录 global 与每个 retained tenant 的 revision、对象、锁、WAL 和错误。
+2. 默认使用 forward-fix；不要改写已发布 revision 或手工伪造 `alembic_version`。
+3. 若数据库不可继续服务，使用已验证 backup 恢复到新的 `omnibase_restore_*` 数据库。
+4. 运行 `verify_restore.py`、tenant/schema/trigger 检查和应用 smoke 后，由人工批准切换。
+5. 保留原故障数据库只读取证；不得原地覆盖、自动 drop 或用普通业务数据库跑 destructive tests。
+
+### 12.6 Frontend 或 SDK 故障
+
+- Frontend 可独立回退到上一 production build；不要通过放宽后端授权来兼容 UI。
+- Gateway 契约不兼容时先恢复原 OpenAPI/DTO，或显式升级 contract version并同步两种 SDK；不要只修改生成产物或关闭严格 parser。
+
+## 13. 明确冻结：P34.4 与 P34.5
+
+截至当前源码和交接状态：
+
+- P34.4 Workspace lifecycle、模板、空 Sandbox、Node Registry、Workspace membership、Peer Grant、Service Advertisement、Network Lease 和 `PeerOverlayProvider` 仍未进入实施。
+- P34.5 filesystem/network/process/identity/resource isolation Gate、独立 Sandbox network namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter 和攻击矩阵仍未进入实施。
+- 主 Compose 的 bridge network、tenant schema 隔离、Control Plane 的 `workspace_id` 字段、Capability 的 workspace/runtime claim 结构，都不能被表述为 P34.4/P34.5 已交付。
+- 当前没有可安全运行任意敌对代码的生产 Sandbox 声明，也没有“成员无中心服务器协作”的已实现虚拟局域网。
+- 在 P34.5 隔离 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
+- P34.4/P34.5 解冻需要 roadmap 与 handover 明确更新，并同时交付源码入口、迁移、身份/网络契约、拒绝型默认、测试矩阵和恢复路径。概念设计或字段预留不能解冻实现。
+
+Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。
+
+## 14. 修改完成时的交接格式
+
+每次维护交接至少写清：
+
+1. 修改了哪些源码、迁移、契约、测试或文档。
+2. 影响矩阵中的哪些模块和 INV 编号被触及。
+3. 哪些命令实际通过，包含测试数量/退出状态。
+4. 哪些 Gate 未执行，以及原因。
+5. 是否修改数据库、运行中容器、外部服务或业务数据；若没有，明确写没有。
+6. 当前 fail-closed 状态是否保持，例如 Gateway rejecting defaults、Controlled Data 默认 503、V1 authoritative lane、P34.4/P34.5 freeze。
+7. 出现故障时应先禁用哪个入口、撤销什么凭据、保留哪些证据，以及采用 forward-fix 还是 restore-to-new。
+
+本地 AI 的正确目标不是“让当前机器暂时能跑”，而是让干净 checkout 能从源码、锁文件、迁移、测试和公开维护文档中重建同一行为。

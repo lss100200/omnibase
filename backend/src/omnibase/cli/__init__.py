@@ -1,0 +1,1 @@
+"""OmniBase CLI package."""

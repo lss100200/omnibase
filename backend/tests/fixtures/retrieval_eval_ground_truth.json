@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "model_name": "BAAI/bge-small-zh-v1.5",
+    "dimension": 512,
+    "version": 1
+  },
+  "documents": [
+    {"document_id": "doc-alpha", "title": "Machine Learning"},
+    {"document_id": "doc-beta", "title": "Database Indexing"},
+    {"document_id": "doc-gamma", "title": "Vector Search"}
+  ],
+  "chunks": [
+    {"chunk_id": "c1", "document_id": "doc-alpha", "content": "Machine learning is a subset of AI."},
+    {"chunk_id": "c2", "document_id": "doc-alpha", "content": "Supervised learning uses labeled data."},
+    {"chunk_id": "c3", "document_id": "doc-beta", "content": "B-tree indexes support ordered lookup."},
+    {"chunk_id": "c4", "document_id": "doc-beta", "content": "GIN indexes support composite values."},
+    {"chunk_id": "c5", "document_id": "doc-gamma", "content": "Embeddings map text into vector space."},
+    {"chunk_id": "c6", "document_id": "doc-gamma", "content": "Cosine similarity compares vector angles."}
+  ],
+  "queries": [
+    {
+      "query_id": "q1",
+      "query_text": "What is supervised machine learning?",
+      "relevant_chunk_ids": ["c1", "c2"]
+    },
+    {
+      "query_id": "q2",
+      "query_text": "Which database indexes are available?",
+      "relevant_chunk_ids": ["c3", "c4"]
+    },
+    {
+      "query_id": "q3",
+      "query_text": "How does vector similarity work?",
+      "relevant_chunk_ids": ["c5", "c6"]
+    },
+    {
+      "query_id": "q4",
+      "query_text": "How are embeddings compared?",
+      "relevant_chunk_ids": ["c5"]
+    }
+  ]
+}

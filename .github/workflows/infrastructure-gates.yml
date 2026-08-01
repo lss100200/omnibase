@@ -1,0 +1,212 @@
+name: infrastructure-gates
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infrastructure-gates-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked backend dependencies
+        run: uv sync --frozen
+      - name: Format and focused infrastructure lint
+        shell: bash
+        run: |
+          uv run ruff format --check \
+            src/omnibase/auth/router.py \
+            src/omnibase/core/config.py \
+            src/omnibase/core/logging.py \
+            src/omnibase/core/middleware.py \
+            src/omnibase/core/rate_limit.py \
+            src/omnibase/database/router.py \
+            src/omnibase/documents/router.py \
+            src/omnibase/main.py \
+            src/omnibase/rag/embedding.py \
+            src/omnibase/rag/parser.py \
+            src/omnibase/rag/reranker.py \
+            src/omnibase/rag/router.py \
+            src/omnibase/rag/store.py \
+            src/omnibase/tenants/dependencies.py \
+            src/omnibase/control_plane \
+            src/omnibase/capabilities \
+            src/omnibase/capability_gateway \
+            src/omnibase/controlled_data \
+            src/omnibase/migrations/env.py \
+            src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py \
+            src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py \
+            src/omnibase/migrations/versions/0006_p34_3_controlled_data.py \
+            tests/cleanup.py \
+            tests/conftest.py \
+            tests/integration/conftest.py \
+            tests/integration/test_auth_e2e.py \
+            tests/integration/test_p34_*.py \
+            tests/test_destructive_test_safety.py \
+            tests/test_health.py \
+            tests/test_http_boundaries.py \
+            tests/test_migration_scope_fail_closed.py \
+            tests/test_p0_exposure_lockdown.py \
+            tests/test_p34_*.py \
+            tests/test_rate_limit.py \
+            tests/test_reranker_boundary.py \
+            tests/test_tenants.py
+          uv run ruff check \
+            src/omnibase/auth/router.py \
+            src/omnibase/core/config.py \
+            src/omnibase/core/logging.py \
+            src/omnibase/core/middleware.py \
+            src/omnibase/core/rate_limit.py \
+            src/omnibase/database/router.py \
+            src/omnibase/documents/router.py \
+            src/omnibase/main.py \
+            src/omnibase/rag/embedding.py \
+            src/omnibase/rag/parser.py \
+            src/omnibase/rag/reranker.py \
+            src/omnibase/rag/router.py \
+            src/omnibase/rag/store.py \
+            src/omnibase/tenants/dependencies.py \
+            src/omnibase/control_plane \
+            src/omnibase/capabilities \
+            src/omnibase/capability_gateway \
+            src/omnibase/controlled_data \
+            tests/test_migration_scope_fail_closed.py \
+            tests/test_rate_limit.py \
+            tests/test_p34_*.py \
+            tests/integration/test_p34_*.py
+      - name: Full backend typecheck
+        run: uv run mypy src
+      - name: Compile backend and operator scripts
+        run: |
+          uv run python -m compileall -q src tests
+          uv run python -m compileall -q ../scripts/database ../scripts/maintenance
+      - name: Validate AI maintainer map and benchmark protocol
+        run: |
+          uv run python ../scripts/maintenance/validate_maintainer_map.py --repo-root ..
+          uv run python ../scripts/maintenance/validate_maintainer_benchmark.py --repo-root ..
+      - name: Backend non-integration tests
+        run: uv run pytest -m "not integration"
+      - name: OpenAPI and Python SDK contracts
+        shell: bash
+        run: |
+          uv run pytest ../sdk/contracts/test_openapi_contract.py
+          PYTHONPATH=../sdk/python/src uv run pytest ../sdk/python/tests
+      - name: Python SDK lint
+        working-directory: sdk/python
+        run: ../../backend/.venv/bin/ruff check .
+
+  frontend-and-typescript-sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            sdk/typescript/pnpm-lock.yaml
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Frontend tests and production build
+        working-directory: frontend
+        run: |
+          pnpm test
+          pnpm typecheck
+          pnpm lint
+          pnpm build
+      - name: Install locked TypeScript SDK dependencies
+        working-directory: sdk/typescript
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript SDK contract
+        working-directory: sdk/typescript
+        run: |
+          pnpm test
+          pnpm typecheck
+
+  compose-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate disposable database Compose
+        env:
+          TEST_DATABASE_OWNER_PASSWORD: ci-owner-placeholder
+          TEST_DATABASE_PASSWORD: ci-runner-placeholder
+          TEST_DATABASE_NAME: omnibase_test_config
+          TEST_DATABASE_ROLE: omnibase_test_config_runner
+          TEST_DATABASE_PORT: "55432"
+        run: docker compose -p omnibase-ci-config -f docker-compose.destructive-tests.yml config --quiet
+      - name: Validate frontend production Compose
+        env:
+          FRONTEND_PROD_PORT: "3001"
+        run: docker compose -f docker-compose.frontend-production.yml config --quiet
+
+  postgres-sentinel-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: backend
+    env:
+      TEST_COMPOSE_PROJECT: omnibase-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      TEST_DATABASE_NAME: omnibase_test_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      TEST_DATABASE_ROLE: omnibase_test_ci_runner
+      TEST_DATABASE_PORT: "55432"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Generate ephemeral disposable-database credentials
+        shell: bash
+        run: |
+          echo "TEST_DATABASE_OWNER_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+          echo "TEST_DATABASE_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+      - name: Fresh migration and isolated integration gate
+        run: make test-destructive
+
+  frontend-production-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start hardened production frontend
+        env:
+          FRONTEND_PROD_PORT: "3001"
+        run: docker compose -p omnibase-ci-frontend-smoke -f docker-compose.frontend-production.yml up -d --build --wait
+      - name: Verify health endpoint
+        run: curl --fail --show-error --max-time 10 http://127.0.0.1:3001/healthz
+      - name: Cleanup
+        if: always()
+        run: docker compose -p omnibase-ci-frontend-smoke -f docker-compose.frontend-production.yml down --remove-orphans

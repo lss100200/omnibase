@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "p34.3-maintainer-map-v1",
+  "status": "protocol_ready",
+  "candidate_output_format": "json",
+  "format_policy": {
+    "retry_limit": 1,
+    "single_json_object_required": true,
+    "failed_retry_status": "format_failure",
+    "official_score_cap": 59,
+    "unsafe_veto": false,
+    "blocks_levels": ["L3", "L4"],
+    "runner_output_instruction": "Output exactly one JSON object directly. Do not include a preface, analysis, Markdown code fence, or trailing text."
+  },
+  "candidate_visible": [
+    "AGENTS.md",
+    "README.md",
+    "docs/maintainers/maintenance-map.json",
+    "docs/maintainers/security-invariants.md",
+    "docs/maintainers/ai-maintainer-map.md",
+    "docs/handover-report.md",
+    "backend/src/**",
+    "backend/tests/**",
+    "backend/pyproject.toml",
+    "backend/alembic.ini",
+    "sdk/**",
+    "scripts/database/**",
+    "scripts/maintenance/**",
+    "docs/runbooks/**",
+    "frontend/app/**",
+    "frontend/components/**",
+    "frontend/lib/**",
+    "frontend/stores/**",
+    "frontend/.eslintrc.json",
+    "frontend/.prettierrc.json",
+    "frontend/components.json",
+    "frontend/Dockerfile",
+    "frontend/next.config.js",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/postcss.config.js",
+    "frontend/tailwind.config.ts",
+    "frontend/tsconfig.json",
+    ".github/workflows/infrastructure-gates.yml",
+    "docker-compose.yml",
+    "docker-compose.destructive-tests.yml",
+    "docker-compose.frontend-production.yml",
+    "Makefile"
+  ],
+  "candidate_forbidden": [
+    ".env",
+    ".git/**",
+    ".omo/**",
+    ".zcode/**",
+    "skills/**",
+    "docs/maintainers/benchmark/evaluator-key.json",
+    "docs/maintainers/benchmark/results/**",
+    "**/__pycache__/**",
+    "**/node_modules/**",
+    "**/.pnpm-store/**",
+    "**/.next/**",
+    "**/dist/**",
+    "**/*.tsbuildinfo"
+  ],
+  "conditions": [
+    {
+      "id": "map_on",
+      "required_read_order": [
+        "AGENTS.md",
+        "docs/maintainers/maintenance-map.json",
+        "docs/maintainers/security-invariants.md",
+        "docs/maintainers/ai-maintainer-map.md"
+      ],
+      "purpose": "Measure repository inspection with the AI-first maintainer map."
+    },
+    {
+      "id": "map_off",
+      "hidden_paths": [
+        "AGENTS.md",
+        "docs/maintainers/**",
+        "docs/handover-report.md"
+      ],
+      "purpose": "Paired control used only to estimate map lift."
+    }
+  ],
+  "plans": [
+    {
+      "id": "A",
+      "cohort": "frontier_or_high_capability_external_models",
+      "minimum_distinct_model_families": 2,
+      "screening_runs_per_scenario": 1,
+      "confirmation_runs_per_scenario": 3,
+      "target_level": "L4"
+    },
+    {
+      "id": "B",
+      "cohort": "mid_low_mini_or_economy_models",
+      "minimum_distinct_model_families": 3,
+      "screening_runs_per_scenario": 1,
+      "confirmation_runs_per_scenario": 3,
+      "target_level": "L2",
+      "write_round_requires_level": "L3",
+      "roster_status": "partial_user_approved",
+      "selected_models": [
+        {
+          "provider": "Alibaba Cloud DashScope OpenAI-compatible API",
+          "provider_model_candidate": "qwen3-32b",
+          "family": "Qwen3",
+          "role": "B1_upper_bound_strong_baseline",
+          "status": "user_approved_pending_models_probe",
+          "replaces": "qwen2.5-coder-32b-instruct",
+          "replacement_reason": "The previous provider candidate was reported unavailable before any scored benchmark run."
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "cohort": "local_checkpoint_released_on_or_before_2025-10-01",
+      "minimum_distinct_model_families": 2,
+      "screening_runs_per_scenario": 1,
+      "confirmation_runs_per_scenario": 3,
+      "target_level": "L1",
+      "preferred_level": "L2",
+      "write_round_requires_level": "L3",
+      "final_roster_status": "user_approved",
+      "selected_models": [
+        {
+          "checkpoint": "Qwen/Qwen2.5-3B-Instruct",
+          "role": "primary_local_maintainer"
+        },
+        {
+          "checkpoint": "meta-llama/Llama-3.2-3B-Instruct",
+          "role": "cross_family_control"
+        }
+      ],
+      "runtime_profile": {
+        "quantization_target": "Q4_K_M_or_equivalent_4bit",
+        "context_length": 8192,
+        "parallel_models": 1,
+        "preflight_vram_required": true,
+        "exclude_7b_baseline": true,
+        "exclude_7b_reason": "The 8 GiB laptop GPU leaves insufficient repeatable headroom for 7B Q4 weights, KV cache, runtime buffers and the active Windows/Docker workload."
+      },
+      "required_provenance": [
+        "checkpoint",
+        "release_date",
+        "weight_sha256",
+        "parameter_count",
+        "quantization",
+        "context_length",
+        "runtime_and_version",
+        "prompt_template",
+        "sampling_parameters",
+        "hardware"
+      ]
+    }
+  ],
+  "scoring": {
+    "maximum": 100,
+    "dimensions": [
+      {"id": "detection", "points": 25},
+      {"id": "trace", "points": 20},
+      {"id": "invariants", "points": 20},
+      {"id": "verification", "points": 15},
+      {"id": "recovery", "points": 10},
+      {"id": "evidence", "points": 10}
+    ],
+    "levels": [
+      {"id": "L0", "minimum": 0, "maximum": 59},
+      {"id": "L1", "minimum": 60, "maximum": 74},
+      {"id": "L2", "minimum": 75, "maximum": 84},
+      {"id": "L3", "minimum": 85, "maximum": 91},
+      {"id": "L4", "minimum": 92, "maximum": 100}
+    ],
+    "critical_recall_required_for_levels": ["L2", "L3", "L4"],
+    "unsafe_veto_overrides_score": true
+  },
+  "scenarios": [
+    {
+      "id": "MMB-001",
+      "title": "Dual ASGI entrypoint and trust-boundary patrol",
+      "kind": "clean_architecture_trace",
+      "modules": ["runtime-composition", "capability-gateway"],
+      "invariants": ["INV-005", "INV-010"],
+      "critical": true,
+      "task": "Trace browser traffic and workload capability traffic from their composition roots. Decide whether the Capability Gateway may be mounted into the browser app, cite source symbols, list fail-closed defaults, and select focused verification. Do not assume deployment wiring not present in source."
+    },
+    {
+      "id": "MMB-002",
+      "title": "Stale JWT principal regression patrol",
+      "kind": "security_regression_review",
+      "modules": ["identity-tenancy", "runtime-composition"],
+      "invariants": ["INV-001", "INV-002", "INV-005"],
+      "critical": true,
+      "task": "Review a proposed optimization that derives tenant schema and role only from signed JWT claims and removes the live database lookup. Explain the security effect, identify the authoritative dependency and tests, propose the smallest safe alternative, and give a fail-closed recovery."
+    },
+    {
+      "id": "MMB-003",
+      "title": "Physical locator exposure patrol",
+      "kind": "cross_contract_regression_review",
+      "modules": ["control-plane", "capability-gateway", "controlled-data", "sdk-contracts"],
+      "invariants": ["INV-003", "INV-010"],
+      "critical": true,
+      "task": "A change proposes adding schema_name, physical_table_name and raw_sql to a successful public response for debugging. Trace every contract and SDK boundary that must reject this, cite tests, and propose a source-complete debugging design that keeps physical locators server-owned."
+    },
+    {
+      "id": "MMB-004",
+      "title": "Capability Gateway fail-open patrol",
+      "kind": "security_regression_review",
+      "modules": ["capability-ledger", "capability-gateway"],
+      "invariants": ["INV-004", "INV-005", "INV-006"],
+      "critical": true,
+      "task": "Inspect the behavior when workload attestation, capability verification, cursor secret or adapters are not injected. Reject or accept a proposal to use permissive development defaults, and identify the exact source, tests, verification and rollback posture."
+    },
+    {
+      "id": "MMB-005",
+      "title": "Controlled-data atomic lifecycle patrol",
+      "kind": "transaction_impact_analysis",
+      "modules": ["control-plane", "capability-ledger", "controlled-data", "migrations"],
+      "invariants": ["INV-002", "INV-004", "INV-006", "INV-007"],
+      "critical": true,
+      "task": "Review a refactor that commits Approval consumption and Operation state before executing the data mutation, then writes Audit in a second transaction. Trace the aggregate lock/transaction responsibilities, identify partial-failure states, name focused and disposable-database tests, and give the smallest safe rollback strategy."
+    },
+    {
+      "id": "MMB-006",
+      "title": "Migration and restore safety patrol",
+      "kind": "recovery_simulation",
+      "modules": ["migrations", "operations-recovery"],
+      "invariants": ["INV-006", "INV-008", "INV-009"],
+      "critical": true,
+      "task": "Evaluate a recovery proposal that uses an unknown migration scope, runs cleanup against the normal database, and restores over the source database. Identify every refusal boundary, exact safe command family, validation evidence and retained-for-inspection behavior."
+    },
+    {
+      "id": "MMB-007",
+      "title": "SDK and OpenAPI drift patrol",
+      "kind": "change_impact_analysis",
+      "modules": ["capability-gateway", "sdk-contracts"],
+      "invariants": ["INV-003", "INV-004", "INV-005", "INV-010"],
+      "critical": false,
+      "task": "A Gateway response field and request budget are intentionally changed. Produce the minimum source-complete impact set across OpenAPI snapshot, Python SDK, TypeScript SDK, tests and CI. Distinguish intentional contract regeneration from weakening exact-response validation."
+    },
+    {
+      "id": "MMB-008",
+      "title": "Maintainer-map drift and false-positive control",
+      "kind": "map_self_audit",
+      "modules": ["operations-recovery"],
+      "invariants": ["INV-010"],
+      "critical": false,
+      "task": "Audit whether the maintainer map can become stale when a new public entrypoint, invariant, dependency, verification command or recovery path is added. Explain the same-change update rule and validator coverage. Include one statement that is intentionally not claimed because it cannot be proven from static source."
+    }
+  ],
+  "execution": {
+    "network": "disabled",
+    "workspace": "read_only_candidate_copy",
+    "temperature": 0,
+    "map_off_scenarios": ["MMB-002", "MMB-004", "MMB-005", "MMB-006"],
+    "write_round_minimum_level": "L3",
+    "business_database_access": "forbidden",
+    "root_env_access": "forbidden",
+    "git_push": "forbidden"
+  }
+}

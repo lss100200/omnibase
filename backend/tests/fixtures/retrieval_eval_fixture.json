@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "model_name": "BAAI/bge-small-zh-v1.5",
+    "dimension": 512,
+    "version": 1
+  },
+  "documents": [
+    {
+      "document_id": "doc-alpha",
+      "title": "Introduction to Machine Learning"
+    },
+    {
+      "document_id": "doc-beta",
+      "title": "Advanced Database Indexing"
+    },
+    {
+      "document_id": "doc-gamma",
+      "title": "Vector Search Fundamentals"
+    }
+  ],
+  "chunks": [
+    { "chunk_id": "c1", "document_id": "doc-alpha", "content": "Machine learning is a subset of artificial intelligence." },
+    { "chunk_id": "c2", "document_id": "doc-alpha", "content": "Supervised learning uses labeled training data." },
+    { "chunk_id": "c3", "document_id": "doc-alpha", "content": "Unsupervised learning finds patterns in unlabeled data." },
+    { "chunk_id": "c4", "document_id": "doc-alpha", "content": "Neural networks are inspired by biological neurons." },
+    { "chunk_id": "c5", "document_id": "doc-alpha", "content": "Deep learning uses many layers of neural networks." },
+    { "chunk_id": "c6", "document_id": "doc-beta", "content": "B-tree indexes are the default in most databases." },
+    { "chunk_id": "c7", "document_id": "doc-beta", "content": "Hash indexes provide O(1) point lookups." },
+    { "chunk_id": "c8", "document_id": "doc-beta", "content": "PostgreSQL supports GiST and GIN indexes." },
+    { "chunk_id": "c9", "document_id": "doc-beta", "content": "Covering indexes can avoid heap fetches." },
+    { "chunk_id": "c10", "document_id": "doc-gamma", "content": "Vector embeddings map data into high-dimensional space." },
+    { "chunk_id": "c11", "document_id": "doc-gamma", "content": "HNSW is a popular approximate nearest neighbor algorithm." },
+    { "chunk_id": "c12", "document_id": "doc-gamma", "content": "Cosine similarity measures angle between vectors." },
+    { "chunk_id": "c13", "document_id": "doc-gamma", "content": "Dimensionality reduction preserves semantic structure." },
+    { "chunk_id": "c14", "document_id": "doc-gamma", "content": "pgvector extends PostgreSQL with vector operations." },
+    { "chunk_id": "c15", "document_id": "doc-gamma", "content": "Embedding models like BGE produce dense vectors." }
+  ],
+  "queries": [
+    {
+      "query_id": "q1",
+      "query_text": "What is machine learning and how does it relate to AI?",
+      "relevant_chunk_ids": ["c1", "c2", "c3", "c4", "c5"],
+      "ranked_chunk_ids": ["c1", "c2", "c3", "c15", "c4", "c10", "c5", "c6", "c11", "c7", "c12", "c8", "c13", "c14", "c9"]
+    },
+    {
+      "query_id": "q2",
+      "query_text": "Explain database indexing techniques",
+      "relevant_chunk_ids": ["c6", "c7", "c8", "c9"],
+      "ranked_chunk_ids": ["c6", "c1", "c8", "c10", "c2", "c9", "c11", "c3", "c7", "c12", "c13", "c14", "c15", "c4", "c5"]
+    },
+    {
+      "query_id": "q3",
+      "query_text": "How does vector similarity search work?",
+      "relevant_chunk_ids": ["c10", "c11", "c12", "c13", "c14"],
+      "ranked_chunk_ids": ["c10", "c11", "c12", "c15", "c13", "c1", "c6", "c2", "c14", "c7", "c8", "c3", "c9", "c4", "c5"]
+    }
+  ]
+}
