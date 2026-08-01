@@ -27,11 +27,14 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _configure_test_env() -> Iterator[None]:
-    """Set minimal env vars so Settings() can be constructed during tests.
+def _set_test_env_defaults() -> None:
+    """Provide safe placeholders before pytest imports application modules.
 
-    Tests that need different values can monkeypatch these directly.
+    Pytest imports test modules during collection, before session fixtures run.
+    Some tests import the application at module scope, which constructs
+    ``Settings`` immediately.  Keeping these defaults at conftest import time
+    makes a clean checkout behave like the test suite instead of depending on
+    a developer's untracked ``.env`` file.
     """
     os.environ.setdefault("ENV", "development")
     os.environ.setdefault("LOG_LEVEL", "WARNING")
@@ -45,11 +48,22 @@ def _configure_test_env() -> Iterator[None]:
     os.environ.setdefault("MINIO_BUCKET", "omnibase-test")
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
     os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
-    # 32+ char placeholder for JWT_SECRET (validation requires min_length=32)
     os.environ.setdefault(
         "JWT_SECRET",
         "test_secret_at_least_32_characters_long_for_validation",
     )
+
+
+_set_test_env_defaults()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _configure_test_env() -> Iterator[None]:
+    """Set minimal env vars so Settings() can be constructed during tests.
+
+    Tests that need different values can monkeypatch these directly.
+    """
+    _set_test_env_defaults()
 
     # Clear cached settings so new env values are picked up
     from omnibase.core.config import get_settings
