@@ -5,7 +5,7 @@
 > **模型基准状态**：Plan A `deepseek-v4-pro` 只能保持暂定 L2，confirmation 因长会话 Markdown JSON fence 失败，write round 未授权；Plan B B1 `qwen3-32b` 因零工具读取、伪造源码证据并触发 Audit lifecycle 与 in-place restore 两个既有安全 veto，正式为 `L0 Unsafe`；Plan B B2 `deepseek-v4-flash` 已确认为 `L2 Triage Confirmed`，证明经济型模型在真实读取维护者地图时可以稳定分诊，但证据真实性与 schema 纪律不足以进入 L3；B3 首选不同家族的 `glm-4.7-flash`，尚未执行。Plan C 两个 3B Q4_K_M 制品完整，但 native tool gate 失败，正式 screening 未启动，benchmark passed=false。
 > **冻结边界**：P34.5A0 只解冻协议、拒绝默认和无副作用测试骨架。独立 Linux Runner、真实 RuntimeDriver、cgroup/namespace/seccomp/AppArmor 或 stronger runtime、默认拒绝网络 namespace、Workspace Network Broker、短期 mTLS workload identity、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据接入、Agent Runtime 与 Agent 编排继续冻结；Public Preview 不得声称普通 Docker 或 metadata-only provider 可以安全运行任意敌对代码。
 > **项目路径**：`<repository-root>`
-> **Git 状态**：公开默认分支 `main` @ `2843468e24f2fa02fa040234c001e3667eb2111e`；PR `#6` 已在两组 Backend/Frontend/Compose/PostgreSQL sentinel 流水线全绿后合并，宣传页、Plan B B3 方案、P34.5A0 和本报告均已进入公开历史。
+> **Git 状态**：PR `#6` 的 P34.5A0 功能基线 merge commit 为 `2843468e24f2fa02fa040234c001e3667eb2111e`；宣传页、Plan B B3 方案、P34.5A0 和本报告均已进入公开 `main`。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准，版本化报告不硬编码后续纯文档 merge 的自身 hash，避免循环修订。
 
 ---
 
@@ -1310,7 +1310,7 @@ git diff --check：passed
    - 公开仓库：`https://github.com/lss100200/omnibase`，默认分支 `main`。
    - P34.4 通过干净发布分支 `codex/public-preview-p34-4` 移植，避免把旧 `.omo/` 历史带入公开仓库；发布提交为 `2ea36fda6dcf639cedfc1b36dc378b653d2f62f6`，Plan B B2 交接提交为 `2040aadd6e28fcf8631886fcffcb9661e7a0fc39`。
    - PR `#1` 在 Backend、Frontend/TypeScript SDK、Compose 和 PostgreSQL sentinel 强制检查全绿后合并，merge commit 为 `49e14f745c1abf6790a253fffebb6c152463b2c6`。
-   - PR `#6` 将 `/public-preview`、Plan B B3 Gate、P34.5A0 与交接更新移植到最新依赖安全基线；push 与 pull_request 两组 `backend`、`frontend-and-typescript-sdk`、`compose-config`、`postgres-sentinel-integration` 均通过后合并，merge commit/current public `main` 为 `2843468e24f2fa02fa040234c001e3667eb2111e`。
+   - PR `#6` 将 `/public-preview`、Plan B B3 Gate、P34.5A0 与交接更新移植到最新依赖安全基线；push 与 pull_request 两组 `backend`、`frontend-and-typescript-sdk`、`compose-config`、`postgres-sentinel-integration` 均通过后合并，P34.5A0 功能基线 merge commit 为 `2843468e24f2fa02fa040234c001e3667eb2111e`。
    - 匿名 `git ls-remote` 已确认无需登录即可读取公开 `main`；没有 force push，也没有把根 `.env`、`.omo/`、`skills/`、`.tmp/`、模型权重、缓存或本地数据库材料带入公开历史。
 
 2. **仓库权限与安全功能**
