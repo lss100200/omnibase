@@ -129,6 +129,11 @@ class RunnerReceipt:
     operation_id: UUID
     evidence_digest: str
     reason_code: str
+    binding_digest: str | None = None
+    runner_id: UUID | None = None
+    runtime_instance_id: UUID | None = None
+    exit_code: int | None = None
+    truncated: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.operation_id, UUID):
@@ -137,6 +142,39 @@ class RunnerReceipt:
             raise ValueError("runner receipt evidence_digest must be sha256")
         if not self.reason_code.startswith("runner_") or len(self.reason_code) > 100:
             raise ValueError("runner receipt reason_code is invalid")
+        binding_values = (self.binding_digest, self.runner_id, self.runtime_instance_id)
+        if any(value is not None for value in binding_values) and (
+            self.binding_digest is None
+            or _SHA256_RE.fullmatch(self.binding_digest) is None
+            or not isinstance(self.runner_id, UUID)
+            or not isinstance(self.runtime_instance_id, UUID)
+        ):
+            raise ValueError("runner receipt binding is incomplete")
+        if self.exit_code is not None and (
+            isinstance(self.exit_code, bool)
+            or not isinstance(self.exit_code, int)
+            or self.exit_code < -255
+            or self.exit_code > 255
+        ):
+            raise ValueError("runner receipt exit_code is invalid")
+        if not isinstance(self.truncated, bool):
+            raise TypeError("runner receipt truncated must be bool")
+
+    def verify_bound_result(
+        self,
+        *,
+        operation_id: UUID,
+        binding_digest: str,
+        runner_id: UUID,
+        runtime_instance_id: UUID,
+    ) -> None:
+        if (
+            self.operation_id != operation_id
+            or self.binding_digest != binding_digest
+            or self.runner_id != runner_id
+            or self.runtime_instance_id != runtime_instance_id
+        ):
+            raise ValueError("runner receipt binding mismatch")
 
 
 class SandboxRunner(Protocol):

@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
-from sqlalchemy import String, bindparam, cast, column, func, select, table, text
+from sqlalchemy import String, Uuid, bindparam, cast, column, func, select, table, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import BindParameter
 
@@ -403,8 +403,8 @@ class CanonicalRagReadAdapter:
             )
             source = table(
                 "embeddings",
-                column("id"),
-                column("document_id"),
+                column("id", Uuid(as_uuid=False)),
+                column("document_id", Uuid(as_uuid=False)),
                 column("content"),
                 column("metadata"),
                 column("char_start"),
@@ -412,7 +412,9 @@ class CanonicalRagReadAdapter:
                 column("chunk_index"),
                 schema=schema,
             )
-            requested: BindParameter[object] = bindparam("citation_ids", expanding=True)
+            requested: BindParameter[str] = bindparam(
+                "citation_ids", expanding=True, type_=Uuid(as_uuid=False)
+            )
             size_statement = (
                 select(
                     cast(source.c.id, String),
@@ -451,7 +453,11 @@ class CanonicalRagReadAdapter:
                     source.c.char_start,
                     source.c.char_end,
                 )
-                .where(source.c.id.in_(bindparam("safe_ids", expanding=True)))
+                .where(
+                    source.c.id.in_(
+                        bindparam("safe_ids", expanding=True, type_=Uuid(as_uuid=False))
+                    )
+                )
                 .order_by(source.c.chunk_index)
             )
             if document_id is not None:

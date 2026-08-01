@@ -21,11 +21,13 @@ from omnibase.capability_gateway.query import CursorCodec
 from omnibase.capability_gateway.resolver import RegistryResourceResolver
 from omnibase.capability_gateway.router import router
 from omnibase.capability_gateway.security import (
+    CoreCapabilityVerifier,
     RejectingCapabilityVerifier,
     RejectingWorkloadAttestor,
     WorkloadAttestor,
 )
 from omnibase.capability_gateway.service import GatewayComponents, GatewayFailure, GatewayService
+from omnibase.capability_gateway.workload import SqlAlchemyRunLeaseWorkloadAttestor
 from omnibase.core.config import get_settings
 from omnibase.core.middleware import RequestBodyLimitMiddleware, RequestContextMiddleware
 
@@ -137,4 +139,34 @@ def create_gateway_app(
     return app
 
 
-__all__ = ["create_gateway_app"]
+def create_production_gateway_app(
+    *,
+    workload_attestor: SqlAlchemyRunLeaseWorkloadAttestor,
+    cursor_secret: bytes,
+) -> FastAPI:
+    """Compose the real read-only Gateway behind a trusted mTLS attestor.
+
+    The caller must provide the workload attestor explicitly.  The function
+    never creates a permissive fallback and never mounts the Gateway into the
+    Browser application.
+    """
+    if not isinstance(workload_attestor, SqlAlchemyRunLeaseWorkloadAttestor):
+        raise ValueError("production Gateway requires the live Run Lease workload attestor")
+    if not isinstance(cursor_secret, bytes) or len(cursor_secret) < 32:
+        raise ValueError("cursor_secret must contain at least 32 bytes")
+    resolver = RegistryResourceResolver()
+    components = GatewayComponents(
+        verifier=CoreCapabilityVerifier(),
+        resolver=resolver,
+        data_adapter=PostgresDataReadAdapter(resolver, CursorCodec(cursor_secret)),
+        rag_adapter=CanonicalRagReadAdapter(resolver),
+        audit_sink=ControlPlaneGatewayAuditSink(),
+    )
+    return create_gateway_app(
+        components,
+        workload_attestor=workload_attestor,
+        cursor_secret=cursor_secret,
+    )
+
+
+__all__ = ["create_gateway_app", "create_production_gateway_app"]

@@ -41,6 +41,11 @@ from omnibase.sandbox import (
     VerifiedSandboxAuthorization,
 )
 from omnibase.sandbox import authorization as authorization_module
+from omnibase.sandbox.dispatch_digest import (
+    runner_execution_binding_digest,
+    sandbox_execution_spec_digest,
+    sandbox_request_digest,
+)
 from omnibase.workspaces.service import LeaseRejected
 
 _A = "a" * 64
@@ -110,7 +115,14 @@ def _command() -> SandboxCommandSpec:
     )
 
 
-def _intent(request: SandboxOperationRequest) -> SandboxOperationIntent:
+def _intent(
+    request: SandboxOperationRequest,
+    *,
+    runtime_handle: SandboxRuntimeHandle,
+    runtime_spec: SandboxRuntimeSpec,
+    command: SandboxCommandSpec,
+    profile: RunnerIsolationProfile,
+) -> SandboxOperationIntent:
     return SandboxOperationIntent(
         operation_id=request.operation_id,
         tenant_id=request.tenant_id,
@@ -122,8 +134,13 @@ def _intent(request: SandboxOperationRequest) -> SandboxOperationIntent:
         run_fencing_token=request.run_fencing_token,
         node_fencing_token=request.node_fencing_token,
         action=request.action.value,
-        request_digest=_A,
-        spec_digest=_B,
+        request_digest=sandbox_request_digest(request),
+        spec_digest=sandbox_execution_spec_digest(
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+            isolation_profile=profile,
+        ),
     )
 
 
@@ -178,10 +195,16 @@ class _RecordingTransport:
         *,
         outcome_unknown: bool = False,
         mismatched_receipt: bool = False,
+        reason_code: str = "runner_execution_succeeded",
+        exit_code: int | None = 0,
+        truncated: bool = False,
     ) -> None:
         self.calls: list[tuple[RunnerExecutionPlan, VerifiedRunnerHost]] = []
         self.outcome_unknown = outcome_unknown
         self.mismatched_receipt = mismatched_receipt
+        self.reason_code = reason_code
+        self.exit_code = exit_code
+        self.truncated = truncated
 
     def execute(
         self,
@@ -195,7 +218,12 @@ class _RecordingTransport:
         return RunnerReceipt(
             operation_id=uuid4() if self.mismatched_receipt else plan.intent.operation_id,
             evidence_digest=_F,
-            reason_code="runner_probe_succeeded",
+            reason_code=self.reason_code,
+            binding_digest=runner_execution_binding_digest(plan, host),
+            runner_id=host.runner_id,
+            runtime_instance_id=plan.request.runtime_instance_id,
+            exit_code=self.exit_code,
+            truncated=self.truncated,
         )
 
     def terminate(self, *, plan, host):  # pragma: no cover - not in A2 execute slice
@@ -224,13 +252,25 @@ def _execute(
     *,
     request: SandboxOperationRequest,
     profile: RunnerIsolationProfile,
+    runtime_handle: SandboxRuntimeHandle | None = None,
+    runtime_spec: SandboxRuntimeSpec | None = None,
+    command: SandboxCommandSpec | None = None,
 ) -> SandboxDispatchResult:
+    runtime_handle = runtime_handle or SandboxRuntimeHandle(uuid4())
+    runtime_spec = runtime_spec or _runtime_spec()
+    command = command or _command()
     return coordinator.execute(
-        intent=_intent(request),
+        intent=_intent(
+            request,
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+            profile=profile,
+        ),
         request=request,
-        runtime_handle=SandboxRuntimeHandle(uuid4()),
-        runtime_spec=_runtime_spec(),
-        command=_command(),
+        runtime_handle=runtime_handle,
+        runtime_spec=runtime_spec,
+        command=command,
         isolation_profile=profile,
     )
 
@@ -361,15 +401,76 @@ def test_dispatch_rejects_durable_intent_binding_drift_before_store_or_transport
         transport=transport,
         now=now,
     )
+    runtime_handle = SandboxRuntimeHandle(uuid4())
+    runtime_spec = _runtime_spec()
+    command = _command()
     with pytest.raises(ValueError, match="dispatch operation binding mismatch"):
         coordinator.execute(
-            intent=replace(_intent(request), **drift),
+            intent=replace(
+                _intent(
+                    request,
+                    runtime_handle=runtime_handle,
+                    runtime_spec=runtime_spec,
+                    command=command,
+                    profile=profile,
+                ),
+                **drift,
+            ),
             request=request,
-            runtime_handle=SandboxRuntimeHandle(uuid4()),
-            runtime_spec=_runtime_spec(),
-            command=_command(),
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
             isolation_profile=profile,
         )
+    with pytest.raises(SandboxConflict, match="sandbox_operation_not_found"):
+        store.get(request.operation_id)
+    assert transport.calls == []
+
+
+@pytest.mark.parametrize(
+    ("digest_field", "message"),
+    [
+        ("request_digest", "dispatch request digest mismatch"),
+        ("spec_digest", "dispatch execution spec digest mismatch"),
+    ],
+)
+def test_dispatch_recomputes_durable_request_and_execution_digests_before_store(
+    digest_field: str,
+    message: str,
+) -> None:
+    now = datetime(2026, 8, 1, 16, tzinfo=UTC)
+    request = _request()
+    profile = _profile()
+    store = InMemorySandboxOperationStore(clock=lambda: now)
+    transport = _RecordingTransport()
+    coordinator = _coordinator(
+        request=request,
+        profile=profile,
+        store=store,
+        transport=transport,
+        now=now,
+    )
+    runtime_handle = SandboxRuntimeHandle(uuid4())
+    runtime_spec = _runtime_spec()
+    command = _command()
+    intent = _intent(
+        request,
+        runtime_handle=runtime_handle,
+        runtime_spec=runtime_spec,
+        command=command,
+        profile=profile,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        coordinator.execute(
+            intent=replace(intent, **{digest_field: _F}),
+            request=request,
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+            isolation_profile=profile,
+        )
+
     with pytest.raises(SandboxConflict, match="sandbox_operation_not_found"):
         store.get(request.operation_id)
     assert transport.calls == []
@@ -388,18 +489,98 @@ def test_successful_dispatch_is_durable_and_exact_replay_does_not_redispatch() -
         transport=transport,
         now=now,
     )
+    runtime_handle = SandboxRuntimeHandle(uuid4())
+    runtime_spec = _runtime_spec()
+    command = _command()
 
-    result = _execute(coordinator, request=request, profile=profile)
+    result = _execute(
+        coordinator,
+        request=request,
+        profile=profile,
+        runtime_handle=runtime_handle,
+        runtime_spec=runtime_spec,
+        command=command,
+    )
     assert result.record.state is SandboxOperationState.SUCCEEDED
     assert result.receipt is not None
     assert result.replayed is False
     assert len(transport.calls) == 1
 
-    replay = _execute(coordinator, request=request, profile=profile)
+    replay = _execute(
+        coordinator,
+        request=request,
+        profile=profile,
+        runtime_handle=runtime_handle,
+        runtime_spec=runtime_spec,
+        command=command,
+    )
     assert replay.record == result.record
     assert replay.receipt is None
     assert replay.replayed is True
     assert len(transport.calls) == 1
+
+
+def test_bound_runner_failure_receipt_is_durable_failure_not_success() -> None:
+    now = datetime(2026, 8, 1, 16, tzinfo=UTC)
+    request = _request()
+    profile = _profile()
+    store = InMemorySandboxOperationStore(clock=lambda: now)
+    transport = _RecordingTransport(
+        reason_code="runner_execution_failed",
+        exit_code=1,
+    )
+    coordinator = _coordinator(
+        request=request,
+        profile=profile,
+        store=store,
+        transport=transport,
+        now=now,
+    )
+
+    result = _execute(coordinator, request=request, profile=profile)
+
+    assert result.record.state is SandboxOperationState.FAILED
+    assert result.record.transitions[-1].reason_code == "runner_execution_failed"
+    assert result.receipt is not None
+    assert result.receipt.exit_code == 1
+
+
+def test_false_success_exit_code_becomes_ambiguous() -> None:
+    now = datetime(2026, 8, 1, 16, tzinfo=UTC)
+    request = _request()
+    profile = _profile()
+    store = InMemorySandboxOperationStore(clock=lambda: now)
+    coordinator = _coordinator(
+        request=request,
+        profile=profile,
+        store=store,
+        transport=_RecordingTransport(exit_code=1),
+        now=now,
+    )
+
+    with pytest.raises(RunnerOutcomeUnknown, match="sandbox_runner_receipt_result_rejected"):
+        _execute(coordinator, request=request, profile=profile)
+
+    assert store.get(request.operation_id).state is SandboxOperationState.AMBIGUOUS
+
+
+def test_truncated_success_receipt_is_durable_failure() -> None:
+    now = datetime(2026, 8, 1, 16, tzinfo=UTC)
+    request = _request()
+    profile = _profile()
+    store = InMemorySandboxOperationStore(clock=lambda: now)
+    coordinator = _coordinator(
+        request=request,
+        profile=profile,
+        store=store,
+        transport=_RecordingTransport(truncated=True),
+        now=now,
+    )
+
+    result = _execute(coordinator, request=request, profile=profile)
+
+    assert result.record.state is SandboxOperationState.FAILED
+    assert result.record.transitions[-1].reason_code == "runner_output_truncated"
 
 
 def test_unknown_runner_outcome_becomes_ambiguous_and_never_auto_replays() -> None:
@@ -415,14 +596,31 @@ def test_unknown_runner_outcome_becomes_ambiguous_and_never_auto_replays() -> No
         transport=transport,
         now=now,
     )
+    runtime_handle = SandboxRuntimeHandle(uuid4())
+    runtime_spec = _runtime_spec()
+    command = _command()
 
     with pytest.raises(RunnerOutcomeUnknown, match="runner_transport_timeout"):
-        _execute(coordinator, request=request, profile=profile)
+        _execute(
+            coordinator,
+            request=request,
+            profile=profile,
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+        )
     assert store.get(request.operation_id).state is SandboxOperationState.AMBIGUOUS
     assert len(transport.calls) == 1
 
     with pytest.raises(SandboxConflict, match="sandbox_operation_reconciliation_required"):
-        _execute(coordinator, request=request, profile=profile)
+        _execute(
+            coordinator,
+            request=request,
+            profile=profile,
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+        )
     assert len(transport.calls) == 1
 
 
@@ -474,7 +672,16 @@ def test_crash_after_dispatch_marker_is_forced_to_ambiguous() -> None:
     request = _request()
     profile = _profile()
     store = InMemorySandboxOperationStore(clock=lambda: now)
-    intent = _intent(request)
+    runtime_handle = SandboxRuntimeHandle(uuid4())
+    runtime_spec = _runtime_spec()
+    command = _command()
+    intent = _intent(
+        request,
+        runtime_handle=runtime_handle,
+        runtime_spec=runtime_spec,
+        command=command,
+        profile=profile,
+    )
     store.begin(intent)
     store.authorize(intent.operation_id, evidence_digest=_A)
     store.claim_dispatch(intent.operation_id)
@@ -488,7 +695,14 @@ def test_crash_after_dispatch_marker_is_forced_to_ambiguous() -> None:
     )
 
     with pytest.raises(SandboxConflict, match="sandbox_operation_reconciliation_required"):
-        _execute(coordinator, request=request, profile=profile)
+        _execute(
+            coordinator,
+            request=request,
+            profile=profile,
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+        )
     assert store.get(request.operation_id).state is SandboxOperationState.AMBIGUOUS
     assert transport.calls == []
 

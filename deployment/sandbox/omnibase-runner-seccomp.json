@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "architecture": "x86_64",
+  "default_action": "allow",
+  "enforcement": "linux-seccomp-bpf-prctl",
+  "no_new_privileges_required": true,
+  "deny_errno": 1,
+  "denied_syscalls": [
+    "add_key",
+    "bpf",
+    "delete_module",
+    "finit_module",
+    "init_module",
+    "io_uring_setup",
+    "kexec_file_load",
+    "kexec_load",
+    "keyctl",
+    "mount",
+    "move_mount",
+    "open_by_handle_at",
+    "open_tree",
+    "perf_event_open",
+    "pivot_root",
+    "ptrace",
+    "reboot",
+    "request_key",
+    "setns",
+    "swapoff",
+    "swapon",
+    "umount2",
+    "unshare",
+    "userfaultfd"
+  ],
+  "notes": [
+    "The systemd service also installs an outer seccomp filter.",
+    "This contract is pinned by SHA-256 in the Runner attestation.",
+    "The launcher installs the listed inner filter immediately before exec."
+  ]
+}
+

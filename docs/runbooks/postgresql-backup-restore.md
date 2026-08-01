@@ -6,6 +6,7 @@ OmniBase 的恢复策略是“验证备份，恢复到新数据库，校验后�
 
 - 需要与服务端 major version 兼容的 `pg_dump`、`pg_restore`、`psql`、`createdb`。
 - 脚本不读取 `.env`。通过受限 `PGPASSFILE`、平台 Secret 或临时 `PGPASSWORD` 注入凭据；不要把密码放入参数。
+- 在仓库根诊断 Compose 时必须显式使用 `docker compose --env-file .env.example ...`；disposable restore/test overlay 必须使用它自己的专用 Compose/env 文件。禁止运行裸 `docker compose config --format json`，因为 Compose 会隐式读取根 `.env` 并把展开后的 secret 写入终端或 artifact。
 - 备份目录必须位于 Git 工作树之外，并使用主机加密、访问控制和离线/异地副本。
 - 加密密钥必须由部署方的 Secret/KMS 管理，不能和备份放在同一目录或同一仓库。
 

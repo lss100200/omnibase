@@ -1,7 +1,11 @@
-"""P34.5A fail-closed Sandbox foundation and A1-A2 dispatch contracts.
+"""P34.5 Sandbox control-plane contracts and fail-closed defaults.
 
-No implementation in this package executes code or contacts a runtime,
-container engine, network provider, data store or host control socket.
+The package root intentionally exposes only Core-safe authorization, durable
+dispatch, provider, and transport contracts.  The explicitly attested Linux
+RuntimeDriver, Runner service, Network Broker, and Overlay publication adapters
+live in their dedicated modules so importing Core does not import process or
+runtime side-effect implementations.  Production defaults remain unavailable
+or rejecting until those components are explicitly composed after their Gates.
 """
 
 from omnibase.sandbox.authorization import (

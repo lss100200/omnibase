@@ -387,6 +387,7 @@ OmniBase 是可下载、可重建的开源项目。修复必须完整存在于�
 - 同时更新源码、必要依赖声明/lock、测试和可重建配置。
 - 在 clean checkout、全新依赖环境和一次性数据库中验证修复。
 - 将生成物从提交中排除，并让生成步骤由源码确定性重建。
+- 仓库根目录的 Compose diagnostic/config/run/exec/up/logs/ps 命令必须显式传入 `--env-file .env.example`；若是 disposable overlay，必须使用其专用 Compose/env 文件。该规则防止 Compose 隐式读取并在 JSON/config 输出中展开根 `.env`。
 - 让维护者地图验证器反向扫描可由 AST 无歧义识别的 FastAPI 组合入口：
   顶层 `APIRouter`/`FastAPI` 赋值、直接创建并返回 `FastAPI` 的顶层工厂，
   以及同文件对该工厂的顶层实例化。该 Gate 只证明这些 HTTP 入口已被某个
@@ -397,6 +398,7 @@ OmniBase 是可下载、可重建的开源项目。修复必须完整存在于�
 
 - 直接编辑 `.venv`、`site-packages`、`node_modules`、运行中容器或镜像层代替源码修复。
 - 依赖未提交文件、用户 `.env`、本机绝对路径、预热缓存或手工数据库状态才能通过。
+- 在仓库根运行裸 `docker compose config --format json`，或任何未显式指定安全 env file 的 Compose diagnostic/config/run/exec；不得把根 `.env` 展开到终端、日志、artifact 或维护证据。
 - 只更新生成 SDK/OpenAPI/构建产物而不更新权威源码。
 - 为通过 CI 删除测试、降低 Gate、增加全局 `ignore_missing_imports`/宽泛 ignore 或跳过安全检查。
 
@@ -405,7 +407,7 @@ OmniBase 是可下载、可重建的开源项目。修复必须完整存在于�
 - 按 `.github/workflows/infrastructure-gates.yml` 运行 Backend Ruff、Mypy、compileall 和非 integration tests。
 - 对受影响 P34 migration 运行 fresh sentinel integration tests。
 - 对前端改动运行 `pnpm test`、TypeScript 检查和 production build。
-- 运行 `docker compose config`，确认 clean build 不依赖本机私有文件。
+- 运行 `docker compose --env-file .env.example config`，确认 clean build 不依赖本机私有文件。
 - 运行维护者地图 validator，并用临时未映射 `APIRouter` 做负向验证，确认错误
   明确列出 `unmapped discovered entrypoint`。
 
@@ -659,7 +661,7 @@ P34.4D 的协作 harness 只验证内容摘要、Git ref 元数据和追加事�
 
 **为何存在**
 
-P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次普通操作都必须重新绑定 tenant、Workspace、Run、runtime instance、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。P34.2 read profile 与 Sandbox lifecycle profile 必须互斥；Sandbox Grant 必须短期、不可委派、绑定单一 Workspace/runtime/workload identity，并且不得签发为 Gateway bearer token。紧急 stop/destroy 必须使用独立可信 controller authorization，不能依赖已经撤销的 workload grant，也不能因为 workload 已撤销就匿名放行。任何副作用前还必须存在 operation-idempotent capability budget reservation、durable operation/transition/Audit、当前 Runner host/profile 证明和独立 transport；exact replay 不得重复扣费，binding drift 必须拒绝，dispatch 结果不确定时禁止自动重放。缺少可信 verifier/store/provider/controller/host/transport/Runner 时必须拒绝，A0-A3 的本地 harness 只能演练授权、状态机与调度顺序，不能产生任何进程、文件、容器、socket、网络、挂载或数据访问。
+P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事实，不能自行证明某个运行时可以安全执行代码。Sandbox 每次普通操作都必须重新绑定 tenant、Workspace、Run、runtime instance、Node、Lease、Workspace generation、Run/Node fencing、workload identity、action、有效期和在线 capability 状态；原始 UUID、provider handle、调用方声明或已经创建的 runtime 都不是持续授权。P34.2 read profile 与 Sandbox lifecycle profile 必须互斥；Sandbox Grant 必须短期、不可委派、绑定单一 Workspace/runtime/workload identity，并且不得签发为 Gateway bearer token。紧急 stop/destroy 必须使用独立可信 controller authorization，不能依赖已经撤销的 workload grant，也不能因为 workload 已撤销就匿名放行。任何副作用前还必须存在 operation-idempotent capability budget reservation、durable operation/transition/Audit、当前 Runner host/profile 证明和独立 transport；exact replay 不得重复扣费，binding drift 必须拒绝，dispatch 结果不确定时禁止自动重放。缺少可信 verifier/store/provider/controller/host/transport/Runner 时必须拒绝。A0-A3 的本地 harness 只能演练授权、状态机与调度顺序；A4 即使具备真实 Linux Runner seam，也必须由目标宿主攻击 Gate 决定是否可装配，源码存在不能替代 cgroup/namespace/seccomp/LSM 和有界强杀证据。
 
 **允许的改法**
 
@@ -696,12 +698,225 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 - `backend/tests/test_p34_5_sandbox_a1_control.py`
 - `backend/tests/test_p34_5_sandbox_a2_dispatch.py`
 - `backend/tests/test_p34_5_sandbox_a3_persistence.py`
+- `backend/tests/test_p34_5_sandbox_a4_runtime.py`
+- `backend/tests/test_p34_5_sandbox_a4_transport.py`
 - `backend/tests/integration/test_p34_5_sandbox_persistence.py`（仅 guarded disposable `omnibase_test_*` sentinel PostgreSQL）
 - `backend/tests/test_p34_4_workspace_service.py`
-- `docker compose run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces`
+- `docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces`
 - `python scripts/sandbox/probe_runner_host.py`；结果不 ready 时不得通过降低 profile 或省略控制强行装配 provider。
 - 对新增真实 provider 运行 P34.5 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；A0 单元测试不能替代目标 Linux isolation Gate。
 
 **失败恢复**
 
 立即撤下真实 provider/Runner wiring，恢复 `UnavailableSandboxProvider`、`UnavailableSandboxRunner` 与全部 rejecting authorizer/verifier，撤销受影响 Run Lease/capability/workload identity，并通过独立可信控制通道停止对应 Runner。保留 operation transition、runtime、lease、fencing、审计和 provider 证据；ambiguous outcome 只允许 reconciliation，不允许猜测重放。无法证明副作用前完成在线验证时一律视为未授权。不得通过放宽路径、网络、资源或身份检查恢复服务，也不得把普通 Docker smoke 当作敌对代码隔离证明。
+
+## INV-018 attested-linux-runtime
+
+**权威源码**
+
+- `backend/src/omnibase/sandbox/dispatch_digest.py`
+- `backend/src/omnibase/sandbox/runner.py`
+- `backend/src/omnibase/sandbox/runner_service.py`
+- `backend/src/omnibase/sandbox/runtime_driver.py`
+- `backend/src/omnibase/sandbox/runtime_probe.py`
+- `backend/src/omnibase/sandbox/transport_auth.py` (`TrustedRunnerMtlsPeer`, `MtlsRunnerTransportAuthenticator`, `SqliteRunnerReplayStore`)
+- `backend/src/omnibase/sandbox/transport_service.py`
+- `backend/tests/test_p34_5_sandbox_deployment_launcher.py`
+- `scripts/sandbox/probe_linux_runtime.py`
+- `scripts/sandbox/run_a4_attack_matrix.py`
+- `deployment/sandbox/**`
+- `docs/evidence/p34-5/linux-runner-attack-gate.json`
+
+**为何存在**
+
+“命令在 Linux 上运行”不等于“命令被安全隔离”。Runner 必须在副作用前证明受信 launcher、受信 runner root、cgroup v2、独立 user/PID/mount/network namespace、seccomp、LSM、身份映射和 profile digest，并把这些证据与 operation、Run/runtime、Runner/Node 和 fencing 绑定。Coordinator 与 Runner 必须使用同一个 canonical execution-binding digest；非零退出、截断、超时、输出溢出、receipt 漂移或无法证明 cgroup 已空都不能写成成功。杀死 launcher PID 也不能代替杀死整个 operation cgroup。
+
+**允许的改法**
+
+- 在纯 Core `dispatch_digest.py` 中维护 canonical request/spec/execution binding，Runner 侧只能委托或证明完全一致。
+- 通过固定路径、固定摘要、无 shell 的 launcher 接收结构化 JSON；stdin 写入和 stdout/stderr 捕获必须受 deadline 与字节上限约束。
+- production Runner transport 只接受可信 mTLS ingress 注入的 `TrustedRunnerMtlsPeer`，并将证书指纹、Runner/Node identity、Node fencing、有效期与 envelope binding 一起验证；peer certificate thumbprint 必须与 `VerifiedRunnerHost.runner_identity_thumbprint` 精确一致，不能只比较 `runner_id`/`node_id`；普通 Header、来源 IP 或调用方对象不能替代 mTLS peer evidence。
+- 使用私有显式路径的 `SqliteRunnerReplayStore` 持久拒绝 nonce 与 sequence replay；父目录/文件必须通过 owner、mode、regular-file 和 no-symlink 检查，进程重启不能清空 replay 边界。
+- 每个 operation 使用独立 cgroup；超时、输出溢出、spawn/pipe/selector/communicate/metadata/evidence 任一异常都先写该 operation 的 `cgroup.kill`，等待 `cgroup.events` 明确 `populated 0`，随后才清理 launcher process group、cgroup 与本次 runtime 目录。无法证明为空时必须保留现场并 fail-closed。
+- 使用真实 rootless runtime 的 subordinate UID/GID 映射与 namespace inode 作为 user namespace 证据；不得因为宿主策略禁止裸 `unshare -Ur` 就忽略真实容器映射。
+- host namespace reference 只有两种可信形式：直接 VM 上的 `/proc/1/ns/{user,pid,mnt,net}` namespace symlink handle，或 `/run/omnibase-host-ns/{user,pid,mnt,net}` 下由 root 拥有、非 group/world-writable 的 regular snapshot，且内容必须严格为对应 host namespace 的 `device:inode`。runtime probe 比较的是 namespace identity，不是 snapshot 普通文件自身的 inode。
+- 目标 Linux profile 可使用 AppArmor 或等价受支持 LSM，但必须在目标节点证明 loaded/enforced，而不是只读取配置文件名。
+
+**禁止的改法**
+
+- 在 Core API、Celery、Browser 进程或普通宿主 shell 中直接执行 workspace command。
+- 用 PID kill、超时返回、进程退出或 `docker stop` 文本代替整个 cgroup 已终止的证据。
+- 对缺失 cgroup、namespace、seccomp、LSM、launcher digest、runner-root digest、Node fencing 或 receipt binding 的宿主降级通过。
+- 把任意普通文件的 inode 当作 host namespace identity，接受非 root-owned/可写 snapshot、非严格 `dev:ino` 内容，或让 runtime 与 host namespace 相同时继续执行。
+- 在 production 使用 `HmacRunnerTransportAuthenticator` 或 `InMemoryRunnerReplayStore`，把普通请求 Header 转成 trusted peer，只绑定 `runner_id`/`node_id` 而不核对 host identity thumbprint，使用共享/可写/symlink SQLite 路径，或在进程重启后接受旧 nonce/sequence。
+- 把 Docker Desktop、WSL、rootful 容器或共享宿主的成功 smoke 自动描述为 production hostile-code isolation。
+- 让 Runner 持有数据库、Redis、MinIO、JWT、签名私钥、宿主 `.env`、容器 socket、宿主工作区或成员 Overlay credential。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_5_sandbox_a2_dispatch.py`
+- `backend/tests/test_p34_5_sandbox_a4_runtime.py`
+- `backend/tests/test_p34_5_sandbox_a4_transport.py`
+- `backend/tests/test_p34_5_sandbox_deployment_launcher.py`
+- `python scripts/sandbox/probe_linux_runtime.py --config <target-host-config>`
+- `python scripts/sandbox/run_a4_attack_matrix.py <target-host-config>`；只有真实目标宿主产生的 artifact 才能作为攻击 Gate 证据。
+
+**失败恢复**
+
+撤下 `AttestedLinuxSandboxRunner`/RuntimeDriver wiring，恢复 unavailable transport/Runner，撤销相关 Run Lease 与 workload identity，并通过独立控制通道按 operation cgroup 停止遗留 workload。保留 attestation、receipt、cgroup、stderr/stdout 摘要和 ambiguous operation 历史。无法证明 cgroup 为空时按仍有敌对进程处理，不能标记成功或自动重放。
+
+## INV-019 logical-service-network
+
+**权威源码**
+
+- `backend/src/omnibase/sandbox/network.py`
+- `backend/src/omnibase/sandbox/broker.py`
+- `backend/src/omnibase/sandbox/network_ledger.py`
+- `backend/src/omnibase/sandbox/network_runtime.py`
+- `backend/src/omnibase/sandbox/overlay_publication.py`
+- `backend/tests/test_p34_5_sandbox_network_broker.py`
+- `backend/tests/test_p34_5_sandbox_network_durable.py`
+- `backend/tests/test_p34_5_sandbox_network_runtime.py`
+- `backend/tests/test_p34_5_overlay_adapter.py`
+- `backend/tests/test_p34_5_network_broker_daemon.py`
+- `deployment/network-broker/**`
+- `scripts/network-broker/**`
+- `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`
+
+**为何存在**
+
+Sandbox 需要使用 Workspace 服务或只读 Gateway，不代表它可以加入成员 Overlay、解析任意地址或获得公网/LAN 通行证。网络授权必须绑定 Tenant、Workspace、Run、runtime、workload identity、Run/Node/Network fencing、Network Lease、logical service、协议/端口、deadline 和预算。Broker 在独立 network namespace 证据下把 logical service 解析为 server-owned destination，并在连接前再次解析以拒绝 DNS rebinding；物理地址、路由、provider handle 和凭据都不能进入 Sandbox DTO。
+
+**允许的改法**
+
+- 扩展逻辑服务类型、协议或预算时，同时更新绑定 digest、resolver、policy、receipt 和负向测试。
+- 使用 operation-idempotent durable ledger 预留 connection/bytes 预算；exact committed replay 不重复扣费或再次调用 transport。
+- durable reservation 的状态只能从 `pending` 单向进入 `committed` 或 `unknown`；`pending/unknown` 都继续占用预算并阻止自动重放。Ledger 必须使用显式绝对私有路径、原子 `O_EXCL/O_NOFOLLOW` 创建、`BEGIN IMMEDIATE` aggregate CAS、不可 DELETE/改写的 SQLite trigger，且它不是业务数据库。
+- 在授权后和连接前分别解析，并对两次目的地分类和 resolution digest 做一致性检查。
+- production namespace attestor 只读取可信 daemon 私有目录中的当前 runtime 证据，使用 `O_NOFOLLOW`/`fstat` 防路径替换，绑定 Runner/namespace ID、可信 PID/starttime、live `/proc/<pid>/ns/net` `dev:ino`、全部 Run/Node/Network fencing 与 workload identity，并在 durable reservation/transport 前重新验证。host reference 只允许精确 `/proc/1/ns/net` 或 root-owned private `/run/omnibase-host-ns/net` strict `dev:ino` snapshot。
+- 最小本地 Broker transport 只连接显式私有 `AF_UNIX` socket；daemon 必须使用与调用方不同的专用 UID/GID，连接前后 socket `dev:ino` 必须连续，Linux `SO_PEERCRED` PID/UID/GID 与 PID starttime 必须稳定，并通过独立 pinned key 的 nonce challenge-response 证明应用层 daemon identity。任何公网或成员 Overlay route 仍由 policy 在 transport 前拒绝。
+- 独立 Linux Broker daemon 必须从 `PrivateNetwork=yes` 的空网络 namespace 启动，只允许短生命周期 worker 在重新打开并验证 live `/proc/<pid>/ns/net`、PID starttime、positive `dev:ino`、非 host namespace 与最长五分钟 root-owned permit 后执行一次 `setns` 和 TCP connect。任何网络副作用前先以 durable `O_EXCL` marker 消费 operation；receipt 只能报告实际 socket connection/bytes，并绑定 challenge、operation 与 plan digest。
+- Overlay adapter 只能发布 `OverlayLogicalServicePublication`，再经 verified mapper 生成 Broker 的 `LogicalNetworkService`。
+
+**禁止的改法**
+
+- 允许 Sandbox 直接访问 loopback、metadata、link-local、RFC1918、IPv6 ULA、multicast/reserved、宿主 LAN、成员私网、管理端口或任意公网。
+- 让 Sandbox 传入 IP、URL、route、DNS answer、provider handle、credential reference 或 member identity。
+- 用 allowlist 域名跳过解析后 IP 检查，跟随重定向进入私网，或在两次解析漂移时继续连接。
+- 在缺失 authorizer/resolver/namespace attestor/budget ledger/transport 时默认开放，或把 test-only in-memory ledger 当成 production durable evidence。
+- 在 transport 已可能接收请求后删除 pending charge、把 commit 异常当作未发生、从 `unknown` 回退到 pending，或在没有人工 reconciliation 的情况下再次连接。
+- 用普通文件 path、可写 evidence、任意 `/proc/*/ns/net`、非 root snapshot、调用方声明的 namespace UUID、同 UID 近似、source IP 或 Header 代替 live namespace identity、专用 daemon UID、`SO_PEERCRED` 与 pinned-key challenge。
+- 让 Broker supervisor 自身拥有宿主网络、让 Sandbox 直接持有 daemon key/permit/AF_UNIX socket、在 consumed marker 后自动重放，或用普通 Docker bridge 的成功连接代替独立 Linux Runner 的真实 `setns`/default-deny attack Gate。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_5_sandbox_network_broker.py`
+- `backend/tests/test_p34_5_sandbox_network_durable.py`
+- `backend/tests/test_p34_5_sandbox_network_runtime.py`
+- `backend/tests/test_p34_5_overlay_adapter.py`
+- `backend/tests/test_p34_5_network_broker_daemon.py`
+- 独立 Linux Runner Network Broker Gate：真实 namespace-only connect、direct public/host deny、public/member/address-class deny、connection/bytes budget、challenge forgery、stale PID/starttime/netns、host/cross-runtime、socket impersonation/continuity、durable replay 与 cleanup。
+- Threat matrix `RUN-03/04`、`NET-01/02` 与 `CROSS-01`。
+
+**失败恢复**
+
+恢复全部 rejecting/unavailable Broker 组件，停止独立 daemon，撤销受影响 Network Lease、logical service publication 与 workload identity，并阻断对应 network namespace。保留 budget reservation、daemon consumed marker、resolution、namespace 和 receipt 证据；目的地或结果不明确时不自动重试。daemon、systemd、permit、namespace、transport 或 Gate 脚本哈希变化后必须在独立 Linux Runner 重跑攻击 Gate，普通 Docker/WSL 结果不能替代。
+
+## INV-020 overlay-adapter-binding
+
+**权威源码**
+
+- `backend/src/omnibase/workspaces/overlay_adapters/contracts.py`
+- `backend/src/omnibase/workspaces/overlay_adapters/headscale.py`
+- `backend/src/omnibase/workspaces/overlay_adapters/ledger.py`
+- `backend/src/omnibase/workspaces/overlay_adapters/transport.py`
+- `backend/src/omnibase/sandbox/overlay_publication.py`
+- `backend/tests/test_p34_5_overlay_adapter.py`
+- `backend/tests/test_p34_5_overlay_ledger.py`
+- `backend/tests/test_p34_5_overlay_disposable_gate.py`
+- `scripts/overlay/**`
+- `deployment/overlay/**`
+- `docs/evidence/p34-5/overlay-disposable-gate.json`
+
+**为何存在**
+
+Overlay 是成员受信 Node Daemon 之间的基础设施，不是 Workspace 或 Sandbox 的授权事实。每次 activate/rotate/revoke/status 必须在线绑定 Tenant、Workspace、Peer Grant、Service Advertisement、Network Lease、双 Node attestation、Workspace/service generation、Peer/Network/双 Node fencing 和 credential generation。Sandbox subject 与 direct endpoint publication 在 intent 构造阶段即拒绝；最终只向 Broker 发布不含地址、route、provider handle 或凭据的 logical service。
+
+**允许的改法**
+
+- 在 provider-neutral 契约后新增 adapter；provider 特有 key、地址和命令只留在受信 Node Daemon transport 内。
+- production mutation 使用可跨进程重启的 `OverlayOperationLedger`；reserve 必须发生在 credential issuance 和 daemon transport 之前。
+- credential 只通过短期 opaque reference 传递，generation 必须严格高于 live generation。
+- daemon status/receipt 必须重新核对完整 binding；active publication 必须绑定 live binding、active receipt、fencing、generation、expiry 和 digest。
+
+**禁止的改法**
+
+- 将 Sandbox 注册为 Overlay peer，向 Sandbox 发布直接 endpoint，或把成员设备身份复制给 workload。
+- 持久化或返回 raw Headscale/Tailscale auth key、Overlay IP/route、provider handle、Node Daemon credential 或 URL 内嵌 secret。
+- 对已经可能跨过 transport boundary 的 mutation 自动重放，或用相同 operation ID 搭配不同 action/binding。
+- 重置 credential generation、Peer/Network/Node fencing，或把 `InMemoryOverlayOperationLedger` 描述为生产 durability。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_5_overlay_adapter.py`
+- `backend/tests/test_p34_5_overlay_ledger.py`
+- `backend/tests/test_p34_5_overlay_disposable_gate.py`
+- `backend/tests/test_p34_4_overlay_collaboration.py`
+- P34.5 工程 Gate 必须使用真实 disposable Headscale control plane，并通过 mTLS Node Daemon 对真实 provider record 完成 activate/status/rotate/revoke、ambiguous no-replay、离线/重连、凭据 containment 与完整清理；单元测试或只修改 test-double 本地状态不能代替该 Gate。
+- P34.7 production Gate 继续要求 hardened production Node Daemon、两个真实成员节点的数据面、强制 DERP relay/故障恢复，以及节点失陷、真实 node revoke 与 credential theft 攻击矩阵。P34.5 的 provider control-plane Gate 不得冒充这些生产数据面证据。
+
+**失败恢复**
+
+恢复 rejecting verifier/attestor/credential issuer/ledger/transport/mapper，撤销 Peer Grant、Service Advertisement、Network Lease 和短期 credential reference。对 ambiguous mutation 先读可信 daemon status 并人工 reconciliation，不删除 ledger reservation，也不使用同一 operation ID 猜测重放。
+
+## INV-021 gateway-workload-identity
+
+**权威源码**
+
+- `backend/src/omnibase/capability_gateway/workload.py`
+- `backend/src/omnibase/capability_gateway/app.py`
+- `backend/src/omnibase/capability_gateway/mtls_ingress.py`
+- `backend/src/omnibase/capability_gateway/server.py`
+- `backend/src/omnibase/capability_gateway/thumbprints.py`
+- `backend/src/omnibase/capability_gateway/security.py`
+- `backend/src/omnibase/capabilities/service.py`
+- `backend/src/omnibase/workspaces/service.py`
+- `backend/tests/test_p34_5_gateway_workload.py`
+- `backend/tests/test_p34_5_gateway_mtls_ingress.py`
+- `backend/tests/integration/test_p34_5_gateway_mtls_split_disposable.py`
+- `scripts/gateway/run_p34_5d_disposable_gate.py`
+- `deployment/gateway/compose.disposable.yml`
+- `docs/evidence/p34-5/gateway-mtls-disposable-gate.{json,md}`
+
+**为何存在**
+
+Gateway bearer token 只代表 P34.2 read capability，不能证明发起请求的当前 Sandbox runtime 仍受授权。可信 Runner/Broker mTLS transport 必须在 ASGI scope 注入不可由普通 Header 构造的 peer evidence；Gateway 每次请求都重新读取 live P34.4 Run Lease、Node attestation、Workspace generation、Run/Node fencing、runtime 与证书指纹。Core 只有在完整 binding 当前有效后才能签发最长五分钟且不晚于 Lease expiry 的 read token；Runner/Sandbox 永不持有签名私钥。
+
+**允许的改法**
+
+- 支持可信 Runner 或 Network Broker peer kind，但必须由 server-owned mTLS ingress 构造 `TrustedGatewayPeerEvidence`。
+- credential-vending 请求体必须为空；grant、key、issuer、tenant、Workspace、Run、Runtime、Node、Lease、generation、fencing 与 originating user 只能来自 server-owned registry 和 live attestation，不能由调用方提交。
+- 复用 P34.2 `CoreCapabilityVerifier`、只读 PostgreSQL/RAG adapter 和 append-only Audit；保持 Gateway 与 Browser ASGI 分离。
+- 缩短 token TTL、加强证书轮换和 revocation，但不能缓存 live lease acceptance 跨请求；TTL 必须同时不晚于五分钟、peer evidence expiry 与 Run Lease expiry。
+- token 和私钥字段必须 redacted/repr-safe，错误与 Audit 不得包含原始凭据或物理 locator。
+
+**禁止的改法**
+
+- 从 HTTP Header、cookie、source IP、opaque runtime ID 或 bearer token 自身构造 trusted peer evidence。
+- 在 live lease/Node/fencing 复核前加载私钥或签发 token，或让 TTL 超过五分钟/Run Lease expiry。
+- 给 Runner/Sandbox 数据库 session、连接串、Redis/MinIO credential、JWT/signing private key 或 direct infrastructure route。
+- 把 Gateway 挂入 Browser app，接受 Browser JWT 代替 workload mTLS，或开放 Runtime write capability。
+- 让持有数据库/签名私钥的 Gateway 进程同时充当受限 workload client，或把 Backend 源码、数据库/Redis/MinIO/JWT 配置、signing key、server secret、宿主 mount、容器 socket交给 broker-client。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_5_gateway_workload.py`
+- `backend/tests/test_p34_5_gateway_mtls_ingress.py`
+- `backend/tests/test_p34_2_gateway_api.py`
+- `backend/tests/test_p34_2_gateway_query.py`
+- `backend/tests/integration/test_p34_5_gateway_mtls_split_disposable.py`（仅 guarded disposable `omnibase_test_*` sentinel PostgreSQL）
+- `scripts/gateway/run_p34_5d_disposable_gate.py`；必须验证独立 server/client、真实 TLS handshake、parameter-free credential vending、四项只读调用、cross-tenant/stale/revocation/certificate/TLS 负例与 containers/networks/volumes 全清理。
+
+**失败恢复**
+
+恢复 rejecting workload attestor、capability verifier、credential issuer 和 private-key provider，撤销短期 token/Run Lease/workload certificate，并保留 code-only denied/error Audit。无法证明 mTLS scope 或 live lease 当前性时返回不可用/拒绝，不能回退到 Browser cookie 或静态 service secret。

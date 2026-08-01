@@ -48,9 +48,20 @@ runtime evidence; then correct the stale documentation in the same change.
   new `omnibase_restore_*` database, never destructive in-place guessing.
 - P34.4 Workspace governance, lifecycle metadata, lease/fencing, trusted-node
   control records, and the fake/local collaboration harness are explicitly
-  unlocked. P34.5 real Sandbox isolation, a real Overlay adapter or member
-  network, real tenant/RAG data access, and Agent Runtime/orchestration remain
-  frozen until the roadmap and handover explicitly unlock them.
+  unlocked. P34.5A0-A4/B/C/D are engineering-sealed: the independent Hyper-V
+  Linux Runner passed its 11/11 isolation Gate, the independent PrivateNetwork
+  Broker daemon passed two 26/26 namespace/default-deny/identity/budget/replay
+  rounds, the Headscale adapter passed a real control-plane Gate with an mTLS
+  Node-Daemon test double, and the split-process mTLS Gateway passed the guarded
+  disposable schema/rows/RAG/citation read Gate. Production defaults still
+  reject until the documented trusted wiring is explicitly assembled. This
+  does not authorize a normal Docker/WSL host to run hostile code, expose a
+  member Overlay endpoint to a Sandbox, connect a Sandbox or Runner directly to
+  PostgreSQL/Redis/MinIO, or treat the disposable Gates as proof of production
+  Core-to-Runner/Broker activation, non-disposable tenant/RAG, real member data
+  plane, DERP, node-compromise, capacity, or SLA readiness. Workspace
+  private-write/RAG promotion and Agent Runtime/orchestration remain frozen
+  until the roadmap and handover explicitly unlock them.
 - P34.4 membership mutations serialize on the tenant-bound Workspace aggregate,
   then re-lock the actor and target membership before evaluating the active-owner
   invariant. Template registration revalidates the live tenant administrator in
@@ -88,6 +99,12 @@ runtime evidence; then correct the stale documentation in the same change.
   shape.
 - Never stage `.omo/`, `.zcode/`, `.tmp/`, generated eval workspaces, model
   weights, `node_modules/`, `.next/`, SDK `dist/`, or local database material.
+- From the repository root, every Compose diagnostic, `config`, `run`, `exec`,
+  `up`, `logs`, or `ps` command must explicitly use
+  `docker compose --env-file .env.example ...` unless it uses a documented
+  disposable overlay-specific Compose file and env file. Never run bare
+  `docker compose config --format json`: Compose would implicitly expand the
+  root `.env` and could expose secrets through diagnostic output.
 - Do not use `git add .`. Stage explicit paths and inspect the cached diff.
 - Do not run destructive database tests against a normal database. Use the
   sentinel Compose project and `omnibase_test_*` names enforced by the Makefile.
@@ -99,10 +116,10 @@ runtime evidence; then correct the stale documentation in the same change.
 The project is container-first; a host Python environment is not required.
 
 ```text
-docker compose run --rm --no-deps backend mypy src
-docker compose run --rm --no-deps backend pytest -m "not integration" -q
-docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .
-docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+docker compose --env-file .env.example run --rm --no-deps backend mypy src
+docker compose --env-file .env.example run --rm --no-deps backend pytest -m "not integration" -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 ```
 
 The exact focused Ruff baseline enforced by CI is in

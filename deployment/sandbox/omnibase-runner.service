@@ -1,0 +1,62 @@
+[Unit]
+Description=OmniBase P34.5 hardened independent Sandbox Runner
+After=local-fs.target apparmor.service omnibase-runner-host-ns.service
+Requires=apparmor.service omnibase-runner-host-ns.service
+ConditionFileIsExecutable=/usr/libexec/omnibase/omnibase-isolation-launcher
+
+[Service]
+Type=simple
+User=omnibase-runner
+Group=omnibase-runner
+UMask=0077
+RuntimeDirectory=omnibase-runner
+RuntimeDirectoryMode=0700
+StateDirectory=omnibase-runner
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/omnibase-runner
+ExecStart=/usr/bin/unshare --pid --fork /usr/libexec/omnibase/omnibase-isolation-launcher serve
+Restart=on-failure
+RestartSec=2s
+
+PrivateUsers=yes
+PrivateMounts=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectClock=yes
+ProtectControlGroups=no
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+DevicePolicy=closed
+SystemCallArchitectures=native
+SystemCallFilter=~add_key bpf delete_module finit_module init_module io_pgetevents io_submit io_uring_setup ioperm iopl kexec_file_load kexec_load keyctl open_by_handle_at perf_event_open process_vm_readv process_vm_writev ptrace reboot request_key swapoff swapon userfaultfd
+AppArmorProfile=omnibase-runner
+
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_KILL CAP_SETGID CAP_SETPCAP CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT
+AmbientCapabilities=CAP_CHOWN CAP_DAC_OVERRIDE CAP_KILL CAP_SETGID CAP_SETPCAP CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT
+
+ReadWritePaths=/var/lib/omnibase-runner /run/omnibase-runner
+BindReadOnlyPaths=/run/omnibase-host-ns
+InaccessiblePaths=/root /home /media /mnt /srv
+RemoveIPC=yes
+KeyringMode=private
+TasksMax=256
+MemoryMax=768M
+MemorySwapMax=0
+CPUQuota=100%
+Delegate=cpu memory pids
+DelegateSubgroup=supervisor
+
+[Install]
+WantedBy=multi-user.target

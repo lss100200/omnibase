@@ -38,7 +38,7 @@ class FakeVerifier:
         del session, resource_id
         if credential.authorization == "bad":
             raise CapabilityVerificationError
-        assert credential.trusted_context.certificate_thumbprint == "trusted-thumbprint"
+        assert credential.trusted_context.certificate_thumbprint == "a" * 64
         assert action in self.capability.actions
         return self.capability
 
@@ -110,7 +110,7 @@ class StaticAttestor:
             tenant_id=TENANT,
             workspace_id=WORKSPACE,
             runtime_instance_id="50000000-0000-0000-0000-000000000001",
-            certificate_thumbprint="trusted-thumbprint",
+            certificate_thumbprint="a" * 64,
         )
 
 
@@ -131,6 +131,7 @@ def _capability(**changes) -> VerifiedCapability:
 
 
 def _client(
+    request: pytest.FixtureRequest,
     *,
     descriptor: ResourceDescriptor | None = None,
     data_adapter=None,
@@ -161,7 +162,9 @@ def _client(
     )
     session = MagicMock()
     app.dependency_overrides[get_gateway_db] = lambda: session
-    return TestClient(app, raise_server_exceptions=False), verifier, audit, session
+    client = TestClient(app, raise_server_exceptions=False)
+    request.addfinalizer(client.close)
+    return client, verifier, audit, session
 
 
 HEADERS = {
@@ -170,8 +173,10 @@ HEADERS = {
 }
 
 
-def test_gateway_rejects_user_bearer_jwt_and_has_no_cors() -> None:
-    client, _, _, _ = _client()
+def test_gateway_rejects_user_bearer_jwt_and_has_no_cors(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, _, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/schema/read",
         json={"resource_id": RESOURCE},
@@ -181,8 +186,10 @@ def test_gateway_rejects_user_bearer_jwt_and_has_no_cors() -> None:
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_gateway_schema_read_consumes_budget_and_audits() -> None:
-    client, verifier, audit, _ = _client()
+def test_gateway_schema_read_consumes_budget_and_audits(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, verifier, audit, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=HEADERS
     )
@@ -193,8 +200,10 @@ def test_gateway_schema_read_consumes_budget_and_audits() -> None:
     assert audit.records[0].decision == "allowed"
 
 
-def test_default_missing_trusted_attestor_fails_closed() -> None:
-    client, verifier, _, _ = _client(trusted_attestor=False)
+def test_default_missing_trusted_attestor_fails_closed(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, verifier, _, _ = _client(request, trusted_attestor=False)
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=HEADERS
     )
@@ -202,8 +211,10 @@ def test_default_missing_trusted_attestor_fails_closed() -> None:
     assert verifier.consumed == []
 
 
-def test_client_supplied_certificate_thumbprint_is_ignored() -> None:
-    client, _, _, _ = _client()
+def test_client_supplied_certificate_thumbprint_is_ignored(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, _, _ = _client(request)
     headers = {**HEADERS, "X-Omnibase-Workload-Cert-Sha256": "attacker-controlled"}
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=headers
@@ -211,8 +222,10 @@ def test_client_supplied_certificate_thumbprint_is_ignored() -> None:
     assert response.status_code == 200
 
 
-def test_oversized_schema_response_is_rejected_with_413() -> None:
-    client, verifier, audit, _ = _client(data_adapter=OversizedSchemaAdapter())
+def test_oversized_schema_response_is_rejected_with_413(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, verifier, audit, _ = _client(request, data_adapter=OversizedSchemaAdapter())
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=HEADERS
     )
@@ -222,8 +235,10 @@ def test_oversized_schema_response_is_rejected_with_413() -> None:
     assert audit.records[0].decision == "denied"
 
 
-def test_audit_and_response_share_the_middleware_request_id() -> None:
-    client, _, audit, _ = _client()
+def test_audit_and_response_share_the_middleware_request_id(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, audit, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=HEADERS
     )
@@ -258,8 +273,11 @@ def test_audit_and_response_share_the_middleware_request_id() -> None:
         ),
     ],
 )
-def test_tenant_and_workspace_idor_return_same_safe_404(descriptor) -> None:
-    client, verifier, audit, session = _client(descriptor=descriptor)
+def test_tenant_and_workspace_idor_return_same_safe_404(
+    descriptor,
+    request: pytest.FixtureRequest,
+) -> None:
+    client, verifier, audit, session = _client(request, descriptor=descriptor)
     response = client.post(
         "/gateway/v1/data/schema/read", json={"resource_id": RESOURCE}, headers=HEADERS
     )
@@ -273,8 +291,10 @@ def test_tenant_and_workspace_idor_return_same_safe_404(descriptor) -> None:
     assert session.rollback.call_count >= 1
 
 
-def test_scope_constraints_reject_rows_timeout_and_bytes() -> None:
-    client, _, audit, _ = _client()
+def test_scope_constraints_reject_rows_timeout_and_bytes(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, audit, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/rows/read",
         headers=HEADERS,
@@ -288,8 +308,8 @@ def test_scope_constraints_reject_rows_timeout_and_bytes() -> None:
     assert audit.records[0].reason_code == "capability_constraint_denied"
 
 
-def test_scope_cannot_be_self_reported_in_body() -> None:
-    client, _, _, _ = _client()
+def test_scope_cannot_be_self_reported_in_body(request: pytest.FixtureRequest) -> None:
+    client, _, _, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/schema/read",
         headers=HEADERS,
@@ -302,8 +322,11 @@ def test_scope_cannot_be_self_reported_in_body() -> None:
 
 
 @pytest.mark.parametrize("invalid_limit", ["5", True, 1.5])
-def test_gateway_rejects_type_confused_integer_fields(invalid_limit) -> None:
-    client, _, _, _ = _client()
+def test_gateway_rejects_type_confused_integer_fields(
+    invalid_limit,
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, _, _ = _client(request)
     response = client.post(
         "/gateway/v1/data/rows/read",
         headers=HEADERS,
@@ -312,8 +335,10 @@ def test_gateway_rejects_type_confused_integer_fields(invalid_limit) -> None:
     assert response.status_code == 422
 
 
-def test_openapi_exposes_only_closed_gateway_contract() -> None:
-    client, _, _, _ = _client()
+def test_openapi_exposes_only_closed_gateway_contract(
+    request: pytest.FixtureRequest,
+) -> None:
+    client, _, _, _ = _client(request)
     schema = client.app.openapi()
     paths = set(schema["paths"])
     assert paths == {

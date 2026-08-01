@@ -23,6 +23,11 @@ from omnibase.sandbox.contracts import (
     SandboxRuntimeSpec,
     utc_now,
 )
+from omnibase.sandbox.dispatch_digest import (
+    runner_execution_binding_digest,
+    sandbox_execution_spec_digest,
+    sandbox_request_digest,
+)
 from omnibase.sandbox.host import (
     RejectingRunnerHostAttestor,
     RunnerHostAttestor,
@@ -154,6 +159,15 @@ class SandboxExecutionCoordinator:
             raise ValueError("dispatch action binding mismatch")
         if intent.spec_digest is None:
             raise ValueError("dispatch requires a spec digest")
+        if intent.request_digest != sandbox_request_digest(request):
+            raise ValueError("dispatch request digest mismatch")
+        if intent.spec_digest != sandbox_execution_spec_digest(
+            runtime_handle=runtime_handle,
+            runtime_spec=runtime_spec,
+            command=command,
+            isolation_profile=isolation_profile,
+        ):
+            raise ValueError("dispatch execution spec digest mismatch")
         record = self._operation_store.begin(intent)
         replay = self._replay_or_reject(record)
         if replay is not None:
@@ -270,9 +284,32 @@ class SandboxExecutionCoordinator:
             self._operation_store.mark_ambiguous(operation_id)
             raise RunnerOutcomeUnknown("sandbox_runner_outcome_unknown") from exc
 
-        if receipt.operation_id != operation_id:
+        expected_binding = runner_execution_binding_digest(plan, host)
+        try:
+            receipt.verify_bound_result(
+                operation_id=operation_id,
+                binding_digest=expected_binding,
+                runner_id=host.runner_id,
+                runtime_instance_id=plan.request.runtime_instance_id,
+            )
+        except ValueError as exc:
             self._operation_store.mark_ambiguous(operation_id)
-            raise RunnerOutcomeUnknown("sandbox_runner_receipt_binding_rejected")
+            raise RunnerOutcomeUnknown("sandbox_runner_receipt_binding_rejected") from exc
+        if receipt.reason_code != "runner_execution_succeeded":
+            failed = self._operation_store.fail(
+                operation_id,
+                reason_code=receipt.reason_code,
+            )
+            return SandboxDispatchResult(record=failed, receipt=receipt, replayed=False)
+        if receipt.exit_code != 0:
+            self._operation_store.mark_ambiguous(operation_id)
+            raise RunnerOutcomeUnknown("sandbox_runner_receipt_result_rejected")
+        if receipt.truncated:
+            failed = self._operation_store.fail(
+                operation_id,
+                reason_code="runner_output_truncated",
+            )
+            return SandboxDispatchResult(record=failed, receipt=receipt, replayed=False)
         succeeded = self._operation_store.succeed(
             operation_id,
             evidence_digest=receipt.evidence_digest,

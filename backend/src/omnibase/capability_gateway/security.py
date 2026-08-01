@@ -14,6 +14,7 @@ from omnibase.capability_gateway.contracts import (
     VerifiedCapability,
     WorkloadCredential,
 )
+from omnibase.capability_gateway.thumbprints import certificate_thumbprint_to_x5t_s256
 from omnibase.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -134,7 +135,9 @@ class CoreCapabilityVerifier:
                 expected_tenant_id=identity.tenant_id,
                 expected_workspace_id=identity.workspace_id,
                 expected_runtime_instance_id=identity.runtime_instance_id,
-                expected_workload_thumbprint=identity.certificate_thumbprint,
+                expected_workload_thumbprint=certificate_thumbprint_to_x5t_s256(
+                    identity.certificate_thumbprint
+                ),
                 action=action,
                 resource_id=resource_id,
             )

@@ -1,0 +1,13 @@
+{
+  "cgroup_root": "/sys/fs/cgroup/omnibase-runner",
+  "expected_launcher_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "host_namespace_root": "/run/omnibase-host-ns",
+  "launcher_path": "/usr/libexec/omnibase/omnibase-isolation-launcher",
+  "lsm_profile_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "lsm_profile_name": "omnibase-runner",
+  "lsm_profile_path": "/etc/apparmor.d/omnibase-runner",
+  "runner_id": "00000000-0000-0000-0000-000000000000",
+  "runner_root": "/var/lib/omnibase-runner",
+  "seccomp_profile_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "seccomp_profile_path": "/etc/omnibase-runner/seccomp.json"
+}

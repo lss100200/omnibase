@@ -1,0 +1,28 @@
+[Unit]
+Description=OmniBase trusted host namespace reference mounts
+After=local-fs.target
+Before=omnibase-runner.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/omnibase/omnibase-isolation-launcher host-ns-prepare
+RemainAfterExit=yes
+UMask=0022
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_PTRACE
+AmbientCapabilities=CAP_SYS_PTRACE
+PrivateDevices=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=~@clock @debug @module @mount @raw-io @reboot @swap
+ReadWritePaths=/run/omnibase-host-ns
+
+[Install]
+WantedBy=multi-user.target

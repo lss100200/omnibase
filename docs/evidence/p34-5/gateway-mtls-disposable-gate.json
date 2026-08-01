@@ -1,0 +1,93 @@
+{
+  "allowed_audit_actions": [
+    "data.rows.read",
+    "data.schema.read",
+    "rag.citation.read",
+    "rag.search"
+  ],
+  "business_database_migrated": false,
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "temporary_env_removed": true,
+    "volumes": 0
+  },
+  "credential_flow": {
+    "client_parameters": [],
+    "live_attestation_before_private_key_load": true,
+    "server_owned_binding": true,
+    "transport_der_before_issue": true,
+    "ttl_max_seconds": 300
+  },
+  "database_name": "omnibase_test_p345d_20260801211802",
+  "database_sentinel_verified": true,
+  "direct_database_route_present": false,
+  "gate": "P34.5D split-process disposable mTLS Gateway",
+  "gate_backend_image_id": "sha256:406d67c19d7133bfefd4594dd6fa36e5aa4d8908ae1a605906139dfed9cea6f0",
+  "gate_client_image_id": "sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba",
+  "gate_postgres_image_id": "sha256:36b6a092baf69f73281b565f41013194296b7f5f0e657252cac8b619b4ed63e5",
+  "passed": true,
+  "physical_locator_exposed": false,
+  "private_key_exposed": false,
+  "process_isolation": {
+    "broker_client_backend_source_present": false,
+    "broker_client_container": true,
+    "broker_client_database_environment_present": false,
+    "broker_client_host_mount_present": false,
+    "broker_client_signing_private_key_present": false,
+    "gateway_server_container": true
+  },
+  "read_and_rejection_matrix": {
+    "citation": 200,
+    "client_environment_forbidden_keys": [],
+    "client_forbidden_mounts_present": [],
+    "credential": 200,
+    "credential_cache_control": "no-store",
+    "credential_expires_at": "2026-08-01T21:22:17.801693+00:00",
+    "credential_parameter_body": 422,
+    "cross-tenant": {
+      "credential": 401,
+      "read": 401
+    },
+    "header_cookie_spoof": "tls_rejected",
+    "lease-revoked": {
+      "credential": 401,
+      "read": 401
+    },
+    "missing_certificate": "tls_rejected",
+    "node-attestation-expired": {
+      "credential": 401,
+      "read": 401
+    },
+    "node-attestation-revoked": {
+      "credential": 401,
+      "read": 401
+    },
+    "node-fencing": {
+      "credential": 401,
+      "read": 401
+    },
+    "rag_search": 200,
+    "registry-revoked": {
+      "credential": 401,
+      "read": 401
+    },
+    "rows": 200,
+    "run-fencing": {
+      "credential": 401,
+      "read": 401
+    },
+    "schema": 200,
+    "tls_below_1_2": "tls_rejected",
+    "workspace-generation": {
+      "credential": 401,
+      "read": 401
+    },
+    "wrong_certificate": 401
+  },
+  "real_credentials_used": false,
+  "root_env_accessed": false,
+  "schema_version": 2,
+  "secret_scan_findings": [],
+  "source_mounts_read_only": true
+}

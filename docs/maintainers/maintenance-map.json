@@ -2,8 +2,9 @@
   "schema_version": 1,
   "purpose": "Machine-readable repair map for local AI maintainers. Paths are repository-relative and commands are run from the repository root unless a command changes directory explicitly.",
   "frozen_boundaries": [
-    "P34.5 real Sandbox isolation and untrusted runtime execution beyond the fail-closed A0-A3 contracts, durable ledger and metadata-only harness",
-    "Real Overlay adapters, member networking and Workspace data channels",
+    "Production hostile-code execution on any Runner that has not passed the P34.5 Linux isolation and attack matrix Gate",
+    "Real member Overlay deployment, physical Overlay endpoint exposure to Sandbox, and direct Sandbox/Runner access to PostgreSQL, Redis or MinIO",
+    "Workspace private-write, derived RAG promotion and canonical data mutation from Sandbox workloads",
     "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
   "sources_of_truth": [
@@ -251,7 +252,66 @@
         "backend/src/omnibase/sandbox/**"
       ],
       "test_paths": [
-        "backend/tests/test_p34_5_sandbox_foundation.py"
+        "backend/tests/test_p34_5_sandbox_foundation.py",
+        "backend/tests/test_p34_5_sandbox_a1_control.py",
+        "backend/tests/test_p34_5_sandbox_a2_dispatch.py",
+        "backend/tests/test_p34_5_sandbox_a3_persistence.py"
+      ]
+    },
+    {
+      "id": "INV-018",
+      "title": "Attested Linux runtime and bounded cgroup termination",
+      "document": "docs/maintainers/security-invariants.md#inv-018-attested-linux-runtime",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/runner_service.py",
+        "backend/src/omnibase/sandbox/runtime_driver.py",
+        "backend/src/omnibase/sandbox/runtime_probe.py",
+        "backend/src/omnibase/sandbox/transport_auth.py",
+        "backend/src/omnibase/sandbox/transport_service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_5_sandbox_a4_runtime.py",
+        "backend/tests/test_p34_5_sandbox_a4_transport.py",
+        "scripts/sandbox/run_a4_attack_matrix.py"
+      ]
+    },
+    {
+      "id": "INV-019",
+      "title": "Logical-service-only Sandbox network access",
+      "document": "docs/maintainers/security-invariants.md#inv-019-logical-service-network",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/network.py",
+        "backend/src/omnibase/sandbox/broker.py",
+        "backend/src/omnibase/sandbox/overlay_publication.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_5_sandbox_network_broker.py",
+        "backend/tests/test_p34_5_overlay_adapter.py"
+      ]
+    },
+    {
+      "id": "INV-020",
+      "title": "Provider-neutral Overlay mutation and publication binding",
+      "document": "docs/maintainers/security-invariants.md#inv-020-overlay-adapter-binding",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/overlay_adapters/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_5_overlay_adapter.py",
+        "backend/tests/test_p34_4_overlay_collaboration.py"
+      ]
+    },
+    {
+      "id": "INV-021",
+      "title": "mTLS workload identity and short-lived read Gateway credentials",
+      "document": "docs/maintainers/security-invariants.md#inv-021-gateway-workload-identity",
+      "source_paths": [
+        "backend/src/omnibase/capability_gateway/workload.py",
+        "backend/src/omnibase/capability_gateway/app.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_5_gateway_workload.py",
+        "backend/tests/test_p34_2_gateway_api.py"
       ]
     }
   ],
@@ -280,8 +340,8 @@
       "depends_on": [],
       "invariants": ["INV-005", "INV-010"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_health.py tests/test_http_boundaries.py -q",
-        "docker compose config --quiet"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_health.py tests/test_http_boundaries.py -q",
+        "docker compose --env-file .env.example config --quiet"
       ],
       "recovery": [
         "Revert router or middleware composition without bypassing RequestContextMiddleware or body limits.",
@@ -310,7 +370,7 @@
       "depends_on": ["runtime-composition", "migrations"],
       "invariants": ["INV-001", "INV-002", "INV-005"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",
         "make test-destructive"
       ],
       "recovery": [
@@ -338,7 +398,7 @@
       "depends_on": ["identity-tenancy", "rag-pipeline"],
       "invariants": ["INV-001", "INV-002", "INV-005", "INV-010"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_documents.py tests/test_workers.py -q"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_documents.py tests/test_workers.py -q"
       ],
       "recovery": [
         "Keep durable document state transitions authoritative; retries must not fabricate success.",
@@ -362,8 +422,8 @@
       "depends_on": ["identity-tenancy", "document-ingestion"],
       "invariants": ["INV-001", "INV-002", "INV-003", "INV-005", "INV-010"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_rag_store.py tests/test_rag_sse.py tests/test_reranker_boundary.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/rag"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_rag_store.py tests/test_rag_sse.py tests/test_reranker_boundary.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/rag"
       ],
       "recovery": [
         "Keep model download disabled by default and preserve local_files_only boundaries.",
@@ -387,8 +447,8 @@
       "depends_on": ["identity-tenancy", "migrations"],
       "invariants": ["INV-002", "INV-003", "INV-006", "INV-007"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_1_control_plane_api.py tests/test_p34_1_control_plane_models.py tests/test_p34_1_control_plane_service.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/control_plane"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_1_control_plane_api.py tests/test_p34_1_control_plane_models.py tests/test_p34_1_control_plane_service.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/control_plane"
       ],
       "recovery": [
         "Do not repair operation state by direct row edits; use a forward-fix that preserves version and audit history.",
@@ -415,8 +475,8 @@
       "depends_on": ["control-plane", "identity-tenancy"],
       "invariants": ["INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/capabilities"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capabilities"
       ],
       "recovery": [
         "Revoke affected grants and rotate signing keys through an audited forward-fix; do not relax claim validation.",
@@ -443,9 +503,9 @@
       "depends_on": ["capability-ledger", "control-plane", "rag-pipeline"],
       "invariants": ["INV-003", "INV-004", "INV-005", "INV-006"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/capability_gateway",
-        "docker compose run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py -q"
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py -q"
       ],
       "recovery": [
         "Return to RejectingCapabilityVerifier and RejectingWorkloadAttestor when trusted wiring is unavailable.",
@@ -470,8 +530,8 @@
       "depends_on": ["identity-tenancy", "control-plane", "capability-ledger", "migrations"],
       "invariants": ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests -k p34_3 -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/controlled_data",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests -k p34_3 -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/controlled_data",
         "make test-destructive"
       ],
       "recovery": [
@@ -531,10 +591,10 @@
         "INV-016"
       ],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/workspaces",
-        "docker compose run --rm --no-deps backend ruff check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
-        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspaces",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspaces src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py tests/test_p34_4_api_contract.py tests/test_p34_4_workspace_service.py tests/test_p34_4_overlay_collaboration.py tests/integration/test_p34_4_workspace_foundation.py",
         "make test-destructive"
       ],
       "recovery": [
@@ -595,10 +655,10 @@
         "INV-017"
       ],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py tests/test_p34_4_workspace_service.py -q",
-        "docker compose run --rm --no-deps backend mypy src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces",
-        "docker compose run --rm --no-deps backend ruff check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
-        "docker compose run --rm --no-deps backend ruff format --check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py tests/test_p34_4_workspace_service.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/capabilities src/omnibase/sandbox src/omnibase/workspaces/contracts.py src/omnibase/workspaces/service.py src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py tests/test_p34_5_sandbox_foundation.py tests/test_p34_5_sandbox_a1_control.py tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a3_persistence.py tests/integration/test_p34_5_sandbox_persistence.py",
         "make test-destructive",
         "python scripts/sandbox/probe_runner_host.py"
       ],
@@ -610,6 +670,290 @@
         "Ambiguous provider outcomes require explicit reconciliation and must never be automatically replayed under the same operation ID.",
         "Treat FakeInMemorySandboxProvider as metadata-only; its exec/cancel paths must remain hard-disabled and it must never gain Docker, socket, subprocess, host path, network or data-store integration.",
         "Real execution remains blocked until a Linux isolation profile, Runner identity, default-deny network, resource enforcement and the P34.5 attack matrix are independently verified."
+      ]
+    },
+    {
+      "id": "sandbox-runtime",
+      "name": "P34.5A4 attested independent Linux Runner and bounded RuntimeDriver",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/dispatch_digest.py",
+        "backend/src/omnibase/sandbox/runner.py",
+        "backend/src/omnibase/sandbox/runner_service.py",
+        "backend/src/omnibase/sandbox/runtime_driver.py",
+        "backend/src/omnibase/sandbox/runtime_probe.py",
+        "backend/src/omnibase/sandbox/transport_auth.py",
+        "backend/src/omnibase/sandbox/transport_service.py",
+        "backend/tests/test_p34_5_sandbox_deployment_launcher.py",
+        "scripts/sandbox/**",
+        "deployment/sandbox/**",
+        "docs/evidence/p34-5/linux-runner-attack-gate.json",
+        "docs/evidence/p34-5/linux-runner-attack-gate.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/sandbox/dispatch_digest.py:runner_execution_binding_digest",
+        "backend/src/omnibase/sandbox/runner_service.py:AttestedLinuxSandboxRunner",
+        "backend/src/omnibase/sandbox/runtime_driver.py:AttestedLinuxLocalRuntimeDriver",
+        "backend/src/omnibase/sandbox/runtime_driver.py:SubprocessIsolationLauncher",
+        "backend/src/omnibase/sandbox/runtime_probe.py:SystemLinuxRuntimeProbe",
+        "backend/src/omnibase/sandbox/transport_auth.py:TrustedRunnerMtlsPeer",
+        "backend/src/omnibase/sandbox/transport_auth.py:MtlsRunnerTransportAuthenticator",
+        "backend/src/omnibase/sandbox/transport_auth.py:SqliteRunnerReplayStore",
+        "backend/src/omnibase/sandbox/transport_auth.py:HmacRunnerTransportAuthenticator",
+        "backend/src/omnibase/sandbox/transport_service.py:AuthenticatedRunnerService",
+        "backend/src/omnibase/sandbox/transport_service.py:AuthenticatedLocalRunnerTransport",
+        "scripts/sandbox/probe_linux_runtime.py:main",
+        "scripts/sandbox/run_a4_attack_matrix.py:main",
+        "deployment/sandbox/omnibase-isolation-launcher.py:_execute",
+        "deployment/sandbox/run-attack-gate.py:main"
+      ],
+      "public_interfaces": [
+        "Internal authenticated Runner transport; never mounted on Browser ASGI",
+        "Trusted mTLS peer binding including exact certificate thumbprint match to VerifiedRunnerHost.runner_identity_thumbprint, plus process-restart durable nonce/sequence replay rejection",
+        "Pinned launcher JSON protocol with canonical operation/plan/host binding digest",
+        "Linux runtime attestation for cgroup v2, namespace identity, seccomp, LSM and trusted paths; host namespace references are either /proc/1/ns handles or root-owned dev:ino snapshots",
+        "Per-operation cgroup.kill and bounded empty-cgroup proof before launcher process-group cleanup, including every launcher, pipe, selector and evidence failure path"
+      ],
+      "depends_on": [
+        "sandbox-foundation",
+        "workspace-control-plane"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-017",
+        "INV-018"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
+        "python scripts/sandbox/probe_linux_runtime.py --config scripts/sandbox/linux-runtime-config.example.json",
+        "python scripts/sandbox/run_a4_attack_matrix.py --help",
+        "python -m py_compile deployment/sandbox/omnibase-isolation-launcher.py deployment/sandbox/run-attack-gate.py"
+      ],
+      "recovery": [
+        "Restore UnavailableLinuxRuntimeDriver, UnavailableSandboxRunner and UnavailableRunnerTransport whenever host, launcher, namespace, cgroup, LSM or receipt evidence cannot be proven.",
+        "Never weaken the isolation profile to fit Docker Desktop or WSL; those environments remain development-only unless their exact host evidence independently passes the same attack Gate.",
+        "Never compare a runtime namespace to an arbitrary regular-file inode; accept only /proc/1/ns symlink handles or root-owned non-writable /run/omnibase-host-ns dev:ino snapshots.",
+        "Treat timeout, output overflow, incomplete cgroup kill, missing populated=0 evidence and transport ambiguity as failure or reconciliation-required, never success or automatic replay.",
+        "Production transport uses TrustedRunnerMtlsPeer, MtlsRunnerTransportAuthenticator and a private durable replay store; require the peer certificate thumbprint to equal VerifiedRunnerHost.runner_identity_thumbprint exactly; HMAC and in-memory replay state are local/development-only.",
+        "Keep Runner nodes free of Core database, object-store, Redis, JWT, signing-key, Docker/Podman socket and member-Overlay credentials."
+      ]
+    },
+    {
+      "id": "network-broker",
+      "name": "P34.5B default-deny Workspace Network Broker",
+      "source_paths": [
+        "backend/src/omnibase/sandbox/network.py",
+        "backend/src/omnibase/sandbox/broker.py",
+        "backend/src/omnibase/sandbox/network_ledger.py",
+        "backend/src/omnibase/sandbox/network_runtime.py",
+        "backend/src/omnibase/sandbox/overlay_publication.py",
+        "backend/tests/test_p34_5_sandbox_network_broker.py",
+        "backend/tests/test_p34_5_sandbox_network_durable.py",
+        "backend/tests/test_p34_5_sandbox_network_runtime.py",
+        "backend/tests/test_p34_5_network_broker_daemon.py",
+        "deployment/network-broker/**",
+        "scripts/network-broker/**",
+        "docs/evidence/p34-5/network-broker-attack-gate.json",
+        "docs/evidence/p34-5/network-broker-attack-gate.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/sandbox/network.py:SandboxNetworkAuthorizer",
+        "backend/src/omnibase/sandbox/network.py:WorkspaceServiceResolver",
+        "backend/src/omnibase/sandbox/broker.py:WorkspaceNetworkPolicyEngine",
+        "backend/src/omnibase/sandbox/broker.py:ControlledWorkspaceNetworkBroker",
+        "backend/src/omnibase/sandbox/broker.py:RejectingWorkspaceNetworkBroker",
+        "backend/src/omnibase/sandbox/network_ledger.py:SqliteNetworkBudgetLedger",
+        "backend/src/omnibase/sandbox/network_runtime.py:FilesystemNetworkNamespaceAttestor",
+        "backend/src/omnibase/sandbox/network_runtime.py:UnixSocketBrokerTransport",
+        "backend/src/omnibase/sandbox/overlay_publication.py:VerifiedOverlayLogicalServiceMapper",
+        "deployment/network-broker/omnibase-network-broker.py:NetworkBrokerDaemon"
+      ],
+      "public_interfaces": [
+        "Internal logical-service Broker protocol; no Browser route and no direct public egress",
+        "Tenant/Workspace/Run/runtime/workload/lease/generation/fencing-bound authorization",
+        "Repeated resolution with exact service/protocol/port/address/route-kind/digest stability before budget reservation and independent transport",
+        "Private POSIX SQLite connection/byte budget ledger with BEGIN IMMEDIATE aggregate CAS, append-only one-way pending/committed/unknown state and restart-safe exact replay",
+        "Private daemon-owned namespace evidence with host-net identity separation and TOCTOU checks, plus a bounded AF_UNIX transport that requires SO_PEERCRED",
+        "Independent non-root Linux Broker daemon with PrivateNetwork, live PID/starttime/netns revalidation, short-lived root-owned permits, durable consumed-operation no-replay, measured receipts and pinned-key challenge-response"
+      ],
+      "depends_on": [
+        "sandbox-runtime",
+        "workspace-control-plane"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-005",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-017",
+        "INV-018",
+        "INV-019"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_network_broker_daemon.py tests/test_p34_5_sandbox_network_broker.py tests/test_p34_5_sandbox_network_durable.py tests/test_p34_5_sandbox_network_runtime.py tests/test_p34_5_overlay_adapter.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox/network.py src/omnibase/sandbox/broker.py src/omnibase/sandbox/network_ledger.py src/omnibase/sandbox/network_runtime.py src/omnibase/sandbox/overlay_publication.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/sandbox/network.py src/omnibase/sandbox/broker.py src/omnibase/sandbox/network_ledger.py src/omnibase/sandbox/network_runtime.py src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_network_broker_daemon.py tests/test_p34_5_sandbox_network_broker.py tests/test_p34_5_sandbox_network_durable.py tests/test_p34_5_sandbox_network_runtime.py ../deployment/network-broker/omnibase-network-broker.py ../scripts/network-broker/run-network-broker-attack-gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/sandbox/network.py src/omnibase/sandbox/broker.py src/omnibase/sandbox/network_ledger.py src/omnibase/sandbox/network_runtime.py src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_network_broker_daemon.py tests/test_p34_5_sandbox_network_broker.py tests/test_p34_5_sandbox_network_durable.py tests/test_p34_5_sandbox_network_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python -m py_compile deployment/network-broker/omnibase-network-broker.py scripts/network-broker/run-network-broker-attack-gate.py",
+        "On the independent target Linux Runner only: sudo python scripts/network-broker/run-network-broker-attack-gate.py --output /tmp/omnibase-p345b-broker-gate.json"
+      ],
+      "recovery": [
+        "Restore rejecting authorizer, resolver, namespace attestor, budget ledger, mapper, transport and Broker defaults when any live proof is unavailable.",
+        "Never hand a Sandbox a physical address, provider handle, credential reference or member Overlay identity; only logical service identifiers cross the boundary.",
+        "Reject direct public internet, loopback, metadata, link-local, RFC1918/ULA, multicast/reserved destinations and any DNS rebinding or receipt drift.",
+        "Treat pending and unknown durable operations as charged and outcome-unknown; do not delete, release budget or replay transport. A committed exact replay returns its receipt without another charge or transport call.",
+        "Restore UnavailableBrokerTransport unless the private AF_UNIX socket, dedicated daemon UID/GID, peer PID/starttime, socket inode continuity, pinned-key challenge and current non-host namespace evidence are all proven.",
+        "Treat a consumed daemon operation as outcome-unknown unless the Core ledger commits the exact verified receipt; never delete or replay it as a recovery shortcut.",
+        "Treat the daemon, systemd unit and VM Gate script as byte-sealed evidence inputs: lint and compile them, but any autoformat or content change invalidates the recorded SHA and requires both 26/26 VM rounds to be rerun.",
+        "Do not treat the in-memory ledger, pure mapper, unit test daemon or ordinary Docker/WSL as production deployment evidence. Re-run the independent Linux Network Broker attack Gate whenever daemon, systemd, permit, namespace, transport or attack-script hashes change."
+      ]
+    },
+    {
+      "id": "overlay-adapter",
+      "name": "P34.5C provider-neutral Headscale Overlay adapter seam",
+      "source_paths": [
+        "backend/src/omnibase/workspaces/overlay_adapters/**",
+        "backend/src/omnibase/sandbox/overlay_publication.py",
+        "backend/tests/test_p34_5_overlay_adapter.py",
+        "backend/tests/test_p34_5_overlay_ledger.py",
+        "backend/tests/test_p34_5_overlay_disposable_gate.py",
+        "scripts/overlay/**",
+        "deployment/overlay/**",
+        "docs/evidence/p34-5/overlay-disposable-gate.json",
+        "docs/evidence/p34-5/overlay-disposable-gate.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/workspaces/overlay_adapters/contracts.py:OverlayOperationLedger",
+        "backend/src/omnibase/workspaces/overlay_adapters/contracts.py:OverlayLogicalServicePublication",
+        "backend/src/omnibase/workspaces/overlay_adapters/headscale.py:HeadscaleOverlayAdapter",
+        "backend/src/omnibase/workspaces/overlay_adapters/transport.py:HttpOverlayDaemonTransport",
+        "backend/src/omnibase/workspaces/overlay_adapters/transport.py:CliOverlayDaemonTransport",
+        "backend/src/omnibase/workspaces/overlay_adapters/ledger.py:InMemoryOverlayOperationLedger",
+        "backend/src/omnibase/workspaces/overlay_adapters/ledger.py:SqliteOverlayOperationLedger",
+        "backend/src/omnibase/workspaces/overlay_adapters/transport.py:MtlsHttpJsonClient",
+        "backend/src/omnibase/sandbox/overlay_publication.py:OverlayLogicalServiceMapper"
+      ],
+      "public_interfaces": [
+        "Internal provider-neutral activate/rotate/revoke/status adapter for trusted Node Daemons",
+        "Reference-only short-lived credential seam; raw Headscale/Tailscale keys are forbidden",
+        "Durable operation ledger seam with no automatic replay after an ambiguous mutation",
+        "Logical service publication to the Broker; Sandbox can never become an Overlay peer"
+      ],
+      "depends_on": [
+        "workspace-control-plane",
+        "network-broker"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-005",
+        "INV-010",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-019",
+        "INV-020"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_overlay_adapter.py tests/test_p34_4_overlay_collaboration.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
+        "python -B scripts/overlay/validate_disposable_gate.py --repo-root .",
+        "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1"
+      ],
+      "recovery": [
+        "Restore rejecting binding verifier, Node Daemon attestor, credential issuer, durable ledger, transport and logical-service mapper defaults before repairing provider drift.",
+        "Never auto-replay activate, rotate or revoke after the daemon boundary may have been crossed; reconcile status and create a new operation only after explicit operator evidence.",
+        "Never reset credential generation, Workspace/service generation or Peer/Node/Network fencing to make stale state current.",
+        "Treat the in-memory ledger and injected fake transports as tests only; a real Headscale/Node Daemon deployment must pass its separate disposable integration and attack Gate."
+      ]
+    },
+    {
+      "id": "gateway-workload",
+      "name": "P34.5D mTLS workload identity and short-lived read Capability bridge",
+      "source_paths": [
+        "backend/src/omnibase/capability_gateway/workload.py",
+        "backend/src/omnibase/capability_gateway/app.py",
+        "backend/src/omnibase/capability_gateway/mtls_ingress.py",
+        "backend/src/omnibase/capability_gateway/server.py",
+        "backend/src/omnibase/capability_gateway/thumbprints.py",
+        "backend/src/omnibase/capability_gateway/security.py",
+        "backend/src/omnibase/capability_gateway/service.py",
+        "backend/src/omnibase/capability_gateway/adapters.py",
+        "backend/tests/test_p34_5_gateway_mtls_ingress.py",
+        "backend/tests/test_p34_5_gateway_workload.py",
+        "backend/tests/integration/test_p34_5_gateway_mtls_disposable.py",
+        "backend/tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "scripts/gateway/**",
+        "deployment/gateway/**",
+        "docs/evidence/p34-5/gateway-mtls-disposable-gate.json",
+        "docs/evidence/p34-5/gateway-mtls-disposable-gate.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/capability_gateway/workload.py:TrustedGatewayPeerEvidence",
+        "backend/src/omnibase/capability_gateway/workload.py:SqlAlchemyRunLeaseWorkloadAttestor",
+        "backend/src/omnibase/capability_gateway/workload.py:GatewayCredentialIssuer",
+        "backend/src/omnibase/capability_gateway/workload.py:SqlAlchemyGatewayCredentialIssuer",
+        "backend/src/omnibase/capability_gateway/workload.py:RejectingGatewayCredentialIssuer",
+        "backend/src/omnibase/capability_gateway/app.py:create_production_gateway_app",
+        "backend/src/omnibase/capability_gateway/mtls_ingress.py:JsonMtlsPeerRegistry",
+        "backend/src/omnibase/capability_gateway/mtls_ingress.py:VerifiedMtlsGatewayIngress",
+        "backend/src/omnibase/capability_gateway/mtls_ingress.py:VerifiedMtlsH11Protocol",
+        "backend/src/omnibase/capability_gateway/server.py:GatewayServerConfig",
+        "backend/src/omnibase/capability_gateway/server.py:FileCapabilityPrivateKeyProvider",
+        "backend/src/omnibase/capability_gateway/server.py:GatewayCredentialVendingApp",
+        "backend/src/omnibase/capability_gateway/server.py:HardenedGatewayUvicornConfig",
+        "backend/src/omnibase/capability_gateway/server.py:build_mtls_gateway",
+        "backend/src/omnibase/capability_gateway/server.py:run"
+      ],
+      "public_interfaces": [
+        "Dedicated Uvicorn TLS service requiring a trusted client certificate and TLS 1.2 or newer",
+        "Trusted ASGI scope evidence constructed only from transport-supplied client-certificate DER and a server-owned revocable registry",
+        "Parameter-free mTLS credential vending whose grant, key, issuer and originating-user binding is selected only by the server registry after live attestation",
+        "Fresh DB-backed P34.4 Run/Node/Lease/fencing attestation on every Gateway request",
+        "Core-only read credential issuance bounded to five minutes and the earlier peer-evidence or live Run Lease expiry",
+        "Separate production Gateway composition exposing only schema, rows, RAG search and citation read actions; never mounted into Browser ASGI"
+      ],
+      "depends_on": [
+        "capability-gateway",
+        "network-broker",
+        "workspace-control-plane"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-019",
+        "INV-021"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py ../scripts/gateway/run_p34_5d_disposable_gate.py ../scripts/gateway/p34_5d_broker_client.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "python scripts/gateway/run_p34_5d_disposable_gate.py"
+      ],
+      "recovery": [
+        "Restore RejectingWorkloadAttestor, RejectingCapabilityVerifier, RejectingGatewayCredentialIssuer and RejectingCapabilityPrivateKeyProvider whenever trusted mTLS or live lease evidence is unavailable.",
+        "Never construct TrustedGatewayPeerEvidence from HTTP headers, browser cookies, source IP, opaque runtime identifiers or bearer-token possession.",
+        "Revoke the certificate in the server-owned registry, revoke the Run Lease and stop the independent Gateway service when peer identity or transport state is uncertain; every request reloads the registry.",
+        "Keep private signing keys and database sessions in Core; Runner and Sandbox receive only a short-lived read token over the authenticated channel.",
+        "Treat the scored disposable Gate wrapper and minimal broker-client as byte-sealed evidence inputs: lint and compile them, but any autoformat or content change invalidates the evidence and requires the split-process Gate to be rerun.",
+        "Do not add direct database, object-store, Redis, physical locator, caller-parameterized credential-vending or runtime-write routes to the Gateway."
       ]
     },
     {
@@ -634,7 +978,7 @@
       "depends_on": [],
       "invariants": ["INV-002", "INV-006", "INV-008", "INV-009"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest tests/test_migration_scope_fail_closed.py tests/test_destructive_test_safety.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_migration_scope_fail_closed.py tests/test_destructive_test_safety.py -q",
         "make test-destructive"
       ],
       "recovery": [
@@ -676,7 +1020,17 @@
     {
       "id": "sdk-contracts",
       "name": "OpenAPI contract and project-local Python/TypeScript SDKs",
-      "source_paths": ["sdk/**"],
+      "source_paths": [
+        "sdk/contracts/**",
+        "sdk/python/src/**",
+        "sdk/python/tests/**",
+        "sdk/python/pyproject.toml",
+        "sdk/typescript/src/**",
+        "sdk/typescript/tests/**",
+        "sdk/typescript/package.json",
+        "sdk/typescript/pnpm-lock.yaml",
+        "sdk/typescript/tsconfig.json"
+      ],
       "entrypoints": [
         "sdk/python/src/omnibase_sdk/client.py:OmniBaseClient",
         "sdk/typescript/src/client.ts:OmniBaseClient",
@@ -690,7 +1044,7 @@
       "depends_on": ["capability-gateway"],
       "invariants": ["INV-003", "INV-004", "INV-005", "INV-010"],
       "verification": [
-        "docker compose run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q",
         "cd sdk/typescript && npm ci --ignore-scripts && npm test && npm run typecheck"
       ],
       "recovery": [
@@ -721,19 +1075,21 @@
         "GitHub Actions infrastructure gates",
         "Database operator CLI scripts",
         "Migration and recovery runbooks",
+        "Safe Compose diagnostics require explicit --env-file .env.example or a disposable overlay-specific env file",
         "P34.3 maintainer-map benchmark protocol and suite"
       ],
       "depends_on": ["migrations", "runtime-composition", "sdk-contracts"],
       "invariants": ["INV-008", "INV-009", "INV-010"],
       "verification": [
-        "docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
-        "docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
         "python -m compileall -q scripts/database scripts/maintenance",
-        "docker compose config --quiet"
+        "docker compose --env-file .env.example config --quiet"
       ],
       "recovery": [
         "Follow docs/runbooks/postgresql-backup-restore.md and verify the new database before cutover.",
-        "Do not weaken sentinel names, disposable Compose project guards, or cleanup confirmation words."
+        "Do not weaken sentinel names, disposable Compose project guards, or cleanup confirmation words.",
+        "Never run bare docker compose config --format json from the repository root; use --env-file .env.example so the root .env is neither read nor expanded into diagnostics."
       ]
     }
   ]

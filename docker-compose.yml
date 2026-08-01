@@ -173,6 +173,9 @@ services:
     volumes:
       # 开发模式：源码挂载，修改即热重载
       - ./backend:/app
+      # 只读部署资产用于 canonical backend 测试校验，防止 Runner 脚本漂移
+      - ./deployment/sandbox:/deployment/sandbox:ro
+      - ./deployment/network-broker:/deployment/network-broker:ro
       # 隔离虚拟环境，避免被宿主机覆盖
       - backend_venv:/app/.venv
     healthcheck:
