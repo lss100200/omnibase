@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5 及真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0 fail-closed Sandbox 契约/拒绝默认/metadata-only harness 已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -433,6 +433,15 @@ destroy(runtime_handle)
 - provider handle 是内部定位，不得进入公开 API 或 capability；
 - provider 失败不得导致 capability、资源配额或 workspace state fail-open。
 
+P34.5A0 现在只实现上述接口的**拒绝型安全骨架**：
+
+- `backend/src/omnibase/sandbox/contracts.py` 定义严格的 `SandboxProvider`、在线 `SandboxAuthorizer`、Workspace/Run/Node/Lease/generation/fencing/workload identity 绑定、结构化 argv、相对 POSIX path、资源上限、只读 root/non-root/no-new-privileges/capability-drop 与 `deny_all` 网络策略；
+- `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 是默认装配，缺失可信 P34.4/P34.2 在线验证或真实 provider 时所有操作拒绝；
+- `FakeInMemorySandboxProvider` 只演练 create/start/stop/destroy、空 logs/stats 和 metadata-only snapshot/restore-new-generation；`exec`/`cancel` 永久返回 `sandbox_execution_not_unlocked`，不创建进程、文件、容器、socket、网络、挂载或 provider 资源；
+- test-only `InMemorySandboxAuthorizer` 只模拟服务器拥有的 lease/capability ledger，验证完整 binding、expiry、revocation 和 stale fencing；它不接受 raw token，也不是生产实现。
+
+该骨架不等于 P34.5A Runner/执行隔离已完成；没有独立 Linux Runner、cgroup、seccomp/AppArmor/gVisor/Kata、真实 writable layer、真实有界强杀、workload mTLS 或 Gateway 通道。任何真实执行 wiring 仍由 P34.5A 攻击 Gate 阻断。
+
 ## 10. 风险与审批矩阵
 
 | 等级 | 示例 | 默认主体 | 审批 | 额外控制 |
@@ -553,6 +562,8 @@ Gate：SQL/identifier 注入、无条件 mutation、锁/statement timeout、roll
 Gate：同 Tenant 跨 Workspace 默认拒绝；membership aggregate 并发不能移除最后 owner；重复 create/run/pause/archive 幂等；Run/Node/Network 旧 fencing token 无法提交；实时 attestation 过期后 holder 失效；terminal Run 不可复活；过期/撤销 lease 无法续租或提交；logical Network Lease 签发无 provider 副作用；撤销 Node 后不可调度/发布/使用 peer/service/network/authority；restore 产生新 identity/generation 且无 token/进程/连接；模板事务内 admin 撤权与并发自然键冲突 fail-closed；authority 离线时不产生双写。最终证据为 focused `83 passed`（Workspace service `48` + Overlay/Collaboration `27` + API contract `8`）、Backend 非 integration `767 passed / 9 skipped / 11 deselected`、Mypy `105 source files / 0 issues`，以及 fresh R6 的 migration `1 passed`、P34.4 foundation `4 passed`、完整 integration `57 passed / 1 deselected`。这些结果只证明 metadata control plane 和 synthetic harness，不证明真实 Overlay 或 Sandbox。验证入口见维护者地图的 `workspace-control-plane` 模块；普通业务数据库不得用于 migration 验收。
 
 ### P34.5：Sandbox Runtime
+
+**P34.5A0 — fail-closed 预启动骨架（2026-08-01 已完成局部工程 Gate）**：实现严格 Sandbox DTO、在线授权 seam、拒绝型默认、`deny_all` 网络、metadata-only 状态机与负向测试。focused 单测、Ruff 和 Mypy 通过只证明“默认不会执行/联网且危险输入被拒绝”，不证明任何真实 runtime 隔离等级。
 
 拆成四个可独立验收的增量，仍属于同一个 P34.5：
 

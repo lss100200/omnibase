@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5 真实执行与网络隔离继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0 拒绝型 Sandbox 契约与 metadata-only harness 已落地，真实执行与网络隔离继续冻结
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -200,7 +200,7 @@ P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模�
 - `restore_new_generation` 创建新 workload identity，旧 token、进程、连接、PID、socket 和 runtime handle 一律失效。
 - provider handle 只存内部控制面，不进入公开 API、token、日志或 workspace。
 
-本节除 Run lease/generation/fencing 的控制面契约外仍未解冻。P34.4 不包含独立 Runner、RuntimeDriver、SandboxProvider、workload identity、容器或代码执行；这些控制必须等待 P34.5 在目标 Linux isolation profile 上实现并通过攻击 Gate。
+P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。该 harness 的 `exec`/`cancel` 永久拒绝，不创建进程、文件、容器、socket、网络、挂载或 provider 资源。它只证明真实实现尚未装配时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现；这些仍须等待目标 Linux profile 的 P34.5 攻击 Gate。
 
 ### 4.9 文件系统与 Artifact
 
@@ -325,6 +325,10 @@ P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模�
 | FENCE-01 | 旧 token/epoch 在新 holder 后提交 | 409，不能覆盖新状态 | concurrency/unit | P34.4 |
 | AUTH-01 | authority 离线或过期后两个 Node 写入 | 只读/拒绝，不自动选举、不双写 | unit/integration | P34.4 |
 | AUTH-02 | 同 sequence 不同 digest 或错误 previous digest | conflict/fail-closed，不自动 merge | unit | P34.4 |
+| SBX-A0-01 | 缺失可信 authorizer/provider 仍请求 prepare/create/start/exec | code-only unavailable/reject，无副作用 | unit | P34.5A0 |
+| SBX-A0-02 | stale Run/Node fencing、过期/撤销 lease、action/binding 不匹配 | 每次调用在线拒绝，不以 handle/UUID 作为授权 | unit | P34.5A0 |
+| SBX-A0-03 | 绝对/drive/traversal/保留路径、单字符串 command/任意 env、无限资源、非 deny-all 网络 | 构造期拒绝 | contract/unit | P34.5A0 |
+| SBX-A0-04 | metadata-only fake 被要求执行/取消命令、恢复伪造 snapshot、重放 restore 或让已销毁 Run 重建 | hard deny/conflict，零进程/文件/socket/provider side effect，terminal Run 不复活 | unit/source audit | P34.5A0 |
 | RUN-03 | Runner 尝试直连 DB/MinIO/Redis | 网络和凭据均不可用 | sandbox harness | P34.5 |
 | RUN-04 | Runner task 夹带 JWT/locator/凭据 | 控制面拒绝，审计脱敏 | contract/security | P34.5 |
 | FS-01 | `../`/绝对路径/编码绕过 | 拒绝，root 外无变化 | sandbox harness | P34.5 |
@@ -369,6 +373,7 @@ P34.4：
 
 P34.5–P34.6：
 
+- P34.5A0 先证明拒绝型默认、严格 DTO、在线 authorization seam、metadata-only harness 与零真实执行/联网副作用；它不是 runtime isolation Gate；
 - 生命周期并发和撤销稳定；
 - sandbox 逃逸、网络、文件、进程、资源矩阵全绿；
 - workspace 只能访问 gateway；
