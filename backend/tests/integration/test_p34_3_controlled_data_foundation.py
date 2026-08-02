@@ -104,8 +104,8 @@ def test_0006_creates_global_foundation_and_only_tenant_payload_table(
 
     # P34.4 is global-only, but Alembic still advances both scoped revision
     # ledgers to the repository head after its tenant no-op.
-    assert global_revision == "0007"
-    assert tenant_revision == "0007"
+    assert global_revision == "0008"
+    assert tenant_revision == "0008"
     assert {
         "data_table_bindings",
         "data_column_bindings",
@@ -144,7 +144,7 @@ def test_0006_empty_downgrade_and_reupgrade_are_safe(db_engine) -> None:
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0007"
+            == "0008"
         )
 
 
@@ -337,5 +337,5 @@ def test_0006_downgrade_refuses_live_controlled_resources(
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0007"
+            == "0008"
         )

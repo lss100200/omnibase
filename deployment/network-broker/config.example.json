@@ -1,0 +1,15 @@
+{
+  "connect_timeout_seconds": 2.0,
+  "consumed_directory": "/var/lib/omnibase-network-broker/consumed",
+  "daemon_authentication_key_path": "/etc/omnibase-network-broker/daemon-auth.key",
+  "daemon_uid": 999,
+  "host_namespace_owner_uid": 0,
+  "host_network_namespace_path": "/run/omnibase-host-ns/net",
+  "max_request_bytes": 65536,
+  "permit_directory": "/run/omnibase-network-broker-permits",
+  "permit_owner_uid": 0,
+  "read_timeout_seconds": 0.25,
+  "socket_path": "/run/omnibase-network-broker-daemon/broker.sock",
+  "trusted_client_gid": 0,
+  "trusted_client_uid": 0
+}

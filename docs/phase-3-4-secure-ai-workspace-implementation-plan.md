@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0 fail-closed Sandbox 契约/拒绝默认/metadata-only harness 已落地，但真实 Sandbox/Overlay adapter/数据通道/Agent Runtime 继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A4、B、C、D 已完成工程封板。当前独立 Hyper-V Linux Runner 哈希已通过 11/11 attack Gate，独立 PrivateNetwork Broker daemon 已两轮通过 26/26 Gate，真实 Headscale 0.26.1 control-plane + mTLS Node-Daemon test-double disposable Gate 已通过，split-process mTLS Gateway 已通过 guarded disposable schema/rows/RAG/citation 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点数据面/DERP/节点失陷、容量/SLA 与生产总验收进入 P34.7；Agent Runtime 继续冻结到这些联合边界完成
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -433,14 +433,26 @@ destroy(runtime_handle)
 - provider handle 是内部定位，不得进入公开 API 或 capability；
 - provider 失败不得导致 capability、资源配额或 workspace state fail-open。
 
-P34.5A0 现在只实现上述接口的**拒绝型安全骨架**：
+P34.5A0-A3 已实现上述接口的**拒绝型安全、控制与持久调度骨架**：
 
 - `backend/src/omnibase/sandbox/contracts.py` 定义严格的 `SandboxProvider`、在线 `SandboxAuthorizer`、Workspace/Run/Node/Lease/generation/fencing/workload identity 绑定、结构化 argv、相对 POSIX path、资源上限、只读 root/non-root/no-new-privileges/capability-drop 与 `deny_all` 网络策略；
 - `RejectingSandboxAuthorizer` 与 `UnavailableSandboxProvider` 是默认装配，缺失可信 P34.4/P34.2 在线验证或真实 provider 时所有操作拒绝；
 - `FakeInMemorySandboxProvider` 只演练 create/start/stop/destroy、空 logs/stats 和 metadata-only snapshot/restore-new-generation；`exec`/`cancel` 永久返回 `sandbox_execution_not_unlocked`，不创建进程、文件、容器、socket、网络、挂载或 provider 资源；
 - test-only `InMemorySandboxAuthorizer` 只模拟服务器拥有的 lease/capability ledger，验证完整 binding、expiry、revocation 和 stale fencing；它不接受 raw token，也不是生产实现。
+- `ComposedSandboxAuthorizer` 要求可信 wiring 分别返回 live P34.4 Run Lease/Node attestation/fencing 与 P34.2 capability 结果，再做完整 binding、action 和交集 expiry 复核；默认 lease/capability verifier 都拒绝。
+- `bind_run_runtime_identity()` 在 live fenced lease 下单次绑定 runtime instance/workload identity；`SqlAlchemySandboxLeaseVerifier` 每次使用新事务重新读取 P34.4 Workspace/Run/Node/Lease、DB clock、generation、Run/Node fencing、实时 attestation 和 runtime binding。
+- emergency stop/destroy 不复用 workload grant，而使用独立 `SandboxControlAuthorizer`、controller identity、runtime handle、generation/fencing、reason 与 deadline；生产默认拒绝，test-only authorizer 只验证语义。
+- `SandboxOperationStore` 冻结 production durable seam，默认 `UnavailableSandboxOperationStore`；`InMemorySandboxOperationStore` 只演练 append-only 语义，不是生产持久化或审计实现。
+- `0008_p34_5_sandbox_dispatch.py` 将 read 与 Sandbox lifecycle capability profile 设为数据库级互斥闭集；Sandbox Grant 单 Workspace、runtime/workload-bound、不可委派、最长五分钟，并明确禁止通过 Gateway bearer token 使用。
+- `verify_and_reserve_sandbox_capability()` 与 `SqlAlchemySandboxCapabilityVerifier` 在新事务中按 operation ID 幂等预留 calls/cost；exact replay 不重复扣费，operation/tenant/grant/workspace/runtime/action drift 拒绝。
+- `SqlAlchemySandboxOperationStore` 已实现 production durable operation pointer、append-only transition 与 redacted Audit 同事务持久化；Workspace/Run/Grant 由复合 tenant 外键约束，并发 dispatch claim 单赢家，ambiguous outcome 只允许显式 reconciliation。
+- `RunnerHostAttestor` 绑定 Runner/Node identity、Node fencing、isolation profile digest、expiry 与 evidence；`RunnerTransport` 隔离 Core 与未来独立 Runner；两者默认拒绝。
+- `SandboxExecutionCoordinator` 固定 operation reservation → live authorization → host attestation → dispatch marker → transport → receipt binding 顺序；terminal exact replay 不重复 dispatch，dispatching crash、timeout 和 receipt drift 都进入 ambiguous/reconciliation-required。
+- `SandboxRunner`/`RunnerIsolationProfile` 冻结独立 Linux Runner 接口及 cgroup v2、user/PID/mount/network namespace、seccomp、LSM、有界强杀要求；`UnavailableSandboxRunner` 是生产默认，不运行命令。
 
-该骨架不等于 P34.5A Runner/执行隔离已完成；没有独立 Linux Runner、cgroup、seccomp/AppArmor/gVisor/Kata、真实 writable layer、真实有界强杀、workload mTLS 或 Gateway 通道。任何真实执行 wiring 仍由 P34.5A 攻击 Gate 阻断。
+P34.5A4 已新增独立 Linux Runner/RuntimeDriver seam、canonical request/spec/execution digest、production `TrustedRunnerMtlsPeer` + `MtlsRunnerTransportAuthenticator`、私有 `SqliteRunnerReplayStore`、namespace/cgroup/seccomp/LSM probe 与覆盖全部 launcher failure 的 operation cgroup fail-safe cleanup。Host namespace reference 只接受直接 VM `/proc/1/ns/*` handle，或 root-owned/non-writable `/run/omnibase-host-ns/*` 中严格的 `dev:ino` snapshot。当前封存 launcher 已在独立 Hyper-V Ubuntu Runner 上通过 11/11 Gate；Docker Desktop/WSL 不自动合格，Core↔VM production mTLS wiring 仍需 P34.7 联合验收。
+
+P34.5B 已新增 logical-service-only `ControlledWorkspaceNetworkBroker`，默认 authorizer/resolver/namespace attestor/budget ledger/transport 全部拒绝；两次解析除安全分类外还要求完整 destination binding 稳定，禁止 metadata/private/link-local/public/direct-member-overlay。独立 Linux Broker daemon 以专用非 root UID 和 `PrivateNetwork=yes` 启动，只接受 root-owned 短期 exact permit，经 live PID/starttime/netns 与 host-snapshot 复核后 durable 消费 operation，再由 worker `setns` 建立一次 TCP 连接并返回 measured receipt + pinned-key challenge。当前部署哈希已在 Hyper-V Ubuntu Runner 上首轮和重启确认轮各通过 26/26 default-deny/identity/budget/replay Gate，脱敏证据位于 `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`。P34.5C 已新增 provider-neutral `HeadscaleOverlayAdapter`、durable ledger、opaque short-lived credential reference 和 Overlay→Broker logical publication，并通过真实 Headscale provider record mutation + mTLS Node-Daemon test-double disposable Gate；Sandbox 不能成为 Overlay peer。P34.5D 已新增 Runner/Broker mTLS scope evidence、每请求 live Run/Node/Lease/fencing attestor、Core-only 最长五分钟 read credential issuer和独立 production Gateway composition，并通过独立 server/client 的 guarded disposable schema/rows/RAG/citation 四读与 stale/revocation Gate。P34.7 保留 Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员 Overlay 数据面、容量/SLA 与生产总验收。
 
 ## 10. 风险与审批矩阵
 
@@ -565,12 +577,16 @@ Gate：同 Tenant 跨 Workspace 默认拒绝；membership aggregate 并发不能
 
 **P34.5A0 — fail-closed 预启动骨架（2026-08-01 已完成局部工程 Gate）**：实现严格 Sandbox DTO、在线授权 seam、拒绝型默认、`deny_all` 网络、metadata-only 状态机与负向测试。focused 单测、Ruff 和 Mypy 通过只证明“默认不会执行/联网且危险输入被拒绝”，不证明任何真实 runtime 隔离等级。
 
+**P34.5A1-A3 — 控制与持久调度闭环（2026-08-02 已完成工程 Gate）**：A1/A2 完成 DB-backed live Run lease/runtime identity、独立 emergency control、host attestation、transport 与 no-auto-replay coordinator；A3 完成互斥 Sandbox capability profile、operation-idempotent budget reservation、SQLAlchemy durable operation/transition/Audit 与 `0008` sentinel migration Gate。完成口径仍只是“副作用前授权、预算、状态和证据闭环”，不是 Runner 或敌对代码隔离完成。
+
+**P34.5A4/B/C/D — 工程封板（2026-08-02）**：A4 实现独立 attested Linux Runner/RuntimeDriver、mTLS transport 与 durable replay、canonical binding 和全异常 cgroup fail-safe cleanup，当前封存哈希已在独立 Hyper-V Linux 通过 11/11 attack Gate；B 实现 logical Network Broker、durable budget、独立 PrivateNetwork daemon 与真实 `setns` transport，并在同一 Runner 两轮通过 26/26 Gate；C 实现首个 Headscale adapter/publication，并通过真实 Headscale provider-record + mTLS Node-Daemon test-double disposable Gate；D 实现可信 workload identity、server-owned credential vending 与短期只读 Gateway credential，并通过 split-process guarded disposable 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点/DERP/节点失陷、容量/SLA 与生产总验收仍与 P34.5 工程完成口径分离，进入 P34.7。
+
 拆成四个可独立验收的增量，仍属于同一个 P34.5：
 
 1. **P34.5A — Runner 与执行隔离**：独立 Linux Sandbox Runner、`SandboxProvider`/`RuntimeDriver`、non-root、cgroup、只读 root、独立 writable layer、文件/进程/资源限制和有界终止。
 2. **P34.5B — 双平面网络**：每 Workspace/Run 独立 network namespace、默认拒绝 egress、Workspace Network Broker、短期 mTLS workload identity；Sandbox 不直接加入成员 Overlay。
-3. **P34.5C — 首个 Overlay adapter**：将经过 P34.4 Gate 的自托管/可替换 provider 接到受信 Node Daemon，只向 Broker 发布显式服务；验证撤销、relay、掉线、重连和节点失陷边界。
-4. **P34.5D — 只读能力最小闭环**：攻击矩阵通过后，才让 Sandbox 经 Broker + Capability Gateway 访问 P34.2 只读 schema/rows/RAG/citation；继续关闭 Runtime 写 capability。
+3. **P34.5C — 首个 Overlay adapter**：将经过 P34.4 Gate 的自托管/可替换 provider 接到受信 Node Daemon，只向 Broker 发布显式服务；本阶段验证真实 provider control-plane revoke、掉线、重连、ambiguous no-replay和凭据 containment。真实成员数据面、DERP relay 与节点失陷归 P34.7 production Gate。
+4. **P34.5D — 只读能力最小闭环**：完成 Runner/Broker workload identity、真实 mTLS ingress、live lease/fencing attestation、server-owned credential vending 与只读 Gateway composition；split-process guarded disposable schema/rows/RAG/citation smoke 已通过。默认 production wiring、非 disposable tenant/RAG 和 Runtime write capability 在 P34.7 联合 Gate 前继续关闭。
 
 Gate：Runner 无核心凭据且不直连 DB/MinIO/Redis；Sandbox 无成员 Overlay identity；默认无法访问宿主 LAN、成员私网、metadata、管理端口、其他 Workspace 和任意外网；Broker 只转发 grant 明确允许的逻辑服务；威胁模型中的 lease/fencing、逃逸、宿主访问、DNS rebinding、relay 滥用、凭据、资源耗尽和跨 workspace 测试全部通过。Docker profile 仅可标记为开发功能基线。
 

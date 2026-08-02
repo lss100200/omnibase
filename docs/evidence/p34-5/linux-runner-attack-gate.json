@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "gate": "passed",
+  "confirmation_after_service_restart": true,
+  "execution_environment": {
+    "virtualization": "Hyper-V generation 2 VM",
+    "distribution": "Ubuntu 24.04",
+    "kernel": "6.17.0-1021-azure",
+    "runner_service_uid": 1000,
+    "runner_identity_redacted": true,
+    "apparmor": "omnibase-runner (enforce)",
+    "seccomp_mode": 2,
+    "no_new_privileges": true,
+    "cgroup_v2_controllers": ["cpu", "cpuset", "io", "memory", "pids"]
+  },
+  "artifacts": {
+    "launcher_sha256": "33f4e51feb66a58bd6faed3e54d285fdbce9e67ba722369f969638de6624a969",
+    "apparmor_profile_sha256": "d6adc18678d7c738fe37c869060768298592026c930093fba19e977b64f0cabc",
+    "seccomp_contract_sha256": "ee652ed3f64216b62ebde245ac4c34fee9bd49fc8c9ffbb98f66274f98b1b518",
+    "raw_confirmation_report_sha256": "c2f20ca217c531c9c2005cd697547f3b8540b0c705d1e6b27d394475aeabc755",
+    "probe_evidence_digest": "b48314538a1fd0d248a34fd468bbcd51e4d5167bea4068c06c021e75acfbf64f"
+  },
+  "results": [
+    {"id": "RUN-03", "passed": true, "result": "No data-service credentials; DB, Redis and MinIO endpoints unreachable"},
+    {"id": "RUN-04", "passed": true, "result": "Payload carrying an environment/JWT marker rejected before execution"},
+    {"id": "FS-01", "passed": true, "result": "Absolute host paths absent from the ephemeral root"},
+    {"id": "FS-02", "passed": true, "result": "Symlink, cross-mount hardlink and device-node attempts denied"},
+    {"id": "FS-03", "passed": true, "result": "Workspace inode quota reached without host impact"},
+    {"id": "NET-01", "passed": true, "result": "Loopback, private LAN and metadata endpoints unreachable"},
+    {"id": "NET-02", "passed": true, "result": "No resolver configuration and DNS/redirect targets unreachable"},
+    {"id": "PROC-01", "passed": true, "result": "Fork pressure hit pids.max; complete cgroup became populated 0"},
+    {"id": "PROC-02", "passed": true, "result": "Infinite output hit the bounded output limit; cgroup killed and emptied"},
+    {"id": "HOST-01", "passed": true, "result": "Host env, SSH, runtime sockets and cgroup filesystem absent"},
+    {"id": "CROSS-01", "passed": true, "result": "Other runtime roots and Runner control socket absent"}
+  ],
+  "post_gate": {
+    "runner_service_healthy": true,
+    "runtime_cgroups_remaining": 0,
+    "runtime_directories_remaining": 0,
+    "only_supervisor_cgroup_remained": true,
+    "private_replay_store_reserved": true,
+    "business_database_accessed": false,
+    "root_env_accessed": false,
+    "docker_or_podman_socket_used": false
+  }
+}

@@ -292,6 +292,8 @@ class SandboxOperationRequest:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
+    capability_grant_id: UUID
     node_id: UUID
     lease_id: UUID
     workspace_generation: int
@@ -305,6 +307,8 @@ class SandboxOperationRequest:
             "tenant_id": self.tenant_id,
             "workspace_id": self.workspace_id,
             "run_id": self.run_id,
+            "runtime_instance_id": self.runtime_instance_id,
+            "capability_grant_id": self.capability_grant_id,
             "node_id": self.node_id,
             "lease_id": self.lease_id,
         }
@@ -386,6 +390,7 @@ class SandboxRuntimeView:
     tenant_id: UUID
     workspace_id: UUID
     run_id: UUID
+    runtime_instance_id: UUID
     workspace_generation: int
     workload_identity_thumbprint: str
     state: SandboxRuntimeState
@@ -396,7 +401,12 @@ class SandboxRuntimeView:
             raise TypeError("handle must be SandboxRuntimeHandle")
         if any(
             not isinstance(value, UUID)
-            for value in (self.tenant_id, self.workspace_id, self.run_id)
+            for value in (
+                self.tenant_id,
+                self.workspace_id,
+                self.run_id,
+                self.runtime_instance_id,
+            )
         ):
             raise TypeError("runtime view identifiers must be UUID values")
         _require_strict_int(
@@ -439,6 +449,7 @@ class SandboxSnapshot:
     tenant_id: UUID
     workspace_id: UUID
     source_run_id: UUID
+    source_runtime_instance_id: UUID
     source_generation: int
     source_workload_identity_thumbprint: str
     manifest_digest: str
@@ -452,6 +463,7 @@ class SandboxSnapshot:
                 self.tenant_id,
                 self.workspace_id,
                 self.source_run_id,
+                self.source_runtime_instance_id,
             )
         ):
             raise TypeError("snapshot identifiers must be UUID values")

@@ -55,6 +55,7 @@ def _result(
 
 def _build_client(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
     *,
     configured: bool,
     answer: Callable[..., Any],
@@ -83,10 +84,14 @@ def _build_client(
         return results if results is not None else [_result()]
 
     monkeypatch.setattr("omnibase.rag.router.hybrid_search", fake_search)
-    monkeypatch.setattr("omnibase.rag.router.rerank", lambda query, candidates, top_k: candidates[:top_k])
+    monkeypatch.setattr(
+        "omnibase.rag.router.rerank", lambda query, candidates, top_k: candidates[:top_k]
+    )
     monkeypatch.setattr("omnibase.rag.router.llm_configured", lambda: configured)
     monkeypatch.setattr("omnibase.rag.router.generate_answer", answer)
-    return TestClient(app)
+    client = TestClient(app)
+    request.addfinalizer(client.close)
+    return client
 
 
 class TestSseFormat:
@@ -110,9 +115,8 @@ class TestAskEndpointAuthentication:
 
         app = FastAPI()
         app.include_router(router)
-        response = TestClient(app, raise_server_exceptions=False).post(
-            "/rag/ask", json={"query": "question"}
-        )
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/rag/ask", json={"query": "question"})
         assert response.status_code == 401
         assert response.json()["detail"] == "Authorization header missing"
 
@@ -121,7 +125,9 @@ class TestAskEndpointStreams:
     """Exercise the actual endpoint and its streaming generators."""
 
     def test_success_is_citations_then_chunks_then_done(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         calls: dict[str, Any] = {}
 
@@ -132,6 +138,7 @@ class TestAskEndpointStreams:
         source = "A" * 240
         client = _build_client(
             monkeypatch,
+            request,
             configured=True,
             answer=answer,
             results=[_result(content=source)],
@@ -162,9 +169,14 @@ class TestAskEndpointStreams:
             "stream": True,
         }
 
-    def test_citation_shape_is_stable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_citation_shape_is_stable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
         client = _build_client(
             monkeypatch,
+            request,
             configured=True,
             answer=lambda *args, **kwargs: iter(["ok"]),
             results=[_result(content="Z" * 240)],
@@ -182,7 +194,9 @@ class TestAskEndpointStreams:
         }
 
     def test_no_key_is_citations_then_terminal_safe_error(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         provider_called = False
 
@@ -191,7 +205,7 @@ class TestAskEndpointStreams:
             provider_called = True
             return iter(())
 
-        client = _build_client(monkeypatch, configured=False, answer=answer)
+        client = _build_client(monkeypatch, request, configured=False, answer=answer)
         events = _parse_sse(client.post("/rag/ask", json={"query": "q"}).text)
 
         assert [name for name, _ in events] == ["citations", "error"]
@@ -200,7 +214,9 @@ class TestAskEndpointStreams:
         assert all(name != "done" for name, _ in events)
 
     def test_provider_failure_is_terminal_and_does_not_leak_exception(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         secret = "sk-secret C:\\internal\\provider.py SQL SELECT password"
 
@@ -211,7 +227,7 @@ class TestAskEndpointStreams:
 
             return failing_stream()
 
-        client = _build_client(monkeypatch, configured=True, answer=answer)
+        client = _build_client(monkeypatch, request, configured=True, answer=answer)
         events = _parse_sse(client.post("/rag/ask", json={"query": "q"}).text)
 
         assert [name for name, _ in events] == ["citations", "chunk", "error"]
@@ -220,11 +236,14 @@ class TestAskEndpointStreams:
         assert all(name != "done" for name, _ in events)
 
     def test_tenant_schema_is_forwarded_to_retrieval(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         received: dict[str, Any] = {}
         client = _build_client(
             monkeypatch,
+            request,
             configured=True,
             answer=lambda *args, **kwargs: iter(["ok"]),
             schema_name="tenant_deadbeef",

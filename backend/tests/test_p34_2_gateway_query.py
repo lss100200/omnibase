@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
+from sqlalchemy import Uuid
 from sqlalchemy.dialects import postgresql
 
 from omnibase.capability_gateway import adapters as adapters_module
@@ -213,7 +214,7 @@ def test_core_constraint_mapping_fails_closed(monkeypatch, constraints) -> None:
             tenant_id=core.tenant_id,
             workspace_id=core.workspace_id,
             runtime_instance_id=core.runtime_instance_id,
-            certificate_thumbprint="trusted-thumbprint",
+            certificate_thumbprint="a" * 64,
         ),
     )
     with pytest.raises(CapabilityVerificationError):
@@ -243,7 +244,7 @@ def test_core_timeout_constraint_maps_without_gateway_default(monkeypatch) -> No
             tenant_id=core.tenant_id,
             workspace_id=core.workspace_id,
             runtime_instance_id=core.runtime_instance_id,
-            certificate_thumbprint="trusted-thumbprint",
+            certificate_thumbprint="a" * 64,
         ),
     )
     verified = CoreCapabilityVerifier().verify(
@@ -309,3 +310,45 @@ def test_citation_preflight_rejects_oversized_body_before_content_fetch() -> Non
             max_bytes=1024,
         )
     assert session.execute.call_count == 2
+
+
+def test_citation_queries_bind_postgresql_uuid_columns_as_uuid() -> None:
+    citation_id = "30000000-0000-0000-0000-000000000001"
+    document_id = "40000000-0000-0000-0000-000000000001"
+    locator_store = MagicMock()
+    locator_store.get_locator.return_value = {
+        "adapter": "canonical_rag_v1",
+        "schema": "tenant_deadbeef",
+        "document_id": document_id,
+    }
+    session = MagicMock()
+    preflight = MagicMock()
+    preflight.fetchmany.return_value = [(citation_id, 5)]
+    content = MagicMock()
+    content.fetchmany.return_value = [(citation_id, document_id, "hello", {"page": 1}, 0, 5)]
+    session.execute.side_effect = [MagicMock(), preflight, content]
+
+    result = CanonicalRagReadAdapter(locator_store).read_citations(
+        session,
+        capability=MagicMock(),
+        resource=MagicMock(id="20000000-0000-0000-0000-000000000001"),
+        citation_ids=[citation_id],
+        timeout_ms=100,
+        max_bytes=1024,
+    )
+
+    assert [item.citation_id for item in result.citations] == [UUID(citation_id)]
+    preflight_statement = session.execute.call_args_list[1].args[0]
+    content_statement = session.execute.call_args_list[2].args[0]
+    preflight_binds = preflight_statement.compile(dialect=postgresql.dialect()).binds
+    content_binds = content_statement.compile(dialect=postgresql.dialect()).binds
+    assert isinstance(preflight_binds["citation_ids"].type, Uuid)
+    assert isinstance(content_binds["safe_ids"].type, Uuid)
+    assert any(
+        isinstance(parameter.type, Uuid) and parameter.value == document_id
+        for parameter in preflight_binds.values()
+    )
+    assert any(
+        isinstance(parameter.type, Uuid) and parameter.value == document_id
+        for parameter in content_binds.values()
+    )

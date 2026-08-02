@@ -197,7 +197,7 @@ def test_0005_creates_only_global_capability_tables_and_revocation_trigger(db_en
                 "AND NOT t.tgisinternal"
             )
         ).scalar_one_or_none()
-    assert revision == "0007"
+    assert revision == "0008"
     assert {
         "capability_signing_keys",
         "capability_grants",
@@ -236,7 +236,10 @@ def test_database_rejects_write_actions_workspace_issuers_and_cross_tenant_usage
             ":actions, ARRAY[:resource]::uuid[], :not_before, :expires, "
             "1, 1, 1, 0, :issuer_type, :issuer)"
         )
-        with pytest.raises(IntegrityError, match="read_actions"), connection.begin_nested():
+        with (
+            pytest.raises(IntegrityError, match="action_profile"),
+            connection.begin_nested(),
+        ):
             connection.execute(
                 statement,
                 {**params, "actions": ["data.rows.insert"], "issuer_type": "system"},

@@ -1,0 +1,117 @@
+name: omnibase-p345d-gateway
+
+services:
+  postgres-gateway:
+    image: ${GATE_POSTGRES_IMAGE:?required}
+    environment:
+      POSTGRES_USER: omnibase_test_owner
+      POSTGRES_PASSWORD: ${TEST_DATABASE_OWNER_PASSWORD:?required}
+      POSTGRES_DB: ${TEST_DATABASE_NAME:?required}
+      TEST_DATABASE_ROLE: ${TEST_DATABASE_ROLE:?required}
+      TEST_DATABASE_PASSWORD: ${TEST_DATABASE_PASSWORD:?required}
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+      - ../../backend/tests/postgres-init-destructive-tests.sh:/docker-entrypoint-initdb.d/10-destructive-tests.sh:ro
+    networks: [gateway-gate]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} && PGPASSWORD=$${TEST_DATABASE_PASSWORD} psql -U $${TEST_DATABASE_ROLE} -d $${POSTGRES_DB} -c 'SELECT 1' >/dev/null",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: "no"
+
+  gateway-server:
+    image: ${GATE_BACKEND_IMAGE:?required}
+    depends_on:
+      postgres-gateway:
+        condition: service_healthy
+    environment:
+      ENV: production
+      DATABASE_URL: postgresql+psycopg://${TEST_DATABASE_ROLE}:${TEST_DATABASE_PASSWORD}@postgres-gateway:5432/${TEST_DATABASE_NAME}
+      TEST_DATABASE_URL: postgresql+psycopg://${TEST_DATABASE_ROLE}:${TEST_DATABASE_PASSWORD}@postgres-gateway:5432/${TEST_DATABASE_NAME}
+      TEST_DATABASE_NAME: ${TEST_DATABASE_NAME}
+      OMNIBASE_INTEGRATION_TESTS: "1"
+      P34_5D_SPLIT_GATE: "1"
+      P34_5D_SERVER_MATERIAL: /server-material
+      P34_5D_CLIENT_MATERIAL: /client-material
+      P34_5D_CONTROL: /control
+      P34_5D_GATE_EVIDENCE_PATH: /evidence/gateway-mtls-disposable-gate.json
+      P34_5D_GATE_IMAGE_ID: ${GATE_BACKEND_IMAGE:?required}
+      P34_5D_GATE_POSTGRES_IMAGE_ID: ${GATE_POSTGRES_IMAGE:?required}
+      P34_5D_GATE_CLIENT_IMAGE_ID: ${GATE_CLIENT_IMAGE:?required}
+      MINIO_ENDPOINT: disabled.invalid:9000
+      MINIO_ACCESS_KEY: synthetic-disabled
+      MINIO_SECRET_KEY: synthetic-disabled
+      REDIS_URL: redis://disabled.invalid:6379/15
+      JWT_SECRET: synthetic_gateway_gate_only_value_at_least_32_characters
+      MODEL_CACHE_DIR: /nonexistent-model-cache
+      RERANKER_MODEL_PATH: /nonexistent-reranker
+      MODEL_DOWNLOAD_ENABLED: "false"
+      RATE_LIMIT_ENABLED: "false"
+    command:
+      [
+        "pytest",
+        "-m",
+        "integration",
+        "tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "-p",
+        "no:cacheprovider",
+        "--no-showlocals",
+        "--tb=short",
+        "-q",
+      ]
+    volumes:
+      - ../../backend/src:/app/src:ro
+      - ../../backend/tests:/app/tests:ro
+      - ../../backend/alembic.ini:/app/alembic.ini:ro
+      - backend-venv:/app/.venv:ro
+      - gateway-server-material:/server-material
+      - gateway-client-material:/client-material
+      - gateway-control:/control
+      - ../../docs/evidence/p34-5:/evidence
+    networks: [gateway-gate]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: "no"
+
+  broker-client:
+    image: ${GATE_CLIENT_IMAGE:?required}
+    depends_on:
+      gateway-server:
+        condition: service_started
+    environment:
+      P34_5D_CLIENT_MATERIAL: /client-material
+      P34_5D_CONTROL: /control
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: ["python", "-B", "/client/p34_5d_broker_client.py"]
+    volumes:
+      - ../../scripts/gateway/p34_5d_broker_client.py:/client/p34_5d_broker_client.py:ro
+      - gateway-client-material:/client-material:ro
+      - gateway-control:/control
+    networks: [gateway-gate]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: "no"
+
+networks:
+  gateway-gate:
+    internal: true
+
+volumes:
+  backend-venv:
+    external: true
+    name: omnibase_backend_venv
+  gateway-server-material: {}
+  gateway-client-material: {}
+  gateway-control: {}

@@ -45,7 +45,7 @@ from omnibase.core.logging import get_logger
 log = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass
 class GatewayFailure(Exception):
     status_code: int
     code: str

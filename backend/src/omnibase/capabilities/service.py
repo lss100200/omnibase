@@ -7,6 +7,8 @@ locator, SQL string, credential, or remotely supplied verification key.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from dataclasses import dataclass
@@ -15,6 +17,7 @@ from itertools import pairwise
 from typing import Any
 
 from sqlalchemy import exists, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from omnibase.capabilities.models import (
@@ -22,6 +25,7 @@ from omnibase.capabilities.models import (
     CapabilityRevocation,
     CapabilitySigningKey,
     CapabilityUsage,
+    CapabilityUsageReservation,
 )
 from omnibase.capabilities.token import (
     ALGORITHM,
@@ -46,6 +50,23 @@ READ_ACTIONS = frozenset(
     }
 )
 """P34.2 action vocabulary.  ``citation`` is intentionally singular."""
+
+SANDBOX_ACTIONS = frozenset(
+    {
+        "sandbox.prepare",
+        "sandbox.create",
+        "sandbox.start",
+        "sandbox.exec",
+        "sandbox.cancel",
+        "sandbox.logs",
+        "sandbox.stats",
+        "sandbox.snapshot",
+        "sandbox.restore",
+        "sandbox.stop",
+        "sandbox.destroy",
+    }
+)
+"""P34.5 workload lifecycle vocabulary; emergency control is deliberately absent."""
 
 MAX_DELEGATION_DEPTH = 8
 
@@ -87,6 +108,23 @@ class VerifiedCapability:
     action: str
     resource_id: str
     constraints: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedSandboxCapabilityFacts:
+    """Token-free server-owned proof for one idempotently budgeted operation."""
+
+    grant_id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_instance_id: str
+    workload_identity_digest: str
+    operation_id: str
+    action: str
+    grant_version: int
+    verified_at: datetime
+    expires_at: datetime
+    verification_digest: str
 
 
 @dataclass(frozen=True)
@@ -186,6 +224,57 @@ def create_grant(
         constraints=constraints,
         approval_id=approval_id,
         parent_grant_id=None,
+        allowed_actions=READ_ACTIONS,
+        workload_identity_digest=None,
+    )
+
+
+def create_sandbox_grant(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    runtime_instance_id: str,
+    workload_identity_digest: str,
+    issuer_context: TrustedIssuerContext,
+    actions: set[str] | frozenset[str],
+    not_before: datetime,
+    expires_at: datetime,
+    max_calls: int,
+    max_bytes: int,
+    max_cost_units: int,
+    constraints: dict[str, object] | None = None,
+) -> CapabilityGrant:
+    """Create one non-delegable, runtime-bound Sandbox lifecycle grant."""
+
+    _validate_issuer_context(issuer_context, tenant_id=tenant_id)
+    _validate_digest(workload_identity_digest, "workload_identity_digest")
+    not_before = _aware(not_before)
+    expires_at = _aware(expires_at)
+    if expires_at - not_before > MAX_TOKEN_TTL:
+        raise CapabilityScopeDenied("sandbox grant lifetime cannot exceed five minutes")
+    return _create_grant(
+        session,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        runtime_instance_id=runtime_instance_id,
+        actor_user_id=issuer_context.originating_user_id,
+        actions=actions,
+        resource_ids=frozenset({workspace_id}),
+        not_before=not_before,
+        expires_at=expires_at,
+        max_calls=max_calls,
+        max_bytes=max_bytes,
+        max_cost_units=max_cost_units,
+        delegation_depth=0,
+        delegation_depth_limit=0,
+        created_by_actor_type="system",
+        created_by_actor_id=issuer_context.system_actor_id,
+        constraints=constraints,
+        approval_id=None,
+        parent_grant_id=None,
+        allowed_actions=SANDBOX_ACTIONS,
+        workload_identity_digest=workload_identity_digest,
     )
 
 
@@ -296,6 +385,8 @@ def delegate_grant(
         constraints=child_constraints,
         approval_id=parent.approval_id,
         parent_grant_id=parent.id,
+        allowed_actions=READ_ACTIONS,
+        workload_identity_digest=None,
     )
 
 
@@ -317,6 +408,8 @@ def issue_token(
         raise ValueError("kid has an invalid format")
     now = _now()
     grant = get_grant(session, tenant_id=tenant_id, grant_id=grant_id)
+    if not frozenset(grant.actions) <= READ_ACTIONS:
+        raise CapabilityScopeDenied("sandbox grants cannot be issued as Gateway bearer tokens")
     if grant.actor_user_id != issuer_context.originating_user_id:
         raise CapabilityScopeDenied("issuer context is not bound to the grant user")
     if grant.state != "active" or _aware(grant.not_before) > now or _aware(grant.expires_at) <= now:
@@ -576,6 +669,147 @@ def _reserve_budget(
     return usage
 
 
+def verify_and_reserve_sandbox_capability(
+    session: Session,
+    *,
+    operation_id: str,
+    grant_id: str,
+    expected_tenant_id: str,
+    expected_workspace_id: str,
+    expected_runtime_instance_id: str,
+    expected_workload_identity_digest: str,
+    action: str,
+) -> VerifiedSandboxCapabilityFacts:
+    """Verify one Sandbox grant and reserve its budget exactly once per operation."""
+
+    for value in (
+        operation_id,
+        grant_id,
+        expected_tenant_id,
+        expected_workspace_id,
+        expected_runtime_instance_id,
+    ):
+        _validate_uuid(value)
+    _validate_digest(expected_workload_identity_digest, "workload_identity_digest")
+    if action not in SANDBOX_ACTIONS:
+        raise CapabilityScopeDenied("sandbox capability action is outside the closed vocabulary")
+
+    grant = get_grant(
+        session,
+        tenant_id=expected_tenant_id,
+        grant_id=grant_id,
+        lock=True,
+    )
+    now = _now()
+    if (
+        grant.state != "active"
+        or _aware(grant.not_before) > now
+        or _aware(grant.expires_at) <= now
+        or grant.workspace_id != expected_workspace_id
+        or grant.runtime_instance_id != expected_runtime_instance_id
+        or grant.workload_identity_digest != expected_workload_identity_digest
+        or grant.delegation_depth != 0
+        or grant.delegation_depth_limit != 0
+        or grant.parent_grant_id is not None
+        or action not in grant.actions
+        or not frozenset(grant.actions) <= SANDBOX_ACTIONS
+        or frozenset(grant.resource_ids) != frozenset({expected_workspace_id})
+    ):
+        raise CapabilityScopeDenied("sandbox capability binding is not active")
+    _assert_active_ancestry(
+        session,
+        tenant_id=expected_tenant_id,
+        leaf=grant,
+        lock=True,
+        failure_type=CapabilityScopeDenied,
+    )
+    workspace = session.execute(
+        select(ResourceRecord.id).where(
+            ResourceRecord.tenant_id == expected_tenant_id,
+            ResourceRecord.id == expected_workspace_id,
+            ResourceRecord.kind == "workspace",
+            ResourceRecord.state.in_(("active", "running", "paused", "stopped")),
+            ResourceRecord.policy_class != "system_internal",
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        raise CapabilityScopeDenied("sandbox workspace resource is unavailable")
+
+    inserted = session.execute(
+        pg_insert(CapabilityUsageReservation)
+        .values(
+            operation_id=operation_id,
+            tenant_id=expected_tenant_id,
+            grant_id=grant.id,
+            workspace_id=expected_workspace_id,
+            runtime_instance_id=expected_runtime_instance_id,
+            action=action,
+            calls=1,
+            cost_units=1,
+        )
+        .on_conflict_do_nothing(index_elements=[CapabilityUsageReservation.operation_id])
+        .returning(CapabilityUsageReservation.operation_id)
+    ).scalar_one_or_none()
+    if inserted is None:
+        reservation = session.execute(
+            select(CapabilityUsageReservation).where(
+                CapabilityUsageReservation.operation_id == operation_id
+            )
+        ).scalar_one_or_none()
+        if reservation is None or (
+            reservation.tenant_id,
+            reservation.grant_id,
+            reservation.workspace_id,
+            reservation.runtime_instance_id,
+            reservation.action,
+        ) != (
+            expected_tenant_id,
+            grant.id,
+            expected_workspace_id,
+            expected_runtime_instance_id,
+            action,
+        ):
+            raise CapabilityScopeDenied("sandbox capability reservation binding drift")
+    else:
+        _reserve_budget(
+            session,
+            tenant_id=expected_tenant_id,
+            grant_id=grant.id,
+            grant_version=grant.version,
+            calls=1,
+            bytes_in=0,
+            bytes_out=0,
+            cost_units=1,
+        )
+
+    verification_digest = _canonical_digest(
+        {
+            "action": action,
+            "expires_at": _aware(grant.expires_at).isoformat(),
+            "grant_id": grant.id,
+            "grant_version": grant.version,
+            "operation_id": operation_id,
+            "runtime_instance_id": expected_runtime_instance_id,
+            "tenant_id": expected_tenant_id,
+            "workload_identity_digest": expected_workload_identity_digest,
+            "workspace_id": expected_workspace_id,
+        }
+    )
+    return VerifiedSandboxCapabilityFacts(
+        grant_id=grant.id,
+        tenant_id=expected_tenant_id,
+        workspace_id=expected_workspace_id,
+        runtime_instance_id=expected_runtime_instance_id,
+        workload_identity_digest=expected_workload_identity_digest,
+        operation_id=operation_id,
+        action=action,
+        grant_version=grant.version,
+        verified_at=now,
+        expires_at=_aware(grant.expires_at),
+        verification_digest=verification_digest,
+    )
+
+
 def revoke_grant(
     session: Session,
     *,
@@ -786,8 +1020,10 @@ def _create_grant(
     constraints: dict[str, object] | None,
     approval_id: str | None,
     parent_grant_id: str | None,
+    allowed_actions: frozenset[str],
+    workload_identity_digest: str | None,
 ) -> CapabilityGrant:
-    safe_actions = _validate_actions(actions)
+    safe_actions = _validate_actions(actions, allowed_actions=allowed_actions)
     safe_resources = _validate_resource_ids(resource_ids)
     safe_constraints = _validate_constraints(constraints)
     if approval_id is not None:
@@ -847,6 +1083,7 @@ def _create_grant(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         runtime_instance_id=runtime_instance_id,
+        workload_identity_digest=workload_identity_digest,
         actor_user_id=actor_user_id,
         parent_grant_id=parent_grant_id,
         actions=sorted(safe_actions),
@@ -870,10 +1107,14 @@ def _create_grant(
     return grant
 
 
-def _validate_actions(actions: set[str] | frozenset[str]) -> frozenset[str]:
+def _validate_actions(
+    actions: set[str] | frozenset[str],
+    *,
+    allowed_actions: frozenset[str] = READ_ACTIONS,
+) -> frozenset[str]:
     values = frozenset(actions)
-    if not values or "*" in values or not values <= READ_ACTIONS:
-        raise CapabilityScopeDenied("P34.2 grants allow only the fixed read action vocabulary")
+    if not values or "*" in values or not values <= allowed_actions:
+        raise CapabilityScopeDenied("capability actions are outside the selected closed vocabulary")
     return values
 
 
@@ -948,6 +1189,16 @@ def _validate_uuid(value: str) -> None:
         raise ValueError("capability identifiers must be UUIDs") from exc
 
 
+def _validate_digest(value: str, name: str) -> None:
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{name} must be a lowercase sha256 digest")
+
+
+def _canonical_digest(value: object) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -959,6 +1210,7 @@ def _aware(value: datetime) -> datetime:
 __all__ = [
     "MAX_DELEGATION_DEPTH",
     "READ_ACTIONS",
+    "SANDBOX_ACTIONS",
     "CapabilityBudgetExceeded",
     "CapabilityConflict",
     "CapabilityError",
@@ -967,13 +1219,16 @@ __all__ = [
     "TrustedIssuerContext",
     "TrustedPlatformContext",
     "VerifiedCapability",
+    "VerifiedSandboxCapabilityFacts",
     "consume_budget",
     "create_grant",
+    "create_sandbox_grant",
     "delegate_grant",
     "get_grant",
     "issue_token",
     "register_signing_key",
     "revoke_grant",
     "revoke_token",
+    "verify_and_reserve_sandbox_capability",
     "verify_capability",
 ]

@@ -1,0 +1,69 @@
+#include <tunables/global>
+
+profile omnibase-runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  capability chown,
+  capability dac_override,
+  capability kill,
+  capability setgid,
+  capability setpcap,
+  capability setuid,
+  capability sys_admin,
+  capability sys_chroot,
+
+  network unix stream,
+  deny network inet,
+  deny network inet6,
+  deny network packet,
+
+  mount,
+  umount,
+
+  /usr/libexec/omnibase/omnibase-isolation-launcher rix,
+  /usr/libexec/omnibase/ r,
+  /usr/bin/python3 rix,
+  /usr/bin/python3.12 rix,
+  /usr/bin/unshare rix,
+  /usr/bin/busybox rix,
+  /var/lib/omnibase-runner/runtimes/*/root/bin/busybox rix,
+  /etc/nsswitch.conf r,
+  /etc/passwd r,
+  /etc/group r,
+  /etc/subuid r,
+  /etc/subgid r,
+  /usr/lib/python3.12/** r,
+  /usr/local/lib/python3.12/ r,
+  /usr/local/lib/python3.12/** r,
+  /usr/lib/x86_64-linux-gnu/** mr,
+  /lib/x86_64-linux-gnu/** mr,
+  /lib64/** mr,
+
+  /proc/** r,
+  /proc/*/uid_map rw,
+  /proc/*/gid_map rw,
+  /proc/*/setgroups rw,
+  /sys/fs/cgroup/system.slice/omnibase-runner.service/** rw,
+  /sys/fs/cgroup/system.slice/omnibase-runner.service/ rw,
+
+  /run/omnibase-runner/** rwk,
+  /run/omnibase-host-ns/ r,
+  /run/omnibase-host-ns/** r,
+  /var/lib/omnibase-runner/** rwk,
+  /etc/omnibase-runner/** r,
+  /etc/apparmor.d/omnibase-runner r,
+
+  /dev/null rw,
+  /dev/urandom r,
+  /dev/random r,
+
+  deny /root/** rwklx,
+  deny /home/** rwklx,
+  deny /run/docker.sock rw,
+  deny /run/podman/** rwklx,
+  deny /var/run/docker.sock rw,
+  deny /var/run/postgresql/** rwklx,
+  deny /var/lib/docker/** rwklx,
+  deny /var/lib/containers/** rwklx,
+  deny /var/lib/omnibase-runner/runner_ed25519 rwklx,
+}

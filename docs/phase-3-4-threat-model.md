@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0 拒绝型 Sandbox 契约与 metadata-only harness 已落地，真实执行与网络隔离继续冻结
+> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A4、B、C、D 已完成工程封板。独立 Hyper-V Linux Runner 的当前 launcher 哈希已通过 11/11 attack Gate；独立 PrivateNetwork Broker daemon 已在同一 Runner 上两轮通过 26/26 Gate；真实 Headscale 0.26.1 control-plane + mTLS Node-Daemon test-double disposable Gate 已通过；split-process mTLS Gateway 已通过 guarded disposable schema/rows/RAG/citation 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点数据面、DERP、节点失陷、容量/SLA 与生产总验收仍是 P34.7 独立 Gate，不得由本阶段证据冒充
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -200,7 +200,11 @@ P34.4 当前只实现 17 张 global 表上的控制面元数据：版本化模�
 - `restore_new_generation` 创建新 workload identity，旧 token、进程、连接、PID、socket 和 runtime handle 一律失效。
 - provider handle 只存内部控制面，不进入公开 API、token、日志或 workspace。
 
-P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。该 harness 的 `exec`/`cancel` 永久拒绝，不创建进程、文件、容器、socket、网络、挂载或 provider 资源。它只证明真实实现尚未装配时 fail-closed，不能证明独立 Runner、cgroup、seccomp/AppArmor、gVisor/Kata、workload mTLS、有界强杀或敌对代码隔离已经实现；这些仍须等待目标 Linux profile 的 P34.5 攻击 Gate。
+P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型生产默认、完整 lease/generation/Run/Node fencing/workload identity/action binding、资源/路径/结构化 argv/只读 root/default-deny network 合约，以及 metadata-only fake harness。P34.5A1 又增加 live lease + capability 组合授权 seam、独立于 workload grant 的 emergency stop/destroy controller authorization、operation ID/request-spec digest exact replay、ambiguous outcome reconciliation 状态机、目标 Linux isolation profile 合约与 `UnavailableSandboxRunner`。P34.5A2 进一步加入 runtime instance 单次绑定、每次新事务重验 P34.4 Run/Node/Lease/fencing/attestation 的 SQLAlchemy verifier、Runner host/profile/identity attestation、独立 transport 和 no-auto-replay coordinator。P34.5A3 用 `0008` 将 read 与 Sandbox lifecycle capability profile 变成数据库级互斥闭集，Sandbox Grant 强制单 Workspace、runtime/workload-bound、不可委派、最长五分钟且不能签发 Gateway bearer token；`capability_usage_reservations` 按 operation ID 幂等扣费，`SqlAlchemySandboxOperationStore` 将 current pointer、append-only transition 与 redacted Audit 同事务持久化，并以 tenant/Workspace/Run/Grant 复合外键和数据库 trigger 拒绝漂移、更新与删除。
+
+P34.5A4 进一步提供 canonical request/spec/execution binding、`TrustedRunnerMtlsPeer`、production `MtlsRunnerTransportAuthenticator`、私有路径 `SqliteRunnerReplayStore`、独立 `AttestedLinuxSandboxRunner`/RuntimeDriver、namespace/cgroup/seccomp/LSM probe，以及覆盖 partial cgroup setup、spawn、pipe、selector、communicate、metadata、receipt 和 evidence failure 的统一 fail-safe cleanup。所有异常先 `cgroup.kill`、确认 `populated 0`，随后才清理 launcher process group/cgroup/runtime dir；证明失败保留现场并 fail-closed。Host namespace reference 只接受直接 VM `/proc/1/ns/*` handles，或 root-owned/non-writable `/run/omnibase-host-ns/*` 中严格的 `dev:ino` snapshot。当前哈希已在独立 Hyper-V Ubuntu Runner 上通过 11/11 attack Gate；普通 Docker Desktop/WSL 不自动合格，Core↔VM production mTLS 联合装配仍独立验收。
+
+P34.5B 的 Broker 只接受 logical service，并绑定 Tenant/Workspace/Run/runtime/workload/Network Lease/generation/Run+Node+Network fencing、protocol/port/deadline/budget；授权后与连接前双解析，且在预算预留前要求 service/protocol/port/address/route-kind/resolution-digest 全部稳定，metadata/loopback/private/link-local/ULA/public/direct-member-overlay 默认拒绝。独立 Broker daemon/AF_UNIX transport 已在目标 VM 首轮与服务重启确认轮各通过 26/26 Gate。P34.5C 的 Headscale adapter 只让受信 Node Daemon 使用 opaque credential reference，经 durable `OverlayOperationLedger` 防 ambiguous mutation replay，并只向 Broker 发布 logical metadata；真实 disposable Gate 已通过 Headscale provider-record activate/status/rotate/revoke、offline/reconnect 与 secret containment，但注册真实成员设备为 0。P34.5D 只接受 mTLS ingress 注入的 trusted Runner/Broker peer evidence，每次请求重验 live Run/Node/Lease/fencing，Core-only issuer 签发不超过五分钟且不晚于 peer evidence/Lease expiry 的 P34.2 read token；独立 server/client 的 guarded disposable schema/rows/RAG/citation 四读与 stale/revocation 矩阵已经通过。P34.7 仍直接验证 Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点/DERP/node-compromise、容量/SLA 与生产总验收。
 
 ### 4.9 文件系统与 Artifact
 
@@ -222,11 +226,12 @@ P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型�
 控制：
 
 - egress 默认拒绝，只允许 gateway；
-- gateway 专用内部网络和服务身份；
+- gateway 专用内部网络和短期 mTLS workload identity；普通 Header/cookie 不能构造可信 peer；
 - 禁止 loopback、private/link-local、metadata 和 runtime socket；
-- 域名解析前后均校验，限制 redirect；
+- Sandbox 只提交 logical service ID；Broker 授权后与连接前分别解析，结果漂移或 DNS rebinding 即拒绝；
 - 连接数、流量、响应大小、DNS 和时间上限；
 - 外网扩权属于 R3 限时审批。
+- Sandbox 永不成为成员 Overlay peer，也不接收 Overlay IP/route/key/provider handle；Headscale adapter 只在受信 Node Daemon 边界工作。
 
 ### 4.11 进程与资源耗尽
 
@@ -329,6 +334,27 @@ P34.5A0 已新增严格 `SandboxProvider`/`SandboxAuthorizer` seam、拒绝型�
 | SBX-A0-02 | stale Run/Node fencing、过期/撤销 lease、action/binding 不匹配 | 每次调用在线拒绝，不以 handle/UUID 作为授权 | unit | P34.5A0 |
 | SBX-A0-03 | 绝对/drive/traversal/保留路径、单字符串 command/任意 env、无限资源、非 deny-all 网络 | 构造期拒绝 | contract/unit | P34.5A0 |
 | SBX-A0-04 | metadata-only fake 被要求执行/取消命令、恢复伪造 snapshot、重放 restore 或让已销毁 Run 重建 | hard deny/conflict，零进程/文件/socket/provider side effect，terminal Run 不复活 | unit/source audit | P34.5A0 |
+| SBX-A1-01 | live lease 与 capability 的 tenant/workspace/run/identity/action/expiry 任一不一致 | 组合 authorizer 拒绝，provider/Runner 无副作用 | unit | P34.5A1 |
+| SBX-A1-02 | workload grant 撤销后继续普通 lifecycle，或伪造 controller 请求 destroy | 普通路径拒绝；只有独立可信 controller + current generation/fencing/deadline 可授权 emergency control | unit | P34.5A1 |
+| SBX-A1-03 | 同 operation ID payload/spec drift、ambiguous provider outcome 自动重跑、terminal operation 复活 | conflict；只能显式 reconciliation；terminal 不可转换 | unit | P34.5A1 |
+| SBX-A1-04 | 未装配真实 Linux Runner 或 isolation profile 不完整时 execute/terminate | `sandbox_runner_unavailable`/构造期拒绝，零 runtime side effect | contract/source audit | P34.5A1 |
+| SBX-A2-01 | Run Lease 当前但 runtime instance/workload identity 未绑定、已漂移或终态已清除 | DB-backed verifier 拒绝，transport 前无副作用 | unit | P34.5A2 |
+| SBX-A2-02 | Runner host 的 Node fencing、profile digest、identity、有效期或 evidence 不匹配 | host attestation 拒绝，operation 记为 failed，不 dispatch | unit/probe | P34.5A2 |
+| SBX-A2-03 | dispatch 后 timeout、进程崩溃或 receipt operation ID 漂移 | operation 标记 ambiguous/reconciliation-required，同 operation ID 禁止自动重放 | unit | P34.5A2 |
+| SBX-A2-04 | Docker Desktop 缺少 rootless/userns 或 LSM 仍尝试装配 hardened provider | host probe not-ready，保持 provider/transport unavailable，不降低 profile | operator/source audit | P34.5A2 |
+| SBX-A3-01 | 在同一 Grant 混合 read 与 Sandbox action、缺少 workload digest、扩大到多 Workspace 或委派 Sandbox Grant | service 与 `0008` CHECK 双重拒绝；Sandbox Grant 不签发 Gateway bearer token | unit/sentinel PostgreSQL | P34.5A3 |
+| SBX-A3-02 | 同 operation ID 重放导致重复扣 budget，或复用 operation ID 搭配不同 tenant/grant/workspace/runtime/action | exact replay 只保留一条 reservation/一次 calls+cost；binding drift 拒绝 | unit/concurrency sentinel | P34.5A3 |
+| SBX-A3-03 | 跨 tenant/Workspace/Run 写 operation、并发重复 claim dispatch、直接修改/删除 transition/reservation | 复合 FK、行锁状态机、append-only trigger；并发只有一个 dispatch winner | sentinel PostgreSQL | P34.5A3 |
+| SBX-A3-04 | operation transition 成功但 Audit 丢失，或 populated `0008` 被降级抹去证据 | transition/current pointer/Audit 同事务；存在 Grant/reservation/operation/transition 时 downgrade fail-closed | sentinel PostgreSQL | P34.5A3 |
+| SBX-A4-01 | 伪造 mTLS peer、重放旧 nonce/sequence，或 Runner 进程重启后重放旧 envelope | 证书/Runner/Node/fencing binding 拒绝；私有 durable replay store 跨进程拒绝 | unit + Runner integration | P34.5A4 |
+| SBX-A4-02 | runtime namespace 与 PID1 相同、缺少 cgroup/seccomp/LSM、launcher/runner-root digest 漂移 | host/runtime attestation fail-closed，不 dispatch | target Linux probe | P34.5A4 |
+| SBX-A4-03 | timeout、输出溢出、fork/daemonize 后只杀 launcher PID | 先 kill operation cgroup 并证明 `populated 0`；否则结果失败/ambiguous | target Linux attack harness | P34.5A4 |
+| SBX-B-01 | logical service 指向 metadata/private/public/direct-member Overlay，或两次解析发生 DNS rebinding | Broker 在 transport 前拒绝，零连接副作用 | unit + network namespace harness | P34.5B |
+| SBX-B-02 | 同 operation 重复扣网络预算、receipt/resolution/namespace binding 漂移 | exact replay 不重复扣费；漂移/unknown 禁止自动 replay | unit/concurrency | P34.5B |
+| SBX-C-01 | Sandbox 试图成为 Overlay peer、请求直接 endpoint、夹带 raw key/route/IP/provider handle | intent/DTO 构造期拒绝；publication 只有 logical metadata | unit/contract | P34.5C |
+| SBX-C-02 | activate/rotate/revoke 可能已跨 daemon boundary 后自动重放，或 credential generation 不单调 | durable ledger 标记 outcome unknown；新 generation 必须严格更高 | unit + disposable Headscale | P34.5C |
+| SBX-D-01 | Header/cookie 冒充 trusted Gateway peer，或 stale Run/Node/Lease/fencing 复用 read token | ASGI scope/mTLS + 每请求 live DB proof 拒绝；adapter 不被调用 | Gateway unit/integration | P34.5D |
+| SBX-D-02 | Runner/Sandbox 获取 signing key、DB/Redis/MinIO locator/credential 或 Runtime write route | private key 留在 Core，Gateway 仅四个 P34.2 read action且无 direct infrastructure route | contract/source audit | P34.5D |
 | RUN-03 | Runner 尝试直连 DB/MinIO/Redis | 网络和凭据均不可用 | sandbox harness | P34.5 |
 | RUN-04 | Runner task 夹带 JWT/locator/凭据 | 控制面拒绝，审计脱敏 | contract/security | P34.5 |
 | FS-01 | `../`/绝对路径/编码绕过 | 拒绝，root 外无变化 | sandbox harness | P34.5 |
@@ -369,13 +395,14 @@ P34.4：
 - 实时 attestation、Network lease cursor、无 provider 副作用的逻辑签发、Node/Peer/Service/Network/Authority 统一锁序撤销与无真实数据协作冲突 Gate 通过；
 - Browser API 不暴露 attestation、heartbeat、lease、fencing、provider activation 或 authority；
 - 不执行不可信代码，不访问真实成员网络、业务数据、MinIO、Redis 或 canonical RAG。
-- 当前验证证据为 focused `83 passed`（Workspace service `48` + Overlay/Collaboration `27` + API contract `8`）、Backend 非 integration `767 passed / 9 skipped / 11 deselected`、Mypy `105 source files / 0 issues`、fresh R6 `1 + 4 + 57 passed / 1 deselected`；这些数字不构成真实 Overlay、VPN 或 Sandbox 安全声明。
+- 历史 P34.4 focused 与 sentinel 数字仍用于元数据控制面证据；P34.5 最终本地封板另有 Backend non-integration `1065 passed / 12 skipped / 14 deselected`、Mypy `137 source files / 0 issues`、独立 Linux Runner 11/11 artifact、Network Broker 两轮 26/26 artifact、真实 Headscale control-plane disposable artifact，以及 split-process mTLS guarded disposable 四读 artifact。这些证据仍不构成 Core↔Runner/Broker production 联合激活、非 disposable production tenant/RAG、真实成员 Overlay 数据面、DERP、节点失陷、容量/SLA 或生产总验收声明。
 
 P34.5–P34.6：
 
 - P34.5A0 先证明拒绝型默认、严格 DTO、在线 authorization seam、metadata-only harness 与零真实执行/联网副作用；它不是 runtime isolation Gate；
 - 生命周期并发和撤销稳定；
-- sandbox 逃逸、网络、文件、进程、资源矩阵全绿；
+- 当前独立 Linux Runner 哈希的 sandbox 文件、网络、进程、资源矩阵 11/11 全绿；
+- 当前独立 Network Broker daemon 哈希在同一 hardened Linux Runner 上首轮与重启确认轮均 26/26 全绿，覆盖真实 `setns` namespace-only connect、无默认路由、public/member/metadata/loopback/LAN/ULA 拒绝、connection/bytes budget、challenge forgery、PID/starttime/netns/host/cross-runtime、socket impersonation 与 durable no-replay；
 - workspace 只能访问 gateway；
 - canonical/derived 隔离和恢复演练通过。
 
@@ -398,7 +425,7 @@ P34.7：
 - E2B：未来远程 provider adapter，不作为权限事实源。
 - Dagger：仅构建/测试流水线，不作为 runtime 安全边界。
 
-普通共享内核 Docker 不得宣称能够安全运行任意敌对代码。进入多租户不可信代码生产前，必须在目标 Linux standard/strong profile 上通过 P34.5/P34.7 全攻击矩阵。
+普通共享内核 Docker 不得宣称能够安全运行任意敌对代码。当前 Hyper-V Linux profile 已分别证明封存哈希对应的独立 Runner 11/11 Gate 与 Network Broker 26/26 Gate；进入多租户不可信代码生产前，仍必须完成 Core↔Runner/Broker/Gateway production mTLS 与 tenant/RAG 联合装配，并在目标 Linux standard/strong profile 上通过 P34.7 production 全攻击矩阵。
 
 1. 目标攻击者是否包含恶意多租户代码；共享内核是否可接受。
 2. Windows 开发与 Linux 生产是否使用不同 adapter，安全语义如何一致。

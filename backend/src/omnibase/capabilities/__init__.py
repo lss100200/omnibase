@@ -5,6 +5,7 @@ from omnibase.capabilities.models import (
     CapabilityRevocation,
     CapabilitySigningKey,
     CapabilityUsage,
+    CapabilityUsageReservation,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "CapabilityRevocation",
     "CapabilitySigningKey",
     "CapabilityUsage",
+    "CapabilityUsageReservation",
 ]

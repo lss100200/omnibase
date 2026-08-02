@@ -546,6 +546,182 @@ def test_run_lease_rejects_stale_generation_fencing_expiry_and_revocation(
         )
 
 
+def test_bind_run_runtime_identity_is_single_assignment_and_exactly_replayable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = SimpleNamespace(
+        observed_state="leased",
+        runtime_instance_id=None,
+        workload_identity_digest=None,
+        version=4,
+    )
+    session = MagicMock()
+    monkeypatch.setattr(
+        service,
+        "_validated_run_lease",
+        lambda *args, **kwargs: (run, SimpleNamespace(), datetime(2026, 8, 1, tzinfo=UTC)),
+    )
+    runtime_instance_id = "98bd1424-7592-4f09-af37-61105246d7ce"
+    workload_identity_digest = "a" * 64
+
+    first = service.bind_run_runtime_identity(
+        session,
+        tenant_id="tenant-a",
+        run_id="run-a",
+        lease_id="lease-a",
+        node_id="node-a",
+        generation=3,
+        fencing_token=7,
+        runtime_instance_id=runtime_instance_id.upper(),
+        workload_identity_digest=workload_identity_digest,
+    )
+    replay = service.bind_run_runtime_identity(
+        session,
+        tenant_id="tenant-a",
+        run_id="run-a",
+        lease_id="lease-a",
+        node_id="node-a",
+        generation=3,
+        fencing_token=7,
+        runtime_instance_id=runtime_instance_id,
+        workload_identity_digest=workload_identity_digest,
+    )
+
+    assert first is replay is run
+    assert run.runtime_instance_id == runtime_instance_id
+    assert run.workload_identity_digest == workload_identity_digest
+    assert run.version == 5
+    session.flush.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("runtime_instance_id", "workload_identity_digest"),
+    [
+        ("e6a78c2d-4a35-4385-b737-191445a66c8c", "a" * 64),
+        ("98bd1424-7592-4f09-af37-61105246d7ce", "b" * 64),
+    ],
+)
+def test_bind_run_runtime_identity_rejects_identity_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_instance_id: str,
+    workload_identity_digest: str,
+) -> None:
+    run = SimpleNamespace(
+        observed_state="leased",
+        runtime_instance_id="98bd1424-7592-4f09-af37-61105246d7ce",
+        workload_identity_digest="a" * 64,
+        version=5,
+    )
+    session = MagicMock()
+    monkeypatch.setattr(
+        service,
+        "_validated_run_lease",
+        lambda *args, **kwargs: (run, SimpleNamespace(), datetime(2026, 8, 1, tzinfo=UTC)),
+    )
+
+    with pytest.raises(service.LeaseRejected, match="already bound"):
+        service.bind_run_runtime_identity(
+            session,
+            tenant_id="tenant-a",
+            run_id="run-a",
+            lease_id="lease-a",
+            node_id="node-a",
+            generation=3,
+            fencing_token=7,
+            runtime_instance_id=runtime_instance_id,
+            workload_identity_digest=workload_identity_digest,
+        )
+
+    assert run.version == 5
+    session.flush.assert_not_called()
+
+
+def test_verify_run_lease_for_sandbox_returns_complete_runtime_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 1, 8, 0, tzinfo=UTC)
+    runtime_instance_id = "98bd1424-7592-4f09-af37-61105246d7ce"
+    run = SimpleNamespace(
+        id="888f19b4-2959-45ed-b5b6-bc06e77bb1f3",
+        tenant_id="0e237468-a17a-44c9-a882-cb513e8f5a9b",
+        workspace_id="4dbcf4f1-a5e4-45ff-95c5-afc00e5f7f17",
+        generation=3,
+        runtime_instance_id=runtime_instance_id,
+        workload_identity_digest="a" * 64,
+    )
+    lease = SimpleNamespace(
+        id="37c6f3cf-a90f-45dd-8810-a4e18d0c2158",
+        node_id="0fb5d57b-bb49-4cd6-8011-a32d29c34bbe",
+        node_fencing_token=11,
+        fencing_token=7,
+        expires_at=now + timedelta(seconds=30),
+    )
+    monkeypatch.setattr(
+        service,
+        "_validated_run_lease",
+        lambda *args, **kwargs: (run, lease, now),
+    )
+
+    facts = service.verify_run_lease_for_sandbox(
+        MagicMock(),
+        tenant_id=run.tenant_id,
+        run_id=run.id,
+        runtime_instance_id=runtime_instance_id,
+        lease_id=lease.id,
+        node_id=lease.node_id,
+        generation=3,
+        fencing_token=7,
+        workload_identity_digest="a" * 64,
+    )
+
+    assert facts.runtime_instance_id == runtime_instance_id
+    assert facts.workspace_id == run.workspace_id
+    assert facts.node_fencing_token == 11
+    assert facts.verified_at == now
+    assert facts.expires_at == lease.expires_at
+    assert len(facts.verification_digest) == 64
+
+
+@pytest.mark.parametrize(
+    ("runtime_instance_id", "workload_identity_digest"),
+    [
+        ("e6a78c2d-4a35-4385-b737-191445a66c8c", "a" * 64),
+        ("98bd1424-7592-4f09-af37-61105246d7ce", "b" * 64),
+    ],
+)
+def test_verify_run_lease_for_sandbox_rejects_stale_runtime_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_instance_id: str,
+    workload_identity_digest: str,
+) -> None:
+    run = SimpleNamespace(
+        runtime_instance_id="98bd1424-7592-4f09-af37-61105246d7ce",
+        workload_identity_digest="a" * 64,
+    )
+    monkeypatch.setattr(
+        service,
+        "_validated_run_lease",
+        lambda *args, **kwargs: (
+            run,
+            SimpleNamespace(),
+            datetime(2026, 8, 1, tzinfo=UTC),
+        ),
+    )
+
+    with pytest.raises(service.LeaseRejected, match="stale or unbound"):
+        service.verify_run_lease_for_sandbox(
+            MagicMock(),
+            tenant_id="tenant-a",
+            run_id="run-a",
+            runtime_instance_id=runtime_instance_id,
+            lease_id="lease-a",
+            node_id="node-a",
+            generation=3,
+            fencing_token=7,
+            workload_identity_digest=workload_identity_digest,
+        )
+
+
 def test_claim_run_lease_binds_current_node_fencing_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

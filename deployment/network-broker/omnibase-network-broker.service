@@ -1,0 +1,59 @@
+[Unit]
+Description=OmniBase P34.5B independent Workspace Network Broker
+After=local-fs.target omnibase-runner-host-ns.service
+Requires=omnibase-runner-host-ns.service
+ConditionFileIsExecutable=/usr/libexec/omnibase/omnibase-network-broker
+ConditionPathExists=/etc/omnibase-network-broker/config.json
+
+[Service]
+Type=simple
+User=omnibase-network-broker
+Group=omnibase-network-broker
+UMask=0077
+RuntimeDirectory=omnibase-network-broker-daemon
+RuntimeDirectoryMode=0700
+StateDirectory=omnibase-network-broker
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/omnibase-network-broker
+ExecStart=/usr/libexec/omnibase/omnibase-network-broker serve --config /etc/omnibase-network-broker/config.json
+Restart=on-failure
+RestartSec=2s
+
+# The supervisor starts in a network-empty namespace.  Only a short-lived
+# forked worker with CAP_SYS_ADMIN may enter one root-pinned workload netns.
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+DevicePolicy=closed
+SystemCallArchitectures=native
+SystemCallFilter=~add_key bpf delete_module finit_module fsconfig fsmount fsopen init_module io_pgetevents io_submit io_uring_setup ioperm iopl kexec_file_load kexec_load keyctl mount mount_setattr move_mount open_by_handle_at open_tree perf_event_open pivot_root process_vm_readv process_vm_writev ptrace reboot request_key swapoff swapon umount2 userfaultfd
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_PTRACE
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_PTRACE
+ReadWritePaths=/var/lib/omnibase-network-broker /run/omnibase-network-broker-daemon
+ReadOnlyPaths=/run/omnibase-host-ns /run/omnibase-network-broker-permits
+InaccessiblePaths=/root /home /media /mnt /srv -/run/docker.sock -/run/podman/podman.sock
+RemoveIPC=yes
+KeyringMode=private
+TasksMax=64
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

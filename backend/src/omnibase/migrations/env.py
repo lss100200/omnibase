@@ -37,6 +37,7 @@ from omnibase.core.config import get_settings  # noqa: E402
 from omnibase.core.logging import configure_logging, get_logger  # noqa: E402
 from omnibase.db import tenant as tenant_models  # noqa: E402, F401
 from omnibase.db.models import GLOBAL_METADATA, TENANT_METADATA  # noqa: E402
+from omnibase.sandbox import models as sandbox_models  # noqa: E402, F401
 from omnibase.tenants.service import _initialize_tenant_schema  # noqa: E402
 from omnibase.workspaces import models as workspace_models  # noqa: E402, F401
 

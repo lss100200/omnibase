@@ -1,0 +1,167 @@
+services:
+  pki-init:
+    image: alpine/openssl@sha256:5008e829163320a6e8166883c03e68189e8925ade68cde36584dc2a41cfa5248
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        umask 077
+        if [ -f /pki/ca.crt ] && [ -f /pki/server.crt ] && \
+           [ -f /pki/server.key ] && [ -f /pki/client.crt ] && \
+           [ -f /pki/client.key ]; then
+          exit 0
+        fi
+        rm -f /pki/*
+        openssl genrsa -out /pki/ca.key 3072
+        openssl req -x509 -new -key /pki/ca.key -sha256 -days 2 \
+          -subj '/CN=OmniBase Disposable Overlay CA' -out /pki/ca.crt
+        openssl genrsa -out /pki/server.key 3072
+        openssl req -new -key /pki/server.key -subj '/CN=node-daemon' \
+          -out /pki/server.csr
+        printf '%s\n' \
+          'subjectAltName=DNS:node-daemon' \
+          'extendedKeyUsage=serverAuth' \
+          > /pki/server.ext
+        openssl x509 -req -in /pki/server.csr -CA /pki/ca.crt \
+          -CAkey /pki/ca.key -CAcreateserial -days 2 -sha256 \
+          -extfile /pki/server.ext -out /pki/server.crt
+        openssl genrsa -out /pki/client.key 3072
+        openssl req -new -key /pki/client.key -subj '/CN=omnibase-gate-runner' \
+          -out /pki/client.csr
+        printf '%s\n' 'extendedKeyUsage=clientAuth' > /pki/client.ext
+        openssl x509 -req -in /pki/client.csr -CA /pki/ca.crt \
+          -CAkey /pki/ca.key -CAcreateserial -days 2 -sha256 \
+          -extfile /pki/client.ext -out /pki/client.crt
+        chmod 600 /pki/*.key
+        chmod 644 /pki/*.crt
+    volumes:
+      - overlay-pki:/pki
+    networks:
+      - overlay-gate
+    restart: "no"
+
+  headscale:
+    image: headscale/headscale@sha256:ea9b5ee06274d757a4d52103de56cd11a9c393acb19d9a35f4b9fe52ada410de
+    command: ["serve"]
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./headscale-config.yaml:/etc/headscale/config.yaml:ro
+      - headscale-state:/var/lib/headscale
+    networks:
+      - overlay-gate
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/run/headscale:size=1m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  provider-secret-init:
+    image: python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686
+    command: ["python", "-c", "raise SystemExit('provider secret input required')"]
+    volumes:
+      - provider-secrets:/run/omnibase-provider-secrets
+    networks:
+      - overlay-gate
+    read_only: true
+    tmpfs:
+      - /tmp:size=1m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  node-daemon:
+    image: python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686
+    command:
+      - python
+      - /opt/omnibase/node_daemon_test_double.py
+      - --ca
+      - /pki/ca.crt
+      - --cert
+      - /pki/server.crt
+      - --key
+      - /pki/server.key
+      - --state
+      - /var/lib/omnibase-node-daemon/state.json
+      - --headscale-url
+      - http://headscale:8080
+      - --headscale-api-key-file
+      - /run/omnibase-provider-secrets/headscale-api-key
+      - --headscale-user
+      - omnibase-gate
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+    volumes:
+      - ../../scripts/overlay/node_daemon_test_double.py:/opt/omnibase/node_daemon_test_double.py:ro
+      - overlay-pki:/pki:ro
+      - node-daemon-state:/var/lib/omnibase-node-daemon
+      - provider-secrets:/run/omnibase-provider-secrets:ro
+    networks:
+      - overlay-gate
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  gate-runner:
+    image: omnibase-backend:latest
+    command:
+      - /app/.venv/bin/pytest
+      - tests/test_p34_5_overlay_disposable_gate.py
+      - -p
+      - no:cacheprovider
+      - -q
+      - -s
+    depends_on:
+      headscale:
+        condition: service_started
+      node-daemon:
+        condition: service_started
+    environment:
+      OMNIBASE_OVERLAY_GATE_BASE_URL: https://node-daemon:8443
+      OMNIBASE_OVERLAY_GATE_CA_FILE: /pki/ca.crt
+      OMNIBASE_OVERLAY_GATE_CERT_FILE: /pki/client.crt
+      OMNIBASE_OVERLAY_GATE_KEY_FILE: /pki/client.key
+      OMNIBASE_OVERLAY_GATE_HEADSCALE_HEALTH_URL: http://headscale:8080/health
+      OMNIBASE_OVERLAY_GATE_LEDGER_DIR: /var/lib/omnibase-gate-ledger
+    volumes:
+      - ../../backend/src:/app/src:ro
+      - ../../backend/tests:/app/tests:ro
+      - gate-runner-venv:/app/.venv:ro
+      - overlay-pki:/pki:ro
+      - gate-ledger-state:/var/lib/omnibase-gate-ledger
+    networks:
+      - overlay-gate
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+networks:
+  overlay-gate:
+    internal: true
+
+volumes:
+  overlay-pki:
+  headscale-state:
+  node-daemon-state:
+  provider-secrets:
+  gate-ledger-state:
+  gate-runner-venv:
+    external: true
+    name: omnibase_backend_venv

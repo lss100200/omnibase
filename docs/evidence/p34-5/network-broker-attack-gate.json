@@ -1,0 +1,79 @@
+{
+  "artifact_sha256": "573e69892812823018cab2a201082b21777fad1dbc3479b5cb74fcb17fa2c3de",
+  "attack_gate": {
+    "BUDGET-BYTES-EXCEEDED": "PASS",
+    "BUDGET-CONNECTION-EXCEEDED": "PASS",
+    "CROSS-01": "PASS",
+    "DAEMON-CHALLENGE": "PASS",
+    "DAEMON-CHALLENGE-FORGERY": "PASS",
+    "DEST-LOOPBACK": "PASS",
+    "DEST-METADATA": "PASS",
+    "DEST-MULTICAST": "PASS",
+    "DEST-RESERVED": "PASS",
+    "DEST-RFC1918": "PASS",
+    "DEST-ULA": "PASS",
+    "DURABLE-CONSUME": "PASS",
+    "MEASURED-BUDGET": "PASS",
+    "NET-MEMBER": "PASS",
+    "NET-PUBLIC": "PASS",
+    "NETNS-CONNECT": "PASS",
+    "NETNS-DIRECT-HOST-DENY": "PASS",
+    "NETNS-DIRECT-PUBLIC-DENY": "PASS",
+    "NETNS-HOST": "PASS",
+    "NETNS-STALE-PID": "PASS",
+    "NETNS-WRONG-IDENTITY": "PASS",
+    "NETNS-WRONG-STARTTIME": "PASS",
+    "REPLAY-01": "PASS",
+    "SERVICE-HEALTH": "PASS",
+    "SOCKET-IMPERSONATION": "PASS",
+    "SOCKET-PEER-CONTINUITY": "PASS"
+  },
+  "cleanup": {
+    "consumed_files": 0,
+    "disposable_namespace_processes": 0,
+    "namespace_stopped": true,
+    "permit_files": 0,
+    "residual_gate_paths": [],
+    "service_active": true
+  },
+  "completed_at": "2026-08-01T21:28:14.982461+00:00",
+  "deployment": {
+    "broker_gid": 988,
+    "broker_uid": 999,
+    "capability_bounding_set": [
+      "CAP_SYS_ADMIN",
+      "CAP_SYS_PTRACE"
+    ],
+    "daemon_user": "omnibase-network-broker",
+    "no_new_privileges": true,
+    "private_network": true,
+    "restrict_address_families": [
+      "AF_UNIX",
+      "AF_INET",
+      "AF_INET6"
+    ],
+    "service_state": "active/running",
+    "target": "OmniBase-P34.5-Runner Hyper-V Ubuntu 24.04 VM"
+  },
+  "external_network_connection_succeeded": false,
+  "hostile_code_production_claimed": false,
+  "local_verification": {
+    "focused_tests": "136 passed",
+    "py_compile": "PASS",
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "shell_syntax": "PASS"
+  },
+  "passed": true,
+  "root_env_accessed": false,
+  "source_sha256": {
+    "deployment/network-broker/README.md": "24aae47a9af9fe833d6e25cf12fdb596c3b2184b0ab1f5d14b6c8bbd87e87dd9",
+    "deployment/network-broker/config.example.json": "2c75ef3b3c1995167a3ac0661c21f3288628afdf15fb3b1b56c10f06554491e1",
+    "deployment/network-broker/install-network-broker.sh": "89405fb6bdc14e358e2d78f913edafce4c1bbd087e86835cee653b2630a8295c",
+    "deployment/network-broker/omnibase-network-broker-tmpfiles.conf": "11724d774aa320d83822ed12c60e35a31571b999f1c92c1d2d6fb0feaeb8d7ed",
+    "deployment/network-broker/omnibase-network-broker.py": "162498b0f0e08e761ec6c8b35fe1469b9d70f12b9676359d0d6f9ecdb968a055",
+    "deployment/network-broker/omnibase-network-broker.service": "aba7b1343bafc470715afa1e421f9f4afa48abc3abe6e97cd8c64066a90149e4",
+    "scripts/network-broker/run-network-broker-attack-gate.py": "565de902e9bfbb6d8caa6fc21cbcfe1d923a3b249c7ad8ce91e3590ec7890ccc"
+  },
+  "tests": 26
+}

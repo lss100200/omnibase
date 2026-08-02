@@ -314,7 +314,7 @@ def _run(
     return run_id
 
 
-def test_0007_creates_global_only_workspace_foundation(db_engine) -> None:
+def test_0007_and_0008_keep_workspace_foundation_global_only(db_engine) -> None:
     with db_engine.connect() as connection:
         revision = connection.execute(
             text("SELECT version_num FROM omnibase_meta.alembic_version")
@@ -355,7 +355,7 @@ def test_0007_creates_global_only_workspace_foundation(db_engine) -> None:
                 )
             ).scalars()
         )
-    assert revision == "0007"
+    assert revision == "0008"
     assert {
         "workspaces",
         "workspace_memberships",
@@ -1104,7 +1104,7 @@ def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
                 connection.execute(
                     text("SELECT version_num FROM omnibase_meta.alembic_version")
                 ).scalar_one()
-                == "0007"
+                == "0008"
             )
     finally:
         if template_id is not None and tenant_id is not None:
