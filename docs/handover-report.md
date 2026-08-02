@@ -1020,8 +1020,8 @@ TypeScript SDK 独立 lockfile 已完成：
 | 前端性能 | 认证重构 + Chat 节流 + 生产镜像 + 分页 | ✅ 工作树 | 待原子提交 |
 | **Phase 1.6** | BGE-M3 双索引评估 | ✅ 工程+CPU benchmark 完成 | V1 仍为权威主通道；真实语料质量 gate 未完成，生产 V2 回填/cutover 冻结 |
 | **Phase 2** | API 基础设施硬化 | ✅ 工程完成、待原子提交 | `/api/v1`、Request ID、请求边界、限流、数据库实时主体/RBAC、离线模型边界；独立生产 smoke 通过 |
-| **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform** | P34.0–P34.3 ✅；P34.4 元数据控制面 ✅；P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 pending | 历史 Backend `1065 passed / 12 skipped / 14 deselected`、Mypy `137/0`；A4 旧 11/11 已失效且新 12/12 未证明；Broker 两轮 26/26；fresh-clone Headscale control-plane 与 clean-checkout split-process mTLS 四读 Gate；production 联合激活进入 P34.7 |
-| **Phase 5** | Agent 编排 | 待 Phase 3-4 P34.7 | Planner + Specialists 只能作为工作空间内的受约束负载，通过 capability 使用宿主能力 |
+| **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform** | P34.0–P34.3 ✅；P34.4 元数据控制面 ✅；P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 `pending/not_proven`；P34.6 Foundation ✅ | A4 旧 11/11 已失效且新 12/12 未证明；Broker 两轮 26/26；fresh-clone Headscale control-plane 与 clean-checkout split-process mTLS 四读 Gate；P34.6 Workspace-data fail-closed primitives 已实现；production 联合激活进入 P34.7 |
+| **Phase 5** | Agent Runtime 与受控编排 | `PLANNED / FROZEN`，待 P34.7 PASS | P5.0–P5.9 已形成详细路线；Planner 只提交 Proposal，确定性 Validator 决定可调度 DAG，Executor/Memory/Skill/多 Agent 只能作为 Workspace 内受约束 workload 通过逻辑 capability 使用能力 |
 | **Phase 6** | Skill + MCP 扩展生态 | 待 Phase 3-4/5 | 工作空间边界内的一等公民扩展生态 |
 | **Phase 7** | 开源准备 | 远期 | 文档、Demo、部署脚本、CI/CD、安全审计 |
 
@@ -1034,7 +1034,7 @@ TypeScript SDK 独立 lockfile 已完成：
 - `.omo/plans/phase-1-5-closeout-and-next-phase.md` — Phase 1.5 收口与下一阶段
 - `docs/phase-1-6-and-beyond-implementation-plan.md` — Phase 1.6 收口、AI 工作空间优先和 Phase 2–7 实施计划
 - `docs/phase-3-4-secure-ai-workspace-implementation-plan.md` — Phase 3-4 Resource Registry、Capability、Sandbox Runner、RuntimeDriver 与 P34.0–P34.7 正式实施契约
-- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 Agent Registry、Task/Run/Step ledger、compile-only Planner、Capability Tool Gateway、Memory Compiler、原生 Skill、多 Agent DAG 与恢复 Gate
+- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 P5.0–P5.9 统一契约：P34.7 Evidence Admission Gate、Agent identity/Task Lease/fencing、compile-only Planner 与确定性 Validator、Executor/Model/Tool Gateway、Context Capsule/长期 Memory、第一方原生 Skill、有界多 Agent DAG、unknown no-replay、恢复/reconciliation、UI/SDK 和 production Gate；当前保持 `PLANNED / FROZEN`
 - `docs/phase-3-4-threat-model.md` — Phase 3-4 资产、信任边界、安全不变量、攻击矩阵和运行时验收 Gate
 - `docs/deployment-guide.md` — 部署指南（9 节，含开发 vs 生产镜像）
 - `.zcode/plans/plan-sess_3caa018d-836b-4fda-aaf1-50e27f4281cf.md` — 前端性能/认证重构执行计划
@@ -1572,7 +1572,7 @@ git diff --check：passed
 
    - 安全审查发现并修复：Capability write 缺少 live Workspace membership、Derived effect `derived_index_build`/数据库 `derived_build` 枚举漂移、WorkspaceDataEffect ORM/migration unique 漂移、credential profile 隐式升级、usage reservation state/result 约束不足、Artifact read Adapter failure 缺 Audit，以及 provider effect 后 finalize/Audit/commit failure 未 durable 收口。
    - P34.6 与受影响 Capability/Gateway focused：`127 passed`；完成 P34.5 hardening rebase 后的 Backend non-integration：`1121 passed / 14 skipped / 14 deselected`；Mypy：`148 source files / 0 issues`；本次 52 个相关 Python 文件 Ruff check 与 format check 通过，未以 `noqa` 或宽泛 ignore 隐藏复杂度。
-   - OpenAPI/SDK contract：`4 passed`；maintainer map：`24 invariants / 19 modules / 231 path specs / 521 matched files / 128 entrypoints / 14 discovered HTTP entrypoints / 69 verification commands`；benchmark validator：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`；Compose config 与 `git diff --check` 通过。
+   - OpenAPI/SDK contract：`4 passed`；rebase 后 maintainer map validator：`24 invariants / 19 modules / 232 path specs / 532 matched files / 128 entrypoints / 14 discovered HTTP entrypoints / 76 verification commands`；benchmark validator：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`；Compose config 与 `git diff --check` 通过。
    - Fresh guarded disposable PostgreSQL 完整 Gate：empty downgrade/re-upgrade `1 passed`；其余 integration `70 passed / 1 skipped / 1 deselected`，覆盖 0001→0009、global/tenant migration、derived effect CHECK、ORM/migration unique、usage reservation state/result、canonical immutability、lineage append-only/cycle、并发 reverse-edge 串行化、真实 Core Gateway → Operation/Reservation/Budget/Audit 幂等闭环、populated downgrade refusal与 revoked Workspace membership write rejection。额外 targeted 复核为 `2 passed in 26.55s`；一次性 containers/networks/volumes 均清理为 0。
    - P34.5D split-process mTLS Gate 必须在 P34.5 clean-checkout reproducibility hardening 合入后用最终源码重跑；旧 evidence 不作为本次 P34.6 封板的最终哈希。缺少最终复现证据时，production Gateway wiring 继续 fail-closed。
 

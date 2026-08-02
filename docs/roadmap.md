@@ -119,7 +119,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > **预估工期**：3-4 周
 > **目标**：让 Agent 作为工作空间内的受约束负载执行复杂任务
 >
-> **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。P34.7 通过前只允许维护计划、威胁模型和离线契约，不得据此提前启动 Agent Runtime。
+> **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|

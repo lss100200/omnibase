@@ -1,8 +1,10 @@
-# Phase 5 Agent Runtime 与编排实施计划
+# Phase 5 Agent Runtime 与受控编排统一实施计划
 
-> 状态：规划已冻结，运行时代码尚未解冻。
+> 状态：`PLANNED / FROZEN`，运行时代码尚未解冻。
 >
 > 硬前置：P34.7 production total Gate 全部通过并有可复现证据前，只允许维护本计划、数据契约草案、威胁模型和离线验证器；不得启动自主 Planner、多 Agent 长循环、宿主级工具或连接 non-disposable tenant/RAG 的 Agent Runtime。
+>
+> 授权边界：用户批准继续 P34.7 和后续 Phase 5，不等于 P34.7 已经通过。P5.0 必须根据当前提交、部署哈希、迁移、证据和运行方式独立判定；任何缺项都使 Phase 5 继续保持冻结。
 
 ## 1. 目标与设计原则
 
@@ -18,6 +20,42 @@ Phase 5 的目标不是把一个大模型直接接到数据库、终端和网络
 6. 多 Agent 只能在 server-validated DAG 中协作；子 Agent 的 Grant、预算、TTL、工具集合和 Resource scope 必须严格小于或等于父任务。
 7. 产品 Skill 只是版本化、签名、可审计的能力声明与工作流模板，不能绕过 Gateway 或沙箱；任意 MCP/第三方 Skill marketplace 属于 Phase 6。
 
+### 1.1 权威组件与调用方向
+
+Phase 5 必须把自然语言推理与安全授权彻底分离：
+
+```text
+Browser / User
+  -> Main ASGI Agent Control API
+  -> Agent Invocation + Operation + Approval + Idempotency
+  -> trusted Runtime Coordinator
+  -> Planner Sandbox workload
+  -> deterministic Plan Validator
+  -> validated bounded DAG
+  -> task-scoped Executor Sandbox workloads
+  -> Capability Gateway / Model Gateway / Skill contracts
+  -> Artifact / Workspace Data / Memory
+```
+
+- **Browser Agent Control Plane**：只负责 Definition/Version、Workspace installation、Invocation、Approval、Cancel、Reconciliation、Memory/Skill 治理和证据查询。它不直接调用 Sandbox provider，不接收 workload token，不代理模型 Provider Key，也不把 Browser JWT 转换为 workload identity。
+- **Runtime Coordinator**：只推进状态机、计算 DAG readiness、分配 Lease/fencing、预留预算、装配短期 capability、持久化 dispatch intent、执行 revoke/cancel/reconciliation；它不运行 LLM，不执行 Workspace 命令，不把自然语言直接转换为副作用。
+- **Planner workload**：只读取有界 Goal Artifact、AgentVersion、Skill Manifest 和 Context Capsule，并提交严格 `PlanProposal`。它不持有 write/promotion/admin/emergency-control capability，不决定审批、预算或 capability 是否通过。
+- **Plan Validator**：运行在可信 Core 中，以确定性代码检查 schema、DAG、版本、预算、风险、capability、Approval 和 Resource scope。Planner 输出在 Validator 接受前没有执行权。
+- **Executor workload**：每个 DAG 节点使用独立 Attempt、Run/runtime/workload identity、Task Lease、fencing、Grant 和预算；不能继承 Planner 或兄弟节点的 token、Lease、可写文件层或能力。
+- **Aggregator**：只读取 committed Task outputs 并生成 Final Result Artifact；如需新增副作用，必须提交新的 Plan Amendment，再过 Validator、预算与 Approval。
+
+### 1.2 继续冻结的非目标
+
+- 任意 SQL、数据库连接串、物理 locator、Provider handle 或宿主路径下发。
+- Sandbox/Runner 直连 PostgreSQL、Redis、MinIO、宿主 LAN 或成员 Overlay。
+- Planner 自行签发 capability、增加预算、批准自己或修改安全策略。
+- Memory、Skill、RAG、Artifact 或模型输出覆盖平台安全内核。
+- 无界 ReAct、自主递归、无限工具调用、无限 replan 或无限子 Agent。
+- Agent 自动执行 promotion、canonical mutation、发布、merge、push 或 deploy。
+- 从 `pending|unknown` 自动 replay 外部副作用。
+- 恢复旧 Run、Lease、token、runtime/workload identity、PID、socket、connection 或 provider handle。
+- 第三方 MCP、开放 Marketplace、动态依赖下载和远程未审查 Skill；这些继续属于 Phase 6。
+
 ## 2. 解冻条件：P5.0 Admission Gate
 
 P5.0 不运行 Agent，只验证 Phase 5 是否可以开始。下列条件必须同时成立：
@@ -28,8 +66,12 @@ P5.0 不运行 Agent，只验证 Phase 5 是否可以开始。下列条件必须
 - Capability、Approval、Operation、Idempotency、Audit、quota、Run/Network Lease 与 recovery runbook 的文档和源码一致。
 - 默认生产 composition 在缺少任一 attestation、adapter、key、registry、Grant 或 recovery component 时返回拒绝/不可用，而不是降级放行。
 - 建立 `AGENT_RUNTIME_ENABLED=false`、`AGENT_PLANNER_ENABLED=false`、`MULTI_AGENT_ENABLED=false` 三个独立、默认关闭的 server-owned feature Gate；配置错误和未知值 fail-closed。
+- 建立 P34.7 Evidence Manifest 验证器，至少绑定 source commit、dirty scope、Runner/Broker/Gateway/Overlay/Workspace-data/provider artifact digest、migration head、OpenAPI/SDK snapshot、production composition 和 runbook 版本；缺失、漂移或无法 clean-checkout 复现时不得解冻。
+- P5.0 只允许威胁模型、契约、负向 fixture、validator 和文档工作；不得以“先实现但不开放”为理由预装自主 Planner、Executor 或多 Agent scheduler。
 
 任一条件缺失时，Phase 5 只能停留在规划和离线契约阶段。
+
+P5.0 完成定义：P34.7 的所有 production Gate 已独立复验、Critical Veto 为 0、Evidence Manifest 与当前源码一致，且 Phase 5 三个 feature Gate 仍保持关闭。只有随后单独进入 P5.1 时才允许新增 Agent Runtime 领域代码。
 
 ## 3. 数据模型与权威边界
 
@@ -47,6 +89,17 @@ P5.0 不运行 Agent，只验证 Phase 5 是否可以开始。下列条件必须
 - `AgentCheckpoint`：只保存可恢复的逻辑状态、已提交结果引用、DAG cursor 和预算账本摘要；不保存 credential、PID、socket、连接或 provider handle。
 - `ContextCapsule`：Memory Compiler 生成的短期、不可委派、可过期上下文包，绑定 user/Workspace/Agent/Task、来源 Resource/version、token 预算和内容摘要。
 - `MemoryCandidate`：Agent 提议写入长期记忆的候选项；默认不自动进入用户库，必须经策略过滤、去敏、归并和必要的人工确认。
+
+建议对应物理表按职责拆分为：
+
+- Registry：`agent_definitions`、`agent_versions`、`workspace_agent_installations`。
+- Invocation/Plan：`agent_invocations`、`agent_plan_versions`、`agent_plan_nodes`、`agent_plan_edges`、`agent_plan_amendments`。
+- Execution：`agent_task_attempts`、`agent_task_lease_cursors`、`agent_task_leases`、`agent_checkpoints`、`agent_reconciliation_cases`。
+- Usage/effect：`agent_model_invocations`、`agent_tool_invocations`、`agent_usage_reservations`。
+- Memory governance：`memory_candidates`、`memory_items`、`memory_item_versions`、`memory_conflicts`、`memory_context_capsules`、`memory_feedback`、`memory_deletion_jobs`。
+- Skills：`skill_definitions`、`skill_versions`、`workspace_skill_installations`、`skill_evaluation_runs`、`skill_revocations`。
+
+已有 `OperationRecord`、`ApprovalRequest`、`IdempotencyRecord`、`AuditEvent` 与 capability reservation 继续是安全生命周期的权威；上述 Agent 表只补充领域状态，禁止建立第二套可绕过的审批、审计或幂等系统。Alembic revision 编号只能在 P34.7 最终基线合并后确定，不得在计划中预先假定为固定 `0010`。
 
 状态机必须由数据库 CHECK、唯一约束和必要的不可变 Trigger共同保护。终态 Run/Attempt/ToolCall 不得回到运行态；旧 generation、旧 fencing 或旧 workload identity 不能恢复执行。
 
@@ -71,7 +124,34 @@ Planner/Executor 的每次模型或工具调用至少绑定：Tenant、Workspace
 
 新增 Task Lease，但复用 P34.4 的实时 Node/Run attestation；Task Lease TTL 不得晚于 Run Lease、Node attestation、Task deadline 和 Capability Grant 中的最早 expiry。Retry 创建新的 Attempt 和更高 Task fencing；Pause、Cancel、Agent revoke、Workspace generation 变化、Run Lease revoke或 Node re-fence 立即使旧 Task Lease 失效。Task/Invocation generation 只能递增，不能为恢复旧 holder 而重置。
 
-### 3.2 建议新增的维护者不变量
+### 3.2 状态机
+
+建议冻结以下闭集状态机，并由数据库 CHECK、部分唯一索引、复合外键和必要 Trigger 保护：
+
+```text
+AgentInvocation:
+created -> planning -> awaiting_approval -> scheduled -> running
+        -> paused | blocked_unknown -> succeeded | failed | cancelled
+
+AgentPlanVersion:
+proposed -> validated -> rejected | awaiting_approval -> active
+         -> superseded | completed
+
+AgentTaskAttempt:
+pending -> ready -> leased -> dispatching -> running
+        -> committed | failed | unknown | cancelled
+
+AgentToolInvocation / AgentModelInvocation:
+reserved -> dispatching -> committed | failed | unknown
+```
+
+- `succeeded|failed|cancelled|committed|unknown` 等终态不得回到运行态。
+- `unknown` 只能进入 reconciliation；不能回到 `reserved|dispatching`。
+- Plan Amendment 创建新 PlanVersion，不更新已批准的旧 DAG。
+- Cancel 或 Plan Amendment 提高 Invocation generation，使旧 Plan/Task holder 被 fence。
+- Exact committed replay 只返回原结果，不再次调用 model/tool/provider 或重复扣费。
+
+### 3.3 建议新增的维护者不变量
 
 - `INV-025 agent-identity-layering`：Definition、Version、Workspace binding、Task/Invocation、Attempt、Run、Runtime 与 Workload Identity 分别验证，能力不可隐式继承。
 - `INV-026 planner-proposal-not-authority`：Planner 输出只是提案；只有确定性 Validator、预算和 Approval lifecycle 能使计划可调度。
@@ -131,7 +211,35 @@ Gate：循环 DAG、预算溢出、隐藏工具、scope escalation、审批漂�
 
 首批只允许低风险内建工具：Workspace Resource read/list、RAG search/citation、受控 Artifact read/write、受控 Sandbox job submit/status/cancel。任意 SQL、任意 HTTP、宿主文件、Docker、进程和 unrestricted shell 均不进入首批工具。
 
-### 7.1 独立 Model Gateway
+### 7.1 Capability profile 与 ToolDefinition
+
+Agent 不获得一个“万能 Agent Token”。每个 Task Attempt 使用相互独立的最小短期 Grant：
+
+- Sandbox lifecycle grant：继续 token-free，并由现有 Sandbox verifier 在线复核。
+- Gateway read grant。
+- Workspace-data grant。
+- Memory view/search grant。
+- Memory candidate write grant。
+- Model invoke grant。
+- Skill manifest/invoke grant。
+- Task result/checkpoint submit grant。
+
+Planner、Executor、Aggregator 和 Reviewer 必须使用不同 capability 模板；Planner 的 read-only profile 不能被 Executor 继承，Executor 的 write/tool profile 也不能被 Planner 或 Aggregator 使用。各 profile 即使同时属于一个 Task，也应由独立 Grant 与独立短期 credential 表达，不合并为 wildcard bearer token。
+
+每个 `ToolVersion` 至少冻结：
+
+- logical tool ID、exact version 和 digest；
+- input/output JSON Schema；
+- required action 和 Resource scope；
+- effect class：`pure_read|idempotent_write|external_effect|sandbox_exec|human_action`；
+- timeout、最大 input/output bytes、最大 calls 和预算维度；
+- retry、Approval、Reconciliation、Artifact 与 redaction policy。
+
+工具参数不得包含 SQL、physical schema/table/column、bucket/object key、presigned URL、host path、provider handle、API key、arbitrary base URL 或 raw credential reference。
+
+建议新增逻辑 actions：`agent.plan.submit`、`agent.task.result.submit`、`agent.checkpoint.write`、`agent.event.append`、`memory.view.read`、`memory.search`、`memory.candidate.create`、`memory.feedback.create`、`model.invoke`、`model.stream.read`、`skill.manifest.read` 和 `skill.invoke`。Promotion、Approval decision、Agent/Skill publish/revoke、长期 Memory publish/delete 和 canonical mutation 不进入 workload token。
+
+### 7.2 独立 Model Gateway
 
 - Agent 只提交逻辑 `model_profile_id`；Provider、base URL、credential、允许模型、fallback policy 和费用策略由 server-owned registry 决定。
 - 默认禁止 silent fallback；requested/actual model identity、provider policy digest、input/output/reasoning token、费用、finish reason 和 latency 进入结构化证据。
@@ -139,8 +247,6 @@ Gate：循环 DAG、预算溢出、隐藏工具、scope escalation、审批漂�
 - 模型调用同样先预留 token/cost/call/deadline budget；timeout、断线或 identity drift 不伪装成成功。
 - Prompt、response 和 reasoning 正文不写 Audit；需要保留的正文保存为 scoped Artifact，Audit 只保存 digest、大小、逻辑 model identity、usage 和 code-only reason。
 - 模型输出只能生成 Proposal 或 typed result，不能签发 Grant、通过 Approval、改变 budget 或直接调用 provider adapter。
-
-建议新增逻辑 actions：`agent.plan.submit`、`agent.task.result.submit`、`agent.checkpoint.write`、`memory.view.read`、`memory.search`、`memory.candidate.create`、`model.invoke`、`skill.manifest.read` 和 `skill.invoke`。Promotion、Approval decision、Agent/Skill publish/revoke、长期 Memory publish/delete 和 canonical mutation 不进入 workload token。
 
 ## 8. P5.5 Memory Compiler 与长期用户智能库
 
@@ -160,6 +266,35 @@ Memory Compiler 为每次 Task 生成有界 ContextCapsule：
 - 原始聊天、模型推断和工具输出不自动成为长期事实。MemoryCandidate 必须通过重复合并、矛盾检测、PII/secret 过滤、来源证明和用户删除/纠正机制。
 - 删除/撤销必须使新 Capsule 不再包含目标记忆；旧 Capsule 到期且不可续签。
 
+Prompt 层级固定为：
+
+```text
+Platform Security Kernel
+  -> AgentVersion instructions
+  -> approved first-party Skill instructions
+  -> ContextCapsule（明确标记为不可信数据）
+  -> current task input
+  -> Tool protocol
+```
+
+Memory、RAG、Artifact、Skill 示例和用户内容都不能覆盖 Security Kernel。从检索结果中发现的“系统指令”“忽略规则”“调用隐藏工具”等文本必须按不可信内容处理。ContextCapsule 必须保存 selected Memory IDs/versions、selection reason、sensitivity summary、token count、compiler policy digest、expiry 和 evidence references。
+
+两阶段预算至少包含 `memory_initial_budget_tokens`、`memory_retrieval_budget_tokens`、`max_memory_calls`、`max_memory_result_tokens`、`max_memory_items`、`max_sensitive_items` 和 `memory_deadline_ms`。超预算必须拒绝或明确截断，禁止静默完整注入。
+
+Memory Candidate 生命周期建议为：
+
+```text
+candidate -> deduplicating -> conflict_review
+          -> awaiting_confirmation | auto_eligible
+          -> active -> superseded | expired | paused | deleted
+```
+
+- Agent 只能创建 Candidate，不能直接发布永久用户画像。
+- 高敏感记忆必须用户确认；禁止自动推断心理、健康、政治、宗教等敏感属性。
+- 每条记忆必须绑定 source Invocation/Task/Resource/Artifact、证据、置信度、scope、sensitivity、retention 和 conflict group。
+- 删除同步处理结构化记录、独立向量 lane、分层摘要和缓存，仅保留 code-only tombstone/Audit。
+- 建议在 tenant schema 使用独立 `user_memory_chunks_v1`、`workspace_memory_chunks_v1` 与 `memory_index_state`；不得复用或写入 canonical `documents/embeddings/embeddings_v2`、canonical index metadata 或 P34.6 `workspace_derived_chunks_v2`。
+
 Gate：跨用户/Workspace 记忆泄漏、删除后复现、恶意文档提示注入、来源/version drift、token budget 绕过和错误长期固化全部覆盖。
 
 ## 9. P5.6 原生 Skills 基础
@@ -171,6 +306,14 @@ Phase 5 只实现项目原生、受信、版本化 Skill 契约和少量内建 S
 - SkillVersion 内容不可变、按 digest 安装；升级生成新版本，运行中的 AgentRun 固定旧版本。
 - 内建首批建议：`repository-inspector`、`maintainer-map-navigator`、`safe-test-runner`、`workspace-librarian`、`memory-curator`、`snapshot-auditor`。
 - `safe-test-runner` 仍只能提交经过 P34.5 Sandbox contract 的 job；不能拿 Docker socket 或宿主 shell。
+
+Skill runtime 限定为三类：
+
+- `instruction`：只增加经批准的有限 instruction，不产生新 capability。
+- `workflow`：展开为 PlanProposal fragment，仍必须重新经过完整 DAG Validator。
+- `script`：只能在 Sandbox 中作为独立 Task Attempt 执行，禁止在 Core 进程运行 Python/Node/shell。
+
+Skill lifecycle 固定为 `draft -> tested -> approved -> published -> deprecated|revoked`。每个版本必须通过 Manifest closed-set、strict schema、dependency lock、source digest、SBOM/signature、secret scan、symlink/junction/realpath escape、capability/memory/network policy diff、有 Skill/无 Skill paired eval、安全负例、人工 review 和回滚演练。Skill 更新不会替换正在运行 Invocation 的 pinned version；revoke 使新 Task 无法使用，但历史证据继续保留。
 
 Gate：Skill 声明外工具、版本漂移、循环调用、隐藏网络、预算扩大、输入 schema 注入和卸载后继续运行全部拒绝。
 
@@ -186,11 +329,13 @@ Gate：Skill 声明外工具、版本漂移、循环调用、隐藏网络、预�
 
 多 Agent 规则：
 
-- Orchestrator 只能实例化计划中声明的 Specialist，不得动态下载新 Agent/Skill。
+- Orchestrator 只能实例化计划中声明、且已安装 exact version/digest 的 Specialist，不得动态下载新 Agent/Skill；Planner 只能在 Proposal 中引用 Specialist，不能直接 spawn 未验证进程。
 - 子任务使用新 Step/Attempt/Operation/Grant；禁止共享 bearer token、workload certificate 或可变内存对象。
 - 输出通过 typed artifact/message channel 传递，携带 producer AgentVersion、Task/Step、digest、schema 和 sensitivity。
 - 聚合器不能把低信任输出直接升级为高信任事实；关键结果需要独立验证或人工审批。
 - 最大 fan-out、深度、循环次数、总 token/cost、并发 Sandbox 和 wall-clock 均为 server-owned 上限。
+- 代码任务不得共享可写 runtime filesystem；应使用独立 branch/worktree 或 content-addressed patch Artifact。合并是独立受控 Task，冲突不能自动 last-write-wins。
+- 动态修改必须创建 immutable Plan Amendment；已 committed 节点可被引用但不可改写，新增风险、成本、网络或 write scope 时重新审批，旧 PlanVersion 由 Invocation generation/plan version fence。
 
 Gate：递归爆炸、Agent 自我复制、相互授权、confused deputy、跨 Workspace 消息、伪造工具证据、预算转移和死锁恢复。
 
@@ -201,6 +346,14 @@ Gate：递归爆炸、Agent 自我复制、相互授权、confused deputy、跨 
 - DAG cursor 根据 committed Step result 重建；失败/unknown Step 进入人工 reconciliation 或创建全新 Operation，不能重置旧幂等键。
 - 模型输出本身不是恢复权威；Operation、Effect、Audit、Resource/version 和 provider reconciliation 才是权威证据。
 - Snapshot restore 后的 Workspace 必须先通过 P34.7 provider/subtype 验证，才能创建新的 AgentRun。
+
+Checkpoint 只允许记录 committed PlanVersion、committed dependency frontier、Task result Artifact IDs/digests、未决 Approval/unknown reconciliation、剩余预算、exact Agent/Skill versions 和 code-only summary。它不得保存 active token、Lease、runtime/workload identity、PID/socket、provider connection、进程内存、raw credential 或 host path。
+
+Resume 必须重新验证 Workspace/Agent installation，创建新 Invocation generation 或 Task Attempt、新 Workspace Run/runtime identity、新 Run/Task Lease、更高 fencing、新短期 Grants 和新 ContextCapsule；只能复用 committed outputs，遇到 `unknown` 时继续 blocked。
+
+Cancel 必须提高 Invocation generation、撤销 Task Lease/Grants/workload certificate/registry binding、取消未 dispatch Task，并经独立 `SandboxControlAuthorizer` stop/destroy 活跃 runtime。无法确认终止或 provider outcome 的任务进入 reconciliation-required，不能标记为成功或安全重试。
+
+P34.6/P34.7 Snapshot restore 后，新 Workspace 不自动恢复旧 Invocation。AgentDefinition/SkillVersion 可以作为安全 metadata reference 重新安装，但用户必须显式创建新 Invocation，Memory View 重新授权，全部 Run/Lease/token/runtime/workload identity 均重新生成。
 
 Gate：进程崩溃、Core 重启、Runner 丢失、网络分区、provider timeout、Audit failure、checkpoint corruption 和 stale lease recovery。
 
@@ -217,6 +370,27 @@ Gate：进程崩溃、Core 重启、Runner 丢失、网络分区、provider time
 - Memory 删除、矛盾、跨用户泄漏、过量注入和敏感内容日志泄漏。
 - clean-checkout/source-built CI、disposable integration、目标 Linux attack Gate、production smoke、容量和 SLA。
 
+统一测试矩阵：
+
+| 类别 | 必测内容 | Critical veto |
+|---|---|---|
+| Contract | strict DTO、closed set、digest、version、schema | extra field、locator 或 secret 被接受 |
+| Identity | Tenant/Workspace/User/Agent/Run/Task binding | 跨 scope 或身份隐式继承 |
+| Lease/Fencing | expiry、revoke、Node re-fence、Task retry | stale holder 可提交 |
+| Planner | cycle、无限循环、增权、自批、超预算 | Proposal 直接产生副作用 |
+| Executor | task capability、runtime isolation、result binding | 使用他人 Grant/Lease |
+| Tool/Model | request digest、identity、effect、timeout、budget | `unknown` replay、silent fallback、Key 泄漏 |
+| Memory | scope、敏感、provenance、token、delete | 跨用户/Workspace 泄漏 |
+| Skill | version、manifest、provenance、revoke、Sandbox | wildcard、路径逃逸或 Core 执行 |
+| DAG | acyclic、bounds、parallelism、cancel、amendment | 无限 Agent 或旧 Plan 提交 |
+| Audit | append-only、redaction、success atomicity | Audit 失败但业务成功 |
+| Recovery | crash points、checkpoint、resume、reconcile | 旧 identity/Lease 复活 |
+| Sandbox/Network | host/fs/process/network/credential attacks | 直连基础设施、Overlay 或逃逸 |
+| API/SDK/UI | Browser/Gateway 分离、strict parser、evidence | credential 混用或 UI 绕过后端 |
+| Migration/Capacity | fresh/downgrade/re-upgrade、预算/SLA | 普通业务库 destructive test 或超预算继续 |
+
+必须固定为 Critical Veto 的事件包括：跨 Tenant/Workspace/User Memory 泄漏；Planner/Skill 扩大 capability；Browser JWT 被 workload route 接受；Sandbox/Runner 直连基础设施；stale holder 成功提交；`pending|unknown` 自动 replay；physical locator/Provider Key 泄漏；requester self-approval；无界 Agent 循环；terminal 状态复活；Skill script 在 Core 执行；Memory/Skill/RAG 覆盖安全内核；silent model fallback；Audit failure 被降级为成功；以及 Agent 声称执行了 Tool/Command、但 durable evidence 不存在。
+
 发布顺序固定：单 Agent + 只读工具 → 单 Agent + 受控 Artifact/Sandbox 工具 → MemoryCandidate/ContextCapsule → 静态 Specialist DAG → 有界动态 DAG。每一级独立 feature flag、独立回滚和独立证据，禁止一次性打开全部能力。
 
 ## 13. API 与 UI 解耦
@@ -227,6 +401,41 @@ Gate：进程崩溃、Core 重启、Runner 丢失、网络分区、provider time
 - UI 必须展示计划、工具、Resource scope、预算、Approval、实时状态、unknown/reconciliation 和 Audit link；不能把“模型正在思考”冒充真实执行进度。
 - API contract 先于 UI；Python/TypeScript SDK snapshot、locator/credential leakage scan 和 backward compatibility Gate 同步更新。
 - SDK 必须拆为 Browser/Admin Control Client 与 Workload Capability Client；前者只持用户会话并访问 `/api/v1`，后者只持短期 workload credential 并访问 `/gateway/v1`。不得创建同时持有 Browser JWT 和 workload token 的万能客户端。
+
+建议 Browser Control API 按逻辑资源组织：
+
+```text
+/api/v1/agent-definitions
+/api/v1/agent-definitions/{id}/versions
+/api/v1/workspaces/{workspace_id}/agent-installations
+/api/v1/workspaces/{workspace_id}/agent-invocations
+/api/v1/agent-invocations/{id}/plan
+/api/v1/agent-invocations/{id}/tasks
+/api/v1/agent-invocations/{id}/cancel
+/api/v1/agent-invocations/{id}/approvals
+/api/v1/agent-invocations/{id}/reconciliation
+/api/v1/memory
+/api/v1/memory/candidates
+/api/v1/memory/export
+/api/v1/skills
+/api/v1/workspaces/{workspace_id}/skill-installations
+```
+
+建议 workload Gateway 保持独立 mTLS 入口：
+
+```text
+/gateway/v1/agent/plan/submit
+/gateway/v1/agent/task/result
+/gateway/v1/agent/checkpoints/write
+/gateway/v1/memory/view/read
+/gateway/v1/memory/search
+/gateway/v1/memory/candidates/create
+/gateway/v1/skills/manifest/read
+/gateway/v1/skills/invoke
+/gateway/v1/models/invoke
+```
+
+UI 至少包含 Agent Catalog、Version/Capability diff、Workspace installations、New Invocation、Plan DAG、Task Attempt/Lease/fencing、Budget/Token/Cost、Approvals、Unknown Reconciliation、Artifact/Evidence、Memory Center、Skill installation 和 Audit Timeline。UI 必须明确区分 proposed/validated/approved/running、committed/failed/unknown、exact replay/new attempt，以及 model claimed action 与 verified tool evidence；不得把 fake/disposable 结果显示为 production evidence。
 
 ## 14. 分批完成定义
 
@@ -243,4 +452,51 @@ Gate：进程崩溃、Core 重启、Runner 丢失、网络分区、provider time
 | P5.8 | Checkpoint/new-identity recovery 与 reconciliation 演练通过 |
 | P5.9 | 攻击矩阵、clean-checkout CI、目标 runtime、容量/SLA 和 production smoke 全部通过 |
 
-Phase 5 只有在 P5.0–P5.9 的实际证据、维护者地图、runbook、OpenAPI/SDK、UI 和默认拒绝 composition 一致后才算完成。任何阶段不得因模型能力更强或余额充足而降低安全、可维护性和恢复要求。
+### 14.1 Phase 5 全阶段完成定义
+
+Phase 5 只有同时满足以下条件才算完成：
+
+1. P34.7 有独立、与当前提交一致的 PASS 证据。
+2. Agent 只能作为 Workspace 内受约束 workload 运行。
+3. Planner 只提出 Proposal，确定性 Validator 才拥有接受权。
+4. Executor 每个任务拥有独立 Lease、fencing、runtime identity 和最小 capability。
+5. 多 Agent 只执行有界、无环、预算化 DAG。
+6. Model、Tool、Skill、Memory、Data 和 Network 全部使用逻辑 API。
+7. Agent 无数据库、对象存储、Redis、宿主、Overlay 或 Provider 凭据。
+8. Approval、Operation、Idempotency、Budget、Audit 和 effect no-replay 完整。
+9. ContextCapsule 按 scope 和 token budget 生成，不存在整库注入。
+10. Agent 只能创建 MemoryCandidate，不能自行固化敏感画像。
+11. 第一方 Skill exact-version、可撤销、可评估、不可增权；第三方生态继续关闭。
+12. Checkpoint 恢复创建新 Run/Attempt/Lease/identity，`unknown` 有人工 reconciliation。
+13. Browser Control API、Workload Gateway、Python/TypeScript SDK 和 credential 类型完全分离。
+14. fresh sentinel migration、non-integration、Mypy、Ruff、OpenAPI、SDK、Frontend、maintainer-map、benchmark、Compose 和 destructive Gates 全部通过。
+15. 生产 Runner/Broker/Gateway/Workspace-data/Model 联合链路通过攻击、故障、容量、恢复和 revoke Gate。
+16. 所有 Critical Veto 为 0，文档、迁移、源码、OpenAPI、Compose 和 evidence digest 一致。
+
+### 14.2 实施顺序与并行边界
+
+严格主链：
+
+```text
+P34.7 PASS
+  -> P5.0
+  -> P5.1
+  -> P5.2
+  -> P5.3
+  -> P5.4
+  -> P5.5
+  -> P5.6
+  -> P5.7
+  -> P5.8
+  -> P5.9
+```
+
+允许 P5.1 数据模型与 P5.3 Proposal Schema 并行设计，但 Validator 通过前不能 dispatch；P5.5 Memory 与 P5.6 Skill schema 可在 P5.4 单 Agent Executor Gate 后并行；UI 只能在对应 API contract 冻结后实现。禁止 P34.7 未通过时装配 Planner/Executor、单 Agent 未通过时启动多 Agent、Memory scope 未通过时注入用户库、Skill provenance 未通过时执行脚本、Reconciliation 未完成时开放外部写工具，或把 fake/disposable evidence 描述成 production。
+
+### 14.3 维护资料同步
+
+实施时必须同步更新 `AGENTS.md`、`docs/maintainers/maintenance-map.json`、`docs/maintainers/security-invariants.md`、`docs/maintainers/ai-maintainer-map.md`、`docs/roadmap.md`、`docs/handover-report.md`、Phase 5 threat model、Agent recovery/reconciliation/emergency revoke runbook、Model credential containment runbook、Memory privacy/delete/export runbook、Skill review/revoke/rollback runbook、OpenAPI snapshots 和 CI Gates。
+
+维护者地图建议新增 `agent-control-plane`、`agent-runtime-coordinator`、`agent-planner-validator`、`agent-executor`、`agent-model-gateway`、`agent-memory`、`native-skills`、`agent-ui-sdk` 与 `agent-operations-recovery` 模块。
+
+任何阶段不得因模型能力更强或余额充足而降低安全、可维护性和恢复要求。
