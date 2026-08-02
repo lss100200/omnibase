@@ -1,73 +1,54 @@
 # P34.5C disposable Headscale provider Gate
 
-Run `run-20260802-171322` passed from a fresh Windows clone of commit
-`2621759024ddf9e5d84fc96e56d00140287c1db2`. Git applied the repository
-line-ending contract before the run: the PowerShell Gate wrapper contained 391
-CRLF line endings and no bare LF. The scored source manifest therefore
-represents the bytes a public Windows clean checkout actually executes.
+Run `run-20260802-190724` passed from a fresh ordinary Windows clone of
+commit `cc48baa9bbd78d8824393311220ba523dfb186de` (tree
+`fd6e2b3ef0e390a9879c5cb4fa1b845ff1a42d62`). Git applied the repository
+checkout contract before execution: non-empty Python files and all shell
+scripts were LF, PowerShell scripts were CRLF, the clone was clean, and
+`core.autocrlf=true`.
 
 ## Clean-checkout and source seal
 
-- The dedicated Gate Runner was built from checked-in `backend/uv.lock`,
-  the complete copied `backend/src` source set, the required tests, Docker
-  build inputs, Gate scripts, and `.gitattributes`.
-- No ambient `omnibase-backend:latest` image or external
-  `omnibase_backend_venv` volume was used.
-- The source manifest contains 161 regular files, rejects symlinks, records a
-  clean Git commit/tree, and binds immutable upstream image digests.
-- Scored raw source manifest SHA-256:
-  `a417d45348a97966dcdfa6fa0c287d6fa228dba1442fa44ac5d13cba77ddd6c5`.
-- The repository copy is JSON-equivalent but line-ending-normalized by Git;
-  its SHA-256 is
-  `a31978cb5b2c7d423379f466fde103b6cec65dacaa47796fd5782f9c99fe54c8`.
+- The dedicated Gate Runner was built from the public checkout, locked Backend
+  dependencies, complete required source/tests, Docker inputs, Gate scripts,
+  `.gitattributes`, and pinned upstream image digests.
+- No ambient Backend image, external virtual environment, host source mount,
+  real member device, published host port, or business database was used.
+- Source manifest SHA-256:
+  `d0d1f54c08629f7d6158d143f1db928197648403e36b3598e01be54e9a8d8740`.
 - Source tree SHA-256:
-  `a7df01e3661a642f6dbc5980b8db22721137ea4332a222fe40bd957ecdcc0f5b`.
-- The historical seal verifier passed against the fresh-clone bytes.
+  `8cce097c80959061cef3f3751979ca99eeea723b9942cc29a68e2dedde02470f`.
+- Git source was clean and bound to the exact commit/tree above.
 
 ## Verified provider behavior
 
-- Pinned Headscale 0.26.1 started on an internal-only disposable network with
-  zero published host ports and zero real member devices.
-- The mTLS Node-Daemon test double performed real Headscale provider-record
-  activate, status, rotate, and revoke mutations.
-- Activate created a real provider record; rotate expired the old record and
-  created a new active record; revoke expired the current record; status read
-  Headscale truth rather than trusting only local state.
-- The scored lifecycle produced three provider records and six provider
-  mutations.
-- A simulated response drop after provider commit was not automatically
-  replayed. Stale fencing was rejected before mutation.
-- Node-Daemon offline behavior failed closed and reconnect recovery passed.
-- Sandbox-facing publication rejected direct endpoints, routes, provider
-  credentials, and member identity; only logical service metadata crossed the
-  boundary.
-- The containment scan found no credential, authorization header, private key,
-  raw provider key, or URL credential in artifacts or logs.
+- Pinned Headscale 0.26.1 ran on an internal-only disposable network.
+- The mTLS Node-Daemon test double performed real provider-record activate,
+  status, rotate, and revoke mutations.
+- Activate created a record; rotate expired the old record and created the new
+  active record; revoke expired the current record; status used Headscale
+  truth.
+- The lifecycle produced three provider records and six provider API
+  mutations. Receipts were redacted.
+- A simulated ambiguous provider response was not replayed automatically.
+- Offline fail-closed behavior and reconnect recovery passed.
+- Containment and configuration-seal checks passed.
 
 ## Cleanup and boundaries
 
-Final cleanup proved zero remaining containers, zero networks, and zero
-disposable volumes. The Gate did not access a business database, the repository
-root `.env`, a real member device, or a real member Overlay.
+- Formal report SHA-256:
+  `246f1d9b9a8bddcf9517cc7d0361ec6699660faf7a17785cecf24549216c3f38`.
+- Cleanup proved remaining containers/networks/disposable volumes `0/0/0`.
+- Root `.env` accessed by the Gate: `false`.
+- Business database accessed: `false`.
+- Real member devices: `0`; published host ports: `0`.
 
-The raw scored report is:
+This disposable Gate proves the provider control-plane seam for the sealed
+source only. It does not prove a hostile-code production Runner, real member
+data plane, DERP behavior, node compromise/revocation, production credential
+rotation, non-disposable tenant/RAG, capacity/SLA, or P34.7 readiness.
 
-```text
-C:\tmp\omnibase-p345-overlay-gate\run-20260802-171322\report.json
-SHA-256 e5b702f8450e34fbc4f368eae338ab4da760ea8af32bc6b80d26069fa6ef4a3e
-```
-
-This Gate proves the disposable provider control-plane seam only. It does not
-prove a hardened production Node-Daemon, a two-member data plane, DERP relay,
-node compromise/revocation, production credential rotation, capacity, SLA, or
-P34.7 production readiness. Rejecting/unavailable production defaults remain
-mandatory.
-
-## Host diagnostic incident
-
-The scored Gate did not read the repository root `.env`. An earlier unrelated
-host diagnostic used a bare Compose config command and implicitly expanded
-local development credentials into internal tool output. No credential value
-entered repository evidence, a commit, a candidate bundle, or an external
-provider, but the deployment owner should still rotate the affected local
-development credentials.
+An earlier host diagnostic in this project history implicitly expanded root
+`.env` through a bare Compose config command. That historical incident remains
+separate from this scored Gate's `root_env_accessed_by_script=false` result and
+must not be erased or reinterpreted.

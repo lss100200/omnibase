@@ -1,10 +1,10 @@
 {
-  "file_count": 161,
+  "file_count": 173,
   "files": [
     {
       "path": ".gitattributes",
-      "sha256": "828f797c2668e5d7fd20bed50ecd89fad93a9a3363357358ed5613ea885abdc8",
-      "size": 435,
+      "sha256": "f670fbeb322dea5143ff1aca6cb2d902441cdb18529d9d76278936ce6ebcb4e0",
+      "size": 453,
       "tracked": true
     },
     {
@@ -15,308 +15,320 @@
     },
     {
       "path": "backend/src/omnibase/__init__.py",
-      "sha256": "86e5d08156322bb4bebf101fa30337bf504f693217e115f8b7f2f8bb3d42c3cf",
-      "size": 58,
+      "sha256": "f285505aa37b100308cb27982aa69c5ebd7d8a9257c82d2be3357e76cd6a7066",
+      "size": 55,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/api/__init__.py",
-      "sha256": "29a71fd134da5715c8f87d17e46dd83418f6fe22ed98b98da1963da8b87b511b",
-      "size": 29,
+      "sha256": "0b8db440cb643cbf51d4befa38d02c0337080e93bf2d1137559feca96dfd34b3",
+      "size": 28,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/api/health.py",
-      "sha256": "aeeb61138173f228288e90825279aa719139b428998145e49eec40a4fa4dd528",
-      "size": 6885,
+      "sha256": "8902f774a0d02235c1faf15c752a34d68e8eb47dc8b15fde8f4c668753d1a155",
+      "size": 6702,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/api/health_schemas.py",
-      "sha256": "1bc99252a416e74de98a74a122e922ccca5e3b6e5effa2e5cd97cd86f64d7d59",
-      "size": 1102,
+      "sha256": "d9a9e957b067593b41b0d2c18081eeab3b1d4f4c4c24e98f8527219cd22f07b4",
+      "size": 1070,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/auth/__init__.py",
-      "sha256": "51e335f19f95fceecdc3fb584f49591bfd33bf7c580ec7374a30211445f59434",
-      "size": 84,
+      "sha256": "d03de6ec51adc8667302fbf1acd47eef36b21269f6f544e5f620ab0c462daae5",
+      "size": 83,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/auth/router.py",
-      "sha256": "451ce47031bec87a77797a6284dd014d97ed06e3e15f67f133225924473287e0",
-      "size": 6791,
+      "sha256": "6d8dc4ae8ac50da36236e330b380d38729c601e10a0e7716bcb3fdc70d3634ee",
+      "size": 6603,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/auth/schemas.py",
-      "sha256": "75e72d781899d85a2ce5a7ccf41952a912e05dad3c3b2ebc4c2cc1e7503b65b1",
-      "size": 2845,
+      "sha256": "b92f7575833f67d7add6ef59d47d79a3d111af8e0f99932fd3942b39ae56165d",
+      "size": 2737,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/auth/security.py",
-      "sha256": "c5d2d1c2dc69ae882cf6ec831ad0e0480c9a82524243899daf2985621081b41b",
-      "size": 7476,
+      "sha256": "f982048267f1ea08111a3b4273e401a3f45a0a321b3b3c79c9ffb648c459aab3",
+      "size": 7234,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/auth/service.py",
-      "sha256": "4b70676e85aeb5f3e7bb945bcc027c44ec8c2e7715a861445955f2fb515cd72e",
-      "size": 11926,
+      "sha256": "c56cc206347803241dae152426f27952ae8e4f49cf57a560447104063e8f5b9e",
+      "size": 11573,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capabilities/__init__.py",
-      "sha256": "518499b667e2ac56f67123de45031417290356d4045df58afb851fa9f3424d9d",
-      "size": 403,
+      "sha256": "18b2acfa64cea91d78b30a2ae2b7f5e9a89ddf6365c851b89c5c4878c5ae864a",
+      "size": 386,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capabilities/models.py",
-      "sha256": "c5a3219d00a54e350e78d4b7266a56738773aa541db18cd07a4ae663170cb4d1",
-      "size": 16056,
+      "sha256": "548b5d455ec969bf0a26172b4d946e8b3566d200c73b72c5e22009c2a15d8382",
+      "size": 21195,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capabilities/service.py",
-      "sha256": "0ed2655ca77a6499ffd55d7aa3e113a3978b8d5cd14e3626b36d8b7a3c9534a0",
-      "size": 43231,
+      "sha256": "e3f7046022125fbf840853e0169aa157ca45dc1c296dbd0b4adb56028126725d",
+      "size": 61020,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capabilities/token.py",
-      "sha256": "7abdac9b30286103396f210b8ba285172454a69221655584e650018f9b3b0927",
-      "size": 11327,
+      "sha256": "1c623bb265a35b3a98fc82e7055e2080ab08a080a559e07ce67a340335998d5e",
+      "size": 11012,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/__init__.py",
-      "sha256": "b055d083d9b67f9b7d77788b2f7f80807f5f77d3b8a9faf1009bf74495c984b7",
-      "size": 827,
+      "sha256": "c49312ef2d2a63a3cc81a664822da348452f76e673f0943afd47a2d784474138",
+      "size": 803,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/adapters.py",
-      "sha256": "f9f525639f6dddaa29431bbc328dabf861dd6b09ec6747e053676e8675436480",
-      "size": 18931,
+      "sha256": "35136b23f002e334967a832beb5ae8181be1cc563d902a06e053d2cdf72cadaa",
+      "size": 18393,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/app.py",
-      "sha256": "fbc36fba49a3714f09b701d33218ea028f4bad25b9ee24050b8740f8e8859422",
-      "size": 6755,
+      "sha256": "e2fbf5f759d0fe5a38dc2496c44d44dcaef479634284500ee2e4bf7a24f3f65a",
+      "size": 7793,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/audit.py",
-      "sha256": "1cb10f2e052569588a23c8bc3c10e133b6488cef594346c07a81125670922529",
-      "size": 2159,
+      "sha256": "27ecc966ab26a93698631214b97feb7b39bc919bcdb3ee3d05b6e691546a97d8",
+      "size": 2208,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/contracts.py",
-      "sha256": "cc47007a6c9fa2f2d5c7f4b3c162390b9c7c87fbd76bc4f00ae1fb2e79170b47",
-      "size": 7864,
+      "sha256": "90abb577e58e7f7994c627a29931d958a16236bb017c4af7592655730f65e2c7",
+      "size": 13511,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/mtls_ingress.py",
-      "sha256": "f077d9c62032989ee2f7b865c56ba4556b5ff915e62dfdca0999300f79b004d1",
-      "size": 14008,
+      "sha256": "400901734a2ccd69d5b1f8971be3cf354177f364117fbd3f1bf020d4144bc71d",
+      "size": 14084,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/policy.py",
-      "sha256": "10dac50094135a3f85180b117424637abb42d1cc6ad29d1e406a33cd075f00b1",
-      "size": 2580,
+      "sha256": "3538baae981d6bdd82163367d0b592a7c9476ed9a65ee9c5fb99aaa5a9cce377",
+      "size": 3475,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/query.py",
-      "sha256": "de07611d3243a84c0b7933519e7a385bba443c1a30171124b676ea3aa9622977",
-      "size": 11006,
+      "sha256": "dbf07a42ad74ac3d412b86643c9b14632c732e792b244c6c3bbb05d6aed650e1",
+      "size": 10678,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/resolver.py",
-      "sha256": "3b4743fe65e0073084397390a86f66aa5410ada50c3b922206377b7b0b7ac27f",
-      "size": 3154,
+      "sha256": "c1b65765d96d177ddbf801aea5ec8e97d5d63f5c68f5dbb1c8459f75fcb56cbd",
+      "size": 3044,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/router.py",
-      "sha256": "e245fd1a470e513e850addc8c15275a3537c5592ec98d9fc7605ad57d9b25cae",
-      "size": 5092,
+      "sha256": "1301ff9fe9b6ad2c5caddc53fa31c889e19d4407873cf70c3806e2522bfbe3ee",
+      "size": 9642,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/security.py",
-      "sha256": "a11021514e755cc52ae2529279d521bc01ebeff6f085cc57d27f06c075ceb032",
-      "size": 10076,
+      "sha256": "ef500bb4bb89925aa21a103fd894d170064aae736d64803c9771158b9c84346c",
+      "size": 14929,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/server.py",
-      "sha256": "db7ee0bf25318b2fc3101e232a719bb51e8cae7c59a04728ec8052ca2b8e11c2",
-      "size": 11731,
+      "sha256": "c01eb28108bd40ee7415d11fc3028ef2971be8af1a2eba73cacf4741ed647dff",
+      "size": 11826,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/service.py",
-      "sha256": "ce06d72904f511ff1c3669a5764c44a319f71086cbd61f84466957800ace3cb2",
-      "size": 15086,
+      "sha256": "06f1dd0df43cfe297c912afb81fc740dadde28900a40067d7023af41c2d1334d",
+      "size": 14650,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/thumbprints.py",
-      "sha256": "ffbc4a48f93537632a02c49f65a5068961205d6f2e04f2713f3a0d2223d4f517",
-      "size": 655,
+      "sha256": "39f65aef53b0b27ee6ee1e774b03b95879232d2fd2527b520a8ae82e907d34e8",
+      "size": 636,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/capability_gateway/workload.py",
-      "sha256": "ee363c1ced2a257b6ac145cd6b481ee06d1b6ce6d6b42c7c513277bac3f358dd",
-      "size": 16233,
+      "sha256": "7baf79c7f7dbc9f4a1a578d7fec5ad0312be0134e3f621f2ef1f4a7033ad063d",
+      "size": 16720,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/capability_gateway/write_adapters.py",
+      "sha256": "b4cbb0b57860bc6f256a28400d120d56a39f04b12aa195a03f35fa856f41aabf",
+      "size": 4085,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/capability_gateway/write_service.py",
+      "sha256": "96af34c683dd80885ef4bc35d86652bb869c8f3f3f23ec9618ef9b275aa7ae98",
+      "size": 29450,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/cli/__init__.py",
-      "sha256": "1b2dc81db30a31b813703f72e7140d0f6550d87f08f0c1fb7a21e0cfd51d3df8",
-      "size": 29,
+      "sha256": "e9ab8013d3583fba268f9b2e5f110b342b25a3e6ef006f35b5e9f3145dabf770",
+      "size": 28,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/cli/main.py",
-      "sha256": "9dfab47276d050d35ea62a5e6e083d36210764c8bfb1356b3f48cbf53917a6f1",
-      "size": 6545,
+      "sha256": "d4f31334305b8306a539ea873a2dad3e01fae918c2d6f1de420ea2b7ab184464",
+      "size": 6358,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/control_plane/__init__.py",
-      "sha256": "b69419d61ecc64b2339969ab45f664020cd0621aa97953d79a14c837d4f5f122",
-      "size": 387,
+      "sha256": "c7329a57cc4ba41c31d0bd851f88346afc5b475bcaf47e80731673ef3793dae0",
+      "size": 368,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/control_plane/models.py",
-      "sha256": "cc87f15bc089d854a417ac019ca42e9865632e8c3f653cfb6964aa1b47486b92",
-      "size": 26368,
+      "sha256": "8503183d9bd7a542be070d8d239ebc193ee8cb01f9969b01809300238154406b",
+      "size": 26132,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/control_plane/router.py",
-      "sha256": "98362b6eea3b3fba61c459c39692736331f60e929486ad4e68235ec2eb1a722b",
-      "size": 6707,
+      "sha256": "6213bcbec436b98271bd1a70dea28aed8b84048b1155f09d1dee817d48c62520",
+      "size": 6480,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/control_plane/schemas.py",
-      "sha256": "0b616a7a5dbc0873f149e2330b8fa48b71062e436f4ca5ba71735c8da2274313",
-      "size": 5090,
+      "sha256": "b7d8c9e5c82c3641b8768dca3319951d274841fb5ed8db6ee9793d73c2c3ef7b",
+      "size": 4877,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/control_plane/service.py",
-      "sha256": "60963e0dcded2e48688b56f440b1ae25fad4fe246cd53668f5c05a0e1db8d213",
-      "size": 58642,
+      "sha256": "97a6b488515798990fdf0a5d548efe76d69e145076e8c8298f987781cc80da97",
+      "size": 57121,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/__init__.py",
-      "sha256": "628991dba73f052f5857fc1bc23e6f7fc22cbf723e30595e62917295924858da",
-      "size": 536,
+      "sha256": "7cc819a652fa954cee874b1101898bdd4d903411a9e2876a92487724f6d257a6",
+      "size": 516,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/contracts.py",
-      "sha256": "8409e1a225788293a84be60f337c37de4af460600fe0b58081b6183b93e0e81b",
-      "size": 6079,
+      "sha256": "41e191a771e3797f21e8b082a93edce03e7c86312ee0fb9ecff6290ed0561f5d",
+      "size": 5905,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/create_table_bootstrap.py",
-      "sha256": "bc6147595d7de04e26e079298e458b87de00a7d6a194d1d1e1c1f0263ca5a584",
-      "size": 12671,
+      "sha256": "5ab31cad5e1ac40713d3e1f6752219f0e9fd95d1d3877ffa823c863ba9e9d604",
+      "size": 12323,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/crud.py",
-      "sha256": "fa01bf64ab4dd47ca6939d976d3ad7579cf312eeea4e1ebd8818966328d2de6d",
-      "size": 19430,
+      "sha256": "286c2b63dbdc6ade9c5818e81dff55921c4cc1784defa345eae454ae063e74d5",
+      "size": 18914,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/crud_contracts.py",
-      "sha256": "bd62b68fec921b5fcfacb544eb2be4bba3e1dd95e9794c0eaac89b9a89ade445",
-      "size": 4689,
+      "sha256": "b888dade3b902e02644e5e511376b945698211edc53ce2e4b8a49ead6913d684",
+      "size": 4531,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/ddl.py",
-      "sha256": "384a881e14ba312ce6d71d7d8f016d19d3c96863685152046fd067ec8ca7ee17",
-      "size": 40295,
+      "sha256": "782d425b88f2c5e8787c890bf50987f4cef8e9046a9eee35f623e9487e4b15e7",
+      "size": 39289,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/ddl_contracts.py",
-      "sha256": "cff96cebd183d9d30eafcac743b1fbf7bb8488e1fff0360d4abe4c5efd50b0e3",
-      "size": 7069,
+      "sha256": "a68959c32a4c2826f8fcf2602a83e0129c797db63e2d97b28e05ac7803470e11",
+      "size": 6826,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/execution_service.py",
-      "sha256": "f2a179f80f5876718ac12c39a9b25d9a697b3f814cc9ec7227986937f466d86e",
-      "size": 22438,
+      "sha256": "b15619b7c0f4777326d3777f9a69883390c751e2c94715ed7ecb1f93db180140",
+      "size": 21857,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/executor.py",
-      "sha256": "407ac2a70218d5a394388166b37f6151e9b2d6d7d7076e45cc18150eedba2fc2",
-      "size": 35498,
+      "sha256": "61ff332f27cbfb4c8df2063d30c285947a4009b9f45e04a078ed593b28f7be70",
+      "size": 40190,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/identifiers.py",
-      "sha256": "f5327f7f63bcef43a54c26c03271d7c015586f3bffca648370d01696b46766a7",
-      "size": 1642,
+      "sha256": "4a6f52a729829cfb6d318b91fe3dee2f6a843bcbee7a10d22868826fa111c92f",
+      "size": 1592,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/models.py",
-      "sha256": "090e418f8716d7b6ca99b23ab80277618ca60cc3ca686dc9f5d0edf917b24cdf",
-      "size": 28832,
+      "sha256": "a06675f2d778412ef0f319c8756260ded85e778a648995a6fd7acdb3e2ce87a0",
+      "size": 28661,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/operation_service.py",
-      "sha256": "91aca2fbaca1a16557fefaf094a2650c532ae6232f6b171aa4b26a35edbb778f",
-      "size": 26204,
+      "sha256": "dd6d8539381b1efb8869f2d215fff75bd5b6049cbc9c0433b36e9b2d67f17ef5",
+      "size": 25476,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/router.py",
-      "sha256": "0479a2cb65e2bc4d4d2a09be17f105e1bf0daea13b782a6ca9ff3eebccc3c57d",
-      "size": 26699,
+      "sha256": "8e142047ab00236c29e8667c81bd09b5f49e4fe4364a2313e0daaf5dbf8591b1",
+      "size": 25978,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/schemas.py",
-      "sha256": "2d6dc91563d542353d4d74a41a250d48b46ecab4c8741fcd2c5d8a65b9151f7d",
-      "size": 1571,
+      "sha256": "d7233648ade9544535154ed430c4cbd668577d4fd0ec86279e77f0b009a62046",
+      "size": 1510,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/tenant_models.py",
-      "sha256": "9927df554896f91c393d240422726671f9af47927ad0524cf68f4c3148e7cfd9",
-      "size": 2935,
+      "sha256": "63cc0ebb5d7e824d383e1418eef0a004e153668b026fa258f6d2ecaae94dab15",
+      "size": 2862,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/controlled_data/types.py",
-      "sha256": "2543ac7c0b191c794f507a8d2e3a96ed3d8ac87698c3f965b5d69bfd62385231",
-      "size": 4135,
+      "sha256": "fd5eb919caf204f00c11366287d51b0208b80a9d2fda2337139e6615b26c5063",
+      "size": 4004,
       "tracked": true
     },
     {
@@ -327,122 +339,122 @@
     },
     {
       "path": "backend/src/omnibase/core/config.py",
-      "sha256": "65fb01624ec25810aee409381632d932b0cb024e3f8993b506f5e95d3d7a44b4",
-      "size": 11107,
+      "sha256": "e19f604ef305ec773e9f534fe8971f43758fb3ee3ed95ba0a74b9df5177a83a0",
+      "size": 10820,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/core/db.py",
-      "sha256": "d7e516e18c3afbe851f7132844f24ee62686406622020ad4214e946d88c19532",
-      "size": 6887,
+      "sha256": "a174a9026fccb68e85b3f1b122ae4be20345536355eb833c98ad2baa92addf34",
+      "size": 6687,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/core/logging.py",
-      "sha256": "b5b03557e28fc902b9a74adfd122e69c2f55cdda314af191b6e3e6566fe58867",
-      "size": 4903,
+      "sha256": "7d444d7a7c121a9ae8ca5e724e925a0c1c19982069c9de42b67a997d5e290ebf",
+      "size": 4768,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/core/middleware.py",
-      "sha256": "45fca4f4f4d78893e7de98840740744aea92c9223168b70f9ccd46f29298e26f",
-      "size": 6407,
+      "sha256": "db23dd9d26d621856c662f298af0769bfcc40a202c6fddae394313e69d14ddf0",
+      "size": 6225,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/core/rate_limit.py",
-      "sha256": "1357b4cf1c90d576951986b09c71e7b4e7ba1d379cccbbcd624ed6b402d73fd9",
-      "size": 6625,
+      "sha256": "b4e24821481e2dae512f421237a66fe7170d8741c9003dcbfd7feb6e5c268a69",
+      "size": 6406,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/database/__init__.py",
-      "sha256": "9dc9cd8399a9552e42ec3804b7a28f688bf3f79368cfdfab02031fba1d510f3c",
-      "size": 56,
+      "sha256": "088eb9dc16fb0800c977b4db8599ebe650747dbb78aa992efd6ec4fc43890162",
+      "size": 55,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/database/router.py",
-      "sha256": "c77702d8c67f6d7bf0b3fe01b61d11ae1660f7fcf2c3609287f77a2cf2727704",
-      "size": 3796,
+      "sha256": "d601e89a033fc6f8a52eba201b38d6a77d011b39f9b360a6819362f468c79a96",
+      "size": 3679,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/database/schemas.py",
-      "sha256": "40d20a015b19d897a5c8a48112d93f66a4fa404bfb8d52536f5ce8614a1a3ab9",
-      "size": 682,
+      "sha256": "33a0c3c12ee4e60a7f9856995e96a334a454957bff260149a8a513d8b7c49c79",
+      "size": 653,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/db/__init__.py",
-      "sha256": "7f3b9f2456497e3822a0b2385ead81cde5611a800bad36d9e88911fdf3fb30ae",
-      "size": 410,
+      "sha256": "9a9ab072cbd61c308cfee1229a295bafcd9f31a520883807b86c483666a8f895",
+      "size": 399,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/db/models.py",
-      "sha256": "25ea2a16dd9117a911ce1391773b423d019c9b9f4ee5a6be1f2af1f120b0a744",
-      "size": 3631,
+      "sha256": "7f136d55edb224f756719ef46daa4af64f2b1371fe2ba9dadd7f6223591f2929",
+      "size": 3525,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/db/tenant.py",
-      "sha256": "5b5bf580780389a16ec7c12c350cc35d1d427be4e0022dc7dc96b9c0991e1990",
-      "size": 10746,
+      "sha256": "bdb31a0dd9132b97ec25594d83144298c5ac40682a11a4376363b6d42ae437f0",
+      "size": 10461,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/__init__.py",
-      "sha256": "145b3465d7441f941552718d7562b0b6c59be78da73c532fbf65af38f3aef86f",
-      "size": 78,
+      "sha256": "069dd349ba07963f8e577eabee9a5a8a54fc727db5968e53dd533e3364e7bad7",
+      "size": 77,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/enqueue.py",
-      "sha256": "f66a9cc164c6e327769e089801a45396438067ed143ab186787de8f1178012ad",
-      "size": 1204,
+      "sha256": "6862a346b1bf97e0fb64bfcf92cd6ad9ac41bc74eed5216e42c948371e64847d",
+      "size": 1157,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/metadata.py",
-      "sha256": "b2b930f81718d6f6473b25961d437d15013199b1ee2a8f61824ffdd832510ccf",
-      "size": 7020,
+      "sha256": "77fe59396faa68dcec1f61894d0c072bcdbdb973ad13759e08f7078e40bd6014",
+      "size": 6816,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/router.py",
-      "sha256": "e4354c3cb9a3c23423d3929bcd158e83d45e97865cf347e92ca4a6130edf5303",
-      "size": 8015,
+      "sha256": "094975ac44d8830a0543be5243e1657d242b75a99613aab3631cdfa9c5ac16aa",
+      "size": 7788,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/schemas.py",
-      "sha256": "a39aeb48b4fc8da74537d362e800f0fad75af5c5b88a5b46ec84c22d3055d8b8",
-      "size": 2315,
+      "sha256": "2fae4b3728303246cb17786d5db72e36d15b529cd4420c0e29169b33fb147fbf",
+      "size": 2224,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/documents/service.py",
-      "sha256": "eb9e5489f7680ddd414eb9030d79fd02fada0d47019a66fa70310fe534184972",
-      "size": 16000,
+      "sha256": "882e003e0ba4754e07a46bc08b0a253783f2ae2a5d2229b44652743e95419933",
+      "size": 15538,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/main.py",
-      "sha256": "4a9f207c2cacc5f0e96768f4d6dd26355539f09ac8d7f92e01fd84ea050ce6c3",
-      "size": 12223,
+      "sha256": "539363102c3d29ed684aaca2401c9e2e824c0b8eb0f6ece2b229bcdadf09008e",
+      "size": 11922,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/__init__.py",
-      "sha256": "6eeb7ca42c2a343522c7185774309e5c7a72f8d7a4322de0a963254056c7416a",
-      "size": 48,
+      "sha256": "5703b83a60af5b6d920d9e0979c0817575ed0112d1159a4fd31f809ffa983066",
+      "size": 47,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/env.py",
-      "sha256": "670b600d9541da7e687a4cd86181d0f4fb3f2565df3cbd676288ff0f8341df44",
-      "size": 7474,
+      "sha256": "94bbcc489114db0e3c77cc9cbd7c9bb1517192d0da065e54bece2f6fd7140735",
+      "size": 7483,
       "tracked": true
     },
     {
@@ -453,284 +465,290 @@
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0001_create_tenants_table.py",
-      "sha256": "e8394d926d532104466b68d724893c625eba9d9bf33e574e487f870e1613d3f9",
-      "size": 4001,
+      "sha256": "0787b532627d32606bf2c6e9f12a6bfa4e71bb91c661b524881d7bbc32fa86c0",
+      "size": 3881,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0002_async_document_lifecycle.py",
-      "sha256": "cd1aa699657fcb4067d678ac0c9f8c000372b3a6ebb3968d531e1385113abb4b",
-      "size": 2434,
+      "sha256": "ae2175078e1b0ae0f1fcbe3ec2e33e480c6b4e62f00ad6ca3a167efa4fc6f773",
+      "size": 2360,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0003_phase_1_6_dual_index_foundation.py",
-      "sha256": "969b2c05796836ba2dde62dad6810e3321f77bb1bafce0f896742808a029ed15",
-      "size": 4125,
+      "sha256": "337c30781cb11588a5d378f598d90cf8b5fd6d2dabb7c1ce9a4a8d1c1e353293",
+      "size": 4027,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py",
-      "sha256": "d90bbd36804c153a65a1ffa6ef02b7c71031a5a9b3842db609157129a6eecbd5",
-      "size": 24316,
+      "sha256": "390514b9c892f1adc86c15410c996fe8cbab30503eb33da68a60643ee4a5b29b",
+      "size": 23639,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
-      "sha256": "fe4d2498724feb086cd89650cc27d8bc8cd9526a38d50cd2d90c333177601b05",
-      "size": 13615,
+      "sha256": "e3902230448f65eea7cadc143c97c54c79bfc2511cfa5087afdff65eefda9200",
+      "size": 13286,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py",
-      "sha256": "143e8d99ff549a55444687c2089997e74fde6bb804c3bbdf2e6bd698bc975c53",
-      "size": 30810,
+      "sha256": "91e6a0835326b8944e0cb4fce438903dc35cca9d8aab979753b02d36e02d2468",
+      "size": 30022,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py",
-      "sha256": "87a96a38b5b185f3dfa7dc267d3b80a8ed7c49b35b0bd06922a39fc18ad5767e",
-      "size": 52395,
+      "sha256": "0b5d3d6eff931556b7a3560ed5652ecbb04834a2236df0a44df819e3ff504b5b",
+      "size": 51059,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py",
-      "sha256": "065f77b1493db633d3df699308212adaf180e8e9fd057e37c52ea251961315b1",
-      "size": 13275,
+      "sha256": "78efdec94076ef4b101bf0e5c2f791fe1546265da5ad47d5808e5ed9f1a52ef8",
+      "size": 12933,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py",
+      "sha256": "845a39c47c3b9e434cf79c2ea1a7899479e1c04d33cf429251a6708b89c9dc96",
+      "size": 44289,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/__init__.py",
-      "sha256": "5b68749cf4b96a84ad445460852f2735840a395b73de1ea40496aa59cf219522",
-      "size": 262,
+      "sha256": "a29eaa2a13e0cdb70699176ac514f15aefdf425f4085706b185be926ca70aefe",
+      "size": 255,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/benchmark.py",
-      "sha256": "bc8aa2e3bb5ebdb434092a3bc8ddb03c79d6658e451b09f8e7c5d6c787b2a74b",
-      "size": 6974,
+      "sha256": "0b048a450e8b36b40ace6028e08f06eaf19982f1b1408610cbaebb2ba4c3258d",
+      "size": 6777,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/chunker.py",
-      "sha256": "5e82d5e92843f5c4d4bb9699c421c2896b43e9815c7b77da871e0575a2f08175",
-      "size": 8736,
+      "sha256": "c04f2eb3c6d2af725cd030bf01c54cacc7a3e85a69e5faacb0ee48e3c5f98775",
+      "size": 8463,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/embedding.py",
-      "sha256": "5834724f6999b0285a8e7c03ef6198c8bd609bad21bb509c87797699d88008bc",
-      "size": 12157,
+      "sha256": "b792f88b3c1ddb4acc4c2d2bf76c0158cf0fbf4b418b080112f47c49d420e0ce",
+      "size": 11800,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/evaluation_fixture.py",
-      "sha256": "8c3af01194031c9c37252331befd9f29621690eb866ca5095ccd8a7683061f17",
-      "size": 5790,
+      "sha256": "470acb7da20d00d7b768840f2a2dacecedceaad8e35fb6236deefb80614efd36",
+      "size": 5616,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/evaluation_runner.py",
-      "sha256": "3646e8eed960d46dc136e869f51069feb2d6fafa6a47a3555516bbd45688a003",
-      "size": 8553,
+      "sha256": "f1773c61a74346a9eba5b2497fc14c621e8573c9660910e228a0d86eec2b678b",
+      "size": 8297,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/evaluator.py",
-      "sha256": "675d69754778f147ffc4b9c30a15525fb6726ef0a4e0f51245f02b48a2fdf5da",
-      "size": 7219,
+      "sha256": "1ea38d36574891905b734ce669fb85e12e107224c4c0e22ad0d3ae5a64918015",
+      "size": 6976,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/index_metadata.py",
-      "sha256": "2a69c3a48df888f91026583a040a9067c38580ec39f64f888641971adcb2a5e9",
-      "size": 4982,
+      "sha256": "f83c3b0f6a42f8f0f6135e8f792f2123beccc0202e4f7f52dad905299dbedaae",
+      "size": 4827,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/ingest.py",
-      "sha256": "b6175e6b35aaf6b994e273e23e8ddd99abc7a452b4fa66516b3af501287736e0",
-      "size": 5712,
+      "sha256": "5212864c8a4741800f418257310c2fdd5adaccf2edb934a4a3ded533e16707f3",
+      "size": 5532,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/llm.py",
-      "sha256": "821808b284f99ccd04d94d28802c42c687c17d56761691ae4667074b37dedabc",
-      "size": 4246,
+      "sha256": "6a97caf7ed8c8f87028f65cd57223809362913047316001e534bbe2f1d190f6d",
+      "size": 4112,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/parser.py",
-      "sha256": "b46b552a78588abb30023482f9508aa6cecd6dc6000484746b13e01623819545",
-      "size": 8126,
+      "sha256": "e59d83f345164030bc0c9aaefd6c12fefa3b42057b6677ebbfae7621181ce38c",
+      "size": 7889,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/reranker.py",
-      "sha256": "c321eb35831269ef26a81424b13b828975f20a5a2c30d378cad9919765179a2e",
-      "size": 5489,
+      "sha256": "a6ea34335661182f08284a7a42c7947f696698cc67e445894af5b193605ff300",
+      "size": 5315,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/retriever.py",
-      "sha256": "6ae0312a925a9f303616049c31b91716137aeebdaca244bc15c873135eb46f95",
-      "size": 5577,
+      "sha256": "8effd8bd44233492d79ae4c4b5695a62e6f935982380502f820d9f58bdf615c3",
+      "size": 5393,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/router.py",
-      "sha256": "59313dd671506f26a1ee4e134a232a1fccf8d8bd5cf4232d74c72de272c485c0",
-      "size": 8725,
+      "sha256": "554d19f1b6908739b33ec1983e7d24a7c74f7eeb16fb17a59818457e1160afe9",
+      "size": 8454,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/schemas.py",
-      "sha256": "9cab06fc71f93968879e4ee7faa6a3b37817ade247f676434c0561be1235be04",
-      "size": 2696,
+      "sha256": "8692b06b91163688f8162f48fe240457468dcd0273f52a21cec41cdf3d681e6c",
+      "size": 2598,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/rag/store.py",
-      "sha256": "73e44fd17bc6f727d380d1f50fb833598e796810d245ba587d19f9bec87a7768",
-      "size": 14406,
+      "sha256": "d2ac98b85a8fe760b23a4265e254cc1fd496e3641d4bd98f53209f1caff541da",
+      "size": 13977,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/__init__.py",
-      "sha256": "ca1998e9e8e8cd30fdda82876237e4667d0277198a2813ab82b29dd4611bcb8c",
-      "size": 4420,
+      "sha256": "2652424a620be6316b819601a4ec4fc933c0c748d206d5a6d5e2cd0604d23141",
+      "size": 4277,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/authorization.py",
-      "sha256": "c0794278f2b3b887e8c143bc9e793d147c5a3ce663b18e744d274baf4b483caa",
-      "size": 12965,
+      "sha256": "5c41fb840ef8fc2246fddbfe1f33d6e20a2e62d95144ee8c62d05b6a3854c8ea",
+      "size": 12637,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/broker.py",
-      "sha256": "89900a2ed2f2c8a34dd7c1985b332612b7259972549105778065bda4a766a40e",
-      "size": 34756,
+      "sha256": "b194797fdc63fb8a4528cacfe1e930b517d10282261c276ca6147d63f645471d",
+      "size": 33869,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/contracts.py",
-      "sha256": "7c7e10025fb66aaefff31b57bb8c96675228f03208689a2622623701ae6de7a7",
-      "size": 19645,
+      "sha256": "92c18abc0673c2971727cc9ff36fd78834524583d4d02dd6a5f9ef42e3659abd",
+      "size": 19041,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/control.py",
-      "sha256": "184c62b11d2f01e29abdb5b04d474effaa8932f0d8d507512397ba49f26b692f",
-      "size": 8350,
+      "sha256": "7fe0632a3e810601678d94488303d172cc615e8fe7efc66102b56cc8b8da47ef",
+      "size": 8123,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/coordinator.py",
-      "sha256": "6da350c1228d1fe425bbabdae73386958b100f57217d02c0e3834509e4f41171",
-      "size": 11810,
+      "sha256": "8d7cf087e592633903225b2db0523bb47d7df75757b5a4e7f95f102cb1e63c09",
+      "size": 11487,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/dispatch_digest.py",
-      "sha256": "203e250f2fa96ef410a21d15b00aa4fbf7ac0bd81e5a3f8a50f393ab877be287",
-      "size": 8610,
+      "sha256": "5e41d0e0adb8e78f7c3fd5effab7de4eb573aa4642c274b442d00950def6644e",
+      "size": 8428,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/host.py",
-      "sha256": "dd12973f5c8517cbd55de741a91d31391166a617685964e46ff475998413dbfa",
-      "size": 3657,
+      "sha256": "619be04fe4707e5ab34241a153e9646e55966eb0167dd056ff4f20a62bcd25d1",
+      "size": 3548,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/models.py",
-      "sha256": "bd103a30c515add9e5c4c36a2abaca6ec5091251ecf08a4178cb48043abb0abb",
-      "size": 7502,
+      "sha256": "214ab5a2971c3af9d871654b584a157cae1ac98de9c99d8ba3f037ebe4d6b83f",
+      "size": 7311,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/network.py",
-      "sha256": "7fb951b65551d61ee531ca7a5538b74e13945e572ab5e5209d5ff6f4b50bb09b",
-      "size": 16432,
+      "sha256": "716142fe993428d61e7d2cf00b76f98f4f9586494dfd604774889e70e4e6fd8b",
+      "size": 15998,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/network_ledger.py",
-      "sha256": "dba0026814326897f3b50f8f8e1a1b7ed9f9b62c750a925d3ef0bb0d0b1b58c0",
-      "size": 18045,
+      "sha256": "29af2c3bf815503960984544b9a9e134acee1f57855eb3319caa90a7f4bafd06",
+      "size": 17657,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/network_runtime.py",
-      "sha256": "58bfee7cfca347a8b905ca6da5af78aedf92693475784f5a4a026369ef8cb173",
-      "size": 28991,
+      "sha256": "1eb2da05c183dff1fdab7c70f1577005600b61c801c5ed2fc784cc65e99771f8",
+      "size": 28285,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/operations.py",
-      "sha256": "bf0a68006959b4b9aa367de34a53e5ddaae5745d06a29529b8ca5452c97e24ce",
-      "size": 15016,
+      "sha256": "867dc27058d7f40cbbda3ea742645658cd09d579507747f9c5d085e22ad07552",
+      "size": 14586,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/overlay_publication.py",
-      "sha256": "b000fef7cf8e287cb0ea7002d9efeae92c92479b7931cbb7c4c34a0548509abe",
-      "size": 2982,
+      "sha256": "16e897871ba1d96981e6fe651f87343f572ac9f209c6f66afd974459ee8d818d",
+      "size": 2902,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/persistence.py",
-      "sha256": "ec23ed3626233c1964ab8333178500965ba80837816fd06e9e72c1e9455e7c4c",
-      "size": 13407,
+      "sha256": "3eddd2b8cf08a06898d1c6f383adcfdec4315a24de923625722f0282444391ff",
+      "size": 13060,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/provider.py",
-      "sha256": "1174e38a9b4dd4c11a237e53104437e183fd9371d750c751928392a5340ed4e7",
-      "size": 22345,
+      "sha256": "4db91394a8a5cdf77ac47685eb612125e498b3d398a2cd7d0e0834d70d20e6f8",
+      "size": 21722,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/runner.py",
-      "sha256": "13765fdf9c35662741a50483929ad86e33dc7c4424145615a724056ac994458c",
-      "size": 7725,
+      "sha256": "6de97c1b93fd366ab0d75fcdf396b41a00855b636f600e2444f07bed081e96aa",
+      "size": 7515,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/runner_service.py",
-      "sha256": "eb43f2ee700a6f68d646c4e1fd37a7d26de1a86c9f110b1e99b4f5c155046300",
-      "size": 2486,
+      "sha256": "015ae21d2156519e7efabb51aba081a264a23ca3625da5cdfaea39deea53ce4f",
+      "size": 2403,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/runtime_driver.py",
-      "sha256": "759b70ed637967ab56deb803a4574248153ecea472072091b69d524633c51684",
-      "size": 30513,
+      "sha256": "8109b025d5a40c8326522e101f144ccb24973182859464f374e97fe408b84d8d",
+      "size": 29719,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/runtime_probe.py",
-      "sha256": "f74a4f8c99ad4a457653bb558ee0514114d84636fdeabc0bbba64391c7688de6",
-      "size": 15608,
+      "sha256": "f8181f2a63ae7e07bda6af72908b70717a849fa6d119497cb81547c132b3e0b7",
+      "size": 15212,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/transport.py",
-      "sha256": "daf0df77a123433f82f0e9575f7adabe1b76fb325ca8282107d859153ca1c6a7",
-      "size": 1800,
+      "sha256": "d64dd3e6fb92d3949b7b9c8b5a6e7e2c823642798c8a829aa8bbad291f859439",
+      "size": 1729,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/transport_auth.py",
-      "sha256": "ff48d7b1f8a4e9bb521e7bb6edbcc1ed74bc53f98d73191f4bc48b888232cba0",
-      "size": 20679,
+      "sha256": "75172aa1c996ace7455c5dcdaf76304457794c5c58453b1b7b31ad7b3db83df2",
+      "size": 20143,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/sandbox/transport_service.py",
-      "sha256": "af596fec4dc8c76fc2f721b48245131832fdb6491117f763ada7918605a2dbca",
-      "size": 5742,
+      "sha256": "295171c1646542f94fc07b16025675e4483824d98f1f7ad04d9928d2aed58475",
+      "size": 5582,
       "tracked": true
     },
     {
@@ -741,8 +759,8 @@
     },
     {
       "path": "backend/src/omnibase/storage/minio_client.py",
-      "sha256": "f2a511d24c1f1495e7d43b81d63c4065530cde02e860af0f7ac36939b088d834",
-      "size": 2292,
+      "sha256": "3b009db8a2ec666274bebf19a7a7a800002460445f4764c0875bf67b298ae2f5",
+      "size": 2208,
       "tracked": true
     },
     {
@@ -753,38 +771,38 @@
     },
     {
       "path": "backend/src/omnibase/tenants/context.py",
-      "sha256": "aacb1da16720af09a10bcd72b7092b56bcbc2d12634459ec66b66e819734b39b",
-      "size": 2734,
+      "sha256": "65b57c213088b8b5a3be068c559562ad7ab69d21b94e07d572c1e20a058674a1",
+      "size": 2650,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/tenants/dependencies.py",
-      "sha256": "66d56195012d08965b1d6cae12d94f20e72ad97b72fc2afc29d5a5220280c50a",
-      "size": 9200,
+      "sha256": "85ab23fc60345f252e0e5eb68ee70d32a2a1ff711e037befafa74af487c83996",
+      "size": 8927,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/tenants/router.py",
-      "sha256": "4e75481106eb6e347f80926774a1e59eac41af71721d1ac72d7da978aa29aa4a",
-      "size": 5076,
+      "sha256": "4a078733628e3ff8f77222bc1781065dc1d8a9ced3706b07a89f16e635b89cff",
+      "size": 4916,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/tenants/schema_manager.py",
-      "sha256": "ccb0ef2b7ac34c09322f8f56b8dc934865ccca97e283a8f94c46bc2f57780194",
-      "size": 9941,
+      "sha256": "44019df0c5a6afcc498a1e574f1e82bf9270c4a69f4997999efc5c1fac9a3edf",
+      "size": 9673,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/tenants/schemas.py",
-      "sha256": "fb733eba95896963c329de329a22192b84b81f3b1a76f41be96665c30c2d2d1d",
-      "size": 1681,
+      "sha256": "dd1c758f793e9dc738950f9d3274276fe054b12b6241f932ac38ce7e09c194fc",
+      "size": 1621,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/tenants/service.py",
-      "sha256": "9e9375fadbb1b48f2020d01b7ac79628bbda316b8933323b0ceda42018b21d47",
-      "size": 17123,
+      "sha256": "492dbb6d3c06fb6620c039fa65a7a33fb994dd45f0e53bdb103ee93b27c049df",
+      "size": 16708,
       "tracked": true
     },
     {
@@ -795,116 +813,170 @@
     },
     {
       "path": "backend/src/omnibase/workers/app.py",
-      "sha256": "2fd71de77846383bc3b803fbbec527384b3a9d8ebfa5db41efea1901f2aded93",
-      "size": 2085,
+      "sha256": "8e42198105770ce90928816ffe23d7a491765e076736803741ff19b588d6f34c",
+      "size": 2023,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workers/backfill.py",
-      "sha256": "55b9ca62bfa9e2f0f7861c8a1c54e11335b8f654dcda1171291f5633e57ebf4f",
-      "size": 4945,
+      "sha256": "4f3f58ee52ffbdaf4cb4e5d449bfeb757f569883611c31ebd562f7f82c3a2a6d",
+      "size": 4807,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workers/tasks.py",
-      "sha256": "940698e618df3b6663db8b175f57f035e01a2af1bf46200f8114bb020c5dfe96",
-      "size": 12245,
+      "sha256": "97a4e187ebafff48cd05226c7c45ef0fbaf851fbda0e57b6580141dfaf56eb99",
+      "size": 11836,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/__init__.py",
+      "sha256": "afe498a96e172551526c9c9abe1dbe6130bba37d0467340faa5038b75276358e",
+      "size": 411,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/artifacts.py",
+      "sha256": "55afcae2270e217fb8381e583e36b2e9f1223ba5b6a4cbcd1a6771c621d67b36",
+      "size": 14704,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/contracts.py",
+      "sha256": "7cf00e37d04124b82500e5ba9e9ae648689d2ad311463d79dbc8f35e0eb72ac0",
+      "size": 3999,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/derived_rag.py",
+      "sha256": "2930c132259776e730a4b5851f5ea64c417c278df9e342557486f893df62cc0c",
+      "size": 16622,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/models.py",
+      "sha256": "b56f25748252a54b52b7e75982342025658269687e58a0e189a84194e4a0245b",
+      "size": 23008,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/promotion.py",
+      "sha256": "139e697e7af58ab1cf972082dd6e1e8aefe9bd551635a12871c4ccf3e9eae173",
+      "size": 15985,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/service.py",
+      "sha256": "aed69a84ecbfb68f6e4ae33b5b771661e3f77da659800d700d675a466fb9fcf9",
+      "size": 10816,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/snapshots.py",
+      "sha256": "309857d187e00830f7c0075edbc8c78579ee5c8853e63c36f1588f5ddedb77ce",
+      "size": 28018,
+      "tracked": true
+    },
+    {
+      "path": "backend/src/omnibase/workspace_data/tenant_models.py",
+      "sha256": "1d907c756a7301260fdbac3739f963e9fd5cdf093fd24ea15eebf8eb0c9363e1",
+      "size": 3726,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/__init__.py",
-      "sha256": "8310d4e807828472189d8113e2460bfbe2fe00edda4b497e4a36e35e2797cfaa",
-      "size": 861,
+      "sha256": "32128ecf235241e66e7f19911fcd6e9e47d23a596c4f537e207d13c3ee57d5d2",
+      "size": 822,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/collaboration.py",
-      "sha256": "cf9b141664acc2026ab1594f27f873f93ccdf2cded984398ec370037d68496d3",
-      "size": 13754,
+      "sha256": "fa068a660bb9a5de004e810463df696dffefb63a04da51c2065712371b761af8",
+      "size": 13362,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/contracts.py",
-      "sha256": "690d4a93fd0875a6709be9a92e738f4eb5f84977fa16eb7e792f326dc26166ec",
-      "size": 4634,
+      "sha256": "3be6c2a4f119402027d09360e1e0d1048caedb116da58825462fea5c176cb8ef",
+      "size": 4491,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/models.py",
-      "sha256": "72429fc3522f542bea77cb61cdabe5341d2bc3c3a1379e5a51f7605380bac7df",
-      "size": 55203,
+      "sha256": "8b2d09adc91e3312d96000c155c01bfd1bf611799d5a573bd20e2f14f0f69022",
+      "size": 53724,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay.py",
-      "sha256": "e6ae00cfea72513ce3c0888e4ed3a76e532bf014098279992a352a608c66ce22",
-      "size": 24695,
+      "sha256": "de41a7b61b7fd5c44510587a4cd7d3dbb2496b569ea1b6c0aa6d4347fb2ffe07",
+      "size": 23944,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay_adapters/__init__.py",
-      "sha256": "736f9ed53f4b82d058b15a82d074fbdce059b9774d5272a4f4e8a8139f7b3664",
-      "size": 2613,
+      "sha256": "6e0b4db6a6c133f7b7bcf20cc51d7e061bc4d2e962f0e4a11edebfc90ac0fdcd",
+      "size": 2528,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay_adapters/contracts.py",
-      "sha256": "d502f904f85c19eacb7f2a04c1457755a52d19aae1e338ea860564c4996fc05a",
-      "size": 29735,
+      "sha256": "ef00fb18494cc2e5fc5ef7ce2c9b438b3a00384fba0844252c90ddeffe98a292",
+      "size": 28960,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay_adapters/headscale.py",
-      "sha256": "152552ef9a94891b09e9b557b2a4a80c52462ebee412cef2b4811561b5c6c5e6",
-      "size": 12448,
+      "sha256": "cf9e0bbebc8aca9a18d38b8ed8ac11b94e989667c782b81e60251b5d37e4ea89",
+      "size": 12114,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay_adapters/ledger.py",
-      "sha256": "be95c5699199682317d2fe6f72cce4a00f292fd09208289e80a4e5bf89b9a4ad",
-      "size": 17248,
+      "sha256": "90cd5d25939d3aac8904777f9a17ee3111d6704f2f4977627138e7fef612f96c",
+      "size": 16834,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/overlay_adapters/transport.py",
-      "sha256": "f7641c860bfde00f7a10f5a056da8f74251da3a9653b9ab39fb459180f4d2439",
-      "size": 19475,
+      "sha256": "62ac16912a756808db20b6762456c1343e750979d77511ed18e7a45f9d52d846",
+      "size": 18995,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/router.py",
-      "sha256": "52c2726d8d2f3d44e66c3d2a7f8553b79520d8eb0b4d3f0c3e38321603e034d8",
-      "size": 16889,
+      "sha256": "c853c52b3a6accbc760d520ff107621f3b755f276d543a2458e9c0c5f3d680a4",
+      "size": 16375,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/schemas.py",
-      "sha256": "c060953564d1396155539acca5fdd3fdfebf3a85c5883d636113b60723fe9ffd",
-      "size": 4783,
+      "sha256": "d34d43f1df772e095ce78ec3a8ff6f6fc60c059cb67721235544ea68ac3a91f9",
+      "size": 4581,
       "tracked": true
     },
     {
       "path": "backend/src/omnibase/workspaces/service.py",
-      "sha256": "ee6dbf180a7d0f3791fbc449e42c3c9781370bcffd17f6ae48a6f2acbb3cb155",
-      "size": 59975,
+      "sha256": "4852343678aa0e7d86dfd4ab5eff1bf68bb6231f7fa8380417c760723df5ac64",
+      "size": 58295,
       "tracked": true
     },
     {
       "path": "backend/tests/test_p34_5_overlay_adapter.py",
-      "sha256": "c69dac4972f3783ae6f071696f030d6499fc923701a2c575a14b2da64a6a116c",
-      "size": 27786,
+      "sha256": "19c63cef66634a95b6fea210f3cbca9c8c6a9466fbc5b9131ac08a55789460f4",
+      "size": 27008,
       "tracked": true
     },
     {
       "path": "backend/tests/test_p34_5_overlay_disposable_gate.py",
-      "sha256": "e02b2e184b3a7d1c155edc2457d3fa2514893daabb6b892676d810455e50a01a",
-      "size": 17476,
+      "sha256": "e1f1594c84433f7646cba673139c2ba454f66386202c12d7141dfc310f6e0a0c",
+      "size": 17047,
       "tracked": true
     },
     {
       "path": "backend/tests/test_p34_5_overlay_ledger.py",
-      "sha256": "4534f18b8f45716267184ced37360313502bbdc0beff1b8d6f8982e29f5822b3",
-      "size": 6087,
+      "sha256": "dd1428cabcfcba8ab359a68d2cb5ceeccd9bf1ef0b2b61b350221a1a069707a1",
+      "size": 5918,
       "tracked": true
     },
     {
@@ -945,8 +1017,8 @@
     },
     {
       "path": "scripts/overlay/node_daemon_test_double.py",
-      "sha256": "e6678247f44b44ae5dc7086d0498d524ece4841d3677967ac33d3045b9ae7c6a",
-      "size": 20692,
+      "sha256": "6cc95c6d65d2b0d8a78a63933143d1184dfa4b895373bfd9d47085b7a8c5831b",
+      "size": 20186,
       "tracked": true
     },
     {
@@ -957,28 +1029,28 @@
     },
     {
       "path": "scripts/overlay/test_validate_disposable_gate.py",
-      "sha256": "3f971ce8ca8c8fe8d65d72022155eb9e49d8b04e8b5a7397111267e0998b5023",
-      "size": 2686,
+      "sha256": "7970cba7fc147a0c0c98db93697949405531aac438df5547a9b345720ec00acc",
+      "size": 2617,
       "tracked": true
     },
     {
       "path": "scripts/overlay/validate_disposable_gate.py",
-      "sha256": "060805cacbb2b348e908b2509c0fb73d02095b8b28dc3565892ce3a386d970f4",
-      "size": 13834,
+      "sha256": "ea87b3343818a53eca7c727ba1477d01e2dbeb2602bb00ce7f6079ac238fac51",
+      "size": 13480,
       "tracked": true
     }
   ],
   "git": {
-    "commit": "2621759024ddf9e5d84fc96e56d00140287c1db2",
+    "commit": "cc48baa9bbd78d8824393311220ba523dfb186de",
     "dirty": false,
     "dirty_paths": [],
     "dirty_scope_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "tree": "1c84e0a88ce26aeb6db4df006bf6449a0c703b14"
+    "tree": "fd6e2b3ef0e390a9879c5cb4fa1b845ff1a42d62"
   },
   "real_member_devices_registered": 0,
   "root_env_included": false,
   "schema": "omnibase.p34-5c.source-manifest.v1",
-  "source_tree_sha256": "a7df01e3661a642f6dbc5980b8db22721137ea4332a222fe40bd957ecdcc0f5b",
+  "source_tree_sha256": "8cce097c80959061cef3f3751979ca99eeea723b9942cc29a68e2dedde02470f",
   "upstream_images": {
     "gate_runner_base": "python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686",
     "headscale": "headscale/headscale@sha256:ea9b5ee06274d757a4d52103de56cd11a9c393acb19d9a35f4b9fe52ada410de",
