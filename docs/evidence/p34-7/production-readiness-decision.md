@@ -98,10 +98,10 @@ All of the following remain required and `not_proven`:
 - Agent Runtime, Planner, Executor, multi-Agent DAG, product Skill and MCP
   execution remain frozen.
 
-## Clean-checkout follow-up
+## Clean-checkout verification
 
-After this change is committed, run the formal validator from a fresh public
-clean checkout:
+The formal validator was run after the implementation commit from a clean
+checkout with the configured public remote:
 
 ```text
 python scripts/production/validate_p34_7_composition.py \
@@ -109,7 +109,25 @@ python scripts/production/validate_p34_7_composition.py \
   --output <operator-controlled-path>/p34-7-production-admission.json
 ```
 
-The expected result remains `blocked/not_proven` until every production
-blocker above has current-source, hash-bound evidence. A clean-checkout
-`blocked/not_proven` result proves reproducibility and safe refusal; it does not
-unlock production or Phase 5.
+Result:
+
+```text
+implementation commit: 63790b49a73927dcd0c3c67d2093edb5dec8d8e6
+source tree: be394f19ce5ac741d752fb3e67dd86572b6f3907
+source clean: true
+source files: 123
+source manifest SHA-256: 8dd165724700d7c139a8ca5044128ffd59f58b9880870d0447ca52fe77650132
+report SHA-256: a6efe6c50fc452bb1f356ff001336a648186689d8a962b022ac915835e58e319
+exit code: 2
+state: blocked/not_proven
+activation allowed: false
+blockers: 10
+vetoes: 0
+evaluator-key files in scope: 0
+root .env accessed: false
+business database accessed/migrated: false/false
+```
+
+This is the required reproducible safe-refusal result for the current evidence
+set. It does not unlock production or Phase 5. Re-run the validator whenever a
+tracked production source byte changes or new production evidence is admitted.

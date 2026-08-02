@@ -1623,6 +1623,7 @@ git diff --check：passed
    - D/F Overlay/SLA focused `11 passed`，Ruff/format/py_compile 全部通过。
    - 主 Agent 统一回归：P34.7 focused `39 passed`；Backend non-integration `1160 passed / 14 skipped / 14 deselected`；Backend + Python SDK Mypy `155 source files / 0 issues`；Provider-focused + Python SDK + OpenAPI `28 passed`；TypeScript SDK `8 passed` + typecheck；Frontend `44 passed` + typecheck/lint + Next.js production build（含 `/spaces` 与 `/spaces/[workspaceId]`）；changed Python scope Ruff check/format check 全绿。
    - Maintainer map validator 与 benchmark validator 已通过；最终精确计数和 clean-checkout `--verify` 结果记录于 `docs/evidence/p34-7/production-readiness-decision.md`。`--verify` 必须在提交后的 fresh clean checkout 运行；外部 evidence 未齐时正确结果仍是 `blocked/not_proven`，绝不称 P34.7 PASS。
+   - 实现提交 `63790b49a73927dcd0c3c67d2093edb5dec8d8e6` 的 clean-checkout formal `--verify` 已实际执行：source tree `be394f19ce5ac741d752fb3e67dd86572b6f3907`、123 files、manifest `8dd165724700d7c139a8ca5044128ffd59f58b9880870d0447ca52fe77650132`、exit 2、`blocked/not_proven`、10 blockers、0 Veto、evaluator-key scope 0、activation=false。该结果证明当前源码可复现地安全拒绝，不是 production PASS。
    - 本轮未读取根 `.env`，未迁移或访问普通业务数据库，未访问 non-disposable tenant/RAG，未启动 hostile code、真实 production component、真实 Overlay revoke 或 canonical cutover，未启动 Agent Runtime。
 
 ### Phase 3-4 下一阶段执行契约
