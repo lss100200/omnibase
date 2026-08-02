@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactRoot = 'C:\tmp\omnibase-p345-overlay-gate',
-    [switch]$KeepProject
+    [switch]$KeepProject,
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,11 +10,10 @@ $project = 'omnibase-p345-overlay-gate'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $composeFile = (Resolve-Path (Join-Path $repoRoot 'deployment\overlay\compose.disposable.yml')).Path
 $envFile = (Resolve-Path (Join-Path $repoRoot 'deployment\overlay\gate.env')).Path
-$expectedGateRunnerImage = 'sha256:406d67c19d7133bfefd4594dd6fa36e5aa4d8908ae1a605906139dfed9cea6f0'
-$expectedGateRunnerVenv = 'omnibase_backend_venv'
 $runId = 'run-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss')
 $artifactDirectory = Join-Path $ArtifactRoot $runId
 $null = New-Item -ItemType Directory -Path $artifactDirectory -Force
+$sourceManifestPath = Join-Path $artifactDirectory 'source-manifest.json'
 
 function Invoke-GateCommand {
     param(
@@ -125,9 +125,17 @@ $result = [ordered]@{
     headscale_image = 'headscale/headscale@sha256:ea9b5ee06274d757a4d52103de56cd11a9c393acb19d9a35f4b9fe52ada410de'
     node_daemon_image = 'python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686'
     pki_image = 'alpine/openssl@sha256:5008e829163320a6e8166883c03e68189e8925ade68cde36584dc2a41cfa5248'
-    gate_runner_image_id = $expectedGateRunnerImage
-    gate_runner_venv_volume = $expectedGateRunnerVenv
+    gate_runner_base_image = 'python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686'
+    gate_runner_image_id = $null
+    gate_runner_build = 'not_run'
     compose_env_file = 'deployment/overlay/gate.env'
+    source_manifest = 'source-manifest.json'
+    source_manifest_sha256 = $null
+    source_tree_sha256 = $null
+    source_git_commit = $null
+    source_git_tree = $null
+    source_git_dirty = $null
+    source_git_dirty_scope_sha256 = $null
     real_member_devices_registered = 0
     host_ports_published = 0
     business_database_accessed = $false
@@ -143,23 +151,42 @@ $result = [ordered]@{
     cleanup_gate = 'not_run'
 }
 
+$validator = Join-Path $repoRoot 'scripts\overlay\validate_disposable_gate.py'
+& python -B $validator --repo-root $repoRoot --manifest-out $sourceManifestPath | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw 'Disposable Gate source seal validator failed'
+}
+$sourceManifest = Get-Content -LiteralPath $sourceManifestPath -Raw | ConvertFrom-Json
+$result.configuration_seal = 'passed'
+$result.source_manifest_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceManifestPath).Hash.ToLowerInvariant()
+$result.source_tree_sha256 = [string]$sourceManifest.source_tree_sha256
+$result.source_git_commit = [string]$sourceManifest.git.commit
+$result.source_git_tree = [string]$sourceManifest.git.tree
+$result.source_git_dirty = [bool]$sourceManifest.git.dirty
+$result.source_git_dirty_scope_sha256 = [string]$sourceManifest.git.dirty_scope_sha256
+
+if ($ValidateOnly) {
+    $result.completed_at = (Get-Date).ToUniversalTime().ToString('o')
+    $result.status = 'validation_only_passed'
+    $result | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $artifactDirectory 'report.json') -Encoding utf8
+    Write-Output "P34.5C disposable Overlay Gate validation passed: $artifactDirectory"
+    return
+}
+
 try {
-    $validator = Join-Path $repoRoot 'scripts\overlay\validate_disposable_gate.py'
-    & python -B $validator --repo-root $repoRoot | Out-Null
+    Invoke-GateCommand (Compose-Arguments @('build', '--pull', 'gate-runner')) | Out-Null
+    $result.gate_runner_build = 'passed'
+    $actualGateRunnerImage = (& docker image inspect omnibase-p345-overlay-gate-runner:source --format '{{.Id}}').Trim()
+    if ($LASTEXITCODE -ne 0 -or $actualGateRunnerImage -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw 'The source-built disposable Gate Runner image is unavailable'
+    }
+    $result.gate_runner_image_id = $actualGateRunnerImage
+    & python -B $validator --repo-root $repoRoot --verify-manifest $sourceManifestPath | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw 'Disposable Gate configuration seal validator failed'
-    }
-    $result.configuration_seal = 'passed'
-    $actualGateRunnerImage = (& docker image inspect omnibase-backend:latest --format '{{.Id}}').Trim()
-    if ($LASTEXITCODE -ne 0 -or $actualGateRunnerImage -ne $expectedGateRunnerImage) {
-        throw 'The fixed disposable Gate Runner image ID does not match the sealed value'
-    }
-    $actualVenvVolume = (& docker volume inspect $expectedGateRunnerVenv --format '{{.Name}}').Trim()
-    if ($LASTEXITCODE -ne 0 -or $actualVenvVolume -ne $expectedGateRunnerVenv) {
-        throw 'The fixed disposable Gate Runner venv volume is unavailable'
+        throw 'Disposable Gate source changed during the image build'
     }
     $composeSource = Get-Content -LiteralPath $composeFile -Raw
-    if ($composeSource -match '\$\{OMNIBASE_GATE_' -or $composeSource -notmatch 'image:\s+omnibase-backend:latest') {
+    if ($composeSource -match '\$\{OMNIBASE_GATE_' -or $composeSource -notmatch 'image:\s+omnibase-p345-overlay-gate-runner:source') {
         throw 'Disposable Compose still permits Gate Runner environment substitution'
     }
     Invoke-GateCommand (Compose-Arguments @('down', '-v', '--remove-orphans')) | Out-Null
@@ -303,6 +330,10 @@ try {
         }
     }
     $result.containment_scan = 'passed'
+    & python -B $validator --repo-root $repoRoot --verify-manifest $sourceManifestPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Disposable Gate source changed while the Gate was running'
+    }
     $result.completed_at = (Get-Date).ToUniversalTime().ToString('o')
     $result.status = 'passed'
 }

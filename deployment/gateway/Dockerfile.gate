@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+
+ARG PYTHON_BASE_IMAGE=python:3.11-slim-bookworm
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.4.27
+
+FROM ${UV_IMAGE} AS uv
+FROM ${PYTHON_BASE_IMAGE}
+
+ARG SOURCE_MANIFEST_SHA256
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PYTHONPATH=/app/src \
+    PATH=/app/.venv/bin:$PATH
+
+LABEL org.opencontainers.image.title="OmniBase P34.5D Gateway Gate" \
+      org.omnibase.gate="p34.5d" \
+      org.omnibase.source-manifest-sha256="${SOURCE_MANIFEST_SHA256}"
+
+COPY --from=uv /uv /uvx /bin/
+
+WORKDIR /app
+
+# Dependency resolution is byte-bound to the public source lockfile. The first
+# sync intentionally omits the project because source is copied only after the
+# dependency layer has been established.
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/src ./src
+COPY backend/tests ./tests
+RUN uv sync --frozen \
+    && python -m compileall -q src tests
+
+CMD ["pytest", "--version"]

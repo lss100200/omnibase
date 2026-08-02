@@ -26,7 +26,7 @@ services:
     restart: "no"
 
   gateway-server:
-    image: ${GATE_BACKEND_IMAGE:?required}
+    image: ${GATE_GATEWAY_IMAGE:?required}
     depends_on:
       postgres-gateway:
         condition: service_healthy
@@ -41,7 +41,7 @@ services:
       P34_5D_CLIENT_MATERIAL: /client-material
       P34_5D_CONTROL: /control
       P34_5D_GATE_EVIDENCE_PATH: /evidence/gateway-mtls-disposable-gate.json
-      P34_5D_GATE_IMAGE_ID: ${GATE_BACKEND_IMAGE:?required}
+      P34_5D_GATE_IMAGE_ID: ${GATE_GATEWAY_IMAGE:?required}
       P34_5D_GATE_POSTGRES_IMAGE_ID: ${GATE_POSTGRES_IMAGE:?required}
       P34_5D_GATE_CLIENT_IMAGE_ID: ${GATE_CLIENT_IMAGE:?required}
       MINIO_ENDPOINT: disabled.invalid:9000
@@ -66,10 +66,6 @@ services:
         "-q",
       ]
     volumes:
-      - ../../backend/src:/app/src:ro
-      - ../../backend/tests:/app/tests:ro
-      - ../../backend/alembic.ini:/app/alembic.ini:ro
-      - backend-venv:/app/.venv:ro
       - gateway-server-material:/server-material
       - gateway-client-material:/client-material
       - gateway-control:/control
@@ -93,7 +89,6 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
     command: ["python", "-B", "/client/p34_5d_broker_client.py"]
     volumes:
-      - ../../scripts/gateway/p34_5d_broker_client.py:/client/p34_5d_broker_client.py:ro
       - gateway-client-material:/client-material:ro
       - gateway-control:/control
     networks: [gateway-gate]
@@ -109,9 +104,6 @@ networks:
     internal: true
 
 volumes:
-  backend-venv:
-    external: true
-    name: omnibase_backend_venv
   gateway-server-material: {}
   gateway-client-material: {}
   gateway-control: {}

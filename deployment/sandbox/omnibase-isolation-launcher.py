@@ -299,9 +299,15 @@ def _validate_payload(  # noqa: C901 - one closed protocol validator is auditabl
         "run_as_uid": isolation.get("run_as_uid") if isinstance(isolation, dict) else None,
     }:
         raise ValueError("isolation_policy_invalid")
-    if not isinstance(isolation.get("run_as_uid"), int) or isolation["run_as_uid"] <= 0:
+    if (
+        type(isolation.get("run_as_uid")) is not int
+        or not 10_000 <= isolation["run_as_uid"] <= 2**31 - 1
+    ):
         raise ValueError("run_uid_invalid")
-    if not isinstance(isolation.get("run_as_gid"), int) or isolation["run_as_gid"] <= 0:
+    if (
+        type(isolation.get("run_as_gid")) is not int
+        or not 10_000 <= isolation["run_as_gid"] <= 2**31 - 1
+    ):
         raise ValueError("run_gid_invalid")
     network = runtime_spec.get("network")
     if network != {
@@ -514,6 +520,84 @@ def _terminate_process_group(process: subprocess.Popen[bytes] | None) -> None:
         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("runner_launcher_process_group_termination_failed") from exc
+
+
+def _parse_id_map(value: str, *, field: str) -> list[dict[str, int]]:
+    mappings: list[dict[str, int]] = []
+    for line in value.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            raise RuntimeError(f"{field}_shape_invalid")
+        try:
+            inside_id, outside_id, length = (int(part) for part in parts)
+        except ValueError as exc:
+            raise RuntimeError(f"{field}_shape_invalid") from exc
+        if inside_id < 0 or outside_id < 0 or length <= 0:
+            raise RuntimeError(f"{field}_range_invalid")
+        mappings.append(
+            {
+                "inside_id": inside_id,
+                "length": length,
+                "outside_id": outside_id,
+            }
+        )
+    if not mappings:
+        raise RuntimeError(f"{field}_empty")
+    return mappings
+
+
+def _enforce_workload_identity(
+    isolation: dict[str, Any],
+    *,
+    uid_map_text: str,
+    gid_map_text: str,
+    setgroups_mode: str,
+) -> dict[str, Any]:
+    requested_uid = isolation["run_as_uid"]
+    requested_gid = isolation["run_as_gid"]
+    uid_map = _parse_id_map(uid_map_text, field="uid_map")
+    gid_map = _parse_id_map(gid_map_text, field="gid_map")
+    expected_uid_map = [
+        {"inside_id": requested_uid, "length": 1, "outside_id": uid_map[0]["outside_id"]}
+    ]
+    expected_gid_map = [
+        {"inside_id": requested_gid, "length": 1, "outside_id": gid_map[0]["outside_id"]}
+    ]
+    if uid_map != expected_uid_map or uid_map[0]["outside_id"] == 0:
+        raise RuntimeError("workload_uid_map_invalid")
+    if gid_map != expected_gid_map or gid_map[0]["outside_id"] == 0:
+        raise RuntimeError("workload_gid_map_invalid")
+    if setgroups_mode != "deny":
+        raise RuntimeError("workload_setgroups_not_denied")
+    if os.getgroups():
+        raise RuntimeError("workload_supplementary_groups_not_empty")
+
+    # The requested IDs are already the current IDs after unshare installs the
+    # one-entry maps.  Explicitly normalize real/effective/saved identities so
+    # no inherited saved ID can regain the Runner service identity.
+    os.setresgid(requested_gid, requested_gid, requested_gid)
+    os.setresuid(requested_uid, requested_uid, requested_uid)
+    identity = {
+        "egid": os.getegid(),
+        "euid": os.geteuid(),
+        "gid": os.getgid(),
+        "gid_map": gid_map,
+        "gid_map_digest": _sha256_bytes(gid_map_text.encode()),
+        "setgroups_mode": setgroups_mode,
+        "supplementary_groups": os.getgroups(),
+        "uid": os.getuid(),
+        "uid_map": uid_map,
+        "uid_map_digest": _sha256_bytes(uid_map_text.encode()),
+    }
+    if (
+        identity["uid"] != requested_uid
+        or identity["euid"] != requested_uid
+        or identity["gid"] != requested_gid
+        or identity["egid"] != requested_gid
+        or identity["supplementary_groups"]
+    ):
+        raise RuntimeError("workload_identity_transition_failed")
+    return identity
 
 
 def _execute(payload: dict[str, Any]) -> dict[str, Any]:
@@ -855,13 +939,23 @@ def _enter(arguments: list[str]) -> int:
     cgroup = Path(arguments[0]).resolve(strict=True)
     if cgroup.parent != CGROUP_ROOT or not UUID(cgroup.name):
         raise ValueError("enter_cgroup_invalid")
+    payload = json.loads(Path(arguments[1]).read_text())
+    _validate_payload(payload)
+    isolation = payload["runtime_spec"]["isolation"]
+    # Clear the Runner service's supplementary groups while CAP_SETGID is
+    # still available.  unshare then locks setgroups before installing the
+    # single GID mapping, so the isolated workload cannot add them back.
+    os.setgroups([])
+    if os.getgroups():
+        raise RuntimeError("runner_supplementary_groups_clear_failed")
     (cgroup / "cgroup.procs").write_text(str(os.getpid()))
     os.execve(  # noqa: S606 - fixed trusted executable; shell use is forbidden.
         "/usr/bin/unshare",
         [
             "unshare",
             "--user",
-            "--map-root-user",
+            f"--map-user={isolation['run_as_uid']}",
+            f"--map-group={isolation['run_as_gid']}",
             "--pid",
             "--mount",
             "--net",
@@ -953,25 +1047,41 @@ def _isolate(arguments: list[str]) -> int:
         _mount(None, root_path, None, MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV, "")
         stage = "capture_namespace_evidence"
         uid_map = Path("/proc/self/uid_map").read_text().strip()
+        gid_map = Path("/proc/self/gid_map").read_text().strip()
+        setgroups_mode = Path("/proc/self/setgroups").read_text().strip()
         namespaces = _namespace_evidence()
         apparmor = Path("/proc/self/attr/current").read_text().strip()
         stage = "enter_ephemeral_root"
         os.chroot(root_path)
         os.chdir("/workspace")
+        stage = "enforce_workload_identity"
+        identity = _enforce_workload_identity(
+            payload["runtime_spec"]["isolation"],
+            uid_map_text=uid_map,
+            gid_map_text=gid_map,
+            setgroups_mode=setgroups_mode,
+        )
         stage = "install_seccomp"
         _install_seccomp()
         stage = "drop_capabilities"
         _drop_capabilities()
+        if (
+            os.getuid() != identity["uid"]
+            or os.geteuid() != identity["euid"]
+            or os.getgid() != identity["gid"]
+            or os.getegid() != identity["egid"]
+            or os.getgroups() != identity["supplementary_groups"]
+        ):
+            raise RuntimeError("workload_identity_drift_before_exec")
         metadata = {
             "apparmor": apparmor,
             "cap_eff": _capability_effective_hex(),
-            "host_uid_mapped_nonroot": uid_map.split()[1:2] == ["1000"],
+            "host_uid_mapped_nonroot": identity["uid_map"][0]["outside_id"] != 0,
             "namespaces": namespaces,
             "no_new_privileges": str(libc.prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)),
             "root_read_only": bool(os.statvfs("/").f_flag & os.ST_RDONLY),
             "seccomp_mode": str(libc.prctl(PR_GET_SECCOMP, 0, 0, 0, 0)),
-            "uid_map_digest": _sha256_bytes(uid_map.encode()),
-            "workload_euid": os.geteuid(),
+            "workload_identity": identity,
         }
         os.write(metadata_fd, json.dumps(metadata, sort_keys=True).encode())
         os.close(metadata_fd)

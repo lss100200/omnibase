@@ -9,7 +9,7 @@
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0007",
+    "Alembic migrations 0001 through 0008",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -730,11 +730,12 @@
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py ../scripts/sandbox/validate_runner_attack_evidence.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py ../scripts/sandbox/validate_runner_attack_evidence.py",
         "python scripts/sandbox/probe_linux_runtime.py --config scripts/sandbox/linux-runtime-config.example.json",
         "python scripts/sandbox/run_a4_attack_matrix.py --help",
-        "python -m py_compile deployment/sandbox/omnibase-isolation-launcher.py deployment/sandbox/run-attack-gate.py"
+        "python -m py_compile deployment/sandbox/omnibase-isolation-launcher.py deployment/sandbox/run-attack-gate.py scripts/sandbox/validate_runner_attack_evidence.py",
+        "python -B scripts/sandbox/validate_runner_attack_evidence.py --repo-root ."
       ],
       "recovery": [
         "Restore UnavailableLinuxRuntimeDriver, UnavailableSandboxRunner and UnavailableRunnerTransport whenever host, launcher, namespace, cgroup, LSM or receipt evidence cannot be proven.",
@@ -867,7 +868,9 @@
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py",
         "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
         "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
+        "python -B -m pytest scripts/overlay/test_validate_disposable_gate.py -q",
         "python -B scripts/overlay/validate_disposable_gate.py --repo-root .",
+        "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1 -ValidateOnly",
         "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1"
       ],
       "recovery": [
@@ -943,8 +946,10 @@
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py ../scripts/gateway/run_p34_5d_disposable_gate.py ../scripts/gateway/p34_5d_broker_client.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py ../scripts/gateway/run_p34_5d_disposable_gate.py ../scripts/gateway/p34_5d_broker_client.py ../scripts/gateway/test_run_p34_5d_disposable_gate.py",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "python -B -m pytest scripts/gateway/test_run_p34_5d_disposable_gate.py -q",
+        "python scripts/gateway/run_p34_5d_disposable_gate.py --validate-only",
         "python scripts/gateway/run_p34_5d_disposable_gate.py"
       ],
       "recovery": [

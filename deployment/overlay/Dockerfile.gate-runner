@@ -1,0 +1,89 @@
+FROM python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    PATH=/app/.venv/bin:$PATH
+
+WORKDIR /app
+
+# The disposable Gate needs only pytest, the Overlay seam and the package
+# initialization dependencies reached by that seam.  Resolve every wheel
+# directly from the checked-in uv lockfile, preserving each wheel URL and
+# SHA-256 instead of consulting an ambient venv or an unpinned resolver.
+COPY backend/pyproject.toml backend/uv.lock /tmp/omnibase-lock/
+RUN python - <<'PY'
+import pathlib
+import platform
+import tomllib
+
+root = pathlib.Path("/tmp/omnibase-lock")
+project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+dev = project.get("dependency-groups", {}).get("dev", [])
+if not any(str(item).startswith("pytest>=8.3,<9") for item in dev):
+    raise SystemExit("backend pytest dependency declaration is not sealed")
+
+locked = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
+packages = {item["name"]: item for item in locked["package"]}
+required = (
+    "greenlet",
+    "iniconfig",
+    "packaging",
+    "pluggy",
+    "pygments",
+    "pytest",
+    "pytest-asyncio",
+    "sqlalchemy",
+    "typing-extensions",
+)
+requirements = []
+for name in required:
+    package = packages.get(name)
+    if package is None:
+        raise SystemExit(f"locked Gate dependency missing: {name}")
+    if name in {"greenlet", "sqlalchemy"}:
+        architecture = platform.machine().lower()
+        if architecture not in {"aarch64", "x86_64"}:
+            raise SystemExit(f"unsupported Gate Runner architecture: {architecture}")
+        wheels = [
+            wheel
+            for wheel in package.get("wheels", [])
+            if "-cp311-cp311-musllinux_1_2" in wheel["url"]
+            and architecture in wheel["url"]
+        ]
+    else:
+        wheels = [
+            wheel
+            for wheel in package.get("wheels", [])
+            if wheel["url"].endswith(("-py3-none-any.whl", "-py2.py3-none-any.whl"))
+        ]
+    if len(wheels) != 1:
+        raise SystemExit(f"locked Gate wheel is not unique: {name}")
+    wheel = wheels[0]
+    requirements.append(f"{name} @ {wheel['url']} --hash={wheel['hash']}")
+(root / "gate-requirements.txt").write_text(
+    "\n".join(requirements) + "\n",
+    encoding="utf-8",
+)
+PY
+RUN python -m venv /app/.venv \
+    && /app/.venv/bin/python -m pip install \
+        --disable-pip-version-check \
+        --no-cache-dir \
+        --require-hashes \
+        --no-deps \
+        -r /tmp/omnibase-lock/gate-requirements.txt
+
+COPY backend/src /app/src
+COPY backend/pyproject.toml /app/pyproject.toml
+COPY backend/tests/test_p34_5_overlay_adapter.py /app/tests/test_p34_5_overlay_adapter.py
+COPY backend/tests/test_p34_5_overlay_ledger.py /app/tests/test_p34_5_overlay_ledger.py
+COPY backend/tests/test_p34_5_overlay_disposable_gate.py /app/tests/test_p34_5_overlay_disposable_gate.py
+
+RUN /app/.venv/bin/python -m compileall -q \
+      /app/src/omnibase/workspaces/overlay_adapters \
+      /app/tests/test_p34_5_overlay_disposable_gate.py \
+    && /app/.venv/bin/python -c \
+      "from omnibase.workspaces.overlay_adapters import HeadscaleOverlayAdapter"
+
+ENTRYPOINT []

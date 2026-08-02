@@ -1,0 +1,14 @@
+**
+!backend/
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/alembic.ini
+!backend/src/
+!backend/src/**
+!backend/tests/
+!backend/tests/**
+backend/src/**/__pycache__/
+backend/src/**/*.py[cod]
+backend/tests/**/__pycache__/
+backend/tests/**/*.py[cod]
+backend/tests/.pytest_cache/

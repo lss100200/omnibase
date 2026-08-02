@@ -26,8 +26,7 @@ def _invoke(
     process = subprocess.run(
         [LAUNCHER, mode],
         input=json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=timeout,
         check=False,
         env={"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PATH": "/usr/bin:/bin"},
@@ -54,9 +53,7 @@ def _payload(
     operation_id = str(uuid4())
     runtime_instance_id = str(uuid4())
     return {
-        "binding_digest": hashlib.sha256(
-            f"binding:{operation_id}".encode()
-        ).hexdigest(),
+        "binding_digest": hashlib.sha256(f"binding:{operation_id}".encode()).hexdigest(),
         "cgroup_name": runtime_instance_id,
         "command": {
             "argv": ["sh", "-c", script],
@@ -105,6 +102,39 @@ def _read_evidence(operation_id: str) -> dict[str, Any]:
     return json.loads((EVIDENCE_ROOT / f"{operation_id}.json").read_text())
 
 
+def _identity_evidence_matches(metadata: dict[str, Any], payload: dict[str, Any]) -> bool:
+    isolation = payload["runtime_spec"]["isolation"]
+    requested_uid = isolation["run_as_uid"]
+    requested_gid = isolation["run_as_gid"]
+    identity = metadata.get("workload_identity", {})
+    uid_map = identity.get("uid_map")
+    gid_map = identity.get("gid_map")
+    return (
+        identity.get("uid") == requested_uid
+        and identity.get("euid") == requested_uid
+        and identity.get("gid") == requested_gid
+        and identity.get("egid") == requested_gid
+        and identity.get("supplementary_groups") == []
+        and identity.get("setgroups_mode") == "deny"
+        and isinstance(uid_map, list)
+        and len(uid_map) == 1
+        and uid_map[0].get("inside_id") == requested_uid
+        and uid_map[0].get("length") == 1
+        and isinstance(uid_map[0].get("outside_id"), int)
+        and uid_map[0]["outside_id"] > 0
+        and isinstance(gid_map, list)
+        and len(gid_map) == 1
+        and gid_map[0].get("inside_id") == requested_gid
+        and gid_map[0].get("length") == 1
+        and isinstance(gid_map[0].get("outside_id"), int)
+        and gid_map[0]["outside_id"] > 0
+        and isinstance(identity.get("uid_map_digest"), str)
+        and len(identity["uid_map_digest"]) == 64
+        and isinstance(identity.get("gid_map_digest"), str)
+        and len(identity["gid_map_digest"]) == 64
+    )
+
+
 def _normal_case(
     case_id: str, script: str, probe: dict[str, Any], **options: Any
 ) -> dict[str, Any]:
@@ -132,6 +162,7 @@ def _normal_case(
             and metadata.get("seccomp_mode") == "2"
             and metadata.get("root_read_only") is True
             and metadata.get("host_uid_mapped_nonroot") is True
+            and _identity_evidence_matches(metadata, payload)
             and metadata.get("apparmor") == "omnibase-runner (enforce)"
             and all(
                 child_namespaces.get(name) != runner_namespaces.get(name)
@@ -171,14 +202,14 @@ def _bounded_failure_case(
         metadata.get("cap_eff") == "0000000000000000"
         and metadata.get("seccomp_mode") == "2"
         and metadata.get("root_read_only") is True
+        and metadata.get("host_uid_mapped_nonroot") is True
+        and _identity_evidence_matches(metadata, payload)
         and all(
             child_namespaces.get(name) != runner_namespaces.get(name)
             for name in ("user", "pid", "mnt", "net")
         )
     )
-    expected_reasons = (
-        (expected_reason,) if isinstance(expected_reason, str) else expected_reason
-    )
+    expected_reasons = (expected_reason,) if isinstance(expected_reason, str) else expected_reason
     passed = (
         code == 0
         and receipt.get("reason_code") in expected_reasons
@@ -192,8 +223,7 @@ def _bounded_failure_case(
     if case_id == "PROC-01":
         pids_events = evidence.get("cgroup_pids_events", [])
         pids_limit_hit = any(
-            line.startswith("max ") and int(line.partition(" ")[2]) > 0
-            for line in pids_events
+            line.startswith("max ") and int(line.partition(" ")[2]) > 0 for line in pids_events
         )
         passed = passed and pids_limit_hit
     return {
@@ -223,6 +253,8 @@ def main() -> int:
     results = [
         _normal_case(
             "RUN-03",
+            'test "$(id -u)" -eq 10000; test "$(id -g)" -eq 10000; '
+            "test -z \"$(id -G | awk '{if (NF > 1) print}')\"; "
             'test -z "$DATABASE_URL$REDIS_URL$MINIO_ENDPOINT$JWT_SECRET"; '
             "! nc -z -w 1 127.0.0.1 5432; ! nc -z -w 1 127.0.0.1 6379; ! nc -z -w 1 127.0.0.1 9000",
             probe,
@@ -240,6 +272,22 @@ def main() -> int:
             "isolation_evidence": True,
             "passed": malformed_code != 0 and malformed_response.get("ready") is False,
             "reason_code": "payload_with_environment_rejected",
+            "receipt_evidence_digest": None,
+        }
+    )
+    invalid_identity = _payload("true")
+    invalid_identity["runtime_spec"]["isolation"]["run_as_uid"] = 9999
+    invalid_identity_code, invalid_identity_response = _invoke("execute", invalid_identity)
+    results.append(
+        {
+            "case": "RUN-05",
+            "duration_ms": 0,
+            "exit_code": invalid_identity_code,
+            "isolation_evidence": True,
+            "passed": (
+                invalid_identity_code != 0 and invalid_identity_response.get("ready") is False
+            ),
+            "reason_code": "invalid_workload_identity_rejected",
             "receipt_evidence_digest": None,
         }
     )

@@ -738,7 +738,7 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 - production Runner transport 只接受可信 mTLS ingress 注入的 `TrustedRunnerMtlsPeer`，并将证书指纹、Runner/Node identity、Node fencing、有效期与 envelope binding 一起验证；peer certificate thumbprint 必须与 `VerifiedRunnerHost.runner_identity_thumbprint` 精确一致，不能只比较 `runner_id`/`node_id`；普通 Header、来源 IP 或调用方对象不能替代 mTLS peer evidence。
 - 使用私有显式路径的 `SqliteRunnerReplayStore` 持久拒绝 nonce 与 sequence replay；父目录/文件必须通过 owner、mode、regular-file 和 no-symlink 检查，进程重启不能清空 replay 边界。
 - 每个 operation 使用独立 cgroup；超时、输出溢出、spawn/pipe/selector/communicate/metadata/evidence 任一异常都先写该 operation 的 `cgroup.kill`，等待 `cgroup.events` 明确 `populated 0`，随后才清理 launcher process group、cgroup 与本次 runtime 目录。无法证明为空时必须保留现场并 fail-closed。
-- 使用真实 rootless runtime 的 subordinate UID/GID 映射与 namespace inode 作为 user namespace 证据；不得因为宿主策略禁止裸 `unshare -Ur` 就忽略真实容器映射。
+- 使用真实、可验证的非 root user-namespace UID/GID 映射与 namespace inode 作为 user namespace 证据。允许 dedicated Runner 的单项 outer service UID/GID → 请求的 non-root inner UID/GID 映射，或经目标宿主 Gate 证明的 subordinate range；两种方案都必须在 workload `exec` 前精确核对 real/effective/saved UID/GID、supplementary groups、`uid_map`、`gid_map` 与 `setgroups=deny`，不得接受调用方绑定的身份却静默运行成 namespace root，也不得因为宿主策略禁止裸 `unshare -Ur` 就忽略真实映射。
 - host namespace reference 只有两种可信形式：直接 VM 上的 `/proc/1/ns/{user,pid,mnt,net}` namespace symlink handle，或 `/run/omnibase-host-ns/{user,pid,mnt,net}` 下由 root 拥有、非 group/world-writable 的 regular snapshot，且内容必须严格为对应 host namespace 的 `device:inode`。runtime probe 比较的是 namespace identity，不是 snapshot 普通文件自身的 inode。
 - 目标 Linux profile 可使用 AppArmor 或等价受支持 LSM，但必须在目标节点证明 loaded/enforced，而不是只读取配置文件名。
 

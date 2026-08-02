@@ -10,7 +10,7 @@
 
 1. `AGENTS.md`：仓库级维护契约、冻结边界和安全工作流。
 2. `docs/maintainers/maintenance-map.json`：机器可读模块、依赖、不变量、验证和恢复入口。
-3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-010 的权威维护约束。
+3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-021 的权威维护约束。
 4. 本文：运行入口、调用方向、边界和影响矩阵。
 5. 目标模块源码，以及机器地图列出的迁移、契约和测试。
 6. `docs/handover-report.md`：当前阶段状态、最近验证证据和尚未授权的动作。
@@ -453,7 +453,7 @@ P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker G
 
 ### 7.2 Alembic 方向
 
-- migration 链当前为 `0001` 至 `0007`。
+- migration 链当前为 `0001` 至 `0008`。
 - `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
 - 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
 - `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
@@ -495,7 +495,7 @@ P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker G
 判断“系统实际上做什么”时使用以下顺序：
 
 1. 当前运行路径的源码和数据库级约束/trigger。
-2. Alembic `0001`–`0007`，包括 upgrade、downgrade 和 scope guard。
+2. Alembic `0001`–`0008`，包括 upgrade、downgrade 和 scope guard。
 3. OpenAPI 与 SDK contract snapshot，以及严格 DTO parser。
 4. 与目标行为对应且刚刚通过的单元测试、HTTP contract 测试和 disposable PostgreSQL integration tests。
 5. `security-invariants.md` 和 `maintenance-map.json` 中的维护契约。

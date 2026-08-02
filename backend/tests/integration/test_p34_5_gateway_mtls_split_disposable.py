@@ -310,6 +310,8 @@ def test_split_gateway_server_and_broker_client_gate(db_engine, tmp_path: Path) 
                 "broker_client_database_environment_present": False,
                 "broker_client_signing_private_key_present": False,
                 "broker_client_host_mount_present": False,
+                "gateway_server_source_mount_present": False,
+                "gateway_server_dependency_volume_present": False,
             },
             "credential_flow": {
                 "client_parameters": [],
@@ -325,7 +327,8 @@ def test_split_gateway_server_and_broker_client_gate(db_engine, tmp_path: Path) 
             "direct_database_route_present": False,
             "root_env_accessed": False,
             "real_credentials_used": False,
-            "source_mounts_read_only": True,
+            "source_mounts_present": False,
+            "ambient_virtualenv_present": False,
             "gate_backend_image_id": os.environ.get("P34_5D_GATE_IMAGE_ID"),
             "gate_postgres_image_id": os.environ.get("P34_5D_GATE_POSTGRES_IMAGE_ID"),
             "gate_client_image_id": os.environ.get("P34_5D_GATE_CLIENT_IMAGE_ID"),

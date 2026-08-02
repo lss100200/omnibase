@@ -115,7 +115,10 @@ services:
     restart: "no"
 
   gate-runner:
-    image: omnibase-backend:latest
+    build:
+      context: ../..
+      dockerfile: deployment/overlay/Dockerfile.gate-runner
+    image: omnibase-p345-overlay-gate-runner:source
     command:
       - /app/.venv/bin/pytest
       - tests/test_p34_5_overlay_disposable_gate.py
@@ -136,9 +139,6 @@ services:
       OMNIBASE_OVERLAY_GATE_HEADSCALE_HEALTH_URL: http://headscale:8080/health
       OMNIBASE_OVERLAY_GATE_LEDGER_DIR: /var/lib/omnibase-gate-ledger
     volumes:
-      - ../../backend/src:/app/src:ro
-      - ../../backend/tests:/app/tests:ro
-      - gate-runner-venv:/app/.venv:ro
       - overlay-pki:/pki:ro
       - gate-ledger-state:/var/lib/omnibase-gate-ledger
     networks:
@@ -162,6 +162,3 @@ volumes:
   node-daemon-state:
   provider-secrets:
   gate-ledger-state:
-  gate-runner-venv:
-    external: true
-    name: omnibase_backend_venv
