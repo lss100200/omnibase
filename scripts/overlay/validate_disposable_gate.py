@@ -18,6 +18,7 @@ PKI_IMAGE = (
 )
 
 EXACT_SOURCE_PATHS = (
+    ".gitattributes",
     "backend/pyproject.toml",
     "backend/uv.lock",
     "backend/src/omnibase/sandbox/overlay_publication.py",

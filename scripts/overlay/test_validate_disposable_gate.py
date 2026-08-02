@@ -31,6 +31,7 @@ def test_static_configuration_and_manifest_round_trip() -> None:
     assert not manifest["root_env_included"]
     assert manifest["real_member_devices_registered"] == 0
     assert manifest["file_count"] >= 150
+    assert any(entry["path"] == ".gitattributes" for entry in manifest["files"])
 
     with tempfile.TemporaryDirectory() as temporary:
         path = Path(temporary) / "manifest.json"
