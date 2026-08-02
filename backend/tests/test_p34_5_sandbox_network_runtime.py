@@ -173,6 +173,39 @@ def _write_evidence(directory: Path, value: dict[str, object]) -> Path:
     return path
 
 
+def _simulate_root_owned_host_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    host_snapshot: Path,
+) -> None:
+    """Keep production root-owner checks while adapting tmp_path fixtures."""
+
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+
+    def fixture_lstat(path: Path) -> os.stat_result:
+        info = real_lstat(path)
+        if path != host_snapshot.parent:
+            return info
+        values = list(info)
+        values[4] = 0
+        return os.stat_result(values)
+
+    def fixture_fstat(descriptor: int) -> os.stat_result:
+        info = real_fstat(descriptor)
+        try:
+            descriptor_path = Path(f"/proc/self/fd/{descriptor}").resolve()
+        except OSError:
+            return info
+        if descriptor_path != host_snapshot:
+            return info
+        values = list(info)
+        values[4] = 0
+        return os.stat_result(values)
+
+    monkeypatch.setattr(Path, "lstat", fixture_lstat)
+    monkeypatch.setattr(os, "fstat", fixture_fstat)
+
+
 @pytest.mark.skipif(os.name != "posix", reason="production attestor is POSIX-only")
 def test_filesystem_attestor_binds_private_current_non_host_namespace(
     tmp_path: Path,
@@ -183,6 +216,7 @@ def test_filesystem_attestor_binds_private_current_non_host_namespace(
     host_snapshot.write_text("1:4026531992\n", encoding="ascii")
     host_snapshot.chmod(0o600)
     monkeypatch.setattr(network_runtime_module, "_HOST_SNAPSHOT_PATH", host_snapshot)
+    _simulate_root_owned_host_snapshot(monkeypatch, host_snapshot)
     _write_evidence(evidence_directory, _evidence_value())
 
     attestor = FilesystemNetworkNamespaceAttestor(
@@ -208,6 +242,7 @@ def test_filesystem_attestor_rejects_host_namespace_symlink_and_broad_file(
     host_snapshot.write_text(f"{_live_namespace_identity()}\n", encoding="ascii")
     host_snapshot.chmod(0o600)
     monkeypatch.setattr(network_runtime_module, "_HOST_SNAPSHOT_PATH", host_snapshot)
+    _simulate_root_owned_host_snapshot(monkeypatch, host_snapshot)
     evidence_path = _write_evidence(evidence_directory, _evidence_value())
     attestor = FilesystemNetworkNamespaceAttestor(
         evidence_directory=evidence_directory,

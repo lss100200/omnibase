@@ -4,6 +4,7 @@ import ast
 import inspect
 import io
 import json
+import os
 import signal
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -400,7 +401,18 @@ def test_linux_probe_accepts_only_root_owned_namespace_identity_snapshots(
     reference = tmp_path / "user"
     reference.write_text("123:456\n")
     reference.chmod(0o444)
-    monkeypatch.setattr(probe_module.os, "geteuid", lambda: 0, raising=False)
+    simulated_owner_uid = 0
+    real_lstat = Path.lstat
+
+    def namespace_snapshot_lstat(path: Path) -> os.stat_result:
+        info = real_lstat(path)
+        if path != reference:
+            return info
+        values = list(info)
+        values[4] = simulated_owner_uid
+        return os.stat_result(values)
+
+    monkeypatch.setattr(Path, "lstat", namespace_snapshot_lstat)
     monkeypatch.setattr(
         probe_module,
         "_read_bounded",
@@ -409,9 +421,17 @@ def test_linux_probe_accepts_only_root_owned_namespace_identity_snapshots(
 
     assert probe_module._host_namespace_identity(reference) == "123:456"
 
+    simulated_owner_uid = 1001
+    with pytest.raises(ValueError, match="not trusted"):
+        probe_module._host_namespace_identity(reference)
+    simulated_owner_uid = 0
+
+    reference.chmod(0o600)
     reference.write_text("not-a-namespace")
+    reference.chmod(0o444)
     with pytest.raises(ValueError, match="identity is invalid"):
         probe_module._host_namespace_identity(reference)
+    reference.chmod(0o600)
     reference.write_text("123:456")
     reference.chmod(0o666)
     with pytest.raises(ValueError, match="not trusted"):

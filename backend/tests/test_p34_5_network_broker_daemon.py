@@ -243,6 +243,18 @@ def test_host_snapshot_uses_nofollow_and_same_fd_continuity(
     snapshot = snapshot_directory / "net"
     snapshot.write_text("2:4026531992\n", encoding="ascii")
     snapshot.chmod(0o444)
+
+    real_lstat = Path.lstat
+
+    def root_owned_snapshot_parent(path: Path) -> os.stat_result:
+        info = real_lstat(path)
+        if path != snapshot_directory:
+            return info
+        values = list(info)
+        values[4] = 0
+        return os.stat_result(values)
+
+    monkeypatch.setattr(Path, "lstat", root_owned_snapshot_parent)
     assert daemon._read_host_snapshot_identity(snapshot, owner_uid=os.geteuid()) == "2:4026531992"
 
     target = tmp_path / "attacker-net"
@@ -259,6 +271,7 @@ def test_host_snapshot_uses_nofollow_and_same_fd_continuity(
 
     def mutate_during_read(descriptor: int, maximum: int) -> bytes:
         value = real_read(descriptor, maximum)
+        snapshot.chmod(0o600)
         snapshot.write_text("2:402653199200\n", encoding="ascii")
         snapshot.chmod(0o444)
         return value
@@ -268,7 +281,10 @@ def test_host_snapshot_uses_nofollow_and_same_fd_continuity(
         daemon._read_host_snapshot_identity(snapshot, owner_uid=os.geteuid())
 
 
-def test_production_config_requires_private_root_owned_parent(tmp_path: Path) -> None:
+def test_production_config_requires_private_root_owned_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config_directory = tmp_path / "config"
     config_directory.mkdir(mode=0o750)
     key_path = config_directory / "daemon-auth.key"
@@ -292,6 +308,34 @@ def test_production_config_requires_private_root_owned_parent(tmp_path: Path) ->
     config_path = config_directory / "config.json"
     config_path.write_text(json.dumps(value), encoding="utf-8")
     config_path.chmod(0o440)
+
+    verify_directory = daemon._verify_directory
+    read_bounded_json = daemon._read_bounded_json
+
+    def verify_fixture_directory(
+        path: Path,
+        *,
+        owner_uid: int,
+        allow_group_read_execute: bool = False,
+    ) -> None:
+        assert owner_uid == 0
+        verify_directory(
+            path,
+            owner_uid=os.geteuid(),
+            allow_group_read_execute=allow_group_read_execute,
+        )
+
+    def read_fixture_config(
+        path: Path,
+        *,
+        maximum: int,
+        owner_uid: int,
+    ) -> object:
+        assert owner_uid == 0
+        return read_bounded_json(path, maximum=maximum, owner_uid=os.geteuid())
+
+    monkeypatch.setattr(daemon, "_verify_directory", verify_fixture_directory)
+    monkeypatch.setattr(daemon, "_read_bounded_json", read_fixture_config)
     assert daemon.BrokerConfig.load(config_path).daemon_uid == 999
 
     config_directory.chmod(0o770)
@@ -320,8 +364,16 @@ def test_systemd_profile_blocks_mount_syscalls_while_retaining_setns_capability(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SO_PEERCRED is Linux/POSIX-only")
-def test_server_rejects_socket_peer_uid_impersonation(tmp_path: Path) -> None:
+def test_server_rejects_socket_peer_uid_impersonation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _config(tmp_path)
+    monkeypatch.setattr(
+        daemon.BrokerConfig,
+        "load_authentication_key",
+        lambda self: bytes.fromhex("11" * 32),
+    )
     left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         accepted = daemon.NetworkBrokerDaemon(config)
