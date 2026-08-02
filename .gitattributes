@@ -2,6 +2,7 @@
 # Preserve their exact bytes and exclude only these paths from whitespace checks.
 *.sh text eol=lf
 *.ps1 text eol=crlf
+*.py text eol=lf
 deployment/overlay/gate.env -whitespace
 deployment/sandbox/omnibase-runner-seccomp.json -whitespace
 docs/evidence/p34-5/gateway-mtls-disposable-gate.json -whitespace

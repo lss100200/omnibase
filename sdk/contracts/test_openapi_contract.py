@@ -66,7 +66,7 @@ def test_gateway_openapi_declares_one_safe_error_envelope_and_request_id() -> No
     for path_item in schema["paths"].values():
         operation = path_item["post"]
         responses = operation["responses"]
-        assert ERROR_STATUSES <= responses.keys()
+        assert responses.keys() >= ERROR_STATUSES
         for status in ERROR_STATUSES:
             model = _ref_name(
                 responses[status]["content"]["application/json"]["schema"]
