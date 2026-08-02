@@ -411,6 +411,20 @@
         "backend/tests/test_p34_7_overlay_production_gate.py",
         "backend/tests/test_p34_7_overlay_sla.py"
       ]
+    },
+    {
+      "id": "INV-039",
+      "title": "Phase 5 admission gates fail closed until P34.7 evidence is ready",
+      "document": "docs/maintainers/security-invariants.md#inv-039-phase5-admission-fail-closed",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_admission.py",
+        "deployment/production/phase5-admission.example.json",
+        "scripts/production/validate_p5_0_admission.py",
+        "docs/phase-5-threat-model.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_0_admission.py"
+      ]
     }
   ],
   "modules": [
@@ -1302,6 +1316,52 @@
         "Do not replay pending or unknown provider effects; retain journals, receipts, signatures and source manifests for reconciliation.",
         "Revoke affected Run, Network Lease, workload certificate and node credentials before re-admitting a compromised component.",
         "Phase 5 remains frozen until the clean-checkout P34.7 total Gate is independently PASS."
+      ]
+    },
+    {
+      "id": "phase5-admission",
+      "name": "P5.0 fail-closed Phase 5 admission gate and Evidence Manifest",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_admission.py",
+        "scripts/production/validate_p5_0_admission.py",
+        "deployment/production/phase5-admission.example.json",
+        "backend/tests/test_p5_0_admission.py",
+        "docs/phase-5-threat-model.md",
+        "docs/evidence/p34-7/production-readiness-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_admission.py:parse_feature_gate",
+        "backend/src/omnibase/production/phase5_admission.py:resolve_feature_gates",
+        "backend/src/omnibase/production/phase5_admission.py:Phase5AdmissionGate",
+        "backend/src/omnibase/production/phase5_admission.py:discover_migration_head",
+        "backend/src/omnibase/production/phase5_admission.py:load_phase5_admission_config",
+        "scripts/production/validate_p5_0_admission.py:main"
+      ],
+      "public_interfaces": [
+        "AGENT_RUNTIME_ENABLED / AGENT_PLANNER_ENABLED / MULTI_AGENT_ENABLED server-owned feature gate resolution (missing/empty=false, unknown=fail-closed)",
+        "P5.0 Phase 5 admission decision report (ready | blocked/not_proven | invalid/veto) with blockers, vetoes and safety negatives",
+        "P5.0 Evidence Manifest contract and clean-checkout validator"
+      ],
+      "depends_on": [
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_0_admission.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_admission.py tests/test_p5_0_admission.py ../scripts/production/validate_p5_0_admission.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_admission.py tests/test_p5_0_admission.py ../scripts/production/validate_p5_0_admission.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 feature gate false and activation_requested=false; resolve gate conflicts as configuration errors, never as silent true.",
+        "When P34.7 evidence or any sealed manifest file drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; blocked/not_proven is the only correct state until evidence is complete.",
+        "Never read the root .env, a database, or start any Agent/Planner/Executor/queue/worker/scheduler from this module or its validator."
       ]
     },
     {

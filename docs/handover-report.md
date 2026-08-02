@@ -1626,6 +1626,67 @@ git diff --check：passed
    - 实现提交 `63790b49a73927dcd0c3c67d2093edb5dec8d8e6` 的 clean-checkout formal `--verify` 已实际执行：source tree `be394f19ce5ac741d752fb3e67dd86572b6f3907`、123 files、manifest `8dd165724700d7c139a8ca5044128ffd59f58b9880870d0447ca52fe77650132`、exit 2、`blocked/not_proven`、10 blockers、0 Veto、evaluator-key scope 0、activation=false。该结果证明当前源码可复现地安全拒绝，不是 production PASS。
    - 本轮未读取根 `.env`，未迁移或访问普通业务数据库，未访问 non-disposable tenant/RAG，未启动 hostile code、真实 production component、真实 Overlay revoke 或 canonical cutover，未启动 Agent Runtime。
 
+### P5.0 Phase 5 admission gate（2026-08-02）
+
+> P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不
+> 实现、不预装、不启动任何 Agent/Planner/Executor/queue/worker/scheduler，
+> 也不新增 Agent API、Browser Agent UI、后台 worker 或 Celery task。
+> INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map。
+
+1. **三个独立、server-owned、默认关闭的 Feature Gate**
+
+   - `AGENT_RUNTIME_ENABLED`、`AGENT_PLANNER_ENABLED`、`MULTI_AGENT_ENABLED`
+     在 `backend/src/omnibase/production/phase5_admission.py` 中独立解析，
+     不存在总开关；缺失值与空值解析为 `false`。
+   - 只有精确 `"true"`/`"false"` 被接受；`TRUE`、` true`、`1`、`yes`、
+     `on`、`null`、非字符串等未知值一律报配置错误（fail-closed），不使用
+     `bool("false")` 一类不安全解析。
+   - 依赖规则在解析层强制：Planner=true 而 Runtime=false 拒绝；
+     Multi-Agent=true 而 Planner/Runtime 任一 false 拒绝。
+   - 即使三个 gate 显式 `true`，只要 P34.7 Evidence Manifest 非 `ready`，
+     P5.0 仍必须 `blocked/not_proven`；gate 解析为 `true` 只增加 blocker。
+
+2. **P5.0 Evidence Manifest validator 与 strict 合同**
+
+   - `deployment/production/phase5-admission.example.json` 是 strict 合同：
+     feature gates 必须全 `false`、`critical_veto.expected` 必须为 0、
+     P34.7 formal state 当前 `blocked/not_proven` 且 decision 文档被
+     SHA-256 封存、九项 production 证据（Runner 12/12、四条 roundtrip、
+     provider recovery、data-owner tenant/RAG、双成员 Overlay/DERP、
+     容量/SLA）全部 `not_proven`。
+   - `scripts/production/validate_p5_0_admission.py --verify` 从 clean
+     checkout 校验 Git commit/tree/dirty scope/source manifest、
+     migration head（0009）、OpenAPI snapshot、Python/TS SDK 版本、
+     production composition digest、runbook digest 与 P34.7 decision
+     digest；`--gate NAME=VALUE` 只覆盖单个 gate 的解析输入。
+   - validator 不读取根 `.env`、不连接数据库、不执行 migration；report
+     固定输出 `root_env_accessed=false`、`business_database_accessed=false`、
+     `business_database_migrated=false`、`hostile_code_executed=false`、
+     `phase5_runtime_activated=false`。
+   - 当前正确结果：`state=blocked/not_proven`、`activation_allowed=false`、
+     blockers 11（activation 关闭 + P34.7 非 ready + 九项证据未证明）、
+     vetoes 0（clean checkout 下）；该结果可复现地安全拒绝，不是 P5.0 PASS。
+
+3. **维护资料同步**
+
+   - `AGENTS.md`、`docs/maintainers/maintenance-map.json`（新增 INV-039 与
+     `phase5-admission` 模块）、`security-invariants.md`（INV-039）、
+     `ai-maintainer-map.md`（§6.8/§11.11/影响矩阵/解冻边界）、
+     `docs/phase-5-threat-model.md`（P5.0 admission 威胁模型与攻击矩阵）、
+     `.env.example`（三个 gate 的配置形状）、
+     `.github/workflows/infrastructure-gates.yml`（Ruff 路径、compileall、
+     P5.0 validate-only 步骤）与 `deployment/production/README.md` 已同步。
+
+4. **明确未发生的事项**
+
+   - 没有创建 AgentDefinition/AgentVersion ORM、migration、Agent Runtime、
+     Planner、Executor、dispatcher、scheduler、Tool/Model provider、
+     Memory/Skill runtime、Specialist、Multi-Agent DAG、MCP 或任意
+     shell/SQL/HTTP 工具；没有新增 Agent API route、Browser Agent UI、
+     后台 worker 或 Celery task。
+   - 没有读取根 `.env`；没有访问或迁移普通业务数据库；没有运行 Phase 5
+     runtime；没有 push。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。

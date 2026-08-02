@@ -35,3 +35,27 @@ The validator never reads the root `.env`, secret/certificate payloads, a
 database or business storage.  It hashes only paths returned by `git ls-files`
 for the explicit source scope.  Runtime credentials remain server-owned and
 outside the repository.
+
+## P5.0 Phase 5 admission gate
+
+The P5.0 gate (`phase5-admission.example.json`) decides whether Phase 5
+engineering may begin.  It does not start any Agent, Planner, Executor, queue,
+worker or scheduler.  The three Phase 5 feature gates
+(`AGENT_RUNTIME_ENABLED`, `AGENT_PLANNER_ENABLED`, `MULTI_AGENT_ENABLED`) are
+independent, server-owned and disabled by default; missing or empty values
+equal `false`, unknown values and dependency conflicts fail closed, and P5.0
+stays `blocked/not_proven` while the P34.7 formal state is not `ready`.
+
+```text
+python scripts/production/validate_p5_0_admission.py --validate-only
+python scripts/production/validate_p5_0_admission.py --verify
+```
+
+`--verify` additionally hashes the clean checkout, resolves the feature gates
+from the server environment (override with `--gate NAME=VALUE`), and verifies
+the migration head, OpenAPI snapshot, Python/TypeScript SDK versions,
+production composition digest, runbook digest and the P34.7 decision digest.
+The checked-in contract keeps `activation_requested=false`, all gates false
+and every production evidence item `not_proven`, so the correct current result
+is `blocked/not_proven` with zero vetoes.  The validator never reads the root
+`.env`, a database or a migration.

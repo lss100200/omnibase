@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "phase": "P5.0",
+  "activation_requested": false,
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "p34_7": {
+    "formal_state": "blocked/not_proven",
+    "decision": {
+      "path": "docs/evidence/p34-7/production-readiness-decision.md",
+      "sha256": "0ef8a35e0a5836b9aefcbf7dd444f91add95216865b6502e3183f7814c744a8d"
+    }
+  },
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      ".gitattributes",
+      "AGENTS.md",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/tests/test_p5_0_admission.py",
+      "deployment/production",
+      "scripts/production",
+      "docs/maintainers/maintenance-map.json",
+      "docs/maintainers/security-invariants.md",
+      "docs/maintainers/ai-maintainer-map.md",
+      "docs/phase-5-agent-runtime-implementation-plan.md",
+      "docs/phase-5-threat-model.md",
+      "docs/runbooks/p34-7-overlay-sla.md",
+      "sdk/contracts",
+      "sdk/python",
+      "sdk/typescript"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "current_source_linux_runner_12_of_12",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "core_runner_mtls_production_roundtrip",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "runner_broker_production_identity_roundtrip",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "runner_gateway_mtls_non_disposable_roundtrip",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "broker_gateway_mtls_non_disposable_roundtrip",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "provider_backed_workspace_recovery_non_disposable",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "data_owner_authorized_tenant_rag_smoke",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "two_real_member_overlay_derp_node_compromise",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    },
+    {
+      "id": "production_capacity_fault_injection_sla",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    }
+  ],
+  "migration_head": {
+    "directory": "backend/src/omnibase/migrations/versions",
+    "expected_revision": "0009"
+  },
+  "openapi_snapshot": {
+    "path": "sdk/contracts/p34-2-openapi.snapshot.json",
+    "sha256": "8506e273959b50c3030c5a8ea3b533181a89d5db2fa449dfe503076d163da373"
+  },
+  "sdk_contracts": {
+    "python": {
+      "path": "sdk/python/pyproject.toml",
+      "version": "0.1.0"
+    },
+    "typescript": {
+      "path": "sdk/typescript/package.json",
+      "version": "0.1.0"
+    }
+  },
+  "production_composition": {
+    "path": "deployment/production/composition.example.json",
+    "sha256": "e9c03c9f536156eb029d30f42eb6696f471ddd6c587b769febc75192db96a5c0"
+  },
+  "runbook": {
+    "path": "docs/runbooks/p34-7-overlay-sla.md",
+    "version": "1",
+    "sha256": "4e286d7c843d96e452ca52205acdf4400983185d7e50e8441fb1a252716eb24a"
+  },
+  "critical_veto": {
+    "expected": 0
+  }
+}

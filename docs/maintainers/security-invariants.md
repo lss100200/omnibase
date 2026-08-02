@@ -1174,3 +1174,64 @@ Core、Runner、Broker 与 Gateway 是四个独立信任边界。只有 Core 接
 **失败恢复**
 
 隔离受影响 Node Daemon/成员节点，撤销 node credential、Peer Grant、Service Advertisement 与 Network Lease，停止 service publication，并保留签名 evidence 与 observation。rejoin 必须创建新 identity 和新 fencing；不得恢复旧 credential 或自动重放 ambiguous mutation。
+
+## INV-039 phase5-admission-fail-closed
+
+**权威源码**
+
+- `backend/src/omnibase/production/phase5_admission.py`
+- `deployment/production/phase5-admission.example.json`
+- `scripts/production/validate_p5_0_admission.py`
+- `docs/phase-5-threat-model.md`
+- `backend/tests/test_p5_0_admission.py`
+
+**为何存在**
+
+Phase 5 是否允许开始不能由"验证器存在"或"模型很强大"决定。P5.0 必须由
+三个独立、server-owned、默认关闭的 Feature Gate 与 P34.7 Evidence Manifest
+共同 fail-closed：缺失/空 gate 等于 `false`，未知值（大小写、空白、非标准
+字符串、非字符串）必须配置错误，Planner 依赖 Runtime、Multi-Agent 依赖
+Planner+Runtime，即使三 gate 全为 `true` 只要 P34.7 不是 `ready` 仍必须
+`blocked/not_proven`。Gate 只返回 admission decision，不启动任何 Agent/
+Planner/Executor/queue/worker/scheduler，也不读取根 `.env` 或业务数据库。
+
+**允许的改法**
+
+- 收紧 gate 解析（更小的接受集）、合同闭集或 evidence 断言。
+- 为新的独立生产证据增加 sealed evidence 项；缺失项保持 `not_proven`。
+- 在 fresh clean checkout 上重跑 `--verify`，并把 `blocked/not_proven`
+  作为外部证据未齐时的唯一正确结果。
+- 更新 P34.7 decision、OpenAPI/SDK/composition/runbook 时，在同一变更中
+  同步更新 P5.0 合同的 sealed digest 并重新验证。
+
+**禁止的改法**
+
+- 用 `bool("false")` 一类不安全解析、大小写/空白容忍或默认真值开启 gate。
+- 用总开关隐式开启两个以上 gate，或在 P34.7 非 `ready` 时把 P5.0 写成
+  PASS/ready。
+- 让 validator 读取、打印、散列或提交根 `.env`、凭据、证书载荷、数据库
+  或业务存储；让 evidence/合同路径逃逸仓库或指向根 `.env`。
+- 在 P5.0 模块中预装 AgentDefinition/AgentVersion ORM、Planner、Executor、
+  dispatcher、scheduler、Tool/Model provider、Memory/Skill runtime、
+  Multi-Agent DAG、MCP 或任意 shell/SQL/HTTP 工具；新增 Agent API、UI、
+  后台 worker 或 Celery task；以"代码存在但 gate 关闭"为理由实现上述内容。
+- 把 `not_proven` 证据计为通过、容忍 dirty checkout、忽略 migration
+  head/SDK/OpenAPI/composition/runbook 漂移，或把 `critical_veto.expected`
+  写成非 0。
+
+**必须运行的测试**
+
+- `backend/tests/test_p5_0_admission.py`（gate 解析负向、合同闭集、证据
+  digest/断言漂移、migration head、SDK/OpenAPI/composition/runbook 漂移、
+  dirty veto、三 gate 全 true 仍 blocked、report safety negatives）
+- `python scripts/production/validate_p5_0_admission.py --validate-only`
+- 提交后从 fresh clean checkout 运行 `--verify`；当前正确结果是
+  `blocked/not_proven`（P34.7 未 ready），不是失败伪装。
+
+**失败恢复**
+
+把三个 gate 恢复为 `false`、`activation_requested` 恢复为 `false`，修复
+合同后从新的 clean checkout 重跑 validator。gate 解析或依赖冲突视为配置
+错误（veto），不得静默降级为 true；sealed digest 漂移时保留原合同与
+report 取证，更新证据或合同后重新封存并 re-verify。任何情况下都不得从
+该模块启动 Phase 5 运行时组件。

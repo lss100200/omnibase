@@ -92,7 +92,16 @@ runtime evidence; then correct the stale documentation in the same change.
   12/12, two Broker 26/26 rounds, node-compromise evidence, dual Ed25519
   signatures and SLA samples. Missing external evidence means
   `blocked/not_proven`; it must never be rewritten as P34.7 PASS. Phase 5
-  remains PLANNED/FROZEN.
+  remains PLANNED/FROZEN. P5.0 is the only permitted Phase 5 deliverable: the
+  fail-closed admission gate in `backend/src/omnibase/production/
+  phase5_admission.py` with three independent, default-off feature gates
+  (`AGENT_RUNTIME_ENABLED`, `AGENT_PLANNER_ENABLED`, `MULTI_AGENT_ENABLED`),
+  the strict contract `deployment/production/phase5-admission.example.json`
+  and the validator `scripts/production/validate_p5_0_admission.py`. It only
+  returns an admission decision and never starts an Agent, Planner, Executor,
+  queue, worker or scheduler; missing/empty gate values are false, unknown
+  values and dependency conflicts fail closed, and P5.0 stays
+  `blocked/not_proven` while P34.7 is not `ready`.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

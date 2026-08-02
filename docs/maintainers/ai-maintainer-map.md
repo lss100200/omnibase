@@ -472,6 +472,35 @@ Browser control plane
 
 P34.6 的 unit/fresh-sentinel Gate 证明源码、migration、DB trigger、逻辑路由和失败语义；真实非 disposable object store/index worker、生产 snapshot payload 传输、恢复演练、容量/SLA 与 production cutover 继续由 P34.7 验收。
 
+### 6.8 P5.0 Phase 5 admission gate（只决策，不运行）
+
+`backend/src/omnibase/production/phase5_admission.py` 是 Phase 5 的唯一
+P5.0 交付物：它验证 Phase 5 是否允许开始，不实现、不导入、不启动任何
+Agent/Planner/Executor/queue/worker/scheduler。三个 Feature Gate
+（`AGENT_RUNTIME_ENABLED`、`AGENT_PLANNER_ENABLED`、`MULTI_AGENT_ENABLED`）
+独立解析、默认关闭：缺失/空值等于 `false`，只有精确 `"true"`/`"false"`
+被接受，未知值（大小写、空白、非标准字符串、非字符串）报配置错误；
+Planner 依赖 Runtime、Multi-Agent 依赖 Planner+Runtime，依赖冲突同样
+fail-closed。
+
+- `deployment/production/phase5-admission.example.json` 是 strict 合同：
+  feature gates 必须全 `false`、`critical_veto.expected` 必须为 0、
+  P34.7 formal state 当前为 `blocked/not_proven`，Runner/Broker/Gateway/
+  Overlay/Workspace-data/provider 九项生产证据全部 `not_proven`。
+- `scripts/production/validate_p5_0_admission.py --validate-only` 只解析
+  合同（exit 0）；`--verify` 从 clean checkout 校验 Git provenance、
+  migration head（当前 `0009`）、OpenAPI snapshot、Python/TypeScript SDK
+  版本、production composition、runbook 与 P34.7 decision 的 sealed
+  digest，并解析环境中的 gate 值。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7 非 ready + activation
+  关闭 + 九项证据未证明）；即使三个 gate 显式 `true` 也仍然 blocked。
+- 该模块不读取根 `.env`、不连接数据库、不执行 migration；report 固定
+  输出 `root_env_accessed=false`、`business_database_accessed=false`、
+  `business_database_migrated=false`、`hostile_code_executed=false`、
+  `phase5_runtime_activated=false`。
+- INV-025–INV-034 仍是 Phase 5 计划预留不变量，P5.0 不得把其中任何一条
+  标记为已实现。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
@@ -554,6 +583,7 @@ P34.6 的 unit/fresh-sentinel Gate 证明源码、migration、DB trigger、逻�
 | `workspaces/overlay_adapters/**`, `scripts/overlay/**`, `deployment/overlay/**` | P34.5C trusted Node Daemon mutation、durable operation seam、短期 credential reference、真实 Headscale control-plane Gate 与 logical publication | P34.4 Peer/Service/Network/Node facts、Network Broker、P34.7 production Node/relay/compromise Gate | INV-003, INV-005, INV-013–INV-015, INV-019, INV-020 |
 | `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
 | `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
+| `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
@@ -824,6 +854,35 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 
 `--validate-only` 只证明配置合同能被严格解析，不验证外部生产证据，也不启动服务。P34.7 总 Gate 必须在提交后的 public clean checkout 使用 `scripts/production/validate_p34_7_composition.py --verify`，并同时提供 current-source Runner 12/12、两轮 Broker 26/26、四条 production component roundtrip、真实 provider/non-disposable tenant/RAG、两成员 Overlay/DERP/node-compromise、双签名与 SLA 样本。缺少任一项时正确结果是 `blocked/not_proven`，Phase 5 继续冻结。
 
+### 11.11 P5.0 Phase 5 admission gate
+
+```powershell
+python scripts/production/validate_p5_0_admission.py --validate-only
+python scripts/production/validate_p5_0_admission.py --verify
+python scripts/production/validate_p5_0_admission.py --verify --gate AGENT_RUNTIME_ENABLED=false
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p5_0_admission.py `
+  tests/test_p34_7_production_composition.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production/phase5_admission.py `
+  tests/test_p5_0_admission.py `
+  ../scripts/production/validate_p5_0_admission.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check `
+  src/omnibase/production/phase5_admission.py `
+  tests/test_p5_0_admission.py `
+  ../scripts/production/validate_p5_0_admission.py
+```
+
+`--validate-only` 只证明合同有效；`--verify` 必须在提交后的 fresh clean
+checkout 运行。当前外部证据未齐时正确结果是 `blocked/not_proven`（exit 2，
+veto 0）：P34.7 formal state 非 ready、activation 关闭、九项 production
+证据未证明。`--gate NAME=VALUE` 只覆盖单个 gate 的解析输入，仍受依赖规则
+约束；任何 gate 解析为 `true` 都只增加 blocker，永不改变"P34.7 非 ready
+即 blocked"的结论。该 validator 不读取根 `.env`、不连接数据库、不启动
+任何 Phase 5 运行时组件。
+
 ## 12. 故障恢复路径
 
 ### 12.1 身份或跨 Tenant 风险
@@ -920,7 +979,7 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 - 在对应 production Runner/Broker/Gateway/Overlay 联合 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
 - P34.5 的源码/协议解冻与 production deployment Gate 必须分开报告。当前已有目标 Linux、Broker、Headscale control-plane 和 split-process Gateway disposable evidence，但 production Core wiring、真实成员 Overlay 数据面或非 disposable tenant/RAG 任一直接证据缺失时，对应 wiring 仍继续 fail-closed；不能用字段预留、单元测试或本地 smoke 自动解冻。
 
-Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。
+Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 只交付 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate 与 P34.7 Evidence Manifest validator），它只返回 `blocked/not_proven` 决策，不解冻 Phase 5 Runtime，也不预装任何 Planner/Executor/Agent 代码；INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map 的已实现集。
 
 ## 14. 修改完成时的交接格式
 
