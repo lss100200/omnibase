@@ -829,6 +829,7 @@
         "backend/tests/test_p34_5_overlay_disposable_gate.py",
         "scripts/overlay/**",
         "deployment/overlay/**",
+        "docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json",
         "docs/evidence/p34-5/overlay-disposable-gate.json",
         "docs/evidence/p34-5/overlay-disposable-gate.md"
       ],
@@ -870,6 +871,7 @@
         "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
         "python -B -m pytest scripts/overlay/test_validate_disposable_gate.py -q",
         "python -B scripts/overlay/validate_disposable_gate.py --repo-root .",
+        "python -B scripts/overlay/validate_disposable_gate.py --repo-root . --verify-seal docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json",
         "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1 -ValidateOnly",
         "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1"
       ],
@@ -950,6 +952,7 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
         "python -B -m pytest scripts/gateway/test_run_p34_5d_disposable_gate.py -q",
         "python scripts/gateway/run_p34_5d_disposable_gate.py --validate-only",
+        "python scripts/gateway/run_p34_5d_disposable_gate.py --verify-evidence docs/evidence/p34-5/gateway-mtls-disposable-gate.json",
         "python scripts/gateway/run_p34_5d_disposable_gate.py"
       ],
       "recovery": [

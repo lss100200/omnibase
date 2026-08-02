@@ -5,7 +5,21 @@
     "rag.citation.read",
     "rag.search"
   ],
+  "ambient_virtualenv_present": false,
   "business_database_migrated": false,
+  "clean_checkout_build": {
+    "ambient_backend_image_used": false,
+    "ambient_virtualenv_used": false,
+    "broker_client_host_mount_present": false,
+    "client_dockerfile": "deployment/gateway/Dockerfile.client",
+    "client_image_id": "sha256:dbccfb02fbeedc11f269d0b76925cac1b110095a0c1b6cee32d3d0d808ff1edb",
+    "gateway_dockerfile": "deployment/gateway/Dockerfile.gate",
+    "gateway_image_id": "sha256:263975e55032efdfd055c973f302e5b1cd27beeccc8e0cd46b5dd3c3bafc5be1",
+    "postgres_image": "pgvector/pgvector@sha256:36b6a092baf69f73281b565f41013194296b7f5f0e657252cac8b619b4ed63e5",
+    "postgres_image_id": "sha256:36b6a092baf69f73281b565f41013194296b7f5f0e657252cac8b619b4ed63e5",
+    "python_base": "python@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba",
+    "uv_image": "ghcr.io/astral-sh/uv@sha256:a6d964deccd6f2d88dcf133427101ed92e5ba2f0562a5f1a5a84417f4579333d"
+  },
   "cleanup": {
     "containers": 0,
     "networks": 0,
@@ -19,12 +33,12 @@
     "transport_der_before_issue": true,
     "ttl_max_seconds": 300
   },
-  "database_name": "omnibase_test_p345d_20260801211802",
+  "database_name": "omnibase_test_p345d_20260802085532",
   "database_sentinel_verified": true,
   "direct_database_route_present": false,
   "gate": "P34.5D split-process disposable mTLS Gateway",
-  "gate_backend_image_id": "sha256:406d67c19d7133bfefd4594dd6fa36e5aa4d8908ae1a605906139dfed9cea6f0",
-  "gate_client_image_id": "sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba",
+  "gate_backend_image_id": "sha256:263975e55032efdfd055c973f302e5b1cd27beeccc8e0cd46b5dd3c3bafc5be1",
+  "gate_client_image_id": "sha256:dbccfb02fbeedc11f269d0b76925cac1b110095a0c1b6cee32d3d0d808ff1edb",
   "gate_postgres_image_id": "sha256:36b6a092baf69f73281b565f41013194296b7f5f0e657252cac8b619b4ed63e5",
   "passed": true,
   "physical_locator_exposed": false,
@@ -35,7 +49,9 @@
     "broker_client_database_environment_present": false,
     "broker_client_host_mount_present": false,
     "broker_client_signing_private_key_present": false,
-    "gateway_server_container": true
+    "gateway_server_container": true,
+    "gateway_server_dependency_volume_present": false,
+    "gateway_server_source_mount_present": false
   },
   "read_and_rejection_matrix": {
     "citation": 200,
@@ -43,7 +59,7 @@
     "client_forbidden_mounts_present": [],
     "credential": 200,
     "credential_cache_control": "no-store",
-    "credential_expires_at": "2026-08-01T21:22:17.801693+00:00",
+    "credential_expires_at": "2026-08-02T09:14:46.926137+00:00",
     "credential_parameter_body": 422,
     "cross-tenant": {
       "credential": 401,
@@ -89,5 +105,1264 @@
   "root_env_accessed": false,
   "schema_version": 2,
   "secret_scan_findings": [],
-  "source_mounts_read_only": true
+  "source_manifest": {
+    "dirty": false,
+    "dirty_paths": [],
+    "dirty_scope_definition": "git status --porcelain=v1; filenames/status only; root .env excluded",
+    "dirty_scope_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": [
+      {
+        "path": ".gitattributes",
+        "sha256": "c83c314367a0dcd74340a152b01eb14859336964f14779c97822d2f50849a91d",
+        "size": 427
+      },
+      {
+        "path": "backend/alembic.ini",
+        "sha256": "051753d5f2285bf2762c571a1029c91c92757b76bb34fe5da06e24c9e3658083",
+        "size": 1528
+      },
+      {
+        "path": "backend/pyproject.toml",
+        "sha256": "df0552eebc5b9814c2ed11bf6422639cbb1133c97e4eb3a2ac2284ce020bce5b",
+        "size": 9869
+      },
+      {
+        "path": "backend/src/omnibase/__init__.py",
+        "sha256": "f285505aa37b100308cb27982aa69c5ebd7d8a9257c82d2be3357e76cd6a7066",
+        "size": 55
+      },
+      {
+        "path": "backend/src/omnibase/api/__init__.py",
+        "sha256": "0b8db440cb643cbf51d4befa38d02c0337080e93bf2d1137559feca96dfd34b3",
+        "size": 28
+      },
+      {
+        "path": "backend/src/omnibase/api/health.py",
+        "sha256": "8902f774a0d02235c1faf15c752a34d68e8eb47dc8b15fde8f4c668753d1a155",
+        "size": 6702
+      },
+      {
+        "path": "backend/src/omnibase/api/health_schemas.py",
+        "sha256": "d9a9e957b067593b41b0d2c18081eeab3b1d4f4c4c24e98f8527219cd22f07b4",
+        "size": 1070
+      },
+      {
+        "path": "backend/src/omnibase/auth/__init__.py",
+        "sha256": "d03de6ec51adc8667302fbf1acd47eef36b21269f6f544e5f620ab0c462daae5",
+        "size": 83
+      },
+      {
+        "path": "backend/src/omnibase/auth/router.py",
+        "sha256": "6d8dc4ae8ac50da36236e330b380d38729c601e10a0e7716bcb3fdc70d3634ee",
+        "size": 6603
+      },
+      {
+        "path": "backend/src/omnibase/auth/schemas.py",
+        "sha256": "b92f7575833f67d7add6ef59d47d79a3d111af8e0f99932fd3942b39ae56165d",
+        "size": 2737
+      },
+      {
+        "path": "backend/src/omnibase/auth/security.py",
+        "sha256": "f982048267f1ea08111a3b4273e401a3f45a0a321b3b3c79c9ffb648c459aab3",
+        "size": 7234
+      },
+      {
+        "path": "backend/src/omnibase/auth/service.py",
+        "sha256": "c56cc206347803241dae152426f27952ae8e4f49cf57a560447104063e8f5b9e",
+        "size": 11573
+      },
+      {
+        "path": "backend/src/omnibase/capabilities/__init__.py",
+        "sha256": "18b2acfa64cea91d78b30a2ae2b7f5e9a89ddf6365c851b89c5c4878c5ae864a",
+        "size": 386
+      },
+      {
+        "path": "backend/src/omnibase/capabilities/models.py",
+        "sha256": "d0eed0b7ea6670ea3ffccb52171250811f7179e90223f3b69f9b3da9bb9ccd7a",
+        "size": 15666
+      },
+      {
+        "path": "backend/src/omnibase/capabilities/service.py",
+        "sha256": "e6e37827825cdd35b5c331eb9baf453d30c2b5610f6c0e1a42fc2828398a19a4",
+        "size": 41997
+      },
+      {
+        "path": "backend/src/omnibase/capabilities/token.py",
+        "sha256": "1c623bb265a35b3a98fc82e7055e2080ab08a080a559e07ce67a340335998d5e",
+        "size": 11012
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/__init__.py",
+        "sha256": "c49312ef2d2a63a3cc81a664822da348452f76e673f0943afd47a2d784474138",
+        "size": 803
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/adapters.py",
+        "sha256": "35136b23f002e334967a832beb5ae8181be1cc563d902a06e053d2cdf72cadaa",
+        "size": 18393
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/app.py",
+        "sha256": "5ebd0cc533392e06f6d1b8b0da11c3c373e4dcefd0138617caa6ae971018aadc",
+        "size": 6583
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/audit.py",
+        "sha256": "2a9a83d047791ffb5f25a3c72d274f0dc782f5e2d6daaabec5a1ef0a9eaae9cc",
+        "size": 2086
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/contracts.py",
+        "sha256": "1f1c3dbc4a45d8c9a278772098e5dc84b286c810a890d971b939546ec5111ea5",
+        "size": 7566
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/mtls_ingress.py",
+        "sha256": "bb055779622c3ce25b7c3892357ae13b7efd6bb15f6c6d50d35a799a3d700263",
+        "size": 13664
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/policy.py",
+        "sha256": "29bc4f081f290dfd0ed79f9e6798852b94aaf51486c51a9d43362c2be21d63e9",
+        "size": 2504
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/query.py",
+        "sha256": "dbf07a42ad74ac3d412b86643c9b14632c732e792b244c6c3bbb05d6aed650e1",
+        "size": 10678
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/resolver.py",
+        "sha256": "c1b65765d96d177ddbf801aea5ec8e97d5d63f5c68f5dbb1c8459f75fcb56cbd",
+        "size": 3044
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/router.py",
+        "sha256": "e67ff53c347f71b83d469d53350b6d3578793fff591f60212ffcaf2b133eb708",
+        "size": 4925
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/security.py",
+        "sha256": "7373860d6be123da4bc26ce0dc4e4fde0c8c2dfe922772c12a82e901080c2cfd",
+        "size": 9786
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/server.py",
+        "sha256": "99001736949f2cbce2b1bb0521dee3f3c19f70e4c060173be378dbf9c972dbee",
+        "size": 11433
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/service.py",
+        "sha256": "06f1dd0df43cfe297c912afb81fc740dadde28900a40067d7023af41c2d1334d",
+        "size": 14650
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/thumbprints.py",
+        "sha256": "39f65aef53b0b27ee6ee1e774b03b95879232d2fd2527b520a8ae82e907d34e8",
+        "size": 636
+      },
+      {
+        "path": "backend/src/omnibase/capability_gateway/workload.py",
+        "sha256": "103ea2a435f7e003d11256cbed0a18378bbc807fb1708adc1979c2a998ef630f",
+        "size": 15815
+      },
+      {
+        "path": "backend/src/omnibase/cli/__init__.py",
+        "sha256": "e9ab8013d3583fba268f9b2e5f110b342b25a3e6ef006f35b5e9f3145dabf770",
+        "size": 28
+      },
+      {
+        "path": "backend/src/omnibase/cli/main.py",
+        "sha256": "d4f31334305b8306a539ea873a2dad3e01fae918c2d6f1de420ea2b7ab184464",
+        "size": 6358
+      },
+      {
+        "path": "backend/src/omnibase/control_plane/__init__.py",
+        "sha256": "c7329a57cc4ba41c31d0bd851f88346afc5b475bcaf47e80731673ef3793dae0",
+        "size": 368
+      },
+      {
+        "path": "backend/src/omnibase/control_plane/models.py",
+        "sha256": "60d11626a8dcaf7ddf5de60fcd0a99fc4099e1c93a9846fcbef783be33d41f74",
+        "size": 25650
+      },
+      {
+        "path": "backend/src/omnibase/control_plane/router.py",
+        "sha256": "6213bcbec436b98271bd1a70dea28aed8b84048b1155f09d1dee817d48c62520",
+        "size": 6480
+      },
+      {
+        "path": "backend/src/omnibase/control_plane/schemas.py",
+        "sha256": "b7d8c9e5c82c3641b8768dca3319951d274841fb5ed8db6ee9793d73c2c3ef7b",
+        "size": 4877
+      },
+      {
+        "path": "backend/src/omnibase/control_plane/service.py",
+        "sha256": "08941026cd6691e8d6d3e722a9188ad28f83af568ab42fdc3dc97ce0b5220675",
+        "size": 56930
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/__init__.py",
+        "sha256": "7cc819a652fa954cee874b1101898bdd4d903411a9e2876a92487724f6d257a6",
+        "size": 516
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/contracts.py",
+        "sha256": "41e191a771e3797f21e8b082a93edce03e7c86312ee0fb9ecff6290ed0561f5d",
+        "size": 5905
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/create_table_bootstrap.py",
+        "sha256": "5ab31cad5e1ac40713d3e1f6752219f0e9fd95d1d3877ffa823c863ba9e9d604",
+        "size": 12323
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/crud.py",
+        "sha256": "286c2b63dbdc6ade9c5818e81dff55921c4cc1784defa345eae454ae063e74d5",
+        "size": 18914
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/crud_contracts.py",
+        "sha256": "b888dade3b902e02644e5e511376b945698211edc53ce2e4b8a49ead6913d684",
+        "size": 4531
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/ddl.py",
+        "sha256": "782d425b88f2c5e8787c890bf50987f4cef8e9046a9eee35f623e9487e4b15e7",
+        "size": 39289
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/ddl_contracts.py",
+        "sha256": "a68959c32a4c2826f8fcf2602a83e0129c797db63e2d97b28e05ac7803470e11",
+        "size": 6826
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/execution_service.py",
+        "sha256": "b15619b7c0f4777326d3777f9a69883390c751e2c94715ed7ecb1f93db180140",
+        "size": 21857
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/executor.py",
+        "sha256": "c54b62db7f54b246e05d68b0c2fb43b820889ed0663d81558a130b09093e8916",
+        "size": 34517
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/identifiers.py",
+        "sha256": "4a6f52a729829cfb6d318b91fe3dee2f6a843bcbee7a10d22868826fa111c92f",
+        "size": 1592
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/models.py",
+        "sha256": "ba1afcf394eb8d7348c09d69839c7dc5325b727d5f43eae3eabf867bb9b1cde7",
+        "size": 28128
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/operation_service.py",
+        "sha256": "dd6d8539381b1efb8869f2d215fff75bd5b6049cbc9c0433b36e9b2d67f17ef5",
+        "size": 25476
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/router.py",
+        "sha256": "8e142047ab00236c29e8667c81bd09b5f49e4fe4364a2313e0daaf5dbf8591b1",
+        "size": 25978
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/schemas.py",
+        "sha256": "d7233648ade9544535154ed430c4cbd668577d4fd0ec86279e77f0b009a62046",
+        "size": 1510
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/tenant_models.py",
+        "sha256": "63cc0ebb5d7e824d383e1418eef0a004e153668b026fa258f6d2ecaae94dab15",
+        "size": 2862
+      },
+      {
+        "path": "backend/src/omnibase/controlled_data/types.py",
+        "sha256": "fd5eb919caf204f00c11366287d51b0208b80a9d2fda2337139e6615b26c5063",
+        "size": 4004
+      },
+      {
+        "path": "backend/src/omnibase/core/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "backend/src/omnibase/core/config.py",
+        "sha256": "e19f604ef305ec773e9f534fe8971f43758fb3ee3ed95ba0a74b9df5177a83a0",
+        "size": 10820
+      },
+      {
+        "path": "backend/src/omnibase/core/db.py",
+        "sha256": "a174a9026fccb68e85b3f1b122ae4be20345536355eb833c98ad2baa92addf34",
+        "size": 6687
+      },
+      {
+        "path": "backend/src/omnibase/core/logging.py",
+        "sha256": "7d444d7a7c121a9ae8ca5e724e925a0c1c19982069c9de42b67a997d5e290ebf",
+        "size": 4768
+      },
+      {
+        "path": "backend/src/omnibase/core/middleware.py",
+        "sha256": "db23dd9d26d621856c662f298af0769bfcc40a202c6fddae394313e69d14ddf0",
+        "size": 6225
+      },
+      {
+        "path": "backend/src/omnibase/core/rate_limit.py",
+        "sha256": "b4e24821481e2dae512f421237a66fe7170d8741c9003dcbfd7feb6e5c268a69",
+        "size": 6406
+      },
+      {
+        "path": "backend/src/omnibase/database/__init__.py",
+        "sha256": "088eb9dc16fb0800c977b4db8599ebe650747dbb78aa992efd6ec4fc43890162",
+        "size": 55
+      },
+      {
+        "path": "backend/src/omnibase/database/router.py",
+        "sha256": "d601e89a033fc6f8a52eba201b38d6a77d011b39f9b360a6819362f468c79a96",
+        "size": 3679
+      },
+      {
+        "path": "backend/src/omnibase/database/schemas.py",
+        "sha256": "33a0c3c12ee4e60a7f9856995e96a334a454957bff260149a8a513d8b7c49c79",
+        "size": 653
+      },
+      {
+        "path": "backend/src/omnibase/db/__init__.py",
+        "sha256": "9a9ab072cbd61c308cfee1229a295bafcd9f31a520883807b86c483666a8f895",
+        "size": 399
+      },
+      {
+        "path": "backend/src/omnibase/db/models.py",
+        "sha256": "7f136d55edb224f756719ef46daa4af64f2b1371fe2ba9dadd7f6223591f2929",
+        "size": 3525
+      },
+      {
+        "path": "backend/src/omnibase/db/tenant.py",
+        "sha256": "bdb31a0dd9132b97ec25594d83144298c5ac40682a11a4376363b6d42ae437f0",
+        "size": 10461
+      },
+      {
+        "path": "backend/src/omnibase/documents/__init__.py",
+        "sha256": "069dd349ba07963f8e577eabee9a5a8a54fc727db5968e53dd533e3364e7bad7",
+        "size": 77
+      },
+      {
+        "path": "backend/src/omnibase/documents/enqueue.py",
+        "sha256": "6862a346b1bf97e0fb64bfcf92cd6ad9ac41bc74eed5216e42c948371e64847d",
+        "size": 1157
+      },
+      {
+        "path": "backend/src/omnibase/documents/metadata.py",
+        "sha256": "77fe59396faa68dcec1f61894d0c072bcdbdb973ad13759e08f7078e40bd6014",
+        "size": 6816
+      },
+      {
+        "path": "backend/src/omnibase/documents/router.py",
+        "sha256": "094975ac44d8830a0543be5243e1657d242b75a99613aab3631cdfa9c5ac16aa",
+        "size": 7788
+      },
+      {
+        "path": "backend/src/omnibase/documents/schemas.py",
+        "sha256": "2fae4b3728303246cb17786d5db72e36d15b529cd4420c0e29169b33fb147fbf",
+        "size": 2224
+      },
+      {
+        "path": "backend/src/omnibase/documents/service.py",
+        "sha256": "882e003e0ba4754e07a46bc08b0a253783f2ae2a5d2229b44652743e95419933",
+        "size": 15538
+      },
+      {
+        "path": "backend/src/omnibase/main.py",
+        "sha256": "539363102c3d29ed684aaca2401c9e2e824c0b8eb0f6ece2b229bcdadf09008e",
+        "size": 11922
+      },
+      {
+        "path": "backend/src/omnibase/migrations/__init__.py",
+        "sha256": "5703b83a60af5b6d920d9e0979c0817575ed0112d1159a4fd31f809ffa983066",
+        "size": 47
+      },
+      {
+        "path": "backend/src/omnibase/migrations/env.py",
+        "sha256": "3f70df3250bab3e5ac37917b3db9376d121ec19e30588b42b83cf4f0668907e5",
+        "size": 7276
+      },
+      {
+        "path": "backend/src/omnibase/migrations/script.py.mako",
+        "sha256": "429df476b59e8781509bcca90863b09bd0221b085bb0e30472ebc80b744032be",
+        "size": 671
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0001_create_tenants_table.py",
+        "sha256": "0787b532627d32606bf2c6e9f12a6bfa4e71bb91c661b524881d7bbc32fa86c0",
+        "size": 3881
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0002_async_document_lifecycle.py",
+        "sha256": "ae2175078e1b0ae0f1fcbe3ec2e33e480c6b4e62f00ad6ca3a167efa4fc6f773",
+        "size": 2360
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0003_phase_1_6_dual_index_foundation.py",
+        "sha256": "337c30781cb11588a5d378f598d90cf8b5fd6d2dabb7c1ce9a4a8d1c1e353293",
+        "size": 4027
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py",
+        "sha256": "390514b9c892f1adc86c15410c996fe8cbab30503eb33da68a60643ee4a5b29b",
+        "size": 23639
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
+        "sha256": "e3902230448f65eea7cadc143c97c54c79bfc2511cfa5087afdff65eefda9200",
+        "size": 13286
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py",
+        "sha256": "91e6a0835326b8944e0cb4fce438903dc35cca9d8aab979753b02d36e02d2468",
+        "size": 30022
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py",
+        "sha256": "0b5d3d6eff931556b7a3560ed5652ecbb04834a2236df0a44df819e3ff504b5b",
+        "size": 51059
+      },
+      {
+        "path": "backend/src/omnibase/migrations/versions/0008_p34_5_sandbox_dispatch.py",
+        "sha256": "78efdec94076ef4b101bf0e5c2f791fe1546265da5ad47d5808e5ed9f1a52ef8",
+        "size": 12933
+      },
+      {
+        "path": "backend/src/omnibase/rag/__init__.py",
+        "sha256": "a29eaa2a13e0cdb70699176ac514f15aefdf425f4085706b185be926ca70aefe",
+        "size": 255
+      },
+      {
+        "path": "backend/src/omnibase/rag/benchmark.py",
+        "sha256": "0b048a450e8b36b40ace6028e08f06eaf19982f1b1408610cbaebb2ba4c3258d",
+        "size": 6777
+      },
+      {
+        "path": "backend/src/omnibase/rag/chunker.py",
+        "sha256": "c04f2eb3c6d2af725cd030bf01c54cacc7a3e85a69e5faacb0ee48e3c5f98775",
+        "size": 8463
+      },
+      {
+        "path": "backend/src/omnibase/rag/embedding.py",
+        "sha256": "b792f88b3c1ddb4acc4c2d2bf76c0158cf0fbf4b418b080112f47c49d420e0ce",
+        "size": 11800
+      },
+      {
+        "path": "backend/src/omnibase/rag/evaluation_fixture.py",
+        "sha256": "470acb7da20d00d7b768840f2a2dacecedceaad8e35fb6236deefb80614efd36",
+        "size": 5616
+      },
+      {
+        "path": "backend/src/omnibase/rag/evaluation_runner.py",
+        "sha256": "f1773c61a74346a9eba5b2497fc14c621e8573c9660910e228a0d86eec2b678b",
+        "size": 8297
+      },
+      {
+        "path": "backend/src/omnibase/rag/evaluator.py",
+        "sha256": "1ea38d36574891905b734ce669fb85e12e107224c4c0e22ad0d3ae5a64918015",
+        "size": 6976
+      },
+      {
+        "path": "backend/src/omnibase/rag/index_metadata.py",
+        "sha256": "f83c3b0f6a42f8f0f6135e8f792f2123beccc0202e4f7f52dad905299dbedaae",
+        "size": 4827
+      },
+      {
+        "path": "backend/src/omnibase/rag/ingest.py",
+        "sha256": "5212864c8a4741800f418257310c2fdd5adaccf2edb934a4a3ded533e16707f3",
+        "size": 5532
+      },
+      {
+        "path": "backend/src/omnibase/rag/llm.py",
+        "sha256": "6a97caf7ed8c8f87028f65cd57223809362913047316001e534bbe2f1d190f6d",
+        "size": 4112
+      },
+      {
+        "path": "backend/src/omnibase/rag/parser.py",
+        "sha256": "e59d83f345164030bc0c9aaefd6c12fefa3b42057b6677ebbfae7621181ce38c",
+        "size": 7889
+      },
+      {
+        "path": "backend/src/omnibase/rag/reranker.py",
+        "sha256": "a6ea34335661182f08284a7a42c7947f696698cc67e445894af5b193605ff300",
+        "size": 5315
+      },
+      {
+        "path": "backend/src/omnibase/rag/retriever.py",
+        "sha256": "8effd8bd44233492d79ae4c4b5695a62e6f935982380502f820d9f58bdf615c3",
+        "size": 5393
+      },
+      {
+        "path": "backend/src/omnibase/rag/router.py",
+        "sha256": "554d19f1b6908739b33ec1983e7d24a7c74f7eeb16fb17a59818457e1160afe9",
+        "size": 8454
+      },
+      {
+        "path": "backend/src/omnibase/rag/schemas.py",
+        "sha256": "8692b06b91163688f8162f48fe240457468dcd0273f52a21cec41cdf3d681e6c",
+        "size": 2598
+      },
+      {
+        "path": "backend/src/omnibase/rag/store.py",
+        "sha256": "d2ac98b85a8fe760b23a4265e254cc1fd496e3641d4bd98f53209f1caff541da",
+        "size": 13977
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/__init__.py",
+        "sha256": "2652424a620be6316b819601a4ec4fc933c0c748d206d5a6d5e2cd0604d23141",
+        "size": 4277
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/authorization.py",
+        "sha256": "5c41fb840ef8fc2246fddbfe1f33d6e20a2e62d95144ee8c62d05b6a3854c8ea",
+        "size": 12637
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/broker.py",
+        "sha256": "b194797fdc63fb8a4528cacfe1e930b517d10282261c276ca6147d63f645471d",
+        "size": 33869
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/contracts.py",
+        "sha256": "92c18abc0673c2971727cc9ff36fd78834524583d4d02dd6a5f9ef42e3659abd",
+        "size": 19041
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/control.py",
+        "sha256": "7fe0632a3e810601678d94488303d172cc615e8fe7efc66102b56cc8b8da47ef",
+        "size": 8123
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/coordinator.py",
+        "sha256": "8d7cf087e592633903225b2db0523bb47d7df75757b5a4e7f95f102cb1e63c09",
+        "size": 11487
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/dispatch_digest.py",
+        "sha256": "5e41d0e0adb8e78f7c3fd5effab7de4eb573aa4642c274b442d00950def6644e",
+        "size": 8428
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/host.py",
+        "sha256": "619be04fe4707e5ab34241a153e9646e55966eb0167dd056ff4f20a62bcd25d1",
+        "size": 3548
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/models.py",
+        "sha256": "214ab5a2971c3af9d871654b584a157cae1ac98de9c99d8ba3f037ebe4d6b83f",
+        "size": 7311
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/network.py",
+        "sha256": "716142fe993428d61e7d2cf00b76f98f4f9586494dfd604774889e70e4e6fd8b",
+        "size": 15998
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/network_ledger.py",
+        "sha256": "29af2c3bf815503960984544b9a9e134acee1f57855eb3319caa90a7f4bafd06",
+        "size": 17657
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/network_runtime.py",
+        "sha256": "1eb2da05c183dff1fdab7c70f1577005600b61c801c5ed2fc784cc65e99771f8",
+        "size": 28285
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/operations.py",
+        "sha256": "867dc27058d7f40cbbda3ea742645658cd09d579507747f9c5d085e22ad07552",
+        "size": 14586
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/overlay_publication.py",
+        "sha256": "16e897871ba1d96981e6fe651f87343f572ac9f209c6f66afd974459ee8d818d",
+        "size": 2902
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/persistence.py",
+        "sha256": "3eddd2b8cf08a06898d1c6f383adcfdec4315a24de923625722f0282444391ff",
+        "size": 13060
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/provider.py",
+        "sha256": "4db91394a8a5cdf77ac47685eb612125e498b3d398a2cd7d0e0834d70d20e6f8",
+        "size": 21722
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/runner.py",
+        "sha256": "6de97c1b93fd366ab0d75fcdf396b41a00855b636f600e2444f07bed081e96aa",
+        "size": 7515
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/runner_service.py",
+        "sha256": "015ae21d2156519e7efabb51aba081a264a23ca3625da5cdfaea39deea53ce4f",
+        "size": 2403
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/runtime_driver.py",
+        "sha256": "8109b025d5a40c8326522e101f144ccb24973182859464f374e97fe408b84d8d",
+        "size": 29719
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/runtime_probe.py",
+        "sha256": "f8181f2a63ae7e07bda6af72908b70717a849fa6d119497cb81547c132b3e0b7",
+        "size": 15212
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/transport.py",
+        "sha256": "d64dd3e6fb92d3949b7b9c8b5a6e7e2c823642798c8a829aa8bbad291f859439",
+        "size": 1729
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/transport_auth.py",
+        "sha256": "75172aa1c996ace7455c5dcdaf76304457794c5c58453b1b7b31ad7b3db83df2",
+        "size": 20143
+      },
+      {
+        "path": "backend/src/omnibase/sandbox/transport_service.py",
+        "sha256": "295171c1646542f94fc07b16025675e4483824d98f1f7ad04d9928d2aed58475",
+        "size": 5582
+      },
+      {
+        "path": "backend/src/omnibase/storage/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "backend/src/omnibase/storage/minio_client.py",
+        "sha256": "3b009db8a2ec666274bebf19a7a7a800002460445f4764c0875bf67b298ae2f5",
+        "size": 2208
+      },
+      {
+        "path": "backend/src/omnibase/tenants/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "backend/src/omnibase/tenants/context.py",
+        "sha256": "65b57c213088b8b5a3be068c559562ad7ab69d21b94e07d572c1e20a058674a1",
+        "size": 2650
+      },
+      {
+        "path": "backend/src/omnibase/tenants/dependencies.py",
+        "sha256": "85ab23fc60345f252e0e5eb68ee70d32a2a1ff711e037befafa74af487c83996",
+        "size": 8927
+      },
+      {
+        "path": "backend/src/omnibase/tenants/router.py",
+        "sha256": "4a078733628e3ff8f77222bc1781065dc1d8a9ced3706b07a89f16e635b89cff",
+        "size": 4916
+      },
+      {
+        "path": "backend/src/omnibase/tenants/schema_manager.py",
+        "sha256": "44019df0c5a6afcc498a1e574f1e82bf9270c4a69f4997999efc5c1fac9a3edf",
+        "size": 9673
+      },
+      {
+        "path": "backend/src/omnibase/tenants/schemas.py",
+        "sha256": "dd1c758f793e9dc738950f9d3274276fe054b12b6241f932ac38ce7e09c194fc",
+        "size": 1621
+      },
+      {
+        "path": "backend/src/omnibase/tenants/service.py",
+        "sha256": "492dbb6d3c06fb6620c039fa65a7a33fb994dd45f0e53bdb103ee93b27c049df",
+        "size": 16708
+      },
+      {
+        "path": "backend/src/omnibase/workers/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "backend/src/omnibase/workers/app.py",
+        "sha256": "8e42198105770ce90928816ffe23d7a491765e076736803741ff19b588d6f34c",
+        "size": 2023
+      },
+      {
+        "path": "backend/src/omnibase/workers/backfill.py",
+        "sha256": "4f3f58ee52ffbdaf4cb4e5d449bfeb757f569883611c31ebd562f7f82c3a2a6d",
+        "size": 4807
+      },
+      {
+        "path": "backend/src/omnibase/workers/tasks.py",
+        "sha256": "97a4e187ebafff48cd05226c7c45ef0fbaf851fbda0e57b6580141dfaf56eb99",
+        "size": 11836
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/__init__.py",
+        "sha256": "32128ecf235241e66e7f19911fcd6e9e47d23a596c4f537e207d13c3ee57d5d2",
+        "size": 822
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/collaboration.py",
+        "sha256": "fa068a660bb9a5de004e810463df696dffefb63a04da51c2065712371b761af8",
+        "size": 13362
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/contracts.py",
+        "sha256": "3be6c2a4f119402027d09360e1e0d1048caedb116da58825462fea5c176cb8ef",
+        "size": 4491
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/models.py",
+        "sha256": "0406b6e029c3056ae51b0b9affd3a34e23621a551b4a673954322e45a546e2a7",
+        "size": 53699
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay.py",
+        "sha256": "de41a7b61b7fd5c44510587a4cd7d3dbb2496b569ea1b6c0aa6d4347fb2ffe07",
+        "size": 23944
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay_adapters/__init__.py",
+        "sha256": "6e0b4db6a6c133f7b7bcf20cc51d7e061bc4d2e962f0e4a11edebfc90ac0fdcd",
+        "size": 2528
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay_adapters/contracts.py",
+        "sha256": "ef00fb18494cc2e5fc5ef7ce2c9b438b3a00384fba0844252c90ddeffe98a292",
+        "size": 28960
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay_adapters/headscale.py",
+        "sha256": "cf9e0bbebc8aca9a18d38b8ed8ac11b94e989667c782b81e60251b5d37e4ea89",
+        "size": 12114
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay_adapters/ledger.py",
+        "sha256": "90cd5d25939d3aac8904777f9a17ee3111d6704f2f4977627138e7fef612f96c",
+        "size": 16834
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/overlay_adapters/transport.py",
+        "sha256": "62ac16912a756808db20b6762456c1343e750979d77511ed18e7a45f9d52d846",
+        "size": 18995
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/router.py",
+        "sha256": "c853c52b3a6accbc760d520ff107621f3b755f276d543a2458e9c0c5f3d680a4",
+        "size": 16375
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/schemas.py",
+        "sha256": "d34d43f1df772e095ce78ec3a8ff6f6fc60c059cb67721235544ea68ac3a91f9",
+        "size": 4581
+      },
+      {
+        "path": "backend/src/omnibase/workspaces/service.py",
+        "sha256": "014e8f2c066f98abe97641292bace8c4044bce01fb4ebcd2779dbd5267d2aee1",
+        "size": 58181
+      },
+      {
+        "path": "backend/tests/__init__.py",
+        "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "size": 1
+      },
+      {
+        "path": "backend/tests/cleanup.py",
+        "sha256": "867a113c5ae760784fa3106870660c497a6436d97156636cdff99f9a2175d5f6",
+        "size": 8717
+      },
+      {
+        "path": "backend/tests/conftest.py",
+        "sha256": "862c9fff1955a4d04a96f5c9766a5e6fc0fa3dbb499c63c510d31b709a07866d",
+        "size": 2558
+      },
+      {
+        "path": "backend/tests/destructive_preflight.py",
+        "sha256": "321edad4425c2c990fb468ba8b86a2227660ffe6de99645bde7e662ed4cc6553",
+        "size": 943
+      },
+      {
+        "path": "backend/tests/e2e_rag_test.py",
+        "sha256": "f3903f0146c9f376d457d75ade61c44c320f616446549fa014354729a1bac2e8",
+        "size": 4439
+      },
+      {
+        "path": "backend/tests/fixtures/retrieval_eval_fixture.json",
+        "sha256": "54b002b556e027466d1addfaf76d5bab0bda86cededb6351039c7733cb69e417",
+        "size": 3083
+      },
+      {
+        "path": "backend/tests/fixtures/retrieval_eval_ground_truth.json",
+        "sha256": "9fadfd11b9997789d03416c4a81fe53b0ae49abd34291ac8c797a8bc2d520d99",
+        "size": 1513
+      },
+      {
+        "path": "backend/tests/integration/__init__.py",
+        "sha256": "9850dc6b30c38a5b87fac70441e4e6be94f9121e3a2f9e8d0cf72db35614bd37",
+        "size": 307
+      },
+      {
+        "path": "backend/tests/integration/conftest.py",
+        "sha256": "cd780a1c728cf1e4176e6041c0ae20adb026b7169c295ad7230bf2032a84f194",
+        "size": 4637
+      },
+      {
+        "path": "backend/tests/integration/test_auth_e2e.py",
+        "sha256": "a95f8f2b796f7b6fce6864272e09531a9f246b079425e211f6d53d0ed713e4de",
+        "size": 8614
+      },
+      {
+        "path": "backend/tests/integration/test_p34_1_control_plane_foundation.py",
+        "sha256": "6a9ab6e302479b8afc0ab76ce05028539fc7a7b8a6be4adf14712b91268efb28",
+        "size": 13109
+      },
+      {
+        "path": "backend/tests/integration/test_p34_2_capability_foundation.py",
+        "sha256": "c50bd813039c99ac7fd4e744424ae974a62c6c6108cc6d977bb5df6214dd04d2",
+        "size": 24594
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_concurrency.py",
+        "sha256": "c3c7868a267496d9d1c71aef7c1f35db5dc5ec36a2aba99784eeab19ba41a622",
+        "size": 24217
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_executor.py",
+        "sha256": "3183ca1d3a12db656a351c4f673c425896ac0beb37c67300e44818f14542e972",
+        "size": 22390
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_foundation.py",
+        "sha256": "eff82254a0fb354e95e861767ff60e6aff2faaff0a04b29a46a0d383d3cd073e",
+        "size": 11748
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_lock_races.py",
+        "sha256": "ac26cdd5fdfd23cca4f4f0403955a65855fbd55392371293470178e89b2fcdc1",
+        "size": 11842
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_router.py",
+        "sha256": "0ca341bd1cb4b4fd3922a897bd4528add3edae1c19697200b0753aa900adc118",
+        "size": 28703
+      },
+      {
+        "path": "backend/tests/integration/test_p34_3_controlled_data_timeouts.py",
+        "sha256": "3454ab9a9ce26e39ebabf63fa000f53f71b91d2212b65874baf2d40cec133512",
+        "size": 10807
+      },
+      {
+        "path": "backend/tests/integration/test_p34_4_workspace_foundation.py",
+        "sha256": "4af56e7310ddfd54c5808f5f0d5c34481060fe32acff6efe690a53e56b94e6ad",
+        "size": 41197
+      },
+      {
+        "path": "backend/tests/integration/test_p34_5_gateway_mtls_disposable.py",
+        "sha256": "ccd1876223fbc66bf1da6807338fd5674031b09370c747d74d0b5e22ec14320e",
+        "size": 31254
+      },
+      {
+        "path": "backend/tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "sha256": "bf59cafc8e29f5f9264944b4c991e15e3bf895fe558b5fcb78072537b4230155",
+        "size": 13153
+      },
+      {
+        "path": "backend/tests/integration/test_p34_5_sandbox_persistence.py",
+        "sha256": "8ba97f0f0c3f10a932a70828c57b05f53a3f465158c865568f1086446282704b",
+        "size": 15600
+      },
+      {
+        "path": "backend/tests/integration/test_phase_1_6_tenant_foundation.py",
+        "sha256": "bed9371b667461be0c008aed19f7d9180e9ddd53ab01027fc974265cfa524ae5",
+        "size": 7593
+      },
+      {
+        "path": "backend/tests/postgres-init-destructive-tests.sh",
+        "sha256": "d36be4c274da4b695c2a58bb3cb4f34cd8ece1640605310d8df642f9715e9ea7",
+        "size": 1236
+      },
+      {
+        "path": "backend/tests/test_auth_security.py",
+        "sha256": "858b9c38dbb3c4f6ee562e18f7b212116027b408e4635feb82a7f66d8a84880b",
+        "size": 8722
+      },
+      {
+        "path": "backend/tests/test_auth_service.py",
+        "sha256": "a7f1e525a60b7566b8696242bff660c6b1c4dbaaa70c5aa795a483ed0358f726",
+        "size": 1871
+      },
+      {
+        "path": "backend/tests/test_cli.py",
+        "sha256": "23b356f89a93331c1d9944061b1cdcd45a3d57e0a046435051f2006514414f80",
+        "size": 5334
+      },
+      {
+        "path": "backend/tests/test_destructive_test_safety.py",
+        "sha256": "8b00144050647ac940ad0664a43f9d3be53bddc31a1561cc9e59c61e3c0d6f6c",
+        "size": 5483
+      },
+      {
+        "path": "backend/tests/test_document_api_contract.py",
+        "sha256": "38d6af2c7359fd54dbca38a6c4409560236e4b700f40b80efd560f83625c5df3",
+        "size": 12410
+      },
+      {
+        "path": "backend/tests/test_document_lifecycle.py",
+        "sha256": "a38120a9974ebde4b650e64dc3f7abce22d30c20c51b0551b4d448bf2eee242c",
+        "size": 6802
+      },
+      {
+        "path": "backend/tests/test_documents.py",
+        "sha256": "5e5fa4498e5cfcc15945b9bb352cccc1447650cd5720fe431a9cd7e71eadb427",
+        "size": 8575
+      },
+      {
+        "path": "backend/tests/test_embedding.py",
+        "sha256": "91a0913b60e2423821e65a4054d31d278b50ed96bb6cb7983d6f164eeca2d0ed",
+        "size": 3332
+      },
+      {
+        "path": "backend/tests/test_embedding_config.py",
+        "sha256": "3cfe639543b89148e648aafc88f4d1bf7236177439ac03b566a99ca23b90c429",
+        "size": 1804
+      },
+      {
+        "path": "backend/tests/test_evaluation_runner.py",
+        "sha256": "00b860119452af7b8bcc0fb334ac9de03355eabda5d501aebcd2a31c1af1ac9b",
+        "size": 4238
+      },
+      {
+        "path": "backend/tests/test_evaluator_fixture.py",
+        "sha256": "edeb0f90949ac226815daf1353c640efb1e54c451d0616e097d1cc0853800874",
+        "size": 8982
+      },
+      {
+        "path": "backend/tests/test_evaluator_integration.py",
+        "sha256": "95719be4159a930a97720e7cffbf3f8012bffc97057b02abfa077ce3dbab8500",
+        "size": 8339
+      },
+      {
+        "path": "backend/tests/test_evaluator_unit.py",
+        "sha256": "615a044b943854d267307d39a830aa5227e4a2fe1a250331780739a3d66abe0a",
+        "size": 4358
+      },
+      {
+        "path": "backend/tests/test_health.py",
+        "sha256": "1c4f7c6c02bc2d91a841e034cfd7bd7348756dcaca5fdba4073e4b965328fc6a",
+        "size": 4804
+      },
+      {
+        "path": "backend/tests/test_http_boundaries.py",
+        "sha256": "e3550454ab093524199153766e0aea67d05f9165cc6bd2a65c018bc9fe922dd7",
+        "size": 5118
+      },
+      {
+        "path": "backend/tests/test_idempotent_ingest.py",
+        "sha256": "f45f570d449136316d2d1a4d90c8593a680b6494079c86cd9c5ea59b8823365c",
+        "size": 8701
+      },
+      {
+        "path": "backend/tests/test_index_metadata.py",
+        "sha256": "4a3d7ffde5127379c27fea8ce12b7b01df8e5510a5f697f53f08a779c53199c0",
+        "size": 6854
+      },
+      {
+        "path": "backend/tests/test_migration_scope_fail_closed.py",
+        "sha256": "d39af79b3356f5c0338a2b8de9e5cb0532f0bf1b66f6785e8ae048624f14acbc",
+        "size": 2240
+      },
+      {
+        "path": "backend/tests/test_p0_exposure_lockdown.py",
+        "sha256": "8be196d33f84da30c94ed26258bfc2e54d369ad45d373730526e925d802797ee",
+        "size": 3793
+      },
+      {
+        "path": "backend/tests/test_p34_1_control_plane_api.py",
+        "sha256": "a99533d83a9e9987ca523ce31aa91d5215ef5f1a629c8e3f6d989d729d931c7a",
+        "size": 10187
+      },
+      {
+        "path": "backend/tests/test_p34_1_control_plane_models.py",
+        "sha256": "da68f4d5322036aefb75f57232e3455647476077beb603cbce45b6dca52bb83d",
+        "size": 9436
+      },
+      {
+        "path": "backend/tests/test_p34_1_control_plane_service.py",
+        "sha256": "49e803418a787f6e510650d9ef259c45cb2f6e3a3a59e70bc6ba8909a8250bd2",
+        "size": 42592
+      },
+      {
+        "path": "backend/tests/test_p34_2_capability_models.py",
+        "sha256": "430cf3454bf83a7da78b82a0b53d278b46e13068473ca4be67a9cadec2feaa71",
+        "size": 4511
+      },
+      {
+        "path": "backend/tests/test_p34_2_capability_service.py",
+        "sha256": "b99572c90d76f4eb2fc865632bb1bf8e43fa2ef26445f2471d54271a4765e6dd",
+        "size": 42901
+      },
+      {
+        "path": "backend/tests/test_p34_2_gateway_api.py",
+        "sha256": "5305625d236045033c840500581f6c705cd3dc6e1edc2944b95e0cfab771bdcb",
+        "size": 12201
+      },
+      {
+        "path": "backend/tests/test_p34_2_gateway_query.py",
+        "sha256": "24ee21c2ac5f434569fdc75859eac2054377ee6667b8c04ff4b3da26a97f7b6e",
+        "size": 12148
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_api.py",
+        "sha256": "206900f3a669901e8063c8d923d21c6143c32feb1ebf12670caa4bd8f0283f6c",
+        "size": 14931
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_crud.py",
+        "sha256": "5cd899a384941732e28c1ea6f91dc40512df7e6b3fb142863ec6ddc521dfd529",
+        "size": 14041
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_ddl.py",
+        "sha256": "f4706fa79a63cd3d7e55657f7cb1fe06e82f73fcd27e6e8d2bbf7b3c7862486a",
+        "size": 37240
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_execution_service.py",
+        "sha256": "918ea60fe76fd2c11801d692a404e79a22b83d2fafe7f24259df6e74d1e1ed24",
+        "size": 24375
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_executor.py",
+        "sha256": "ba339c7cafae4765f269d3056a1c241d1712b86f5df328f2d688b88f324a8d38",
+        "size": 34471
+      },
+      {
+        "path": "backend/tests/test_p34_3_controlled_data_foundation.py",
+        "sha256": "75c3fe1d61c14079b5eb53486242380021ca7eb4b72fc6d2d4fb8191a4edad50",
+        "size": 10695
+      },
+      {
+        "path": "backend/tests/test_p34_3_create_table_bootstrap.py",
+        "sha256": "b2226ac4f31aea069127a886382eed4145b6d3302581dea87dd8260488a49ebe",
+        "size": 11768
+      },
+      {
+        "path": "backend/tests/test_p34_4_api_contract.py",
+        "sha256": "bb5db816104da2df266336adaa991b5052e6d87e2255fc67b82ddc6cb9f523c6",
+        "size": 4631
+      },
+      {
+        "path": "backend/tests/test_p34_4_overlay_collaboration.py",
+        "sha256": "f4428c4254874a1157e113affc0965262a282e0d0af2e567787309eec5a723a8",
+        "size": 21375
+      },
+      {
+        "path": "backend/tests/test_p34_4_workspace_service.py",
+        "sha256": "87dd6e036d1ad9821f212e81cfa878dd07ee5f12fac53fb24573227009372f25",
+        "size": 27788
+      },
+      {
+        "path": "backend/tests/test_p34_5_gateway_mtls_ingress.py",
+        "sha256": "dddcc51c8fa8218541af61a8919eb4811fe43f786fa506889ae45aa6d75acf81",
+        "size": 6451
+      },
+      {
+        "path": "backend/tests/test_p34_5_gateway_workload.py",
+        "sha256": "184b69c6f8f1541e47e8d3d0d92d316261f3dd79fdbe16918804b4182eefb8ac",
+        "size": 32478
+      },
+      {
+        "path": "backend/tests/test_p34_5_network_broker_daemon.py",
+        "sha256": "6a6ee7e4016987dc85c512cd1404f29d058291728c213ed4d7f16c8e0f443352",
+        "size": 15100
+      },
+      {
+        "path": "backend/tests/test_p34_5_overlay_adapter.py",
+        "sha256": "19c63cef66634a95b6fea210f3cbca9c8c6a9466fbc5b9131ac08a55789460f4",
+        "size": 27008
+      },
+      {
+        "path": "backend/tests/test_p34_5_overlay_disposable_gate.py",
+        "sha256": "e1f1594c84433f7646cba673139c2ba454f66386202c12d7141dfc310f6e0a0c",
+        "size": 17047
+      },
+      {
+        "path": "backend/tests/test_p34_5_overlay_ledger.py",
+        "sha256": "dd1428cabcfcba8ab359a68d2cb5ceeccd9bf1ef0b2b61b350221a1a069707a1",
+        "size": 5918
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_a1_control.py",
+        "sha256": "54878eaeadddcee8bbcda5ee1f5843c698b590c18567c265ffb7ead3ecc0f95b",
+        "size": 11274
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_a2_dispatch.py",
+        "sha256": "8a588cf5aebc5822f8ce4dff9147eaa09279f578886d0910201948b316bc04f7",
+        "size": 23004
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_a3_persistence.py",
+        "sha256": "918e14a7df2dcababc0cb50de171460ec229b79bfe248e9425077e1aba04458a",
+        "size": 6185
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_a4_runtime.py",
+        "sha256": "b92f45fc846db2f501869db7d6473f978c98f7ecff31a404adcc871a874a8b73",
+        "size": 23790
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_a4_transport.py",
+        "sha256": "34a9f9c201648710d9b1c86b9002d53cfe1e154ca8177289f40dcebd48a7c118",
+        "size": 16237
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_deployment_launcher.py",
+        "sha256": "4e516fd664c862e9436af80d95393970d6c2e4fffdf7b9405174fa3033f49a40",
+        "size": 18736
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_foundation.py",
+        "sha256": "17223a5a1bd8a258323124a41bbbc7de88b56b736bd2638555f8c830728de491",
+        "size": 15953
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_network_broker.py",
+        "sha256": "cdcb27ed9c8f625b8b7ec8d9399064a4e4f3de73502f914eac5794bc02ac449a",
+        "size": 24101
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_network_durable.py",
+        "sha256": "1980e1caab53eef280ac638cddb1791bb2bbd32d2a70ca2377c25ca1db2638c9",
+        "size": 16940
+      },
+      {
+        "path": "backend/tests/test_p34_5_sandbox_network_runtime.py",
+        "sha256": "57d257661446997fa6db66a1d2d0071b6fb538c4502b8224c679092eabfb95af",
+        "size": 15579
+      },
+      {
+        "path": "backend/tests/test_phase_1_6_dual_lane.py",
+        "sha256": "743bb346215850fdcb3c64f6934b6576e0b5360c170ef58df808865c37b00ec7",
+        "size": 7646
+      },
+      {
+        "path": "backend/tests/test_phase_1_6_tenant_foundation.py",
+        "sha256": "731b269c669d3b6450eb561184a65673abf9e49ea5a1c62f6c78e5c615d34db4",
+        "size": 4222
+      },
+      {
+        "path": "backend/tests/test_rag_benchmark.py",
+        "sha256": "cab1fa825cb4e0c9e46029fe714f4da3ed1689e4e8515da697e12d2f614192f7",
+        "size": 1512
+      },
+      {
+        "path": "backend/tests/test_rag_sse.py",
+        "sha256": "e931252aa3317d0cca25442836f9ac850704c298f6e5116a2e5964c71ce4193d",
+        "size": 9205
+      },
+      {
+        "path": "backend/tests/test_rag_store.py",
+        "sha256": "da20fe50b6ff9c5aa45a9b606dd5c5f9598da90a1366befe888dc282f1a37ab3",
+        "size": 18880
+      },
+      {
+        "path": "backend/tests/test_rate_limit.py",
+        "sha256": "2aaa30070b1eb8a4db84e8ac80b682542b2980e54846e3f28cd3470c2eb90eeb",
+        "size": 4535
+      },
+      {
+        "path": "backend/tests/test_reranker_boundary.py",
+        "sha256": "74b115131c50b29252f2924171ea7b5d1653f9054d6deab3318048fef178cd6b",
+        "size": 1853
+      },
+      {
+        "path": "backend/tests/test_tenants.py",
+        "sha256": "84b75346fff335032c9da2ca75c4049e1214b05f720a2d94960e20a201f89b6a",
+        "size": 18122
+      },
+      {
+        "path": "backend/tests/test_upload_failure.py",
+        "sha256": "dad0d9b6fcf7bf88c2d36b43fc0f26e8315676b392e0f9bab3f3e1a9df46c307",
+        "size": 9228
+      },
+      {
+        "path": "backend/tests/test_upload_no_sync_ingest.py",
+        "sha256": "8069a9abba3b99a0b1eb5ab0e8becc0d837dd37da31dd3af75e790533b31dee6",
+        "size": 5354
+      },
+      {
+        "path": "backend/tests/test_upload_queue.py",
+        "sha256": "fe4e52f2ac34df20a3299baf2481b79b6d7afe02398e2bbc062084690354e8ff",
+        "size": 13976
+      },
+      {
+        "path": "backend/tests/test_upload_router.py",
+        "sha256": "259bcf5a3ea891f8cf228411e83f71e587fd7d5e66364dd82128019b860190a6",
+        "size": 4950
+      },
+      {
+        "path": "backend/tests/test_workers.py",
+        "sha256": "8cc23fd5d637dd080ba6b4f7bd71124587c99b022f24a98c4b1e1eb5f91feb0f",
+        "size": 18986
+      },
+      {
+        "path": "backend/uv.lock",
+        "sha256": "0ffb3217c9a48f99445821997d82bfe7cec7ceefd9e9417d4783110fe85f08f4",
+        "size": 575876
+      },
+      {
+        "path": "deployment/gateway/compose.disposable.yml",
+        "sha256": "815e3ef73fd2349746f8446bd0e23122f89cc82355cde13b4995176b40cfd218",
+        "size": 3695
+      },
+      {
+        "path": "deployment/gateway/Dockerfile.client",
+        "sha256": "1ef0f29c91c13e0bcba54a0d0c4ae8a4805e707b4f684c06d3c79d736d55de52",
+        "size": 527
+      },
+      {
+        "path": "deployment/gateway/Dockerfile.client.dockerignore",
+        "sha256": "ae726f6841b17dc989584a3e5d19b2f77aee9ead8fba49961f873e4506f32d2e",
+        "size": 72
+      },
+      {
+        "path": "deployment/gateway/Dockerfile.gate",
+        "sha256": "63c9b1b7e9a93833c2d143e5f36d3a500dbc88a39233305f17613adf6b6f7463",
+        "size": 1070
+      },
+      {
+        "path": "deployment/gateway/Dockerfile.gate.dockerignore",
+        "sha256": "6df25622bbeba4994b36e148e314b04bbb45988f335509a49ae91310847850bf",
+        "size": 278
+      },
+      {
+        "path": "deployment/gateway/gate.env.example",
+        "sha256": "ad45d5521d0bc254ec25c56099bdf5a4ceb93ef5f51eb67d8e71b0679621382d",
+        "size": 608
+      },
+      {
+        "path": "deployment/gateway/README.md",
+        "sha256": "d710d07bd82d7bf655b008008bb27ac42860d753ba28fae374291374bf333ee5",
+        "size": 3999
+      },
+      {
+        "path": "scripts/gateway/p34_5d_broker_client.py",
+        "sha256": "e853acaed441c036ef23c905b09739b8faf97f651c7cfcf4786d40413f6ae58f",
+        "size": 10018
+      },
+      {
+        "path": "scripts/gateway/run_p34_5d_disposable_gate.py",
+        "sha256": "398bf7f4ed7984cdccac90b93de5524080703d6b3d86152f88bc69469681af47",
+        "size": 26575
+      },
+      {
+        "path": "scripts/gateway/test_run_p34_5d_disposable_gate.py",
+        "sha256": "ebaee246f59b260bb3104d0d89468275749ebc287faa7725360f58f298dc6635",
+        "size": 4950
+      }
+    ],
+    "gate": "P34.5D clean-checkout source manifest",
+    "git_commit": "d6e888b4f9640cca3cdec27860915226dcf47c64",
+    "git_tree": "93dfd018ee30efd8f52aafbcd59dff3a5229c0c8",
+    "schema_version": 1,
+    "symlink_count": 0
+  },
+  "source_manifest_sha256": "fd01d13463b9a5f83d50031873c1ce085fb9f6c4293b6685348f000a4529619f",
+  "source_mounts_present": false
 }

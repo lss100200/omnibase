@@ -1,9 +1,24 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "gate": "passed",
-  "run_id": "run-20260802-034054",
+  "run_id": "run-20260802-171322",
   "scope": "real Headscale control-plane mutations through an mTLS Node-Daemon test double",
   "production_overlay_deployment": false,
+  "clean_checkout": {
+    "source_git_commit": "2621759024ddf9e5d84fc96e56d00140287c1db2",
+    "source_git_tree": "1c84e0a88ce26aeb6db4df006bf6449a0c703b14",
+    "source_git_dirty": false,
+    "fresh_clone_path_redacted": true,
+    "gitattributes_bound": true,
+    "powershell_checkout_line_endings": "CRLF",
+    "source_manifest": "docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json",
+    "scored_source_manifest_sha256": "a417d45348a97966dcdfa6fa0c287d6fa228dba1442fa44ac5d13cba77ddd6c5",
+    "repository_manifest_sha256": "a31978cb5b2c7d423379f466fde103b6cec65dacaa47796fd5782f9c99fe54c8",
+    "source_tree_sha256": "a7df01e3661a642f6dbc5980b8db22721137ea4332a222fe40bd957ecdcc0f5b",
+    "source_file_count": 161,
+    "ambient_backend_image_used": false,
+    "ambient_virtualenv_used": false
+  },
   "execution_environment": {
     "project": "omnibase-p345-overlay-gate",
     "headscale_version": "0.26.1",
@@ -11,11 +26,10 @@
     "node_daemon_kind": "disposable_test_double",
     "node_daemon_image": "python@sha256:f9ce6fe33d9a5499e35c976df16d24ae80f6ef0a28be5433140236c2ca482686",
     "pki_image": "alpine/openssl@sha256:5008e829163320a6e8166883c03e68189e8925ade68cde36584dc2a41cfa5248",
-    "gate_runner_image_id": "sha256:406d67c19d7133bfefd4594dd6fa36e5aa4d8908ae1a605906139dfed9cea6f0",
-    "gate_runner_venv_volume": "omnibase_backend_venv",
+    "gate_runner_image_id": "sha256:11ce1e475a385aea342545c359a03a0fe9777241c90eef626352435713d70214",
+    "gate_runner_built_from_checkout": true,
     "compose_env_file": "deployment/overlay/gate.env",
     "compose_env_file_explicit_for_all_calls": true,
-    "gate_runner_environment_substitution_allowed": false,
     "network_internal": true,
     "host_ports_published": 0,
     "real_member_devices_registered": 0,
@@ -46,13 +60,13 @@
     "networks_remaining": 0,
     "disposable_volumes_remaining": 0,
     "provider_secret_volume_destroyed": true,
-    "fixed_gate_runner_image_retained": true,
     "business_database_accessed": false,
+    "root_env_accessed": false,
     "real_member_overlay_accessed": false
   },
   "artifacts": {
-    "source_report": "C:\\tmp\\omnibase-p345-overlay-gate\\run-20260802-034054\\report.json",
-    "source_report_sha256": "3fe977b41ef403558d88d1819e1a3488149060ba853676afca802993f1733eac"
+    "source_report": "C:\\tmp\\omnibase-p345-overlay-gate\\run-20260802-171322\\report.json",
+    "source_report_sha256": "e5b702f8450e34fbc4f368eae338ab4da760ea8af32bc6b80d26069fa6ef4a3e"
   },
   "security_incident_scope": {
     "gate_script_root_env_accessed": false,

@@ -704,7 +704,7 @@ P34.4 Run Lease、Node fencing 和实时 attestation 只提供控制面授权事
 - `backend/tests/test_p34_4_workspace_service.py`
 - `docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox src/omnibase/workspaces`
 - `python scripts/sandbox/probe_runner_host.py`；结果不 ready 时不得通过降低 profile 或省略控制强行装配 provider。
-- 对新增真实 provider 运行 P34.5 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；A0 单元测试不能替代目标 Linux isolation Gate。
+- 对新增真实 provider 运行 P34.5 `RUN-03/04/05`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 攻击矩阵；`RUN-05` 必须证明非法或 root-like workload UID/GID 被拒绝，并且合法请求实际以请求的 non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny` 执行。A0 单元测试不能替代目标 Linux isolation Gate。
 
 **失败恢复**
 
@@ -816,7 +816,7 @@ Sandbox 需要使用 Workspace 服务或只读 Gateway，不代表它可以加�
 - `backend/tests/test_p34_5_overlay_adapter.py`
 - `backend/tests/test_p34_5_network_broker_daemon.py`
 - 独立 Linux Runner Network Broker Gate：真实 namespace-only connect、direct public/host deny、public/member/address-class deny、connection/bytes budget、challenge forgery、stale PID/starttime/netns、host/cross-runtime、socket impersonation/continuity、durable replay 与 cleanup。
-- Threat matrix `RUN-03/04`、`NET-01/02` 与 `CROSS-01`。
+- Threat matrix `RUN-03/04/05`、`NET-01/02` 与 `CROSS-01`。
 
 **失败恢复**
 
@@ -863,6 +863,7 @@ Overlay 是成员受信 Node Daemon 之间的基础设施，不是 Workspace 或
 - `backend/tests/test_p34_5_overlay_disposable_gate.py`
 - `backend/tests/test_p34_4_overlay_collaboration.py`
 - P34.5 工程 Gate 必须使用真实 disposable Headscale control plane，并通过 mTLS Node Daemon 对真实 provider record 完成 activate/status/rotate/revoke、ambiguous no-replay、离线/重连、凭据 containment 与完整清理；单元测试或只修改 test-double 本地状态不能代替该 Gate。
+- disposable Gate 必须从 public clean checkout 构建专用 Runner，source manifest 必须覆盖 `.gitattributes`、锁文件、Dockerfiles、完整复制的源码/测试和 Gate wrapper，并拒绝 ambient backend image、ambient virtualenv、symlink build input 与 dirty scored checkout。历史证据验证只允许后续 evidence/docs commit 改变 Git HEAD，不能容忍任何已封存 source byte 漂移。
 - P34.7 production Gate 继续要求 hardened production Node Daemon、两个真实成员节点的数据面、强制 DERP relay/故障恢复，以及节点失陷、真实 node revoke 与 credential theft 攻击矩阵。P34.5 的 provider control-plane Gate 不得冒充这些生产数据面证据。
 
 **失败恢复**
@@ -898,6 +899,7 @@ Gateway bearer token 只代表 P34.2 read capability，不能证明发起请求�
 - credential-vending 请求体必须为空；grant、key、issuer、tenant、Workspace、Run、Runtime、Node、Lease、generation、fencing 与 originating user 只能来自 server-owned registry 和 live attestation，不能由调用方提交。
 - 复用 P34.2 `CoreCapabilityVerifier`、只读 PostgreSQL/RAG adapter 和 append-only Audit；保持 Gateway 与 Browser ASGI 分离。
 - 缩短 token TTL、加强证书轮换和 revocation，但不能缓存 live lease acceptance 跨请求；TTL 必须同时不晚于五分钟、peer evidence expiry 与 Run Lease expiry。
+- disposable split-process Gate 必须从 public clean checkout 构建独立 Gateway 与最小 stdlib broker client 镜像；source manifest 必须覆盖 `.gitattributes`、`pyproject.toml`、`uv.lock`、完整复制的 `backend/src`/`backend/tests`、Dockerfiles、Compose、wrapper 与 client。不得依赖 ambient backend image、外部 venv volume 或 host source mount，且 Windows clean checkout 中 Linux init `.sh` 必须由 Git 属性和 Gate validator 双重证明为 LF-only。
 - token 和私钥字段必须 redacted/repr-safe，错误与 Audit 不得包含原始凭据或物理 locator。
 
 **禁止的改法**
