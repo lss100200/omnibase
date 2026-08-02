@@ -436,18 +436,93 @@ def _write_markdown(report: dict[str, object], digest: str) -> None:
     EVIDENCE_MD.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _verify_recorded_gate_result(report: dict[str, object]) -> None:
+    if report.get("passed") is not True or report.get("root_env_accessed") is not False:
+        raise RuntimeError("P34.5D evidence is not a passed root-env-free Gate")
+    if report.get("business_database_migrated") is not False:
+        raise RuntimeError("P34.5D evidence does not preserve the business database boundary")
+    cleanup = report.get("cleanup")
+    if not isinstance(cleanup, dict) or cleanup != {
+        "containers": 0,
+        "networks": 0,
+        "temporary_env_removed": True,
+        "volumes": 0,
+    }:
+        raise RuntimeError("P34.5D evidence cleanup is incomplete")
+    if report.get("secret_scan_findings") != []:
+        raise RuntimeError("P34.5D evidence contains secret-scan findings")
+
+
+def _verify_recorded_source_manifest(report: dict[str, object]) -> None:
+    recorded = report.get("source_manifest")
+    if not isinstance(recorded, dict):
+        raise RuntimeError("P34.5D evidence has no embedded source manifest")
+    if recorded.get("dirty") is not False or recorded.get("dirty_paths") != []:
+        raise RuntimeError("P34.5D scored evidence was not produced from a clean checkout")
+    if not isinstance(recorded.get("git_commit"), str) or len(recorded["git_commit"]) != 40:
+        raise RuntimeError("P34.5D evidence commit identity is invalid")
+    if not isinstance(recorded.get("git_tree"), str) or len(recorded["git_tree"]) != 40:
+        raise RuntimeError("P34.5D evidence tree identity is invalid")
+    expected_manifest_sha256 = hashlib.sha256(_canonical_json_bytes(recorded)).hexdigest()
+    if report.get("source_manifest_sha256") != expected_manifest_sha256:
+        raise RuntimeError("P34.5D embedded source manifest digest drifted")
+
+    current = _source_manifest()
+    stable_fields = ("schema_version", "gate", "symlink_count", "files")
+    if any(recorded.get(field) != current.get(field) for field in stable_fields):
+        raise RuntimeError("P34.5D sealed Gate source bytes changed after the scored run")
+
+
+def _verify_recorded_build_containment(report: dict[str, object]) -> None:
+    build = report.get("clean_checkout_build")
+    if not isinstance(build, dict):
+        raise RuntimeError("P34.5D clean-checkout build evidence is missing")
+    required_negatives = {
+        "ambient_backend_image_used": False,
+        "ambient_virtualenv_used": False,
+        "broker_client_host_mount_present": False,
+    }
+    if any(build.get(key) is not value for key, value in required_negatives.items()):
+        raise RuntimeError("P34.5D clean-checkout build containment drifted")
+
+
+def _verify_recorded_evidence(report: dict[str, object]) -> None:
+    _verify_recorded_gate_result(report)
+    _verify_recorded_source_manifest(report)
+    _verify_recorded_build_containment(report)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--validate-only",
         action="store_true",
         help="validate clean-checkout inputs and Compose without building images or touching a database",
+    )
+    modes.add_argument(
+        "--verify-evidence",
+        type=Path,
+        help="verify a sealed scored report against the current public source bytes",
     )
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = _parse_args()
+    if arguments.verify_evidence is not None:
+        _validate_static_contract()
+        evidence_path = arguments.verify_evidence.resolve(strict=True)
+        try:
+            evidence_path.relative_to(REPO_ROOT)
+        except ValueError as exc:
+            raise RuntimeError("P34.5D evidence path escaped the repository") from exc
+        report = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if not isinstance(report, dict):
+            raise RuntimeError("P34.5D evidence root is not an object")
+        _verify_recorded_evidence(report)
+        print("P34.5D scored evidence source seal passed")
+        return 0
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     project = f"omnibase-p34-p345d-{stamp}"
     database_name = f"omnibase_test_p345d_{stamp.lower()}"

@@ -164,6 +164,38 @@ def verify_manifest(root: Path, path: Path) -> dict[str, Any]:
     return current
 
 
+def verify_sealed_source(root: Path, path: Path) -> dict[str, Any]:
+    """Verify historical clean-run source bytes without requiring the old HEAD."""
+
+    try:
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateValidationError("sealed source manifest is unavailable or invalid") from exc
+    git = recorded.get("git")
+    if not isinstance(git, dict) or git.get("dirty") is not False:
+        raise GateValidationError("sealed source manifest was not produced from a clean checkout")
+    if git.get("dirty_paths") != []:
+        raise GateValidationError("sealed source manifest contains a dirty path scope")
+    if not isinstance(git.get("commit"), str) or len(git["commit"]) != 40:
+        raise GateValidationError("sealed source commit identity is invalid")
+    if not isinstance(git.get("tree"), str) or len(git["tree"]) != 40:
+        raise GateValidationError("sealed source tree identity is invalid")
+
+    current = build_source_manifest(root)
+    stable_fields = (
+        "schema",
+        "source_tree_sha256",
+        "file_count",
+        "files",
+        "upstream_images",
+        "real_member_devices_registered",
+        "root_env_included",
+    )
+    if any(recorded.get(field) != current.get(field) for field in stable_fields):
+        raise GateValidationError("sealed Gate source bytes changed after the scored run")
+    return recorded
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise GateValidationError(message)
@@ -288,15 +320,21 @@ def main() -> int:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--manifest-out")
     parser.add_argument("--verify-manifest")
+    parser.add_argument("--verify-seal")
     args = parser.parse_args()
     root = Path(args.repo_root).resolve(strict=True)
 
-    if args.manifest_out and args.verify_manifest:
-        raise SystemExit("choose either --manifest-out or --verify-manifest")
+    selected_modes = sum(
+        bool(value) for value in (args.manifest_out, args.verify_manifest, args.verify_seal)
+    )
+    if selected_modes > 1:
+        raise SystemExit("choose only one manifest output or verification mode")
     try:
         validate_static_configuration(root)
         if args.verify_manifest:
             manifest = verify_manifest(root, Path(args.verify_manifest).resolve(strict=True))
+        elif args.verify_seal:
+            manifest = verify_sealed_source(root, Path(args.verify_seal).resolve(strict=True))
         else:
             manifest = build_source_manifest(root)
             if args.manifest_out:

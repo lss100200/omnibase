@@ -46,3 +46,23 @@ def test_manifest_tamper_is_rejected() -> None:
         path.write_text(json.dumps(manifest), encoding="utf-8")
         with pytest.raises(VALIDATOR.GateValidationError, match="source changed"):
             VALIDATOR.verify_manifest(REPO_ROOT, path)
+
+
+def test_historical_clean_seal_ignores_only_git_head_drift() -> None:
+    manifest = VALIDATOR.build_source_manifest(REPO_ROOT)
+    manifest["git"] = {
+        "commit": "1" * 40,
+        "tree": "2" * 40,
+        "dirty": False,
+        "dirty_paths": [],
+        "dirty_scope_sha256": "3" * 64,
+    }
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / "manifest.json"
+        VALIDATOR.write_manifest(path, manifest)
+        assert VALIDATOR.verify_sealed_source(REPO_ROOT, path) == manifest
+
+        manifest["files"][0]["size"] += 1
+        VALIDATOR.write_manifest(path, manifest)
+        with pytest.raises(VALIDATOR.GateValidationError, match="source bytes changed"):
+            VALIDATOR.verify_sealed_source(REPO_ROOT, path)

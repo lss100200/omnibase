@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 from subprocess import CompletedProcess
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -75,3 +78,38 @@ def test_generated_env_and_compose_command_are_explicitly_disposable(tmp_path: P
     assert compose[:3] == ["docker", "compose", "--env-file"]
     assert compose[3] == str(env_file)
     assert str(gate.COMPOSE_FILE) in compose
+
+
+def test_historical_clean_evidence_verifies_only_stable_source_bytes() -> None:
+    manifest = gate._source_manifest()
+    manifest["git_commit"] = "1" * 40
+    manifest["git_tree"] = "2" * 40
+    manifest["dirty"] = False
+    manifest["dirty_paths"] = []
+    report = {
+        "passed": True,
+        "root_env_accessed": False,
+        "business_database_migrated": False,
+        "cleanup": {
+            "containers": 0,
+            "networks": 0,
+            "temporary_env_removed": True,
+            "volumes": 0,
+        },
+        "secret_scan_findings": [],
+        "source_manifest": manifest,
+        "source_manifest_sha256": hashlib.sha256(gate._canonical_json_bytes(manifest)).hexdigest(),
+        "clean_checkout_build": {
+            "ambient_backend_image_used": False,
+            "ambient_virtualenv_used": False,
+            "broker_client_host_mount_present": False,
+        },
+    }
+    gate._verify_recorded_evidence(report)
+
+    manifest["files"][0]["size"] += 1
+    report["source_manifest_sha256"] = hashlib.sha256(
+        gate._canonical_json_bytes(manifest)
+    ).hexdigest()
+    with pytest.raises(RuntimeError, match="source bytes changed"):
+        gate._verify_recorded_evidence(report)
