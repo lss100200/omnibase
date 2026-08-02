@@ -1,9 +1,9 @@
 # OmniBase 工作交接报告
 
 > **日期**：2026-08-02
-> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；本 hardening 分支在公开封板后又修复了两个 P1：A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建。C 现已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。独立 Network Broker daemon 的两轮 26/26 artifact 未被本轮修改。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点数据面/DERP/节点失陷、容量/SLA 与生产总验收进入 P34.7。本轮曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已停止、扫描并在 P34.5A4-D 小节记录；应轮换受影响本地开发凭据。公开仓库 `https://github.com/lss100200/omnibase` 的 `main` 已启用强制 PR/CI、Secret Scanning/Push Protection 与 Dependabot；普通业务数据库 migration、真实成员网络和 Runtime 写数据通道继续关闭。
+> **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。
 > **模型基准状态**：Plan A `deepseek-v4-pro` 只能保持暂定 L2，confirmation 因长会话 Markdown JSON fence 失败，write round 未授权；Plan B B1 `qwen3-32b` 因零工具读取、伪造源码证据并触发 Audit lifecycle 与 in-place restore 两个既有安全 veto，正式为 `L0 Unsafe`；Plan B B2 `deepseek-v4-flash` 已确认为 `L2 Triage Confirmed`，证明经济型模型在真实读取维护者地图时可以稳定分诊，但证据真实性与 schema 纪律不足以进入 L3；B3 首选不同家族的 `glm-4.7-flash`，尚未执行。Plan C 两个 3B Q4_K_M 制品完整，但 native tool gate 失败，正式 screening 未启动，benchmark passed=false。
-> **冻结边界**：P34.5A0-A3/B/C/D 工程入口和本阶段可在本机证明的 Gate 已完成；A4 源码入口已解冻，但 current-hash target Linux 12/12 Gate 尚未证明，因此真实 hostile-code Runner activation 继续冻结。production wiring 仍受 A4 12/12、Core↔Runner/Broker mTLS、trusted Gateway ingress/data 与 P34.7 真实成员 Overlay 数据面/DERP/node-compromise Gate 约束。普通 Docker/WSL、in-memory ledger、fake transport 或 metadata-only provider 不得被声称可以安全运行任意敌对代码。Sandbox 不得成为成员 Overlay peer，不得直连 PostgreSQL/Redis/MinIO，也不得获得 JWT、签名私钥、宿主 `.env`、容器 socket、宿主目录或成员设备 identity。Workspace 私有写入/RAG promotion、Agent Runtime 与 Agent 编排继续冻结。
+> **冻结边界**：P34.5A0-A3/B/C/D 工程入口和本阶段可在本机证明的 Gate 已完成；A4 源码入口已解冻，但 current-hash target Linux 12/12 Gate 尚未证明，因此真实 hostile-code Runner activation 继续冻结。P34.6 只完成 bounded Foundation / Contracts / Fail-closed primitives，不等于 production data-plane。production wiring 仍受 A4 12/12、Core↔Runner/Broker/Gateway 联合 mTLS、真实 provider/object transfer、non-disposable tenant/RAG 与 P34.7 真实成员 Overlay 数据面/DERP/node-compromise Gate 约束。Sandbox 不得成为成员 Overlay peer，不得直连 PostgreSQL/Redis/MinIO，也不得获得 JWT、签名私钥、宿主 `.env`、容器 socket、宿主目录或成员设备 identity。Browser private-write、canonical mutation、production WorkspaceDataAdapter、Agent Runtime 与 Agent 编排继续冻结。
 > **项目路径**：`<repository-root>`
 > **Git 状态**：PR `#9` 已把 P34.5A1-A4/B/C/D 工程封板合入公开 `main`（当前 hardening 分支基线 `f16f3c567caefd6d0c6a348f75f7f65b92331572`）。post-seal hardening 的本地代码提交依次为 `ec2ac7861190539a0d89e3a8b850b2b71d2d1a04`、`3d05921d198af7ff5cb331c4c281ae9df429c36f`、`d6e888b4f9640cca3cdec27860915226dcf47c64` 与 `2621759024ddf9e5d84fc96e56d00140287c1db2`；本报告不硬编码后续 evidence/docs commit 的自身 hash，避免循环修订。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准。
 
@@ -1034,6 +1034,7 @@ TypeScript SDK 独立 lockfile 已完成：
 - `.omo/plans/phase-1-5-closeout-and-next-phase.md` — Phase 1.5 收口与下一阶段
 - `docs/phase-1-6-and-beyond-implementation-plan.md` — Phase 1.6 收口、AI 工作空间优先和 Phase 2–7 实施计划
 - `docs/phase-3-4-secure-ai-workspace-implementation-plan.md` — Phase 3-4 Resource Registry、Capability、Sandbox Runner、RuntimeDriver 与 P34.0–P34.7 正式实施契约
+- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 Agent Registry、Task/Run/Step ledger、compile-only Planner、Capability Tool Gateway、Memory Compiler、原生 Skill、多 Agent DAG 与恢复 Gate
 - `docs/phase-3-4-threat-model.md` — Phase 3-4 资产、信任边界、安全不变量、攻击矩阵和运行时验收 Gate
 - `docs/deployment-guide.md` — 部署指南（9 节，含开发 vs 生产镜像）
 - `.zcode/plans/plan-sess_3caa018d-836b-4fda-aaf1-50e27f4281cf.md` — 前端性能/认证重构执行计划
@@ -1516,7 +1517,7 @@ git diff --check：passed
 
    - 已新增只能由 trusted Runner/Broker mTLS ingress 注入 ASGI scope 的 `TrustedGatewayPeerEvidence`，以及每请求新事务重验 live Run/Node/Lease/generation/fencing/runtime/certificate binding 的 workload attestor。
    - Core-only credential issuer 在完整 live proof 后加载 signing private key，签发最长五分钟且不晚于 Run Lease expiry 的 P34.2 read token；Runner/Sandbox 不持有私钥、数据库/Redis/MinIO locator 或 credential。
-   - `create_production_gateway_app()` 仍是独立非 Browser ASGI composition，只开放 P34.2 schema/rows/RAG/citation read path，无 direct infrastructure 或 Runtime write route。
+   - `create_production_gateway_app()` 仍是独立非 Browser ASGI composition；P34.2 schema/rows/RAG/citation read path 与 P34.6 逻辑 Workspace-data route 分离。P34.6 route 的 production adapter 默认 `UnavailableWorkspaceDataAdapter`，因此存在路由契约不等于生产写能力已开放；无 direct infrastructure route。
    - P34.5D 已通过 split-process disposable mTLS Gate：独立 `gateway-server` 与 stdlib-only `broker-client` 使用真实 TLS handshake，client 无 Backend 源码、数据库/Redis/MinIO/JWT 环境、签名私钥、server-secret volume、宿主挂载或容器 socket。参数为空的 credential-vending path 只能从 transport DER 与 server-owned registry 取得 grant/key/issuer/originating-user binding，先重验 live Run/Node/Lease/generation/fencing，再加载私钥；TTL 同时受五分钟、peer evidence expiry 与 Run Lease expiry 裁剪，响应 `Cache-Control: no-store`。
    - final Gate 从 commit `d643f6202fa5ce77ab410c715572b4dc6c8258f6` 的真正 fresh Windows clone 构建 dedicated Gateway 与 stdlib-only broker client，不再使用 ambient backend image、external venv 或 host source mount。`.gitattributes` 强制 Linux `.sh` 为 LF，wrapper validator 额外检查 shebang/LF-only；249 文件 source manifest 覆盖 `.gitattributes`、`pyproject.toml`、`uv.lock`、完整 `backend/src`/`backend/tests`、Dockerfiles、Compose、wrapper/client 与 upstream digests，manifest SHA-256 为 `763d8690889739950fd18ee231221c44d14b90fb3e05c293807818cfa8d53432`。fresh-clone historical verifier 已对相同工作树字节通过。
    - scored Gate 使用三个启动前解析的 immutable image SHA-256，在 guarded `omnibase_test_*` tmpfs PostgreSQL 内完成 credential vending、schema/rows/RAG/citation 四读，以及 cross-tenant、Node attestation revoked/expired、Workspace generation、Run/Node fencing、Lease/registry revoke、wrong/missing certificate、Header/cookie spoof 与 TLS < 1.2 拒绝。scored raw evidence SHA-256 为 `3d0cfeba0c5fa6d4a4693cd07e36fed5574ff38d1f51bae0055ac4a6060e508d`；cleanup 为 containers/networks/volumes `0/0/0` 且 temporary env 已删除，普通业务数据库 migration 未执行。真实生产激活、容量/SLA、非 disposable tenant/RAG 与真实成员网络联合验收仍保留给 P34.7。
@@ -1535,6 +1536,54 @@ git diff --check：passed
    - 由于凭据曾进入内部工具输出，应按已暴露处理并轮换受影响的本地开发凭据；轮换本身需要用户/部署所有者的外部状态授权，不能由文档任务静默执行。
    - 从本节起，仓库根所有 Compose diagnostic/config/run/exec/up/logs/ps 必须显式使用 `--env-file .env.example`；disposable overlay 使用自己的专用 Compose/env 文件。永久禁止裸 `docker compose config --format json`。AGENTS、维护者地图、security invariants、AI maintainer map 与恢复 runbook 已同步该规则。
 
+### P34.6 Workspace-private data、promotion 与 snapshot/restore-new-identity 工程 Gate（2026-08-02）
+
+> 本节只声明 P34.6 的受限工程基础与隔离验证完成，不声明 production provider、真实对象传输、生产恢复、non-disposable tenant/RAG 或 Core↔Runner/Broker/Gateway 联合装配已经完成。
+
+1. **Workspace Data 与 migration `0009`**
+
+   - 新增 `backend/src/omnibase/workspace_data/`，覆盖逻辑契约、global/tenant ORM、服务层、Artifact、Derived RAG、Promotion、Snapshot 与 Restore metadata lifecycle；migration `0009_p34_6_workspace_data.py` 建立物理约束、复合租户/Workspace 外键、append-only lineage、canonical registry immutability、effect/usage reservation 状态约束和 populated downgrade 拒绝。
+   - Sandbox/Runner 只提交逻辑 tenant/workspace/resource/operation/grant/version 标识。公共 DTO、SDK、Audit、日志与错误继续禁止 PostgreSQL schema/table/column、bucket/object key、provider handle、presigned URL、receipt、credential 或 SQL。
+   - `canonical_readonly` 继续不可写、不可删除、不可原地重分类；Derived RAG 使用独立 tenant physical lane，禁止写入 `documents`、`embeddings`、`embeddings_v2` 或 `rag_document_index_state`。
+
+2. **Workspace-data capability 与独立 mTLS Gateway path**
+
+   - Read、Sandbox 与 Workspace-data action profile 是互斥闭集。Credential vending 分为参数为空的 `/gateway/v1/credential/read` 与 `/gateway/v1/credential/workspace-data`；请求路径、server-owned registry `expected_profile` 与数据库 Grant 实际 actions 必须三者精确匹配，否则在私钥加载和 token 签发前拒绝。
+   - Workspace-data Grant 精确绑定 tenant、Workspace、runtime instance、workload identity、action、Resource 与 version；最长五分钟、不可委派、可撤销，并受 calls/bytes/cost budget 约束。每次请求重新验证 live Run、Node、Lease、Workspace generation、Run/Node fencing、certificate thumbprint 和 Grant。
+   - Capability-backed private mutation 的锁序为 Tenant → tenant User → Workspace aggregate → actor WorkspaceMembership → Resource → bindings → AuthorizationContext → Operation → Idempotency。即使 Grant 与 tenant User 仍 active，只要 Workspace membership 被 revoked 或角色不可写，操作必须在 mutation、Operation 和 Idempotency 副作用前拒绝。
+   - Browser `controlled_data/router.py` 继续拒绝 Workspace-private workload write。Runtime/Sandbox 不能用 Browser JWT、cookie、read token 或 lifecycle Grant 调用 Workspace-data；也不能直连 PostgreSQL、Redis 或 MinIO。
+   - `create_production_gateway_app()` 暴露逻辑 P34.6 route，但默认 production adapter 仍为 `UnavailableWorkspaceDataAdapter`。本阶段没有安装真实 provider/write adapter。
+
+3. **Artifact、Derived RAG、Promotion 与 external-effect no-replay**
+
+   - Artifact 与 Derived output 不允许原地覆盖；修改必须创建新 Resource/version 与 lineage。Artifact read 在 Adapter 前持久扣除预算；Adapter 失败时原事务回滚，并以独立短事务写 code-only `artifact_read_adapter_unavailable` Audit，不保存 provider message、locator、object key 或原始异常。
+   - Provider boundary 之后 finalize、Audit 或 commit 失败时，系统以 fresh transaction 尽力把 reservation/effect 收口为 `unknown`；数据库不可用时保留 durable `pending`。`pending` 与 `unknown` 都禁止相同 Operation 自动 replay，只能进入显式人工 reconciliation。
+   - Promotion 不进入 runtime token，也没有 Gateway promotion route。Requester 不得自批；Approval 必须 consumed、精确绑定 queued Operation、source Resource/version、manifest digest 与 request hash，并由实时 active tenant admin 复核。
+   - Promotion metadata state machine 只允许未来的成功实现创建新的 `controlled_shared` target；source ID、policy、locator、version 与 digest 必须保持不变，且 P34.6 永不允许创建、修改或重分类 `canonical_readonly`。当前 `EffectOutcome.COMMITTED` 路径会在创建 target/effect 前 fail-closed 拒绝，因为 durable copy adapter、quota/Grant journal 与 provider receipt binding 尚未通过 Gate；P34.6 没有开放 `controlled_shared` 成功可见性。
+
+4. **Snapshot inventory 与 restore-new-identity**
+
+   - Snapshot inventory 由服务端枚举，调用方不能提交可信 Resource list。每个 item 必须绑定 ordinal、Resource ID/version/kind/policy、content digest、payload Artifact ID、size 与 source Workspace generation；全部验证通过后才允许 `building → ready`，seal 后 item/manifest 不可更新或删除。
+   - Manifest 校验必须检测 item 增删、重排、digest/size/payload/version/generation drift。
+   - Restore 契约要求未来的成功实现永远创建新 Workspace ID、更高 generation、全新 private/derived Resource ID、scope binding 与 `restored_from` lineage；不得复制或复活 Run、Run/Network Lease、Capability Grant、bearer token、runtime instance、workload certificate/identity、PID、socket、provider handle 或 Overlay/member identity。当前 `EffectOutcome.COMMITTED` Restore 默认拒绝，尚不创建可用的新 Workspace 或 subtype storage binding。
+   - 当前完成的是 server-generated inventory、manifest、数据库 seal、lineage 约束与 restore-new-identity metadata foundation，不是生产 backup/restore 或真实 blob/object transfer 演练。Snapshot capture 尚未形成覆盖 active Lease、pending/unknown effect、Artifact/Derived/Publication 生命周期和并发 mutation 的 production barrier，因此只能称 metadata capture prototype。
+
+5. **审查修复与最终验证证据**
+
+   - 安全审查发现并修复：Capability write 缺少 live Workspace membership、Derived effect `derived_index_build`/数据库 `derived_build` 枚举漂移、WorkspaceDataEffect ORM/migration unique 漂移、credential profile 隐式升级、usage reservation state/result 约束不足、Artifact read Adapter failure 缺 Audit，以及 provider effect 后 finalize/Audit/commit failure 未 durable 收口。
+   - P34.6 与受影响 Capability/Gateway focused：`127 passed`；完成 P34.5 hardening rebase 后的 Backend non-integration：`1121 passed / 14 skipped / 14 deselected`；Mypy：`148 source files / 0 issues`；本次 52 个相关 Python 文件 Ruff check 与 format check 通过，未以 `noqa` 或宽泛 ignore 隐藏复杂度。
+   - OpenAPI/SDK contract：`4 passed`；maintainer map：`24 invariants / 19 modules / 231 path specs / 521 matched files / 128 entrypoints / 14 discovered HTTP entrypoints / 69 verification commands`；benchmark validator：`3 plans / 8 scenarios / 6 critical / 9 unsafe vetoes`；Compose config 与 `git diff --check` 通过。
+   - Fresh guarded disposable PostgreSQL 完整 Gate：empty downgrade/re-upgrade `1 passed`；其余 integration `70 passed / 1 skipped / 1 deselected`，覆盖 0001→0009、global/tenant migration、derived effect CHECK、ORM/migration unique、usage reservation state/result、canonical immutability、lineage append-only/cycle、并发 reverse-edge 串行化、真实 Core Gateway → Operation/Reservation/Budget/Audit 幂等闭环、populated downgrade refusal与 revoked Workspace membership write rejection。额外 targeted 复核为 `2 passed in 26.55s`；一次性 containers/networks/volumes 均清理为 0。
+   - P34.5D split-process mTLS Gate 必须在 P34.5 clean-checkout reproducibility hardening 合入后用最终源码重跑；旧 evidence 不作为本次 P34.6 封板的最终哈希。缺少最终复现证据时，production Gateway wiring 继续 fail-closed。
+
+6. **明确未发生的事项**
+
+   - 没有把 migration `0009` 应用到普通业务数据库；P34.6 destructive Gate 只使用显式 `.env.example`、`omnibase_test_*`、tmpfs PostgreSQL、随机一次性密码和 restricted non-owner role。本阶段没有新增根 `.env` 访问；P34.5 历史诊断异常仍按既有记录处理。
+   - 没有访问 non-disposable production tenant/RAG；没有连接非 disposable object store/index worker；没有安装 production WorkspaceDataAdapter/provider；没有执行真实 MinIO/object copy、snapshot payload transfer 或生产 restore rehearsal。
+   - 没有开放 Browser Workspace-data write，没有给 Sandbox/Runner JWT、数据库/Redis/MinIO credential、签名私钥、宿主挂载、容器 socket或成员 Overlay identity。
+   - 没有执行 canonical cutover；完整 UI、Python/TypeScript SDK 易用层、人工 reconciliation、production composition 与容量/SLA 留在 P34.7。
+   - Agent Runtime、Planner、多 Agent DAG/长循环、产品 Skill/MCP 安装和宿主级工具继续冻结。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
@@ -1543,8 +1592,8 @@ git diff --check：passed
 - **P34.3 ✅ 工程验收、待原子提交/业务 migration 授权**：Foundation、CRUD/DDL、create-table bootstrap、完整 aggregate 锁序、atomic lifecycle、User-RBAC structured write Router、真实 lock/statement timeout、状态竞态、并发 exact replay 和 fresh sentinel PostgreSQL Gate 已完成；Router 默认 503，Workspace/Agent write、任意 SQL与普通业务 migration 继续关闭。
 - **P34.4 ✅ 元数据逻辑控制面与 fake/local harness 工程封板**：17 张 global 表、版本化模板、Workspace aggregate membership/RBAC/scope、Workspace/Run 生命周期、Run/Node/Network fencing、实时 attestation、terminal Run 不可复活、Node/Peer/Service/Authority 统一锁序与 synthetic collaboration harness 已通过 Gate；logical Network Lease 不调用 provider。真实 Overlay/VPN、Sandbox、成员网络和真实数据接入不在该完成口径内。
 - **P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 pending**：A0-A3 授权、预算、durable ledger 与 coordinator 完成；A4 已修复 UID/GID namespace-root 漂移并扩展为 12 项 Gate，但旧 11/11 artifact 已失效，新的 Hyper-V 12/12 未经真实 VM 重跑前不得标记通过；B 的 logical Network Broker、durable budget、AF_UNIX challenge transport 与独立 PrivateNetwork daemon 已在同一 Runner 首轮和重启确认轮各通过 26/26 Gate；C 已从 fresh Windows clone 使用 source-built Runner 通过真实 Headscale control-plane + mTLS Node-Daemon test-double Gate；D 已从 clean checkout 使用 source-built Gateway/client 通过 split-process mTLS ingress、server-owned credential vending、live workload identity 与 guarded sentinel schema/rows/RAG/citation 最小闭环。Core↔VM/Runner/Broker production activation、真实成员节点数据面/DERP/节点失陷、非 disposable tenant/RAG、容量/SLA 与总验收继续进入 P34.7，不得由本阶段证据自动标记通过。
-- **P34.6**：workspace 私有表、派生索引、记忆、lineage，以及经审批、幂等和补偿进入规范资源的 promotion。
-- **P34.7**：快照恢复、完整 UI/SDK、真实最小闭环、攻击矩阵与生产总验收。
+- **P34.6 ✅ Foundation / Contracts / Fail-closed primitives**：Workspace-private/derived 逻辑写契约、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Promotion/Snapshot/Restore metadata state machine 与 server-generated inventory 已通过隔离 Gate；Promotion 和 Restore 的 `COMMITTED` 成功路径、`controlled_shared` 成功可见性、production provider/object transfer、production snapshot barrier、non-disposable tenant/RAG 与完整 UI/SDK 仍关闭。
+- **P34.7**：真实 provider 对象传输与恢复演练、人工 reconciliation、完整 UI/SDK、non-disposable tenant/RAG 最小闭环、Core↔Runner/Broker/Gateway production composition、真实成员 Overlay/DERP/node-compromise、容量/SLA、攻击矩阵与生产总验收；任何 canonical cutover 需独立审批。
 
 **不可跳过**：任一增量未通过自身 Gate，不得临时开放直连数据库、宿主文件、长期凭据、无限网络或宿主级执行。P34.7 未全部通过前，不得实现 Phase 5 自主 Planner、多 Agent 长循环或宿主级工具。
 

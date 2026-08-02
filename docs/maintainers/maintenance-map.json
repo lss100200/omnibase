@@ -4,12 +4,12 @@
   "frozen_boundaries": [
     "Production hostile-code execution on any Runner that has not passed the P34.5 Linux isolation and attack matrix Gate",
     "Real member Overlay deployment, physical Overlay endpoint exposure to Sandbox, and direct Sandbox/Runner access to PostgreSQL, Redis or MinIO",
-    "Workspace private-write, derived RAG promotion and canonical data mutation from Sandbox workloads",
+    "Production Workspace-data adapter/provider activation, canonical mutation, and any direct Sandbox/Runner data-store access outside the P34.6 controlled Gateway contracts",
     "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0008",
+    "Alembic migrations 0001 through 0009",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -312,6 +312,50 @@
       "test_paths": [
         "backend/tests/test_p34_5_gateway_workload.py",
         "backend/tests/test_p34_2_gateway_api.py"
+      ]
+    },
+    {
+      "id": "INV-022",
+      "title": "Canonical and Workspace-derived storage separation",
+      "document": "docs/maintainers/security-invariants.md#inv-022-canonical-derived-storage-boundary",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/**",
+        "backend/src/omnibase/capability_gateway/write_adapters.py",
+        "backend/src/omnibase/capability_gateway/write_service.py",
+        "backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_workspace_data_contracts.py",
+        "backend/tests/test_p34_6_gateway_workload_write.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-023",
+      "title": "Promotion approval and copy-on-publish atomicity",
+      "document": "docs/maintainers/security-invariants.md#inv-023-promotion-approval-atomicity",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/promotion.py",
+        "backend/src/omnibase/workspace_data/models.py",
+        "backend/src/omnibase/control_plane/service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-024",
+      "title": "Snapshot inventory and restore-new-identity lineage",
+      "document": "docs/maintainers/security-invariants.md#inv-024-snapshot-restore-lineage",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/snapshots.py",
+        "backend/src/omnibase/workspace_data/models.py",
+        "backend/src/omnibase/workspaces/service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
       ]
     }
   ],
@@ -884,7 +928,7 @@
     },
     {
       "id": "gateway-workload",
-      "name": "P34.5D mTLS workload identity and short-lived read Capability bridge",
+      "name": "P34.5D mTLS workload identity plus fail-closed P34.6 data bridge",
       "source_paths": [
         "backend/src/omnibase/capability_gateway/workload.py",
         "backend/src/omnibase/capability_gateway/app.py",
@@ -926,7 +970,7 @@
         "Parameter-free mTLS credential vending whose grant, key, issuer and originating-user binding is selected only by the server registry after live attestation",
         "Fresh DB-backed P34.4 Run/Node/Lease/fencing attestation on every Gateway request",
         "Core-only read credential issuance bounded to five minutes and the earlier peer-evidence or live Run Lease expiry",
-        "Separate production Gateway composition exposing only schema, rows, RAG search and citation read actions; never mounted into Browser ASGI"
+        "Separate production Gateway composition exposing P34.2 read routes plus P34.6 logical Workspace-data routes whose adapter defaults remain unavailable; never mounted into Browser ASGI"
       ],
       "depends_on": [
         "capability-gateway",
@@ -943,7 +987,9 @@
         "INV-014",
         "INV-015",
         "INV-019",
-        "INV-021"
+        "INV-021",
+        "INV-022",
+        "INV-023"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
@@ -961,7 +1007,72 @@
         "Revoke the certificate in the server-owned registry, revoke the Run Lease and stop the independent Gateway service when peer identity or transport state is uncertain; every request reloads the registry.",
         "Keep private signing keys and database sessions in Core; Runner and Sandbox receive only a short-lived read token over the authenticated channel.",
         "Treat the scored disposable Gate wrapper and minimal broker-client as byte-sealed evidence inputs: lint and compile them, but any autoformat or content change invalidates the evidence and requires the split-process Gate to be rerun.",
-        "Do not add direct database, object-store, Redis, physical locator, caller-parameterized credential-vending or runtime-write routes to the Gateway."
+        "Do not add direct database, object-store, Redis, physical locator or caller-parameterized credential-vending routes; P34.6 Workspace-data routes must use short-lived non-delegable workload grants and an explicitly installed controlled adapter."
+      ]
+    },
+    {
+      "id": "workspace-data-rag",
+      "name": "P34.6 Workspace-private data, derived RAG, publication and snapshot lineage",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/**",
+        "backend/src/omnibase/capability_gateway/write_adapters.py",
+        "backend/src/omnibase/capability_gateway/write_service.py",
+        "backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py",
+        "backend/tests/test_p34_6_workspace_data_contracts.py",
+        "backend/tests/test_p34_6_workspace_data_service.py",
+        "backend/tests/test_p34_6_gateway_workload_write.py",
+        "backend/tests/test_p34_6_artifact_derived_lifecycle.py",
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/workspace_data/service.py:create_effect",
+        "backend/src/omnibase/workspace_data/service.py:transition_effect",
+        "backend/src/omnibase/capability_gateway/write_service.py:WorkspaceDataGatewayService",
+        "backend/src/omnibase/capability_gateway/app.py:create_production_gateway_app"
+      ],
+      "public_interfaces": [
+        "Logical Workspace-private row mutation, immutable artifact and derived-index capability contracts",
+        "Copy-on-publish promotion to a new controlled_shared Resource only; canonical_readonly is not a P34.6 target",
+        "Server-generated snapshot inventory and restore-new-Workspace/resource identity metadata",
+        "No physical schema/table/bucket/object key/provider handle in public DTO, SDK, Audit, log or error"
+      ],
+      "depends_on": [
+        "control-plane",
+        "capability-ledger",
+        "capability-gateway",
+        "controlled-data",
+        "workspace-control-plane",
+        "gateway-workload",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007",
+        "INV-008",
+        "INV-011",
+        "INV-012",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py tests/integration/test_p34_6_workspace_data_foundation.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py tests/integration/test_p34_6_workspace_data_foundation.py",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Restore unavailable/rejecting Workspace-data adapters and revoke affected workload-data grants before investigating scope, version, digest or storage uncertainty.",
+        "Keep pending/unknown effects, reservations, publication records, snapshot items, Audit and lineage as evidence; never delete or reset them to force replay.",
+        "Never repair promotion by changing the source policy class or locator in place; create a new target Resource only after fresh approval and exact binding verification.",
+        "Restore always creates new Workspace and Resource identities; never revive old Run, Lease, token, runtime/workload identity, PID, socket or provider handle."
       ]
     },
     {
@@ -979,7 +1090,7 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0008",
+        "Alembic revisions 0001-0009",
         "make test-destructive",
         "omnibase migrate"
       ],

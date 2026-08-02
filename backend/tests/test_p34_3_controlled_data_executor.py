@@ -404,6 +404,8 @@ def test_update_executes_locks_preflight_version_recheck_and_apply_on_one_connec
     assert CONTROLLED_CRUD_LOCK_ORDER == (
         "omnibase_meta.tenants",
         "tenant.users",
+        "omnibase_meta.workspaces",
+        "omnibase_meta.workspace_memberships",
         "omnibase_meta.resource_registry",
         "omnibase_meta.data_table_bindings",
         "omnibase_meta.data_column_bindings",

@@ -69,6 +69,24 @@ class DataTableBinding(Base):
             "physical_table_name",
             name="data_table_bindings_tenant_physical_uq",
         ),
+        ForeignKeyConstraint(
+            ["resource_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.resource_registry.id",
+                f"{GLOBAL_SCHEMA}.resource_registry.tenant_id",
+            ],
+            name="data_table_bindings_resource_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.workspaces.id",
+                f"{GLOBAL_SCHEMA}.workspaces.tenant_id",
+            ],
+            name="data_table_bindings_workspace_tenant_fk",
+            ondelete="RESTRICT",
+        ),
         Index(
             "data_table_bindings_tenant_workspace_idx",
             "tenant_id",
@@ -92,11 +110,7 @@ class DataTableBinding(Base):
         ForeignKey(f"{GLOBAL_SCHEMA}.tenants.id", ondelete="CASCADE"),
         nullable=False,
     )
-    resource_id: Mapped[str] = mapped_column(
-        _UUID,
-        ForeignKey(f"{GLOBAL_SCHEMA}.resource_registry.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
+    resource_id: Mapped[str] = mapped_column(_UUID, nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(_UUID, nullable=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     policy_class: Mapped[str] = mapped_column(String(32), nullable=False)

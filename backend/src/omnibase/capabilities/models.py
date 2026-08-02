@@ -98,6 +98,13 @@ class CapabilityGrant(Base):
             "'data.schema.read', 'data.rows.read', 'rag.search', "
             "'rag.citation.read']::varchar[] AND workload_identity_digest IS NULL) "
             "OR (actions <@ ARRAY["
+            "'data.rows.insert', 'data.rows.update', 'data.rows.delete', "
+            "'artifact.read', 'artifact.write', 'rag.derived.create', "
+            "'rag.derived.delete']::varchar[] AND "
+            "workload_identity_digest IS NOT NULL AND "
+            "workload_identity_digest ~ '^[0-9a-f]{64}$' AND "
+            "delegation_depth = 0 AND delegation_depth_limit = 0) "
+            "OR (actions <@ ARRAY["
             "'sandbox.prepare', 'sandbox.create', 'sandbox.start', "
             "'sandbox.exec', 'sandbox.cancel', 'sandbox.logs', "
             "'sandbox.stats', 'sandbox.snapshot', 'sandbox.restore', "
@@ -318,6 +325,123 @@ class CapabilityUsageReservation(Base):
     )
 
 
+class WorkspaceDataUsageReservation(Base):
+    """Durable operation-idempotent budget/effect evidence for P34.6 data access."""
+
+    __tablename__ = "workspace_data_usage_reservations"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('data.rows.insert', 'data.rows.update', 'data.rows.delete', "
+            "'artifact.read', 'artifact.write', 'rag.derived.create', "
+            "'rag.derived.delete')",
+            name="workspace_data_usage_reservations_action_check",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'committed', 'unknown')",
+            name="workspace_data_usage_reservations_state_check",
+        ),
+        CheckConstraint(
+            "request_hash ~ '^[0-9a-f]{64}$'",
+            name="workspace_data_usage_reservations_request_hash_check",
+        ),
+        CheckConstraint(
+            "workload_identity_digest ~ '^[0-9a-f]{64}$'",
+            name="workspace_data_usage_reservations_workload_digest_check",
+        ),
+        CheckConstraint(
+            "resource_version >= 1",
+            name="workspace_data_usage_reservations_resource_version_check",
+        ),
+        CheckConstraint(
+            "calls = 1 AND bytes_in >= 0 AND bytes_out_reserved >= 0 " "AND cost_units > 0",
+            name="workspace_data_usage_reservations_budget_check",
+        ),
+        CheckConstraint(
+            "result_digest IS NULL OR result_digest ~ '^[0-9a-f]{64}$'",
+            name="workspace_data_usage_reservations_result_digest_check",
+        ),
+        CheckConstraint(
+            "(state = 'committed' AND result_digest IS NOT NULL) OR "
+            "(state IN ('pending', 'unknown') AND result_digest IS NULL)",
+            name="workspace_data_usage_reservations_state_result_check",
+        ),
+        ForeignKeyConstraint(
+            ["grant_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.capability_grants.id",
+                f"{GLOBAL_SCHEMA}.capability_grants.tenant_id",
+            ],
+            name="workspace_data_usage_reservations_grant_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["operation_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.operations.id",
+                f"{GLOBAL_SCHEMA}.operations.tenant_id",
+            ],
+            name="workspace_data_usage_reservations_operation_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.workspaces.id",
+                f"{GLOBAL_SCHEMA}.workspaces.tenant_id",
+            ],
+            name="workspace_data_usage_reservations_workspace_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["resource_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.resource_registry.id",
+                f"{GLOBAL_SCHEMA}.resource_registry.tenant_id",
+            ],
+            name="workspace_data_usage_reservations_resource_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "workspace_data_usage_reservations_tenant_grant_created_idx",
+            "tenant_id",
+            "grant_id",
+            "created_at",
+        ),
+        {"comment": "P34.6 durable workspace-data budget and no-replay evidence"},
+    )
+
+    operation_id: Mapped[str] = mapped_column(_UUID, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        _UUID,
+        ForeignKey(f"{GLOBAL_SCHEMA}.tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    grant_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    grant_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    runtime_instance_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    workload_identity_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[str] = mapped_column(_UUID, nullable=False)
+    resource_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    calls: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("1"))
+    bytes_in: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    bytes_out_reserved: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'pending'"))
+    result_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+        onupdate=text("now()"),
+    )
+
+
 class CapabilityRevocation(Base):
     """Append-only online deny record for an entire grant or one token JTI."""
 
@@ -387,4 +511,5 @@ __all__ = [
     "CapabilitySigningKey",
     "CapabilityUsage",
     "CapabilityUsageReservation",
+    "WorkspaceDataUsageReservation",
 ]

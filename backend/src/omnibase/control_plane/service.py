@@ -571,6 +571,14 @@ def append_resource_lineage(
     created_by_operation_id: str | None = None,
 ) -> ResourceLineage:
     """Append a tenant-scoped lineage edge bound to the source's version."""
+
+    session.execute(
+        select(
+            func.pg_advisory_xact_lock(
+                func.hashtextextended(f"omnibase:resource-lineage:{tenant_id}", 0)
+            )
+        )
+    )
     _validate_choice(relation, _LINEAGE_RELATIONS, "lineage relation")
     if source_resource_id == derived_resource_id:
         raise DomainConflict("A resource cannot derive from itself")

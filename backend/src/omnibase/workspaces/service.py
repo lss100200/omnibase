@@ -107,6 +107,9 @@ _ACTION_ROLE = {
     "workspace.snapshot": "operator",
     "workspace.restore": "maintainer",
     "workspace.nodes.manage": "maintainer",
+    "workspace.data.read": "viewer",
+    "workspace.data.write": "member",
+    "workspace.data.publish": "owner",
 }
 
 

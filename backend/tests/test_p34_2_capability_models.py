@@ -8,6 +8,7 @@ from omnibase.capabilities.models import (
     CapabilitySigningKey,
     CapabilityUsage,
     CapabilityUsageReservation,
+    WorkspaceDataUsageReservation,
 )
 from omnibase.db.models import GLOBAL_SCHEMA
 
@@ -26,6 +27,7 @@ def test_capability_models_are_global_and_tenant_scoped_where_required() -> None
         CapabilityGrant: "capability_grants",
         CapabilityUsage: "capability_usage",
         CapabilityUsageReservation: "capability_usage_reservations",
+        WorkspaceDataUsageReservation: "workspace_data_usage_reservations",
         CapabilityRevocation: "capability_revocations",
     }
     for model, table_name in expected.items():
@@ -35,6 +37,7 @@ def test_capability_models_are_global_and_tenant_scoped_where_required() -> None
         CapabilityGrant,
         CapabilityUsage,
         CapabilityUsageReservation,
+        WorkspaceDataUsageReservation,
         CapabilityRevocation,
     ):
         assert model.__table__.columns.tenant_id.nullable is False
@@ -51,7 +54,7 @@ def test_signing_key_registry_cannot_store_private_key_or_remote_url_fields() ->
     )
 
 
-def test_grant_database_contract_has_disjoint_read_and_sandbox_profiles() -> None:
+def test_grant_database_contract_has_disjoint_read_workspace_data_and_sandbox_profiles() -> None:
     checks = _checks(CapabilityGrant)
     action_check = checks["capability_grants_action_profile_check"]
     assert "data.schema.read" in action_check
@@ -64,7 +67,9 @@ def test_grant_database_contract_has_disjoint_read_and_sandbox_profiles() -> Non
     assert "cardinality(resource_ids) = 1" in action_check
     assert "delegation_depth = 0" in action_check
     assert "delegation_depth_limit = 0" in action_check
-    assert "rows.insert" not in action_check
+    assert "data.rows.insert" in action_check
+    assert "artifact.write" in action_check
+    assert "rag.derived.create" in action_check
     assert "schema.apply" not in action_check
     assert "'*'" not in action_check
     assert "created_by_actor_type = 'system'" in checks["capability_grants_trusted_issuer_check"]

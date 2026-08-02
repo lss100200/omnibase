@@ -37,9 +37,11 @@ from omnibase.controlled_data.execution_service import (
     execute_controlled_crud_audited,
 )
 from omnibase.controlled_data.executor import (
+    ControlledCrudAuthorizationDenied,
     ControlledCrudCommand,
     ControlledCrudResult,
     ControlledCrudSuccessAuditError,
+    TrustedCapabilityDecision,
     TrustedUserRbacDecision,
     execute_controlled_crud,
 )
@@ -97,6 +99,7 @@ def _create_scenario(
     _upgrade_head()
     tenant_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
+    template_id = uuid.uuid4()
     actor_id = uuid.uuid4()
     resource_id = uuid.uuid4()
     binding_id = uuid.uuid4()
@@ -155,6 +158,47 @@ def _create_scenario(
                 "id": str(actor_id),
                 "email": f"executor-{suffix}@example.invalid",
                 "password_hash": "integration-test-not-a-real-password-hash",
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.resource_registry "
+                "(id, tenant_id, kind, owner_type, owner_id, display_name, state, "
+                "version, policy_class) VALUES (:id, :tenant, 'workspace', "
+                "'workspace', :id, 'Executor workspace', 'active', 1, "
+                "'workspace_private')"
+            ),
+            {"id": str(workspace_id), "tenant": str(tenant_id)},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.workspace_templates "
+                "(id, tenant_id, template_key, version, display_name, digest, "
+                "template_spec, state, created_by_user_id) VALUES "
+                "(:id, :tenant, :key, 1, 'Executor template', :digest, "
+                "'{}'::jsonb, 'active', :actor)"
+            ),
+            {
+                "id": str(template_id),
+                "tenant": str(tenant_id),
+                "key": f"executor-{suffix}",
+                "digest": "d" * 64,
+                "actor": str(actor_id),
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.workspaces "
+                "(id, tenant_id, template_id, owner_user_id, display_name, "
+                "desired_state, observed_state, generation, version, quota) VALUES "
+                "(:id, :tenant, :template, :actor, 'Executor workspace', "
+                "'running', 'running', 1, 1, '{}'::jsonb)"
+            ),
+            {
+                "id": str(workspace_id),
+                "tenant": str(tenant_id),
+                "template": str(template_id),
+                "actor": str(actor_id),
             },
         )
         connection.execute(
@@ -489,6 +533,101 @@ def test_wrong_but_valid_tenant_schema_fails_closed_before_tenant_data(
         "retryable": False,
     }
     assert wrong_schema not in str(audits).lower()
+
+
+def test_capability_write_rechecks_revoked_workspace_membership(
+    db_engine: Engine,
+    run_owned_resources: _OwnedResources,
+) -> None:
+    scenario = _create_scenario(db_engine, run_owned_resources)
+    grant_id = uuid.uuid4()
+    runtime_instance_id = uuid.uuid4()
+    verification_digest = "b" * 64
+    workload_digest = "c" * 64
+    now = datetime.now(UTC)
+
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.workspace_memberships "
+                "(tenant_id, workspace_id, user_id, role, state, version, "
+                "created_by_user_id) VALUES "
+                "(:tenant, :workspace, :actor, 'operator', 'revoked', 2, :actor)"
+            ),
+            {
+                "tenant": str(scenario.tenant_id),
+                "workspace": str(scenario.workspace_id),
+                "actor": str(scenario.actor_id),
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.capability_grants "
+                "(id, tenant_id, workspace_id, runtime_instance_id, "
+                "workload_identity_digest, actor_user_id, actions, resource_ids, "
+                "constraints, version, state, not_before, expires_at, max_calls, "
+                "max_bytes, max_cost_units, delegation_depth, delegation_depth_limit, "
+                "created_by_actor_type, created_by_actor_id) VALUES "
+                "(:id, :tenant, :workspace, :runtime, :workload, :actor, "
+                "ARRAY['data.rows.update']::varchar[], ARRAY[:resource]::uuid[], "
+                "CAST(:constraints AS jsonb), 1, 'active', :not_before, :expires, "
+                "10, 1048576, 10, 0, 0, 'system', :actor)"
+            ),
+            {
+                "id": str(grant_id),
+                "tenant": str(scenario.tenant_id),
+                "workspace": str(scenario.workspace_id),
+                "runtime": str(runtime_instance_id),
+                "workload": workload_digest,
+                "actor": str(scenario.actor_id),
+                "resource": str(scenario.resource_id),
+                "constraints": '{"timeout_ms":2000}',
+                "not_before": now - timedelta(seconds=1),
+                "expires": now + timedelta(minutes=5),
+            },
+        )
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.authorization_contexts SET "
+                "source = 'capability', grant_id = :grant, "
+                "role_snapshot = ARRAY[]::varchar[], source_version = 1, "
+                "snapshot_hash = :snapshot WHERE id = :id AND tenant_id = :tenant"
+            ),
+            {
+                "grant": str(grant_id),
+                "snapshot": verification_digest,
+                "id": str(scenario.command.authorization_context_id),
+                "tenant": str(scenario.tenant_id),
+            },
+        )
+
+    decision = TrustedCapabilityDecision(
+        decision_id=uuid.uuid4(),
+        allowed=True,
+        tenant_id=scenario.tenant_id,
+        workspace_id=scenario.workspace_id,
+        actor_user_id=scenario.actor_id,
+        resource_id=scenario.resource_id,
+        resource_version=1,
+        action="data.rows.update",
+        authorization_context_id=scenario.command.authorization_context_id,
+        grant_id=grant_id,
+        grant_version=1,
+        runtime_instance_id=runtime_instance_id,
+        workload_identity_digest=workload_digest,
+        request_hash=canonical_request_hash(scenario.request),
+        verification_digest=verification_digest,
+        user_is_active=True,
+        tenant_is_active=True,
+        evaluated_at=now,
+        expires_at=now + timedelta(seconds=30),
+    )
+    command = replace(scenario.command, decision=decision)
+
+    with Session(db_engine) as session, pytest.raises(ControlledCrudAuthorizationDenied):
+        execute_controlled_crud(session, command)
+
+    _assert_mutation_rolled_back(db_engine, scenario)
 
 
 def test_max_rows_overflow_rolls_back_mutation_and_commits_failure_audit(

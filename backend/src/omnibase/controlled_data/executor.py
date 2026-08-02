@@ -1,13 +1,15 @@
 """Minimal transaction-owned executor for P34.3 controlled CRUD.
 
-The executor accepts only a server-owned locator and a trusted live user-RBAC
-decision.  It owns one SQLAlchemy transaction, locks all authorization and
+The executor accepts only a server-owned locator and either a trusted live
+user-RBAC decision or a workload-bound capability decision.  It owns one SQLAlchemy transaction, locks all authorization and
 operation records before touching tenant data, applies transaction-local
 timeouts, and never returns physical identifiers or PostgreSQL row tokens.
 
 The global deadlock-avoidance order is frozen as: Tenant -> tenant User ->
-Resource -> TableBinding -> ColumnBindings(sorted) -> AuthorizationContext ->
-Operation -> Idempotency.  No caller may reorder or pre-lock these records.
+Workspace -> WorkspaceMembership -> Resource -> TableBinding ->
+ColumnBindings(sorted) -> AuthorizationContext -> Operation -> Idempotency.
+Workspace locks are required for workload-capability writes.  No caller may
+reorder or pre-lock these records.
 
 No router imports this module.  It does not perform DDL and it never discovers
 credentials, schemas, or locators from request data.
@@ -60,6 +62,7 @@ from omnibase.controlled_data.models import (
     DataTableBinding,
 )
 from omnibase.db.models import Tenant
+from omnibase.workspaces.models import Workspace, WorkspaceMembership
 
 MutationAction = Literal["data.rows.insert", "data.rows.update", "data.rows.delete"]
 MutationRequestType = InsertMutationRequest | UpdateMutationRequest | DeleteMutationRequest
@@ -73,12 +76,15 @@ _ALLOWED_POLICIES = frozenset({"workspace_private", "tenant_managed", "controlle
 _ALLOWED_LIVE_ROLES = frozenset(
     {"workspace_member", "workspace_admin", "tenant_admin", "platform_admin"}
 )
+_ALLOWED_WORKSPACE_WRITE_ROLES = frozenset({"member", "operator", "maintainer", "owner"})
 _IDEMPOTENCY_TTL = timedelta(hours=24)
 _MAX_LOCK_TIMEOUT_MS = 2_000
 
 CONTROLLED_CRUD_LOCK_ORDER = (
     "omnibase_meta.tenants",
     "tenant.users",
+    "omnibase_meta.workspaces",
+    "omnibase_meta.workspace_memberships",
     "omnibase_meta.resource_registry",
     "omnibase_meta.data_table_bindings",
     "omnibase_meta.data_column_bindings",
@@ -184,6 +190,47 @@ class TrustedUserRbacDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class TrustedCapabilityDecision:
+    """Short-lived internal result of live workload/capability verification."""
+
+    decision_id: UUID
+    allowed: bool
+    tenant_id: UUID
+    workspace_id: UUID
+    actor_user_id: UUID
+    resource_id: UUID
+    resource_version: int
+    action: MutationAction
+    authorization_context_id: UUID
+    grant_id: UUID
+    grant_version: int
+    runtime_instance_id: UUID
+    workload_identity_digest: str
+    request_hash: str
+    verification_digest: str
+    user_is_active: bool
+    tenant_is_active: bool
+    evaluated_at: datetime
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("resource_version", "grant_version"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"decision {name} must be positive")
+        for name in ("workload_identity_digest", "request_hash", "verification_digest"):
+            value = getattr(self, name)
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise ValueError(f"decision {name} must be lowercase SHA-256 hex")
+        if not _aware(self.evaluated_at) or not _aware(self.expires_at):
+            raise ValueError("decision timestamps must be timezone-aware")
+        if self.expires_at <= self.evaluated_at:
+            raise ValueError("decision expiry must follow evaluation")
+        if self.expires_at - self.evaluated_at > timedelta(seconds=30):
+            raise ValueError("decision TTL cannot exceed 30 seconds")
+
+
+@dataclass(frozen=True, slots=True)
 class ControlledCrudCommand:
     """Internal execution command; IDs are bound again against locked records."""
 
@@ -194,7 +241,7 @@ class ControlledCrudCommand:
     operation_id: UUID
     locator: TrustedMutationLocator
     request: MutationRequestType
-    decision: TrustedUserRbacDecision
+    decision: TrustedUserRbacDecision | TrustedCapabilityDecision
     expected_operation_version: int = 1
     lock_timeout_ms: int = 1_000
 
@@ -251,6 +298,8 @@ class _LockedRecords:
     user_id: str
     user_is_active: bool
     user_is_tenant_admin: bool
+    workspace: Workspace | None
+    workspace_membership: WorkspaceMembership | None
     binding: DataTableBinding
     resource: ResourceRecord
     authorization: AuthorizationContext
@@ -554,6 +603,32 @@ def _lock_records(session: Session, command: ControlledCrudCommand) -> _LockedRe
     ):
         raise ControlledCrudAuthorizationDenied("current tenant user is missing or inactive")
 
+    workspace: Workspace | None = None
+    workspace_membership: WorkspaceMembership | None = None
+    if isinstance(command.decision, TrustedCapabilityDecision):
+        if command.workspace_id is None:
+            raise ControlledCrudAuthorizationDenied("capability write requires a workspace")
+        workspace_id = str(command.workspace_id)
+        workspace = session.execute(
+            select(Workspace)
+            .where(
+                Workspace.id == workspace_id,
+                Workspace.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        workspace_membership = session.execute(
+            select(WorkspaceMembership)
+            .where(
+                WorkspaceMembership.tenant_id == tenant_id,
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == str(command.actor_user_id),
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if workspace is None or workspace_membership is None:
+            raise ControlledCrudAuthorizationDenied("workspace or current membership is missing")
+
     resource = session.execute(
         select(ResourceRecord)
         .where(
@@ -609,6 +684,8 @@ def _lock_records(session: Session, command: ControlledCrudCommand) -> _LockedRe
         user_id=str(user_row["id"]),
         user_is_active=user_row["is_active"] is True,
         user_is_tenant_admin=user_row["is_tenant_admin"] is True,
+        workspace=workspace,
+        workspace_membership=workspace_membership,
         binding=binding,
         resource=resource,
         authorization=authorization,
@@ -643,7 +720,6 @@ def _validate_locked_records(
     operation = locked.operation
     decision = command.decision
 
-    current_role = "tenant_admin" if locked.user_is_tenant_admin else "workspace_member"
     expected_operation_version = command.expected_operation_version + (
         2 if operation.state == "succeeded" else 0
     )
@@ -654,10 +730,34 @@ def _validate_locked_records(
             locked.tenant.schema_name == command.locator.tenant_schema,
             locked.user_id == actor_id,
             locked.user_is_active is True,
-            decision.roles == frozenset({current_role}),
         )
     ):
-        raise ControlledCrudAuthorizationDenied("current tenant user role is inactive or changed")
+        raise ControlledCrudAuthorizationDenied("current tenant user is inactive or changed")
+    if isinstance(decision, TrustedUserRbacDecision):
+        current_role = "tenant_admin" if locked.user_is_tenant_admin else "workspace_member"
+        if decision.roles != frozenset({current_role}):
+            raise ControlledCrudAuthorizationDenied("current tenant user role changed")
+    else:
+        workspace = locked.workspace
+        membership = locked.workspace_membership
+        if workspace_id is None or workspace is None or membership is None:
+            raise ControlledCrudAuthorizationDenied("current workspace membership is missing")
+        if not all(
+            (
+                workspace.id == workspace_id,
+                workspace.tenant_id == tenant_id,
+                workspace.desired_state != "archived",
+                workspace.observed_state != "archived",
+                membership.tenant_id == tenant_id,
+                membership.workspace_id == workspace_id,
+                membership.user_id == actor_id,
+                membership.state == "active",
+                membership.role in _ALLOWED_WORKSPACE_WRITE_ROLES,
+            )
+        ):
+            raise ControlledCrudAuthorizationDenied(
+                "current workspace membership is inactive or insufficient"
+            )
 
     if not all(
         (
@@ -684,7 +784,7 @@ def _validate_locked_records(
     ):
         raise ControlledCrudAuthorizationDenied("workspace-private resource ownership mismatch")
 
-    if not all(
+    common_decision = all(
         (
             decision.allowed is True,
             decision.user_is_active is True,
@@ -698,26 +798,50 @@ def _validate_locked_records(
             decision.authorization_context_id == command.authorization_context_id,
             decision.evaluated_at <= now < decision.expires_at,
         )
-    ):
-        raise ControlledCrudAuthorizationDenied("trusted live RBAC decision does not bind request")
-    if not all(
-        (
-            authorization.tenant_id == tenant_id,
-            authorization.workspace_id == workspace_id,
-            authorization.source == "user_rbac",
-            authorization.actor_user_id == actor_id,
-            authorization.grant_id is None,
-            authorization.live_recheck_required is True,
-            authorization.source_version == decision.source_version,
-            authorization.snapshot_hash == decision.snapshot_hash,
-            decision.roles <= frozenset(authorization.role_snapshot),
-            action in authorization.actions,
-            resource_id in authorization.resource_ids,
-            _aware(authorization.expires_at),
-            now < authorization.expires_at,
-            decision.expires_at <= authorization.expires_at,
+    )
+    if not common_decision:
+        raise ControlledCrudAuthorizationDenied("trusted authorization does not bind request")
+    if isinstance(decision, TrustedUserRbacDecision):
+        authorized = all(
+            (
+                authorization.tenant_id == tenant_id,
+                authorization.workspace_id == workspace_id,
+                authorization.source == "user_rbac",
+                authorization.actor_user_id == actor_id,
+                authorization.grant_id is None,
+                authorization.live_recheck_required is True,
+                authorization.source_version == decision.source_version,
+                authorization.snapshot_hash == decision.snapshot_hash,
+                decision.roles <= frozenset(authorization.role_snapshot),
+                action in authorization.actions,
+                resource_id in authorization.resource_ids,
+                _aware(authorization.expires_at),
+                now < authorization.expires_at,
+                decision.expires_at <= authorization.expires_at,
+            )
         )
-    ):
+    else:
+        authorized = all(
+            (
+                workspace_id is not None,
+                binding.policy_class == "workspace_private",
+                authorization.tenant_id == tenant_id,
+                authorization.workspace_id == workspace_id,
+                authorization.source == "capability",
+                authorization.actor_user_id == actor_id,
+                authorization.grant_id == str(decision.grant_id),
+                authorization.live_recheck_required is True,
+                authorization.source_version == decision.grant_version,
+                authorization.snapshot_hash == decision.verification_digest,
+                decision.request_hash == request_hash,
+                action in authorization.actions,
+                resource_id in authorization.resource_ids,
+                _aware(authorization.expires_at),
+                now < authorization.expires_at,
+                decision.expires_at <= authorization.expires_at,
+            )
+        )
+    if not authorized:
         raise ControlledCrudAuthorizationDenied("authorization context is stale or out of scope")
     if not all(
         (
@@ -975,6 +1099,7 @@ __all__ = [
     "ControlledCrudIdempotencyConflict",
     "ControlledCrudResult",
     "ControlledCrudSuccessAuditError",
+    "TrustedCapabilityDecision",
     "TrustedUserRbacDecision",
     "execute_controlled_crud",
     "execute_controlled_crud_in_transaction",

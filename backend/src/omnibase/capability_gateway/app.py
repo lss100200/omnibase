@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from omnibase.capability_gateway.adapters import (
     CanonicalRagReadAdapter,
@@ -28,7 +30,16 @@ from omnibase.capability_gateway.security import (
 )
 from omnibase.capability_gateway.service import GatewayComponents, GatewayFailure, GatewayService
 from omnibase.capability_gateway.workload import SqlAlchemyRunLeaseWorkloadAttestor
+from omnibase.capability_gateway.write_adapters import (
+    UnavailableWorkspaceDataAdapter,
+    WorkspaceDataAdapter,
+)
+from omnibase.capability_gateway.write_service import (
+    WorkspaceDataGatewayComponents,
+    WorkspaceDataGatewayService,
+)
 from omnibase.core.config import get_settings
+from omnibase.core.db import get_session_factory
 from omnibase.core.middleware import RequestBodyLimitMiddleware, RequestContextMiddleware
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -70,6 +81,8 @@ def create_gateway_app(
     components: GatewayComponents | None = None,
     *,
     workload_attestor: WorkloadAttestor | None = None,
+    workspace_data_adapter: WorkspaceDataAdapter | None = None,
+    workspace_data_session_factory: Callable[[], Session] | None = None,
     cursor_secret: bytes | None = None,
 ) -> FastAPI:
     """Create the isolated app.
@@ -111,6 +124,15 @@ def create_gateway_app(
             audit_sink=ControlPlaneGatewayAuditSink(),
         )
     app.state.gateway_service = GatewayService(components)
+    app.state.workspace_data_service = WorkspaceDataGatewayService(
+        WorkspaceDataGatewayComponents(
+            verifier=components.verifier,
+            resolver=components.resolver,
+            adapter=workspace_data_adapter or UnavailableWorkspaceDataAdapter(),
+            audit_sink=components.audit_sink,
+            audit_session_factory=workspace_data_session_factory or get_session_factory(),
+        )
+    )
     app.state.capability_verifier = components.verifier
     app.state.workload_attestor = workload_attestor or RejectingWorkloadAttestor()
     app.include_router(router)
@@ -143,8 +165,12 @@ def create_production_gateway_app(
     *,
     workload_attestor: SqlAlchemyRunLeaseWorkloadAttestor,
     cursor_secret: bytes,
+    workspace_data_adapter: WorkspaceDataAdapter | None = None,
 ) -> FastAPI:
-    """Compose the real read-only Gateway behind a trusted mTLS attestor.
+    """Compose the trusted mTLS Gateway with read and fail-closed data routes.
+
+    Workspace-data routes remain unavailable unless a controlled adapter is
+    explicitly injected; the Browser application is never used as fallback.
 
     The caller must provide the workload attestor explicitly.  The function
     never creates a permissive fallback and never mounts the Gateway into the
@@ -165,6 +191,7 @@ def create_production_gateway_app(
     return create_gateway_app(
         components,
         workload_attestor=workload_attestor,
+        workspace_data_adapter=workspace_data_adapter,
         cursor_secret=cursor_secret,
     )
 

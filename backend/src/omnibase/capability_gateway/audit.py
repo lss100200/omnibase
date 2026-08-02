@@ -24,6 +24,8 @@ class GatewayAuditRecord:
     bytes_in: int
     bytes_out: int | None = None
     row_count: int | None = None
+    risk_level: str = "R0"
+    operation_id: str | None = None
 
 
 @runtime_checkable
@@ -57,9 +59,10 @@ class ControlPlaneGatewayAuditSink:
             run_id=None,
             grant_id=capability.grant_id,
             resource_id=record.resource_id,
+            operation_id=record.operation_id,
             action=record.action,
             decision=record.decision,
-            risk_level="R0",
+            risk_level=record.risk_level,
             input_hash=record.input_hash,
             status_code=record.status_code,
             row_count=record.row_count,

@@ -59,15 +59,36 @@ runtime evidence; then correct the stale documentation in the same change.
   member Overlay endpoint to a Sandbox, connect a Sandbox or Runner directly to
   PostgreSQL/Redis/MinIO, or treat the disposable Gates as proof of production
   Core-to-Runner/Broker activation, non-disposable tenant/RAG, real member data
-  plane, DERP, node-compromise, capacity, or SLA readiness. Workspace
-  private-write/RAG promotion and Agent Runtime/orchestration remain frozen
-  until the roadmap and handover explicitly unlock them.
+  plane, DERP, node-compromise, capacity, or SLA readiness. P34.6
+  Workspace-private/derived data contracts, controlled Gateway write seam,
+  copy-on-publish promotion, server-generated snapshot inventory,
+  restore-new-identity metadata, migration, and isolated verification are
+  engineering-unlocked. Production Workspace-data access remains fail-closed
+  unless trusted mTLS ingress, live Run/Node/Lease/generation/fencing evidence,
+  a short-lived non-delegable workspace-data grant, and an explicitly installed
+  controlled adapter are all present. Browser private-write, direct
+  Sandbox/Runner access to PostgreSQL/Redis/MinIO, canonical mutation,
+  production provider activation, Agent Runtime, and orchestration remain
+  frozen.
 - P34.4 membership mutations serialize on the tenant-bound Workspace aggregate,
   then re-lock the actor and target membership before evaluating the active-owner
   invariant. Template registration revalidates the live tenant administrator in
   the caller-owned transaction and uses the PostgreSQL natural key for exact
   concurrent replay. Do not replace either rule with a pre-transaction role
   snapshot, an unlocked owner count, or catch-and-ignore `IntegrityError`.
+- P34.6 capability-backed private mutation serializes Tenant, tenant User,
+  Workspace aggregate, actor WorkspaceMembership, Resource, bindings,
+  AuthorizationContext, Operation, and Idempotency in that order. The actor
+  membership must still be active and writable on every request; an active
+  Grant and tenant User cannot substitute for live Workspace membership.
+- Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
+  Promotion may only create a new `controlled_shared` Resource and must not
+  modify the source or create/reclassify `canonical_readonly`. External effects
+  left `pending` or `unknown` require reconciliation and must never be replayed
+  automatically. Snapshot inventory is server-generated; restore always creates
+  a new Workspace, generation, and Resource IDs and never revives Run, Lease,
+  token, runtime/workload identity, socket, PID, provider handle, or network
+  identity.
 - Run and Network leases are independently fenced. A Run lease is bound to the
   current Node fencing token and a Network lease is a logical authorization
   allocated from `network_lease_cursors`; P34.4 never activates a provider while

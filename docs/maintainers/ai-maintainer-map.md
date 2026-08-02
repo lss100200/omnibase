@@ -440,20 +440,52 @@ isolated Sandbox network namespace
 
 P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker Gate，覆盖真实 `setns` namespace-only connect、direct egress default-deny、地址分类、预算、challenge、PID/starttime/netns、socket identity、durable no-replay 与清理；证据位于 `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`。该 Gate 不自动证明 Core↔Broker production mTLS 联合激活。P34.5C 已从 fresh Windows clone 构建专用 Runner 并通过真实 disposable Headscale control-plane Gate：161 文件 source manifest 同时封存 `.gitattributes`、锁文件、完整 build inputs 与 upstream digests；mTLS Node Daemon 对 Headscale provider records 完成 activate/status/rotate/revoke，验证 ambiguous no-replay、离线/重连、凭据 containment 与 `0/0/0` 清理。该 Gate 注册的真实成员设备为 0，因此不能冒充 production Node Daemon、两节点数据面、DERP relay 或节点失陷证据；这些继续属于 P34.7。P34.5D 已从 clean checkout 构建独立 Gateway 与 stdlib-only client 镜像并通过真实 split-process mTLS Gateway Gate：249 文件 source manifest 封存 `.gitattributes`、完整 `backend/src`/`backend/tests` 和全部 build inputs；独立受限 client 经 server-owned registry/live lease/fencing 领取短期 credential，并在 guarded `omnibase_test_*` sentinel 内完成 schema/rows/RAG/citation 四读及 stale/revocation 矩阵，最终 `0/0/0` 清理。该闭环仍不允许 Runner/Sandbox 直连 PostgreSQL、Redis 或 MinIO，也不自动证明非 disposable production tenant/RAG。
 
+### 6.7 P34.6 Workspace 数据、Derived RAG、Promotion 与 Snapshot lineage
+
+P34.6 复用 P34.1–P34.5 的 Resource、Operation、Approval、Idempotency、Audit、Workspace membership、Run/Node/Lease/fencing 和 Controlled CRUD，不建立第二套鉴权或 SQL 执行器：
+
+```text
+trusted Runner/Broker mTLS peer
+  -> live Run/Node/Lease/generation/fencing attestation
+  -> short-lived non-delegable WORKSPACE_DATA grant
+  -> independent Gateway logical data route
+  -> operation-idempotent calls/bytes/cost reservation
+  -> P34.3 private CRUD or explicitly installed WorkspaceDataAdapter
+  -> result + Operation/Idempotency/Audit, or pending/unknown reconciliation
+
+Browser control plane
+  -> live Workspace membership and tenant-admin decision
+  -> R2 Approval + Operation + exact source version/digest/request hash
+  -> copy-on-publish to a new controlled_shared Resource
+  -> published_from lineage; source remains immutable
+```
+
+关键边界：
+
+- `capabilities.service.WORKSPACE_DATA_ACTIONS` 与 READ/SANDBOX profiles 互斥；Grant 绑定单一 Workspace、runtime instance 和 workload identity，最长五分钟、不可委派。Promotion action 不存在于 runtime token。
+- `capability_gateway.write_service.WorkspaceDataGatewayService` 只接受逻辑 ID 和 strict DTO；Browser Bearer/read token、canonical/controlled-shared write、physical locator/schema/table/object key/SQL 都在 adapter 前拒绝。Production composition 的 write adapter 默认 unavailable。
+- `workspace_data` 的 Artifact、DerivedIndex、Publication、SnapshotItem 和 DataEffect 都是 durable metadata。Artifact/derived output 不可原地覆盖；每次修订创建新的 Resource/generation，并追加 lineage。
+- tenant `workspace_derived_chunks_v2` 是独立 derived lane；任何 P34.6 build/search/promotion/restore 都不能写 canonical `documents`、`embeddings`、`embeddings_v2` 或 RAG index metadata。
+- provider/object-store/index boundary 前先持久化 pending effect；跨边界后结果不明确进入 `unknown`，禁止自动 replay。不能通过删除 reservation、effect、Audit 或 lineage 伪造 fresh attempt。
+- Promotion 只创建新的 `controlled_shared` target 和 `published_from` lineage；P34.6 不允许直接创建/修改 `canonical_readonly`，也不允许 requester self-approval 或 source 原地 policy flip。
+- Snapshot 只有在 server-generated resource/version/digest/size inventory 全部验证后才能 ready；Restore 创建新 Workspace/generation 和新 Resource ID，不恢复旧 Run、Lease、token、runtime/workload identity、PID、socket、连接或 provider handle。
+
+P34.6 的 unit/fresh-sentinel Gate 证明源码、migration、DB trigger、逻辑路由和失败语义；真实非 disposable object store/index worker、生产 snapshot payload 传输、恢复演练、容量/SLA 与 production cutover 继续由 P34.7 验收。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
 
 | 区域 | 当前数据 |
 |---|---|
-| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 共 17 张表：`workspace_templates`、`workspaces`、`workspace_memberships`、`resource_scope_bindings`、`workspace_scope_grants`、`workspace_runs`、`run_leases`、`workspace_snapshots`、`workspace_nodes`、`node_attestations`、`peer_grants`、`service_advertisements`、`network_lease_cursors`、`network_leases`、`workspace_authorities`、`collaboration_artifacts`、`collaboration_events` |
-| 每个 `tenant_*` schema | users、documents、V1/V2 embeddings、RAG index state，以及 P34.3 `controlled_data_operation_payloads` 和受控动态业务表 |
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations` |
+| 每个 `tenant_*` schema | users、documents、V1/V2 canonical embeddings、RAG index state、P34.3 `controlled_data_operation_payloads` 与受控动态业务表，以及 P34.6 独立 `workspace_derived_chunks_v2` lane |
 | MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
 | Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
 
 ### 7.2 Alembic 方向
 
-- migration 链当前为 `0001` 至 `0008`。
+- migration 链当前为 `0001` 至 `0009`。
 - `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
 - 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
 - `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
@@ -692,7 +724,50 @@ make test-destructive
 
 这些命令覆盖 A0-A3 strict DTO/authorization/durable ledger、A4 canonical digest/Runner transport/RuntimeDriver/deployment fault cleanup、B logical Network Broker、C provider-neutral Overlay adapter/publication，以及 D mTLS workload identity/read Gateway bridge。`0008`、append-only trigger、并发和 downgrade 必须只在 guarded disposable `omnibase_test_*` sentinel PostgreSQL 中验证。最后两个 host 命令必须在目标独立 Linux Runner 上使用真实配置执行；占位符不能直接交给 shell，也不能用普通 Docker/WSL 结果替代。Overlay 单元测试仍不能替代 `scripts/overlay/run_disposable_overlay_gate.ps1`，而该 disposable Gate 又不能替代 P34.7 的真实成员节点、DERP relay 与节点失陷生产 Gate。
 
-### 11.7 SDK contracts
+### 11.7 P34.6 Workspace 数据与 RAG 通道
+
+```powershell
+docker compose --env-file .env.example run --rm --no-deps backend pytest `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py -q
+docker compose --env-file .env.example run --rm --no-deps backend mypy `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data
+docker compose --env-file .env.example run --rm --no-deps backend ruff check `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data `
+  src/omnibase/migrations/versions/0009_p34_6_workspace_data.py `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py `
+  tests/integration/test_p34_6_workspace_data_foundation.py
+docker compose --env-file .env.example run --rm --no-deps backend ruff format --check `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data `
+  src/omnibase/migrations/versions/0009_p34_6_workspace_data.py `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py `
+  tests/integration/test_p34_6_workspace_data_foundation.py
+make test-destructive
+```
+
+`0009`、canonical/policy transition guard、lineage append-only/cycle、workspace-data reservation/effect state、tenant derived lane、跨 Workspace/tenant 和 populated downgrade 必须只在 fresh `omnibase_test_*` sentinel PostgreSQL 中验证。真实对象存储/index worker、production snapshot payload/restore rehearsal 和 canonical cutover 仍是 P34.7 Gate；不得用 metadata/unit 结果冒充。
+
+### 11.8 SDK contracts
 
 ```powershell
 Set-Location backend
@@ -708,7 +783,7 @@ node --test sdk/typescript/tests/client.test.mjs
 & ./frontend/node_modules/.bin/tsc.cmd -p sdk/typescript/tsconfig.json --noEmit
 ```
 
-### 11.8 Frontend
+### 11.9 Frontend
 
 ```powershell
 cd frontend
@@ -782,6 +857,15 @@ pnpm build
 4. 真实 Overlay 故障先隔离 Node Daemon 和 service publication；禁止把物理 IP/key/route 暴露给 Sandbox 作为临时绕行。
 5. Gateway 故障返回拒绝/503；禁止回退 Browser JWT/cookie、静态 service secret、数据库连接串或直接 infrastructure route。
 6. 分别重跑目标 Linux attack matrix、Broker/DNS/跨 Workspace负例、真实 disposable Overlay Gate 和 Gateway live lease/mTLS tests 后再逐层装配。
+
+### 12.9 P34.6 Workspace 数据、Promotion 或 Snapshot 风险
+
+1. 立即恢复 unavailable `WorkspaceDataAdapter` 和 rejecting workload-data Grant issuance，撤销受影响 Grant/Run Lease/workload certificate；Browser Controlled Data 的 `workspace_private` 拒绝保持不变。
+2. 停止 derived build、publication、snapshot/restore worker，保留 reservation、effect、Operation、Approval、Idempotency、Audit、snapshot inventory 和 lineage；pending/unknown 不自动重放。
+3. canonical 或物理 locator 边界不明确时，关闭全部 Workspace data route并对 canonical tables/index metadata做 count/digest取证；禁止通过 policy flip、直接 SQL、删除 lineage 或改写 Audit修复。
+4. Promotion 重新执行必须使用新的、由另一名 live tenant admin 决定的 Approval 和精确 source version/digest/request hash；P34.6 目标仍只能是新的 `controlled_shared` Resource。
+5. Snapshot/restore 故障时保持新 Workspace stopped/unavailable，验证完整 inventory/object digest后 forward-fix；不能覆盖原 Workspace或恢复旧 token、Run、Lease、runtime/workload identity、PID、socket、连接和 provider handle。
+6. 在新的 guarded `omnibase_test_*` sentinel 中重跑 `0009`、trigger、cross-tenant/workspace、unknown no-replay、canonical unchanged、promotion并发与 restore-new-identity Gate 后再开放。
 
 ## 13. 解冻与继续冻结边界：P34.4 / P34.5+
 

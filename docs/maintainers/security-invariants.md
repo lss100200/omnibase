@@ -922,3 +922,111 @@ Gateway bearer token 只代表 P34.2 read capability，不能证明发起请求�
 **失败恢复**
 
 恢复 rejecting workload attestor、capability verifier、credential issuer 和 private-key provider，撤销短期 token/Run Lease/workload certificate，并保留 code-only denied/error Audit。无法证明 mTLS scope 或 live lease 当前性时返回不可用/拒绝，不能回退到 Browser cookie 或静态 service secret。
+
+## INV-022 canonical-derived-storage-boundary
+
+**权威源代码**
+
+- `backend/src/omnibase/workspace_data/**`
+- `backend/src/omnibase/capability_gateway/write_adapters.py`
+- `backend/src/omnibase/capability_gateway/write_service.py`
+- `backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py`
+
+**为何存在**
+
+Workspace private/derived 数据允许被受约束 workload 创建，但它不能因此获得 canonical 写权限。Artifact、derived index、canonical RAG 和物理对象定位必须处于不同 policy、表、adapter 与 storage namespace；derived build、读取、publication 和 restore 的任何路径都不得更新 canonical `documents`、`embeddings`、`embeddings_v2` 或 index metadata。物理 schema、table、bucket、object key、presigned URL 和 provider receipt 只存在于 server-owned adapter/storage binding，不能进入 DTO、SDK、Audit、日志或错误。
+
+**允许的改法**
+
+- 为 Workspace private/derived 增加新的逻辑 kind、不可变 generation、typed internal storage binding 和受控 adapter。
+- Artifact 或 derived output 的“修改”创建新 Resource，并追加 `derived_from`/`transformed_from` lineage。
+- 在数据库、adapter 和测试中增加更严格的 canonical read-only trigger、role privilege 和 before/after digest 证明。
+
+**禁止的改法**
+
+- 复用或写入 canonical 表、index state 或 locator namespace保存 derived output。
+- 允许任何 existing Resource 原地进入或离开 `canonical_readonly`/`workspace_derived`。
+- 让 Browser JWT、read token、Sandbox lifecycle grant 或 caller-supplied locator 调用 workload write adapter。
+- 将 physical locator、对象存储凭据、正文、embedding/vector 或任意 SQL 暴露到公共契约。
+
+**必须运行的测试**
+
+- P34.6 Workspace Data、Gateway write、derived RAG focused tests。
+- OpenAPI/Python/TypeScript SDK locator 泄漏扫描。
+- guarded sentinel PostgreSQL 中的 canonical UPDATE/DELETE/TRUNCATE/policy flip 和 derived-before/after canonical digest 测试。
+
+**失败恢复**
+
+立即撤下 Workspace write/derived adapter，恢复 unavailable/rejecting composition，撤销相关 workload-data Grant，并保留 effect、operation、idempotency、Audit 和 lineage 证据。不能通过删除 derived 记录、重写 canonical 行、暴露 locator 或让 Sandbox 直连存储止血。
+
+## INV-023 promotion-approval-atomicity
+
+**权威源代码**
+
+- `backend/src/omnibase/workspace_data/models.py`
+- `backend/src/omnibase/workspace_data/service.py`
+- `backend/src/omnibase/control_plane/service.py`
+- `backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py`
+
+**为何存在**
+
+Promotion 是把 Workspace 私有/派生资源复制到更广共享范围的高风险操作，不是资源标签修改。它必须精确绑定 tenant、Workspace、source Resource/version/digest、target scope、request hash、Operation、Approval、Grant 与 Idempotency；requester 不能自批。P34.6 只允许创建新的 `controlled_shared` target Resource 和 `published_from` lineage，不允许直接创建或修改 `canonical_readonly`，也不能把 source 原地改为 shared/canonical。
+
+**允许的改法**
+
+- 收紧 risk、审批角色、source/target closed set、TTL、digest、quota 或 reconciliation 规则。
+- 在同一数据库事务中发布 target visibility、lineage、Operation/Idempotency、quota commit 与 success Audit。
+- 对对象存储 copy 使用 `pending -> committed|failed|unknown` effect，provider boundary 后结果不明确时等待显式 reconciliation。
+
+**禁止的改法**
+
+- 将 promotion action 放进 runtime bearer token 或 Gateway workload route。
+- 无审批、过期/已消费审批、requester self-approval、stale membership/generation/version/digest 时继续执行。
+- 原地修改 source policy/locator/version，复用已有 target，或在 Audit/lineage失败后仍让 target 可见。
+- 从 `unknown` 自动重放 provider mutation、删除 reservation/evidence 后伪造 fresh attempt。
+
+**必须运行的测试**
+
+- self-approval、非管理员、过期/重复审批、cross-tenant/workspace、source drift、same-key-different-hash 与并发单赢家。
+- provider commit 后断线进入 `unknown` 且不自动 replay。
+- target/new identity、source 不变、唯一 `published_from`、Audit/lineage failure 全回滚。
+
+**失败恢复**
+
+关闭 promotion executor/adapter，撤销待处理 Approval/Grant，保持 publication/effect 为当前单向状态并人工 reconciliation。不能把 `unknown` 改回 pending、重置幂等键、直接 UPDATE Operation/Approval/Audit/lineage，或把 source policy 原地修成目标值。
+
+## INV-024 snapshot-restore-lineage
+
+**权威源代码**
+
+- `backend/src/omnibase/workspace_data/models.py`
+- `backend/src/omnibase/workspace_data/service.py`
+- `backend/src/omnibase/workspaces/service.py`
+- `backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py`
+
+**为何存在**
+
+Snapshot 只有在服务端生成并核验完整 resource/version/digest/size inventory 后才能作为恢复依据；调用方提交单个 manifest digest 不能证明数据一致。Restore 必须创建新的 Workspace identity/generation 和新的 private/derived Resource ID，并追加 `restored_from` lineage。Run、Lease、token、runtime/workload identity、PID、socket、连接、provider handle、进程内存和成员 Overlay identity 都是短期运行态，绝不能随 snapshot 复活。
+
+**允许的改法**
+
+- 增加 manifest schema version、entry count/bytes、content-addressed payload、storage verifier 和 forward-compatible closed-set adapter。
+- 在一致性 barrier 下拒绝 active lease、pending write/build/promotion，或把 snapshot 留在 building/failed。
+- Restore 使用 durable journal/effect，并在全部 entry 验证完成前保持新 Workspace stopped/unavailable。
+
+**禁止的改法**
+
+- 缺 item/object、digest/size/version/generation drift 时猜测恢复或把 snapshot 标 ready。
+- 覆盖原 Workspace、复用旧 Resource ID，或复制任何旧 token/Run/Lease/runtime/网络身份。
+- partial restore 可见、unknown effect 自动 replay、修改 ready manifest/entry 或删除 lineage 证据。
+
+**必须运行的测试**
+
+- snapshot 与 private write/index/promotion 并发 barrier。
+- manifest 增删/重排/替换、missing/truncated/swapped blob、未知 schema/index format。
+- restore-new Workspace/resource identity、generation 单调、旧 token/lease/runtime identity 全部失效。
+- populated `0009` downgrade fail-closed 与 guarded restore-new sentinel verification。
+
+**失败恢复**
+
+停止 snapshot/restore worker，将不完整新 Workspace 保持 stopped/unavailable，保留 manifest、effect、journal、Audit 与 lineage 证据。重新验证对象和 digest 后走 forward-fix 或 restore 到新的 identity；不得覆盖原 Workspace、删除未知 effect、恢复旧运行态或对普通业务数据库执行破坏性试验。

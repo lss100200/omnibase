@@ -138,9 +138,12 @@ class FileCapabilityPrivateKeyProvider:
 
 
 class GatewayCredentialVendingApp:
-    """mTLS-only, parameter-free credential delivery before the four read routes."""
+    """mTLS-only, parameter-free, explicitly profiled credential delivery."""
 
-    _PATH = "/gateway/v1/credential/read"
+    _PROFILE_BY_PATH = {
+        "/gateway/v1/credential/read": "read",
+        "/gateway/v1/credential/workspace-data": "workspace_data",
+    }
 
     def __init__(
         self,
@@ -154,7 +157,8 @@ class GatewayCredentialVendingApp:
         self._issuer = issuer
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope.get("path") != self._PATH:
+        expected_profile = self._PROFILE_BY_PATH.get(str(scope.get("path")))
+        if scope["type"] != "http" or expected_profile is None:
             await self._app(scope, receive, send)
             return
         if scope.get("method") != "POST":
@@ -174,6 +178,9 @@ class GatewayCredentialVendingApp:
             binding, ServerOwnedGatewayCredentialBinding
         ):
             await _json_response(send, 401, {"error": {"code": "invalid_mtls_peer"}})
+            return
+        if binding.expected_profile != expected_profile:
+            await _json_response(send, 401, {"error": {"code": "credential_rejected"}})
             return
         try:
             trusted = self._attestor.attest(scope, evidence.opaque_identity)
@@ -196,6 +203,7 @@ class GatewayCredentialVendingApp:
                     node_id=evidence.node_id,
                     lease_id=evidence.lease_id,
                     grant_id=binding.grant_id,
+                    expected_profile=binding.expected_profile,
                     key_id=binding.key_id,
                     opaque_identity=evidence.opaque_identity,
                     workspace_generation=evidence.workspace_generation,

@@ -197,6 +197,7 @@ class GatewayCredentialIssueRequest:
     node_id: str
     lease_id: str
     grant_id: str
+    expected_profile: Literal["read", "workspace_data"]
     key_id: str
     opaque_identity: str
     workspace_generation: int
@@ -215,6 +216,8 @@ class GatewayCredentialIssueRequest:
             "grant_id",
         ):
             object.__setattr__(self, name, _uuid(getattr(self, name), name))
+        if self.expected_profile not in {"read", "workspace_data"}:
+            raise ValueError("expected_profile is invalid")
         if (
             not isinstance(self.key_id, str)
             or not 1 <= len(self.key_id) <= 64
@@ -293,7 +296,7 @@ class RejectingGatewayCredentialIssuer:
 
 
 class SqlAlchemyGatewayCredentialIssuer:
-    """Issue one read token only after a fresh live Run/Node lease check."""
+    """Issue one explicitly profiled token after a fresh Run/Node lease check."""
 
     def __init__(
         self,
@@ -323,7 +326,12 @@ class SqlAlchemyGatewayCredentialIssuer:
             raise ValueError("credential ttl must be positive and at most five minutes")
         now = _aware_utc(self._clock(), "clock")
 
-        from omnibase.capabilities.service import issue_token
+        from omnibase.capabilities.service import (
+            READ_ACTIONS,
+            WORKSPACE_DATA_ACTIONS,
+            get_grant,
+            issue_token,
+        )
         from omnibase.workspaces.service import LeaseRejected, verify_run_lease_for_sandbox
 
         session = self._session_factory()
@@ -368,6 +376,21 @@ class SqlAlchemyGatewayCredentialIssuer:
             bounded_ttl = min(ttl, _aware_utc(facts.expires_at, "lease expiry") - now)
             if bounded_ttl <= timedelta(0):
                 raise GatewayCredentialUnavailable("gateway_live_lease_rejected")
+            grant = get_grant(
+                session,
+                tenant_id=request.tenant_id,
+                grant_id=request.grant_id,
+            )
+            actions = frozenset(grant.actions)
+            actual_profile = (
+                "read"
+                if actions and actions <= READ_ACTIONS
+                else "workspace_data"
+                if actions and actions <= WORKSPACE_DATA_ACTIONS
+                else None
+            )
+            if actual_profile != request.expected_profile:
+                raise GatewayCredentialUnavailable("gateway_credential_profile_rejected")
             # The Core-only key loader is deliberately reached only after the
             # complete live Run/Node/fencing binding has been revalidated.
             # Neither the request nor the returned credential contains key

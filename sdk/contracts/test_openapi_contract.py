@@ -1,4 +1,4 @@
-"""P34.2 breaking-change and secret-field regression checks."""
+"""P34.2/P34.6 Gateway breaking-change and secret-field regression checks."""
 
 from __future__ import annotations
 
@@ -68,7 +68,9 @@ def test_gateway_openapi_declares_one_safe_error_envelope_and_request_id() -> No
         responses = operation["responses"]
         assert ERROR_STATUSES <= responses.keys()
         for status in ERROR_STATUSES:
-            model = _ref_name(responses[status]["content"]["application/json"]["schema"])
+            model = _ref_name(
+                responses[status]["content"]["application/json"]["schema"]
+            )
             assert model == "ErrorEnvelope"
             headers = responses[status].get("headers", {})
             assert "X-Request-Id" in headers

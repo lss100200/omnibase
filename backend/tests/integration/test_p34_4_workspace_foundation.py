@@ -355,7 +355,7 @@ def test_0007_and_0008_keep_workspace_foundation_global_only(db_engine) -> None:
                 )
             ).scalars()
         )
-    assert revision == "0008"
+    assert revision == "0009"
     assert {
         "workspaces",
         "workspace_memberships",
@@ -1104,7 +1104,7 @@ def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
                 connection.execute(
                     text("SELECT version_num FROM omnibase_meta.alembic_version")
                 ).scalar_one()
-                == "0008"
+                == "0009"
             )
     finally:
         if template_id is not None and tenant_id is not None:

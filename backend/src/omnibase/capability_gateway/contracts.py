@@ -1,18 +1,35 @@
-"""Closed HTTP and application contracts for the read-only gateway."""
+"""Closed logical contracts for read and fail-closed Workspace-data routes."""
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
+from omnibase.controlled_data.crud_contracts import (
+    DeleteMutationRequest,
+    IdempotencyKey,
+    InsertMutationRequest,
+    UpdateMutationRequest,
+)
+
 GatewayAction = Literal[
     "data.schema.read",
     "data.rows.read",
     "rag.search",
     "rag.citation.read",
+    "data.rows.insert",
+    "data.rows.update",
+    "data.rows.delete",
+    "artifact.read",
+    "artifact.write",
+    "rag.derived.create",
+    "rag.derived.delete",
 ]
 
 
@@ -132,6 +149,95 @@ class CitationReadRequest(ResourceRequest):
         return value
 
 
+class PrivateRowsMutationRequest(GatewayModel):
+    mutation: InsertMutationRequest | UpdateMutationRequest | DeleteMutationRequest = Field(
+        discriminator="kind"
+    )
+
+
+class ArtifactReadRequest(ResourceRequest):
+    resource_version: StrictInt = Field(ge=1)
+    max_bytes: StrictInt = Field(default=1_048_576, ge=1, le=1_048_576)
+
+
+class ArtifactWriteRequest(GatewayModel):
+    idempotency_key: IdempotencyKey
+    display_name: str = Field(min_length=1, max_length=200)
+    media_type: str = Field(
+        min_length=3,
+        max_length=127,
+        pattern=r"^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$",
+    )
+    size_bytes: StrictInt = Field(ge=0, le=1_048_576)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_base64: str = Field(max_length=1_398_104)
+    source_resource_ids: list[UUID] = Field(default_factory=list, max_length=32)
+
+    @field_validator("source_resource_ids")
+    @classmethod
+    def unique_sources(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("source_resource_ids must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def validate_content(self) -> ArtifactWriteRequest:
+        try:
+            decoded = base64.b64decode(self.content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("content_base64 must be canonical base64") from exc
+        if len(decoded) != self.size_bytes:
+            raise ValueError("size_bytes does not match decoded content")
+        if hashlib.sha256(decoded).hexdigest() != self.content_sha256:
+            raise ValueError("content_sha256 does not match decoded content")
+        return self
+
+
+class DerivedChunkWrite(GatewayModel):
+    content: str = Field(min_length=1, max_length=8_000)
+    source_resource_id: UUID
+    chunk_type: Literal["paragraph", "code", "table", "summary"] = "paragraph"
+    page_number: StrictInt | None = Field(default=None, ge=1, le=1_000_000)
+    char_start: StrictInt | None = Field(default=None, ge=0)
+    char_end: StrictInt | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_span(self) -> DerivedChunkWrite:
+        if (self.char_start is None) != (self.char_end is None):
+            raise ValueError("char_start and char_end must be supplied together")
+        if (
+            self.char_start is not None
+            and self.char_end is not None
+            and self.char_end < self.char_start
+        ):
+            raise ValueError("char_end cannot precede char_start")
+        return self
+
+
+class DerivedCreateRequest(GatewayModel):
+    idempotency_key: IdempotencyKey
+    display_name: str = Field(min_length=1, max_length=200)
+    source_resource_ids: list[UUID] = Field(min_length=1, max_length=32)
+    chunks: list[DerivedChunkWrite] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_sources_and_size(self) -> DerivedCreateRequest:
+        sources = set(self.source_resource_ids)
+        if len(sources) != len(self.source_resource_ids):
+            raise ValueError("source_resource_ids must be unique")
+        if any(chunk.source_resource_id not in sources for chunk in self.chunks):
+            raise ValueError("every chunk source must be declared")
+        encoded_size = sum(len(chunk.content.encode("utf-8")) for chunk in self.chunks)
+        if encoded_size > 262_144:
+            raise ValueError("derived content exceeds the request budget")
+        return self
+
+
+class DerivedDeleteRequest(ResourceRequest):
+    resource_version: StrictInt = Field(ge=1)
+    idempotency_key: IdempotencyKey
+
+
 class ColumnRead(GatewayModel):
     id: UUID
     display_name: str
@@ -185,6 +291,55 @@ class CitationReadResponse(GatewayModel):
     citations: list[CitationRead]
     bytes_out: int
     truncated: bool
+
+
+class PrivateRowsMutationResponse(GatewayModel):
+    operation_id: UUID
+    resource_id: UUID
+    resource_version: int
+    action: Literal["data.rows.insert", "data.rows.update", "data.rows.delete"]
+    affected_rows: int
+    replayed: bool
+    request_id: str
+
+
+class ArtifactReadResponse(GatewayModel):
+    resource_id: UUID
+    resource_version: int
+    media_type: str
+    size_bytes: int
+    content_sha256: str
+    content_base64: str
+    bytes_out: int
+
+
+class ArtifactWriteResponse(GatewayModel):
+    operation_id: UUID
+    resource_id: UUID
+    resource_version: int
+    media_type: str
+    size_bytes: int
+    content_sha256: str
+    replayed: bool
+    request_id: str
+
+
+class DerivedCreateResponse(GatewayModel):
+    operation_id: UUID
+    resource_id: UUID
+    resource_version: int
+    chunk_count: int
+    replayed: bool
+    request_id: str
+
+
+class DerivedDeleteResponse(GatewayModel):
+    operation_id: UUID
+    resource_id: UUID
+    resource_version: int
+    deleted: bool
+    replayed: bool
+    request_id: str
 
 
 @dataclass(frozen=True)
@@ -264,10 +419,38 @@ class CitationResult:
     truncated: bool
 
 
+@dataclass(frozen=True)
+class ArtifactReadResult:
+    resource_version: int
+    media_type: str
+    content: bytes
+    content_sha256: str
+
+
+@dataclass(frozen=True)
+class WorkspaceDataWriteResult:
+    operation_id: str
+    resource_id: str
+    resource_version: int
+    action: str
+    affected_rows: int = 0
+    chunk_count: int = 0
+    media_type: str | None = None
+    size_bytes: int | None = None
+    content_sha256: str | None = None
+    deleted: bool = False
+    replayed: bool = False
+
+
 BooleanFilter.model_rebuild()
 
 
 __all__ = [
+    "ArtifactReadRequest",
+    "ArtifactReadResponse",
+    "ArtifactReadResult",
+    "ArtifactWriteRequest",
+    "ArtifactWriteResponse",
     "BooleanFilter",
     "CapabilityConstraints",
     "CitationRead",
@@ -280,11 +463,18 @@ __all__ = [
     "DataRowsResponse",
     "DataRowsResult",
     "DataSchemaResponse",
+    "DerivedChunkWrite",
+    "DerivedCreateRequest",
+    "DerivedCreateResponse",
+    "DerivedDeleteRequest",
+    "DerivedDeleteResponse",
     "ErrorBody",
     "ErrorEnvelope",
     "FilterNode",
     "GatewayAction",
     "OrderBy",
+    "PrivateRowsMutationRequest",
+    "PrivateRowsMutationResponse",
     "RagSearchRequest",
     "RagSearchResponse",
     "RagSearchResult",
@@ -295,4 +485,5 @@ __all__ = [
     "TrustedWorkloadContext",
     "VerifiedCapability",
     "WorkloadCredential",
+    "WorkspaceDataWriteResult",
 ]

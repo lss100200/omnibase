@@ -21,6 +21,13 @@ _ACTION_KINDS: dict[str, frozenset[str]] = {
     "data.rows.read": frozenset({"data_table", "data_view"}),
     "rag.search": frozenset({"corpus", "derived_index"}),
     "rag.citation.read": frozenset({"corpus", "document", "derived_index"}),
+    "data.rows.insert": frozenset({"data_table"}),
+    "data.rows.update": frozenset({"data_table"}),
+    "data.rows.delete": frozenset({"data_table"}),
+    "artifact.read": frozenset({"artifact"}),
+    "artifact.write": frozenset({"workspace"}),
+    "rag.derived.create": frozenset({"workspace"}),
+    "rag.derived.delete": frozenset({"derived_index"}),
 }
 _ACTION_POLICIES: dict[str, frozenset[str]] = {
     "data.schema.read": frozenset(
@@ -45,6 +52,13 @@ _ACTION_POLICIES: dict[str, frozenset[str]] = {
     "rag.citation.read": frozenset(
         {"canonical_readonly", "controlled_shared", "workspace_derived"}
     ),
+    "data.rows.insert": frozenset({"workspace_private"}),
+    "data.rows.update": frozenset({"workspace_private"}),
+    "data.rows.delete": frozenset({"workspace_private"}),
+    "artifact.read": frozenset({"workspace_private"}),
+    "artifact.write": frozenset({"workspace_private"}),
+    "rag.derived.create": frozenset({"workspace_private"}),
+    "rag.derived.delete": frozenset({"workspace_derived"}),
 }
 
 
@@ -67,6 +81,10 @@ def authorize_resource(
         raise PolicyDenial("action_not_allowed_for_resource")
     if resource.policy_class not in _ACTION_POLICIES[action]:
         raise PolicyDenial("policy_class_denied")
+    if action in {"artifact.write", "rag.derived.create"} and resource.kind == "workspace":
+        if resource.id != capability.workspace_id:
+            raise PolicyDenial("resource_not_found")
+        return
     if resource.policy_class in {"workspace_private", "workspace_derived"} and (
         resource.owner_type != "workspace" or resource.owner_id != capability.workspace_id
     ):
