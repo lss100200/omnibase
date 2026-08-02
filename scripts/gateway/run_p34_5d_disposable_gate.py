@@ -25,6 +25,7 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)postgresql(?:\+psycopg)?://[^\s:@/${}]+:[^\s@/${}]{12,}@"),
 )
 _SOURCE_MANIFEST_PATHS = (
+    ".gitattributes",
     "backend/pyproject.toml",
     "backend/uv.lock",
     "backend/alembic.ini",
@@ -164,13 +165,30 @@ def _present_markers(content: str, markers: tuple[str, ...], context: str) -> li
     ]
 
 
+def _validate_lf_shell_script(path: Path) -> None:
+    content = path.read_bytes()
+    if not content.startswith(b"#!"):
+        raise RuntimeError(f"P34.5D shell build input has no shebang: {path}")
+    if b"\r" in content:
+        raise RuntimeError(f"P34.5D shell build input is not LF-only: {path}")
+
+
 def _validate_static_contract() -> None:
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
     gateway_dockerfile = GATE_DOCKERFILE.read_text(encoding="utf-8")
     client_dockerfile = CLIENT_DOCKERFILE.read_text(encoding="utf-8")
+    attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    init_script = REPO_ROOT / "backend" / "tests" / "postgres-init-destructive-tests.sh"
     gateway_service = compose.split("  gateway-server:", 1)[1].split("\n  broker-client:", 1)[0]
     client_service = compose.split("  broker-client:", 1)[1].split("\nnetworks:", 1)[0]
     violations: list[str] = []
+    violations.extend(
+        _missing_markers(
+            attributes,
+            ("*.sh text eol=lf", "*.ps1 text eol=crlf"),
+            "Git clean-checkout line-ending contract",
+        )
+    )
     violations.extend(
         _missing_markers(
             compose,
@@ -227,6 +245,7 @@ def _validate_static_contract() -> None:
         violations.append("minimal client image does not copy the sealed client")
     if violations:
         raise RuntimeError("P34.5D static contract validation failed: " + "; ".join(violations))
+    _validate_lf_shell_script(init_script)
 
 
 def _write_env_file(

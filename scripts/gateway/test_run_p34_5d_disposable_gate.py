@@ -40,6 +40,7 @@ def test_source_manifest_is_stable_and_binds_clean_checkout_inputs(monkeypatch) 
     assert len(str(first["git_tree"])) == 40
     assert len(str(first["dirty_scope_sha256"])) == 64
     files = {entry["path"]: entry for entry in first["files"]}
+    assert ".gitattributes" in files
     assert "backend/pyproject.toml" in files
     assert "backend/uv.lock" in files
     assert "deployment/gateway/Dockerfile.gate" in files
@@ -54,6 +55,17 @@ def test_source_manifest_is_stable_and_binds_clean_checkout_inputs(monkeypatch) 
     assert all(path != ".env" for path in first["dirty_paths"])
     assert not any("__pycache__" in path or ".pytest_cache" in path for path in files)
     assert all(len(str(entry["sha256"])) == 64 for entry in files.values())
+
+
+def test_shell_build_inputs_require_lf_line_endings(tmp_path: Path) -> None:
+    valid = tmp_path / "valid.sh"
+    valid.write_bytes(b"#!/bin/sh\nset -eu\n")
+    gate._validate_lf_shell_script(valid)
+
+    crlf = tmp_path / "crlf.sh"
+    crlf.write_bytes(b"#!/bin/sh\r\nset -eu\r\n")
+    with pytest.raises(RuntimeError, match="not LF-only"):
+        gate._validate_lf_shell_script(crlf)
 
 
 def test_generated_env_and_compose_command_are_explicitly_disposable(tmp_path: Path) -> None:
