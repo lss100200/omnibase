@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A3、B、C、D 已完成工程封板，A4 代码已完成 UID/GID hardening，但旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V Linux 12/12 attack Gate 仍为 `pending/not_proven`。独立 PrivateNetwork Broker daemon 已两轮通过 26/26 Gate，真实 Headscale 0.26.1 control-plane + mTLS Node-Daemon test-double disposable Gate 已通过，split-process mTLS Gateway 已通过 guarded disposable schema/rows/RAG/citation 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、non-disposable production tenant/RAG、真实成员节点数据面/DERP/节点失陷、容量/SLA 与生产总验收进入 P34.7；Agent Runtime 继续冻结到这些联合边界完成
+> 状态：P34.0–P34.6 已完成工程封板。P34.7A–G 的源码合同、本地参考 Gate、Workspace UI 与 Python/TypeScript SDK 已进入统一验收：A/B clean-checkout provenance 与四组件 composition、C/E provider/recovery 与 non-disposable admission、D/F real-member Overlay/DERP/node-compromise/SLA 均已实现 fail-closed validator。当前本地 disposable provider reference Gate 通过，但 production composition、真实 provider/non-disposable tenant/RAG、current-source Hyper-V Runner 12/12、两个真实成员 Linux 节点、production Node Daemon、独立 DERP、node-compromise 与 SLA 证据尚未齐备，因此 P34.7 production total Gate 为 `BLOCKED / NOT_PROVEN`。Agent Runtime 与 Phase 5 继续冻结。
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -618,6 +618,8 @@ P34.7 不再增加新的产品能力；它把 P34.1–P34.6 的独立工程证�
 7. **P34.7G — UI/SDK/运维一致性与 release decision**：完整 UI、Python/TypeScript SDK、OpenAPI snapshot、维护者地图、security invariants、handover、部署文档和 recovery runbook 与实际 production composition 一致；GitHub CI 和目标环境 Gate 指向同一 commit/source manifest。最终由明确责任人接受剩余风险后，才允许把 Phase 5 的 P5.0 feature Gate 从“规划”推进到“可实现”。
 
 P34.7 立即 Veto：任何跨租户/Workspace 泄漏、物理 locator/credential 暴露、Sandbox/Runner 直连基础设施、canonical mutation、旧 Lease/fencing/token 复活、unknown 自动 replay、partial restore 可见、审计缺失、敌对代码逃逸、网络 default-deny 绕过、clean-checkout 不可复现、未授权业务数据库 migration 或把缺失外部证据写成 PASS。
+
+**当前实施判定（2026-08-02）**：P34.7A–G 的可提交源码、配置合同、验证器、focused tests、Workspace Browser control-plane 页面以及 Python/TypeScript Artifact/Derived SDK helper 已完成。`validate-only` 只证明合同有效，C/E disposable local provider Gate 只证明 committed-marker visibility、copy-on-publish、snapshot/restore-new-identity 与 `unknown` no-replay 的参考实现；两者都不构成 production PASS。生产准入仍被 current-source Runner 12/12、四条真实 component roundtrip、production provider、数据所有者授权的 non-disposable tenant/RAG、双真实成员/DERP/node-compromise/双签名和容量/SLA 样本阻塞。P5.0 仍保持 `PLANNED / FROZEN`。
 
 Gate：全部批次 Gate 通过；已知风险有具名接受者；文档、代码、迁移、OpenAPI、运行方式和 source provenance 一致；此后才允许按 `docs/phase-5-agent-runtime-implementation-plan.md` 启动 P5.0。
 

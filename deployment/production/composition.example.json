@@ -1,0 +1,229 @@
+{
+  "activation_requested": false,
+  "channels": [
+    {
+      "carries_browser_credentials": false,
+      "logical_identifiers_only": true,
+      "mutual_authentication": true,
+      "name": "core_runner_mtls",
+      "server_owned_peer_identity": true,
+      "source": "core",
+      "target": "runner",
+      "transport": "mtls"
+    },
+    {
+      "carries_browser_credentials": false,
+      "logical_identifiers_only": true,
+      "mutual_authentication": true,
+      "name": "runner_broker_private",
+      "server_owned_peer_identity": true,
+      "source": "runner",
+      "target": "broker",
+      "transport": "private_unix_socket"
+    },
+    {
+      "carries_browser_credentials": false,
+      "logical_identifiers_only": true,
+      "mutual_authentication": true,
+      "name": "runner_gateway_mtls",
+      "server_owned_peer_identity": true,
+      "source": "runner",
+      "target": "gateway",
+      "transport": "mtls"
+    },
+    {
+      "carries_browser_credentials": false,
+      "logical_identifiers_only": true,
+      "mutual_authentication": true,
+      "name": "broker_gateway_mtls",
+      "server_owned_peer_identity": true,
+      "source": "broker",
+      "target": "gateway",
+      "transport": "mtls"
+    }
+  ],
+  "components": {
+    "broker": {
+      "accepts_browser_traffic": false,
+      "credential_classes": [
+        "daemon_identity",
+        "namespace_permit"
+      ],
+      "executes_workspace_code": false,
+      "process_boundary": "independent",
+      "service_identity": "spiffe://omnibase/production/network-broker"
+    },
+    "core": {
+      "accepts_browser_traffic": true,
+      "credential_classes": [
+        "capability_signing",
+        "database",
+        "jwt_signing",
+        "object_store",
+        "redis"
+      ],
+      "executes_workspace_code": false,
+      "process_boundary": "independent",
+      "service_identity": "spiffe://omnibase/production/core"
+    },
+    "gateway": {
+      "accepts_browser_traffic": false,
+      "credential_classes": [
+        "capability_signing",
+        "database_read_adapter",
+        "peer_registry"
+      ],
+      "executes_workspace_code": false,
+      "process_boundary": "independent",
+      "service_identity": "spiffe://omnibase/production/capability-gateway"
+    },
+    "runner": {
+      "accepts_browser_traffic": false,
+      "credential_classes": [
+        "runner_identity",
+        "short_lived_workload_identity"
+      ],
+      "executes_workspace_code": true,
+      "process_boundary": "independent",
+      "service_identity": "spiffe://omnibase/production/runner"
+    }
+  },
+  "evidence": [
+    {
+      "assertions": {
+        "passed": true
+      },
+      "id": "p34_5b_network_broker_attack_gate",
+      "path": "docs/evidence/p34-5/network-broker-attack-gate.json",
+      "required_for_activation": true,
+      "sha256": "81dc6547129c9ee78e1280824da432ae41531fe9c42a0652184d9ea5c43612c0",
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "business_database_migrated": false,
+        "passed": true,
+        "root_env_accessed": false
+      },
+      "id": "p34_5d_disposable_gateway_gate",
+      "path": "docs/evidence/p34-5/gateway-mtls-disposable-gate.json",
+      "required_for_activation": true,
+      "sha256": "ee179a3abfc66219da0aff866737bd256db3fec9ec37e4209239be910a589c62",
+      "status": "passed"
+    },
+    {
+      "assertions": {},
+      "id": "current_source_linux_runner_12_of_12",
+      "path": "docs/evidence/p34-5/linux-runner-attack-gate.json",
+      "required_for_activation": true,
+      "sha256": "d4f3cf7046a3f12f99db32073b522abcd3180f2258ab1e5fa716f4c7bd79de6c",
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "core_runner_mtls_production_roundtrip",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "runner_broker_production_identity_roundtrip",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "runner_gateway_mtls_non_disposable_roundtrip",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "broker_gateway_mtls_non_disposable_roundtrip",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "provider_backed_workspace_recovery_non_disposable",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "data_owner_authorized_tenant_rag_smoke",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "two_real_member_overlay_derp_node_compromise",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    },
+    {
+      "assertions": {},
+      "id": "production_capacity_fault_injection_sla",
+      "path": null,
+      "required_for_activation": true,
+      "sha256": null,
+      "status": "not_proven"
+    }
+  ],
+  "phase": "P34.7A/B",
+  "schema_version": 1,
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      ".gitattributes",
+      "AGENTS.md",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/src/omnibase/sandbox",
+      "backend/src/omnibase/capability_gateway",
+      "backend/src/omnibase/workspace_data",
+      "backend/src/omnibase/workspaces/overlay_adapters",
+      "backend/tests/test_p34_7_production_composition.py",
+      "backend/tests/test_p34_7_workspace_provider.py",
+      "backend/tests/test_p34_7_overlay_production_gate.py",
+      "backend/tests/test_p34_7_overlay_sla.py",
+      "deployment/production",
+      "deployment/overlay/production",
+      "deployment/sandbox",
+      "deployment/network-broker",
+      "deployment/gateway",
+      "scripts/production",
+      "scripts/workspace-data",
+      "scripts/overlay/p34_7_overlay_common.py",
+      "scripts/overlay/p34_7_production_gate.py",
+      "scripts/overlay/p34_7_sla_report.py",
+      "frontend/package.json",
+      "frontend/pnpm-lock.yaml",
+      "frontend/app/(dashboard)/spaces",
+      "frontend/lib/api.ts",
+      "frontend/lib/types.ts",
+      "sdk/python",
+      "sdk/typescript",
+      "docs/maintainers/maintenance-map.json",
+      "docs/maintainers/security-invariants.md",
+      "docs/maintainers/ai-maintainer-map.md",
+      "docs/runbooks/p34-7-overlay-sla.md"
+    ]
+  }
+}

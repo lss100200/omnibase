@@ -1585,6 +1585,46 @@ git diff --check：passed
    - 没有执行 canonical cutover；完整 UI、Python/TypeScript SDK 易用层、人工 reconciliation、production composition 与容量/SLA 留在 P34.7。
    - Agent Runtime、Planner、多 Agent DAG/长循环、产品 Skill/MCP 安装和宿主级工具继续冻结。
 
+### P34.7 production readiness 工程实现与当前阻塞（2026-08-02）
+
+> 本节记录已落地的 P34.7A–G 工程合同与本地验证，不把缺失的目标环境证据写成生产通过。当前总判定：`P34.7 production total Gate = BLOCKED / NOT_PROVEN`；`Phase 5 = PLANNED / FROZEN`。
+
+1. **P34.7A/B：clean-checkout provenance 与四组件 production composition**
+
+   - 新增 `backend/src/omnibase/production/`、`deployment/production/`、`scripts/production/validate_p34_7_composition.py` 和 `backend/tests/test_p34_7_production_composition.py`。Gate 使用 `ready | blocked/not_proven | invalid/veto` 三态，验证 Git commit/tree、public remote、tracked source manifest、逐文件 SHA-256、evidence digest/assertions、clean checkout 与显式 activation request。
+   - Core、Runner、Broker、Gateway 必须是四个独立进程和唯一 SPIFFE service identity。固定通道为 Core→Runner mTLS、Runner→Broker private AF_UNIX + peer/pinned daemon identity、Runner→Gateway mTLS、Broker→Gateway mTLS；全部只传逻辑标识，Browser cookie/JWT 不得进入内部通道。
+   - Runner/Broker 禁止数据库、Redis、对象存储、JWT、Capability signing、宿主环境和成员 Overlay credential；Gateway 只允许受控 signing/read-adapter/peer-identity 类凭据。Gate 通过只产生 admission decision，不自动启动服务或获得 authority。
+   - `validate-only` 当前正确输出 `blocked/not_proven`，无 Veto；dirty 工作树上的 `--verify` 正确进入 `invalid/veto`。提交后必须从新的 clean checkout 重跑，且在 current-source Runner 12/12 与四条真实 production roundtrip 证据齐备前仍应保持 `blocked/not_proven`。
+
+2. **P34.7C/E：provider-backed data、Promotion/Snapshot/Restore 与 staging admission**
+
+   - 新增 `backend/src/omnibase/workspace_data/provider_adapters.py`、`scripts/workspace-data/run_p34_7_provider_gate.py` 和 `backend/tests/test_p34_7_workspace_provider.py`。typed plan/grant/quota/receipt 精确绑定 tenant/workspace/operation/action/resource/version/digest/size/generation；append-only effect journal 只在 committed marker 后开放对象可见性。
+   - Disposable local content-addressed reference Gate 已证明 Artifact、Derived、copy-on-publish 到新 `controlled_shared` identity、Snapshot capture、Restore 新 Workspace/Resource identity、更高 generation、digest/size 校验、partial/unknown 不可见且不自动 replay。`canonical_readonly` 在 provider target lane 中不可表示。
+   - 最终 disposable Gate evidence 为 `.tmp/p34-7-provider-gate-20260802224743.json`，SHA-256 `b71f0b7bf233591fbd62f5c9cc4e5315b2b5d35e4ed8350c696e2cbb3041ec07`。该文件 gitignored，仅作本机参考证据。
+   - Local reference adapter 的 staging admission 为 true，但 production admission 明确为 false：`production_evidence_not_admitted`。non-disposable tenant/RAG 缺少数据所有者额外授权时固定返回 `blocked/not_proven / data_owner_authorization_missing`；本轮未访问任何真实租户、RAG、对象存储或业务数据库。
+
+3. **P34.7D/F：真实成员 Overlay、DERP、node-compromise、容量与 SLA**
+
+   - 新增 `deployment/overlay/production/`、`scripts/overlay/p34_7_overlay_common.py`、`p34_7_production_gate.py`、`p34_7_sla_report.py`、两组 Backend tests 与 `docs/runbooks/p34-7-overlay-sla.md`。
+   - Production topology 至少要求两个真实独立 Linux 成员、独立 production Node Daemon、独立 DERP、current-source Runner 精确 12/12、Broker 两轮各 26/26、real logical-service/forced DERP、direct path 关闭、node revoke、stolen credential 拒绝、stale lease/fencing 拒绝、ambiguous no-replay、rejoin 新 identity/fencing 与 cleanup `0/0/0/0`。
+   - Scored evidence 需要两个成员用独立 Ed25519 attestation key 对同一 canonical payload 做 detached signature；重复 signer、payload/public-key/signature drift 或验签失败均拒绝。SLA framework 固定覆盖 direct logical service、forced DERP、daemon restart、revoke、partition fail-closed、Broker restart no-replay、Runner forced-kill cleanup、Gateway timeout unknown no-replay 和 credential theft。
+   - `ValidateOnly` 报告 `C:\tmp\omnibase-p347-overlay-validate.json`，SHA-256 `db978b125f26d1582e6839fb7da8e1c12219c037230170cf262506722b28c907`；配置有效、Veto=0，但两个示例节点均为 placeholder，production result 必须保持 `blocked/not_proven`。
+
+4. **P34.7G：Workspace UI、SDK 与维护者入口**
+
+   - Frontend 新增 `/spaces` 与 `/spaces/[workspaceId]`，提供模板/Workspace 列表、创建、生命周期、Run、成员、数据/能力边界、快照与日志说明。Browser 只调用 `/api/v1/workspaces*` 和 `/workspace-templates` 控制面，不开放 WorkspaceData private-write；快照按钮保持禁用，因为 Browser 不能提交可信 server inventory/manifest digest。
+   - Python/TypeScript SDK 新增 `readArtifact`、`writeArtifact`、`createDerived`、`deleteDerived`，只使用 Gateway logical UUID contract；校验 canonical base64、1 MiB content limit、SHA-256、media type、source closed set、chunk count/bytes/span、exact response fields，并禁止 physical locator/workspace/provider credential 进入 DTO。
+   - 维护者地图新增 `production-readiness` 模块与 `INV-035`–`INV-038`。`INV-025`–`INV-034` 继续为 Phase 5 计划预留，P34.7 不占用这些编号。
+
+5. **已完成的 focused 验证与明确未完成事项**
+
+   - A/B composition focused `20 passed`；与 P34.5 Runner/Gateway 边界联合回归 `196 passed / 1 skipped`，该 skip 仅因 backend-only mount 缺 repository-root deployment config，完整 checkout mount 的 focused test 为全绿。
+   - C/E provider focused `8 passed`，P34.6+P34.7 related `46 passed`，workspace_data Mypy `10 files / 0 issues`，Ruff clean。
+   - D/F Overlay/SLA focused `11 passed`，Ruff/format/py_compile 全部通过。
+   - 主 Agent 统一回归：P34.7 focused `39 passed`；Backend non-integration `1160 passed / 14 skipped / 14 deselected`；Backend + Python SDK Mypy `155 source files / 0 issues`；Provider-focused + Python SDK + OpenAPI `28 passed`；TypeScript SDK `8 passed` + typecheck；Frontend `44 passed` + typecheck/lint + Next.js production build（含 `/spaces` 与 `/spaces/[workspaceId]`）；changed Python scope Ruff check/format check 全绿。
+   - Maintainer map validator 与 benchmark validator 已通过；最终精确计数和 clean-checkout `--verify` 结果记录于 `docs/evidence/p34-7/production-readiness-decision.md`。`--verify` 必须在提交后的 fresh clean checkout 运行；外部 evidence 未齐时正确结果仍是 `blocked/not_proven`，绝不称 P34.7 PASS。
+   - 本轮未读取根 `.env`，未迁移或访问普通业务数据库，未访问 non-disposable tenant/RAG，未启动 hostile code、真实 production component、真实 Overlay revoke 或 canonical cutover，未启动 Agent Runtime。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
@@ -1594,7 +1634,7 @@ git diff --check：passed
 - **P34.4 ✅ 元数据逻辑控制面与 fake/local harness 工程封板**：17 张 global 表、版本化模板、Workspace aggregate membership/RBAC/scope、Workspace/Run 生命周期、Run/Node/Network fencing、实时 attestation、terminal Run 不可复活、Node/Peer/Service/Authority 统一锁序与 synthetic collaboration harness 已通过 Gate；logical Network Lease 不调用 provider。真实 Overlay/VPN、Sandbox、成员网络和真实数据接入不在该完成口径内。
 - **P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 pending**：A0-A3 授权、预算、durable ledger 与 coordinator 完成；A4 已修复 UID/GID namespace-root 漂移并扩展为 12 项 Gate，但旧 11/11 artifact 已失效，新的 Hyper-V 12/12 未经真实 VM 重跑前不得标记通过；B 的 logical Network Broker、durable budget、AF_UNIX challenge transport 与独立 PrivateNetwork daemon 已在同一 Runner 首轮和重启确认轮各通过 26/26 Gate；C 已从 fresh Windows clone 使用 source-built Runner 通过真实 Headscale control-plane + mTLS Node-Daemon test-double Gate；D 已从 clean checkout 使用 source-built Gateway/client 通过 split-process mTLS ingress、server-owned credential vending、live workload identity 与 guarded sentinel schema/rows/RAG/citation 最小闭环。Core↔VM/Runner/Broker production activation、真实成员节点数据面/DERP/节点失陷、非 disposable tenant/RAG、容量/SLA 与总验收继续进入 P34.7，不得由本阶段证据自动标记通过。
 - **P34.6 ✅ Foundation / Contracts / Fail-closed primitives**：Workspace-private/derived 逻辑写契约、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Promotion/Snapshot/Restore metadata state machine 与 server-generated inventory 已通过隔离 Gate；Promotion 和 Restore 的 `COMMITTED` 成功路径、`controlled_shared` 成功可见性、production provider/object transfer、production snapshot barrier、non-disposable tenant/RAG 与完整 UI/SDK 仍关闭。
-- **P34.7**：真实 provider 对象传输与恢复演练、人工 reconciliation、完整 UI/SDK、non-disposable tenant/RAG 最小闭环、Core↔Runner/Broker/Gateway production composition、真实成员 Overlay/DERP/node-compromise、容量/SLA、攻击矩阵与生产总验收；任何 canonical cutover 需独立审批。
+- **P34.7 🟡 工程实现已落地，production total Gate BLOCKED / NOT_PROVEN**：A–G 源码合同、本地 provider reference、Workspace UI、Python/TypeScript SDK、生产 composition/Overlay/SLA 验证器已完成；真实 provider、non-disposable tenant/RAG、current-source Runner 12/12、四组件 production roundtrip、双真实成员/独立 DERP/node-compromise/双签名与 SLA 样本仍待直接证据。任何 canonical cutover 需独立审批。
 
 **不可跳过**：任一增量未通过自身 Gate，不得临时开放直连数据库、宿主文件、长期凭据、无限网络或宿主级执行。P34.7 未全部通过前，不得实现 Phase 5 自主 Planner、多 Agent 长循环或宿主级工具。
 

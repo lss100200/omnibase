@@ -9,6 +9,7 @@ import {
   documentsApi,
   healthApi,
   ragApi,
+  workspacesApi,
 } from './api'
 import { clearTokens, setTokens } from './tokens'
 
@@ -124,6 +125,46 @@ test('health probes remain on unversioned root paths', async () => {
 test('database API exposes metadata browsing without arbitrary query execution', () => {
   assert.equal(typeof databaseApi.listTables, 'function')
   assert.equal('query' in databaseApi, false)
+})
+
+test('workspace browser client exposes control-plane routes without workspace-data writes', async () => {
+  const requests: Array<{ url: string; method?: string; data?: string }> = []
+  api.defaults.adapter = async (config) => {
+    requests.push({ url: axios.getUri(config), method: config.method, data: config.data })
+    return {
+      data: config.url?.endsWith('/runs') ? { id: 'run-1' } : { items: [], total: 0 },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    }
+  }
+
+  await workspacesApi.listTemplates()
+  await workspacesApi.list()
+  await workspacesApi.get('workspace-1')
+  await workspacesApi.listMembers('workspace-1')
+  await workspacesApi.listRuns('workspace-1')
+  await workspacesApi.createRun('workspace-1', 3, 'interactive')
+
+  assert.deepEqual(
+    requests.map((request) => request.url),
+    [
+      '/api/v1/workspace-templates',
+      '/api/v1/workspaces',
+      '/api/v1/workspaces/workspace-1',
+      '/api/v1/workspaces/workspace-1/members',
+      '/api/v1/workspaces/workspace-1/runs',
+      '/api/v1/workspaces/workspace-1/runs',
+    ],
+  )
+  const createRun = requests.at(-1)
+  assert.equal(createRun?.method, 'post')
+  const payload = JSON.parse(createRun?.data ?? '{}') as Record<string, unknown>
+  assert.match(String(payload.request_digest), /^[0-9a-f]{64}$/)
+  assert.equal('workspace_data' in workspacesApi, false)
+  assert.equal('promotion' in workspacesApi, false)
+  assert.equal('snapshot' in workspacesApi, false)
 })
 
 test('askStream remains backward compatible when options are omitted', async () => {

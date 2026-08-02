@@ -71,6 +71,54 @@ export interface CitationReadResponse {
   truncated: boolean;
 }
 
+export interface ArtifactReadResponse {
+  resourceId: string;
+  resourceVersion: number;
+  mediaType: string;
+  sizeBytes: number;
+  contentSha256: string;
+  content: Uint8Array;
+  bytesOut: number;
+}
+
+export interface ArtifactWriteResponse {
+  operationId: string;
+  resourceId: string;
+  resourceVersion: number;
+  mediaType: string;
+  sizeBytes: number;
+  contentSha256: string;
+  replayed: boolean;
+  requestId: string;
+}
+
+export interface DerivedChunkWrite {
+  content: string;
+  sourceResourceId: string;
+  chunkType?: "paragraph" | "code" | "table" | "summary";
+  pageNumber?: number;
+  charStart?: number;
+  charEnd?: number;
+}
+
+export interface DerivedCreateResponse {
+  operationId: string;
+  resourceId: string;
+  resourceVersion: number;
+  chunkCount: number;
+  replayed: boolean;
+  requestId: string;
+}
+
+export interface DerivedDeleteResponse {
+  operationId: string;
+  resourceId: string;
+  resourceVersion: number;
+  deleted: boolean;
+  replayed: boolean;
+  requestId: string;
+}
+
 const forbiddenRequestKeys = new Set([
   "database_url",
   "minio_key",
@@ -214,6 +262,109 @@ export function parseCitationResponse(raw: unknown): CitationReadResponse {
   };
 }
 
+export function parseArtifactReadResponse(raw: unknown): ArtifactReadResponse {
+  const value = exactObject(
+    raw,
+    ["resource_id", "resource_version", "media_type", "size_bytes", "content_sha256", "content_base64", "bytes_out"],
+    [],
+    "artifact read",
+  );
+  const content = decodeCanonicalBase64(asString(value.content_base64, "content_base64"));
+  const sizeBytes = asInteger(value.size_bytes, "size_bytes", 0);
+  if (content.byteLength !== sizeBytes) throw new TypeError("artifact size_bytes does not match content");
+  return {
+    resourceId: requireLogicalId(asString(value.resource_id, "resource_id"), "resource_id"),
+    resourceVersion: asInteger(value.resource_version, "resource_version", 1),
+    mediaType: requireMediaType(value.media_type),
+    sizeBytes,
+    contentSha256: requireSha256(value.content_sha256, "content_sha256"),
+    content,
+    bytesOut: asInteger(value.bytes_out, "bytes_out", 0),
+  };
+}
+
+export function parseArtifactWriteResponse(raw: unknown): ArtifactWriteResponse {
+  const value = exactObject(
+    raw,
+    ["operation_id", "resource_id", "resource_version", "media_type", "size_bytes", "content_sha256", "replayed", "request_id"],
+    [],
+    "artifact write",
+  );
+  return {
+    operationId: requireLogicalId(asString(value.operation_id, "operation_id"), "operation_id"),
+    resourceId: requireLogicalId(asString(value.resource_id, "resource_id"), "resource_id"),
+    resourceVersion: asInteger(value.resource_version, "resource_version", 1),
+    mediaType: requireMediaType(value.media_type),
+    sizeBytes: asInteger(value.size_bytes, "size_bytes", 0),
+    contentSha256: requireSha256(value.content_sha256, "content_sha256"),
+    replayed: asBoolean(value.replayed, "replayed"),
+    requestId: asString(value.request_id, "request_id"),
+  };
+}
+
+export function parseDerivedCreateResponse(raw: unknown): DerivedCreateResponse {
+  const value = exactObject(
+    raw,
+    ["operation_id", "resource_id", "resource_version", "chunk_count", "replayed", "request_id"],
+    [],
+    "derived create",
+  );
+  return {
+    operationId: requireLogicalId(asString(value.operation_id, "operation_id"), "operation_id"),
+    resourceId: requireLogicalId(asString(value.resource_id, "resource_id"), "resource_id"),
+    resourceVersion: asInteger(value.resource_version, "resource_version", 1),
+    chunkCount: asInteger(value.chunk_count, "chunk_count", 1),
+    replayed: asBoolean(value.replayed, "replayed"),
+    requestId: asString(value.request_id, "request_id"),
+  };
+}
+
+export function parseDerivedDeleteResponse(raw: unknown): DerivedDeleteResponse {
+  const value = exactObject(
+    raw,
+    ["operation_id", "resource_id", "resource_version", "deleted", "replayed", "request_id"],
+    [],
+    "derived delete",
+  );
+  return {
+    operationId: requireLogicalId(asString(value.operation_id, "operation_id"), "operation_id"),
+    resourceId: requireLogicalId(asString(value.resource_id, "resource_id"), "resource_id"),
+    resourceVersion: asInteger(value.resource_version, "resource_version", 1),
+    deleted: asBoolean(value.deleted, "deleted"),
+    replayed: asBoolean(value.replayed, "replayed"),
+    requestId: asString(value.request_id, "request_id"),
+  };
+}
+
+export function buildDerivedChunks(chunks: DerivedChunkWrite[], sources: Set<string>): JsonValue[] {
+  if (chunks.length < 1 || chunks.length > 100) throw new TypeError("chunks must contain between 1 and 100 items");
+  let totalBytes = 0;
+  return chunks.map((chunk) => {
+    if (!chunk.content || chunk.content.length > 8000) throw new TypeError("chunk content must contain 1..8000 characters");
+    totalBytes += new TextEncoder().encode(chunk.content).byteLength;
+    if (totalBytes > 262_144) throw new TypeError("derived content exceeds the request budget");
+    const sourceResourceId = requireLogicalId(chunk.sourceResourceId, "sourceResourceId");
+    if (!sources.has(sourceResourceId)) throw new TypeError("every chunk source must be declared");
+    const payload: Record<string, JsonValue> = {
+      content: chunk.content,
+      source_resource_id: sourceResourceId,
+      chunk_type: chunk.chunkType ?? "paragraph",
+    };
+    if (chunk.pageNumber !== undefined) payload.page_number = bounded(chunk.pageNumber, 1, 1_000_000, "pageNumber");
+    const hasStart = chunk.charStart !== undefined;
+    const hasEnd = chunk.charEnd !== undefined;
+    if (hasStart !== hasEnd) throw new TypeError("charStart and charEnd must be supplied together");
+    if (hasStart && hasEnd) {
+      const start = bounded(chunk.charStart as number, 0, Number.MAX_SAFE_INTEGER, "charStart");
+      const end = bounded(chunk.charEnd as number, 0, Number.MAX_SAFE_INTEGER, "charEnd");
+      if (end < start) throw new TypeError("charEnd cannot precede charStart");
+      payload.char_start = start;
+      payload.char_end = end;
+    }
+    return payload;
+  });
+}
+
 export function buildRowsQuery(query: RowsQuery): Record<string, JsonValue> {
   if (query.columns.length === 0) throw new TypeError("columns must not be empty");
   if (query.columns.length > 50) throw new TypeError("columns cannot contain more than 50 IDs");
@@ -314,6 +465,41 @@ function assertJsonValue(value: unknown, label: string, depth = 0): asserts valu
 function asBoolean(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") throw new TypeError(`${label} must be a boolean`);
   return value;
+}
+
+function requireSha256(value: unknown, label: string): string {
+  const digest = asString(value, label);
+  if (!/^[0-9a-f]{64}$/u.test(digest)) throw new TypeError(`${label} must be a lowercase SHA-256 digest`);
+  return digest;
+}
+
+function requireMediaType(value: unknown): string {
+  const mediaType = asString(value, "media_type");
+  if (!/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/u.test(mediaType)) {
+    throw new TypeError("media_type is invalid");
+  }
+  return mediaType;
+}
+
+function decodeCanonicalBase64(value: string): Uint8Array {
+  let binary: string;
+  try {
+    binary = atob(value);
+  } catch {
+    throw new TypeError("content_base64 must be canonical base64");
+  }
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (encodeBase64(bytes) !== value) throw new TypeError("content_base64 must be canonical base64");
+  return bytes;
+}
+
+export function encodeBase64(value: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < value.length; offset += chunkSize) {
+    binary += String.fromCharCode(...value.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function bounded(value: number, minimum: number, maximum: number, label: string): number {

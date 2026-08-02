@@ -14,6 +14,11 @@ import type {
   TableInfo,
   TokenResponse,
   UserPublic,
+  WorkspaceList,
+  WorkspaceMembershipList,
+  WorkspaceRead,
+  WorkspaceRunList,
+  WorkspaceTemplateList,
 } from './types'
 import { classifyAuthFailure, invalidateAuthSession, redirectToLogin } from './auth-session'
 import { getAccessToken, getRefreshToken, setTokens } from './tokens'
@@ -220,6 +225,68 @@ export const ragApi = {
     options.signal?.throwIfAborted()
     return requestStream(accessToken)
   },
+}
+
+export const workspacesApi = {
+  listTemplates: () =>
+    api.get<WorkspaceTemplateList>('/workspace-templates').then((response) => response.data),
+
+  list: () => api.get<WorkspaceList>('/workspaces').then((response) => response.data),
+
+  get: (workspaceId: string) =>
+    api.get<WorkspaceRead>(`/workspaces/${workspaceId}`).then((response) => response.data),
+
+  create: (payload: { display_name: string; template_id: string; quota?: Record<string, number> }) =>
+    api
+      .post<WorkspaceRead>('/workspaces', payload, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      })
+      .then((response) => response.data),
+
+  requestState: (
+    workspaceId: string,
+    state: 'start' | 'pause' | 'stop' | 'archive',
+    expectedVersion: number,
+  ) =>
+    api
+      .post<WorkspaceRead>(`/workspaces/${workspaceId}/${state}`, {
+        expected_version: expectedVersion,
+      })
+      .then((response) => response.data),
+
+  listMembers: (workspaceId: string) =>
+    api
+      .get<WorkspaceMembershipList>(`/workspaces/${workspaceId}/members`)
+      .then((response) => response.data),
+
+  listRuns: (workspaceId: string) =>
+    api
+      .get<WorkspaceRunList>(`/workspaces/${workspaceId}/runs`)
+      .then((response) => response.data),
+
+  createRun: async (workspaceId: string, generation: number, kind: 'batch' | 'interactive') => {
+    const operationId = crypto.randomUUID()
+    const requestDigest = await sha256Hex(
+      JSON.stringify({ kind, expected_workspace_generation: generation }),
+    )
+    return api
+      .post<WorkspaceRunList['items'][number]>(
+        `/workspaces/${workspaceId}/runs`,
+        {
+          kind,
+          expected_workspace_generation: generation,
+          request_digest: requestDigest,
+        },
+        { headers: { 'Idempotency-Key': operationId } },
+      )
+      .then((response) => response.data)
+  },
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 /**

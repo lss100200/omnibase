@@ -81,6 +81,18 @@ runtime evidence; then correct the stale documentation in the same change.
   AuthorizationContext, Operation, and Idempotency in that order. The actor
   membership must still be active and writable on every request; an active
   Grant and tenant User cannot substitute for live Workspace membership.
+- P34.7 adds production admission contracts, not production authority. A/B
+  require a clean public checkout, tracked-source/evidence digests, four
+  separate Core/Runner/Broker/Gateway identities and the fixed mTLS/AF_UNIX
+  topology. C/E admit only a disposable local provider reference today;
+  provider objects are visible only after an append-only committed marker,
+  `pending|unknown` never auto-replays, and non-disposable tenant/RAG requires
+  explicit data-owner admission. D/F require two real independent Linux
+  members, production Node Daemons, independent DERP, current-source Runner
+  12/12, two Broker 26/26 rounds, node-compromise evidence, dual Ed25519
+  signatures and SLA samples. Missing external evidence means
+  `blocked/not_proven`; it must never be rewritten as P34.7 PASS. Phase 5
+  remains PLANNED/FROZEN.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

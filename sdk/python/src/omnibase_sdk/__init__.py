@@ -2,8 +2,13 @@
 
 from omnibase_sdk.client import OmniBaseClient
 from omnibase_sdk.models import (
+    ArtifactReadResponse,
+    ArtifactWriteResponse,
     Citation,
     CitationReadResponse,
+    DerivedChunkWrite,
+    DerivedCreateResponse,
+    DerivedDeleteResponse,
     GatewayError,
     OrderBy,
     RagSearchResponse,
@@ -23,8 +28,13 @@ from omnibase_sdk.transport import (
 )
 
 __all__ = [
+    "ArtifactReadResponse",
+    "ArtifactWriteResponse",
     "Citation",
     "CitationReadResponse",
+    "DerivedChunkWrite",
+    "DerivedCreateResponse",
+    "DerivedDeleteResponse",
     "GatewayError",
     "HttpTransport",
     "OmniBaseClient",

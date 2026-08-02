@@ -320,6 +320,8 @@ Gate：私有写入物理隔离；伪造 lineage、重复 promotion、越权目�
 
 **不可跳过规则**：P34.0–P34.7 可以分批演示，但任何增量不得绕过前置 Gate 暂时开放直连数据库、宿主文件、无限网络或长期凭据。P34.7 未全部通过前，不得启动 Phase 5 自主 Planner、多 Agent 长循环或宿主级工具执行。
 
+截至 2026-08-02，P34.7A–G 的工程实现与本地验证入口已经落地，但生产总 Gate 仍为 `BLOCKED / NOT_PROVEN`：本地 provider reference Gate 通过不代表真实 provider/non-disposable tenant/RAG 通过；production composition、current-source Runner 12/12、两个真实成员节点、独立 DERP、node-compromise、双成员签名与 SLA 样本仍缺直接证据。因此 Phase 5 保持 `PLANNED / FROZEN`，不能因 UI/SDK 或 validator 完成而提前解冻。
+
 ## 六、Phase 5：Agent 编排基础
 
 > **预计工期**：3–4 周

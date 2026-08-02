@@ -357,6 +357,60 @@
         "backend/tests/test_p34_6_promotion_snapshot.py",
         "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
       ]
+    },
+    {
+      "id": "INV-035",
+      "title": "Production evidence provenance and clean-checkout admission",
+      "document": "docs/maintainers/security-invariants.md#inv-035-production-evidence-provenance",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "deployment/production/**",
+        "scripts/production/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py"
+      ]
+    },
+    {
+      "id": "INV-036",
+      "title": "Production component identity and transport separation",
+      "document": "docs/maintainers/security-invariants.md#inv-036-production-composition-separation",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "deployment/production/**",
+        "backend/src/omnibase/sandbox/**",
+        "backend/src/omnibase/capability_gateway/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p34_5_sandbox_a4_transport.py",
+        "backend/tests/test_p34_5_gateway_workload.py"
+      ]
+    },
+    {
+      "id": "INV-037",
+      "title": "Provider committed visibility and non-disposable admission",
+      "document": "docs/maintainers/security-invariants.md#inv-037-provider-commit-admission",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/provider_adapters.py",
+        "scripts/workspace-data/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_workspace_provider.py"
+      ]
+    },
+    {
+      "id": "INV-038",
+      "title": "Real-member Overlay evidence, compromise and SLA admission",
+      "document": "docs/maintainers/security-invariants.md#inv-038-overlay-production-evidence",
+      "source_paths": [
+        "deployment/overlay/production/**",
+        "scripts/overlay/p34_7_*.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_overlay_production_gate.py",
+        "backend/tests/test_p34_7_overlay_sla.py"
+      ]
     }
   ],
   "modules": [
@@ -1172,6 +1226,85 @@
       ]
     },
     {
+      "id": "production-readiness",
+      "name": "P34.7 production evidence, composition, provider, Overlay and release admission",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "backend/src/omnibase/workspace_data/provider_adapters.py",
+        "backend/tests/test_p34_7_*.py",
+        "deployment/production/**",
+        "deployment/overlay/production/**",
+        "scripts/production/**",
+        "scripts/workspace-data/**",
+        "scripts/overlay/p34_7_*.py",
+        "docs/runbooks/p34-7-overlay-sla.md",
+        "docs/evidence/p34-7/**",
+        "frontend/app/(dashboard)/spaces/**",
+        "frontend/lib/api.ts",
+        "frontend/lib/types.ts",
+        "sdk/python/src/omnibase_sdk/**",
+        "sdk/typescript/src/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/composition.py:ProductionCompositionGate",
+        "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
+        "scripts/production/validate_p34_7_composition.py:main",
+        "scripts/workspace-data/run_p34_7_provider_gate.py:main",
+        "scripts/overlay/p34_7_production_gate.py:main",
+        "scripts/overlay/p34_7_sla_report.py:main",
+        "sdk/python/src/omnibase_sdk/client.py:OmniBaseClient",
+        "sdk/typescript/src/client.ts:OmniBaseClient"
+      ],
+      "public_interfaces": [
+        "P34.7 production composition admission report",
+        "P34.7 provider/recovery disposable reference Gate",
+        "P34.7 real-member Overlay and SLA evidence contract",
+        "Browser Workspace control-plane UI without private-data write authority",
+        "Python and TypeScript Gateway Artifact/Derived helpers"
+      ],
+      "depends_on": [
+        "workspace-control-plane",
+        "sandbox-runtime",
+        "network-broker",
+        "overlay-adapter",
+        "gateway-workload",
+        "workspace-data-rag",
+        "frontend",
+        "sdk-contracts"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-005",
+        "INV-010",
+        "INV-017",
+        "INV-018",
+        "INV-019",
+        "INV-020",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024",
+        "INV-035",
+        "INV-036",
+        "INV-037",
+        "INV-038"
+      ],
+      "verification": [
+        "python scripts/production/validate_p34_7_composition.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production src/omnibase/workspace_data",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "cd sdk/typescript && pnpm test && pnpm typecheck",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q"
+      ],
+      "recovery": [
+        "Restore activation_requested=false and rejecting/unavailable production adapters whenever evidence is missing, stale or ambiguous.",
+        "Do not replay pending or unknown provider effects; retain journals, receipts, signatures and source manifests for reconciliation.",
+        "Revoke affected Run, Network Lease, workload certificate and node credentials before re-admitting a compromised component.",
+        "Phase 5 remains frozen until the clean-checkout P34.7 total Gate is independently PASS."
+      ]
+    },
+    {
       "id": "operations-recovery",
       "name": "CI gates, backup, restore and operator runbooks",
       "source_paths": [
@@ -1197,8 +1330,8 @@
         "Safe Compose diagnostics require explicit --env-file .env.example or a disposable overlay-specific env file",
         "P34.3 maintainer-map benchmark protocol and suite"
       ],
-      "depends_on": ["migrations", "runtime-composition", "sdk-contracts"],
-      "invariants": ["INV-008", "INV-009", "INV-010"],
+      "depends_on": ["migrations", "runtime-composition", "sdk-contracts", "production-readiness"],
+      "invariants": ["INV-008", "INV-009", "INV-010", "INV-035"],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",

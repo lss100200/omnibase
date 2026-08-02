@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import useSWR from 'swr'
-import { BookOpen, Database, FileText, Sparkles } from 'lucide-react'
-import { documentsApi, healthApi } from '@/lib/api'
+import { Boxes, Database, FileText, Sparkles } from 'lucide-react'
+import { documentsApi, healthApi, workspacesApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +22,8 @@ export default function DashboardPage() {
   const { data: health } = useSWR('health', () => healthApi.readiness().catch(() => null), {
     refreshInterval: 30_000,
   })
+
+  const { data: spaces } = useSWR('workspaces-summary', () => workspacesApi.list())
 
   return (
     <div className="space-y-6">
@@ -43,7 +45,7 @@ export default function DashboardPage() {
           value={docsLoading ? null : (docsData?.total ?? 0)}
           href="/knowledge"
         />
-        <StatCard title="工作空间" icon={BookOpen} value={tenant?.name || '—'} href="/knowledge" />
+        <StatCard title="AI 空间" icon={Boxes} value={spaces?.total ?? 0} href="/spaces" />
         <StatCard
           title="数据库"
           icon={Database}
@@ -57,31 +59,31 @@ export default function DashboardPage() {
                 : 'destructive'
           }
         />
-        <StatCard title="RAG 引擎" icon={Sparkles} value="即将上线" status="warning" />
+        <StatCard title="RAG 引擎" icon={Sparkles} value="受控运行" status="success" />
       </div>
 
       {/* Quick start */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">快速开始</CardTitle>
-          <CardDescription>三个步骤开始使用 OmniBase</CardDescription>
+          <CardDescription>从知识数据进入受控 AI 工作空间</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Step n={1} title="上传你的第一份文档">
             支持 PDF / DOCX / TXT / Markdown，自动提取页数与元数据。
           </Step>
-          <Step n={2} title="浏览数据库">
-            直接查看后台数据结构，体验 schema-per-tenant 隔离。
+          <Step n={2} title="创建 AI 空间">
+            从经过版本封存的模板创建空间，并配置生命周期与资源限额。
           </Step>
-          <Step n={3} title="等待 RAG 上线">
-            Phase 1 将带来向量检索、智能问答和 Agent 编排。
+          <Step n={3} title="受控运行">
+            Run、能力、网络与数据访问受 Lease、fencing、预算和审计约束；Agent 仍等待 P34.7 总 Gate。
           </Step>
           <div className="flex gap-2 pt-2">
             <Button asChild>
               <Link href="/knowledge">前往知识库</Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link href="/database">查看数据库</Link>
+              <Link href="/spaces">进入 AI 空间</Link>
             </Button>
           </div>
         </CardContent>

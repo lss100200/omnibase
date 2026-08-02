@@ -1030,3 +1030,147 @@ Snapshot 只有在服务端生成并核验完整 resource/version/digest/size in
 **失败恢复**
 
 停止 snapshot/restore worker，将不完整新 Workspace 保持 stopped/unavailable，保留 manifest、effect、journal、Audit 与 lineage 证据。重新验证对象和 digest 后走 forward-fix 或 restore 到新的 identity；不得覆盖原 Workspace、删除未知 effect、恢复旧运行态或对普通业务数据库执行破坏性试验。
+
+## INV-035 production-evidence-provenance
+
+**权威源码**
+
+- `backend/src/omnibase/production/**`
+- `deployment/production/**`
+- `scripts/production/**`
+- `backend/tests/test_p34_7_production_composition.py`
+
+**为何存在**
+
+P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑定 Git commit/tree、受控 tracked-source manifest、部署配置和每份 evidence 的 SHA-256 与 JSON assertions。工作树 dirty、证据漂移、缺少当前源码证明或只存在历史报告时，状态只能是 `blocked/not_proven` 或 `invalid/veto`，不能靠人工文字改成 PASS。
+
+**允许的改法**
+
+- 扩展显式 source scope、evidence schema 或验证断言，同时保留根 `.env`、symlink/reparse、非 regular file 和仓库外路径拒绝。
+- 为新的独立生产组件增加当前源码绑定的 evidence 项；缺失项保持 `not_proven`。
+- 将验证与激活分离；Gate 通过只产生 admission decision，不自动启动服务或授予 authority。
+
+**禁止的改法**
+
+- 在 dirty checkout、未跟踪生产源码、证据哈希不匹配或 source manifest 不完整时发出 production PASS。
+- 将 Docker Desktop、WSL、mock、test double、disposable Gate、旧 commit evidence 或端口可达性冒充当前生产证据。
+- 读取、打印、散列或纳入根 `.env`，或让 evidence path 逃逸仓库/受控 operator 目录。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_production_composition.py`
+- `python scripts/production/validate_p34_7_composition.py --validate-only`
+- 提交后必须从 clean checkout 运行 `--verify`；外部证据未齐时预期为 `blocked/not_proven`，不是失败伪装。
+
+**失败恢复**
+
+把 `activation_requested` 恢复为 false，撤销受影响组件的 admission，保留原 evidence 和 manifest 取证。修复源码或重新采集证据后从新的 clean checkout 验证；不得删除 Veto、忽略 dirty scope 或复用旧哈希。
+
+## INV-036 production-composition-separation
+
+**权威源码**
+
+- `backend/src/omnibase/production/composition.py`
+- `deployment/production/composition.example.json`
+- `backend/src/omnibase/sandbox/**`
+- `backend/src/omnibase/capability_gateway/**`
+- `backend/tests/test_p34_7_production_composition.py`
+
+**为何存在**
+
+Core、Runner、Broker 与 Gateway 是四个独立信任边界。只有 Core 接受 Browser 流量，只有 Runner 执行 Workspace 代码；Runner/Broker 不得持有数据库、Redis、对象存储、JWT、签名私钥、宿主环境或成员 Overlay identity。固定内部通道必须使用 logical identifiers 和独立 peer identity，Browser cookie/JWT 不能沿内部通道传播。
+
+**允许的改法**
+
+- 为组件增加更窄的 credential class allowlist、独立 SPIFFE identity、mTLS 验证或 AF_UNIX peer/pinned-daemon identity。
+- 新增 provider 时映射到既有 Core→Runner、Runner→Broker、Runner→Gateway、Broker→Gateway 边界，默认 unavailable。
+- 缩短凭据 TTL、加强轮换、revocation 和 per-request live revalidation。
+
+**禁止的改法**
+
+- 合并 Core/Runner/Broker/Gateway 进程以绕过身份或网络验证。
+- 让 Browser、Runner 或 Sandbox 直连 PostgreSQL、Redis、MinIO、object store、Docker socket、宿主路径或成员 Overlay endpoint。
+- 用 bearer token、cookie、source IP、静态 service secret 或调用方提交的 peer identity 代替 mTLS/daemon-owned evidence。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_production_composition.py`
+- P34.5 Runner transport、Broker、Gateway workload/mTLS focused tests。
+- clean-checkout composition `--verify`，并逐项报告未证明的 production roundtrip。
+
+**失败恢复**
+
+停止 production activation，恢复 unavailable Runner、rejecting Broker/Gateway 和 server-owned credential registry。撤销 Run/Network Lease、workload certificate 与组件身份；不得把 workload 转交 Core、Celery 或宿主 shell 执行。
+
+## INV-037 provider-commit-admission
+
+**权威源码**
+
+- `backend/src/omnibase/workspace_data/provider_adapters.py`
+- `scripts/workspace-data/run_p34_7_provider_gate.py`
+- `backend/tests/test_p34_7_workspace_provider.py`
+
+**为何存在**
+
+外部对象已经物理落盘不等于操作已提交。Artifact、Derived、copy-on-publish、Snapshot 与 Restore 必须绑定 tenant/workspace/operation/grant/version/action/resource/version/digest/size/generation，并经过 append-only effect journal 的 committed marker 后才可见。`pending|unknown` 永不自动 replay；non-disposable tenant/RAG 还需要短期、精确绑定的数据所有者准入事实。
+
+**允许的改法**
+
+- 新增生产 provider adapter，但必须保留 typed plan/grant/quota/receipt、content-addressed verification、committed visibility 和 reconciliation。
+- 增加新的 storage lane 时保持 `canonical_readonly` 不可作为 provider write target。
+- Restore 继续创建新 Workspace、Resource identity 和更高 generation；copy-on-publish 继续创建新 `controlled_shared` target。
+
+**禁止的改法**
+
+- 以对象存在、provider success HTTP、临时 receipt 或本地参考 adapter 作为 committed/production 事实。
+- 自动重放 `pending|unknown`、覆盖 source、复用旧 Resource/Workspace identity 或恢复旧 Run/Lease/token/runtime/network identity。
+- 在没有数据所有者授权时访问 non-disposable tenant/RAG，或把 physical locator/provider handle 暴露到 Browser、SDK、日志、Audit 或错误。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_workspace_provider.py`
+- `scripts/workspace-data/run_p34_7_provider_gate.py` 的 disposable reference Gate。
+- P34.6 Workspace-data、Promotion、Snapshot/Restore focused 与 guarded sentinel tests。
+
+**失败恢复**
+
+移除生产 adapter，恢复 unavailable/rejecting composition；保留 journal、receipt、object digest 和 reconciliation 状态。对 `unknown` 只允许人工读取可信 provider 状态后 forward-fix，不得删除 reservation 后伪装 fresh attempt。
+
+## INV-038 overlay-production-evidence
+
+**权威源码**
+
+- `deployment/overlay/production/**`
+- `scripts/overlay/p34_7_overlay_common.py`
+- `scripts/overlay/p34_7_production_gate.py`
+- `scripts/overlay/p34_7_sla_report.py`
+- `backend/tests/test_p34_7_overlay_production_gate.py`
+- `backend/tests/test_p34_7_overlay_sla.py`
+- `docs/runbooks/p34-7-overlay-sla.md`
+
+**为何存在**
+
+真实成员 Overlay 不能由 Headscale control-plane test double 或单机 disposable evidence 推断。生产准入至少需要两个独立 Linux 成员节点、独立 production Node Daemon、独立 DERP、current-source Runner 12/12、Broker 两轮 26/26、真实 revoke/credential-theft/no-replay/cleanup、容量与 SLA 样本，并由两个成员节点分别对同一 canonical payload 做独立 Ed25519 签名。
+
+**允许的改法**
+
+- 增加新的真实成员、DERP、故障注入或 SLA scenario，并为最小样本数、成功率、p95、并发度和 allowed outcome 设置更严格阈值。
+- 轮换成员 attestation key，但 topology pin、public-key digest 和 evidence signature 必须同步更新并可验证。
+- 将后续 evidence/docs-only commit 与冻结 source scope 分离；任何受控生产源字节变化都必须重新采集证据。
+
+**禁止的改法**
+
+- 让 Sandbox 成为 Overlay peer，向 workload 暴露物理 endpoint/route/key，或允许直达数据库、Redis、MinIO、provider、host route。
+- 接受 placeholder 节点、重复 signer、未签名 payload、direct path 未关闭的“强制 DERP”或历史 11/11 artifact。
+- 把缺样本、超 SLA、节点未独立、credential theft 未拒绝或 cleanup 非零降级为 warning。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_overlay_production_gate.py`
+- `backend/tests/test_p34_7_overlay_sla.py`
+- `python scripts/overlay/p34_7_production_gate.py --validate-only ...`
+- 真实 production Gate 必须验证双成员签名、DERP、node compromise、current-source 12/12、两轮 26/26 和完整 SLA observation。
+
+**失败恢复**
+
+隔离受影响 Node Daemon/成员节点，撤销 node credential、Peer Grant、Service Advertisement 与 Network Lease，停止 service publication，并保留签名 evidence 与 observation。rejoin 必须创建新 identity 和新 fencing；不得恢复旧 credential 或自动重放 ambiguous mutation。

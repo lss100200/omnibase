@@ -796,6 +796,34 @@ pnpm build
 
 只报告实际运行过的命令、退出码和测试数量。未执行 disposable integration、production build、restore rehearsal 或业务 migration 时必须明确写“未执行”。
 
+### 11.10 P34.7 production readiness
+
+```powershell
+python scripts/production/validate_p34_7_composition.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p34_7_production_composition.py `
+  tests/test_p34_7_workspace_provider.py `
+  tests/test_p34_7_overlay_production_gate.py `
+  tests/test_p34_7_overlay_sla.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production `
+  src/omnibase/workspace_data
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production `
+  src/omnibase/workspace_data/provider_adapters.py `
+  tests/test_p34_7_production_composition.py `
+  tests/test_p34_7_workspace_provider.py `
+  tests/test_p34_7_overlay_production_gate.py `
+  tests/test_p34_7_overlay_sla.py `
+  ../scripts/production `
+  ../scripts/workspace-data `
+  ../scripts/overlay/p34_7_overlay_common.py `
+  ../scripts/overlay/p34_7_production_gate.py `
+  ../scripts/overlay/p34_7_sla_report.py
+```
+
+`--validate-only` 只证明配置合同能被严格解析，不验证外部生产证据，也不启动服务。P34.7 总 Gate 必须在提交后的 public clean checkout 使用 `scripts/production/validate_p34_7_composition.py --verify`，并同时提供 current-source Runner 12/12、两轮 Broker 26/26、四条 production component roundtrip、真实 provider/non-disposable tenant/RAG、两成员 Overlay/DERP/node-compromise、双签名与 SLA 样本。缺少任一项时正确结果是 `blocked/not_proven`，Phase 5 继续冻结。
+
 ## 12. 故障恢复路径
 
 ### 12.1 身份或跨 Tenant 风险
@@ -866,6 +894,15 @@ pnpm build
 4. Promotion 重新执行必须使用新的、由另一名 live tenant admin 决定的 Approval 和精确 source version/digest/request hash；P34.6 目标仍只能是新的 `controlled_shared` Resource。
 5. Snapshot/restore 故障时保持新 Workspace stopped/unavailable，验证完整 inventory/object digest后 forward-fix；不能覆盖原 Workspace或恢复旧 token、Run、Lease、runtime/workload identity、PID、socket、连接和 provider handle。
 6. 在新的 guarded `omnibase_test_*` sentinel 中重跑 `0009`、trigger、cross-tenant/workspace、unknown no-replay、canonical unchanged、promotion并发与 restore-new-identity Gate 后再开放。
+
+### 12.10 P34.7 production readiness 风险
+
+1. 立即把 `activation_requested` 设回 false，恢复 unavailable Runner/provider 与 rejecting Broker/Gateway；Gate 或 UI 状态不能替代实际组件撤销。
+2. source/evidence digest、Git tree、双成员签名或 assertion 任一漂移时，冻结整份 release decision，保留原 manifest/evidence 取证并从新的 clean checkout 重跑。
+3. provider 操作处于 `pending|unknown` 时停止可见性和自动重放；读取可信 provider journal/receipt 后人工 reconciliation，不删除 reservation 或伪造 fresh operation。
+4. Overlay/Node compromise 时隔离成员与 Node Daemon，撤销 node credential、Peer Grant、Service Advertisement、Network Lease 和 workload certificate；rejoin 使用新 identity 与新 fencing。
+5. production SLA 缺样本、p95 超标、并发不足、direct path 未关闭、cleanup 非零或签名无效时保持 `blocked/not_proven`；不得用 disposable/local smoke 降级替代。
+6. Browser 继续只使用 Workspace control-plane；不要为修复 UI 开放 WorkspaceData private-write、physical locator、provider handle、数据库连接或对象存储凭据。
 
 ## 13. 解冻与继续冻结边界：P34.4 / P34.5+
 

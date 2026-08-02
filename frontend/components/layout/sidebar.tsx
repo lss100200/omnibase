@@ -2,11 +2,20 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, Database, LayoutDashboard, MessageSquare, Settings, Sparkles } from 'lucide-react'
+import {
+  BookOpen,
+  Boxes,
+  Database,
+  LayoutDashboard,
+  MessageSquare,
+  Settings,
+  Sparkles,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/dashboard', label: '概览', icon: LayoutDashboard },
+  { href: '/spaces', label: 'AI 空间', icon: Boxes },
   { href: '/knowledge', label: '知识库', icon: BookOpen },
   { href: '/playground', label: '检索测试', icon: Sparkles },
   { href: '/chat', label: 'AI 问答', icon: MessageSquare },
@@ -54,7 +63,7 @@ export function Sidebar() {
       <div className="border-t p-3">
         <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <span className="h-2 w-2 rounded-full bg-success" />
-          Phase 0 · 开发中
+          P34.7 · 生产验收中
         </div>
       </div>
     </aside>

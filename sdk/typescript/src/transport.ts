@@ -66,7 +66,8 @@ export class FetchTransport implements Transport {
     this.#baseUrl = options.baseUrl.replace(/\/$/u, "");
     this.#credentialProvider = options.credentialProvider;
     this.#fetch = options.fetch ?? globalThis.fetch;
-    this.#maxResponseBytes = options.maxResponseBytes ?? 1_100_000;
+    // A 1 MiB artifact expands to roughly 1.4 MiB as canonical base64 plus JSON fields.
+    this.#maxResponseBytes = options.maxResponseBytes ?? 1_500_000;
     if (!Number.isInteger(this.#maxResponseBytes) || this.#maxResponseBytes < 1 || this.#maxResponseBytes > 2_000_000) {
       throw new TypeError("maxResponseBytes must be between 1 and 2000000");
     }

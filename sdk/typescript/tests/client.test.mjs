@@ -5,6 +5,7 @@ import { FetchTransport, GatewayError, OmniBaseClient } from "../dist/index.js";
 
 const resourceId = "11111111-1111-4111-8111-111111111111";
 const columnId = "22222222-2222-4222-8222-222222222222";
+const operationId = "33333333-3333-4333-8333-333333333333";
 
 test("schema read uses frozen path and logical ID only", async () => {
   const calls = [];
@@ -174,4 +175,67 @@ test("fetch transport rejects oversized responses before JSON parsing", async ()
     transport.request("POST", "/gateway/v1/data/schema/read", { resource_id: resourceId }),
     /byte limit/u,
   );
+});
+
+test("artifact and derived helpers use logical gateway routes and bind content digests", async () => {
+  const calls = [];
+  const client = new OmniBaseClient({
+    async request(method, path, body) {
+      calls.push({ method, path, body });
+      if (path.endsWith("artifacts/write")) {
+        return {
+          status: 200,
+          headers: {},
+          body: {
+            operation_id: operationId,
+            resource_id: resourceId,
+            resource_version: 1,
+            media_type: "text/plain",
+            size_bytes: 5,
+            content_sha256: body.content_sha256,
+            replayed: false,
+            request_id: "req-write",
+          },
+        };
+      }
+      if (path.endsWith("derived/create")) {
+        return {
+          status: 200,
+          headers: {},
+          body: {
+            operation_id: operationId,
+            resource_id: resourceId,
+            resource_version: 1,
+            chunk_count: 1,
+            replayed: false,
+            request_id: "req-derived",
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+  });
+
+  const written = await client.writeArtifact({
+    idempotencyKey: "artifact-write-1",
+    displayName: "note",
+    mediaType: "text/plain",
+    content: new TextEncoder().encode("hello"),
+  });
+  assert.equal(written.sizeBytes, 5);
+  assert.match(calls[0].body.content_sha256, /^[0-9a-f]{64}$/u);
+  assert.equal(calls[0].body.content_base64, "aGVsbG8=");
+
+  const derived = await client.createDerived({
+    idempotencyKey: "derived-create-1",
+    displayName: "summary",
+    sourceResourceIds: [resourceId],
+    chunks: [{ content: "summary", sourceResourceId: resourceId }],
+  });
+  assert.equal(derived.chunkCount, 1);
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/gateway/v1/artifacts/write",
+    "/gateway/v1/rag/derived/create",
+  ]);
+  assert.equal("workspace_id" in calls[1].body, false);
 });
