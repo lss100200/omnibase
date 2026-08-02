@@ -194,8 +194,9 @@ test-destructive: ## 在一次性隔离数据库中运行破坏性集成测试
 		echo "$(YELLOW)Explicit TEST_DATABASE_PORT and both disposable database passwords are required$(RESET)"; exit 1; \
 	fi
 	@set -eu; \
+		repo_root="$$(pwd)"; \
 		compose_file="$$(pwd)/docker-compose.destructive-tests.yml"; \
-		trap '$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" down -v --remove-orphans' EXIT INT TERM; \
+		trap 'cd "$$repo_root"; $(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" down -v --remove-orphans' EXIT INT TERM; \
 		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" up -d --wait postgres-test; \
 		export OMNIBASE_INTEGRATION_TESTS=1; \
 		export TEST_DATABASE_URL="postgresql+psycopg://$${TEST_DATABASE_ROLE}:$${TEST_DATABASE_PASSWORD}@localhost:$${TEST_DATABASE_PORT}/$${TEST_DATABASE_NAME}"; \
