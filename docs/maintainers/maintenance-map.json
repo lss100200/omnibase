@@ -425,6 +425,20 @@
       "test_paths": [
         "backend/tests/test_p5_0_admission.py"
       ]
+    },
+    {
+      "id": "INV-040",
+      "title": "P5.1A registry contracts stay logical, immutable, secret-free and non-executable",
+      "document": "docs/maintainers/security-invariants.md#inv-040-p51a-registry-contract-preflight",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "deployment/production/phase5-registry-contract.example.json",
+        "scripts/production/validate_p5_1_registry_contract.py",
+        "docs/phase-5-agent-registry-contract.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1_registry_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -1362,6 +1376,53 @@
         "Keep every Phase 5 feature gate false and activation_requested=false; resolve gate conflicts as configuration errors, never as silent true.",
         "When P34.7 evidence or any sealed manifest file drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; blocked/not_proven is the only correct state until evidence is complete.",
         "Never read the root .env, a database, or start any Agent/Planner/Executor/queue/worker/scheduler from this module or its validator."
+      ]
+    },
+    {
+      "id": "phase5-registry-contract-preflight",
+      "name": "P5.1A offline Agent Registry contract preflight (no ORM/migration/service/API)",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "scripts/production/validate_p5_1_registry_contract.py",
+        "deployment/production/phase5-registry-contract.example.json",
+        "backend/tests/test_p5_1_registry_contract.py",
+        "docs/phase-5-agent-registry-contract.md",
+        "docs/evidence/p34-7/production-readiness-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_registry_contract.py:AgentDefinition",
+        "backend/src/omnibase/production/phase5_registry_contract.py:AgentVersionManifest",
+        "backend/src/omnibase/production/phase5_registry_contract.py:WorkspaceAgentBinding",
+        "backend/src/omnibase/production/phase5_registry_contract.py:RegistryContractGate",
+        "backend/src/omnibase/production/phase5_registry_contract.py:load_registry_contract_config",
+        "scripts/production/validate_p5_1_registry_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline AgentDefinition/AgentVersion/WorkspaceAgentBinding strict DTO contracts",
+        "P5.1A registry contract preflight report (blocked/not_proven while P34.7/P5.0 are not ready)",
+        "Sealed contract/evidence digests and source-boundary scan (no ORM/migration/router/Celery/runtime)"
+      ],
+      "depends_on": [
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039",
+        "INV-040"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_1_registry_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1_registry_contract.py tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_registry_contract.py tests/test_p5_1_registry_contract.py ../scripts/production/validate_p5_1_registry_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_registry_contract.py tests/test_p5_1_registry_contract.py ../scripts/production/validate_p5_1_registry_contract.py"
+      ],
+      "recovery": [
+        "Keep all three Phase 5 feature gates false and every P5.1A DTO logical/immutable/secret-free; any ORM/migration/router/Celery/runtime package appearing in the source tree is a veto.",
+        "When P34.7/P5.0 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout.",
+        "P5.1A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, and never read the root .env or a database."
       ]
     },
     {

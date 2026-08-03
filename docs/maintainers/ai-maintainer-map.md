@@ -501,6 +501,31 @@ fail-closed。
 - INV-025–INV-034 仍是 Phase 5 计划预留不变量，P5.0 不得把其中任何一条
   标记为已实现。
 
+### 6.9 P5.1A Agent Registry contract preflight（离线，只验证不实现）
+
+`backend/src/omnibase/production/phase5_registry_contract.py` 是 P5.1A 的
+唯一交付物：AgentDefinition → AgentVersion → WorkspaceAgentBinding 三层
+离线 strict DTO/合同，纯离线 validator，无 ORM、migration、service、
+Browser API、SDK 调用、Planner/Executor/worker/scheduler 或 Runtime。
+
+- `deployment/production/phase5-registry-contract.example.json` 是
+  closed-set 合同：三个 Phase 5 gate 必须 false、P34.7/P5.0 formal state
+  当前 `blocked/not_proven` 且决策文档被 SHA-256 封存、approval policy
+  （high/critical 必须 approval）、server-owned budget ceilings、
+  forbidden source paths、baseline migration revisions（0001–0009）、
+  内嵌 definition/version/binding 正向示例。
+- `scripts/production/validate_p5_1_registry_contract.py --validate-only`
+  只解析合同（exit 0，永不 ready）；`--verify` 复用 P5.0 修补后的逐分量
+  symlink/reparse 路径检查与仓库外 report 规则，校验 sealed digest、
+  migration 集合/head、forbidden 包不存在、OpenAPI snapshot 无 agent
+  endpoint，并解析环境 gate。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0 非 ready + registry
+  database/API/installation 未实现 + production evidence 未证明）；
+  该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
+  用 AST 扫描证明。
+- INV-025–INV-034 仍是 Phase 5 计划预留；INV-040 只描述 P5.1A 合同的
+  离线属性，不声称数据库约束、RBAC、并发安装或 Runtime 已完成。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界

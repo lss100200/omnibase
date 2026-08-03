@@ -101,7 +101,15 @@ runtime evidence; then correct the stale documentation in the same change.
   returns an admission decision and never starts an Agent, Planner, Executor,
   queue, worker or scheduler; missing/empty gate values are false, unknown
   values and dependency conflicts fail closed, and P5.0 stays
-  `blocked/not_proven` while P34.7 is not `ready`.
+  `blocked/not_proven` while P34.7 is not `ready`. P5.1A is the only further
+  permitted Phase 5 deliverable: the offline Agent Registry contract preflight
+  (`backend/src/omnibase/production/phase5_registry_contract.py`, contract
+  `deployment/production/phase5-registry-contract.example.json`, validator
+  `scripts/production/validate_p5_1_registry_contract.py`). It defines strict
+  AgentDefinition/AgentVersion/WorkspaceAgentBinding DTOs only; there is no
+  ORM, migration, service, Browser API, SDK call, Planner, Executor, worker,
+  scheduler or runtime, and P5.1A stays `blocked/not_proven` while P34.7 and
+  P5.0 are not `ready`.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

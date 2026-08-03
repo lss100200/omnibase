@@ -1235,3 +1235,68 @@ Planner/Executor/queue/worker/scheduler，也不读取根 `.env` 或业务数据
 错误（veto），不得静默降级为 true；sealed digest 漂移时保留原合同与
 report 取证，更新证据或合同后重新封存并 re-verify。任何情况下都不得从
 该模块启动 Phase 5 运行时组件。
+
+## INV-040 p51a-registry-contract-preflight
+
+**权威源码**
+
+- `backend/src/omnibase/production/phase5_registry_contract.py`
+- `deployment/production/phase5-registry-contract.example.json`
+- `scripts/production/validate_p5_1_registry_contract.py`
+- `docs/phase-5-agent-registry-contract.md`
+- `backend/tests/test_p5_1_registry_contract.py`
+
+**为何存在**
+
+P5.1A 只是 Agent Registry 的离线合同预检，不是 Registry 实现。合同必须
+保持逻辑化（无物理 locator/凭据）、不可变（sealed manifest digest 基于
+canonical 原始 UTF-8 字节）、无秘密（无 API key/base_url/Authorization/
+cookie/token/私钥）且非运行态（无 ORM/migration/service/API/Planner/
+Executor/worker/scheduler）。P34.7 或 P5.0 未 `ready` 时，P5.1A 恒
+`blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；源码树中
+出现任何 forbidden runtime/ORM/API 包或 migration revision 漂移都是 veto。
+本不变量不得声称数据库约束、RBAC、并发安装或 Runtime 已经完成——那些
+属于 P5.1B+，当前保持未实现。
+
+**允许的改法**
+
+- 收紧 DTO 闭集、budget ceiling、JSON Schema 子集或 approval policy。
+- 为新的离线语义增加负向 fixture；digest 始终按 canonical JSON 原始
+  UTF-8 字节计算，不接受换行归一化解码文本冒充。
+- 更新 P34.7/P5.0 evidence 或合同文档时，在同一变更中同步更新
+  P5.1A 合同的 sealed digest 并重新验证。
+
+**禁止的改法**
+
+- 在本模块或 validator 中实现/预装 ORM、migration、registry service、
+  Browser API、SDK 调用、Planner/Executor/dispatcher/scheduler、Model/
+  Tool/Memory/Skill runtime、Celery task、Agent Runtime 或 shell/SQL/HTTP
+  tool；以"代码存在但 gate 关闭"为理由同样禁止。
+- 让 binding 以不同 digest 绑定同一 version ID、引用未知 definition/
+  version、缺少 high/critical risk 所需的 approval、使用通配符 tool ID
+  或把 revoked/disabled 状态解释为 active。
+- 让 validator 读取根 `.env`、凭据、数据库、migration 或外网；把 report
+  写到仓库内；把 `not_proven` 计为 passed；把 safety negatives 写死为
+  true 而不经源码边界/import 约束/负向测试证明。
+- 预先假定下一个 migration 编号为 `0010`；把 P5.1A 写成 P5.1 PASS；把
+  P34.7 改成 ready；打开 Phase 5 Feature Gate。
+
+**必须运行的测试**
+
+- `backend/tests/test_p5_1_registry_contract.py`（60 项负向清单：DTO
+  闭集、digest 长度/大小写/漂移、CRLF 原始字节、JSON Schema `$ref`、
+  budget/NaN/Infinity、symlink/reparse `.env` 逃逸、dirty checkout、
+  remote mismatch、gate true/truthy、forbidden 包/migration/router、
+  OpenAPI agent endpoint、仓库内 report、not_proven 计数、safety
+  negatives）
+- `python scripts/production/validate_p5_1_registry_contract.py
+  --validate-only`（合法合同 exit 0，永不 ready）
+- 提交后从 fresh clean checkout 运行 `--verify`；当前正确结果是
+  `blocked/not_proven`（exit 2，veto 0）。
+
+**失败恢复**
+
+保持 gate false、删除/回退任何意外出现的 runtime/ORM/API 源码，从新的
+clean checkout 重跑 validator。sealed digest 漂移时保留原合同与 report
+取证，更新证据或合同后重新封存并 re-verify。任何情况下都不得从该模块
+启动 Phase 5 运行时组件或访问业务数据库。

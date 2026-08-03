@@ -68,6 +68,7 @@ jobs:
             src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py \
             src/omnibase/migrations/versions/0006_p34_3_controlled_data.py \
             src/omnibase/production/phase5_admission.py \
+            src/omnibase/production/phase5_registry_contract.py \
             tests/cleanup.py \
             tests/conftest.py \
             tests/integration/conftest.py \
@@ -80,6 +81,7 @@ jobs:
             tests/test_p0_exposure_lockdown.py \
             tests/test_p34_*.py \
             tests/test_p5_0_admission.py \
+            tests/test_p5_1_registry_contract.py \
             tests/test_rate_limit.py \
             tests/test_reranker_boundary.py \
             tests/test_tenants.py
@@ -103,6 +105,7 @@ jobs:
             src/omnibase/capability_gateway \
             src/omnibase/controlled_data \
             src/omnibase/production/phase5_admission.py \
+            src/omnibase/production/phase5_registry_contract.py \
             tests/test_migration_scope_fail_closed.py \
             tests/test_rate_limit.py \
             tests/test_p34_*.py \
@@ -120,6 +123,8 @@ jobs:
           uv run python ../scripts/maintenance/validate_maintainer_benchmark.py --repo-root ..
       - name: P5.0 Phase 5 admission contract (validate-only)
         run: uv run python ../scripts/production/validate_p5_0_admission.py --validate-only
+      - name: P5.1A Agent Registry contract preflight (validate-only)
+        run: uv run python ../scripts/production/validate_p5_1_registry_contract.py --validate-only
       - name: Backend non-integration tests
         run: uv run pytest -m "not integration"
       - name: OpenAPI and Python SDK contracts

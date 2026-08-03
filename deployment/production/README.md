@@ -58,6 +58,26 @@ production composition digest, runbook digest and the P34.7 decision digest.
 The checked-in contract keeps `activation_requested=false`, all gates false
 and every production evidence item `not_proven`, so the correct current result
 is `blocked/not_proven` with zero vetoes.  The validator never reads the root
-`.env`, a database or a migration.  When `--output` is used, the operator must
+`.env`, a database or a migration.
+
+## P5.1A Agent Registry contract preflight
+
+The P5.1A contract (`phase5-registry-contract.example.json`) is an offline
+preflight for the AgentDefinition -> AgentVersion -> WorkspaceAgentBinding
+contracts.  It implements no ORM, migration, service, Browser API or runtime;
+it only validates strict DTOs, closed sets, canonical digests over raw UTF-8
+bytes, budget ceilings and approval policy.
+
+```text
+python scripts/production/validate_p5_1_registry_contract.py --validate-only
+python scripts/production/validate_p5_1_registry_contract.py --verify
+```
+
+`--verify` additionally hashes the clean checkout, checks the P5.0/P34.7
+formal states and sealed digests, and proves no forbidden runtime/ORM/API
+package, migration revision drift or agent OpenAPI endpoint was added.  The
+correct current result is `blocked/not_proven` with zero vetoes; the validator
+never reads the root `.env`, a database, the network or a migration, and it
+never starts an Agent, Planner, Executor, queue, worker or scheduler.  When `--output` is used, the operator must
 choose a path outside the repository so writing the report cannot invalidate
 the source provenance that was just verified.

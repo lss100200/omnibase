@@ -252,3 +252,59 @@ P5.0 PASS，也不得据此解冻 Phase 5 Runtime。
   逐级授权边界）。
 - P34.7 decision 文档与 P5.0 合同都由 digest 封存，但未来 P34.7 证据
   更新时必须在同一变更中同步更新 P5.0 合同与 re-verify，不能只改文档。
+
+---
+
+# Phase 5 威胁模型补充：P5.1A Agent Registry Contract Preflight
+
+> 状态：P5.1A 离线合同预检已实现。Registry database foundation、Browser
+> API、Runtime installation 均未实现；P5.1 production 为
+> `blocked/not_proven`；P5.2+ 保持 frozen。本补充只覆盖 P5.1A 合同与
+> validator 自身的安全属性，不建立任何 Agent Runtime 安全主张。
+
+## P5.1A 资产与信任边界
+
+受保护资产：
+
+- AgentDefinition/AgentVersion/WorkspaceAgentBinding 三层离线合同与
+  canonical digest（基于原始 UTF-8 字节，排除 `manifest_digest` 自指）；
+- sealed contracts/fixture/threat model/maintainer map digest；
+- P5.0 与 P34.7 formal state 与 decision digest；
+- migration revision 集合（0001–0009）与 head；OpenAPI snapshot；
+- safety negatives（10 项）作为"未实现/未运行"的离线证明。
+
+信任区域与 P5.0 相同；决策层 `RegistryContractGate` 是纯函数验证器，无
+数据库/网络/进程副作用，模块 import 白名单（stdlib + omnibase.production）
+由 AST 测试强制。
+
+## P5.1A 威胁与控制
+
+| 威胁 | 控制 |
+|---|---|
+| 把合同当实现（"有合同=Registry 完成"） | report 恒输出 `registry_runtime_implemented=false`、`database_schema_applied=false`、`public_api_exposed=false`；源码边界扫描拒绝 forbidden 包 |
+| binding 用不同 digest 绑定同一 version、引用未知 definition/version | `_validate_registry_references` exact digest 校验，漂移即拒绝 |
+| high/critical 安装缺 Approval | `approval_policy` 强制 required；缺 `approval_id` 拒绝 |
+| 预算 0/负数/超 ceiling/NaN/Infinity | `_strict_positive_int` + ceiling 校验 + `parse_constant` 拒绝非有限数 |
+| wildcard/重复/空 tool ID、scope | 逻辑 key 闭集 + 去重 + 保留字拒绝 |
+| JSON Schema 远程/文件 `$ref`、自定义命令字段 | 受控关键字闭集 + 本地 pointer 白名单 + 深度上限 |
+| digest 大写/长度错误/内容漂移、CRLF 冒充原始字节 | 严格 lowercase 64 hex；canonical 重新序列化原始 UTF-8 字节 |
+| 合同/evidence 经 symlink/reparse 指向根 `.env` | P5.0 修补后的逐分量 `_safe_repo_path` 规则复用 |
+| dirty checkout / remote 不符 | clean-checkout veto；remote 精确匹配 |
+| gate 被打开或写成 TRUE/yes/on/1 | gate true → blocker；truthy token → veto；合同内 gate true → 无效合同 |
+| 偷偷新增 ORM/migration/router/Celery/runtime 包 | forbidden source paths + migration revision 集合漂移 → veto |
+| OpenAPI snapshot 被加入 agent endpoint | snapshot digest + path 扫描 → veto |
+| report 写到仓库内 | `_write_report` 强制仓库外 |
+| `not_proven` 被计为 passed | evidence 处理与 P5.0 一致，只进 blockers |
+| report 声称 runtime activated | 10 项 safety negatives 恒 false，由源码边界/import 约束/负向测试证明 |
+
+## P5.1A 完成定义
+
+1. 离线 strict DTO/closed-set 合同、validator、正/负向 fixture、威胁
+   模型、维护者地图与 CI validate-only Gate 全部通过；
+2. `--verify` 在 fresh clean checkout 可复现 `blocked/not_proven`
+   （exit 2，veto 0）；
+3. 未实现任何 ORM/migration/service/API/Runtime；三个 Feature Gate 保持
+   false；P34.7/P5.0 保持 `blocked/not_proven`。
+
+任何缺失外部证据时正确输出是 `blocked/not_proven`；不得把 P5.1A 写成
+P5.1 PASS，也不得据此解冻 Phase 5 Runtime。
