@@ -1815,35 +1815,47 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
 > Runtime、MCP 或 shell/SQL/HTTP tools；三个 Phase 5 Feature Gate 恒
 > false；P34.7/P5.0/P5.1 production 恒 `blocked/not_proven`；P5.2+ frozen。
 
-1. **ORM 与迁移**：`backend/src/omnibase/agent_registry/models.py` +
+1. **ORM 与迁移（主 Agent 验收后加固）**：
+   `backend/src/omnibase/agent_registry/models.py` +
    `0010_p5_1b_agent_registry.py`。全局 scope（tenant scope 直接 return）；
-   复合 `(id, tenant_id)` FK 阻断跨租户引用；CHECK 约束（risk/state
-   闭集、sha256 格式、jsonb 数组闭集、budget object）；三个 trigger
-   （definition 状态机、sealed version 不可变 + risk 不降级 + tool ID
-   数组校验、binding 跨租户/状态机/approval 校验）；partial unique index
-   （每 workspace+definition 一个 live binding）；populated downgrade
-   fail-closed（`P5.1B downgrade refused`）。`register_resource` 支持
-   caller-owned `resource_id`，审计引用与 `resource_registry` 一致。
-2. **内部服务**：`RegistryPersistenceService` 是唯一变更路径。锁序
-   Tenant -> Workspace -> Definition -> Version -> live Binding ->
-   ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent；
-   幂等（digest 漂移转 `RegistryConflictError`）、approval 单次消费
-   （high/critical 必需，INSERT 前校验、INSERT 后消费）、
-   `register_resource` 登记、`complete_idempotency` 与 append-only 审计
-   全部同事务；supersede 先释放旧 live binding 再安装新 binding（失败
-   整体回滚）。
-3. **验证**：单元测试 `14 passed`；一次性 sentinel PostgreSQL 集成测试
-   `26 passed`（migration head、cross-tenant 拒绝、sealed 不可变、并发
-   单赢家、exact replay、digest drift、stale generation、approval 单次
-   消费、审计 append-only、回滚原子性、物理 locator 缺席、0010 populated
-   downgrade fail-closed）；P34.4 head 断言更新至 0010；`make
-   test-p5-1b-registry` 与 `scripts/production/run_p5_1b_registry_
-   disposable_gate.py` 提供正式 disposable Gate 入口（evidence 写入
-   `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`）。
-4. **P5.1A 合同同步**：`forbidden_source_paths` 移除 `agent_registry`；
+   definition/version/workspace/approval/superseded target 全部使用同租户
+   composite FK，其中 `superseded_by` 为 deferred self-FK；CHECK 约束覆盖
+   risk/state、sha256、jsonb 数组与 budget object。数据库 trigger 现在同时
+   冻结 sealed version 的身份列和内容列、冻结 binding 的安装身份/payload，
+   新安装只接受 active definition + sealed version，并重验 approval 的
+   requester/action/workspace/risk/未消费状态；partial unique index 保证每个
+   workspace+definition 只有一个 live binding；populated downgrade 继续
+   fail-closed（`P5.1B downgrade refused`）。
+2. **内部服务**：`RegistryPersistenceService` 是唯一变更路径。每次 mutation
+   先在 caller-owned transaction 中锁定 live Tenant 与 tenant-schema active
+   User，并在写入前拒绝 DTO 的 tenant/actor 漂移。安装锁序为 Tenant ->
+   tenant User -> Workspace -> Definition -> Version -> live Binding ->
+   IdempotencyRecord -> ApprovalRequest（首次执行）-> target -> Audit；exact
+   replay 在 approval 重验前返回原结果，避免把已消费 approval 的合法 replay
+   误判为冲突。supersede 新增外层 `agent_binding.supersede` 幂等记录，同 key
+   同 payload 返回原新 binding，同 key 语义漂移稳定 conflict；安装、approval
+   消费、resource_registry、idempotency 完成与 append-only audit 仍同事务。
+3. **Gate 修补**：外部交付的旧 Gate 会裸调用 Compose、在 cleanup 前发布
+   passed evidence，并把 cleanup 计数硬编码为 0，因此旧 evidence 已撤销。
+   当前 Gate 的每次 Compose 调用都显式带 `--env-file .env.example`；测试完成
+   后先执行 `down -v --remove-orphans`，再按 Compose project label 检查
+   container/network/volume 均为 0，任何 cleanup 失败都阻止 passed evidence。
+   verifier 还强制检查 sentinel、业务数据库未访问/未迁移、物理 locator 未
+   暴露与完整 cleanup proof。
+4. **实测验证（2026-08-03 主 Agent）**：聚焦 service/Gate 测试
+   `30 passed`；非 integration 全套 `1356 passed, 15 skipped, 14 deselected`；
+   `mypy src` 为 `156 source files / 0 issues`；focused Ruff check/format、
+   compileall、Compose config、maintenance-map validator（31 invariants / 23
+   modules / 302 path specs / 977 files / 154 entrypoints / 98 commands）与
+   benchmark validator 全通过。fresh `omnibase_test_p51b_*` PostgreSQL Gate
+   的 integration suite `30 passed`，evidence `passed=true`，manifest
+   SHA-256 为 `21d0e10c8731aac5efe6287791422aefe08028bf7552fa49e078ab116352dd3a`，
+   `root_env_accessed=false`、`business_database_accessed=false`、
+   `business_database_migrated=false`、cleanup `0/0/0`。
+5. **P5.1A 合同同步**：`forbidden_source_paths` 移除 `agent_registry`；
    `baseline_migration_revisions` 扩展至 `0010`；sealed digest 随文档
    更新；P5.1A `--verify` 继续 `blocked/not_proven`（exit 2）。
-5. **明确未发生**：未新增任何 Browser/API/SDK/前端/Runtime/编排表面；
+6. **明确未发生**：未新增任何 Browser/API/SDK/前端/Runtime/编排表面；
    未打开 Feature Gate；未读取根 `.env`；未访问或迁移业务数据库；未 push。
 
 ## 八、常用命令

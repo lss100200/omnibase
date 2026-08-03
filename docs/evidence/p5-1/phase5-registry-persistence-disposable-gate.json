@@ -1,0 +1,22 @@
+{
+  "business_database_accessed": false,
+  "business_database_migrated": false,
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "volumes": 0
+  },
+  "database_name": "omnibase_test_p51b_20260803103451",
+  "database_sentinel_verified": true,
+  "finished_at": "2026-08-03T10:37:52.518868+00:00",
+  "gate": "P5.1B Agent Registry persistence disposable Gate",
+  "integration_tests": [
+    "backend/tests/integration/test_p5_1b_agent_registry_foundation.py"
+  ],
+  "manifest_sha256": "21d0e10c8731aac5efe6287791422aefe08028bf7552fa49e078ab116352dd3a",
+  "passed": true,
+  "physical_locator_exposed": false,
+  "root_env_accessed": false,
+  "schema_version": 1,
+  "started_at": "2026-08-03T10:34:52.115283+00:00"
+}
