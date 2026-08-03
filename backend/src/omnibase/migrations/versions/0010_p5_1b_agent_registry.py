@@ -510,9 +510,9 @@ def _create_triggers() -> None:
                        OR approval_row.requester_id IS DISTINCT FROM NEW.installed_by
                        OR approval_row.action <> 'agent.install'
                        OR approval_row.workspace_id IS DISTINCT FROM NEW.workspace_id
-                       OR approval_row.risk_level <> CASE version_row.risk_level
+                       OR approval_row.risk_level <> (CASE version_row.risk_level
                             WHEN 'low' THEN 'R1' WHEN 'medium' THEN 'R2'
-                            WHEN 'high' THEN 'R3' WHEN 'critical' THEN 'R4' END THEN
+                            WHEN 'high' THEN 'R3' WHEN 'critical' THEN 'R4' END) THEN
                         RAISE EXCEPTION 'agent_binding approval is not valid'
                             USING ERRCODE = '55000';
                     END IF;
