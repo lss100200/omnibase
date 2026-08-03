@@ -369,3 +369,62 @@ P5.1 PASS，也不得据此解冻 Phase 5 Runtime。
    一次性隔离数据库上通过并记录 sealed evidence；
 3. 未实现任何 Browser API/Runtime/编排；三个 Feature Gate 保持 false；
    P34.7/P5.0/P5.1 production 保持 `blocked/not_proven`；P5.2+ frozen。
+
+# Phase 5 威胁模型补充：P5.1C Browser Agent Registry Control API
+
+> 状态：P5.1C Browser 控制 API 已实现（6 个只读 + 4 个 mutation 端点、
+> fail-closed 默认依赖、Python/TypeScript SDK、一次性
+> `omnibase_test_p51c_*` 数据库 Gate）。它**不**建立任何 Agent Runtime/
+> 编排安全主张；P5.1 production 保持 `blocked/not_proven`，P5.2+ 保持
+> frozen。生产默认拒绝 DB-backed control plane，直到显式装配。
+
+## P5.1C 资产与信任边界
+
+受保护资产：
+
+- `/api/v1/agent-definitions*` 与
+  `/api/v1/workspaces/{id}/agent-installations*` 共 10 个端点；
+- `get_registry_control_plane` 默认注入 `UnavailableAgentRegistryControlPlane`
+  （fail-closed：任何 registry 表访问前 503 `agent_registry_unavailable`）；
+- 公共 DTO（`schemas.py`，`extra="forbid"`，仅逻辑标识符）；
+- Python/TypeScript SDK 的传输与解析边界（Bearer JWT、`/api/v1` 专用、
+  强制 `Idempotency-Key`、禁通配 scope）。
+
+信任边界：与 P5.0/P5.1B 相同；mutation 在调用者事务内重锁 live
+Tenant/User/Workspace/WorkspaceMembership 后委托 sealed P5.1B 服务。
+Browser principal（JWT）是必要非充分条件，role 以当前成员资格为准。
+
+## P5.1C 威胁与控制
+
+| 威胁 | 控制 |
+|---|---|
+| 未装配 DB-backed control plane 时访问 registry | 默认依赖 503 fail-closed，不创建 session、不触碰任何表；10 端点参数化单测 |
+| 非成员/过期成员执行 mutation | `authorize_workspace_action("workspace.grants.manage", lock=True)` 事务内重锁；viewer 只有 `workspace.read` |
+| 事务前角色快照/裸 cookie 授权 | mutation 每次重载 live membership 行并加锁，不信任快照 |
+| 跨租户读/写 definition/version/binding | 服务层恒带 `tenant_id` predicate + DB 复合 FK；catalog 端点 tenant 过滤（集成测试断言） |
+| upgrade/rollback 指向非 sealed 或 digest 不符版本 | `_load_sealed_target_version`：sealed + digest 精确匹配，否则 404/409 |
+| 竞态覆盖新 binding（stale write） | `_require_live_binding` + `expected_binding_id` 不匹配 → 409 `registry_stale_binding` |
+| 同 key 同 body 的 replay 被误判 drift | 确定性 hash 锚点（去掉 server 生成的 binding_id/created_at）；同 key 不同 body 仍 409 |
+| 高风险安装绕过 approval | `registry_approval_required` 409（API 层无有效 approval 时）；approval 单次消费由 sealed service 保证 |
+| 请求含通配/重复 scope 或未知字段 | `schemas.py` `extra="forbid"` + scope 闭集正则 + 客户端 SDK 同构校验（422） |
+| 错误体/OpenAPI/SDK 泄漏物理 locator | 白名单投影 + 单测断言（omnibase_meta/postgresql/password 等缺席） |
+| 通过 API 创建 Definition/Version 或开启 Runtime | 端点集合固定（OpenAPI 精确断言）；无创建端点；Feature Gate 恒 false；migration head 0010 |
+| 生产默认挂载 DB-backed control plane | 只能经 `dependency_overrides` 显式注入；main.py 生产组合不装配 |
+
+## P5.1C 完成定义
+
+1. 单元/API 测试（21 项）通过：10 端点 fail-closed 503、rejecting
+   authorizer、DTO 严格性、server-derived identity、OpenAPI 精确路径
+   集合、无物理 locator、无 internal 请求字段；
+2. 一次性 sentinel PostgreSQL 集成测试（20 项）通过：migration head
+   0010、API-backed install/upgrade/disable/rollback、exact replay、
+   digest drift、stale generation、cross-tenant、live membership、并发
+   单赢家、approval 单次消费、审计 append-only、rollback 原子性、
+   cleanup proof；
+3. `make test-p5-1c-registry-api` 与
+   `scripts/production/run_p5_1c_browser_registry_disposable_gate.py --run`
+   在一次性隔离数据库上通过并记录 sealed evidence；
+4. Python SDK（8 项新增）与 TypeScript SDK（5 项新增）测试通过；
+5. 未实现 Definition/Version 创建、migration 0011、Runtime/编排；
+   三个 Feature Gate 保持 false；P34.7/P5.0/P5.1 production 保持
+   `blocked/not_proven`；P5.2+ frozen。

@@ -122,7 +122,22 @@ runtime evidence; then correct the stale documentation in the same change.
   shell/SQL/HTTP tools, and no feature gate may be enabled; P5.2+ stays
   frozen, P5.1 production stays `blocked/not_proven`, and the disposable
   PostgreSQL Gate (evidence under `docs/evidence/p5-1/`) does not unlock
-  production Registry service, Runtime or orchestration readiness.
+  production Registry service, Runtime or orchestration readiness. P5.1C is
+  the permitted Browser control API: `/api/v1` catalog reads and the
+  Workspace install/disable/upgrade/rollback lifecycle
+  (`agent_registry/schemas.py`, `control.py`, `router.py`, mounted in
+  `main.py`) plus the Python/TypeScript SDK clients
+  (`sdk/python/src/omnibase_sdk/browser_registry.py`,
+  `sdk/typescript/src/registry-browser.ts`). It is fail-closed by default:
+  the unassembled control plane rejects every endpoint with
+  `agent_registry_unavailable` (503) before touching any registry table, and
+  the DB-backed service is only injected explicitly. P5.1C never creates
+  AgentDefinition/AgentVersion (registration and version sealing stay
+  internal), never adds migration `0011`, keeps all three Phase 5 feature
+  gates false, revalidates live tenant/user/role/WorkspaceMembership inside
+  the caller-owned transaction on every mutation, and its disposable
+  `omnibase_test_p51c_*` Gate (evidence under `docs/evidence/p5-1/`) does
+  not unlock production Registry, Runtime or orchestration readiness.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

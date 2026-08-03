@@ -456,6 +456,28 @@
         "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
         "scripts/production/test_run_p5_1b_registry_disposable_gate.py"
       ]
+    },
+    {
+      "id": "INV-042",
+      "title": "P5.1C Browser Agent Registry control API stays fail-closed, principal-gated, logical and gate-sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-042-p51c-browser-registry-control-api",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/main.py",
+        "sdk/python/src/omnibase_sdk/browser_registry.py",
+        "sdk/typescript/src/registry-browser.ts",
+        "docs/evidence/p5-1/phase5-browser-registry-api-design.md",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "sdk/python/tests/test_registry_browser_client.py",
+        "sdk/typescript/tests/registry-browser.test.mjs"
+      ]
     }
   ],
   "modules": [
@@ -481,7 +503,10 @@
         "HTTP /api/v1/health"
       ],
       "depends_on": [],
-      "invariants": ["INV-005", "INV-010"],
+      "invariants": [
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_health.py tests/test_http_boundaries.py -q",
         "docker compose --env-file .env.example config --quiet"
@@ -510,8 +535,15 @@
         "HTTP /api/v1/tenants/*",
         "FastAPI dependency CurrentPrincipal"
       ],
-      "depends_on": ["runtime-composition", "migrations"],
-      "invariants": ["INV-001", "INV-002", "INV-005"],
+      "depends_on": [
+        "runtime-composition",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-005"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",
         "make test-destructive"
@@ -538,8 +570,16 @@
         "HTTP /api/v1/documents/*",
         "Celery task omnibase.workers.tasks.ingest_document_task"
       ],
-      "depends_on": ["identity-tenancy", "rag-pipeline"],
-      "invariants": ["INV-001", "INV-002", "INV-005", "INV-010"],
+      "depends_on": [
+        "identity-tenancy",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_documents.py tests/test_workers.py -q"
       ],
@@ -551,7 +591,9 @@
     {
       "id": "rag-pipeline",
       "name": "Parsing, chunking, embedding, retrieval, reranking and answer APIs",
-      "source_paths": ["backend/src/omnibase/rag/**"],
+      "source_paths": [
+        "backend/src/omnibase/rag/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/rag/router.py:router",
         "backend/src/omnibase/rag/ingest.py:ingest_document",
@@ -562,8 +604,17 @@
         "HTTP /api/v1/rag/playground",
         "HTTP /api/v1/rag/ask"
       ],
-      "depends_on": ["identity-tenancy", "document-ingestion"],
-      "invariants": ["INV-001", "INV-002", "INV-003", "INV-005", "INV-010"],
+      "depends_on": [
+        "identity-tenancy",
+        "document-ingestion"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-003",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_rag_store.py tests/test_rag_sse.py tests/test_reranker_boundary.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/rag"
@@ -576,7 +627,9 @@
     {
       "id": "control-plane",
       "name": "Logical resources, operations, approvals, idempotency and audit ledger",
-      "source_paths": ["backend/src/omnibase/control_plane/**"],
+      "source_paths": [
+        "backend/src/omnibase/control_plane/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/control_plane/router.py:router",
         "backend/src/omnibase/control_plane/service.py:authorize_operation"
@@ -587,8 +640,16 @@
         "HTTP /api/v1/control-plane/approvals/*",
         "HTTP /api/v1/control-plane/audit/events"
       ],
-      "depends_on": ["identity-tenancy", "migrations"],
-      "invariants": ["INV-002", "INV-003", "INV-006", "INV-007"],
+      "depends_on": [
+        "identity-tenancy",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_1_control_plane_api.py tests/test_p34_1_control_plane_models.py tests/test_p34_1_control_plane_service.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/control_plane"
@@ -601,7 +662,9 @@
     {
       "id": "capability-ledger",
       "name": "Disjoint read/Sandbox capability grants, delegation, tokens, revocation and operation-idempotent budgets",
-      "source_paths": ["backend/src/omnibase/capabilities/**"],
+      "source_paths": [
+        "backend/src/omnibase/capabilities/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/capabilities/service.py:create_grant",
         "backend/src/omnibase/capabilities/service.py:create_sandbox_grant",
@@ -615,8 +678,17 @@
         "Signed read-capability token contract",
         "Token-free runtime/workload-bound Sandbox lifecycle verification and idempotent budget reservation"
       ],
-      "depends_on": ["control-plane", "identity-tenancy"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "depends_on": [
+        "control-plane",
+        "identity-tenancy"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capabilities"
@@ -631,7 +703,9 @@
     {
       "id": "capability-gateway",
       "name": "Independent non-browser capability gateway",
-      "source_paths": ["backend/src/omnibase/capability_gateway/**"],
+      "source_paths": [
+        "backend/src/omnibase/capability_gateway/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/capability_gateway/app.py:create_gateway_app",
         "backend/src/omnibase/capability_gateway/router.py:router",
@@ -643,8 +717,17 @@
         "HTTP /gateway/v1/rag/search",
         "HTTP /gateway/v1/rag/citations/read"
       ],
-      "depends_on": ["capability-ledger", "control-plane", "rag-pipeline"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006"],
+      "depends_on": [
+        "capability-ledger",
+        "control-plane",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
@@ -658,7 +741,9 @@
     {
       "id": "controlled-data",
       "name": "Controlled DDL and CRUD execution lifecycle",
-      "source_paths": ["backend/src/omnibase/controlled_data/**"],
+      "source_paths": [
+        "backend/src/omnibase/controlled_data/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/controlled_data/router.py:router",
         "backend/src/omnibase/controlled_data/router.py:mutate_rows",
@@ -670,8 +755,20 @@
         "HTTP /api/v1/controlled-data/rows/mutate",
         "Internal controlled DDL contracts"
       ],
-      "depends_on": ["identity-tenancy", "control-plane", "capability-ledger", "migrations"],
-      "invariants": ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "depends_on": [
+        "identity-tenancy",
+        "control-plane",
+        "capability-ledger",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests -k p34_3 -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/controlled_data",
@@ -1194,7 +1291,12 @@
         "omnibase migrate"
       ],
       "depends_on": [],
-      "invariants": ["INV-002", "INV-006", "INV-008", "INV-009"],
+      "invariants": [
+        "INV-002",
+        "INV-006",
+        "INV-008",
+        "INV-009"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_migration_scope_fail_closed.py tests/test_destructive_test_safety.py -q",
         "make test-destructive"
@@ -1222,8 +1324,17 @@
         "Browser routes /login /register /dashboard /knowledge /database /chat /playground /settings",
         "Next.js rewrite to backend /api/v1"
       ],
-      "depends_on": ["runtime-composition", "identity-tenancy", "document-ingestion", "rag-pipeline"],
-      "invariants": ["INV-001", "INV-005", "INV-010"],
+      "depends_on": [
+        "runtime-composition",
+        "identity-tenancy",
+        "document-ingestion",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "cd frontend && pnpm test",
         "cd frontend && pnpm typecheck",
@@ -1259,8 +1370,15 @@
         "TypeScript package @omnibase/sdk",
         "P34.2 OpenAPI snapshot"
       ],
-      "depends_on": ["capability-gateway"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-010"],
+      "depends_on": [
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q",
         "cd sdk/typescript && npm ci --ignore-scripts && npm test && npm run typecheck"
@@ -1497,6 +1615,73 @@
       ]
     },
     {
+      "id": "agent-registry-browser-control",
+      "name": "P5.1C Browser Agent Registry control API (routers + fail-closed dependency + public DTOs)",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/main.py",
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py",
+        "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "docs/evidence/p5-1/phase5-browser-registry-api-design.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_registry/router.py:router",
+        "backend/src/omnibase/agent_registry/router.py:installation_router",
+        "backend/src/omnibase/agent_registry/router.py:get_registry_control_plane",
+        "backend/src/omnibase/agent_registry/control.py:AgentRegistryControlService",
+        "backend/src/omnibase/agent_registry/control.py:UnavailableAgentRegistryControlPlane",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "GET /api/v1/agent-definitions",
+        "GET /api/v1/agent-definitions/{id}",
+        "GET /api/v1/agent-definitions/{id}/versions",
+        "GET /api/v1/agent-definitions/{id}/versions/{version_id}",
+        "GET /api/v1/workspaces/{workspace_id}/agent-installations",
+        "GET /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations (install)",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/disable",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/upgrade",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/rollback",
+        "Python SDK omnibase_sdk.browser_registry.AgentRegistryBrowserClient",
+        "TypeScript SDK AgentRegistryBrowserClient"
+      ],
+      "depends_on": [
+        "runtime-composition",
+        "identity-tenancy",
+        "agent-registry-persistence",
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-040",
+        "INV-041",
+        "INV-042"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1c_registry_api.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q",
+        "make test-p5-1c-registry-api (disposable sentinel PostgreSQL: migration head + P5.1C integration suite)",
+        "python scripts/production/run_p5_1c_browser_registry_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_registry",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_registry tests/test_p5_1c_registry_api.py tests/integration/test_p5_1c_browser_registry_api_foundation.py ../scripts/production/run_p5_1c_browser_registry_disposable_gate.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_registry tests/test_p5_1c_registry_api.py tests/integration/test_p5_1c_browser_registry_api_foundation.py ../scripts/production/run_p5_1c_browser_registry_disposable_gate.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "cd sdk/python && python -m pytest tests/test_registry_browser_client.py -q",
+        "cd sdk/typescript && pnpm test && pnpm typecheck"
+      ],
+      "recovery": [
+        "Production defaults reject until the DB-backed control plane is explicitly injected; never mount it into main.py by default. Browser endpoints only expose logical identifiers, never physical locators.",
+        "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction before delegating to the sealed P5.1B service; upgrade/rollback pin sealed target versions and expected bindings.",
+        "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names and publish passed evidence only after zero labeled resources remain."
+      ]
+    },
+    {
       "id": "operations-recovery",
       "name": "CI gates, backup, restore and operator runbooks",
       "source_paths": [
@@ -1522,8 +1707,18 @@
         "Safe Compose diagnostics require explicit --env-file .env.example or a disposable overlay-specific env file",
         "P34.3 maintainer-map benchmark protocol and suite"
       ],
-      "depends_on": ["migrations", "runtime-composition", "sdk-contracts", "production-readiness"],
-      "invariants": ["INV-008", "INV-009", "INV-010", "INV-035"],
+      "depends_on": [
+        "migrations",
+        "runtime-composition",
+        "sdk-contracts",
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-008",
+        "INV-009",
+        "INV-010",
+        "INV-035"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",

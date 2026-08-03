@@ -1388,3 +1388,88 @@ sealed version 的身份列与内容列都不可变；binding 安装身份/paylo
 - 仅在新的 `omnibase_test_*` sentinel 数据库上重跑 migration 与 Gate；
   Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
   全部为 0 后才能发布 passed evidence。不得触碰业务数据库。
+
+## INV-042 p51c-browser-registry-control-api
+
+**权威源码**
+
+- `backend/src/omnibase/agent_registry/control.py`
+- `backend/src/omnibase/agent_registry/router.py`
+- `backend/src/omnibase/agent_registry/schemas.py`
+- `backend/src/omnibase/main.py`（`agent_registry_router` +
+  `agent_installation_router` 挂载）
+- `sdk/python/src/omnibase_sdk/browser_registry.py`
+- `sdk/typescript/src/registry-browser.ts`
+- `docs/evidence/p5-1/phase5-browser-registry-api-design.md`
+- `scripts/production/run_p5_1c_browser_registry_disposable_gate.py`
+
+**为何存在**
+
+P5.1C 在 Browser `/api/v1` 上暴露 Agent Registry 的**受控只读目录与
+Workspace 安装生命周期**：6 个只读端点（definitions/versions/
+installations）+ 4 个 mutation（install/disable/upgrade/rollback）。
+生产默认 fail-closed：未装配 DB-backed control plane 时，任何端点都在
+接触任何 registry 表之前返回 HTTP 503 `agent_registry_unavailable`
+（`get_registry_control_plane` 默认注入 `UnavailableAgentRegistryControlPlane`）。
+
+每个受保护请求都必须通过 `get_current_principal`；每个 mutation 在调用者
+拥有的事务内重新验证 live Tenant/User/role/WorkspaceMembership
+（`authorize_workspace_action(action, lock=True)`），锁序为 Tenant ->
+User(actor) -> Workspace -> WorkspaceMembership -> Definition -> Version ->
+live Binding -> IdempotencyRecord -> ApprovalRequest -> target row ->
+Resource -> AuditEvent，然后才委托 P5.1B sealed 服务。API 层不得创建
+AgentDefinition/AgentVersion：定义注册与版本 sealed 仍 internal，三个
+Phase 5 Feature Gate 保持 false，migration head 保持 0010。
+
+**允许的改法**
+
+- 在同一事务内扩展只读投影或 mutation 校验；upgrade/rollback 必须通过
+  sealed 目标版本校验（digest 精确匹配）与 `expected_binding_id` 期望
+  绑定校验，最终复用 `supersede_binding` 的原子语义。
+- 幂等 replay 的 request hash 使用确定性锚点（去掉 server 生成的
+  binding_id/created_at 的 binding payload），同 key 同 body 精确 replay，
+  同 key 不同 body 409；P5.1B 内部调用方不传 override 时行为不变。
+- 收紧公共 DTO 的 `extra="forbid"`、scope 闭集或新增 fail-closed 测试；
+  任何 contract/测试变更必须同步更新 sealed digest 并重验。
+
+**禁止的改法**
+
+- 移除或绕过 fail-closed 默认依赖（production 默认必须 503）；把 DB-backed
+  control plane 直接装配进 main.py 生产组合而不经显式注入。
+- 新增 AgentDefinition/AgentVersion 创建端点、migration 0011、打开任何
+  Phase 5 Feature Gate、暴露 Invocation/Runtime/Orchestration 表面。
+- 在公共 DTO/OpenAPI/SDK/错误体中出现物理 schema/table/column locator、
+  凭据或审计内部字段；请求只用逻辑标识。
+- 用事务前角色快照、cookie 或裸资源 id 替代 mutation 内的 live
+  membership 重锁；跨租户返回 definition/version/binding。
+- 让同 key 同 body 的 replay 误判为 drift，或让高风险的 install 绕过
+  approval 单次消费。
+
+**必须运行的测试**
+
+- `backend/tests/test_p5_1c_registry_api.py`（10 端点 fail-closed 503、
+  rejecting authorizer、DTO 严格性、OpenAPI 精确路径集合、无物理
+  locator、无 internal 请求字段）
+- `backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py`
+  （一次性 sentinel PostgreSQL：migration head 0010、API-backed
+  install/upgrade/disable/rollback、exact replay、digest drift、stale
+  generation、cross-tenant、live membership、并发单赢家、approval 单次
+  消费、审计 append-only、rollback 原子性、cleanup proof）
+- `make test-p5-1c-registry-api` 与
+  `python scripts/production/run_p5_1c_browser_registry_disposable_gate.py --run`
+  （`omnibase_test_p51c_*` 一次性隔离数据库 Gate，evidence 记录到
+  `docs/evidence/p5-1/phase5-browser-registry-api-disposable-gate.json`）
+- Python SDK `sdk/python/tests/test_registry_browser_client.py` 与
+  TypeScript SDK `sdk/typescript/tests/registry-browser.test.mjs`
+
+**失败恢复**
+
+- 任何 fail-closed、授权边界、幂等、approval、audit、cleanup evidence
+  或 source seal 缺陷出现时，立即冻结 Browser registry mutation，保持
+  三个 Phase 5 Feature Gate 为 false，P34.7/P5.0/P5.1 production 为
+  `blocked/not_proven`。
+- 不得对已 populated 的 `0010` 做 destructive downgrade；只允许
+  forward-fix，或恢复到新的 `omnibase_restore_*` 数据库进行核验。
+- 仅在新的 `omnibase_test_*` sentinel 数据库上重跑 migration 与 Gate；
+  Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
+  全部为 0 后才能发布 passed evidence。不得触碰业务数据库。

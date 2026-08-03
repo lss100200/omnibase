@@ -189,21 +189,43 @@ Approval policy（合同顶层 `approval_policy`）：
 缺少 P34.7 ready evidence 时 `--verify` 正确输出
 `state=blocked/not_proven`、`activation_allowed=false`、exit code 2。
 
-## 8. 未证明项与解冻条件
+## 8. P5.1B/P5.1C 已交付边界（engineering-sealed）
+
+P5.1A 之后按计划逐级交付并各自通过 disposable Gate：
+
+- **P5.1B（database foundation）**：`agent_definitions`、
+  `agent_versions`、`workspace_agent_bindings` 三张全局控制面表
+  （migration `0010`，global scope，`(id, tenant_id)` composite FK、
+  闭集 CHECK、append-only lineage trigger、partial unique live index）；
+  唯一内部事务服务 `RegistryPersistenceService`（锁序、幂等、approval
+  消费、append-only audit 同事务）；定义注册与版本 sealed 保持 internal。
+- **P5.1C（Browser control API）**：`/api/v1` 6 个只读端点
+  （definitions/versions/installations）+ 4 个 mutation（install/
+  disable/upgrade/rollback）；生产默认 fail-closed（未装配时任何端点
+  在接触 registry 表前返回 503 `agent_registry_unavailable`）；每个
+  mutation 在调用者事务内重锁 live Tenant/User/Workspace/
+  WorkspaceMembership；upgrade/rollback 只接受 sealed 目标版本且 digest
+  精确匹配；`expected_binding_id` 期望绑定校验；幂等 replay 使用确定性
+  hash 锚点（去掉 server 生成的 binding_id/created_at）；Python 与
+  TypeScript SDK 同步；一次性 `omnibase_test_p51c_*` 数据库 Gate 通过。
+- 三个 Phase 5 Feature Gate 保持 false；migration head 保持 `0010`；
+  禁止新增 migration。
+
+## 9. 未证明项与解冻条件
 
 当前明确未证明/未实现（`blocked_by_p34_7_production_admission`）：
 
-- AgentDefinition/AgentVersion ORM 与数据库约束（复合外键、部分唯一
-  索引、闭集 CHECK、append-only lineage trigger）；
-- migration（编号不得预先假定为 `0010`，由 P34.7 最终基线合并后确定）；
-- registry service 与跨 Tenant/Workspace 数据库并发单赢家；
-- Browser Agent API 与 SDK 公共调用；
-- Workspace 安装/升级/禁用/回滚的真实写操作；
+- 生产 Core-to-Runner/Broker 激活、非 disposable tenant/RAG、真实成员
+  数据面、DERP、节点被攻破防护、容量与 SLA（P34.5/P34.6 全部保持
+  engineering-sealed，production 默认拒绝）；
 - Agent Invocation/Task/Run/Plan/Step/Attempt 与 Planner/Executor/
-  dispatcher/scheduler；
-- 跨租户数据库隔离证据（未来 disposable PostgreSQL Gate）。
+  dispatcher/scheduler、Agent Runtime、model/tool/memory/skill runtime、
+  MCP、shell/SQL/HTTP tools、multi-agent orchestration；
+- 通过 Browser API 创建 AgentDefinition/AgentVersion（P5.1C 明确禁止）；
+- 跨租户数据库隔离证据的 production 形态（一次性 Gate 只证明 disposable
+  形态）。
 
 解冻条件（与 `docs/phase-5-agent-runtime-implementation-plan.md` 一致）：
-P34.7 production total Gate 独立 PASS 后，才能按 P5.1B+ 逐级实现
-database foundation 与 API；本文件与 `phase5-registry-contract.example.json`
+P34.7 production total Gate 独立 PASS 后，才能按后续阶段实现
+Invocation/Runtime；本文件与 `phase5-registry-contract.example.json`
 必须在同一变更中同步更新并重新封存 digest。

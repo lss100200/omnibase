@@ -1861,6 +1861,59 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
 6. **明确未发生**：未新增任何 Browser/API/SDK/前端/Runtime/编排表面；
    未打开 Feature Gate；未读取根 `.env`；未访问或迁移业务数据库；未 push。
 
+### P5.1C Browser Agent Registry control API（2026-08-03）
+
+> P5.1C 在 Browser `/api/v1` 上暴露 **Agent Registry 受控目录与
+> Workspace 安装生命周期**：6 个只读端点（definitions/versions/
+> installations）+ 4 个 mutation（install/disable/upgrade/rollback）。
+> 生产默认 fail-closed：未装配 DB-backed control plane 时，任何端点都在
+> 接触 registry 表之前返回 503 `agent_registry_unavailable`。P5.1C 不
+> 创建 AgentDefinition/AgentVersion（注册与版本 sealed 仍 internal）；
+> 三个 Feature Gate 保持 false；migration head 保持 `0010`；P34.7/P5.0/
+> P5.1 production 恒 `blocked/not_proven`；P5.2+ frozen。
+
+1. **交付物**：
+   - `backend/src/omnibase/agent_registry/schemas.py`：严格公共 DTO
+     （`extra="forbid"`、UUID/digest 正则、scope 闭集拒绝
+     `*`/`all`/`any`、whitelist 投影 `project_definition`/
+     `project_version`/`project_binding`）；
+   - `control.py`：`AgentRegistryControlService`（tenant-scoped catalog
+     读 + mutation；`_lock_workspace_actor` 在调用者事务内按
+     Tenant → User(actor) → Workspace → WorkspaceMembership 加锁，
+     再委托 sealed P5.1B 服务按 Definition → Version → live Binding →
+     Idempotency → Approval → target → Resource → Audit 加锁；
+     `UnavailableAgentRegistryControlPlane` 别名保持 fail-closed）；
+   - `router.py`：`agent-definitions` 与 `agent-installations` 两个
+     router 共 10 端点，`get_registry_control_plane` 默认
+     503；`Idempotency-Key` 头（8–128）；409 reason code 透传
+     （`registry_approval_required`/`registry_stale_binding` 等）；
+   - `main.py`：挂载两个 router；
+   - SDK：Python `omnibase_sdk.browser_registry`（Bearer JWT transport +
+     `AgentRegistryBrowserClient` + 严格模型）+ TypeScript
+     `registry-browser.ts`（同构）。
+2. **确定性幂等锚点**：P5.1B 的 `install_binding`/`supersede_binding`
+   新增可选 `request_hash_override`（默认 None 时行为不变）；Browser 层
+   传入去掉 server 生成字段（`workspace_agent_binding_id`/`created_at`）
+   的 payload hash → 同 key 同 body 精确 replay、同 key 不同 body 409；
+   approval hash 因此可被内部流程预先计算。
+3. **验证**：单元/API 21 项（10 端点 fail-closed 503、DTO 严格性、
+   OpenAPI 精确路径、无物理 locator）；一次性 `omnibase_test_p51c_*`
+   sentinel PostgreSQL integration 20 项（migration head 0010、
+   API-backed install/upgrade/disable/rollback、exact replay、digest
+   drift、cross-tenant、live membership、并发单赢家、approval 单次消费、
+   审计 append-only、rollback 原子性、cleanup proof）；Python SDK 24 项、
+   TypeScript SDK 13 项；P5.1A 合同测试 128 项（含 sealed digest 重算与
+   Windows CRLF 修复）。
+4. **P5.1A 合同同步**：contract 文档新增“P5.1B/P5.1C 已交付边界”章节；
+   威胁模型新增 P5.1C 补充；`security-invariants.md` 新增 INV-042；
+   maintenance map 新增 `agent-registry-browser-control` 模块；五个
+   sealed digest 全部重算并写入 `phase5-registry-contract.example.json`；
+   P5.1A `--verify` 继续 `blocked/not_proven`（exit 2）。
+5. **明确未发生**：未新增 migration 0011；未打开 Feature Gate；未读取
+   根 `.env`；未访问或迁移业务数据库；未 push/PR；P5.1B 内部服务仅做
+   向后兼容的参数扩展（其 sealed evidence 需在其独立 Gate 重跑后
+   重新验证）。
+
 ## 八、常用命令
 
 ```bash

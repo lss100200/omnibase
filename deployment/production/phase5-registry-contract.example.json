@@ -89,27 +89,27 @@
     {
       "name": "agent_registry_contract_doc",
       "path": "docs/phase-5-agent-registry-contract.md",
-      "sha256": "6466a11f50068b51d35544d1b6a9229b6cb43c181430ee99f24d26c0376569da"
+      "sha256": "8d3c5d01e88baaea03d584b76408125270298c2ccbdc4a8b2281328c0b62fba5"
     },
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "323d1c83c38e15c8105935743c4cdff28af0e768bbf5eb4b00bbc6d6ddace151"
+      "sha256": "bf86935470aae7668e2be1159d95ec3cf9f591a7d13a87ce4cdbf9cf663faf9a"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "5bc4d1473264ec07939928d67b0e6f540618d354ea8e1585f4e2e51169d9602f"
+      "sha256": "6bd3e494671fe7f5df1b27203d1356eaa02ae54d9215b1250ffe54ac7fb612f1"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "bb44648ec5413bc0e212c67457174608d281a1550d70518af9f264faeead4b7d"
+      "sha256": "f8bf975fc146b8a9c8a3e73ab760afead1de44caa564bf73f02221075b6e4593"
     },
     {
       "name": "registry_tests",
       "path": "backend/tests/test_p5_1_registry_contract.py",
-      "sha256": "17cc2036b3f0075763734ed2730455c9170f4c88bb8b10a24f43871ce219ff04"
+      "sha256": "1b834d0f9db0953967f1b7a18d6fb9a3559064ba5650cf7db5b6c2983257c569"
     }
   ],
   "openapi_snapshot": {
