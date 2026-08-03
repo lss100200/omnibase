@@ -284,7 +284,10 @@ def _write_file(repo: Path, relative: str, content: str | bytes) -> None:
     if isinstance(content, bytes):
         path.write_bytes(content)
     else:
-        path.write_text(content, encoding="utf-8")
+        # Deterministic LF bytes: universal-newline translation on Windows
+        # would make seal digests differ from the bytes read back by the
+        # formal gate, so synthetic fixtures are written byte-for-byte.
+        path.write_text(content, encoding="utf-8", newline="")
 
 
 def _build_synthetic_repo(tmp_path: Path) -> Path:
@@ -1025,16 +1028,22 @@ def test_parent_directory_symlink_escape_is_rejected(tmp_path: Path) -> None:
 
 
 def test_attempted_runtime_orm_router_packages_are_vetoes(tmp_path: Path) -> None:
-    for forbidden in (
-        "backend/src/omnibase/agent_runtime",
-        "backend/src/omnibase/agent_registry",
-        "backend/src/omnibase/planner",
-        "backend/src/omnibase/executor",
-        "backend/src/omnibase/multi_agent",
+    for index, forbidden in enumerate(
+        (
+            "backend/src/omnibase/agent_runtime",
+            "backend/src/omnibase/agent_registry",
+            "backend/src/omnibase/planner",
+            "backend/src/omnibase/executor",
+            "backend/src/omnibase/multi_agent",
+        )
     ):
-        repo = _build_synthetic_repo(tmp_path)
+        # One synthetic repo per forbidden path: Windows keeps git object
+        # handles open long enough that reusing one directory would fail.
+        repo_dir = tmp_path / f"repo-{index}"
+        repo_dir.mkdir(parents=True, exist_ok=True)
+        repo = _build_synthetic_repo(repo_dir)
         _write_file(repo, f"{forbidden}/__init__.py", "")
-        config = _synthetic_config(tmp_path, repo=repo)
+        config = _synthetic_config(repo_dir, repo=repo)
         report = RegistryContractGate(repo).verify(config, source=_source())
         assert report.state is AdmissionState.INVALID, forbidden
         assert any("forbidden source path exists" in veto for veto in report.vetoes), forbidden
@@ -1214,11 +1223,16 @@ def test_no_agent_runtime_planner_or_executor_packages_exist() -> None:
         "multi_agent",
     ):
         assert not (REPO_ROOT / "backend" / "src" / "omnibase" / forbidden).exists(), forbidden
-    # P5.1B legitimately added the internal persistence package; it is not a runtime.
+    # P5.1B legitimately added the internal persistence package; P5.1C added the
+    # Browser control API. Neither is a runtime, and the API default composition
+    # is fail-closed (rejecting authorizer, never a DB-backed control plane).
     registry = REPO_ROOT / "backend" / "src" / "omnibase" / "agent_registry"
     assert registry.is_dir()
-    assert not (registry / "router.py").exists()
+    assert (registry / "router.py").is_file()
     assert not (registry / "runtime.py").exists()
+    control_source = (registry / "control.py").read_text(encoding="utf-8")
+    assert "UnavailableAgentRegistryControlPlane" in control_source
+    assert "RegistryControlPlaneUnavailable" in control_source
 
 
 def test_migration_revision_discovery_on_synthetic_chain(tmp_path: Path) -> None:
