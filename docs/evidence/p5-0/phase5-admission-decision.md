@@ -96,3 +96,63 @@ evidence set.  It does not unlock Phase 5 runtime or production.  Re-run the
 validator whenever a tracked P5.0 source byte changes or new P34.7 production
 evidence is admitted; while P34.7 is not `ready`, `blocked/not_proven` is the
 only correct P5.0 state.
+
+## Primary-agent independent review and corrections (2026-08-03)
+
+The original external implementation was not accepted from its report alone.
+Independent review reproduced three defects before acceptance:
+
+1. A repository symlink such as `evidence.json -> .env` was resolved before
+   `lstat`, so the validator could read/hash the root `.env` through an alias
+   while reporting `root_env_accessed=false`.
+2. Migration discovery counted heads but did not prove that every revision
+   belonged to one connected acyclic chain; a normal chain plus a disconnected
+   cycle was incorrectly accepted.
+3. Synthetic fixture digests were computed from decoded text rather than the
+   raw bytes verified by the implementation, producing 10 failures under
+   Windows CRLF semantics even though the Linux container run passed.
+
+The main review added component-by-component symlink/junction/reparse rejection
+to P34.7 provenance and P5.0 manifest reads, full migration connectivity/cycle
+validation, byte-exact cross-platform fixture digests, outside-repository report
+output enforcement, and negative regression tests.  The fixes were committed
+locally without push:
+
+```text
+64db2ceeb4d7a5711deb291257dcbe6a3f9ca3ea
+fix(p5.0): harden admission provenance checks
+
+836d18f0ab99e7ce7d3f6917af2cf943216c2952
+style(p5.0): align with locked ruff formatter
+```
+
+Independent canonical verification at `836d18f0ab99e7ce7d3f6917af2cf943216c2952`:
+
+- P5.0 + P34.7 focused Backend: `71 passed`.
+- Backend non-integration: `1211 passed, 14 skipped, 14 deselected`.
+- Backend Mypy: `152 source files, 0 issues`.
+- Project-container Ruff check/format, compileall, Compose config, maintainer
+  map validator and benchmark validator: PASS.
+- Fresh detached clean-checkout formal verification:
+
+```text
+source tree: b77a60f4abcf9c2d447558417b57b482d58b2686
+source clean: true
+source files: 38
+source manifest SHA-256: b5c0ac5785f68d35371959b7fcc72e363824629c63e7b11ea249ca2387bf89fb
+report SHA-256: ca66d38950c20c8315d972c62c1525d202256b69a1b003a26bfa3f888e134bd2
+exit code: 2
+state: blocked/not_proven
+activation allowed: false
+migration head: 0009
+blockers: 11
+vetoes: 0
+root .env accessed: false
+business database accessed/migrated: false/false
+hostile code executed: false
+phase 5 runtime activated: false
+```
+
+Primary-agent decision: **P5.0 engineering admission implementation accepted
+after fixes**.  The admission result itself remains **BLOCKED / NOT_PROVEN**;
+P34.7 production readiness is not proven and P5.1 Agent Runtime remains frozen.

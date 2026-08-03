@@ -1687,6 +1687,34 @@ git diff --check：passed
    - 没有读取根 `.env`；没有访问或迁移普通业务数据库；没有运行 Phase 5
      runtime；没有 push。
 
+5. **主 Agent 独立复核、修补与最终接收（2026-08-03）**
+
+   - 外部报告未被直接采信。主 Agent 独立复现出三个缺口：仓库内
+     `evidence.json -> .env` 符号链接可绕过先前的 `lstat` 并实际解析根
+     `.env`；migration 检查可错误接受“正常主链 + 隐藏循环分支”；测试
+     fixture 用解码文本而非原始字节计算摘要，Windows CRLF 下出现 10 个
+     失败。
+   - 已追加本地修补提交
+     `64db2ceeb4d7a5711deb291257dcbe6a3f9ca3ea`（路径分量级
+     symlink/junction/reparse 拒绝、迁移链完整连通/无循环、byte-exact
+     fixture、report 必须写到仓库外、负向回归测试）与
+     `836d18f0ab99e7ce7d3f6917af2cf943216c2952`（与项目锁定 Ruff formatter
+     对齐）；均未 push。
+   - 最终项目容器验证：P5.0 + P34.7 focused `71 passed`；Backend
+     non-integration `1211 passed / 14 skipped / 14 deselected`；Mypy
+     `152 source files / 0 issues`；项目容器 Ruff check/format、compileall、
+     Compose config、maintainer map validator 与 benchmark validator 全部通过。
+   - 在最终提交 `836d18f0ab99e7ce7d3f6917af2cf943216c2952` 的 fresh detached clean
+     worktree 正式复验：source tree
+     `b77a60f4abcf9c2d447558417b57b482d58b2686`、38 files、manifest
+     `b5c0ac5785f68d35371959b7fcc72e363824629c63e7b11ea249ca2387bf89fb`、
+     report `ca66d38950c20c8315d972c62c1525d202256b69a1b003a26bfa3f888e134bd2`、
+     exit 2、`blocked/not_proven`、11 blockers、0 veto、migration head `0009`，
+     五项 safety negatives 均为 false。
+   - 主 Agent 判定：**P5.0 engineering admission implementation 经修补后可接收**；
+     该判定不等于 Phase 5 解冻。P34.7 production total Gate 仍为
+     `BLOCKED / NOT_PROVEN`，P5.1 Agent Runtime 继续冻结。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
