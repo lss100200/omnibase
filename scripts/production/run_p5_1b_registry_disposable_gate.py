@@ -107,6 +107,13 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _write_text_lf(path: Path, content: str) -> None:
+    """Write repository artifacts as UTF-8 with deterministic LF endings."""
+
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(content)
+
+
 def _git_clean() -> tuple[bool, tuple[str, ...]]:
     result = _run(["git", "status", "--porcelain"], check=False)
     dirty = tuple(line for line in result.stdout.splitlines() if line.strip())
@@ -153,7 +160,7 @@ def _validate_static_contract() -> None:
 
 
 def _write_source_manifest(path: Path, manifest: dict[str, object]) -> str:
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_text_lf(path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return _manifest_sha256(manifest)
 
 
@@ -350,7 +357,7 @@ def _record_evidence(
     evidence["passed"] = passed
     evidence["manifest_sha256"] = manifest_sha256
     json_path = run_dir / "evidence.json"
-    json_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_text_lf(json_path, json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     md_lines = [
         "# P5.1B Agent Registry persistence disposable Gate",
         "",
@@ -368,7 +375,7 @@ def _record_evidence(
         "",
     ]
     md_path = run_dir / "evidence.md"
-    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+    _write_text_lf(md_path, "\n".join(md_lines))
     return json_path, md_path
 
 

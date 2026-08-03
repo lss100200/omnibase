@@ -91,6 +91,12 @@ def test_manifest_sha256_is_canonical_and_deterministic() -> None:
     assert len(first) == 64
 
 
+def test_repository_artifacts_use_deterministic_lf(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.txt"
+    gate._write_text_lf(path, "first\nsecond\n")
+    assert path.read_bytes() == b"first\nsecond\n"
+
+
 def test_compose_always_uses_explicit_env_example(monkeypatch) -> None:
     captured: list[str] = []
 
