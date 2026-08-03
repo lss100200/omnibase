@@ -2,9 +2,9 @@
 
 - Gate: P5.1B Agent Registry persistence disposable Gate
 - Passed: True
-- Manifest SHA-256: 36eafb781ce6abd8bc1d04b0593f4753926e8b7d351a2ec8468095bec6a21f5b
-- Started: 2026-08-03T10:58:22.814985+00:00
-- Finished: 2026-08-03T11:01:23.897237+00:00
+- Manifest SHA-256: 567b33184c8dfbd0f315ee1b5e083ea39144eba2aa3002b90d8bc38ca9c871ee
+- Started: 2026-08-03T16:34:09.630918+00:00
+- Finished: 2026-08-03T16:36:01.540487+00:00
 - Root env accessed: False
 - Business database accessed: False
 - Business database migrated: False
