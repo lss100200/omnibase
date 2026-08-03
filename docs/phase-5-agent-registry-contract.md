@@ -1,12 +1,15 @@
 # P5.1A Agent Registry Contract（离线合同预检）
 
-> 状态：`P5.1A offline contract preflight: implemented / verified`。
-> P5.1 database foundation、Browser API、Runtime installation 均
-> **未实现**；P5.1 production 为 `blocked / not_proven`；P5.2+ 保持 frozen。
+> 状态：`P5.1A offline contract preflight: implemented / verified`；
+> `P5.1B persistence foundation: implemented / verified`（内部 ORM +
+> migration 0010 + 事务 service + disposable PostgreSQL Gate，见
+> `docs/evidence/p5-1/phase5-registry-persistence-design.md`）。
+> Browser API、Runtime installation 仍**未实现**；P5.1 production 为
+> `blocked / not_proven`；P5.2+ 保持 frozen。
 >
 > 本文件是 AgentDefinition → AgentVersion → WorkspaceAgentBinding 三层
-> 离线合同的定义，不是 ORM、migration、service 或 API 的实现。任何读到
-> 本文件的人都不得把"有合同"理解为"Registry 已完成"。
+> 离线合同的定义。P5.1B 的 ORM/迁移/内部 service 不是公开 API，任何读到
+> 本文件的人都不得把"有合同/有持久化地基"理解为"Registry 已完成"。
 
 ## 1. 目的与边界
 

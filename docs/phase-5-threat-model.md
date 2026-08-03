@@ -257,8 +257,8 @@ P5.0 PASS，也不得据此解冻 Phase 5 Runtime。
 
 # Phase 5 威胁模型补充：P5.1A Agent Registry Contract Preflight
 
-> 状态：P5.1A 离线合同预检已实现。Registry database foundation、Browser
-> API、Runtime installation 均未实现；P5.1 production 为
+> 状态：P5.1A 离线合同预检已实现。P5.1B 内部持久化地基已实现（见下方
+> 补充）；Browser API、Runtime installation 仍未实现；P5.1 production 为
 > `blocked/not_proven`；P5.2+ 保持 frozen。本补充只覆盖 P5.1A 合同与
 > validator 自身的安全属性，不建立任何 Agent Runtime 安全主张。
 
@@ -314,3 +314,58 @@ P5.0 PASS，也不得据此解冻 Phase 5 Runtime。
 
 任何缺失外部证据时正确输出是 `blocked/not_proven`；不得把 P5.1A 写成
 P5.1 PASS，也不得据此解冻 Phase 5 Runtime。
+
+---
+
+# Phase 5 威胁模型补充：P5.1B Agent Registry Persistence Foundation
+
+> 状态：P5.1B 内部持久化地基已实现（ORM + migration 0010 + 内部事务
+> service + disposable PostgreSQL Gate）。它不是公开 API，不建立任何
+> Agent Runtime/安装/编排安全主张；P5.1 production 保持
+> `blocked/not_proven`，P5.2+ 保持 frozen。
+
+## P5.1B 资产与信任边界
+
+受保护资产：
+
+- `agent_definitions`/`agent_versions`/`workspace_agent_bindings` 三张
+  全局控制面表与 0010 迁移（trigger 状态机、sealed 不可变、partial
+  unique live index、populated downgrade fail-closed）；
+- `RegistryPersistenceService` 的事务契约：幂等解析、approval 单次
+  消费、`resource_registry` 登记、append-only 审计全部同事务；
+- P5.1A 合同作为唯一输入契约（DTO 漂移即拒绝），逻辑标识符与物理
+  locator 分离。
+
+信任边界与 P5.0 相同；服务**只接受验证过的内部 principal 上下文**，
+每次都在事务内重载 live tenant/workspace/registry 行，从不信任事务前
+快照。
+
+## P5.1B 威胁与控制
+
+| 威胁 | 控制 |
+|---|---|
+| 跨租户引用 definition/version/workspace | 复合 `(id, tenant_id)` FK + trigger 内 `(id, tenant_id)` JOIN 校验，DB 层拒绝（55000/23503） |
+| sealed version 内容被改写 | `agent_versions_seal_guard` 逐列比较，sealed 后任何内容变更即拒绝 |
+| revoked/disabled 被解释为 active 或回退 | trigger 状态机：revoked 终态、disabled 只可转 revoked、sealed 只可转 deprecated/revoked |
+| version 降低 definition risk 绕过 Approval | trigger 比较 risk rank，只允许保持或提高 |
+| 同 workspace+definition 出现第二个 live binding | partial unique index（`pending_approval`/`installed`）单赢家；服务层 FOR UPDATE 检查 |
+| 同一 approval 被消费两次 | approval 行 `state=consumed` + 版本号乐观更新，`rowcount!=1` 拒绝 |
+| 幂等 key 复用但请求 digest 漂移 | `reserve_idempotency` 冲突转换为 `RegistryConflictError`（不 catch-and-ignore） |
+| 审计/resource 引用不一致 | `register_resource` 与实体行同事务；审计 `resource_id` 必须存在于 `resource_registry` |
+| 事务中途失败留下部分状态 | 全部变更单事务原子提交；集成测试验证 rollback 无残留 |
+| 物理 schema/table/column locator 泄漏 | DTO 投影、错误消息、审计仅逻辑标识符；集成测试断言 locator 缺席 |
+| 把 P5.1B 伪装成公开 API/Runtime | 无 router/OpenAPI/SDK/Invocation/Planner/Executor/Celery/Runtime；Feature Gate 恒 false；P5.1 合同 gate 恒 `blocked/not_proven` |
+| 0010 populated downgrade 破坏数据 | `_downgrade_global` 检测非空表即 `RAISE 'P5.1B downgrade refused'`，事务回滚 |
+
+## P5.1B 完成定义
+
+1. 单元测试（14 项）与一次性 sentinel PostgreSQL 集成测试（26 项）全部
+   通过：migration head、cross-tenant 拒绝、sealed 不可变、并发单赢家、
+   exact replay 幂等、digest drift 冲突、stale generation、approval 单次
+   消费、审计 append-only、回滚原子性、物理 locator 缺席、populated
+   downgrade fail-closed；
+2. `make test-p5-1b-registry` 与
+   `scripts/production/run_p5_1b_registry_disposable_gate.py --run` 在
+   一次性隔离数据库上通过并记录 sealed evidence；
+3. 未实现任何 Browser API/Runtime/编排；三个 Feature Gate 保持 false；
+   P34.7/P5.0/P5.1 production 保持 `blocked/not_proven`；P5.2+ frozen。

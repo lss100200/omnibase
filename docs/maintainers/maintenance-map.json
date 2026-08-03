@@ -439,6 +439,23 @@
       "test_paths": [
         "backend/tests/test_p5_1_registry_contract.py"
       ]
+    },
+    {
+      "id": "INV-041",
+      "title": "P5.1B Agent Registry persistence stays internal, tenant-safe, database-enforced and gate-sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-041-p51b-registry-persistence-foundation",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/models.py",
+        "backend/src/omnibase/agent_registry/service.py",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "docs/evidence/p5-1/phase5-registry-persistence-design.md",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1b_agent_registry.py",
+        "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
+        "scripts/production/test_run_p5_1b_registry_disposable_gate.py"
+      ]
     }
   ],
   "modules": [
@@ -1423,6 +1440,59 @@
         "Keep all three Phase 5 feature gates false and every P5.1A DTO logical/immutable/secret-free; any ORM/migration/router/Celery/runtime package appearing in the source tree is a veto.",
         "When P34.7/P5.0 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout.",
         "P5.1A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, and never read the root .env or a database."
+      ]
+    },
+    {
+      "id": "agent-registry-persistence",
+      "name": "P5.1B internal Agent Registry persistence (ORM + migration 0010 + transaction service)",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/**",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "backend/tests/test_p5_1b_agent_registry.py",
+        "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py",
+        "scripts/production/test_run_p5_1b_registry_disposable_gate.py",
+        "docs/evidence/p5-1/phase5-registry-persistence-design.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_registry/service.py:RegistryPersistenceService",
+        "backend/src/omnibase/agent_registry/models.py:AgentDefinitionModel",
+        "backend/src/omnibase/agent_registry/models.py:AgentVersionModel",
+        "backend/src/omnibase/agent_registry/models.py:WorkspaceAgentBindingModel",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py:upgrade",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "RegistryPersistenceService (internal only; no FastAPI router, no OpenAPI, no SDK surface)",
+        "AgentDefinitionModel/AgentVersionModel/WorkspaceAgentBindingModel (global omnibase_meta schema)",
+        "Migration 0010 (composite FK + CHECK + trigger state machines + partial unique live index)",
+        "disposable PostgreSQL Gate evidence (docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json)"
+      ],
+      "depends_on": [
+        "runtime-composition",
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-040",
+        "INV-041"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_1b_agent_registry.py -q",
+        "make test-p5-1b-registry (disposable sentinel PostgreSQL: migration head + P5.1B integration suite)",
+        "python scripts/production/run_p5_1b_registry_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/agent_registry src/omnibase/control_plane/service.py tests/test_p5_1b_agent_registry.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py"
+      ],
+      "recovery": [
+        "P5.1B is engineering-sealed: no Browser /api/v1/agents router, no SDK client, no Invocation/Task/Run/Plan/Step/Attempt, no Planner/Executor/Dispatcher/Scheduler, no Celery, no Agent Runtime, no model/tool/memory/skill runtime, no MCP, no shell/SQL/HTTP tools, no multi-agent orchestration; all three Phase 5 feature gates stay false.",
+        "Registry mutations only run inside caller-owned transactions with idempotency, approval consumption and append-only audit; never update a binding row in isolation.",
+        "Physical PostgreSQL locators must never appear in DTOs, errors or logs; only logical identifiers cross boundaries.",
+        "0010 populated downgrade fails closed; never drop or mutate agent_registry tables destructively in place."
       ]
     },
     {

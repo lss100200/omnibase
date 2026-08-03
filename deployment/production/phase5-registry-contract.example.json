@@ -17,7 +17,7 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "3288bbf25106a89650be1775a8e884b97044f87cbdbe60e62f1e6a660e41f4ec"
+      "sha256": "a029b31df551a92d4d651da7a6a3a1c0ac34c6d5adc9eff032c587d97428a183"
     }
   },
   "source": {
@@ -68,7 +68,6 @@
   },
   "forbidden_source_paths": [
     "backend/src/omnibase/agent_runtime",
-    "backend/src/omnibase/agent_registry",
     "backend/src/omnibase/agents",
     "backend/src/omnibase/planner",
     "backend/src/omnibase/executor",
@@ -83,33 +82,34 @@
     "0006",
     "0007",
     "0008",
-    "0009"
+    "0009",
+    "0010"
   ],
   "sealed_contracts": [
     {
       "name": "agent_registry_contract_doc",
       "path": "docs/phase-5-agent-registry-contract.md",
-      "sha256": "12add47e89bac93feb74e49bae66f95fa2dc9f0efe5b0204b00ecd7c01e34283"
+      "sha256": "6466a11f50068b51d35544d1b6a9229b6cb43c181430ee99f24d26c0376569da"
     },
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "0043dbe9d7829a3dd1d4fa53b61c23c51853939a9046edcc17b60a9db4ae8207"
+      "sha256": "323d1c83c38e15c8105935743c4cdff28af0e768bbf5eb4b00bbc6d6ddace151"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "dae05b8f850dc910d62603f399bf97b184eaefd2095f63e47176053205c0f362"
+      "sha256": "4208c239c16ffce15435cb73fbfe96dba7a9f91db6fe54b97a28115bf0f880d8"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "80b78b16955d67acf8f9b51143781ea3cf9d852e95eeacb09137279305dee903"
+      "sha256": "1b887e0140ceb950b10e09935d604b2033a0d77b464685ad8861e26f48c1a444"
     },
     {
       "name": "registry_tests",
       "path": "backend/tests/test_p5_1_registry_contract.py",
-      "sha256": "88b81ac05aec23da9c031f14d2fbecf802733d70c0360d9f56f6e404c2efa686"
+      "sha256": "dddffd63ed9c6d8aa5ed1ca9e3d0bc9a52028afad4caf5fcc4a8ede09dea996e"
     }
   ],
   "openapi_snapshot": {

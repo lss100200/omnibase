@@ -109,7 +109,20 @@ runtime evidence; then correct the stale documentation in the same change.
   AgentDefinition/AgentVersion/WorkspaceAgentBinding DTOs only; there is no
   ORM, migration, service, Browser API, SDK call, Planner, Executor, worker,
   scheduler or runtime, and P5.1A stays `blocked/not_proven` while P34.7 and
-  P5.0 are not `ready`.
+  P5.0 are not `ready`. P5.1B is the permitted persistence foundation: the
+  internal-only Agent Registry ORM (`backend/src/omnibase/agent_registry/`),
+  scoped migration `0010` (composite `(id, tenant_id)` foreign keys, database
+  trigger state machines, sealed-version immutability, partial unique index
+  for the single live binding) and the internal `RegistryPersistenceService`
+  (caller-owned transactions binding idempotency, approval consumption,
+  `resource_registry` registration and append-only audit). It is **not** a
+  public API: no FastAPI router, OpenAPI endpoint, SDK surface, frontend,
+  Invocation/Task/Run/Plan/Step/Attempt, Planner/Executor/Dispatcher/
+  Scheduler, Celery, Agent Runtime, Model/Tool/Memory/Skill Runtime, MCP or
+  shell/SQL/HTTP tools, and no feature gate may be enabled; P5.2+ stays
+  frozen, P5.1 production stays `blocked/not_proven`, and the disposable
+  PostgreSQL Gate (evidence under `docs/evidence/p5-1/`) does not unlock
+  production Registry service, Runtime or orchestration readiness.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

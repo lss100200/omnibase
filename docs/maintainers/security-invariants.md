@@ -1284,8 +1284,8 @@ Executor/worker/scheduler）。P34.7 或 P5.0 未 `ready` 时，P5.1A 恒
   true 而不经源码边界/import 约束/负向测试证明。
 - 在 `--verify` 时忽略真实 server Feature Gate 环境；只检查配置文件最终
   分量而允许父目录 symlink/reparse，或跟随既有 symlink report 目标。
-- 预先假定下一个 migration 编号为 `0010`；把 P5.1A 写成 P5.1 PASS；把
-  P34.7 改成 ready；打开 Phase 5 Feature Gate。
+- 把 P5.1A 写成 P5.1 PASS；把 P34.7 改成 ready；打开 Phase 5 Feature Gate；
+  把 P5.1B 的 ORM/migration/内部 service 伪装成已完成 Runtime 或公开 API。
 
 **必须运行的测试**
 
@@ -1306,3 +1306,69 @@ Executor/worker/scheduler）。P34.7 或 P5.0 未 `ready` 时，P5.1A 恒
 clean checkout 重跑 validator。sealed digest 漂移时保留原合同与 report
 取证，更新证据或合同后重新封存并 re-verify。任何情况下都不得从该模块
 启动 Phase 5 运行时组件或访问业务数据库。
+
+## INV-041 p51b-registry-persistence-foundation
+
+**权威源码**
+
+- `backend/src/omnibase/agent_registry/models.py`
+- `backend/src/omnibase/agent_registry/service.py`
+- `backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py`
+- `docs/evidence/p5-1/phase5-registry-persistence-design.md`
+- `scripts/production/run_p5_1b_registry_disposable_gate.py`
+
+**为何存在**
+
+P5.1B 是 Agent Registry 的**内部持久化地基**：三张全局控制面表
+（`agent_definitions`、`agent_versions`、`workspace_agent_bindings`）、
+一个 scoped 迁移（`0010`）和唯一的内部事务服务
+（`RegistryPersistenceService`）。它不是公开 API：没有 FastAPI router、
+OpenAPI endpoint、SDK surface、Invocation/Task/Run/Plan/Step/Attempt、
+Planner/Executor/Dispatcher/Scheduler、Celery、Agent Runtime、
+Model/Tool/Memory/Skill Runtime、MCP 或 shell/SQL/HTTP tools。三个 Phase 5
+Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven。
+
+数据库本身执行不变量，ORM 纪律不是唯一保护：复合 `(id, tenant_id)` FK 阻断
+跨租户引用；trigger 执行 definition/version/binding 状态机、sealed version
+内容不可变、revoked 终态、risk 不降级、tool ID 数组闭集、approval 有效性；
+partial unique index 保证每 workspace+definition 只有一个 live binding。
+
+**允许的改法**
+
+- 在同一事务内扩展内部事务操作（幂等解析、approval 消费、append-only
+  审计、resource_registry 登记一起提交）；保持锁序
+  Tenant -> Workspace -> Definition -> Version -> live Binding
+  -> ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent。
+- 收紧 DTO 校验、ceiling、trigger 状态机或新增 fail-closed 集成测试；
+  任何 contract/迁移/测试变更必须同步更新 sealed digest 并重验。
+
+**禁止的改法**
+
+- 新增任何 Browser `/api/v1/agents` 路由、OpenAPI agent endpoint、SDK
+  client、前端页面或 Invocation/Runtime/Orchestration 表面；以"内部可用"
+  为由暴露亦然。
+- 让实体/审计/resource_registry 暴露物理 schema/table/column locator；
+  DTO、错误与日志只允许逻辑标识符。
+- 跨租户引用 definition/version/workspace；sealed version 内容被改写；
+  revoked/disabled 被解释为 active；version 降低 definition risk；
+  high/critical binding 无 approval；同一 approval 被消费两次；live
+  binding 并发出现第二个赢家。
+- catch-and-ignore `IntegrityError`；用 ORM 层纪律代替数据库 trigger；
+  在无 idempotency/audit 的事务外单独更新 binding 行；对 0010 做
+  populated in-place destructive downgrade。
+- 把 P5.1B 写成 P5.1 production 就绪、P34.7/P5.0 ready，或打开任何
+  Phase 5 Feature Gate。
+
+**必须运行的测试**
+
+- `backend/tests/test_p5_1b_agent_registry.py`（映射/幂等/冲突/approval/
+  revoke 的 MagicMock 单元测试）
+- `backend/tests/integration/test_p5_1b_agent_registry_foundation.py`
+  （一次性 sentinel PostgreSQL：migration head、cross-tenant 拒绝、
+  sealed 不可变、并发单赢家、exact replay、digest drift、stale
+  generation、approval 单次消费、审计 append-only、回滚无部分状态、
+  物理 locator 缺席、0010 populated downgrade fail-closed）
+- `make test-p5-1b-registry` 与
+  `python scripts/production/run_p5_1b_registry_disposable_gate.py --run`
+  （一次性隔离数据库 Gate，evidence 记录到
+  `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`）

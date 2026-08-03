@@ -81,3 +81,25 @@ never reads the root `.env`, a database, the network or a migration, and it
 never starts an Agent, Planner, Executor, queue, worker or scheduler.  When `--output` is used, the operator must
 choose a path outside the repository so writing the report cannot invalidate
 the source provenance that was just verified.
+
+## P5.1B Agent Registry persistence foundation (internal only)
+
+P5.1B adds the internal persistence foundation only: the three global
+`omnibase_meta` tables (`agent_definitions`, `agent_versions`,
+`workspace_agent_bindings`, migration `0010`) and the internal
+`RegistryPersistenceService`.  There is still no Browser `/api/v1/agents`
+router, no OpenAPI agent endpoint, no SDK client, no frontend and no
+Invocation/Runtime/Planner/Executor/orchestration surface; all Phase 5
+feature gates stay `false` and P5.1 production stays `blocked/not_proven`.
+
+```text
+make test-p5-1b-registry                     # disposable sentinel PostgreSQL Gate
+python scripts/production/run_p5_1b_registry_disposable_gate.py --run
+python scripts/production/run_p5_1b_registry_disposable_gate.py --verify-evidence docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json
+```
+
+The disposable Gate provisions an isolated Compose project with
+`omnibase_test_*` names, a sentinel and a restricted non-owner role, migrates
+it to head, runs the guarded integration suite, records sealed evidence and
+tears everything down (`0/0/0`).  It never touches a business database and
+never reads the root `.env`.

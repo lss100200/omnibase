@@ -1804,6 +1804,48 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
 
 ---
 
+#### P5.1B Agent Registry persistence foundation（2026-08-03）
+
+> P5.1B 是 P5.1 的**内部持久化地基**：AgentDefinition / AgentVersion /
+> WorkspaceAgentBinding 三张全局 `omnibase_meta` 表（migration `0010`）、
+> 数据库 trigger 状态机与内部事务服务 `RegistryPersistenceService`。
+> 它**不是**公开 API：无 FastAPI router、OpenAPI endpoint、SDK surface、
+> 前端页面、Invocation/Task/Run/Plan/Step/Attempt、Planner/Executor/
+> Dispatcher/Scheduler、Celery、Agent Runtime、Model/Tool/Memory/Skill
+> Runtime、MCP 或 shell/SQL/HTTP tools；三个 Phase 5 Feature Gate 恒
+> false；P34.7/P5.0/P5.1 production 恒 `blocked/not_proven`；P5.2+ frozen。
+
+1. **ORM 与迁移**：`backend/src/omnibase/agent_registry/models.py` +
+   `0010_p5_1b_agent_registry.py`。全局 scope（tenant scope 直接 return）；
+   复合 `(id, tenant_id)` FK 阻断跨租户引用；CHECK 约束（risk/state
+   闭集、sha256 格式、jsonb 数组闭集、budget object）；三个 trigger
+   （definition 状态机、sealed version 不可变 + risk 不降级 + tool ID
+   数组校验、binding 跨租户/状态机/approval 校验）；partial unique index
+   （每 workspace+definition 一个 live binding）；populated downgrade
+   fail-closed（`P5.1B downgrade refused`）。`register_resource` 支持
+   caller-owned `resource_id`，审计引用与 `resource_registry` 一致。
+2. **内部服务**：`RegistryPersistenceService` 是唯一变更路径。锁序
+   Tenant -> Workspace -> Definition -> Version -> live Binding ->
+   ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent；
+   幂等（digest 漂移转 `RegistryConflictError`）、approval 单次消费
+   （high/critical 必需，INSERT 前校验、INSERT 后消费）、
+   `register_resource` 登记、`complete_idempotency` 与 append-only 审计
+   全部同事务；supersede 先释放旧 live binding 再安装新 binding（失败
+   整体回滚）。
+3. **验证**：单元测试 `14 passed`；一次性 sentinel PostgreSQL 集成测试
+   `26 passed`（migration head、cross-tenant 拒绝、sealed 不可变、并发
+   单赢家、exact replay、digest drift、stale generation、approval 单次
+   消费、审计 append-only、回滚原子性、物理 locator 缺席、0010 populated
+   downgrade fail-closed）；P34.4 head 断言更新至 0010；`make
+   test-p5-1b-registry` 与 `scripts/production/run_p5_1b_registry_
+   disposable_gate.py` 提供正式 disposable Gate 入口（evidence 写入
+   `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`）。
+4. **P5.1A 合同同步**：`forbidden_source_paths` 移除 `agent_registry`；
+   `baseline_migration_revisions` 扩展至 `0010`；sealed digest 随文档
+   更新；P5.1A `--verify` 继续 `blocked/not_proven`（exit 2）。
+5. **明确未发生**：未新增任何 Browser/API/SDK/前端/Runtime/编排表面；
+   未打开 Feature Gate；未读取根 `.env`；未访问或迁移业务数据库；未 push。
+
 ## 八、常用命令
 
 ```bash

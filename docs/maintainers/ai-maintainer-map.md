@@ -526,13 +526,44 @@ Browser API、SDK 调用、Planner/Executor/worker/scheduler 或 Runtime。
 - INV-025–INV-034 仍是 Phase 5 计划预留；INV-040 只描述 P5.1A 合同的
   离线属性，不声称数据库约束、RBAC、并发安装或 Runtime 已完成。
 
+### 6.10 P5.1B Agent Registry persistence（内部持久化地基，非公开 API）
+
+`backend/src/omnibase/agent_registry/` 是 P5.1B 的唯一交付物：三张全局
+`omnibase_meta` 表（`agent_definitions`、`agent_versions`、
+`workspace_agent_bindings`，迁移 `0010`）加内部事务服务
+`RegistryPersistenceService`。它**不是**公开 API：无 FastAPI router、
+OpenAPI endpoint、SDK surface、Invocation/Task/Run/Plan/Step/Attempt、
+Planner/Executor/Dispatcher/Scheduler、Celery、Agent Runtime、
+Model/Tool/Memory/Skill Runtime、MCP 或 shell/SQL/HTTP tools；三个 Phase 5
+Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven。
+
+- 数据库本身执行不变量：复合 `(id, tenant_id)` FK 阻断跨租户引用；
+  trigger 执行状态机（revoked 终态、sealed 内容不可变、risk 不降级、
+  tool ID 闭集、approval 有效性、superseded/disabled 一致性）；
+  partial unique index 保证每个 workspace+definition 只有一个 live
+  binding（`pending_approval`/`installed`）。
+- 每次变更在调用方事务内原子完成：`reserve_idempotency`（digest 漂移
+  转 `RegistryConflictError`）→ 实体行 + `register_resource` 登记 →
+  approval 消费（high/critical 必需，恰好一次）→ `complete_idempotency`
+  → append-only audit；锁序 Tenant -> Workspace -> Definition ->
+  Version -> live Binding -> ApprovalRequest -> IdempotencyRecord。
+- `docs/evidence/p5-1/phase5-registry-persistence-design.md` 记录 12 项
+  设计判定（全局 scope、composite FK、trigger、partial unique index、
+  复用 idempotency/approval/audit）。一次性 sentinel PostgreSQL Gate：
+  `make test-p5-1b-registry` 与
+  `scripts/production/run_p5_1b_registry_disposable_gate.py --run`，
+  证据写入 `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`。
+- P5.1A 合同已同步：`forbidden_source_paths` 移除 `agent_registry`，
+  baseline migration revisions 扩展到 `0010`，sealed digest 随本文档
+  更新；P5.1B 不解锁 P5.2+（保持 frozen）。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
 
 | 区域 | 当前数据 |
 |---|---|
-| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations` |
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations`；P5.1B `agent_definitions`、`agent_versions`、`workspace_agent_bindings` |
 | 每个 `tenant_*` schema | users、documents、V1/V2 canonical embeddings、RAG index state、P34.3 `controlled_data_operation_payloads` 与受控动态业务表，以及 P34.6 独立 `workspace_derived_chunks_v2` lane |
 | MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
 | Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
