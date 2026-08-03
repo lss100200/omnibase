@@ -116,3 +116,46 @@ This is the required reproducible safe-refusal result.  It does not unlock
 P5.1 database/API/runtime work or Phase 5 runtime.  Re-run the validator
 whenever a tracked P5.1A source byte changes or new P34.7/P5.0 evidence is
 admitted.
+
+## Independent maintainer review and corrective hardening
+
+An independent review of the three external implementation commits found the
+offline architecture sound but identified contract gaps that made the original
+evidence insufficient for acceptance. The review repaired the gaps without
+adding or unlocking any ORM, migration, service, Browser API, SDK Agent call,
+Planner, Executor, worker, scheduler or Runtime surface:
+
+- the CLI `--verify` path now supplies the current process values for all three
+  server-owned Feature Gates instead of silently verifying an empty mapping;
+- definition/version/binding IDs, tenant logical keys and definition semver
+  labels are checked for collection-level uniqueness before dictionary lookup;
+- definition→version→binding edges now reject Tenant drift, definition/version
+  identity splicing, Workspace installation-scope bypass and version-level risk
+  downgrades;
+- the controlled JSON Schema validator now validates
+  `exclusiveMinimum`/`exclusiveMaximum` as finite numbers instead of merely
+  allowing the keyword;
+- nested Feature Gate and critical-veto objects are closed sets;
+- CLI configuration parent components and report output components reject
+  symlink/reparse points, and an existing symlink report target is never
+  followed or overwritten.
+
+Post-fix local gates:
+
+```text
+P5.1A + P5.0 + P34.7 focused: 199 passed
+Backend non-integration: 1339 passed, 14 skipped, 14 deselected
+Mypy: 153 source files, 0 issues
+Changed Python Ruff check: PASS
+Changed Python Ruff format --check: PASS
+compileall: PASS
+maintainer map: PASS
+maintainer benchmark: PASS
+Compose config --quiet: PASS
+validate-only: blocked/not_proven, contract_valid=true, activation_allowed=false
+```
+
+The original three implementation commits remain part of the provenance, but
+their pre-fix test totals and clean-checkout report are historical evidence,
+not the final independent acceptance result. A fresh clean-checkout report is
+recorded after the corrective commit below.

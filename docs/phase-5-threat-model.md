@@ -283,17 +283,23 @@ P5.0 PASS，也不得据此解冻 Phase 5 Runtime。
 |---|---|
 | 把合同当实现（"有合同=Registry 完成"） | report 恒输出 `registry_runtime_implemented=false`、`database_schema_applied=false`、`public_api_exposed=false`；源码边界扫描拒绝 forbidden 包 |
 | binding 用不同 digest 绑定同一 version、引用未知 definition/version | `_validate_registry_references` exact digest 校验，漂移即拒绝 |
+| 重复逻辑 ID/key/semver 造成索引覆盖或歧义 | definition/version/binding ID 唯一；tenant logical key 与 definition semver 复合唯一 |
+| version/binding 跨 Tenant，或 binding 把 definition 与别的 version 拼接 | definition→version→binding 每条边复核 tenant 与 definition identity；Workspace scope 显式授权 |
+| version 降低 definition risk 绕过 Approval | risk 只能保持或提高；Approval 使用已验证 version risk |
 | high/critical 安装缺 Approval | `approval_policy` 强制 required；缺 `approval_id` 拒绝 |
 | 预算 0/负数/超 ceiling/NaN/Infinity | `_strict_positive_int` + ceiling 校验 + `parse_constant` 拒绝非有限数 |
 | wildcard/重复/空 tool ID、scope | 逻辑 key 闭集 + 去重 + 保留字拒绝 |
 | JSON Schema 远程/文件 `$ref`、自定义命令字段 | 受控关键字闭集 + 本地 pointer 白名单 + 深度上限 |
+| 借 `exclusiveMinimum`/`exclusiveMaximum` 等允许关键字嵌套对象 | 所有数值边界关键字必须是有限 number 且拒绝 bool/object |
 | digest 大写/长度错误/内容漂移、CRLF 冒充原始字节 | 严格 lowercase 64 hex；canonical 重新序列化原始 UTF-8 字节 |
 | 合同/evidence 经 symlink/reparse 指向根 `.env` | P5.0 修补后的逐分量 `_safe_repo_path` 规则复用 |
 | dirty checkout / remote 不符 | clean-checkout veto；remote 精确匹配 |
 | gate 被打开或写成 TRUE/yes/on/1 | gate true → blocker；truthy token → veto；合同内 gate true → 无效合同 |
+| CLI `--verify` 忽略当前进程 Feature Gate 环境 | validator 显式采集三个 server-owned env 名并交给 fail-closed parser |
 | 偷偷新增 ORM/migration/router/Celery/runtime 包 | forbidden source paths + migration revision 集合漂移 → veto |
 | OpenAPI snapshot 被加入 agent endpoint | snapshot digest + path 扫描 → veto |
 | report 写到仓库内 | `_write_report` 强制仓库外 |
+| config 父目录或既有 report 目标是 symlink/reparse | 逐分量 `lstat`，拒绝 link/reparse 后才读写；不跟随既有 report symlink |
 | `not_proven` 被计为 passed | evidence 处理与 P5.0 一致，只进 blockers |
 | report 声称 runtime activated | 10 项 safety negatives 恒 false，由源码边界/import 约束/负向测试证明 |
 

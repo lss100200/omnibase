@@ -35,6 +35,12 @@ RegistryContractError = _contract.RegistryContractError
 RegistryContractGate = _contract.RegistryContractGate
 load_registry_contract_config = _contract.load_registry_contract_config
 
+_FEATURE_GATE_ENV_NAMES = (
+    "AGENT_RUNTIME_ENABLED",
+    "AGENT_PLANNER_ENABLED",
+    "MULTI_AGENT_ENABLED",
+)
+
 DEFAULT_CONFIG = REPO_ROOT / "deployment" / "production" / "phase5-registry-contract.example.json"
 
 
@@ -54,34 +60,65 @@ def _parse_args() -> argparse.Namespace:
 
 def _safe_config_path(path: Path) -> Path:
     unresolved = path if path.is_absolute() else Path.cwd() / path
-    metadata = os.lstat(unresolved)
-    is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
-    if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
-        raise RegistryContractError("configuration must be a regular non-link file")
-    resolved = path.resolve(strict=True)
+    if ".." in unresolved.parts:
+        raise RegistryContractError("configuration path must not contain parent traversal")
+    root = REPO_ROOT.resolve(strict=True)
     try:
-        relative = resolved.relative_to(REPO_ROOT.resolve(strict=True)).as_posix()
+        relative = unresolved.relative_to(root).as_posix()
     except ValueError as exc:
         raise RegistryContractError("configuration path escaped the repository") from exc
     if relative.lower() == ".env":
         raise RegistryContractError("root .env is forbidden")
-    return resolved
+    candidate = root
+    for part in Path(relative).parts:
+        candidate = candidate / part
+        metadata = os.lstat(candidate)
+        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise RegistryContractError("configuration path contains a link or reparse point")
+    metadata = os.lstat(candidate)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise RegistryContractError("configuration must be a regular non-link file")
+    return candidate.resolve(strict=True)
+
+
+def _reject_link_components(path: Path) -> None:
+    absolute = path if path.is_absolute() else Path.cwd() / path
+    if ".." in absolute.parts:
+        raise RegistryContractError("report output path must not contain parent traversal")
+    candidate = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        candidate = candidate / part
+        try:
+            metadata = os.lstat(candidate)
+        except FileNotFoundError:
+            continue
+        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise RegistryContractError("report output path contains a link or reparse point")
+
+
+def _server_gate_values() -> dict[str, str | None]:
+    return {name: os.environ.get(name) for name in _FEATURE_GATE_ENV_NAMES}
 
 
 def _write_report(path: Path, report: dict[str, object]) -> None:
-    resolved = path.resolve()
+    unresolved = path if path.is_absolute() else Path.cwd() / path
+    _reject_link_components(unresolved)
+    resolved = unresolved.resolve()
     try:
         resolved.relative_to(REPO_ROOT.resolve(strict=True))
     except ValueError:
         pass
     else:
         raise RegistryContractError("report output must be outside the repository")
-    if resolved.exists():
-        metadata = os.lstat(resolved)
+    if unresolved.exists():
+        metadata = os.lstat(unresolved)
         is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
         if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
             raise RegistryContractError("report output must be a regular non-link file")
     resolved.parent.mkdir(parents=True, exist_ok=True)
+    _reject_link_components(resolved.parent)
     resolved.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -90,7 +127,11 @@ def main() -> int:
     try:
         config = load_registry_contract_config(_safe_config_path(arguments.config))
         gate = RegistryContractGate(REPO_ROOT)
-        report = gate.validate_only(config) if arguments.validate_only else gate.verify(config)
+        report = (
+            gate.validate_only(config)
+            if arguments.validate_only
+            else gate.verify(config, gate_values=_server_gate_values())
+        )
         payload = report.to_dict()
         if arguments.output is not None:
             _write_report(arguments.output, payload)

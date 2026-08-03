@@ -50,6 +50,10 @@ Authorization header、Browser cookie、workload token、certificate
 private key 或 host command——这些字段在 strict DTO 解析层就被拒绝
 （unknown-field fail-closed）。
 
+集合级身份约束同样 fail-closed：definition/version/binding ID 必须各自
+唯一；`(tenant_id, stable_logical_key)` 必须唯一；同一 Tenant 的同一
+definition 不得声明重复 semver。单个 DTO 合法不代表跨 DTO 引用合法。
+
 ## 3. AgentDefinition 合同
 
 闭集：
@@ -85,6 +89,9 @@ digest，不嵌入秘密系统提示词）、`max_context_tokens`、
   原始 UTF-8 字节计算的 SHA-256（排除 `manifest_digest` 字段自身，避免
   自指方程）；任何内容变化都导致 digest 不匹配并拒绝；
 - 新版本必须产生新的 version ID 与 digest；
+- version 的 `tenant_id` 必须与其 definition 完全一致，且 version 的
+  risk level 只能保持或提高 definition 的风险级别，禁止借版本降级绕过
+  Approval；
 - digest 必须是精确 lowercase 64 字符 SHA-256（大写、长度错误拒绝）；
 - 不得使用经过换行归一化的解码文本冒充原始字节摘要——digest 始终基于
   canonical 重新序列化后的原始 UTF-8 字节（CRLF/LF 输入得到相同
@@ -99,6 +106,8 @@ digest，不嵌入秘密系统提示词）、`max_context_tokens`、
   拒绝远程 URL 与文件引用；schema 无法通过自定义字段携带 command、
   env、secret 或 locator（未知关键字拒绝）；
 - 递归深度上限 20；`enum` 无重复；`type` 闭集。
+- `minimum/maximum/exclusiveMinimum/exclusiveMaximum` 必须是有限数字，
+  不得借允许关键字嵌入对象、命令或 locator。
 
 ## 5. WorkspaceAgentBinding 合同
 
@@ -119,6 +128,9 @@ exact binding 规则：
   `(agent_version_id, agent_version_digest)` 必须与版本 manifest 的
   canonical digest 完全一致，同 version ID 配不同 digest 拒绝；
 - binding 引用的 definition/version 必须存在于注册表；
+- binding 的 definition 必须就是 exact version 所属的 definition；三者
+  `tenant_id` 必须完全一致，且 Workspace binding 只能引用明确允许
+  `workspace` installation scope 的 definition；
 - 引用 revoked definition 的 binding 拒绝；
 - `disabled` 状态必须带 `disabled_at`；`superseded` 必须带
   `superseded_by`（且不能引用自身）；其他状态不得携带这些字段；
@@ -159,6 +171,10 @@ Approval policy（合同顶层 `approval_policy`）：
   contracts/fixture/threat model/maintainer map digest、migration
   revision 集合与 head、forbidden source paths 不存在、OpenAPI
   snapshot 无 agent endpoint；
+- `--verify` 从当前 server process environment 显式读取三个 Feature
+  Gate；不会把空 mapping 当作真实部署环境。配置路径的每个已有分量和
+  report 输出路径的每个已有分量都拒绝 symlink/reparse，既有 symlink
+  report 目标不会被跟随或覆盖；
 - safety negatives 恒为 false：`root_env_accessed`、
   `business_database_accessed`、`business_database_migrated`、
   `external_network_accessed`、`agent_registry_runtime_created`、

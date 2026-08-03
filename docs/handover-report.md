@@ -1752,6 +1752,27 @@ git diff --check：passed
    页面/SDK Agent 调用/Celery task/Planner/Executor/Model/Tool/Memory/
    Skill runtime；未读取根 `.env`；未访问或迁移业务数据库；未 push。
 
+#### P5.1A 独立复核补强（2026-08-03）
+
+外部实现的三次提交经独立复核后判定为架构方向正确但需要安全修补。复核
+发现并修复：CLI `--verify` 未采集实际 server Feature Gate 环境、集合级
+重复 ID 可覆盖索引、definition/version/binding 缺少 Tenant 与 identity
+边校验、version 可降低 definition risk、Workspace binding 可绕过安装
+scope、`exclusiveMinimum/exclusiveMaximum` 允许但未验证数值类型、nested
+gate/critical-veto 未闭集，以及 CLI config 父目录与既有 report symlink
+防护不完整。所有修补仍停留在 P5.1A 纯离线 DTO/validator 层；未新增 ORM、
+migration、service、Browser API、SDK Agent 调用、Planner、Executor、worker、
+scheduler 或 Runtime。
+
+补强后的实际本地 Gate：P5.1A+P5.0+P34.7 focused `199 passed`；Backend
+non-integration `1339 passed / 14 skipped / 14 deselected`；Mypy
+`153 source files / 0 issues`；changed Python Ruff check/format、compileall、
+maintainer map、benchmark validator、Compose config 与 validate-only 全部
+通过。最终状态仍为 `P5.1A implemented/verified`、`P5.1 production
+blocked/not_proven`、三个 Feature Gate false、P5.2+ frozen。原报告中的
+`188/1328` 与 implementation commit clean-checkout 结果保留为历史证据，
+不再作为最终独立验收口径。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。

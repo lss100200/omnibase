@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import runpy
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from omnibase.production.phase5_registry_contract import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "deployment" / "production" / "phase5-registry-contract.example.json"
+VALIDATOR_PATH = REPO_ROOT / "scripts" / "production" / "validate_p5_1_registry_contract.py"
 
 DEFINITION_ID = "00000000-0000-0000-0000-000000000001"
 TENANT_ID = "00000000-0000-0000-0000-00000000000a"
@@ -795,6 +797,119 @@ def test_exact_version_digest_binding_drift_is_rejected() -> None:
         RegistryContractConfig.from_mapping(mapping)
 
 
+@pytest.mark.parametrize(
+    ("collection", "message"),
+    [
+        ("agent_definitions", "agent_definition IDs must be unique"),
+        ("agent_versions", "agent_version IDs must be unique"),
+        ("workspace_agent_bindings", "workspace_agent_binding IDs must be unique"),
+    ],
+)
+def test_registry_logical_ids_must_be_unique(collection: str, message: str) -> None:
+    mapping = _contract_mapping()
+    items = mapping["registry_contracts"][collection]
+    assert isinstance(items, list)
+    items.append(dict(items[0]))
+
+    with pytest.raises(ConfigurationError, match=message):
+        RegistryContractConfig.from_mapping(mapping)
+
+
+def test_definition_logical_key_and_version_label_are_tenant_unique() -> None:
+    mapping = _contract_mapping()
+    second_definition = _definition_mapping()
+    second_definition["agent_definition_id"] = "00000000-0000-0000-0000-000000000002"
+    definitions = mapping["registry_contracts"]["agent_definitions"]
+    assert isinstance(definitions, list)
+    definitions.append(second_definition)
+    with pytest.raises(ConfigurationError, match="stable_logical_key values must be unique"):
+        RegistryContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    second_version = _version_mapping()
+    second_version["agent_version_id"] = "11111111-1111-1111-1111-111111111112"
+    second_version["manifest_digest"] = _version_canonical_digest(second_version)
+    versions = mapping["registry_contracts"]["agent_versions"]
+    assert isinstance(versions, list)
+    versions.append(second_version)
+    with pytest.raises(ConfigurationError, match="version values must be unique"):
+        RegistryContractConfig.from_mapping(mapping)
+
+
+def test_registry_reference_graph_rejects_cross_tenant_or_mismatched_edges() -> None:
+    mapping = _contract_mapping()
+    version = mapping["registry_contracts"]["agent_versions"][0]
+    assert isinstance(version, dict)
+    version["tenant_id"] = "00000000-0000-0000-0000-00000000000b"
+    version["manifest_digest"] = _version_canonical_digest(version)
+    with pytest.raises(ConfigurationError, match="crosses the tenant boundary"):
+        RegistryContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    binding = mapping["registry_contracts"]["workspace_agent_bindings"][0]
+    assert isinstance(binding, dict)
+    binding["tenant_id"] = "00000000-0000-0000-0000-00000000000b"
+    with pytest.raises(ConfigurationError, match="crosses a tenant boundary"):
+        RegistryContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    second_definition = _definition_mapping()
+    second_definition["agent_definition_id"] = "00000000-0000-0000-0000-000000000002"
+    second_definition["stable_logical_key"] = "repository-inspector-v2"
+    definitions = mapping["registry_contracts"]["agent_definitions"]
+    assert isinstance(definitions, list)
+    definitions.append(second_definition)
+    binding = mapping["registry_contracts"]["workspace_agent_bindings"][0]
+    assert isinstance(binding, dict)
+    binding["agent_definition_id"] = second_definition["agent_definition_id"]
+    with pytest.raises(ConfigurationError, match="different agent_definition"):
+        RegistryContractConfig.from_mapping(mapping)
+
+
+def test_version_cannot_downgrade_definition_risk_or_bypass_workspace_scope() -> None:
+    mapping = _contract_mapping()
+    definition = mapping["registry_contracts"]["agent_definitions"][0]
+    assert isinstance(definition, dict)
+    definition["risk_level"] = "high"
+    with pytest.raises(ConfigurationError, match="must not downgrade the risk level"):
+        RegistryContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    definition = mapping["registry_contracts"]["agent_definitions"][0]
+    assert isinstance(definition, dict)
+    definition["allowed_installation_scopes"] = ["tenant"]
+    with pytest.raises(ConfigurationError, match="does not allow workspace installation"):
+        RegistryContractConfig.from_mapping(mapping)
+
+
+@pytest.mark.parametrize("keyword", ["exclusiveMinimum", "exclusiveMaximum"])
+def test_controlled_json_schema_rejects_non_numeric_exclusive_bounds(keyword: str) -> None:
+    mapping = _version_mapping()
+    input_schema = mapping["input_schema"]
+    assert isinstance(input_schema, dict)
+    input_schema[keyword] = {"shell_command": "not-allowed"}
+    mapping["manifest_digest"] = _version_canonical_digest(mapping)
+
+    with pytest.raises(ConfigurationError, match=rf"input_schema\.{keyword} must be a finite"):
+        AgentVersionManifest.from_mapping(mapping, ceilings=_ceilings())
+
+
+def test_nested_feature_gate_and_critical_veto_fields_are_closed_sets() -> None:
+    mapping = _contract_mapping()
+    feature_gates = mapping["feature_gates"]
+    assert isinstance(feature_gates, dict)
+    feature_gates["runtime_alias"] = False
+    with pytest.raises(ConfigurationError, match="feature_gates has unexpected fields"):
+        RegistryContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    critical_veto = mapping["critical_veto"]
+    assert isinstance(critical_veto, dict)
+    critical_veto["ignore"] = True
+    with pytest.raises(ConfigurationError, match="critical_veto has unexpected fields"):
+        RegistryContractConfig.from_mapping(mapping)
+
+
 def test_binding_referencing_unknown_definition_or_version_is_rejected() -> None:
     mapping = _contract_mapping()
     binding = _binding_mapping()
@@ -1004,6 +1119,51 @@ def test_validate_only_never_returns_ready() -> None:
     )
     report = RegistryContractGate(REPO_ROOT).validate_only(config)
     assert report.state is not AdmissionState.READY
+
+
+def test_validator_reads_server_owned_feature_gate_environment(monkeypatch) -> None:
+    namespace = runpy.run_path(str(VALIDATOR_PATH), run_name="p5_1_validator_test")
+    monkeypatch.setenv("AGENT_RUNTIME_ENABLED", "true")
+    monkeypatch.setenv("AGENT_PLANNER_ENABLED", "false")
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "false")
+
+    values = namespace["_server_gate_values"]()
+
+    assert values == {
+        "AGENT_RUNTIME_ENABLED": "true",
+        "AGENT_PLANNER_ENABLED": "false",
+        "MULTI_AGENT_ENABLED": "false",
+    }
+
+
+def test_validator_rejects_parent_symlink_for_config_and_output_symlink(
+    tmp_path: Path,
+) -> None:
+    namespace = runpy.run_path(str(VALIDATOR_PATH), run_name="p5_1_validator_path_test")
+    repo = tmp_path / "repo"
+    real_config_dir = repo / "real-config"
+    real_config_dir.mkdir(parents=True)
+    (real_config_dir / "contract.json").write_text("{}\n", encoding="utf-8")
+    linked_config_dir = repo / "linked-config"
+    linked_config_dir.symlink_to(real_config_dir, target_is_directory=True)
+    safe_config_path = namespace["_safe_config_path"]
+    safe_config_path.__globals__["REPO_ROOT"] = repo
+
+    with pytest.raises(ConfigurationError, match="link or reparse point"):
+        safe_config_path(linked_config_dir / "contract.json")
+
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
+    victim = tmp_path / "victim.json"
+    victim.write_text("unchanged\n", encoding="utf-8")
+    linked_output = report_dir / "report.json"
+    linked_output.symlink_to(victim)
+    write_report = namespace["_write_report"]
+    write_report.__globals__["REPO_ROOT"] = repo
+
+    with pytest.raises(ConfigurationError, match="link or reparse point"):
+        write_report(linked_output, {"state": "blocked/not_proven"})
+    assert victim.read_text(encoding="utf-8") == "unchanged\n"
 
 
 # ---------------------------------------------------------------------------

@@ -1275,9 +1275,15 @@ Executor/worker/scheduler）。P34.7 或 P5.0 未 `ready` 时，P5.1A 恒
 - 让 binding 以不同 digest 绑定同一 version ID、引用未知 definition/
   version、缺少 high/critical risk 所需的 approval、使用通配符 tool ID
   或把 revoked/disabled 状态解释为 active。
+- 接受重复 definition/version/binding ID、重复 tenant logical key 或重复
+  definition semver；允许 version/binding 跨 Tenant、binding 指向不属于
+  其 definition 的 version、Workspace binding 绕过 installation scope，
+  或让 version 降低 definition risk 以绕过 Approval。
 - 让 validator 读取根 `.env`、凭据、数据库、migration 或外网；把 report
   写到仓库内；把 `not_proven` 计为 passed；把 safety negatives 写死为
   true 而不经源码边界/import 约束/负向测试证明。
+- 在 `--verify` 时忽略真实 server Feature Gate 环境；只检查配置文件最终
+  分量而允许父目录 symlink/reparse，或跟随既有 symlink report 目标。
 - 预先假定下一个 migration 编号为 `0010`；把 P5.1A 写成 P5.1 PASS；把
   P34.7 改成 ready；打开 Phase 5 Feature Gate。
 

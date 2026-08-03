@@ -75,6 +75,7 @@ _ALLOWED_BINDING_STATES = frozenset(
     {"pending_approval", "installed", "disabled", "superseded", "revoked"}
 )
 _ALLOWED_RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
+_RISK_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 _FORBIDDEN_TOOL_IDS = frozenset({"all", "any", "*"})
 _APPROVAL_POLICY_VALUES = frozenset({"optional", "required"})
 
@@ -217,7 +218,14 @@ def _validate_controlled_json_schema(
     for key in ("title", "description", "pattern", "format"):
         if key in value and (not isinstance(value[key], str) or not value[key]):
             raise RegistryContractError(f"{name}.{key} must be a non-empty string")
-    for key in ("minLength", "maxLength", "minimum", "maximum"):
+    for key in (
+        "minLength",
+        "maxLength",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+    ):
         if key in value and (
             not isinstance(value[key], (int, float))
             or isinstance(value[key], bool)
@@ -860,6 +868,11 @@ class RegistryContractConfig:
         if data.get("phase") != "P5.1A":
             raise RegistryContractError("configuration.phase must be P5.1A")
         gates = _strict_object(data.get("feature_gates"), name="feature_gates")
+        _only_keys(
+            gates,
+            {"agent_runtime_enabled", "agent_planner_enabled", "multi_agent_enabled"},
+            name="feature_gates",
+        )
         if gates.get("agent_runtime_enabled") is not False:
             raise RegistryContractError(
                 "P5.1A contract requires the Agent Runtime feature gate to be disabled"
@@ -945,8 +958,9 @@ class RegistryContractConfig:
         )
         if not evidence or len({item.evidence_id for item in evidence}) != len(evidence):
             raise RegistryContractError("evidence IDs must be non-empty and unique")
-        critical = data.get("critical_veto")
-        if not isinstance(critical, dict) or critical.get("expected") != 0:
+        critical = _strict_object(data.get("critical_veto"), name="critical_veto")
+        _only_keys(critical, {"expected"}, name="critical_veto")
+        if critical.get("expected") != 0:
             raise RegistryContractError("critical_veto.expected must be exactly 0")
         config = cls(
             schema_version=1,
@@ -986,41 +1000,110 @@ class RegistryContractConfig:
         return config
 
     def _validate_registry_references(self) -> None:
-        definition_ids = {item.agent_definition_id for item in self.definitions}
-        version_ids = {item.agent_version_id for item in self.versions}
-        version_digests = {item.agent_version_id: item.canonical_digest() for item in self.versions}
+        definitions_by_id = {item.agent_definition_id: item for item in self.definitions}
+        versions_by_id = {item.agent_version_id: item for item in self.versions}
+        binding_ids = {item.workspace_agent_binding_id for item in self.bindings}
+        if len(definitions_by_id) != len(self.definitions):
+            raise RegistryContractError("agent_definition IDs must be unique")
+        if len(versions_by_id) != len(self.versions):
+            raise RegistryContractError("agent_version IDs must be unique")
+        if len(binding_ids) != len(self.bindings):
+            raise RegistryContractError("workspace_agent_binding IDs must be unique")
+
+        self._validate_registry_natural_keys()
         for version in self.versions:
-            if version.agent_definition_id not in definition_ids:
-                raise RegistryContractError(
-                    f"agent_version {version.agent_version_id} references an unknown "
-                    f"agent_definition {version.agent_definition_id}"
-                )
+            self._validate_version_reference(version, definitions_by_id)
         for binding in self.bindings:
-            if binding.agent_definition_id not in definition_ids:
-                raise RegistryContractError(
-                    f"workspace_agent_binding {binding.workspace_agent_binding_id} references an "
-                    f"unknown agent_definition {binding.agent_definition_id}"
-                )
-            if binding.agent_version_id not in version_ids:
-                raise RegistryContractError(
-                    f"workspace_agent_binding {binding.workspace_agent_binding_id} references an "
-                    f"unknown agent_version {binding.agent_version_id}"
-                )
-            if version_digests[binding.agent_version_id] != binding.agent_version_digest:
-                raise RegistryContractError(
-                    f"workspace_agent_binding {binding.workspace_agent_binding_id} binds "
-                    f"agent_version {binding.agent_version_id} to a drifted digest"
-                )
-            risk = next(
-                version.risk_level
-                for version in self.versions
-                if version.agent_version_id == binding.agent_version_id
+            self._validate_binding_reference(binding, definitions_by_id, versions_by_id)
+        self._validate_revoked_definition_bindings()
+
+    def _validate_registry_natural_keys(self) -> None:
+        definition_keys = {(item.tenant_id, item.stable_logical_key) for item in self.definitions}
+        if len(definition_keys) != len(self.definitions):
+            raise RegistryContractError(
+                "agent_definition stable_logical_key values must be unique within a tenant"
             )
-            if self.approval_policy[risk.value] == "required" and binding.approval_id is None:
-                raise RegistryContractError(
-                    f"workspace_agent_binding {binding.workspace_agent_binding_id} requires an "
-                    f"approval_id for risk level {risk.value}"
-                )
+        version_keys = {
+            (item.tenant_id, item.agent_definition_id, item.version) for item in self.versions
+        }
+        if len(version_keys) != len(self.versions):
+            raise RegistryContractError(
+                "agent_version version values must be unique within a tenant definition"
+            )
+
+    @staticmethod
+    def _validate_version_reference(
+        version: AgentVersionManifest,
+        definitions_by_id: Mapping[str, AgentDefinition],
+    ) -> None:
+        definition = definitions_by_id.get(version.agent_definition_id)
+        if definition is None:
+            raise RegistryContractError(
+                f"agent_version {version.agent_version_id} references an unknown "
+                f"agent_definition {version.agent_definition_id}"
+            )
+        if version.tenant_id != definition.tenant_id:
+            raise RegistryContractError(
+                f"agent_version {version.agent_version_id} crosses the tenant boundary of "
+                f"agent_definition {version.agent_definition_id}"
+            )
+        if _RISK_RANK[version.risk_level.value] < _RISK_RANK[definition.risk_level.value]:
+            raise RegistryContractError(
+                f"agent_version {version.agent_version_id} must not downgrade the risk level "
+                f"of agent_definition {version.agent_definition_id}"
+            )
+
+    def _validate_binding_reference(
+        self,
+        binding: WorkspaceAgentBinding,
+        definitions_by_id: Mapping[str, AgentDefinition],
+        versions_by_id: Mapping[str, AgentVersionManifest],
+    ) -> None:
+        definition = definitions_by_id.get(binding.agent_definition_id)
+        if definition is None:
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} references an "
+                f"unknown agent_definition {binding.agent_definition_id}"
+            )
+        bound_version = versions_by_id.get(binding.agent_version_id)
+        if bound_version is None:
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} references an "
+                f"unknown agent_version {binding.agent_version_id}"
+            )
+        if binding.agent_definition_id != bound_version.agent_definition_id:
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} binds an "
+                "agent_version from a different agent_definition"
+            )
+        if (
+            binding.tenant_id != definition.tenant_id
+            or binding.tenant_id != bound_version.tenant_id
+        ):
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} crosses a "
+                "tenant boundary"
+            )
+        if "workspace" not in definition.allowed_installation_scopes:
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} references an "
+                "agent_definition that does not allow workspace installation"
+            )
+        if bound_version.canonical_digest() != binding.agent_version_digest:
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} binds "
+                f"agent_version {binding.agent_version_id} to a drifted digest"
+            )
+        if (
+            self.approval_policy[bound_version.risk_level.value] == "required"
+            and binding.approval_id is None
+        ):
+            raise RegistryContractError(
+                f"workspace_agent_binding {binding.workspace_agent_binding_id} requires an "
+                f"approval_id for risk level {bound_version.risk_level.value}"
+            )
+
+    def _validate_revoked_definition_bindings(self) -> None:
         for definition in self.definitions:
             if definition.definition_state is DefinitionState.REVOKED:
                 for binding in self.bindings:
