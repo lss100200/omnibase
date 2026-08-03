@@ -1843,7 +1843,7 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    verifier 还强制检查 sentinel、业务数据库未访问/未迁移、物理 locator 未
    暴露与完整 cleanup proof。
 4. **实测验证（2026-08-03 主 Agent）**：聚焦 service/Gate 测试
-   `30 passed`；非 integration 全套 `1356 passed, 15 skipped, 14 deselected`；
+   `31 passed`；非 integration 全套 `1356 passed, 15 skipped, 14 deselected`；
    `mypy src` 为 `156 source files / 0 issues`；focused Ruff check/format、
    compileall、Compose config、maintenance-map validator（31 invariants / 23
    modules / 302 path specs / 977 files / 154 entrypoints / 98 commands）与
