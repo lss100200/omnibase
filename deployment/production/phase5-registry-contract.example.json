@@ -109,7 +109,7 @@
     {
       "name": "registry_tests",
       "path": "backend/tests/test_p5_1_registry_contract.py",
-      "sha256": "dddffd63ed9c6d8aa5ed1ca9e3d0bc9a52028afad4caf5fcc4a8ede09dea996e"
+      "sha256": "17cc2036b3f0075763734ed2730455c9170f4c88bb8b10a24f43871ce219ff04"
     }
   ],
   "openapi_snapshot": {

@@ -1280,9 +1280,9 @@ class RegistryContractGate:
     def validate_only(self, config: RegistryContractConfig) -> RegistryContractReport:
         blockers = [
             "formal Phase 5 registry contract verification was not executed",
-            "Agent Registry database foundation is not implemented",
+            "Agent Registry production database schema is not applied/proven",
             "Agent Browser API is not implemented",
-            "Workspace installation service is not implemented",
+            "Workspace installation public/runtime surface is not implemented",
         ]
         if config.p34_7_formal_state is not P347FormalState.READY:
             blockers.append(f"P34.7 formal state is not ready: {config.p34_7_formal_state.value}")
@@ -1352,9 +1352,9 @@ class RegistryContractGate:
         )
         blockers.extend(
             [
-                "Agent Registry database foundation is not implemented",
+                "Agent Registry production database schema is not applied/proven",
                 "Agent Browser API is not implemented",
-                "Workspace installation service is not implemented",
+                "Workspace installation public/runtime surface is not implemented",
             ]
         )
         try:

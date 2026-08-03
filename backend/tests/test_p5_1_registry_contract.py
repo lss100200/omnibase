@@ -414,10 +414,13 @@ def test_checked_in_contract_is_valid_but_explicitly_blocked() -> None:
     assert report.contract_valid is True
     assert any("P34.7 formal state is not ready" in item for item in report.blockers)
     assert any("P5.0 admission formal state is not ready" in item for item in report.blockers)
-    assert any("database foundation is not implemented" in item for item in report.blockers)
+    assert any(
+        "production database schema is not applied/proven" in item for item in report.blockers
+    )
     assert any("Agent Browser API is not implemented" in item for item in report.blockers)
     assert any(
-        "Workspace installation service is not implemented" in item for item in report.blockers
+        "Workspace installation public/runtime surface is not implemented" in item
+        for item in report.blockers
     )
 
 
@@ -1234,9 +1237,12 @@ def test_formal_gate_keeps_missing_proofs_blocked() -> None:
     assert report.vetoes == ()
     assert any("P34.7 formal state is not ready" in item for item in report.blockers)
     assert any("Agent Runtime gate remains disabled" in item for item in report.blockers)
-    assert any("database foundation is not implemented" in item for item in report.blockers)
+    assert any(
+        "production database schema is not applied/proven" in item for item in report.blockers
+    )
     assert any("Agent Browser API is not implemented" in item for item in report.blockers)
     assert any(
-        "Workspace installation service is not implemented" in item for item in report.blockers
+        "Workspace installation public/runtime surface is not implemented" in item
+        for item in report.blockers
     )
     assert any("not_proven" in item for item in report.blockers)
