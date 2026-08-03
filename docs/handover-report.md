@@ -1715,6 +1715,43 @@ git diff --check：passed
      该判定不等于 Phase 5 解冻。P34.7 production total Gate 仍为
      `BLOCKED / NOT_PROVEN`，P5.1 Agent Runtime 继续冻结。
 
+### P5.1A Agent Registry contract preflight（2026-08-03）
+
+> P5.1A 是 P5.1 唯一被允许的离线部分：AgentDefinition → AgentVersion →
+> WorkspaceAgentBinding 三层 strict DTO/合同 + 纯离线 validator。没有 ORM、
+> migration、service、Browser API、SDK 调用、Planner/Executor/worker/
+> scheduler 或 Runtime；INV-025–INV-034 继续作为 Phase 5 计划预留。
+
+1. **合同与 DTO**：`backend/src/omnibase/production/phase5_registry_contract.py`
+   实现闭集状态/风险/scope、严格小写 UUID 与逻辑 key、budget ceiling、
+   approval policy（high/critical 必须 approval）、受控 JSON Schema 子集
+   （本地 `$ref`、闭集关键字）、canonical manifest digest（原始 UTF-8 字节，
+   排除自指字段）。`deployment/production/phase5-registry-contract.example.json`
+   封存 P34.7/P5.0 决策 digest、migration 基线、五个 sealed 合同/测试
+   digest 并内嵌正向示例。
+2. **validator**：`scripts/production/validate_p5_1_registry_contract.py`
+   `--validate-only` 永不 ready；`--verify` 复用 P5.0 修补后的逐分量
+   symlink/reparse 路径规则与仓库外 report 要求，校验 Git provenance、
+   P5.0/P34.7 formal state、sealed digest、migration 集合/head、forbidden
+   source paths、OpenAPI agent endpoint 与三个 gate；10 项 safety negatives
+   恒 false，由模块 import 白名单（AST 测试）与源码边界扫描证明。
+3. **当前状态**：P5.1A offline contract `implemented / verified`；P5.1
+   database foundation / Browser API / Runtime installation 均
+   `not implemented`；P5.1 production `blocked/not_proven`；P5.2+ frozen。
+   clean-checkout formal verify（implementation commit
+   `86286dd5d0cd7e0d3b655a35cab9322c3018139e`）：exit 2、
+   `blocked/not_proven`、contract_valid true、7 blockers、0 vetoes、
+   report SHA-256 `d52f3b5a…ed228`。
+4. **验证**：P5.1A+P5.0+P34.7 focused `188 passed`；Backend
+   non-integration `1328 passed / 14 skipped / 14 deselected`；Mypy
+   `153 source files / 0 issues`；Ruff check/format PASS；maintainer map
+   `30 invariants / 22 modules / 287 path specs / 671 matched files /
+   148 entrypoints / 92 verification commands`；benchmark validator PASS；
+   compose/compileall/diff-check PASS。
+5. **明确未发生**：未创建 ORM/migration/registry service/Agent API/前端
+   页面/SDK Agent 调用/Celery task/Planner/Executor/Model/Tool/Memory/
+   Skill runtime；未读取根 `.env`；未访问或迁移业务数据库；未 push。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
