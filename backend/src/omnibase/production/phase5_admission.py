@@ -128,30 +128,39 @@ def _relative_repo_path(value: object, *, name: str) -> str:
     return path.as_posix()
 
 
-def _safe_repo_file(repo_root: Path, relative_path: str) -> Path:
-    candidate = (repo_root / relative_path).resolve(strict=True)
+def _safe_repo_path(repo_root: Path, relative_path: str, *, expect_directory: bool) -> Path:
+    root = repo_root.resolve(strict=True)
+    candidate = root
+    for part in PurePosixPath(relative_path).parts:
+        candidate = candidate / part
+        metadata = os.lstat(candidate)
+        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise ConfigurationError(
+                f"manifest path contains a link or reparse point: {relative_path}"
+            )
+    candidate = candidate.resolve(strict=True)
     try:
-        candidate.relative_to(repo_root.resolve(strict=True))
+        resolved_relative = candidate.relative_to(root).as_posix()
     except ValueError as exc:
         raise ConfigurationError("manifest path escaped the repository") from exc
+    if resolved_relative.lower() in _ROOT_ENV_NAMES:
+        raise ConfigurationError("manifest path resolved to the root .env")
     metadata = os.lstat(candidate)
     is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
-    if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
-        raise ConfigurationError(f"manifest file must be a regular non-link file: {relative_path}")
+    expected_type = stat.S_ISDIR if expect_directory else stat.S_ISREG
+    if stat.S_ISLNK(metadata.st_mode) or is_reparse or not expected_type(metadata.st_mode):
+        kind = "directory" if expect_directory else "file"
+        raise ConfigurationError(f"manifest {kind} has an invalid type: {relative_path}")
     return candidate
+
+
+def _safe_repo_file(repo_root: Path, relative_path: str) -> Path:
+    return _safe_repo_path(repo_root, relative_path, expect_directory=False)
 
 
 def _safe_repo_dir(repo_root: Path, relative_path: str) -> Path:
-    candidate = (repo_root / relative_path).resolve(strict=True)
-    try:
-        candidate.relative_to(repo_root.resolve(strict=True))
-    except ValueError as exc:
-        raise ConfigurationError("manifest directory escaped the repository") from exc
-    metadata = os.lstat(candidate)
-    is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
-    if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISDIR(metadata.st_mode):
-        raise ConfigurationError(f"manifest directory must be a regular directory: {relative_path}")
-    return candidate
+    return _safe_repo_path(repo_root, relative_path, expect_directory=True)
 
 
 def parse_feature_gate(raw: object, *, gate: FeatureGateName) -> bool:
@@ -536,7 +545,10 @@ def discover_migration_head(repo_root: Path, directory: str) -> str:
     """Parse Alembic revision/down_revision pairs without importing migrations."""
     versions_dir = _safe_repo_dir(repo_root, directory)
     revisions: dict[str, str | None] = {}
-    for path in sorted(versions_dir.glob("*.py")):
+    root = repo_root.resolve(strict=True)
+    for discovered_path in sorted(versions_dir.glob("*.py")):
+        relative_path = discovered_path.relative_to(root).as_posix()
+        path = _safe_repo_file(root, relative_path)
         text = path.read_text(encoding="utf-8")
         revision_match = _REVISION_LINE.search(text)
         if revision_match is None:
@@ -560,6 +572,18 @@ def discover_migration_head(repo_root: Path, directory: str) -> str:
     heads = sorted(revision for revision in revisions if revision not in referenced_as_down)
     if len(heads) != 1:
         raise ConfigurationError(f"migration chain has {len(heads)} heads: {', '.join(heads)}")
+    visited: set[str] = set()
+    current: str | None = heads[0]
+    while current is not None:
+        if current in visited:
+            raise ConfigurationError(f"migration chain contains a cycle at revision: {current}")
+        visited.add(current)
+        current = revisions[current]
+    if len(visited) != len(revisions):
+        disconnected = sorted(set(revisions) - visited)
+        raise ConfigurationError(
+            "migration chain contains disconnected or cyclic revisions: " + ", ".join(disconnected)
+        )
     return heads[0]
 
 

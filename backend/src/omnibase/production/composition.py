@@ -114,11 +114,23 @@ def _relative_repo_path(value: object, *, name: str) -> str:
 
 
 def _safe_repo_file(repo_root: Path, relative_path: str) -> Path:
-    candidate = (repo_root / relative_path).resolve(strict=True)
+    root = repo_root.resolve(strict=True)
+    candidate = root
+    for part in PurePosixPath(relative_path).parts:
+        candidate = candidate / part
+        metadata = os.lstat(candidate)
+        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise ConfigurationError(
+                f"evidence path contains a link or reparse point: {relative_path}"
+            )
+    candidate = candidate.resolve(strict=True)
     try:
-        candidate.relative_to(repo_root.resolve(strict=True))
+        resolved_relative = candidate.relative_to(root).as_posix()
     except ValueError as exc:
         raise ConfigurationError("evidence path escaped the repository") from exc
+    if resolved_relative.lower() in _ROOT_ENV_NAMES:
+        raise ConfigurationError("evidence path resolved to the root .env")
     metadata = os.lstat(candidate)
     is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
     if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):

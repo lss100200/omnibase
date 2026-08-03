@@ -58,4 +58,6 @@ production composition digest, runbook digest and the P34.7 decision digest.
 The checked-in contract keeps `activation_requested=false`, all gates false
 and every production evidence item `not_proven`, so the correct current result
 is `blocked/not_proven` with zero vetoes.  The validator never reads the root
-`.env`, a database or a migration.
+`.env`, a database or a migration.  When `--output` is used, the operator must
+choose a path outside the repository so writing the report cannot invalidate
+the source provenance that was just verified.

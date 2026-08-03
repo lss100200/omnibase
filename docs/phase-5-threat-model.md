@@ -86,8 +86,8 @@ Runtime 代码、不创建进程/队列/网络连接，也没有任何"验证通
    assertions；`not_proven` 永不计数为通过。
 7. **CLEAN-PROVENANCE**：`--verify` 只接受 clean checkout、精确匹配的
    Git remote 与 tracked source manifest；dirty 工作树是 veto。
-8. **CHAIN-HEAD**：迁移链必须恰好有一个 head，且等于合同声明的
-   `expected_revision`（当前 `0009`）。
+8. **CHAIN-HEAD**：迁移链必须是完整连通、无循环且恰好有一个 head 的链，
+   该 head 必须等于合同声明的 `expected_revision`（当前 `0009`）。
 9. **NO-SECRET-NO-DB**：validator 永不读取根 `.env`、凭据、证书载荷、
    数据库或业务存储；report 固定输出 `root_env_accessed=false`、
    `business_database_accessed=false`、`business_database_migrated=false`。
@@ -120,7 +120,8 @@ Runtime 代码、不创建进程/队列/网络连接，也没有任何"验证通
 - `feature_gates` 闭集且必须全 `false`；`critical_veto.expected` 必须为 0；
 - evidence 闭集状态机（`passed|blocked|not_proven`）与 P34.7 共用；
 - 所有路径规范化、拒绝绝对路径、`..`、drive letter 与根 `.env`；
-- sealed 文件必须是普通 regular 文件，拒绝 symlink/junction/reparse。
+- 从仓库根到 sealed 文件的每个路径分量都必须是普通目录/文件，拒绝任何
+  symlink/junction/reparse 别名，避免通过仓库内别名解析或散列根 `.env`。
 
 ### 4.3 Evidence 与 sealed 文件
 
@@ -161,7 +162,8 @@ composition/runbook digest 漂移后仍声称 manifest 一致。
 
 - 只读解析 migration 文件的 `revision`/`down_revision`，不导入任何
   migration 代码、不连接数据库；
-- 恰好一个 head 且等于 `expected_revision`，否则 veto；
+- 迁移链必须完整连通且无循环，并且恰好一个 head 等于
+  `expected_revision`，否则 veto；
 - SDK 版本从 `pyproject.toml`/`package.json` 解析并与合同比对；
 - OpenAPI snapshot、production composition、runbook、P34.7 decision 全部
   sealed digest 比对，漂移即 veto。
@@ -193,7 +195,7 @@ composition/runbook digest 漂移后仍声称 manifest 一致。
 | P50-GATE-07 | 合同内 gate 声明 true | 无效合同（veto） | unit |
 | P50-CTR-01 | 合同额外字段/错误 phase/schema | 解析拒绝 | unit |
 | P50-CTR-02 | `critical_veto.expected` 非 0 | 解析拒绝 | unit |
-| P50-CTR-03 | evidence 路径或 source scope 指向根 `.env` | 解析拒绝 | unit |
+| P50-CTR-03 | evidence/source path 直接或经 symlink/reparse 指向根 `.env` | 解析/验证拒绝 | unit |
 | P50-EV-01 | passed 证据缺 path/hash/assertions | 解析拒绝 | unit |
 | P50-EV-02 | sealed evidence digest 漂移 | veto | unit |
 | P50-EV-03 | evidence 断言漂移 | veto | unit |
@@ -201,7 +203,7 @@ composition/runbook digest 漂移后仍声称 manifest 一致。
 | P50-SRC-01 | dirty checkout | veto | unit/CLI |
 | P50-SRC-02 | remote 与合同不符 | invalid/veto | unit/CLI |
 | P50-SRC-03 | tracked scope 被替换 | source manifest 变化，dirty/veto | CLI |
-| P50-MIG-01 | migration 多 head / head 漂移 | veto | unit |
+| P50-MIG-01 | migration 多 head、隐藏循环/断链或 head 漂移 | veto | unit |
 | P50-MIG-02 | down_revision 引用不存在 revision | veto | unit |
 | P50-SDK-01 | Python/TS SDK 版本漂移 | veto | unit |
 | P50-SDK-02 | OpenAPI snapshot digest 漂移 | veto | unit |

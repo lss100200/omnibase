@@ -364,6 +364,33 @@ def test_git_provenance_reports_tracked_dirty_checkout(tmp_path: Path) -> None:
     assert any("source.txt" in path for path in provenance.dirty_paths)
 
 
+def test_git_provenance_rejects_tracked_symlink_to_root_env(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init")
+    _run_git(repo, "config", "user.email", "test@example.invalid")
+    _run_git(repo, "config", "user.name", "P34.7 test")
+    _run_git(repo, "config", "core.autocrlf", "false")
+    (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
+    (repo / ".env").write_text("MUST_NOT_BE_READ=synthetic\n", encoding="utf-8")
+    alias = repo / "evidence.json"
+    try:
+        alias.symlink_to(".env")
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this host")
+    _run_git(repo, "add", ".gitignore", "evidence.json")
+    _run_git(repo, "commit", "-m", "tracked evidence alias")
+    _run_git(repo, "remote", "add", "origin", "https://github.com/lss100200/omnibase.git")
+    scope = SourceScope(
+        expected_repository="https://github.com/lss100200/omnibase.git",
+        tracked_pathspecs=("evidence.json",),
+        require_clean_checkout=True,
+    )
+
+    with pytest.raises(ConfigurationError, match="link or reparse point"):
+        build_git_source_provenance(repo, scope)
+
+
 def test_report_exposes_explicit_safety_negatives() -> None:
     config = (
         load_production_composition_config(CONFIG_PATH)

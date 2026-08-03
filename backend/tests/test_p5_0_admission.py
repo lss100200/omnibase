@@ -39,8 +39,8 @@ PLANNER = FEATURE_GATE_ENV_NAMES["agent_planner"]
 MULTI_AGENT = FEATURE_GATE_ENV_NAMES["multi_agent"]
 
 
-def _digest(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def _digest_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _mapping() -> dict[str, object]:
@@ -172,21 +172,17 @@ def _synthetic_config(
     mapping = _mapping()
     mapping["activation_requested"] = activation_requested
     mapping["p34_7"]["formal_state"] = p34_7_state
-    mapping["p34_7"]["decision"]["sha256"] = _digest(
-        (tmp_path / "docs" / "evidence" / "p34-7" / "production-readiness-decision.md").read_text(
-            encoding="utf-8"
-        )
+    mapping["p34_7"]["decision"]["sha256"] = _digest_file(
+        tmp_path / "docs" / "evidence" / "p34-7" / "production-readiness-decision.md"
     )
-    mapping["openapi_snapshot"]["sha256"] = _digest(
-        (tmp_path / "sdk" / "contracts" / "p34-2-openapi.snapshot.json").read_text(encoding="utf-8")
+    mapping["openapi_snapshot"]["sha256"] = _digest_file(
+        tmp_path / "sdk" / "contracts" / "p34-2-openapi.snapshot.json"
     )
-    mapping["production_composition"]["sha256"] = _digest(
-        (tmp_path / "deployment" / "production" / "composition.example.json").read_text(
-            encoding="utf-8"
-        )
+    mapping["production_composition"]["sha256"] = _digest_file(
+        tmp_path / "deployment" / "production" / "composition.example.json"
     )
-    mapping["runbook"]["sha256"] = _digest(
-        (tmp_path / "docs" / "runbooks" / "p34-7-overlay-sla.md").read_text(encoding="utf-8")
+    mapping["runbook"]["sha256"] = _digest_file(
+        tmp_path / "docs" / "runbooks" / "p34-7-overlay-sla.md"
     )
     if include_passed_evidence:
         evidence_path = tmp_path / "docs" / "evidence.json"
@@ -206,7 +202,7 @@ def _synthetic_config(
                 "id": "synthetic_complete_phase5_gate",
                 "status": "passed",
                 "path": "docs/evidence.json",
-                "sha256": _digest(evidence_path.read_text(encoding="utf-8")),
+                "sha256": _digest_file(evidence_path),
                 "assertions": {
                     "passed": True,
                     "root_env_accessed": False,
@@ -446,6 +442,47 @@ def test_multi_head_migration_chain_is_rejected(tmp_path: Path) -> None:
     assert any("migration chain has 2 heads" in veto for veto in report.vetoes)
 
 
+def test_disconnected_migration_cycle_is_rejected(tmp_path: Path) -> None:
+    config = _synthetic_config(tmp_path, p34_7_state="ready")
+    versions = tmp_path / "backend" / "src" / "omnibase" / "migrations" / "versions"
+    (versions / "cycle_a.py").write_text(
+        'revision: str = "cycle_a"\ndown_revision: str | None = "cycle_b"\n', encoding="utf-8"
+    )
+    (versions / "cycle_b.py").write_text(
+        'revision: str = "cycle_b"\ndown_revision: str | None = "cycle_a"\n', encoding="utf-8"
+    )
+
+    report = Phase5AdmissionGate(tmp_path).verify(config, source=_source())
+
+    assert report.state is AdmissionState.INVALID
+    assert any("disconnected or cyclic revisions" in veto for veto in report.vetoes)
+
+
+def test_passed_evidence_symlink_to_root_env_is_rejected(tmp_path: Path) -> None:
+    config = _synthetic_config(tmp_path, p34_7_state="ready")
+    evidence_path = tmp_path / "docs" / "evidence.json"
+    evidence_path.unlink()
+    (tmp_path / ".env").write_text(
+        json.dumps(
+            {
+                "passed": True,
+                "root_env_accessed": False,
+                "business_database_migrated": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    try:
+        evidence_path.symlink_to("../.env")
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this host")
+
+    report = Phase5AdmissionGate(tmp_path).verify(config, source=_source())
+
+    assert report.state is AdmissionState.INVALID
+    assert any("link or reparse point" in veto for veto in report.vetoes)
+
+
 def test_openapi_snapshot_digest_drift_is_a_veto(tmp_path: Path) -> None:
     config = _synthetic_config(tmp_path, p34_7_state="ready")
     config = replace(
@@ -609,9 +646,9 @@ def test_no_agent_runtime_planner_or_executor_packages_exist() -> None:
     if not CONFIG_PATH.exists():
         pytest.skip("full public checkout is not mounted in the backend test image")
     for forbidden in ("agent_runtime", "planner", "executor", "multi_agent"):
-        assert not (
-            REPO_ROOT / "backend" / "src" / "omnibase" / forbidden
-        ).exists(), f"P5.0 must not introduce a runtime package: {forbidden}"
+        assert not (REPO_ROOT / "backend" / "src" / "omnibase" / forbidden).exists(), (
+            f"P5.0 must not introduce a runtime package: {forbidden}"
+        )
 
 
 def test_git_provenance_hashes_only_tracked_scope_and_ignores_root_env(tmp_path: Path) -> None:

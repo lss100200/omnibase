@@ -34,7 +34,9 @@ FEATURE_GATE_ENV_NAMES = _admission.FEATURE_GATE_ENV_NAMES
 Phase5AdmissionGate = _admission.Phase5AdmissionGate
 load_phase5_admission_config = _admission.load_phase5_admission_config
 
-DEFAULT_CONFIG = REPO_ROOT / "deployment" / "production" / "phase5-admission.example.json"
+DEFAULT_CONFIG = (
+    REPO_ROOT / "deployment" / "production" / "phase5-admission.example.json"
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -81,6 +83,15 @@ def _server_gate_values() -> dict[str, str | None]:
 
 
 def _safe_config_path(path: Path) -> Path:
+    unresolved = path if path.is_absolute() else Path.cwd() / path
+    metadata = os.lstat(unresolved)
+    is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or is_reparse
+        or not stat.S_ISREG(metadata.st_mode)
+    ):
+        raise ConfigurationError("configuration must be a regular non-link file")
     resolved = path.resolve(strict=True)
     try:
         relative = resolved.relative_to(REPO_ROOT.resolve(strict=True)).as_posix()
@@ -93,15 +104,25 @@ def _safe_config_path(path: Path) -> Path:
 
 def _write_report(path: Path, report: dict[str, object]) -> None:
     resolved = path.resolve()
-    if resolved == (REPO_ROOT / ".env").resolve():
-        raise ConfigurationError("report output must never overwrite the root .env")
+    try:
+        resolved.relative_to(REPO_ROOT.resolve(strict=True))
+    except ValueError:
+        pass
+    else:
+        raise ConfigurationError("report output must be outside the repository")
     if resolved.exists():
         metadata = os.lstat(resolved)
         is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
-        if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or is_reparse
+            or not stat.S_ISREG(metadata.st_mode)
+        ):
             raise ConfigurationError("report output must be a regular non-link file")
     resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    resolved.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def main() -> int:
