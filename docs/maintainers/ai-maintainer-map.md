@@ -512,7 +512,7 @@ Browser API、SDK 调用、Planner/Executor/worker/scheduler 或 Runtime。
   closed-set 合同：三个 Phase 5 gate 必须 false、P34.7/P5.0 formal state
   当前 `blocked/not_proven` 且决策文档被 SHA-256 封存、approval policy
   （high/critical 必须 approval）、server-owned budget ceilings、
-  forbidden source paths、baseline migration revisions（0001–0009）、
+  forbidden source paths、baseline migration revisions（0001–0010）、
   内嵌 definition/version/binding 正向示例。
 - `scripts/production/validate_p5_1_registry_contract.py --validate-only`
   只解析合同（exit 0，永不 ready）；`--verify` 复用 P5.0 修补后的逐分量
@@ -537,16 +537,19 @@ Planner/Executor/Dispatcher/Scheduler、Celery、Agent Runtime、
 Model/Tool/Memory/Skill Runtime、MCP 或 shell/SQL/HTTP tools；三个 Phase 5
 Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven。
 
-- 数据库本身执行不变量：复合 `(id, tenant_id)` FK 阻断跨租户引用；
-  trigger 执行状态机（revoked 终态、sealed 内容不可变、risk 不降级、
-  tool ID 闭集、approval 有效性、superseded/disabled 一致性）；
+- 数据库本身执行不变量：复合 `(id, tenant_id)` FK 阻断 definition/version/
+  workspace/approval/superseded target 跨租户引用；trigger 执行状态机
+  （revoked 终态、sealed 身份与内容不可变、binding 安装 payload 不可重连、
+  risk 不降级、tool ID 闭集、approval 有效性、superseded/disabled 一致性）；
   partial unique index 保证每个 workspace+definition 只有一个 live
   binding（`pending_approval`/`installed`）。
-- 每次变更在调用方事务内原子完成：`reserve_idempotency`（digest 漂移
+- 每次变更先在调用方事务内重读 active tenant User，再原子完成：
+  `reserve_idempotency`（digest 漂移
   转 `RegistryConflictError`）→ 实体行 + `register_resource` 登记 →
   approval 消费（high/critical 必需，恰好一次）→ `complete_idempotency`
-  → append-only audit；锁序 Tenant -> Workspace -> Definition ->
-  Version -> live Binding -> ApprovalRequest -> IdempotencyRecord。
+  → append-only audit；安装锁序 Tenant -> tenant User -> Workspace ->
+  Definition -> Version -> live Binding -> IdempotencyRecord ->
+  ApprovalRequest（首次执行）。exact replay 在 approval 重验前返回原结果。
 - `docs/evidence/p5-1/phase5-registry-persistence-design.md` 记录 12 项
   设计判定（全局 scope、composite FK、trigger、partial unique index、
   复用 idempotency/approval/audit）。一次性 sentinel PostgreSQL Gate：
@@ -570,13 +573,17 @@ Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven
 
 ### 7.2 Alembic 方向
 
-- migration 链当前为 `0001` 至 `0009`。
+- migration 链当前为 `0001` 至 `0010`。
 - `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
 - 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
 - `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
 - offline `--sql` 只生成 global SQL，不能代替 tenant online staging 演练。
 - `0006` downgrade 在存在动态资源、payload、outbox 或 compensation 状态时会拒绝执行，避免静默丢失数据。
 - `0007` 只在 global scope 创建 17 张 P34.4 控制面表（包括持久化 Network fencing 的 `network_lease_cursors`）并收紧现有 Resource tenant 复合绑定；ResourceScopeBinding→Workspace/Run、Workspace→restore snapshot、CollaborationEvent→artifact/parent event 均使用 tenant/workspace 复合 FK。tenant scope 为显式 no-op。populated downgrade fail-closed，避免静默丢失 Workspace/lease/authority 元数据。
+- `0010` 只在 global scope 创建 P5.1B Agent Registry 三表、复合 FK、状态/
+  不可变 trigger 与 live-binding 部分唯一索引；tenant scope 显式 no-op，
+  populated downgrade fail-closed。它不迁移普通业务数据库，也不解锁 Agent
+  Runtime 或任何 Phase 5 Feature Gate。
 - ORM 模型、迁移约束和运行服务必须同步审查；只修改 ORM 不会改变已部署数据库。
 - 普通业务数据库 migration、downgrade、restore、cleanup 都需要部署所有者明确授权。单元测试或 sentinel integration 通过不等于已经迁移业务数据库。
 

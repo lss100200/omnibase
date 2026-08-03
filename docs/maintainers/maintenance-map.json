@@ -1481,18 +1481,19 @@
         "INV-041"
       ],
       "verification": [
-        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_1b_agent_registry.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1b_agent_registry.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q",
         "make test-p5-1b-registry (disposable sentinel PostgreSQL: migration head + P5.1B integration suite)",
         "python scripts/production/run_p5_1b_registry_disposable_gate.py --validate-only",
-        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/agent_registry src/omnibase/control_plane/service.py tests/test_p5_1b_agent_registry.py",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py"
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_registry src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py"
       ],
       "recovery": [
         "P5.1B is engineering-sealed: no Browser /api/v1/agents router, no SDK client, no Invocation/Task/Run/Plan/Step/Attempt, no Planner/Executor/Dispatcher/Scheduler, no Celery, no Agent Runtime, no model/tool/memory/skill runtime, no MCP, no shell/SQL/HTTP tools, no multi-agent orchestration; all three Phase 5 feature gates stay false.",
-        "Registry mutations only run inside caller-owned transactions with idempotency, approval consumption and append-only audit; never update a binding row in isolation.",
+        "Registry mutations only run inside caller-owned transactions after re-locking the live tenant User, with idempotency, approval consumption and append-only audit; never update a binding row in isolation or rewire its installation payload.",
         "Physical PostgreSQL locators must never appear in DTOs, errors or logs; only logical identifiers cross boundaries.",
-        "0010 populated downgrade fails closed; never drop or mutate agent_registry tables destructively in place."
+        "0010 populated downgrade fails closed; never drop or mutate agent_registry tables destructively in place.",
+        "The disposable Gate must pass --env-file .env.example to every Compose call and may publish passed evidence only after labeled container/network/volume counts are all zero."
       ]
     },
     {

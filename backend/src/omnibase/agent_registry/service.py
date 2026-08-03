@@ -42,6 +42,7 @@ from omnibase.control_plane.service import (
     reserve_idempotency,
 )
 from omnibase.db.models import Tenant
+from omnibase.db.tenant import User
 from omnibase.production.phase5_registry_contract import (
     AgentDefinition,
     AgentVersionManifest,
@@ -152,6 +153,32 @@ def _lock_tenant(session: Session, *, tenant_id: str) -> Tenant:
     return tenant
 
 
+def _lock_actor_user(session: Session, *, actor_user_id: str) -> User:
+    """Revalidate the live tenant-schema user in the caller-owned transaction."""
+
+    actor = session.execute(
+        select(User).where(User.id == actor_user_id, User.is_active.is_(True)).with_for_update()
+    ).scalar_one_or_none()
+    if actor is None:
+        raise RegistryStateError("registry_actor_inactive_or_missing")
+    return actor
+
+
+def _validate_contract_identity(
+    *,
+    tenant_id: str,
+    actor_user_id: str,
+    dto_tenant_id: str,
+    dto_actor_user_id: str,
+) -> None:
+    """Reject DTO identity drift before any row is constructed or persisted."""
+
+    if dto_tenant_id != tenant_id:
+        raise RegistryStateError("registry_tenant_mismatch")
+    if dto_actor_user_id != actor_user_id:
+        raise RegistryStateError("registry_actor_mismatch")
+
+
 def _validate_registry_approval(
     session: Session,
     *,
@@ -233,7 +260,14 @@ class RegistryPersistenceService:
         definition: AgentDefinition,
         idempotency_key: str,
     ) -> AgentDefinitionModel:
+        _validate_contract_identity(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            dto_tenant_id=definition.tenant_id,
+            dto_actor_user_id=definition.created_by,
+        )
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         request_hash = _canonical_request_hash(definition.to_dict())
         record, inserted = _reserve_registry_idempotency(
             self._session,
@@ -339,7 +373,14 @@ class RegistryPersistenceService:
         version: AgentVersionManifest,
         idempotency_key: str,
     ) -> AgentVersionModel:
+        _validate_contract_identity(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            dto_tenant_id=version.tenant_id,
+            dto_actor_user_id=version.created_by,
+        )
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         definition = self._session.execute(
             select(AgentDefinitionModel)
             .where(
@@ -350,8 +391,8 @@ class RegistryPersistenceService:
         ).scalar_one_or_none()
         if definition is None:
             raise RegistryNotFoundError("registry_definition_not_found")
-        if definition.definition_state == "revoked":
-            raise RegistryStateError("registry_definition_revoked")
+        if definition.definition_state != "active":
+            raise RegistryStateError("registry_definition_not_active")
         request_hash = _canonical_request_hash(version.to_dict())
         record, inserted = _reserve_registry_idempotency(
             self._session,
@@ -466,7 +507,14 @@ class RegistryPersistenceService:
         binding: WorkspaceAgentBinding,
         idempotency_key: str,
     ) -> WorkspaceAgentBindingModel:
+        _validate_contract_identity(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            dto_tenant_id=binding.tenant_id,
+            dto_actor_user_id=binding.installed_by,
+        )
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         _, _, version_row = self._load_install_references(tenant_id=tenant_id, binding=binding)
         live = self._session.execute(
             select(WorkspaceAgentBindingModel)
@@ -578,7 +626,7 @@ class RegistryPersistenceService:
             decision="allowed",
             risk_level=_RISK_TO_R_LEVEL[risk],
             workspace_id=binding.workspace_id,
-            resource_id=model.agent_definition_id,
+            resource_id=model.id,
             input_hash=request_hash,
         )
         return model
@@ -612,8 +660,8 @@ class RegistryPersistenceService:
         ).scalar_one_or_none()
         if definition is None:
             raise RegistryNotFoundError("registry_definition_not_found")
-        if definition.definition_state == "revoked":
-            raise RegistryStateError("registry_definition_revoked")
+        if definition.definition_state != "active":
+            raise RegistryStateError("registry_definition_not_active")
         if "workspace" not in definition.installation_scopes:
             raise RegistryStateError("registry_definition_no_workspace_scope")
         version_row = self._session.execute(
@@ -626,8 +674,8 @@ class RegistryPersistenceService:
         ).scalar_one_or_none()
         if version_row is None:
             raise RegistryNotFoundError("registry_version_not_found")
-        if version_row.version_state == "revoked":
-            raise RegistryStateError("registry_version_revoked")
+        if version_row.version_state != "sealed":
+            raise RegistryStateError("registry_version_not_sealed")
         if version_row.definition_id != binding.agent_definition_id:
             raise RegistryStateError("registry_version_definition_mismatch")
         if version_row.manifest_digest != binding.agent_version_digest:
@@ -644,10 +692,10 @@ class RegistryPersistenceService:
         risk: str,
     ) -> tuple[str, int] | None:
         """Validate the approval without consuming it; return (id, version) if required."""
-        if _RISK_RANK[risk] < 2:
-            return None
         if binding.approval_id is None:
-            raise RegistryStateError("registry_approval_required")
+            if _RISK_RANK[risk] >= 2:
+                raise RegistryStateError("registry_approval_required")
+            return None
         approval = self._session.execute(
             select(ApprovalRequest)
             .where(
@@ -664,12 +712,16 @@ class RegistryPersistenceService:
             raise RegistryStateError("registry_approval_expired")
         if approval.requester_id != actor_user_id:
             raise RegistryStateError("registry_approval_requester_mismatch")
+        if approval.requester_type != "user":
+            raise RegistryStateError("registry_approval_requester_type_mismatch")
         if approval.action != "agent.install":
             raise RegistryStateError("registry_approval_action_mismatch")
         if approval.workspace_id != binding.workspace_id:
             raise RegistryStateError("registry_approval_workspace_mismatch")
         if approval.request_hash != request_hash:
             raise RegistryStateError("registry_approval_request_hash_mismatch")
+        if approval.risk_level != _RISK_TO_R_LEVEL[risk]:
+            raise RegistryStateError("registry_approval_risk_mismatch")
         return approval.id, approval.version
 
     def _consume_approved_approval(
@@ -704,7 +756,7 @@ class RegistryPersistenceService:
             risk_level=_RISK_TO_R_LEVEL[risk],
             workspace_id=binding.workspace_id,
             approval_id=approval_id,
-            resource_id=binding.agent_definition_id,
+            resource_id=binding.workspace_agent_binding_id,
             input_hash=request_hash,
         )
 
@@ -766,6 +818,7 @@ class RegistryPersistenceService:
         audit_action: str,
     ) -> WorkspaceAgentBindingModel:
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         request_hash = _canonical_request_hash(
             {"binding_id": binding_id, "target_state": target_state}
         )
@@ -857,6 +910,15 @@ class RegistryPersistenceService:
         install's single-winner check passes; any later failure rolls the
         whole transaction back, restoring the old binding.
         """
+        _validate_contract_identity(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            dto_tenant_id=new_binding.tenant_id,
+            dto_actor_user_id=new_binding.installed_by,
+        )
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
+        self._load_install_references(tenant_id=tenant_id, binding=new_binding)
         old = self._session.execute(
             select(WorkspaceAgentBindingModel)
             .where(
@@ -867,8 +929,35 @@ class RegistryPersistenceService:
         ).scalar_one_or_none()
         if old is None:
             raise RegistryNotFoundError("registry_binding_not_found")
+        request_hash = _canonical_request_hash(
+            {"old_binding_id": old_binding_id, "new_binding": new_binding.to_dict()}
+        )
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_binding.supersede",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="workspace_agent_binding",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            return cast(WorkspaceAgentBindingModel, existing)
         if old.binding_state not in _LIVE_BINDING_STATES:
             raise RegistryStateError("registry_binding_not_live")
+        if (
+            old.workspace_id != new_binding.workspace_id
+            or old.agent_definition_id != new_binding.agent_definition_id
+        ):
+            raise RegistryStateError("registry_supersede_target_mismatch")
         old.binding_state = "superseded"
         old.superseded_by = new_binding.workspace_agent_binding_id
         self._session.flush()
@@ -881,6 +970,12 @@ class RegistryPersistenceService:
         )
         old.superseded_by = new_model.id
         self._session.flush()
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"workspace_agent_binding_id": new_model.id},
+        )
         append_audit_event(
             self._session,
             tenant_id=tenant_id,
@@ -892,9 +987,7 @@ class RegistryPersistenceService:
             risk_level="R1",
             workspace_id=old.workspace_id,
             resource_id=old.id,
-            input_hash=_canonical_request_hash(
-                {"old_binding_id": old_binding_id, "new_binding_id": new_model.id}
-            ),
+            input_hash=request_hash,
         )
         return new_model
 
@@ -908,6 +1001,7 @@ class RegistryPersistenceService:
         idempotency_key: str,
     ) -> AgentDefinitionModel:
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         request_hash = _canonical_request_hash({"definition_id": definition_id})
         record, inserted = _reserve_registry_idempotency(
             self._session,
@@ -973,6 +1067,7 @@ class RegistryPersistenceService:
         idempotency_key: str,
     ) -> AgentVersionModel:
         _lock_tenant(self._session, tenant_id=tenant_id)
+        _lock_actor_user(self._session, actor_user_id=actor_user_id)
         request_hash = _canonical_request_hash({"version_id": version_id})
         record, inserted = _reserve_registry_idempotency(
             self._session,

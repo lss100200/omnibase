@@ -34,7 +34,10 @@ depends_on: str | sa.Column | None = None
 
 
 def _migration_schema_scope() -> str:
-    scope = op.get_context().config.attributes.get("migration_schema_scope")
+    config = op.get_context().config
+    if config is None:
+        raise RuntimeError("migration configuration is unavailable")
+    scope = config.attributes.get("migration_schema_scope")
     if scope not in {"global", "tenant"}:
         raise RuntimeError(f"unsupported migration_schema_scope: {scope!r}")
     return scope
@@ -278,6 +281,23 @@ def _create_workspace_agent_bindings_table() -> None:
             name="agent_bindings_version_tenant_fk",
             ondelete="RESTRICT",
         ),
+        sa.ForeignKeyConstraint(
+            ["approval_id", "tenant_id"],
+            [f"{_SCHEMA}.approval_requests.id", f"{_SCHEMA}.approval_requests.tenant_id"],
+            name="agent_bindings_approval_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["superseded_by", "tenant_id"],
+            [
+                f"{_SCHEMA}.workspace_agent_bindings.id",
+                f"{_SCHEMA}.workspace_agent_bindings.tenant_id",
+            ],
+            name="agent_bindings_superseded_tenant_fk",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         schema=_SCHEMA,
     )
     op.create_index(
@@ -346,11 +366,16 @@ def _create_triggers() -> None:
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE
             definition_risk text;
+            definition_status text;
             item text;
             seen text[] := '{}';
         BEGIN
             IF TG_OP = 'UPDATE' AND OLD.version_state IN ('sealed', 'deprecated', 'revoked') THEN
-                IF NEW.manifest_payload <> OLD.manifest_payload
+                IF NEW.id IS DISTINCT FROM OLD.id
+                   OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+                   OR NEW.created_by IS DISTINCT FROM OLD.created_by
+                   OR NEW.created_at IS DISTINCT FROM OLD.created_at
+                   OR NEW.manifest_payload <> OLD.manifest_payload
                    OR NEW.manifest_digest <> OLD.manifest_digest
                    OR NEW.model_policy_id <> OLD.model_policy_id
                    OR NEW.instructions_digest <> OLD.instructions_digest
@@ -381,11 +406,15 @@ def _create_triggers() -> None:
                         USING ERRCODE = '55000';
                 END IF;
             END IF;
-            SELECT risk_level INTO definition_risk
+            SELECT risk_level, definition_state INTO definition_risk, definition_status
             FROM omnibase_meta.agent_definitions
             WHERE id = NEW.definition_id AND tenant_id = NEW.tenant_id;
             IF definition_risk IS NULL THEN
                 RAISE EXCEPTION 'agent_version references an unknown agent_definition'
+                    USING ERRCODE = '55000';
+            END IF;
+            IF NEW.version_state = 'sealed' AND definition_status <> 'active' THEN
+                RAISE EXCEPTION 'sealed agent_version requires an active agent_definition'
                     USING ERRCODE = '55000';
             END IF;
             IF (CASE NEW.risk_level WHEN 'low' THEN 0 WHEN 'medium' THEN 1
@@ -450,12 +479,12 @@ def _create_triggers() -> None:
                     USING ERRCODE = '55000';
             END IF;
             IF TG_OP = 'INSERT' THEN
-                IF definition_row.definition_state = 'revoked' THEN
-                    RAISE EXCEPTION 'agent_binding must not reference a revoked definition'
+                IF definition_row.definition_state <> 'active' THEN
+                    RAISE EXCEPTION 'agent_binding requires an active definition'
                         USING ERRCODE = '55000';
                 END IF;
-                IF version_row.version_state = 'revoked' THEN
-                    RAISE EXCEPTION 'agent_binding must not reference a revoked version'
+                IF version_row.version_state <> 'sealed' THEN
+                    RAISE EXCEPTION 'agent_binding requires a sealed version'
                         USING ERRCODE = '55000';
                 END IF;
                 IF NOT (definition_row.installation_scopes @> '["workspace"]'::jsonb) THEN
@@ -463,22 +492,48 @@ def _create_triggers() -> None:
                         USING ERRCODE = '55000';
                 END IF;
                 IF (CASE version_row.risk_level WHEN 'low' THEN 0 WHEN 'medium' THEN 1
-                        WHEN 'high' THEN 2 WHEN 'critical' THEN 3 END) >= 2 THEN
-                    IF NEW.approval_id IS NULL THEN
+                        WHEN 'high' THEN 2 WHEN 'critical' THEN 3 END) >= 2
+                   AND NEW.approval_id IS NULL THEN
                         RAISE EXCEPTION 'high or critical risk binding requires an approval'
                             USING ERRCODE = '55000';
-                    END IF;
-                    SELECT id, state, expires_at INTO approval_row
+                END IF;
+                IF NEW.approval_id IS NOT NULL THEN
+                    SELECT id, state, expires_at, consumed_at, requester_type,
+                           requester_id, action, workspace_id, risk_level
+                      INTO approval_row
                     FROM omnibase_meta.approval_requests
                     WHERE id = NEW.approval_id AND tenant_id = NEW.tenant_id;
                     IF approval_row.id IS NULL OR approval_row.state <> 'approved'
-                       OR approval_row.expires_at IS NOT NULL AND approval_row.expires_at <= now() THEN
+                       OR approval_row.consumed_at IS NOT NULL
+                       OR approval_row.expires_at IS NOT NULL AND approval_row.expires_at <= now()
+                       OR approval_row.requester_type <> 'user'
+                       OR approval_row.requester_id IS DISTINCT FROM NEW.installed_by
+                       OR approval_row.action <> 'agent.install'
+                       OR approval_row.workspace_id IS DISTINCT FROM NEW.workspace_id
+                       OR approval_row.risk_level <> CASE version_row.risk_level
+                            WHEN 'low' THEN 'R1' WHEN 'medium' THEN 'R2'
+                            WHEN 'high' THEN 'R3' WHEN 'critical' THEN 'R4' END THEN
                         RAISE EXCEPTION 'agent_binding approval is not valid'
                             USING ERRCODE = '55000';
                     END IF;
                 END IF;
             END IF;
             IF TG_OP = 'UPDATE' THEN
+                IF NEW.id IS DISTINCT FROM OLD.id
+                   OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+                   OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+                   OR NEW.workspace_generation IS DISTINCT FROM OLD.workspace_generation
+                   OR NEW.agent_definition_id IS DISTINCT FROM OLD.agent_definition_id
+                   OR NEW.agent_version_id IS DISTINCT FROM OLD.agent_version_id
+                   OR NEW.agent_version_digest IS DISTINCT FROM OLD.agent_version_digest
+                   OR NEW.resource_scopes IS DISTINCT FROM OLD.resource_scopes
+                   OR NEW.default_budget_policy IS DISTINCT FROM OLD.default_budget_policy
+                   OR NEW.installed_by IS DISTINCT FROM OLD.installed_by
+                   OR NEW.approval_id IS DISTINCT FROM OLD.approval_id
+                   OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+                    RAISE EXCEPTION 'agent_binding identity and installation payload are immutable'
+                        USING ERRCODE = '55000';
+                END IF;
                 IF OLD.binding_state IN ('superseded', 'revoked') AND NEW.binding_state <> OLD.binding_state THEN
                     RAISE EXCEPTION 'agent_binding terminal state is immutable'
                         USING ERRCODE = '55000';
@@ -603,4 +658,3 @@ def downgrade() -> None:
     if _migration_schema_scope() == "tenant":
         return
     _downgrade_global()
-

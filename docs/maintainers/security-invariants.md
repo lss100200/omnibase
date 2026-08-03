@@ -1332,13 +1332,17 @@ Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven
 跨租户引用；trigger 执行 definition/version/binding 状态机、sealed version
 内容不可变、revoked 终态、risk 不降级、tool ID 数组闭集、approval 有效性；
 partial unique index 保证每 workspace+definition 只有一个 live binding。
+sealed version 的身份列与内容列都不可变；binding 安装身份/payload 不可
+重连，只允许受控状态列变化；approval 与 superseded target 都使用同租户
+复合 FK，不能只靠服务层检查。
 
 **允许的改法**
 
 - 在同一事务内扩展内部事务操作（幂等解析、approval 消费、append-only
   审计、resource_registry 登记一起提交）；保持锁序
-  Tenant -> Workspace -> Definition -> Version -> live Binding
-  -> ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent。
+  Tenant -> tenant User(actor) -> Workspace -> Definition -> Version ->
+  live Binding -> IdempotencyRecord -> ApprovalRequest（首次执行）-> target
+  row -> AuditEvent。exact replay 必须在 approval 重验前返回已提交结果。
 - 收紧 DTO 校验、ceiling、trigger 状态机或新增 fail-closed 集成测试；
   任何 contract/迁移/测试变更必须同步更新 sealed digest 并重验。
 
@@ -1372,3 +1376,15 @@ partial unique index 保证每 workspace+definition 只有一个 live binding。
   `python scripts/production/run_p5_1b_registry_disposable_gate.py --run`
   （一次性隔离数据库 Gate，evidence 记录到
   `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`）
+
+**失败恢复**
+
+- 任何 tenant/actor、状态机、幂等、approval、audit、cleanup evidence 或
+  source seal 缺陷出现时，立即冻结 Registry mutation，保持三个 Phase 5
+  Feature Gate 为 false，P34.7/P5.0/P5.1 production 为
+  `blocked/not_proven`，P5.2+ frozen。
+- 不得对已 populated 的 `0010` 做 destructive downgrade；只允许
+  forward-fix，或恢复到新的 `omnibase_restore_*` 数据库进行核验。
+- 仅在新的 `omnibase_test_*` sentinel 数据库上重跑 migration 与 Gate；
+  Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
+  全部为 0 后才能发布 passed evidence。不得触碰业务数据库。

@@ -25,24 +25,18 @@ import secrets
 import shutil
 import subprocess
 import sys
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "docker-compose.destructive-tests.yml"
+ENV_FILE = REPO_ROOT / ".env.example"
 EVIDENCE_JSON = (
-    REPO_ROOT
-    / "docs"
-    / "evidence"
-    / "p5-1"
-    / "phase5-registry-persistence-disposable-gate.json"
+    REPO_ROOT / "docs" / "evidence" / "p5-1" / "phase5-registry-persistence-disposable-gate.json"
 )
 EVIDENCE_MD = (
-    REPO_ROOT
-    / "docs"
-    / "evidence"
-    / "p5-1"
-    / "phase5-registry-persistence-disposable-gate.md"
+    REPO_ROOT / "docs" / "evidence" / "p5-1" / "phase5-registry-persistence-disposable-gate.md"
 )
 TEMP_ROOT = (REPO_ROOT / ".tmp" / "p5-1b-registry-gate").resolve()
 INTEGRATION_TEST = "backend/tests/integration/test_p5_1b_agent_registry_foundation.py"
@@ -71,9 +65,7 @@ _SOURCE_MANIFEST_PATHS = (
 _SOURCE_MANIFEST_GLOBS = ("backend/src/**/*", "backend/tests/**/*")
 _SECRET_PATTERNS = (
     re.compile(r"(?i)postgresql(?:\+psycopg)?://[^\s:@/${}]+:[^\s@/${}]{12,}@"),
-    re.compile(
-        r"(?i)authorization\s*:\s*(?:bearer|capability)\s+[A-Za-z0-9._~+/=-]{16,}"
-    ),
+    re.compile(r"(?i)authorization\s*:\s*(?:bearer|capability)\s+[A-Za-z0-9._~+/=-]{16,}"),
 )
 
 
@@ -96,9 +88,7 @@ def _run(
     )
 
 
-def _run_to_file(
-    arguments: list[str], path: Path
-) -> subprocess.CompletedProcess[bytes]:
+def _run_to_file(arguments: list[str], path: Path) -> subprocess.CompletedProcess[bytes]:
     with path.open("wb") as output:
         return subprocess.run(
             arguments,
@@ -148,9 +138,7 @@ def _source_manifest() -> dict[str, object]:
 
 
 def _manifest_sha256(manifest: dict[str, object]) -> str:
-    canonical = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode(
-        "utf-8"
-    )
+    canonical = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
 
@@ -160,12 +148,12 @@ def _validate_static_contract() -> None:
             raise RuntimeError(f"P5.1B Gate source path missing: {relative}")
     if not COMPOSE_FILE.is_file():
         raise RuntimeError("destructive-test Compose file is missing")
+    if not ENV_FILE.is_file():
+        raise RuntimeError("explicit Compose env file is missing")
 
 
 def _write_source_manifest(path: Path, manifest: dict[str, object]) -> str:
-    path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return _manifest_sha256(manifest)
 
 
@@ -195,6 +183,8 @@ def _compose(
         [
             "docker",
             "compose",
+            "--env-file",
+            str(ENV_FILE),
             "-p",
             project,
             "-f",
@@ -204,6 +194,57 @@ def _compose(
         check=False,
         env=env,
     )
+
+
+def _project_resource_counts(project: str) -> dict[str, int]:
+    """Return Docker resources still owned by one disposable Compose project."""
+
+    counts: dict[str, int] = {}
+    for kind, arguments in (
+        (
+            "containers",
+            ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={project}"],
+        ),
+        (
+            "networks",
+            [
+                "docker",
+                "network",
+                "ls",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+            ],
+        ),
+        (
+            "volumes",
+            [
+                "docker",
+                "volume",
+                "ls",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+            ],
+        ),
+    ):
+        result = _run(arguments, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"failed to inspect disposable {kind}: {result.stdout[-1000:]}")
+        counts[kind] = sum(1 for line in result.stdout.splitlines() if line.strip())
+    return counts
+
+
+def _cleanup_project(project: str, *, env: dict[str, str]) -> dict[str, int]:
+    """Tear down the disposable project and prove no labeled resources remain."""
+
+    down = _compose(project, "down", "-v", "--remove-orphans", env=env)
+    counts = _project_resource_counts(project)
+    if down.returncode != 0:
+        raise RuntimeError("P5.1B Gate cleanup failed:\n" + down.stdout[-1000:])
+    if any(counts.values()):
+        raise RuntimeError(f"P5.1B Gate cleanup left resources: {counts}")
+    return counts
 
 
 def _pytest_command(*, container: bool = False) -> list[str]:
@@ -281,9 +322,7 @@ def _run_backend_steps(
             check=False,
         )
         if alembic.returncode != 0:
-            raise RuntimeError(
-                "alembic upgrade head failed:\n" + alembic.stdout[-2000:]
-            )
+            raise RuntimeError("alembic upgrade head failed:\n" + alembic.stdout[-2000:])
         pytest = _run(
             _container_backend_command(
                 project, database_url, "python", *_pytest_command(container=True)
@@ -291,9 +330,7 @@ def _run_backend_steps(
             check=False,
         )
         if pytest.returncode != 0:
-            raise RuntimeError(
-                "P5.1B integration suite failed:\n" + pytest.stdout[-4000:]
-            )
+            raise RuntimeError("P5.1B integration suite failed:\n" + pytest.stdout[-4000:])
         return
     alembic = _run([sys.executable, "-m", "alembic", "upgrade", "head"], check=False)
     if alembic.returncode != 0:
@@ -313,9 +350,7 @@ def _record_evidence(
     evidence["passed"] = passed
     evidence["manifest_sha256"] = manifest_sha256
     json_path = run_dir / "evidence.json"
-    json_path.write_text(
-        json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    json_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     md_lines = [
         "# P5.1B Agent Registry persistence disposable Gate",
         "",
@@ -327,6 +362,7 @@ def _record_evidence(
         f"- Root env accessed: {evidence['root_env_accessed']}",
         f"- Business database accessed: {evidence['business_database_accessed']}",
         f"- Business database migrated: {evidence['business_database_migrated']}",
+        f"- Cleanup: {json.dumps(evidence['cleanup'], sort_keys=True)}",
         "",
         "The machine-readable report is `phase5-registry-persistence-disposable-gate.json`.",
         "",
@@ -357,8 +393,16 @@ def _verify_recorded_evidence(report: dict[str, object]) -> None:
         raise RuntimeError("P5.1B recorded Gate did not pass")
     if report.get("root_env_accessed") is not False:
         raise RuntimeError("P5.1B evidence claims root .env access")
+    if report.get("business_database_accessed") is not False:
+        raise RuntimeError("P5.1B evidence claims business database access")
     if report.get("business_database_migrated") is not False:
         raise RuntimeError("P5.1B evidence claims a business database migration")
+    if report.get("database_sentinel_verified") is not True:
+        raise RuntimeError("P5.1B disposable database sentinel was not verified")
+    if report.get("physical_locator_exposed") is not False:
+        raise RuntimeError("P5.1B evidence claims physical locator exposure")
+    if report.get("cleanup") != {"containers": 0, "networks": 0, "volumes": 0}:
+        raise RuntimeError("P5.1B evidence does not prove complete cleanup")
     manifest = _source_manifest()
     recorded = report.get("manifest_sha256")
     if not isinstance(recorded, str) or recorded != _manifest_sha256(manifest):
@@ -398,16 +442,15 @@ def main() -> int:
     source_manifest = _source_manifest()
     if not source_manifest["repository_clean"]:
         raise RuntimeError(
-            "P5.1B Gate requires a clean checkout: "
-            + ", ".join(source_manifest["dirty_paths"])
+            "P5.1B Gate requires a clean checkout: " + ", ".join(source_manifest["dirty_paths"])
         )
-    manifest_sha256 = _write_source_manifest(
-        run_dir / "source-manifest.json", source_manifest
-    )
+    manifest_sha256 = _write_source_manifest(run_dir / "source-manifest.json", source_manifest)
 
     owner_password = secrets.token_hex(24)
     test_password = secrets.token_hex(24)
-    database_url = f"postgresql+psycopg://{role_name}:{test_password}@localhost:55432/{database_name}"
+    database_url = (
+        f"postgresql+psycopg://{role_name}:{test_password}@localhost:55432/{database_name}"
+    )
     env = dict(os.environ)
     env.update(
         {
@@ -436,6 +479,7 @@ def main() -> int:
         "integration_tests": [INTEGRATION_TEST],
     }
 
+    cleanup_verified = False
     try:
         up = _compose(
             project,
@@ -446,9 +490,7 @@ def main() -> int:
             env=env,
         )
         if up.returncode != 0:
-            raise RuntimeError(
-                "disposable PostgreSQL failed to start:\n" + up.stdout[-2000:]
-            )
+            raise RuntimeError("disposable PostgreSQL failed to start:\n" + up.stdout[-2000:])
         evidence["database_sentinel_verified"] = True
         _run_backend_steps(
             database_url,
@@ -456,6 +498,8 @@ def main() -> int:
             backend_executor=arguments.backend_executor,
             env=env,
         )
+        evidence["cleanup"] = _cleanup_project(project, env=env)
+        cleanup_verified = True
         evidence["finished_at"] = datetime.now(UTC).isoformat()
         _record_evidence(
             evidence,
@@ -467,24 +511,28 @@ def main() -> int:
         print("P5.1B disposable Gate passed")
         return 0
     except (RuntimeError, json.JSONDecodeError, OSError) as exc:
+        if not cleanup_verified:
+            with suppress(RuntimeError):
+                evidence["cleanup"] = _cleanup_project(project, env=env)
+                cleanup_verified = True
         evidence["finished_at"] = datetime.now(UTC).isoformat()
-        try:
+        with suppress(OSError):
             _record_evidence(
                 evidence,
                 passed=False,
                 manifest_sha256=manifest_sha256,
                 run_dir=run_dir,
             )
-        except OSError:
-            pass
         print(f"P5.1B disposable Gate failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        down = _compose(project, "down", "-v", "--remove-orphans", env=env)
-        if down.returncode != 0:
-            print(
-                "P5.1B Gate cleanup warning:\n" + down.stdout[-1000:], file=sys.stderr
-            )
+        if not cleanup_verified:
+            down = _compose(project, "down", "-v", "--remove-orphans", env=env)
+            if down.returncode != 0:
+                print(
+                    "P5.1B Gate cleanup warning:\n" + down.stdout[-1000:],
+                    file=sys.stderr,
+                )
 
 
 if __name__ == "__main__":

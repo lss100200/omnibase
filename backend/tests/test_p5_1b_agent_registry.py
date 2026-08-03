@@ -171,6 +171,7 @@ def test_register_definition_maps_dto_to_model(
     inserted_record = SimpleNamespace(id="r1")
     session.execute.return_value.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         None,
         SimpleNamespace(id=ACTOR_ID, is_active=True),
     ]
@@ -218,14 +219,62 @@ def test_register_definition_rejects_missing_tenant() -> None:
         )
 
 
+def test_register_definition_rejects_dto_tenant_drift_before_database_access() -> None:
+    session = _session()
+    definition = AgentDefinition.from_mapping(
+        {**_definition().to_dict(), "tenant_id": "99999999-9999-9999-9999-999999999999"}
+    )
+    with pytest.raises(RegistryStateError, match="registry_tenant_mismatch"):
+        RegistryPersistenceService(session).register_definition(
+            tenant_id=TENANT_ID,
+            actor_user_id=ACTOR_ID,
+            request_id="p51b-unit-test",
+            definition=definition,
+            idempotency_key="key-1",
+        )
+    session.execute.assert_not_called()
+
+
+def test_register_definition_rejects_dto_actor_drift_before_database_access() -> None:
+    session = _session()
+    definition = AgentDefinition.from_mapping(
+        {**_definition().to_dict(), "created_by": "99999999-9999-9999-9999-999999999999"}
+    )
+    with pytest.raises(RegistryStateError, match="registry_actor_mismatch"):
+        RegistryPersistenceService(session).register_definition(
+            tenant_id=TENANT_ID,
+            actor_user_id=ACTOR_ID,
+            request_id="p51b-unit-test",
+            definition=definition,
+            idempotency_key="key-1",
+        )
+    session.execute.assert_not_called()
+
+
+def test_register_definition_rejects_inactive_actor() -> None:
+    session = _session()
+    session.execute.return_value.scalar_one_or_none.side_effect = [
+        SimpleNamespace(id=TENANT_ID, is_active=True),
+        None,
+    ]
+    with pytest.raises(RegistryStateError, match="registry_actor_inactive_or_missing"):
+        RegistryPersistenceService(session).register_definition(
+            tenant_id=TENANT_ID,
+            actor_user_id=ACTOR_ID,
+            request_id="p51b-unit-test",
+            definition=_definition(),
+            idempotency_key="key-1",
+        )
+
+
 def test_register_definition_converts_integrity_error_to_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _session()
     session.execute.return_value.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
-        None,
         SimpleNamespace(id=ACTOR_ID, is_active=True),
+        None,
     ]
     monkeypatch.setattr(
         "omnibase.agent_registry.service.reserve_idempotency",
@@ -258,7 +307,11 @@ def test_register_definition_exact_replay_returns_existing(
     session = _session()
     existing = SimpleNamespace(id=DEFINITION_ID, tenant_id=TENANT_ID, risk_level="low")
     replay_result = MagicMock()
-    replay_result.scalar_one_or_none.return_value = existing
+    replay_result.scalar_one_or_none.side_effect = [
+        SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
+        existing,
+    ]
     session.execute.return_value = replay_result
     monkeypatch.setattr(
         "omnibase.agent_registry.service.reserve_idempotency",
@@ -292,6 +345,7 @@ def test_seal_version_requires_definition(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         None,
     ]
     session.execute.return_value = execute_result
@@ -314,6 +368,7 @@ def test_seal_version_maps_manifest_and_seals(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         definition_row,
         None,
         SimpleNamespace(id=ACTOR_ID, is_active=True),
@@ -356,6 +411,7 @@ def test_install_binding_rejects_stale_workspace_generation(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         workspace_row,
     ]
     session.execute.return_value = execute_result
@@ -389,6 +445,7 @@ def test_install_binding_rejects_version_digest_drift(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         workspace_row,
         definition_row,
         version_row,
@@ -425,6 +482,7 @@ def test_install_binding_requires_approval_for_high_risk(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         workspace_row,
         definition_row,
         version_row,
@@ -479,6 +537,7 @@ def test_install_binding_converts_integrity_error_to_conflict(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         workspace_row,
         definition_row,
         version_row,
@@ -516,6 +575,7 @@ def test_revoke_definition_missing_row_is_not_found(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         None,
     ]
     session.execute.return_value = execute_result
@@ -541,6 +601,7 @@ def test_transition_binding_requires_existing_binding(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.side_effect = [
         SimpleNamespace(id=TENANT_ID, is_active=True),
+        SimpleNamespace(id=ACTOR_ID, is_active=True),
         None,
     ]
     session.execute.return_value = execute_result

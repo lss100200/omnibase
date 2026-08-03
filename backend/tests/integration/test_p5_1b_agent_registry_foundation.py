@@ -755,6 +755,29 @@ def test_database_blocks_sealed_version_content_mutation(db_engine, run_owned_re
     _expect_trigger_rejection(exc_info, "sealed agent_version content is immutable")
 
 
+def test_database_blocks_sealed_version_identity_mutation(db_engine, run_owned_resources) -> None:
+    tenant_id, _, version = _seed_definition_version(
+        db_engine, run_owned_resources, "seal-identity-lock"
+    )
+    with (
+        pytest.raises(Exception) as exc_info,
+        db_engine.connect() as connection,
+        connection.begin(),
+    ):
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.agent_versions SET created_by = :other "
+                "WHERE id = :id AND tenant_id = :tenant"
+            ),
+            {
+                "other": str(uuid.uuid4()),
+                "id": version.agent_version_id,
+                "tenant": tenant_id,
+            },
+        )
+    _expect_trigger_rejection(exc_info, "sealed agent_version content is immutable")
+
+
 def test_database_blocks_revoked_definition_unrevoke(db_engine, run_owned_resources) -> None:
     tenant_id = _tenant_with_schema(db_engine, run_owned_resources, "rev-terminal")
     mapping = _definition_mapping(tenant_id)
@@ -849,6 +872,86 @@ def test_install_binding_rejects_version_digest_drift(db_engine, run_owned_resou
         session.rollback()
 
 
+def test_registry_mutation_revalidates_active_tenant_user(db_engine, run_owned_resources) -> None:
+    tenant_id = _tenant_with_schema(db_engine, run_owned_resources, "inactive-actor")
+    schema_name = None
+    with db_engine.begin() as connection:
+        schema_name = _tenant_schema(connection, tenant_id)
+        connection.execute(
+            text(
+                f'UPDATE "{schema_name}".users '  # noqa: S608
+                "SET is_active = FALSE WHERE id = :actor"
+            ),
+            {"actor": ACTOR_ID},
+        )
+    with _session(db_engine, tenant_id) as session:
+        with pytest.raises(RegistryStateError, match="registry_actor_inactive_or_missing"):
+            _register(
+                session,
+                tenant_id=tenant_id,
+                mapping=_definition_mapping(tenant_id),
+                key=uuid.uuid4().hex,
+            )
+        session.rollback()
+
+
+def test_install_binding_requires_active_definition_and_sealed_version(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, version = _seed_definition_version(
+        db_engine, run_owned_resources, "disabled-definition"
+    )
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.agent_definitions SET definition_state = 'disabled' "
+                "WHERE id = :id AND tenant_id = :tenant"
+            ),
+            {"id": version.agent_definition_id, "tenant": tenant_id},
+        )
+    disabled_binding = _binding_dto(
+        _binding_mapping(tenant_id, workspace_id, version.agent_definition_id, version)
+    )
+    with _session(db_engine, tenant_id) as session:
+        with pytest.raises(RegistryStateError, match="registry_definition_not_active"):
+            _install(
+                session,
+                tenant_id=tenant_id,
+                binding=disabled_binding,
+                key=uuid.uuid4().hex,
+            )
+        session.rollback()
+
+    tenant_id_2, workspace_id_2, version_2 = _seed_definition_version(
+        db_engine, run_owned_resources, "deprecated-version"
+    )
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.agent_versions SET version_state = 'deprecated' "
+                "WHERE id = :id AND tenant_id = :tenant"
+            ),
+            {"id": version_2.agent_version_id, "tenant": tenant_id_2},
+        )
+    deprecated_binding = _binding_dto(
+        _binding_mapping(
+            tenant_id_2,
+            workspace_id_2,
+            version_2.agent_definition_id,
+            version_2,
+        )
+    )
+    with _session(db_engine, tenant_id_2) as session:
+        with pytest.raises(RegistryStateError, match="registry_version_not_sealed"):
+            _install(
+                session,
+                tenant_id=tenant_id_2,
+                binding=deprecated_binding,
+                key=uuid.uuid4().hex,
+            )
+        session.rollback()
+
+
 def test_install_binding_rejects_revoked_definition_and_version(
     db_engine, run_owned_resources
 ) -> None:
@@ -881,7 +984,7 @@ def test_install_binding_rejects_revoked_definition_and_version(
     tenant_id_2, workspace_id_2, version_2 = _seed_definition_version(
         db_engine, run_owned_resources, "revoke-version"
     )
-    with _session(db_engine, tenant_id) as session:
+    with _session(db_engine, tenant_id_2) as session:
         RegistryPersistenceService(session).revoke_version(
             tenant_id=tenant_id_2,
             actor_user_id=ACTOR_ID,
@@ -898,7 +1001,7 @@ def test_install_binding_rejects_revoked_definition_and_version(
             version_2,
         )
     )
-    with _session(db_engine, tenant_id) as session:
+    with _session(db_engine, tenant_id_2) as session:
         with pytest.raises(RegistryStateError):
             _install(session, tenant_id=tenant_id_2, binding=binding_2, key=uuid.uuid4().hex)
         session.rollback()
@@ -1074,14 +1177,42 @@ def test_supersede_binding_marks_old_binding_superseded(db_engine, run_owned_res
                 version,
             )
         )
-        new = RegistryPersistenceService(session).supersede_binding(
+        service = RegistryPersistenceService(session)
+        replay_key = uuid.uuid4().hex
+        new = service.supersede_binding(
             tenant_id=tenant_id,
             actor_user_id=ACTOR_ID,
             request_id=str(uuid.uuid4()),
             old_binding_id=old.id,
             new_binding=second,
-            idempotency_key=uuid.uuid4().hex,
+            idempotency_key=replay_key,
         )
+        replayed = service.supersede_binding(
+            tenant_id=tenant_id,
+            actor_user_id=ACTOR_ID,
+            request_id=str(uuid.uuid4()),
+            old_binding_id=old.id,
+            new_binding=second,
+            idempotency_key=replay_key,
+        )
+        assert replayed.id == new.id
+        drifted_second = _binding_dto(
+            _binding_mapping(
+                tenant_id,
+                workspace_id,
+                version.agent_definition_id,
+                version,
+            )
+        )
+        with pytest.raises(RegistryConflictError, match="registry_replay_input_mismatch"):
+            service.supersede_binding(
+                tenant_id=tenant_id,
+                actor_user_id=ACTOR_ID,
+                request_id=str(uuid.uuid4()),
+                old_binding_id=old.id,
+                new_binding=drifted_second,
+                idempotency_key=replay_key,
+            )
         session.commit()
     assert new.binding_state == "installed"
     assert new.id != old.id
@@ -1095,6 +1226,34 @@ def test_supersede_binding_marks_old_binding_superseded(db_engine, run_owned_res
         ).one()
     assert old_row.binding_state == "superseded"
     assert str(old_row.superseded_by) == new.id
+
+
+def test_database_blocks_binding_payload_rewire(db_engine, run_owned_resources) -> None:
+    tenant_id, workspace_id, version = _seed_definition_version(
+        db_engine, run_owned_resources, "binding-rewire"
+    )
+    binding = _binding_dto(
+        _binding_mapping(tenant_id, workspace_id, version.agent_definition_id, version)
+    )
+    with _session(db_engine, tenant_id) as session:
+        model = _install(session, tenant_id=tenant_id, binding=binding, key=uuid.uuid4().hex)
+        session.commit()
+    with (
+        pytest.raises(Exception) as exc_info,
+        db_engine.connect() as connection,
+        connection.begin(),
+    ):
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.workspace_agent_bindings "
+                "SET resource_scopes = '[\"workspace_private_write\"]'::jsonb "
+                "WHERE id = :id AND tenant_id = :tenant"
+            ),
+            {"id": model.id, "tenant": tenant_id},
+        )
+    _expect_trigger_rejection(
+        exc_info, "agent_binding identity and installation payload are immutable"
+    )
 
 
 def test_failed_transaction_rolls_back_without_partial_state(

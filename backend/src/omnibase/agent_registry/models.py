@@ -295,6 +295,26 @@ class WorkspaceAgentBindingModel(Base):
             name="agent_bindings_version_tenant_fk",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["approval_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.approval_requests.id",
+                f"{GLOBAL_SCHEMA}.approval_requests.tenant_id",
+            ],
+            name="agent_bindings_approval_tenant_fk",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.workspace_agent_bindings.id",
+                f"{GLOBAL_SCHEMA}.workspace_agent_bindings.tenant_id",
+            ],
+            name="agent_bindings_superseded_tenant_fk",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         Index(
             "agent_bindings_tenant_workspace_state_idx",
             "tenant_id",

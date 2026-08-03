@@ -65,7 +65,8 @@ AgentDefinition/AgentVersion/WorkspaceAgentBinding 是**跨租户治理实体**
 
 ## 6. 如何实现 immutable sealed version
 
-- `manifest_payload`/`manifest_digest` 等安全列在 `version_state =
+- `id`/`tenant_id`/`created_by`/`created_at` 身份列与
+  `manifest_payload`/`manifest_digest` 等安全列在 `version_state =
   'sealed'|'deprecated'|'revoked'` 后由数据库 trigger
   `agent_versions_seal_guard`（BEFORE UPDATE）拒绝任何安全列变化；
 - 状态机由同一 trigger 约束：`draft → sealed`（一次性）、
@@ -83,13 +84,15 @@ AgentDefinition/AgentVersion/WorkspaceAgentBinding 是**跨租户治理实体**
 |---|---|---|
 | agent_definitions | draft/active → disabled → revoked；revoked 终态 | CHECK 闭集 + `agent_definitions_state_guard` trigger（revoked 不可恢复；disabled 只能→revoked） |
 | agent_versions | draft → sealed → deprecated → revoked | CHECK 闭集 + seal guard trigger |
-| workspace_agent_bindings | pending_approval/installed → disabled → superseded/revoked；superseded/revoked 终态；disabled_at/superseded_by 与状态一致 | CHECK 闭集 + `agent_bindings_state_guard` trigger（含 disabled_at/superseded_by 一致性） |
+| workspace_agent_bindings | pending_approval/installed → disabled → superseded/revoked；superseded/revoked 终态；disabled_at/superseded_by 与状态一致 | CHECK 闭集 + `agent_bindings_integrity_guard` trigger（含安装 payload 不可重连及 disabled_at/superseded_by 一致性） |
 
 ## 8. 哪些跨行约束必须由事务服务和锁保证
 
 - Approval 消费（`approval_requests.state → consumed`）必须与 binding
   安装同事务原子完成；approval 有效性（state=approved、未过期、未消费、
-  risk/action 绑定）在锁内重验；
+  requester/action/workspace/risk 绑定）在锁内重验；数据库另以
+  `(approval_id, tenant_id)` composite FK 和 trigger 阻断跨租户、已消费或
+  身份漂移的 approval；
 - 幂等记录（`idempotency_records`）的创建/比对与状态变更同事务；
 - 审计（`audit_events`）写入与状态变更同事务；
 - live binding 单赢家：部分唯一索引
@@ -106,7 +109,8 @@ AgentDefinition/AgentVersion/WorkspaceAgentBinding 是**跨租户治理实体**
 ```text
 Tenant -> tenant User(actor) -> Workspace aggregate(install/supersede)
   -> AgentDefinition -> AgentVersion -> live Binding
-  -> ApprovalRequest -> IdempotencyRecord -> 目标行 INSERT/UPDATE -> AuditEvent
+  -> IdempotencyRecord -> ApprovalRequest(first execution only)
+  -> 目标行 INSERT/UPDATE -> AuditEvent
 ```
 
 - 注册定义：先按 `(tenant_id, stable_logical_key)` `SELECT ... FOR UPDATE`
@@ -116,6 +120,11 @@ Tenant -> tenant User(actor) -> Workspace aggregate(install/supersede)
 - 安装 binding：先锁 Workspace aggregate + 重读 generation，再按
   `(tenant_id, workspace_id, agent_definition_id)` 查 live binding；
   无则 INSERT（部分唯一索引兜底单赢家）；有则 exact replay 或 conflict。
+  幂等记录在 approval 之前解析，使已经消费过 approval 的 exact replay
+  能直接返回原 binding，而不会被误判为重复消费；
+- supersede 使用独立 `agent_binding.supersede` 幂等记录封装“旧 binding
+  终态化 + 新 binding 安装”，同 key 同 payload 返回原新 binding，同 key
+  语义漂移稳定 conflict；`superseded_by` 由同租户、deferred self-FK 兜底。
 
 ## 10. 如何让 exact replay 成功，但 semantic drift replay 拒绝
 
