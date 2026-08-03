@@ -43,6 +43,8 @@ def test_source_manifest_is_stable_and_never_contains_root_env(monkeypatch) -> N
         assert check is False
         if arguments[:2] == ["git", "status"]:
             output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/service.py\n"
         else:
             raise AssertionError(arguments)
         return CompletedProcess(arguments, 0, output, "")
@@ -74,6 +76,8 @@ def test_dirty_checkout_is_recorded_and_rejected_by_run_flow(monkeypatch) -> Non
         assert check is False
         if arguments[:2] == ["git", "status"]:
             output = " M backend/src/omnibase/agent_registry/service.py\n"
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/service.py\n"
         else:
             raise AssertionError(arguments)
         return CompletedProcess(arguments, 0, output, "")
@@ -126,6 +130,8 @@ def test_verify_evidence_rejects_drifted_source(monkeypatch, tmp_path: Path) -> 
         assert check is False
         if arguments[:2] == ["git", "status"]:
             output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/service.py\n"
         else:
             raise AssertionError(arguments)
         return CompletedProcess(arguments, 0, output, "")
@@ -155,6 +161,8 @@ def test_verify_evidence_rejects_unsafe_claims(monkeypatch, tmp_path: Path) -> N
         assert check is False
         if arguments[:2] == ["git", "status"]:
             output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/service.py\n"
         else:
             raise AssertionError(arguments)
         return CompletedProcess(arguments, 0, output, "")

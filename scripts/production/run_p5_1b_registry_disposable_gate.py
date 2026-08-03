@@ -120,6 +120,18 @@ def _git_clean() -> tuple[bool, tuple[str, ...]]:
     return not dirty, dirty
 
 
+def _tracked_glob_paths() -> tuple[str, ...]:
+    """Resolve manifest globs through Git so ignored caches never enter a seal."""
+
+    result = _run(
+        ["git", "ls-files", "--", *(f":(glob){pattern}" for pattern in _SOURCE_MANIFEST_GLOBS)],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("failed to enumerate tracked P5.1B source files")
+    return tuple(sorted({line.strip() for line in result.stdout.splitlines() if line.strip()}))
+
+
 def _source_manifest() -> dict[str, object]:
     clean, dirty = _git_clean()
     files: dict[str, object] = {}
@@ -128,13 +140,12 @@ def _source_manifest() -> dict[str, object]:
         if not path.is_file():
             raise RuntimeError(f"source manifest path missing: {relative}")
         files[relative] = _sha256_file(path)
-    for pattern in _SOURCE_MANIFEST_GLOBS:
-        for path in sorted(REPO_ROOT.glob(pattern)):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(REPO_ROOT).as_posix()
-            if relative not in files:
-                files[relative] = _sha256_file(path)
+    for relative in _tracked_glob_paths():
+        path = REPO_ROOT / relative
+        if not path.is_file():
+            raise RuntimeError(f"tracked source manifest path missing: {relative}")
+        if relative not in files:
+            files[relative] = _sha256_file(path)
     return {
         "schema_version": 1,
         "repository_clean": clean,
