@@ -130,4 +130,5 @@ drift、跨租户、live membership、并发单赢家、approval 单次消费、
 audit append-only、rollback 原子性、cleanup proof）、记录 fail-closed
 evidence 并证明零残留资源。canonical evidence 只允许以同目录临时文件 +
 `os.replace` 原子更新，拒绝 source/destination symlink，旧版本可由 Git
-历史恢复；P5.1B Gate 使用相同预检与发布规则。
+历史恢复；复验时只允许这两份 canonical evidence 是 dirty，出现任何其他
+dirty path 仍判 source drift。P5.1B Gate 使用相同预检与发布规则。

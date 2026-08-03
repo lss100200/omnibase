@@ -419,10 +419,10 @@ Browser principal（JWT）是必要非充分条件，role 以当前成员资格�
 
 ## P5.1C 完成定义
 
-1. 单元/API 测试（21 项）通过：10 端点 fail-closed 503、rejecting
+1. 单元/API 测试（22 项）通过：10 端点 fail-closed 503、rejecting
    authorizer、DTO 严格性、server-derived identity、OpenAPI 精确路径
    集合、无物理 locator、无 internal 请求字段；
-2. 一次性 sentinel PostgreSQL 集成测试覆盖 migration head
+2. 一次性 sentinel PostgreSQL 集成测试（24 项）覆盖 migration head
    0010、API-backed install/upgrade/disable/rollback、exact replay、
    digest drift、stale generation、cross-tenant、live membership、并发
    单赢家、upgrade/rollback exact replay、operation-bound Approval、
@@ -431,8 +431,8 @@ Browser principal（JWT）是必要非充分条件，role 以当前成员资格�
 3. `make test-p5-1c-registry-api` 与
    `scripts/production/run_p5_1c_browser_registry_disposable_gate.py --run`
    在一次性隔离数据库上通过并记录 sealed evidence；
-4. Python/TypeScript SDK 必须覆盖 path escape、extra field、closed state、
-   non-integer/NaN 负例；
+4. Python SDK 9 项、TypeScript SDK 全套 15 项通过，并覆盖 path escape、
+   extra field、closed state、non-integer/NaN 负例；
 5. 未实现 Definition/Version 创建、migration 0011、Runtime/编排；
    三个 Feature Gate 保持 false；P34.7/P5.0/P5.1 production 保持
    `blocked/not_proven`；P5.2+ frozen。

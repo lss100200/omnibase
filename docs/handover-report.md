@@ -1898,13 +1898,14 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    `agent.install`/`agent.upgrade`/`agent.rollback`，upgrade/rollback 还绑定
    `old_binding_id`。Approval 同时校验 action + operation-bound request hash，
    不可跨操作重放；同 key 同 body精确 replay、同 key 不同 body 409。
-3. **验证**：单元/API 21 项（10 端点 fail-closed 503、DTO 严格性、
+3. **验证**：单元/API 22 项（10 端点 fail-closed 503、DTO 严格性、
    OpenAPI 精确路径、无物理 locator）；一次性 `omnibase_test_p51c_*`
-   sentinel PostgreSQL integration 20 项（migration head 0010、
+   sentinel PostgreSQL integration 24 项（migration head 0010、
    API-backed install/upgrade/disable/rollback、exact replay、digest
-   drift、cross-tenant、live membership、并发单赢家、approval 单次消费、
-   审计 append-only、rollback 原子性、cleanup proof）；Python SDK 24 项、
-   TypeScript SDK 13 项；P5.1A 合同测试 128 项（含 sealed digest 重算与
+   drift、cross-tenant、live membership、并发单赢家、upgrade/rollback
+   exact replay、operation-bound Approval、approval 单次消费、审计
+   append-only、rollback 原子性、cleanup proof）；Python SDK 本模块 9 项、
+   TypeScript SDK 全套 15 项；P5.1A 合同测试 128 项（含 sealed digest 重算与
    Windows CRLF 修复）。
 4. **P5.1A 合同同步**：contract 文档新增“P5.1B/P5.1C 已交付边界”章节；
    威胁模型新增 P5.1C 补充；`security-invariants.md` 新增 INV-042；
@@ -1924,6 +1925,14 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    原子 replace 且拒绝 symlink。Python/TypeScript SDK 拒绝 path normalization
    逃逸；TypeScript response parser 不再宽松 String/Number 转换；非法逻辑
    UUID 返回稳定 422 `invalid_logical_identifier`。
+7. **独立复验结果**：修复提交后的 Backend 非集成全量为
+   `1380 passed / 16 skipped / 14 deselected`（全仓挂载容器）；Backend
+   Mypy `159 source files / 0 issues`；P5.1 合同/Registry/Gate 聚焦
+   `205 passed`；Gate wrapper `38 passed`；Ruff、compileall、maintenance
+   map（32 invariants / 24 modules）与 benchmark validator 均通过。
+   P5.1B 与 P5.1C 两个 fresh disposable Gate 均 `passed=true`、
+   `database_sentinel_verified=true`、业务数据库访问/迁移 false、
+   physical locator false、cleanup `0/0/0`，且发布后 source seal 立即通过。
 
 ## 八、常用命令
 
