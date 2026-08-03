@@ -148,8 +148,23 @@ def _tracked_glob_paths() -> tuple[str, ...]:
     )
 
 
-def _source_manifest() -> dict[str, object]:
+def _dirty_path(status_line: str) -> str:
+    """Extract one Git porcelain path for exact evidence allowlisting."""
+    path = status_line[3:] if len(status_line) >= 4 else status_line
+    if " -> " in path:
+        path = path.rsplit(" -> ", 1)[1]
+    return path.strip().strip('"').replace("\\", "/")
+
+
+def _source_manifest(
+    *, allowed_dirty_paths: frozenset[str] = frozenset()
+) -> dict[str, object]:
     clean, dirty = _git_clean()
+    if allowed_dirty_paths:
+        dirty = tuple(
+            line for line in dirty if _dirty_path(line) not in allowed_dirty_paths
+        )
+        clean = not dirty
     files: dict[str, object] = {}
     for relative in _SOURCE_MANIFEST_PATHS:
         path = REPO_ROOT / relative
@@ -526,7 +541,14 @@ def _verify_recorded_evidence(report: dict[str, object]) -> None:
         raise RuntimeError("P5.1C evidence claims physical locator exposure")
     if report.get("cleanup") != {"containers": 0, "networks": 0, "volumes": 0}:
         raise RuntimeError("P5.1C evidence does not prove complete cleanup")
-    manifest = _source_manifest()
+    manifest = _source_manifest(
+        allowed_dirty_paths=frozenset(
+            {
+                EVIDENCE_JSON.relative_to(REPO_ROOT).as_posix(),
+                EVIDENCE_MD.relative_to(REPO_ROOT).as_posix(),
+            }
+        )
+    )
     recorded = report.get("manifest_sha256")
     if not isinstance(recorded, str) or recorded != _manifest_sha256(manifest):
         raise RuntimeError("P5.1C source manifest drifted since the recorded Gate")

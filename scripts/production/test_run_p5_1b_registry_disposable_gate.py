@@ -197,7 +197,7 @@ def test_verify_evidence_rejects_incomplete_safety_proof(
     monkeypatch.setattr(
         gate,
         "_source_manifest",
-        lambda: {
+        lambda **_: {
             "schema_version": 1,
             "repository_clean": True,
             "dirty_paths": (),
@@ -225,6 +225,41 @@ def test_cleanup_project_requires_zero_labeled_resources(monkeypatch) -> None:
     )
     with pytest.raises(RuntimeError, match="left resources"):
         gate._cleanup_project("omnibase-p51b-test", env={})
+
+
+def test_evidence_verification_allows_only_its_two_canonical_dirty_paths(
+    monkeypatch,
+) -> None:
+    json_path = gate.EVIDENCE_JSON.relative_to(gate.REPO_ROOT).as_posix()
+    md_path = gate.EVIDENCE_MD.relative_to(gate.REPO_ROOT).as_posix()
+    monkeypatch.setattr(
+        gate,
+        "_git_clean",
+        lambda: (False, (f" M {json_path}", f" M {md_path}")),
+    )
+    allowed = gate._source_manifest(allowed_dirty_paths=frozenset({json_path, md_path}))
+    assert allowed["repository_clean"] is True
+    assert allowed["dirty_paths"] == ()
+
+    monkeypatch.setattr(
+        gate,
+        "_git_clean",
+        lambda: (
+            False,
+            (
+                f" M {json_path}",
+                f" M {md_path}",
+                " M backend/src/omnibase/agent_registry/service.py",
+            ),
+        ),
+    )
+    unexpected = gate._source_manifest(
+        allowed_dirty_paths=frozenset({json_path, md_path})
+    )
+    assert unexpected["repository_clean"] is False
+    assert unexpected["dirty_paths"] == (
+        " M backend/src/omnibase/agent_registry/service.py",
+    )
 
 
 def test_host_preflight_uses_guarded_environment_before_any_migration(
