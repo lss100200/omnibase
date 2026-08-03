@@ -1,0 +1,1038 @@
+"""Internal P5.1B Agent Registry persistence service.
+
+This service is the only mutation path for AgentDefinition, AgentVersion and
+WorkspaceAgentBinding rows.  It is **not** a public API: there is no FastAPI
+router, no OpenAPI endpoint and no SDK surface.  Every mutation runs in the
+caller-owned transaction together with idempotency resolution, approval
+consumption and append-only audit.
+
+Lock order (compatible with the P34.4 Workspace aggregate rules):
+
+    Tenant -> tenant User(actor) -> Workspace aggregate
+      -> AgentDefinition -> AgentVersion -> live Binding
+      -> ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent
+
+Callers must supply a verified internal principal context, never a bare
+tenant id; the service re-loads the live tenant, workspace and registry rows
+inside the transaction and never trusts pre-transaction snapshots.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Protocol, cast
+
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from omnibase.agent_registry.models import (
+    AgentDefinitionModel,
+    AgentVersionModel,
+    WorkspaceAgentBindingModel,
+)
+from omnibase.control_plane.models import ApprovalRequest, IdempotencyRecord
+from omnibase.control_plane.service import (
+    IdempotencyConflict,
+    append_audit_event,
+    complete_idempotency,
+    register_resource,
+    reserve_idempotency,
+)
+from omnibase.db.models import Tenant
+from omnibase.production.phase5_registry_contract import (
+    AgentDefinition,
+    AgentVersionManifest,
+    WorkspaceAgentBinding,
+)
+from omnibase.workspaces.models import Workspace as WorkspaceModel
+
+_IDEMPOTENCY_TTL = timedelta(hours=24)
+_RISK_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+_RISK_TO_R_LEVEL = {"low": "R1", "medium": "R2", "high": "R3", "critical": "R4"}
+_LIVE_BINDING_STATES = ("pending_approval", "installed")
+
+_RegistryRow = AgentDefinitionModel | AgentVersionModel | WorkspaceAgentBindingModel
+
+
+class _RowCountResult(Protocol):
+    """Narrow result shape guaranteed by SQLAlchemy UPDATE execution."""
+
+    rowcount: int
+
+
+def _dml_rowcount(result: object) -> int:
+    """Read the CursorResult row count after a SQLAlchemy UPDATE statement."""
+
+    return cast("_RowCountResult", result).rowcount
+
+
+class RegistryPersistenceError(ValueError):
+    """Stable domain error; never carries SQL, locators or secrets."""
+
+
+class RegistryNotFoundError(RegistryPersistenceError):
+    """A referenced logical entity does not exist."""
+
+
+class RegistryConflictError(RegistryPersistenceError):
+    """Exact replay succeeded or a deterministic conflict occurred."""
+
+
+class RegistryStateError(RegistryPersistenceError):
+    """A state transition or binding invariant is not allowed."""
+
+
+def _canonical_request_hash(payload: dict[str, object]) -> str:
+    canonical = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _reserve_registry_idempotency(
+    session: Session,
+    *,
+    tenant_id: str,
+    actor_scope: str,
+    operation_name: str,
+    key: str,
+    request_hash: str,
+    expires_at: datetime,
+) -> tuple[IdempotencyRecord, bool]:
+    """Reserve registry idempotency, translating replay input drift to a registry conflict."""
+    try:
+        return reserve_idempotency(
+            session,
+            tenant_id=tenant_id,
+            actor_scope=actor_scope,
+            operation_name=operation_name,
+            key=key,
+            request_hash=request_hash,
+            expires_at=expires_at,
+        )
+    except IdempotencyConflict as exc:
+        raise RegistryConflictError("registry_replay_input_mismatch") from exc
+
+
+def _replay_target(
+    session: Session,
+    *,
+    tenant_id: str,
+    response_ref: dict[str, object] | None,
+    kind: str,
+) -> _RegistryRow | None:
+    if not response_ref:
+        return None
+    entity_id = response_ref.get(f"{kind}_id")
+    if not isinstance(entity_id, str):
+        return None
+    if kind == "agent_definition":
+        model: type[_RegistryRow] = AgentDefinitionModel
+    elif kind == "agent_version":
+        model = AgentVersionModel
+    else:
+        model = WorkspaceAgentBindingModel
+    row = session.execute(
+        select(model).where(model.tenant_id == tenant_id, model.id == entity_id)
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    return cast("_RegistryRow", row)
+
+
+def _lock_tenant(session: Session, *, tenant_id: str) -> Tenant:
+    tenant = session.execute(
+        select(Tenant).where(Tenant.id == tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if tenant is None:
+        raise RegistryNotFoundError("registry_tenant_not_found")
+    if not getattr(tenant, "is_active", True):
+        raise RegistryStateError("registry_tenant_inactive")
+    return tenant
+
+
+def _validate_registry_approval(
+    session: Session,
+    *,
+    tenant_id: str,
+    approval_id: str,
+    consumer_actor_id: str,
+    action: str,
+    workspace_id: str,
+    request_hash: str,
+) -> None:
+    """Validate an approved approval without mutating it (binding not yet inserted)."""
+    approval = session.execute(
+        select(ApprovalRequest)
+        .where(
+            ApprovalRequest.id == approval_id,
+            ApprovalRequest.tenant_id == tenant_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if approval is None:
+        raise RegistryStateError("registry_approval_not_found")
+    if approval.state != "approved" or approval.consumed_at is not None:
+        raise RegistryStateError("registry_approval_not_consumable")
+    if approval.expires_at is not None and approval.expires_at <= datetime.now(UTC):
+        raise RegistryStateError("registry_approval_expired")
+    if approval.requester_id != consumer_actor_id:
+        raise RegistryStateError("registry_approval_requester_mismatch")
+    if approval.action != action:
+        raise RegistryStateError("registry_approval_action_mismatch")
+    if approval.workspace_id != workspace_id:
+        raise RegistryStateError("registry_approval_workspace_mismatch")
+    if approval.request_hash != request_hash:
+        raise RegistryStateError("registry_approval_request_hash_mismatch")
+
+
+def _mark_registry_approval_consumed(
+    session: Session,
+    *,
+    tenant_id: str,
+    approval_id: str,
+    version: int,
+) -> None:
+    """Consume an approved approval exactly once, after the binding row exists."""
+    result = session.execute(
+        update(ApprovalRequest)
+        .where(
+            ApprovalRequest.id == approval_id,
+            ApprovalRequest.tenant_id == tenant_id,
+            ApprovalRequest.version == version,
+            ApprovalRequest.state == "approved",
+            ApprovalRequest.consumed_at.is_(None),
+        )
+        .values(
+            state="consumed",
+            consumed_at=datetime.now(UTC),
+            version=version + 1,
+        )
+    )
+    if _dml_rowcount(result) != 1:
+        raise RegistryStateError("registry_approval_consumption_conflict")
+
+
+class RegistryPersistenceService:
+    """Tenant-safe internal registry persistence (single caller-owned session)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    # ------------------------------------------------------------------
+    # AgentDefinition
+    # ------------------------------------------------------------------
+
+    def register_definition(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        definition: AgentDefinition,
+        idempotency_key: str,
+    ) -> AgentDefinitionModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        request_hash = _canonical_request_hash(definition.to_dict())
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_definition.register",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="agent_definition",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            definition_row = cast(AgentDefinitionModel, existing)
+            append_audit_event(
+                self._session,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                actor_type="user",
+                actor_id=actor_user_id,
+                action="registry.replay_resolved",
+                decision="allowed",
+                risk_level=_RISK_TO_R_LEVEL[definition_row.risk_level],
+                resource_id=definition_row.id,
+                input_hash=request_hash,
+                details={"operation_kind": "agent_definition.register"},
+            )
+            return definition_row
+        existing = self._session.execute(
+            select(AgentDefinitionModel)
+            .where(
+                AgentDefinitionModel.tenant_id == tenant_id,
+                AgentDefinitionModel.stable_logical_key == definition.stable_logical_key,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise RegistryConflictError("registry_definition_natural_key_conflict")
+        model = AgentDefinitionModel(
+            id=definition.agent_definition_id,
+            tenant_id=definition.tenant_id,
+            stable_logical_key=definition.stable_logical_key,
+            display_name=definition.display_name,
+            description=definition.description,
+            risk_level=definition.risk_level.value,
+            installation_scopes=list(definition.allowed_installation_scopes),
+            definition_state=definition.definition_state.value,
+            created_by=definition.created_by,
+            metadata_version=definition.metadata_version,
+        )
+        try:
+            self._session.add(model)
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryConflictError("registry_definition_conflict") from exc
+        register_resource(
+            self._session,
+            tenant_id=tenant_id,
+            resource_id=model.id,
+            kind="agent_definition",
+            owner_type="user",
+            owner_id=actor_user_id,
+            display_name=model.display_name,
+            policy_class="tenant_managed",
+            created_by_actor_id=actor_user_id,
+        )
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"agent_definition_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.definition_registered",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[model.risk_level],
+            resource_id=model.id,
+            input_hash=request_hash,
+        )
+        return model
+
+    # ------------------------------------------------------------------
+    # AgentVersion
+    # ------------------------------------------------------------------
+
+    def seal_version(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        version: AgentVersionManifest,
+        idempotency_key: str,
+    ) -> AgentVersionModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        definition = self._session.execute(
+            select(AgentDefinitionModel)
+            .where(
+                AgentDefinitionModel.id == version.agent_definition_id,
+                AgentDefinitionModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if definition is None:
+            raise RegistryNotFoundError("registry_definition_not_found")
+        if definition.definition_state == "revoked":
+            raise RegistryStateError("registry_definition_revoked")
+        request_hash = _canonical_request_hash(version.to_dict())
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_version.seal",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="agent_version",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            version_row = cast(AgentVersionModel, existing)
+            append_audit_event(
+                self._session,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                actor_type="user",
+                actor_id=actor_user_id,
+                action="registry.replay_resolved",
+                decision="allowed",
+                risk_level=_RISK_TO_R_LEVEL[version_row.risk_level],
+                resource_id=version_row.id,
+                input_hash=request_hash,
+                details={"operation_kind": "agent_version.seal"},
+            )
+            return version_row
+        existing = self._session.execute(
+            select(AgentVersionModel)
+            .where(
+                AgentVersionModel.tenant_id == tenant_id,
+                AgentVersionModel.definition_id == version.agent_definition_id,
+                AgentVersionModel.version == version.version,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise RegistryConflictError("registry_version_natural_key_conflict")
+        model = AgentVersionModel(
+            id=version.agent_version_id,
+            tenant_id=version.tenant_id,
+            definition_id=version.agent_definition_id,
+            version=version.version,
+            version_state="sealed",
+            manifest_payload=version.to_dict(),
+            manifest_digest=version.manifest_digest,
+            model_policy_id=version.model_policy_id,
+            instructions_digest=version.instructions_digest,
+            max_context_tokens=version.max_context_tokens,
+            allowed_tool_ids=list(version.allowed_tool_ids),
+            input_schema=version.input_schema,
+            output_schema=version.output_schema,
+            memory_policy_id=version.memory_policy_id,
+            max_concurrency=version.max_concurrency,
+            default_budget=version.default_budget.to_dict(),
+            risk_level=version.risk_level.value,
+            created_by=version.created_by,
+        )
+        try:
+            self._session.add(model)
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryConflictError("registry_version_conflict") from exc
+        register_resource(
+            self._session,
+            tenant_id=tenant_id,
+            resource_id=model.id,
+            kind="agent_version",
+            owner_type="user",
+            owner_id=actor_user_id,
+            display_name=model.version,
+            policy_class="tenant_managed",
+            created_by_actor_id=actor_user_id,
+        )
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"agent_version_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.version_sealed",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[model.risk_level],
+            resource_id=model.id,
+            input_hash=request_hash,
+        )
+        return model
+
+    # ------------------------------------------------------------------
+    # WorkspaceAgentBinding
+    # ------------------------------------------------------------------
+
+    def install_binding(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        binding: WorkspaceAgentBinding,
+        idempotency_key: str,
+    ) -> WorkspaceAgentBindingModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        _, _, version_row = self._load_install_references(tenant_id=tenant_id, binding=binding)
+        live = self._session.execute(
+            select(WorkspaceAgentBindingModel)
+            .where(
+                WorkspaceAgentBindingModel.tenant_id == tenant_id,
+                WorkspaceAgentBindingModel.workspace_id == binding.workspace_id,
+                WorkspaceAgentBindingModel.agent_definition_id == binding.agent_definition_id,
+                WorkspaceAgentBindingModel.binding_state.in_(_LIVE_BINDING_STATES),
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        request_hash = _canonical_request_hash(binding.to_dict())
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_binding.install",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="workspace_agent_binding",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            binding_row = cast(WorkspaceAgentBindingModel, existing)
+            append_audit_event(
+                self._session,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                actor_type="user",
+                actor_id=actor_user_id,
+                action="registry.replay_resolved",
+                decision="allowed",
+                risk_level=_RISK_TO_R_LEVEL[version_row.risk_level],
+                workspace_id=binding.workspace_id,
+                resource_id=binding_row.id,
+                input_hash=request_hash,
+                details={"operation_kind": "agent_binding.install"},
+            )
+            return binding_row
+        if live is not None:
+            raise RegistryConflictError("registry_binding_live_conflict")
+        risk = version_row.risk_level
+        approval_version = self._validate_high_risk_approval(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            binding=binding,
+            request_hash=request_hash,
+            risk=risk,
+        )
+        model = WorkspaceAgentBindingModel(
+            id=binding.workspace_agent_binding_id,
+            tenant_id=binding.tenant_id,
+            workspace_id=binding.workspace_id,
+            workspace_generation=binding.workspace_generation,
+            agent_definition_id=binding.agent_definition_id,
+            agent_version_id=binding.agent_version_id,
+            agent_version_digest=binding.agent_version_digest,
+            binding_state="installed",
+            resource_scopes=list(binding.resource_scopes),
+            default_budget_policy=binding.default_budget_policy.to_dict(),
+            installed_by=binding.installed_by,
+            approval_id=binding.approval_id,
+        )
+        try:
+            self._session.add(model)
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryConflictError("registry_binding_conflict") from exc
+        register_resource(
+            self._session,
+            tenant_id=tenant_id,
+            resource_id=model.id,
+            kind="workspace_agent_binding",
+            owner_type="workspace",
+            owner_id=model.workspace_id,
+            display_name=model.agent_definition_id,
+            policy_class="workspace_private",
+            created_by_actor_id=actor_user_id,
+        )
+        self._consume_approved_approval(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            binding=binding,
+            request_hash=request_hash,
+            risk=risk,
+            approval_version=approval_version,
+        )
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"workspace_agent_binding_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.binding_installed",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[risk],
+            workspace_id=binding.workspace_id,
+            resource_id=model.agent_definition_id,
+            input_hash=request_hash,
+        )
+        return model
+
+    def _load_install_references(
+        self,
+        *,
+        tenant_id: str,
+        binding: WorkspaceAgentBinding,
+    ) -> tuple[WorkspaceModel, AgentDefinitionModel, AgentVersionModel]:
+        """Lock and validate workspace, definition and version for an install."""
+        workspace = self._session.execute(
+            select(WorkspaceModel)
+            .where(
+                WorkspaceModel.tenant_id == tenant_id,
+                WorkspaceModel.id == binding.workspace_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if workspace is None:
+            raise RegistryNotFoundError("registry_workspace_not_found")
+        if workspace.generation != binding.workspace_generation:
+            raise RegistryStateError("registry_workspace_generation_stale")
+        definition = self._session.execute(
+            select(AgentDefinitionModel)
+            .where(
+                AgentDefinitionModel.id == binding.agent_definition_id,
+                AgentDefinitionModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if definition is None:
+            raise RegistryNotFoundError("registry_definition_not_found")
+        if definition.definition_state == "revoked":
+            raise RegistryStateError("registry_definition_revoked")
+        if "workspace" not in definition.installation_scopes:
+            raise RegistryStateError("registry_definition_no_workspace_scope")
+        version_row = self._session.execute(
+            select(AgentVersionModel)
+            .where(
+                AgentVersionModel.id == binding.agent_version_id,
+                AgentVersionModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if version_row is None:
+            raise RegistryNotFoundError("registry_version_not_found")
+        if version_row.version_state == "revoked":
+            raise RegistryStateError("registry_version_revoked")
+        if version_row.definition_id != binding.agent_definition_id:
+            raise RegistryStateError("registry_version_definition_mismatch")
+        if version_row.manifest_digest != binding.agent_version_digest:
+            raise RegistryStateError("registry_version_digest_mismatch")
+        return workspace, definition, version_row
+
+    def _validate_high_risk_approval(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        binding: WorkspaceAgentBinding,
+        request_hash: str,
+        risk: str,
+    ) -> tuple[str, int] | None:
+        """Validate the approval without consuming it; return (id, version) if required."""
+        if _RISK_RANK[risk] < 2:
+            return None
+        if binding.approval_id is None:
+            raise RegistryStateError("registry_approval_required")
+        approval = self._session.execute(
+            select(ApprovalRequest)
+            .where(
+                ApprovalRequest.id == binding.approval_id,
+                ApprovalRequest.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if approval is None:
+            raise RegistryStateError("registry_approval_not_found")
+        if approval.state != "approved" or approval.consumed_at is not None:
+            raise RegistryStateError("registry_approval_not_consumable")
+        if approval.expires_at is not None and approval.expires_at <= datetime.now(UTC):
+            raise RegistryStateError("registry_approval_expired")
+        if approval.requester_id != actor_user_id:
+            raise RegistryStateError("registry_approval_requester_mismatch")
+        if approval.action != "agent.install":
+            raise RegistryStateError("registry_approval_action_mismatch")
+        if approval.workspace_id != binding.workspace_id:
+            raise RegistryStateError("registry_approval_workspace_mismatch")
+        if approval.request_hash != request_hash:
+            raise RegistryStateError("registry_approval_request_hash_mismatch")
+        return approval.id, approval.version
+
+    def _consume_approved_approval(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        binding: WorkspaceAgentBinding,
+        request_hash: str,
+        risk: str,
+        approval_version: tuple[str, int] | None,
+    ) -> None:
+        """Consume the validated approval exactly once, after the binding row exists."""
+        if approval_version is None:
+            return
+        approval_id, version = approval_version
+        _mark_registry_approval_consumed(
+            self._session,
+            tenant_id=tenant_id,
+            approval_id=approval_id,
+            version=version,
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.approval_consumed",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[risk],
+            workspace_id=binding.workspace_id,
+            approval_id=approval_id,
+            resource_id=binding.agent_definition_id,
+            input_hash=request_hash,
+        )
+
+    # ------------------------------------------------------------------
+    # State transitions
+    # ------------------------------------------------------------------
+
+    def disable_binding(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        binding_id: str,
+        idempotency_key: str,
+    ) -> WorkspaceAgentBindingModel:
+        model = self._transition_binding(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            binding_id=binding_id,
+            idempotency_key=idempotency_key,
+            operation_name="agent_binding.disable",
+            target_state="disabled",
+            audit_action="registry.binding_disabled",
+        )
+        return model
+
+    def revoke_binding(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        binding_id: str,
+        idempotency_key: str,
+    ) -> WorkspaceAgentBindingModel:
+        return self._transition_binding(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            binding_id=binding_id,
+            idempotency_key=idempotency_key,
+            operation_name="agent_binding.revoke",
+            target_state="revoked",
+            audit_action="registry.binding_revoked",
+        )
+
+    def _transition_binding(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        binding_id: str,
+        idempotency_key: str,
+        operation_name: str,
+        target_state: str,
+        audit_action: str,
+    ) -> WorkspaceAgentBindingModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        request_hash = _canonical_request_hash(
+            {"binding_id": binding_id, "target_state": target_state}
+        )
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name=operation_name,
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="workspace_agent_binding",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            binding_row = cast(WorkspaceAgentBindingModel, existing)
+            append_audit_event(
+                self._session,
+                tenant_id=tenant_id,
+                request_id=request_id,
+                actor_type="user",
+                actor_id=actor_user_id,
+                action="registry.replay_resolved",
+                decision="allowed",
+                risk_level="R1",
+                workspace_id=binding_row.workspace_id,
+                resource_id=binding_row.id,
+                input_hash=request_hash,
+                details={"operation_kind": operation_name},
+            )
+            return binding_row
+        model = self._session.execute(
+            select(WorkspaceAgentBindingModel)
+            .where(
+                WorkspaceAgentBindingModel.id == binding_id,
+                WorkspaceAgentBindingModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if model is None:
+            raise RegistryNotFoundError("registry_binding_not_found")
+        model.binding_state = target_state
+        if target_state == "disabled":
+            model.disabled_at = datetime.now(UTC)
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryStateError("registry_binding_transition_rejected") from exc
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"workspace_agent_binding_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action=audit_action,
+            decision="allowed",
+            risk_level="R1",
+            workspace_id=model.workspace_id,
+            resource_id=model.id,
+            input_hash=request_hash,
+        )
+        return model
+
+    def supersede_binding(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        old_binding_id: str,
+        new_binding: WorkspaceAgentBinding,
+        idempotency_key: str,
+    ) -> WorkspaceAgentBindingModel:
+        """Supersede the old binding and install the new one atomically.
+
+        The old live binding is moved out of the live set first so the new
+        install's single-winner check passes; any later failure rolls the
+        whole transaction back, restoring the old binding.
+        """
+        old = self._session.execute(
+            select(WorkspaceAgentBindingModel)
+            .where(
+                WorkspaceAgentBindingModel.id == old_binding_id,
+                WorkspaceAgentBindingModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if old is None:
+            raise RegistryNotFoundError("registry_binding_not_found")
+        if old.binding_state not in _LIVE_BINDING_STATES:
+            raise RegistryStateError("registry_binding_not_live")
+        old.binding_state = "superseded"
+        old.superseded_by = new_binding.workspace_agent_binding_id
+        self._session.flush()
+        new_model = self.install_binding(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            binding=new_binding,
+            idempotency_key=f"{idempotency_key}:install",
+        )
+        old.superseded_by = new_model.id
+        self._session.flush()
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.binding_superseded",
+            decision="allowed",
+            risk_level="R1",
+            workspace_id=old.workspace_id,
+            resource_id=old.id,
+            input_hash=_canonical_request_hash(
+                {"old_binding_id": old_binding_id, "new_binding_id": new_model.id}
+            ),
+        )
+        return new_model
+
+    def revoke_definition(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        definition_id: str,
+        idempotency_key: str,
+    ) -> AgentDefinitionModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        request_hash = _canonical_request_hash({"definition_id": definition_id})
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_definition.revoke",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="agent_definition",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            return cast(AgentDefinitionModel, existing)
+        model = self._session.execute(
+            select(AgentDefinitionModel)
+            .where(
+                AgentDefinitionModel.id == definition_id,
+                AgentDefinitionModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if model is None:
+            raise RegistryNotFoundError("registry_definition_not_found")
+        model.definition_state = "revoked"
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryStateError("registry_definition_transition_rejected") from exc
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"agent_definition_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.definition_revoked",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[model.risk_level],
+            resource_id=model.id,
+            input_hash=request_hash,
+        )
+        return model
+
+    def revoke_version(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        request_id: str,
+        version_id: str,
+        idempotency_key: str,
+    ) -> AgentVersionModel:
+        _lock_tenant(self._session, tenant_id=tenant_id)
+        request_hash = _canonical_request_hash({"version_id": version_id})
+        record, inserted = _reserve_registry_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            actor_scope=f"user:{actor_user_id}",
+            operation_name="agent_version.revoke",
+            key=idempotency_key,
+            request_hash=request_hash,
+            expires_at=datetime.now(UTC) + _IDEMPOTENCY_TTL,
+        )
+        if not inserted:
+            existing = _replay_target(
+                self._session,
+                tenant_id=tenant_id,
+                response_ref=record.response_ref,
+                kind="agent_version",
+            )
+            if existing is None:
+                raise RegistryConflictError("registry_replay_target_missing")
+            return cast(AgentVersionModel, existing)
+        model = self._session.execute(
+            select(AgentVersionModel)
+            .where(
+                AgentVersionModel.id == version_id,
+                AgentVersionModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if model is None:
+            raise RegistryNotFoundError("registry_version_not_found")
+        model.version_state = "revoked"
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            raise RegistryStateError("registry_version_transition_rejected") from exc
+        complete_idempotency(
+            self._session,
+            tenant_id=tenant_id,
+            record_id=record.id,
+            response_ref={"agent_version_id": model.id},
+        )
+        append_audit_event(
+            self._session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_type="user",
+            actor_id=actor_user_id,
+            action="registry.version_revoked",
+            decision="allowed",
+            risk_level=_RISK_TO_R_LEVEL[model.risk_level],
+            resource_id=model.id,
+            input_hash=request_hash,
+        )
+        return model
+
+
+__all__ = [
+    "RegistryConflictError",
+    "RegistryNotFoundError",
+    "RegistryPersistenceError",
+    "RegistryPersistenceService",
+    "RegistryStateError",
+]

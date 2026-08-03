@@ -1205,13 +1205,17 @@ def test_no_agent_runtime_planner_or_executor_packages_exist() -> None:
         pytest.skip("full public checkout is not mounted in the backend test image")
     for forbidden in (
         "agent_runtime",
-        "agent_registry",
         "agents",
         "planner",
         "executor",
         "multi_agent",
     ):
         assert not (REPO_ROOT / "backend" / "src" / "omnibase" / forbidden).exists(), forbidden
+    # P5.1B legitimately added the internal persistence package; it is not a runtime.
+    registry = REPO_ROOT / "backend" / "src" / "omnibase" / "agent_registry"
+    assert registry.is_dir()
+    assert not (registry / "router.py").exists()
+    assert not (registry / "runtime.py").exists()
 
 
 def test_migration_revision_discovery_on_synthetic_chain(tmp_path: Path) -> None:
