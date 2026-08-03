@@ -420,7 +420,9 @@ def test_checked_in_contract_is_valid_but_explicitly_blocked() -> None:
     assert any(
         "production database schema is not applied/proven" in item for item in report.blockers
     )
-    assert any("Agent Browser API is not implemented" in item for item in report.blockers)
+    assert any(
+        "Agent Invocation/Runtime API is not implemented" in item for item in report.blockers
+    )
     assert any(
         "Workspace installation public/runtime surface is not implemented" in item
         for item in report.blockers
@@ -1254,7 +1256,9 @@ def test_formal_gate_keeps_missing_proofs_blocked() -> None:
     assert any(
         "production database schema is not applied/proven" in item for item in report.blockers
     )
-    assert any("Agent Browser API is not implemented" in item for item in report.blockers)
+    assert any(
+        "Agent Invocation/Runtime API is not implemented" in item for item in report.blockers
+    )
     assert any(
         "Workspace installation public/runtime surface is not implemented" in item
         for item in report.blockers

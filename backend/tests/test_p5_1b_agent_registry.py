@@ -15,6 +15,7 @@ from omnibase.agent_registry.service import (
     RegistryNotFoundError,
     RegistryPersistenceService,
     RegistryStateError,
+    _binding_request_identity,
     _canonical_request_hash,
 )
 from omnibase.production.phase5_registry_contract import (
@@ -162,6 +163,39 @@ def test_canonical_request_hash_is_stable_and_order_independent() -> None:
     second = _canonical_request_hash({"b": {"x": [1, 2]}, "a": 1})
     assert first == second
     assert len(first) == 64
+
+
+def test_binding_request_hash_profiles_are_closed_and_operation_bound() -> None:
+    binding = _binding()
+    internal_hash, internal_action = _binding_request_identity(
+        binding=binding,
+        profile="internal_full",
+    )
+    install_hash, install_action = _binding_request_identity(
+        binding=binding,
+        profile="browser_install",
+    )
+    upgrade_hash, upgrade_action = _binding_request_identity(
+        binding=binding,
+        profile="browser_upgrade",
+        old_binding_id="77777777-7777-7777-7777-777777777777",
+    )
+    rollback_hash, rollback_action = _binding_request_identity(
+        binding=binding,
+        profile="browser_rollback",
+        old_binding_id="77777777-7777-7777-7777-777777777777",
+    )
+
+    assert internal_hash == _canonical_request_hash(binding.to_dict())
+    assert internal_action == install_action == "agent.install"
+    assert upgrade_action == "agent.upgrade"
+    assert rollback_action == "agent.rollback"
+    assert len({internal_hash, install_hash, upgrade_hash, rollback_hash}) == 4
+
+
+def test_binding_request_hash_profile_rejects_missing_supersede_identity() -> None:
+    with pytest.raises(RegistryStateError, match="registry_request_hash_profile_invalid"):
+        _binding_request_identity(binding=_binding(), profile="browser_upgrade")
 
 
 def test_register_definition_maps_dto_to_model(

@@ -21,6 +21,43 @@ export class RegistryBrowserError extends Error {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const DIGEST_RE = /^[0-9a-f]{64}$/u;
 const SCOPE_RE = /^[a-z][a-z0-9_]{1,63}$/u;
+const RISK_LEVELS = new Set(["low", "medium", "high", "critical"]);
+const DEFINITION_STATES = new Set(["draft", "active", "disabled", "revoked"]);
+const VERSION_STATES = new Set(["draft", "sealed", "deprecated", "revoked"]);
+const BINDING_STATES = new Set([
+  "pending_approval",
+  "installed",
+  "disabled",
+  "superseded",
+  "revoked",
+]);
+
+function validateBrowserPath(path: string): `/api/v1/${string}` {
+  if (!path.startsWith("/api/v1/")) {
+    throw new TypeError("Browser transport only permits requests under /api/v1");
+  }
+  if (
+    path.includes("\\") ||
+    path.includes("%") ||
+    path.includes("?") ||
+    path.includes("#") ||
+    path.includes("\0") ||
+    path.includes("//") ||
+    path.split("/").some((segment) => segment === "." || segment === "..")
+  ) {
+    throw new TypeError("Browser transport path contains forbidden normalization syntax");
+  }
+  const parsed = new URL(path, "https://sdk.invalid");
+  if (
+    parsed.origin !== "https://sdk.invalid" ||
+    parsed.pathname !== path ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new TypeError("Browser transport path is not confined to /api/v1");
+  }
+  return path as `/api/v1/${string}`;
+}
 
 export interface DefaultBudgetPolicyRead {
   readonly max_tokens: number;
@@ -149,9 +186,7 @@ export class BrowserFetchTransport {
     body: unknown,
     idempotencyKey?: string,
   ): Promise<{ status: number; headers: Record<string, string>; body: unknown }> {
-    if (!path.startsWith("/api/v1/")) {
-      throw new TypeError("Browser transport only permits requests under /api/v1");
-    }
+    const confinedPath = validateBrowserPath(path);
     const token = await this.#tokenProvider.getAccessToken();
     if (typeof token !== "string" || token.length === 0 || /\s/u.test(token)) {
       throw new TypeError("Access token is empty or malformed");
@@ -170,7 +205,7 @@ export class BrowserFetchTransport {
       bodyValue = JSON.stringify(body);
     }
     if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+    const response = await this.#fetch(`${this.#baseUrl}${confinedPath}`, {
       method,
       headers,
       body: bodyValue ?? null,
@@ -265,7 +300,7 @@ function requireScopes(value: readonly string[]): string[] {
   return [...value];
 }
 
-function requireBudget(value: unknown): Record<string, number> {
+function requireBudget(value: unknown): DefaultBudgetPolicyRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("default_budget_policy must be an object");
   }
@@ -282,88 +317,205 @@ function requireBudget(value: unknown): Record<string, number> {
     }
     out[key] = number;
   }
-  return out;
+  return {
+    max_tokens: out.max_tokens!,
+    max_cost_units: out.max_cost_units!,
+    max_wall_clock_seconds: out.max_wall_clock_seconds!,
+    max_tool_calls: out.max_tool_calls!,
+  };
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value);
+  if (actual.length !== expected.length || expected.some((key) => !(key in value))) {
+    throw new TypeError(`${label} contains missing or extra fields`);
+  }
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new TypeError(`${label} must be a string`);
+  return value;
+}
+
+function requireNullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requireString(value, label);
+}
+
+function requirePositiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new TypeError(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function requireNonnegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative integer`);
+  }
+  return value;
+}
+
+function requireClosedString(value: unknown, allowed: ReadonlySet<string>, label: string): string {
+  const text = requireString(value, label);
+  if (!allowed.has(text)) throw new TypeError(`${label} is outside the closed set`);
+  return text;
+}
+
+function requireStringArray(value: unknown, label: string, maximum: number): string[] {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw new TypeError(`${label} must be an array of at most ${maximum} strings`);
+  }
+  return value.map((item) => requireString(item, label));
 }
 
 function parseDefinition(value: unknown): AgentDefinitionRead {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("invalid agent definition");
-  }
-  const data = value as Record<string, unknown>;
+  const data = requireRecord(value, "agent definition");
+  requireExactKeys(
+    data,
+    [
+      "agent_definition_id",
+      "stable_logical_key",
+      "display_name",
+      "description",
+      "risk_level",
+      "definition_state",
+      "metadata_version",
+      "created_at",
+    ],
+    "agent definition",
+  );
   return {
-    agent_definition_id: requireUuid(String(data.agent_definition_id), "agent_definition_id"),
-    stable_logical_key: String(data.stable_logical_key),
-    display_name: String(data.display_name),
-    description: data.description === null ? null : String(data.description),
-    risk_level: String(data.risk_level),
-    definition_state: String(data.definition_state),
-    metadata_version: Number(data.metadata_version),
-    created_at: data.created_at === null ? null : String(data.created_at),
+    agent_definition_id: requireUuid(
+      requireString(data.agent_definition_id, "agent_definition_id"),
+      "agent_definition_id",
+    ),
+    stable_logical_key: requireString(data.stable_logical_key, "stable_logical_key"),
+    display_name: requireString(data.display_name, "display_name"),
+    description: requireNullableString(data.description, "description"),
+    risk_level: requireClosedString(data.risk_level, RISK_LEVELS, "risk_level"),
+    definition_state: requireClosedString(
+      data.definition_state,
+      DEFINITION_STATES,
+      "definition_state",
+    ),
+    metadata_version: requirePositiveInteger(data.metadata_version, "metadata_version"),
+    created_at: requireNullableString(data.created_at, "created_at"),
   };
 }
 
 function parseVersion(value: unknown): AgentVersionRead {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("invalid agent version");
-  }
-  const data = value as Record<string, unknown>;
+  const data = requireRecord(value, "agent version");
+  requireExactKeys(
+    data,
+    [
+      "agent_version_id",
+      "agent_definition_id",
+      "version",
+      "version_state",
+      "manifest_digest",
+      "instructions_digest",
+      "risk_level",
+      "max_context_tokens",
+      "allowed_tool_ids",
+      "max_concurrency",
+      "created_at",
+    ],
+    "agent version",
+  );
   return {
-    agent_version_id: requireUuid(String(data.agent_version_id), "agent_version_id"),
-    agent_definition_id: requireUuid(String(data.agent_definition_id), "agent_definition_id"),
-    version: String(data.version),
-    version_state: String(data.version_state),
-    manifest_digest: requireDigest(String(data.manifest_digest), "manifest_digest"),
-    instructions_digest: requireDigest(String(data.instructions_digest), "instructions_digest"),
-    risk_level: String(data.risk_level),
-    max_context_tokens: Number(data.max_context_tokens),
-    allowed_tool_ids: Array.isArray(data.allowed_tool_ids)
-      ? data.allowed_tool_ids.map((item) => String(item))
-      : [],
-    max_concurrency: Number(data.max_concurrency),
-    created_at: data.created_at === null ? null : String(data.created_at),
+    agent_version_id: requireUuid(
+      requireString(data.agent_version_id, "agent_version_id"),
+      "agent_version_id",
+    ),
+    agent_definition_id: requireUuid(
+      requireString(data.agent_definition_id, "agent_definition_id"),
+      "agent_definition_id",
+    ),
+    version: requireString(data.version, "version"),
+    version_state: requireClosedString(data.version_state, VERSION_STATES, "version_state"),
+    manifest_digest: requireDigest(
+      requireString(data.manifest_digest, "manifest_digest"),
+      "manifest_digest",
+    ),
+    instructions_digest: requireDigest(
+      requireString(data.instructions_digest, "instructions_digest"),
+      "instructions_digest",
+    ),
+    risk_level: requireClosedString(data.risk_level, RISK_LEVELS, "risk_level"),
+    max_context_tokens: requirePositiveInteger(data.max_context_tokens, "max_context_tokens"),
+    allowed_tool_ids: requireStringArray(data.allowed_tool_ids, "allowed_tool_ids", 64),
+    max_concurrency: requirePositiveInteger(data.max_concurrency, "max_concurrency"),
+    created_at: requireNullableString(data.created_at, "created_at"),
   };
 }
 
 function parseBinding(value: unknown): AgentInstallationRead {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("invalid agent installation");
-  }
-  const data = value as Record<string, unknown>;
-  const budget = data.default_budget_policy;
-  if (typeof budget !== "object" || budget === null || Array.isArray(budget)) {
-    throw new TypeError("invalid default_budget_policy");
-  }
-  const budgetData = budget as Record<string, unknown>;
+  const data = requireRecord(value, "agent installation");
+  requireExactKeys(
+    data,
+    [
+      "binding_id",
+      "workspace_id",
+      "workspace_generation",
+      "agent_definition_id",
+      "agent_version_id",
+      "agent_version_digest",
+      "binding_state",
+      "resource_scopes",
+      "default_budget_policy",
+      "created_at",
+      "disabled_at",
+      "superseded_by",
+    ],
+    "agent installation",
+  );
   return {
-    binding_id: requireUuid(String(data.binding_id), "binding_id"),
-    workspace_id: requireUuid(String(data.workspace_id), "workspace_id"),
-    workspace_generation: Number(data.workspace_generation),
-    agent_definition_id: requireUuid(String(data.agent_definition_id), "agent_definition_id"),
-    agent_version_id: requireUuid(String(data.agent_version_id), "agent_version_id"),
-    agent_version_digest: requireDigest(String(data.agent_version_digest), "agent_version_digest"),
-    binding_state: String(data.binding_state),
-    resource_scopes: requireScopes(
-      Array.isArray(data.resource_scopes) ? data.resource_scopes.map(String) : [],
+    binding_id: requireUuid(requireString(data.binding_id, "binding_id"), "binding_id"),
+    workspace_id: requireUuid(requireString(data.workspace_id, "workspace_id"), "workspace_id"),
+    workspace_generation: requirePositiveInteger(data.workspace_generation, "workspace_generation"),
+    agent_definition_id: requireUuid(
+      requireString(data.agent_definition_id, "agent_definition_id"),
+      "agent_definition_id",
     ),
-    default_budget_policy: {
-      max_tokens: Number(budgetData.max_tokens),
-      max_cost_units: Number(budgetData.max_cost_units),
-      max_wall_clock_seconds: Number(budgetData.max_wall_clock_seconds),
-      max_tool_calls: Number(budgetData.max_tool_calls),
-    },
-    created_at: data.created_at === null ? null : String(data.created_at),
-    disabled_at: data.disabled_at === null ? null : String(data.disabled_at),
-    superseded_by: data.superseded_by === null ? null : String(data.superseded_by),
+    agent_version_id: requireUuid(
+      requireString(data.agent_version_id, "agent_version_id"),
+      "agent_version_id",
+    ),
+    agent_version_digest: requireDigest(
+      requireString(data.agent_version_digest, "agent_version_digest"),
+      "agent_version_digest",
+    ),
+    binding_state: requireClosedString(data.binding_state, BINDING_STATES, "binding_state"),
+    resource_scopes: requireScopes(
+      requireStringArray(data.resource_scopes, "resource_scopes", 32),
+    ),
+    default_budget_policy: requireBudget(data.default_budget_policy),
+    created_at: requireNullableString(data.created_at, "created_at"),
+    disabled_at: requireNullableString(data.disabled_at, "disabled_at"),
+    superseded_by:
+      data.superseded_by === null
+        ? null
+        : requireUuid(requireString(data.superseded_by, "superseded_by"), "superseded_by"),
   };
 }
 
 function parseList(value: unknown): { items: unknown[]; total: number } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("invalid list response");
-  }
-  const data = value as Record<string, unknown>;
+  const data = requireRecord(value, "list response");
+  requireExactKeys(data, ["items", "total"], "list response");
   if (!Array.isArray(data.items)) throw new TypeError("list response must contain items");
-  return { items: data.items, total: Number(data.total) };
+  return { items: data.items, total: requireNonnegativeInteger(data.total, "total") };
 }
 
 export interface BrowserRegistryResponse {

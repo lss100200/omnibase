@@ -136,6 +136,14 @@ operation_name, key)` UNIQUE）：
 - exact replay：request digest 与记录一致 → 返回原结果（不重复执行）；
 - semantic drift：同 key 不同 request digest → 409 conflict；
 - 幂等记录创建/比对在锁序内完成，与状态变更、审计同事务。
+- P5.1B 内部 `install_binding`/`supersede_binding` 使用 `internal_full`
+  profile，保持完整 DTO digest 语义。P5.1C 复用该 service 时只能选择
+  `browser_install|browser_upgrade|browser_rollback` 闭集，由 service
+  自行计算 operation-bound digest；supersede 额外绑定 old Binding ID。
+  任意 caller-provided digest 禁止进入幂等或 Approval 校验。
+- Binding Approval 的数据库 action 闭集为 `agent.install|agent.upgrade|
+  agent.rollback`；应用服务必须匹配精确 operation、workspace、request
+  hash、requester、risk 与单次消费状态，数据库闭集不能替代服务语义校验。
 
 ## 11. 如何保证 public DTO 永不出现物理 locator
 
@@ -164,3 +172,10 @@ Agent Registry 持久化采用 **global `omnibase_meta` + 每行 tenant_id 物�
 BEFORE INSERT/UPDATE trigger（状态机、sealed 不可变、跨租户/跨行完整性）+
 部分唯一 live-binding 索引**。该设计与 P34.4/P34.6 的既有证据一致，不
 发明混合模型。
+
+P5.1B disposable Gate 在任何 Alembic/pytest 前必须实际运行
+`backend/tests/destructive_preflight.py`，验证 `omnibase_test_*` 名称、
+sentinel 与受限 non-owner role；仅预检 exit 0 后才记录
+`database_sentinel_verified=true`。canonical evidence 允许以同目录临时
+文件和 `os.replace` 原子更新，但 source/destination symlink 必须拒绝，
+并且只有 labeled container/network/volume 全部为 0 才能发布 passed。

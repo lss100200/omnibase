@@ -89,7 +89,14 @@ def _raise_control(exc: Exception) -> Never:
 
 
 def _as_uuid(value: str) -> str:
-    return str(UUID(value))
+    try:
+        return str(UUID(value))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise _http_error(
+            422,
+            "invalid_logical_identifier",
+            "Logical identifier must be a valid UUID",
+        ) from exc
 
 
 @router.get("", response_model=AgentDefinitionList)

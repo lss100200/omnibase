@@ -4,7 +4,8 @@
 > `P5.1B persistence foundation: implemented / verified`（内部 ORM +
 > migration 0010 + 事务 service + disposable PostgreSQL Gate，见
 > `docs/evidence/p5-1/phase5-registry-persistence-design.md`）。
-> Browser API、Runtime installation 仍**未实现**；P5.1 production 为
+> P5.1C Browser Registry control API 已完成 engineering-only 交付，
+> Agent Runtime installation/Invocation 仍**未实现**；P5.1 production 为
 > `blocked / not_proven`；P5.2+ 保持 frozen。
 >
 > 本文件是 AgentDefinition → AgentVersion → WorkspaceAgentBinding 三层
@@ -17,16 +18,20 @@ P5.1A 只允许：离线 strict DTO/schema、closed-set JSON 合同、纯离线
 validator、正/负向 fixture、威胁模型、维护者地图、CI validate-only Gate
 与 clean-checkout `blocked/not_proven` evidence。
 
-明确禁止并持续保持未实现：
+P5.1A 当时明确禁止以下实现；其中 ORM/migration/internal service 与受控
+Browser Registry API 后续只按第 8 节在 P5.1B/P5.1C 解锁，其余项目继续
+保持未实现：
 
-- SQLAlchemy ORM model、Alembic migration、数据库表；
-- AgentDefinition/AgentVersion repository/service；
-- Workspace 安装、升级、禁用、回滚的实际写操作；
+- SQLAlchemy ORM model、Alembic migration、数据库表（仅 P5.1B 已解锁）；
+- AgentDefinition/AgentVersion repository/service（仅 internal P5.1B 已解锁）；
+- Workspace 安装、升级、禁用、回滚的受控治理写操作（仅 P5.1C 已解锁，
+  production 默认仍 503）；
 - Agent Invocation、Task、Run、Plan、Step、Attempt；
 - Planner、Executor、dispatcher、scheduler；
 - Model Gateway、Tool Gateway、Memory runtime、Skill runtime；
 - Celery task、worker、queue、后台服务；
-- Agent Browser API、FastAPI router、前端页面、SDK Agent 调用；
+- Agent Browser Registry API/FastAPI router/SDK Registry client（仅 P5.1C
+  已解锁）；前端 Agent Runtime 页面与 SDK Agent Invocation 仍未实现；
 - 任何 shell/SQL/HTTP tool 或 Agent Runtime 进程。
 
 ## 2. 身份层级与逻辑标识符

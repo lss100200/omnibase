@@ -230,6 +230,26 @@ def test_browser_transport_rejects_non_api_v1_paths() -> None:
         transport.request("GET", "/gateway/v1/data/schema/read", None)
     with pytest.raises(ValueError, match="/api/v1"):
         transport.request("DELETE", "/api/v1/agent-definitions", None)
+    for escaped in (
+        "/api/v1/../../gateway/v1/probe",
+        "/api/v1/%2e%2e/gateway/v1/probe",
+        "/api/v1/agent-definitions?next=/gateway/v1",
+        "/api/v1\\..\\gateway\\v1\\probe",
+        "/api/v1//agent-definitions",
+    ):
+        with pytest.raises(ValueError, match="path|segments|/api/v1"):
+            transport.request("GET", escaped, None)
+
+
+def test_response_models_reject_unknown_fields_and_invalid_closed_states() -> None:
+    with pytest.raises(ValueError, match="fields"):
+        AgentDefinitionRead.from_dict(
+            {**DEFINITION_BODY, "physical_schema_locator": "tenant_secret"}
+        )
+    with pytest.raises(ValueError, match="closed set"):
+        AgentVersionRead.from_dict({**VERSION_BODY, "version_state": "running"})
+    with pytest.raises(ValueError, match="closed set"):
+        AgentInstallationRead.from_dict({**BINDING_BODY, "binding_state": "executing"})
 
 
 def test_browser_transport_requires_https_origin() -> None:

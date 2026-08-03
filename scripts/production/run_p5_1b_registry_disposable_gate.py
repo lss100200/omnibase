@@ -33,10 +33,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "docker-compose.destructive-tests.yml"
 ENV_FILE = REPO_ROOT / ".env.example"
 EVIDENCE_JSON = (
-    REPO_ROOT / "docs" / "evidence" / "p5-1" / "phase5-registry-persistence-disposable-gate.json"
+    REPO_ROOT
+    / "docs"
+    / "evidence"
+    / "p5-1"
+    / "phase5-registry-persistence-disposable-gate.json"
 )
 EVIDENCE_MD = (
-    REPO_ROOT / "docs" / "evidence" / "p5-1" / "phase5-registry-persistence-disposable-gate.md"
+    REPO_ROOT
+    / "docs"
+    / "evidence"
+    / "p5-1"
+    / "phase5-registry-persistence-disposable-gate.md"
 )
 TEMP_ROOT = (REPO_ROOT / ".tmp" / "p5-1b-registry-gate").resolve()
 INTEGRATION_TEST = "backend/tests/integration/test_p5_1b_agent_registry_foundation.py"
@@ -65,7 +73,9 @@ _SOURCE_MANIFEST_PATHS = (
 _SOURCE_MANIFEST_GLOBS = ("backend/src/**/*", "backend/tests/**/*")
 _SECRET_PATTERNS = (
     re.compile(r"(?i)postgresql(?:\+psycopg)?://[^\s:@/${}]+:[^\s@/${}]{12,}@"),
-    re.compile(r"(?i)authorization\s*:\s*(?:bearer|capability)\s+[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(
+        r"(?i)authorization\s*:\s*(?:bearer|capability)\s+[A-Za-z0-9._~+/=-]{16,}"
+    ),
 )
 
 
@@ -74,10 +84,11 @@ def _run(
     *,
     check: bool = True,
     env: dict[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         arguments,
-        cwd=REPO_ROOT,
+        cwd=cwd or REPO_ROOT,
         check=check,
         env=env,
         text=True,
@@ -88,7 +99,9 @@ def _run(
     )
 
 
-def _run_to_file(arguments: list[str], path: Path) -> subprocess.CompletedProcess[bytes]:
+def _run_to_file(
+    arguments: list[str], path: Path
+) -> subprocess.CompletedProcess[bytes]:
     with path.open("wb") as output:
         return subprocess.run(
             arguments,
@@ -124,12 +137,19 @@ def _tracked_glob_paths() -> tuple[str, ...]:
     """Resolve manifest globs through Git so ignored caches never enter a seal."""
 
     result = _run(
-        ["git", "ls-files", "--", *(f":(glob){pattern}" for pattern in _SOURCE_MANIFEST_GLOBS)],
+        [
+            "git",
+            "ls-files",
+            "--",
+            *(f":(glob){pattern}" for pattern in _SOURCE_MANIFEST_GLOBS),
+        ],
         check=False,
     )
     if result.returncode != 0:
         raise RuntimeError("failed to enumerate tracked P5.1B source files")
-    return tuple(sorted({line.strip() for line in result.stdout.splitlines() if line.strip()}))
+    return tuple(
+        sorted({line.strip() for line in result.stdout.splitlines() if line.strip()})
+    )
 
 
 def _source_manifest() -> dict[str, object]:
@@ -156,7 +176,9 @@ def _source_manifest() -> dict[str, object]:
 
 
 def _manifest_sha256(manifest: dict[str, object]) -> str:
-    canonical = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    canonical = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     return hashlib.sha256(canonical).hexdigest()
 
 
@@ -221,7 +243,13 @@ def _project_resource_counts(project: str) -> dict[str, int]:
     for kind, arguments in (
         (
             "containers",
-            ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={project}"],
+            [
+                "docker",
+                "ps",
+                "-aq",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+            ],
         ),
         (
             "networks",
@@ -248,7 +276,9 @@ def _project_resource_counts(project: str) -> dict[str, int]:
     ):
         result = _run(arguments, check=False)
         if result.returncode != 0:
-            raise RuntimeError(f"failed to inspect disposable {kind}: {result.stdout[-1000:]}")
+            raise RuntimeError(
+                f"failed to inspect disposable {kind}: {result.stdout[-1000:]}"
+            )
         counts[kind] = sum(1 for line in result.stdout.splitlines() if line.strip())
     return counts
 
@@ -331,7 +361,7 @@ def _run_backend_steps(
     backend_executor: str,
     env: dict[str, str],
 ) -> None:
-    """Run alembic head + the guarded P5.1B integration suite."""
+    """Run Alembic head and the guarded P5.1B integration suite."""
     if backend_executor == "container":
         alembic = _run(
             _container_backend_command(
@@ -340,7 +370,9 @@ def _run_backend_steps(
             check=False,
         )
         if alembic.returncode != 0:
-            raise RuntimeError("alembic upgrade head failed:\n" + alembic.stdout[-2000:])
+            raise RuntimeError(
+                "alembic upgrade head failed:\n" + alembic.stdout[-2000:]
+            )
         pytest = _run(
             _container_backend_command(
                 project, database_url, "python", *_pytest_command(container=True)
@@ -348,14 +380,73 @@ def _run_backend_steps(
             check=False,
         )
         if pytest.returncode != 0:
-            raise RuntimeError("P5.1B integration suite failed:\n" + pytest.stdout[-4000:])
+            raise RuntimeError(
+                "P5.1B integration suite failed:\n" + pytest.stdout[-4000:]
+            )
         return
-    alembic = _run([sys.executable, "-m", "alembic", "upgrade", "head"], check=False)
+    backend_env = _backend_env(env, database_url=database_url)
+    alembic = _run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        check=False,
+        env=backend_env,
+        cwd=REPO_ROOT / "backend",
+    )
     if alembic.returncode != 0:
         raise RuntimeError("alembic upgrade head failed:\n" + alembic.stdout[-2000:])
-    pytest = _run([sys.executable, *_pytest_command()], check=False)
+    pytest = _run(
+        [sys.executable, *_pytest_command(container=True)],
+        check=False,
+        env=backend_env,
+        cwd=REPO_ROOT / "backend",
+    )
     if pytest.returncode != 0:
         raise RuntimeError("P5.1B integration suite failed:\n" + pytest.stdout[-4000:])
+
+
+def _backend_env(env: dict[str, str], *, database_url: str) -> dict[str, str]:
+    """Host-executor environment bound to the disposable sentinel database."""
+    backend_env = dict(env)
+    backend_env["PYTHONPATH"] = str(REPO_ROOT / "backend" / "src")
+    backend_env["DATABASE_URL"] = database_url
+    backend_env["TEST_DATABASE_URL"] = database_url
+    backend_env["OMNIBASE_INTEGRATION_TESTS"] = "1"
+    backend_env.setdefault(
+        "JWT_SECRET", "test_secret_at_least_32_characters_long_for_validation"
+    )
+    backend_env.setdefault("MINIO_ENDPOINT", "localhost:9000")
+    backend_env.setdefault("MINIO_ACCESS_KEY", "test_access")
+    backend_env.setdefault("MINIO_SECRET_KEY", "test_secret")
+    backend_env.setdefault("REDIS_URL", "redis://localhost:6379/15")
+    return backend_env
+
+
+def _run_database_preflight(
+    database_url: str,
+    *,
+    project: str,
+    backend_executor: str,
+    env: dict[str, str],
+) -> None:
+    """Prove the database name, sentinel, and restricted role before DDL."""
+    if backend_executor == "container":
+        command = _container_backend_command(
+            project,
+            database_url,
+            "python",
+            "tests/destructive_preflight.py",
+        )
+        result = _run(command, check=False)
+    else:
+        result = _run(
+            [sys.executable, "tests/destructive_preflight.py"],
+            check=False,
+            env=_backend_env(env, database_url=database_url),
+            cwd=REPO_ROOT / "backend",
+        )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "disposable database preflight failed:\n" + result.stdout[-2000:]
+        )
 
 
 def _record_evidence(
@@ -397,9 +488,27 @@ def _publish_evidence(run_dir: Path) -> None:
         ("md", run_dir / "evidence.md"),
     ):
         destination = EVIDENCE_JSON if name == "json" else EVIDENCE_MD
-        if destination.exists():
-            raise RuntimeError(f"refusing to overwrite sealed evidence: {destination}")
-        shutil.copy2(source, destination)
+        if source.is_symlink() or not source.is_file():
+            raise RuntimeError(f"evidence source is not a regular file: {source}")
+        if destination.is_symlink() or (
+            destination.exists() and not destination.is_file()
+        ):
+            raise RuntimeError(
+                f"evidence destination is not a regular file: {destination}"
+            )
+        if destination.parent.is_symlink():
+            raise RuntimeError(
+                f"evidence destination parent is a symlink: {destination.parent}"
+            )
+        temporary = destination.with_name(
+            f".{destination.name}.{secrets.token_hex(8)}.tmp"
+        )
+        try:
+            shutil.copy2(source, temporary)
+            os.replace(temporary, destination)
+        finally:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
 
 
 def _verify_recorded_evidence(report: dict[str, object]) -> None:
@@ -460,15 +569,16 @@ def main() -> int:
     source_manifest = _source_manifest()
     if not source_manifest["repository_clean"]:
         raise RuntimeError(
-            "P5.1B Gate requires a clean checkout: " + ", ".join(source_manifest["dirty_paths"])
+            "P5.1B Gate requires a clean checkout: "
+            + ", ".join(source_manifest["dirty_paths"])
         )
-    manifest_sha256 = _write_source_manifest(run_dir / "source-manifest.json", source_manifest)
+    manifest_sha256 = _write_source_manifest(
+        run_dir / "source-manifest.json", source_manifest
+    )
 
     owner_password = secrets.token_hex(24)
     test_password = secrets.token_hex(24)
-    database_url = (
-        f"postgresql+psycopg://{role_name}:{test_password}@localhost:55432/{database_name}"
-    )
+    database_url = f"postgresql+psycopg://{role_name}:{test_password}@localhost:55432/{database_name}"
     env = dict(os.environ)
     env.update(
         {
@@ -508,7 +618,15 @@ def main() -> int:
             env=env,
         )
         if up.returncode != 0:
-            raise RuntimeError("disposable PostgreSQL failed to start:\n" + up.stdout[-2000:])
+            raise RuntimeError(
+                "disposable PostgreSQL failed to start:\n" + up.stdout[-2000:]
+            )
+        _run_database_preflight(
+            database_url,
+            project=project,
+            backend_executor=arguments.backend_executor,
+            env=env,
+        )
         evidence["database_sentinel_verified"] = True
         _run_backend_steps(
             database_url,

@@ -159,6 +159,12 @@ def test_install_rejects_wildcard_resource_scope() -> None:
         json=_install_payload(resource_scopes=["*"]),
     )
     assert response.status_code == 422
+    response = client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/agent-installations",
+        headers=HEADERS,
+        json=_install_payload(agent_version_digest="short"),
+    )
+    assert response.status_code == 422
 
 
 def test_install_rejects_unknown_fields() -> None:
@@ -185,12 +191,20 @@ def test_install_rejects_non_uuid_and_bad_digest() -> None:
         json=_install_payload(agent_definition_id="not-a-uuid"),
     )
     assert response.status_code == 422
-    response = client.post(
-        f"/api/v1/workspaces/{WORKSPACE_ID}/agent-installations",
-        headers=HEADERS,
-        json=_install_payload(agent_version_digest="short"),
-    )
+
+
+def test_path_identifier_rejects_invalid_uuid_with_stable_422() -> None:
+    control = MagicMock(spec=AgentRegistryControlService)
+    client = _client(control)
+    response = client.get("/api/v1/agent-definitions/not-a-uuid")
     assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "invalid_logical_identifier",
+            "message": "Logical identifier must be a valid UUID",
+        }
+    }
+    control.get_definition.assert_not_called()
 
 
 def test_mutation_requires_idempotency_key() -> None:

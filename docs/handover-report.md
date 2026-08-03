@@ -1891,11 +1891,13 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    - SDK：Python `omnibase_sdk.browser_registry`（Bearer JWT transport +
      `AgentRegistryBrowserClient` + 严格模型）+ TypeScript
      `registry-browser.ts`（同构）。
-2. **确定性幂等锚点**：P5.1B 的 `install_binding`/`supersede_binding`
-   新增可选 `request_hash_override`（默认 None 时行为不变）；Browser 层
-   传入去掉 server 生成字段（`workspace_agent_binding_id`/`created_at`）
-   的 payload hash → 同 key 同 body 精确 replay、同 key 不同 body 409；
-   approval hash 因此可被内部流程预先计算。
+2. **确定性幂等与 Approval 锚点（独立审计后修复）**：已移除任意
+   `request_hash_override`。P5.1B service 只接受封闭 hash profile：
+   `internal_full` 保持内部 install/supersede 原始完整 DTO hash 语义；
+   Browser install/upgrade/rollback 的摘要由 service 自行计算并分别绑定
+   `agent.install`/`agent.upgrade`/`agent.rollback`，upgrade/rollback 还绑定
+   `old_binding_id`。Approval 同时校验 action + operation-bound request hash，
+   不可跨操作重放；同 key 同 body精确 replay、同 key 不同 body 409。
 3. **验证**：单元/API 21 项（10 端点 fail-closed 503、DTO 严格性、
    OpenAPI 精确路径、无物理 locator）；一次性 `omnibase_test_p51c_*`
    sentinel PostgreSQL integration 20 项（migration head 0010、
@@ -1911,8 +1913,17 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    P5.1A `--verify` 继续 `blocked/not_proven`（exit 2）。
 5. **明确未发生**：未新增 migration 0011；未打开 Feature Gate；未读取
    根 `.env`；未访问或迁移业务数据库；未 push/PR；P5.1B 内部服务仅做
-   向后兼容的参数扩展（其 sealed evidence 需在其独立 Gate 重跑后
-   重新验证）。
+   向后兼容的封闭 profile 扩展；P5.1B/P5.1C sealed evidence 必须在
+   修复提交的 clean checkout 上重跑各自 disposable Gate 后才重新有效。
+6. **独立审计修复边界**：Browser Version/Binding 预检改为非锁定快照，
+   权威 Definition → Version → Binding 锁序与状态复核只由 P5.1B service
+   执行；upgrade/rollback exact replay 可在旧 Binding 已 superseded 后进入
+   Idempotency 分支。两套 Gate 在 Alembic 前真实执行
+   `backend/tests/destructive_preflight.py`，只在数据库名/sentinel/受限
+   non-owner role 校验成功后记录 sentinel=true，canonical evidence 使用
+   原子 replace 且拒绝 symlink。Python/TypeScript SDK 拒绝 path normalization
+   逃逸；TypeScript response parser 不再宽松 String/Number 转换；非法逻辑
+   UUID 返回稳定 422 `invalid_logical_identifier`。
 
 ## 八、常用命令
 

@@ -388,7 +388,8 @@ P5.1 PASS，也不得据此解冻 Phase 5 Runtime。
   （fail-closed：任何 registry 表访问前 503 `agent_registry_unavailable`）；
 - 公共 DTO（`schemas.py`，`extra="forbid"`，仅逻辑标识符）；
 - Python/TypeScript SDK 的传输与解析边界（Bearer JWT、`/api/v1` 专用、
-  强制 `Idempotency-Key`、禁通配 scope）。
+  强制 `Idempotency-Key`、禁通配 scope、拒绝 URL normalization 逃逸与
+  宽松 response coercion）。
 
 信任边界：与 P5.0/P5.1B 相同；mutation 在调用者事务内重锁 live
 Tenant/User/Workspace/WorkspaceMembership 后委托 sealed P5.1B 服务。
@@ -399,14 +400,19 @@ Browser principal（JWT）是必要非充分条件，role 以当前成员资格�
 | 威胁 | 控制 |
 |---|---|
 | 未装配 DB-backed control plane 时访问 registry | 默认依赖 503 fail-closed，不创建 session、不触碰任何表；10 端点参数化单测 |
-| 非成员/过期成员执行 mutation | `authorize_workspace_action("workspace.grants.manage", lock=True)` 事务内重锁；viewer 只有 `workspace.read` |
+| 非成员/过期成员执行 mutation | `authorize_workspace_action("workspace.grants.manage", lock=True)` 事务内重锁；installation viewer 读使用 `workspace.read`；definitions/versions 是 tenant principal catalog |
 | 事务前角色快照/裸 cookie 授权 | mutation 每次重载 live membership 行并加锁，不信任快照 |
 | 跨租户读/写 definition/version/binding | 服务层恒带 `tenant_id` predicate + DB 复合 FK；catalog 端点 tenant 过滤（集成测试断言） |
-| upgrade/rollback 指向非 sealed 或 digest 不符版本 | `_load_sealed_target_version`：sealed + digest 精确匹配，否则 404/409 |
-| 竞态覆盖新 binding（stale write） | `_require_live_binding` + `expected_binding_id` 不匹配 → 409 `registry_stale_binding` |
-| 同 key 同 body 的 replay 被误判 drift | 确定性 hash 锚点（去掉 server 生成的 binding_id/created_at）；同 key 不同 body 仍 409 |
-| 高风险安装绕过 approval | `registry_approval_required` 409（API 层无有效 approval 时）；approval 单次消费由 sealed service 保证 |
+| upgrade/rollback 指向非 sealed 或 digest 不符版本 | Browser 非锁定 `_load_sealed_target_version_snapshot` 早拒绝；P5.1B 在 Definition → Version → Binding 标准锁序下权威复核 |
+| Browser 预锁 Version/Binding 导致锁序反转 | Browser 只读快照不加行锁；P5.1B service 独占权威行锁与状态判断 |
+| 竞态覆盖新 binding（stale write） | `expected_binding_id` 不匹配 → 409 `registry_stale_binding`；首次执行的 live-state 校验由 P5.1B 完成 |
+| upgrade/rollback 首次成功后 exact replay 被旧 Binding 非 live 提前拒绝 | Browser 快照不要求 live；P5.1B 在旧状态判断前解析 outer IdempotencyRecord，同 key 同 body返回原新 Binding |
+| 任意 caller digest 绕过幂等/Approval payload 绑定 | service 只接受 `internal_full|browser_install|browser_upgrade|browser_rollback` 闭 profile 并自行计算 hash |
+| install Approval 被 upgrade/rollback 重放 | Approval 同时绑定精确 action、old Binding ID（supersede）、deterministic payload 与 risk/workspace/requester；单次消费同事务 |
 | 请求含通配/重复 scope 或未知字段 | `schemas.py` `extra="forbid"` + scope 闭集正则 + 客户端 SDK 同构校验（422） |
+| SDK `/api/v1/../../gateway` 或编码/反斜杠逃逸 | 两 SDK 在 URL join 前拒绝 dot segment、`%`、反斜杠、query/fragment、重复斜杠并复核规范化 path |
+| TypeScript SDK 把非法状态/字符串数字/额外 locator 强转为成功 DTO | exact keys + closed states + strict integer/finite validation；禁止 `String()`/`Number()` coercion |
+| 非法路径 UUID 触发 500 | router 稳定返回 422 `invalid_logical_identifier`，不调用 control plane |
 | 错误体/OpenAPI/SDK 泄漏物理 locator | 白名单投影 + 单测断言（omnibase_meta/postgresql/password 等缺席） |
 | 通过 API 创建 Definition/Version 或开启 Runtime | 端点集合固定（OpenAPI 精确断言）；无创建端点；Feature Gate 恒 false；migration head 0010 |
 | 生产默认挂载 DB-backed control plane | 只能经 `dependency_overrides` 显式注入；main.py 生产组合不装配 |
@@ -416,15 +422,17 @@ Browser principal（JWT）是必要非充分条件，role 以当前成员资格�
 1. 单元/API 测试（21 项）通过：10 端点 fail-closed 503、rejecting
    authorizer、DTO 严格性、server-derived identity、OpenAPI 精确路径
    集合、无物理 locator、无 internal 请求字段；
-2. 一次性 sentinel PostgreSQL 集成测试（20 项）通过：migration head
+2. 一次性 sentinel PostgreSQL 集成测试覆盖 migration head
    0010、API-backed install/upgrade/disable/rollback、exact replay、
    digest drift、stale generation、cross-tenant、live membership、并发
-   单赢家、approval 单次消费、审计 append-only、rollback 原子性、
+   单赢家、upgrade/rollback exact replay、operation-bound Approval、
+   approval 单次消费、审计 append-only、rollback 原子性、
    cleanup proof；
 3. `make test-p5-1c-registry-api` 与
    `scripts/production/run_p5_1c_browser_registry_disposable_gate.py --run`
    在一次性隔离数据库上通过并记录 sealed evidence；
-4. Python SDK（8 项新增）与 TypeScript SDK（5 项新增）测试通过；
+4. Python/TypeScript SDK 必须覆盖 path escape、extra field、closed state、
+   non-integer/NaN 负例；
 5. 未实现 Definition/Version 创建、migration 0011、Runtime/编排；
    三个 Feature Gate 保持 false；P34.7/P5.0/P5.1 production 保持
    `blocked/not_proven`；P5.2+ frozen。

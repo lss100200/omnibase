@@ -1574,10 +1574,12 @@
       ],
       "entrypoints": [
         "backend/src/omnibase/agent_registry/service.py:RegistryPersistenceService",
+        "backend/src/omnibase/agent_registry/service.py:_binding_request_identity",
         "backend/src/omnibase/agent_registry/models.py:AgentDefinitionModel",
         "backend/src/omnibase/agent_registry/models.py:AgentVersionModel",
         "backend/src/omnibase/agent_registry/models.py:WorkspaceAgentBindingModel",
         "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py:upgrade",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py:_run_database_preflight",
         "scripts/production/run_p5_1b_registry_disposable_gate.py:main"
       ],
       "public_interfaces": [
@@ -1611,7 +1613,7 @@
         "Registry mutations only run inside caller-owned transactions after re-locking the live tenant User, with idempotency, approval consumption and append-only audit; never update a binding row in isolation or rewire its installation payload.",
         "Physical PostgreSQL locators must never appear in DTOs, errors or logs; only logical identifiers cross boundaries.",
         "0010 populated downgrade fails closed; never drop or mutate agent_registry tables destructively in place.",
-        "The disposable Gate must pass --env-file .env.example to every Compose call and may publish passed evidence only after labeled container/network/volume counts are all zero."
+        "The disposable Gate must pass --env-file .env.example to every Compose call, execute backend/tests/destructive_preflight.py before Alembic, and may publish passed evidence only after labeled container/network/volume counts are all zero; canonical evidence replacement must be atomic and reject symlinks."
       ]
     },
     {
@@ -1626,6 +1628,10 @@
         "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
         "scripts/production/run_p5_1c_browser_registry_disposable_gate.py",
         "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "sdk/python/src/omnibase_sdk/browser_registry.py",
+        "sdk/python/tests/test_registry_browser_client.py",
+        "sdk/typescript/src/registry-browser.ts",
+        "sdk/typescript/tests/registry-browser.test.mjs",
         "docs/evidence/p5-1/phase5-browser-registry-api-design.md"
       ],
       "entrypoints": [
@@ -1634,6 +1640,7 @@
         "backend/src/omnibase/agent_registry/router.py:get_registry_control_plane",
         "backend/src/omnibase/agent_registry/control.py:AgentRegistryControlService",
         "backend/src/omnibase/agent_registry/control.py:UnavailableAgentRegistryControlPlane",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py:_run_database_preflight",
         "scripts/production/run_p5_1c_browser_registry_disposable_gate.py:main"
       ],
       "public_interfaces": [
@@ -1677,8 +1684,10 @@
       ],
       "recovery": [
         "Production defaults reject until the DB-backed control plane is explicitly injected; never mount it into main.py by default. Browser endpoints only expose logical identifiers, never physical locators.",
-        "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction before delegating to the sealed P5.1B service; upgrade/rollback pin sealed target versions and expected bindings.",
-        "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names and publish passed evidence only after zero labeled resources remain."
+        "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction. Browser Version/Binding checks are non-locking snapshots; the sealed P5.1B service owns the authoritative Definition -> Version -> Binding lock order and repeats all state checks.",
+        "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
+        "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
+        "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names, run destructive_preflight.py before Alembic, and publish passed evidence only after zero labeled resources remain."
       ]
     },
     {

@@ -346,6 +346,7 @@ def _approval(
     *,
     approval_id: str | None = None,
     risk_level: str = "R3",
+    action: str = "agent.install",
 ) -> str:
     approval_id = approval_id or str(uuid.uuid4())
     connection.execute(
@@ -355,7 +356,7 @@ def _approval(
             "action, risk_level, required_approver_role, state, request_hash, "
             "grant_id, operation_id, decided_by_actor_type, decided_by_actor_id, "
             "expires_at) "
-            "VALUES (:id, :tenant, 'user', :actor, :workspace, 'agent.install', "
+            "VALUES (:id, :tenant, 'user', :actor, :workspace, :action, "
             ":risk, :role, 'approved', :hash, :grant, :operation, 'user', :actor, :expires)"
         ),
         {
@@ -363,6 +364,7 @@ def _approval(
             "tenant": tenant_id,
             "actor": ACTOR_ID,
             "workspace": workspace_id,
+            "action": action,
             "risk": risk_level,
             "role": "platform_admin" if risk_level == "R4" else "tenant_admin",
             "hash": request_hash,
@@ -442,23 +444,71 @@ def _install_body(
 
 
 def _upgrade_body(
-    version_mapping: dict[str, object], *, expected_binding_id: str | None = None
+    version_mapping: dict[str, object],
+    *,
+    expected_binding_id: str | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, object]:
     return {
         "target_agent_version_id": version_mapping["agent_version_id"],
         "target_agent_version_digest": version_mapping["manifest_digest"],
         "expected_binding_id": expected_binding_id,
+        "approval_id": approval_id,
     }
 
 
 def _rollback_body(
-    version_mapping: dict[str, object], *, expected_binding_id: str | None = None
+    version_mapping: dict[str, object],
+    *,
+    expected_binding_id: str | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, object]:
     return {
         "rollback_agent_version_id": version_mapping["agent_version_id"],
         "rollback_agent_version_digest": version_mapping["manifest_digest"],
         "expected_binding_id": expected_binding_id,
+        "approval_id": approval_id,
     }
+
+
+def _browser_supersede_hash(
+    *,
+    operation: str,
+    tenant_id: str,
+    workspace_id: str,
+    definition_id: str,
+    version_mapping: dict[str, object],
+    old_binding_id: str,
+    approval_id: str,
+) -> str:
+    binding: dict[str, object] = {
+        "schema_version": 1,
+        "tenant_id": tenant_id,
+        "workspace_id": workspace_id,
+        "workspace_generation": 1,
+        "agent_definition_id": definition_id,
+        "agent_version_id": version_mapping["agent_version_id"],
+        "agent_version_digest": version_mapping["manifest_digest"],
+        "installation_state": "installed",
+        "resource_scopes": ["workspace_private_read"],
+        "default_budget_policy": {
+            "max_tokens": 50000,
+            "max_cost_units": 500,
+            "max_wall_clock_seconds": 300,
+            "max_tool_calls": 50,
+        },
+        "installed_by": ACTOR_ID,
+        "approval_id": approval_id,
+        "disabled_at": None,
+        "superseded_by": None,
+    }
+    return _canonical_hash(
+        {
+            "operation": operation,
+            "old_binding_id": old_binding_id,
+            "binding": binding,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -865,6 +915,123 @@ def test_upgrade_creates_new_binding_and_supersedes_old(db_engine, run_owned_res
     assert str(old_row.superseded_by) == new_binding
 
 
+def test_upgrade_exact_replay_resolves_after_old_binding_is_superseded(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, definition_id, version_a = _seed(
+        db_engine, run_owned_resources, "upgrade-replay"
+    )
+    _, version_b = _register_and_seal(db_engine, tenant_id, definition_id=definition_id)
+    client = _client(db_engine, tenant_id)
+    old_binding = _installed_binding_id(client, workspace_id, definition_id, version_a)
+    key = "p51c-upgrade-replay-0001"
+    path = f"/api/v1/workspaces/{workspace_id}/agent-installations/{old_binding}/upgrade"
+    body = _upgrade_body(version_b, expected_binding_id=old_binding)
+
+    first = client.post(path, headers={"Idempotency-Key": key}, json=body)
+    assert first.status_code == 200, first.text
+    replay = client.post(path, headers={"Idempotency-Key": key}, json=body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["binding_id"] == first.json()["binding_id"]
+
+    _, version_c = _register_and_seal(db_engine, tenant_id, definition_id=definition_id)
+    drift = client.post(
+        path,
+        headers={"Idempotency-Key": key},
+        json=_upgrade_body(version_c, expected_binding_id=old_binding),
+    )
+    assert drift.status_code == 409
+    assert drift.json()["error"]["code"] == "registry_replay_input_mismatch"
+
+
+def test_upgrade_approval_must_match_operation_bound_hash_and_action(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, definition_id, version_a = _seed(
+        db_engine, run_owned_resources, "upgrade-approval"
+    )
+    _, version_b = _register_and_seal(db_engine, tenant_id, definition_id=definition_id)
+    client = _client(db_engine, tenant_id)
+    old_binding = _installed_binding_id(client, workspace_id, definition_id, version_a)
+    approval_id = str(uuid.uuid4())
+    request_hash = _browser_supersede_hash(
+        operation="agent.upgrade",
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        definition_id=definition_id,
+        version_mapping=version_b,
+        old_binding_id=old_binding,
+        approval_id=approval_id,
+    )
+    with db_engine.begin() as connection:
+        _approval(
+            connection,
+            tenant_id,
+            workspace_id,
+            request_hash,
+            approval_id=approval_id,
+            risk_level="R1",
+            action="agent.install",
+        )
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agent-installations/{old_binding}/upgrade",
+        headers={"Idempotency-Key": "p51c-upgrade-approval-0001"},
+        json=_upgrade_body(version_b, approval_id=approval_id),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "registry_approval_action_mismatch"
+
+
+def test_upgrade_consumes_exact_operation_bound_approval_once(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, definition_id, version_a = _seed(
+        db_engine, run_owned_resources, "upgrade-approval-success"
+    )
+    _, version_b = _register_and_seal(db_engine, tenant_id, definition_id=definition_id)
+    client = _client(db_engine, tenant_id)
+    old_binding = _installed_binding_id(client, workspace_id, definition_id, version_a)
+    approval_id = str(uuid.uuid4())
+    request_hash = _browser_supersede_hash(
+        operation="agent.upgrade",
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        definition_id=definition_id,
+        version_mapping=version_b,
+        old_binding_id=old_binding,
+        approval_id=approval_id,
+    )
+    with db_engine.begin() as connection:
+        _approval(
+            connection,
+            tenant_id,
+            workspace_id,
+            request_hash,
+            approval_id=approval_id,
+            risk_level="R1",
+            action="agent.upgrade",
+        )
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agent-installations/{old_binding}/upgrade",
+        headers={"Idempotency-Key": "p51c-upgrade-approval-success"},
+        json=_upgrade_body(version_b, approval_id=approval_id),
+    )
+    assert response.status_code == 200, response.text
+    with db_engine.connect() as connection:
+        state = str(
+            connection.execute(
+                text(
+                    "SELECT state FROM omnibase_meta.approval_requests "
+                    "WHERE id = :id AND tenant_id = :tenant"
+                ),
+                {"id": approval_id, "tenant": tenant_id},
+            ).scalar_one()
+        )
+    assert state == "consumed"
+
+
 def test_upgrade_stale_expected_binding_is_conflict(db_engine, run_owned_resources) -> None:
     tenant_id, workspace_id, definition_id, version_a = _seed(
         db_engine, run_owned_resources, "upgrade-stale"
@@ -962,6 +1129,33 @@ def test_rollback_creates_new_binding_with_exact_old_version(
             {"id": current_binding, "tenant": tenant_id},
         ).one()
     assert old_row.binding_state == "superseded"
+
+
+def test_rollback_exact_replay_resolves_after_current_binding_is_superseded(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, definition_id, version_a = _seed(
+        db_engine, run_owned_resources, "rollback-replay"
+    )
+    _, version_b = _register_and_seal(db_engine, tenant_id, definition_id=definition_id)
+    client = _client(db_engine, tenant_id)
+    old_binding = _installed_binding_id(client, workspace_id, definition_id, version_a)
+    upgraded = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agent-installations/{old_binding}/upgrade",
+        headers={"Idempotency-Key": "p51c-rollback-replay-upgrade"},
+        json=_upgrade_body(version_b),
+    )
+    assert upgraded.status_code == 200, upgraded.text
+    current_binding = upgraded.json()["binding_id"]
+    key = "p51c-rollback-replay-0001"
+    path = f"/api/v1/workspaces/{workspace_id}/agent-installations/{current_binding}/rollback"
+    body = _rollback_body(version_a, expected_binding_id=current_binding)
+
+    first = client.post(path, headers={"Idempotency-Key": key}, json=body)
+    assert first.status_code == 200, first.text
+    replay = client.post(path, headers={"Idempotency-Key": key}, json=body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["binding_id"] == first.json()["binding_id"]
 
 
 def test_rollback_failure_leaves_no_partial_state(db_engine, run_owned_resources) -> None:

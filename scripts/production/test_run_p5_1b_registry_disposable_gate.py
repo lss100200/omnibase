@@ -60,7 +60,9 @@ def test_source_manifest_is_stable_and_never_contains_root_env(monkeypatch) -> N
     assert isinstance(files, dict)
     assert ".env" not in files
     assert "backend/src/omnibase/agent_registry/service.py" in files
-    assert "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py" in files
+    assert (
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py" in files
+    )
     assert "backend/tests/integration/test_p5_1b_agent_registry_foundation.py" in files
     assert "scripts/production/run_p5_1b_registry_disposable_gate.py" in files
     assert all(len(str(digest)) == 64 for digest in files.values())
@@ -148,7 +150,9 @@ def test_verify_evidence_rejects_drifted_source(monkeypatch, tmp_path: Path) -> 
     drifted_path = tmp_path / "drifted.json"
     drifted_path.write_text(json.dumps(drifted), encoding="utf-8")
     with pytest.raises(RuntimeError, match="source manifest drifted"):
-        gate._verify_recorded_evidence(json.loads(drifted_path.read_text(encoding="utf-8")))
+        gate._verify_recorded_evidence(
+            json.loads(drifted_path.read_text(encoding="utf-8"))
+        )
 
 
 def test_verify_evidence_rejects_unsafe_claims(monkeypatch, tmp_path: Path) -> None:
@@ -221,3 +225,109 @@ def test_cleanup_project_requires_zero_labeled_resources(monkeypatch) -> None:
     )
     with pytest.raises(RuntimeError, match="left resources"):
         gate._cleanup_project("omnibase-p51b-test", env={})
+
+
+def test_host_preflight_uses_guarded_environment_before_any_migration(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        captured.update(arguments=arguments, check=check, env=env, cwd=cwd)
+        return CompletedProcess(arguments, 0, "", "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    database_url = (
+        "postgresql+psycopg://runner:test@localhost:55432/omnibase_test_p51b_unit"
+    )
+    gate._run_database_preflight(
+        database_url,
+        project="omnibase-p51b-unit",
+        backend_executor="host",
+        env={},
+    )
+
+    assert captured["arguments"] == [sys.executable, "tests/destructive_preflight.py"]
+    assert captured["cwd"] == gate.REPO_ROOT / "backend"
+    assert captured["check"] is False
+    backend_env = captured["env"]
+    assert isinstance(backend_env, dict)
+    assert backend_env["DATABASE_URL"] == database_url
+    assert backend_env["TEST_DATABASE_URL"] == database_url
+    assert backend_env["OMNIBASE_INTEGRATION_TESTS"] == "1"
+
+
+def test_preflight_failure_blocks_migration(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        del check, env, cwd
+        commands.append(arguments)
+        return CompletedProcess(arguments, 1, "sentinel missing", "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        gate._run_database_preflight(
+            "postgresql+psycopg://runner:test@localhost:55432/omnibase_test_p51b_unit",
+            project="omnibase-p51b-unit",
+            backend_executor="host",
+            env={},
+        )
+    assert len(commands) == 1
+    assert "alembic" not in commands[0]
+
+
+def test_publish_evidence_atomically_replaces_regular_files(
+    monkeypatch, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "evidence.json").write_text('{"passed": true}\n', encoding="utf-8")
+    (run_dir / "evidence.md").write_text("new evidence\n", encoding="utf-8")
+    destination_json = tmp_path / "sealed" / "evidence.json"
+    destination_md = tmp_path / "sealed" / "evidence.md"
+    destination_json.parent.mkdir()
+    destination_json.write_text("old\n", encoding="utf-8")
+    destination_md.write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "EVIDENCE_JSON", destination_json)
+    monkeypatch.setattr(gate, "EVIDENCE_MD", destination_md)
+
+    gate._publish_evidence(run_dir)
+
+    assert destination_json.read_text(encoding="utf-8") == '{"passed": true}\n'
+    assert destination_md.read_text(encoding="utf-8") == "new evidence\n"
+    assert not list(destination_json.parent.glob(".*.tmp"))
+
+
+def test_publish_evidence_rejects_symlink_destination(
+    monkeypatch, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "evidence.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "evidence.md").write_text("evidence\n", encoding="utf-8")
+    target = tmp_path / "target.json"
+    target.write_text("protected\n", encoding="utf-8")
+    link = tmp_path / "evidence.json"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable on this host")
+    monkeypatch.setattr(gate, "EVIDENCE_JSON", link)
+    monkeypatch.setattr(gate, "EVIDENCE_MD", tmp_path / "evidence.md")
+
+    with pytest.raises(RuntimeError, match="not a regular file"):
+        gate._publish_evidence(run_dir)
+    assert target.read_text(encoding="utf-8") == "protected\n"

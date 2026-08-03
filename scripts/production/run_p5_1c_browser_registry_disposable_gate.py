@@ -357,7 +357,7 @@ def _run_backend_steps(
     backend_executor: str,
     env: dict[str, str],
 ) -> None:
-    """Run alembic head + the guarded P5.1C integration suite."""
+    """Run Alembic head and the guarded P5.1C integration suite."""
     if backend_executor == "container":
         alembic = _run(
             _container_backend_command(
@@ -406,12 +406,43 @@ def _backend_env(env: dict[str, str], *, database_url: str) -> dict[str, str]:
     backend_env["TEST_DATABASE_URL"] = database_url
     backend_env["OMNIBASE_INTEGRATION_TESTS"] = "1"
     # Same synthetic service endpoints the container executor passes via -e.
-    backend_env.setdefault("JWT_SECRET", "test_secret_at_least_32_characters_long_for_validation")
+    backend_env.setdefault(
+        "JWT_SECRET", "test_secret_at_least_32_characters_long_for_validation"
+    )
     backend_env.setdefault("MINIO_ENDPOINT", "localhost:9000")
     backend_env.setdefault("MINIO_ACCESS_KEY", "test_access")
     backend_env.setdefault("MINIO_SECRET_KEY", "test_secret")
     backend_env.setdefault("REDIS_URL", "redis://localhost:6379/15")
     return backend_env
+
+
+def _run_database_preflight(
+    database_url: str,
+    *,
+    project: str,
+    backend_executor: str,
+    env: dict[str, str],
+) -> None:
+    """Prove the database name, sentinel, and restricted role before DDL."""
+    if backend_executor == "container":
+        command = _container_backend_command(
+            project,
+            database_url,
+            "python",
+            "tests/destructive_preflight.py",
+        )
+        result = _run(command, check=False)
+    else:
+        result = _run(
+            [sys.executable, "tests/destructive_preflight.py"],
+            check=False,
+            env=_backend_env(env, database_url=database_url),
+            cwd=REPO_ROOT / "backend",
+        )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "disposable database preflight failed:\n" + result.stdout[-2000:]
+        )
 
 
 def _record_evidence(
@@ -453,9 +484,27 @@ def _publish_evidence(run_dir: Path) -> None:
         ("md", run_dir / "evidence.md"),
     ):
         destination = EVIDENCE_JSON if name == "json" else EVIDENCE_MD
-        if destination.exists():
-            raise RuntimeError(f"refusing to overwrite sealed evidence: {destination}")
-        shutil.copy2(source, destination)
+        if source.is_symlink() or not source.is_file():
+            raise RuntimeError(f"evidence source is not a regular file: {source}")
+        if destination.is_symlink() or (
+            destination.exists() and not destination.is_file()
+        ):
+            raise RuntimeError(
+                f"evidence destination is not a regular file: {destination}"
+            )
+        if destination.parent.is_symlink():
+            raise RuntimeError(
+                f"evidence destination parent is a symlink: {destination.parent}"
+            )
+        temporary = destination.with_name(
+            f".{destination.name}.{secrets.token_hex(8)}.tmp"
+        )
+        try:
+            shutil.copy2(source, temporary)
+            os.replace(temporary, destination)
+        finally:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
 
 
 def _verify_recorded_evidence(report: dict[str, object]) -> None:
@@ -568,6 +617,12 @@ def main() -> int:
             raise RuntimeError(
                 "disposable PostgreSQL failed to start:\n" + up.stdout[-2000:]
             )
+        _run_database_preflight(
+            database_url,
+            project=project,
+            backend_executor=arguments.backend_executor,
+            env=env,
+        )
         evidence["database_sentinel_verified"] = True
         _run_backend_steps(
             database_url,

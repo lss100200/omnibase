@@ -1343,6 +1343,11 @@ sealed version 的身份列与内容列都不可变；binding 安装身份/paylo
   Tenant -> tenant User(actor) -> Workspace -> Definition -> Version ->
   live Binding -> IdempotencyRecord -> ApprovalRequest（首次执行）-> target
   row -> AuditEvent。exact replay 必须在 approval 重验前返回已提交结果。
+- P5.1B 内部调用继续使用 `internal_full` 完整 DTO hash。面向 P5.1C 的
+  install/upgrade/rollback profile 必须由 service 自行计算，禁止任意
+  caller digest；数据库 trigger 对 Binding Approval action 只接受
+  `agent.install|agent.upgrade|agent.rollback` 闭集，service 再校验精确
+  operation/hash 并单次消费。
 - 收紧 DTO 校验、ceiling、trigger 状态机或新增 fail-closed 集成测试；
   任何 contract/迁移/测试变更必须同步更新 sealed digest 并重验。
 
@@ -1386,6 +1391,7 @@ sealed version 的身份列与内容列都不可变；binding 安装身份/paylo
 - 不得对已 populated 的 `0010` 做 destructive downgrade；只允许
   forward-fix，或恢复到新的 `omnibase_restore_*` 数据库进行核验。
 - 仅在新的 `omnibase_test_*` sentinel 数据库上重跑 migration 与 Gate；
+  Gate 必须在 Alembic 前实际执行 `backend/tests/destructive_preflight.py`；
   Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
   全部为 0 后才能发布 passed evidence。不得触碰业务数据库。
 
@@ -1415,20 +1421,26 @@ installations）+ 4 个 mutation（install/disable/upgrade/rollback）。
 每个受保护请求都必须通过 `get_current_principal`；每个 mutation 在调用者
 拥有的事务内重新验证 live Tenant/User/role/WorkspaceMembership
 （`authorize_workspace_action(action, lock=True)`），锁序为 Tenant ->
-User(actor) -> Workspace -> WorkspaceMembership -> Definition -> Version ->
+User(actor) -> Workspace -> WorkspaceMembership；Browser 对 Version/Binding
+只做非锁定快照，随后由 P5.1B sealed 服务按 Definition -> Version ->
 live Binding -> IdempotencyRecord -> ApprovalRequest -> target row ->
-Resource -> AuditEvent，然后才委托 P5.1B sealed 服务。API 层不得创建
+Resource -> AuditEvent 的权威锁序复核。API 层不得创建
 AgentDefinition/AgentVersion：定义注册与版本 sealed 仍 internal，三个
 Phase 5 Feature Gate 保持 false，migration head 保持 0010。
 
 **允许的改法**
 
-- 在同一事务内扩展只读投影或 mutation 校验；upgrade/rollback 必须通过
+- 在同一事务内扩展只读投影或 mutation 校验；definitions/versions 是
+  live Tenant principal 下的 tenant-wide catalog，installation 读使用
+  `workspace.read`，mutation 使用 `workspace.grants.manage`；upgrade/rollback 必须通过
   sealed 目标版本校验（digest 精确匹配）与 `expected_binding_id` 期望
   绑定校验，最终复用 `supersede_binding` 的原子语义。
-- 幂等 replay 的 request hash 使用确定性锚点（去掉 server 生成的
-  binding_id/created_at 的 binding payload），同 key 同 body 精确 replay，
-  同 key 不同 body 409；P5.1B 内部调用方不传 override 时行为不变。
+- 幂等/Approval hash 只能由 service 的封闭 profile 计算：`internal_full`
+  保持 P5.1B 原始完整 DTO 语义；Browser install/upgrade/rollback 分别绑定
+  `agent.install|agent.upgrade|agent.rollback`，supersede 摘要还必须包含
+  `old_binding_id`。禁止任意 caller-provided digest。同 key 同 body精确
+  replay，同 key 不同 body 409，且 upgrade/rollback replay 必须先到达
+  IdempotencyRecord，再判断旧 Binding 是否仍 live。
 - 收紧公共 DTO 的 `extra="forbid"`、scope 闭集或新增 fail-closed 测试；
   任何 contract/测试变更必须同步更新 sealed digest 并重验。
 
@@ -1443,24 +1455,32 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
 - 用事务前角色快照、cookie 或裸资源 id 替代 mutation 内的 live
   membership 重锁；跨租户返回 definition/version/binding。
 - 让同 key 同 body 的 replay 误判为 drift，或让高风险的 install 绕过
-  approval 单次消费。
+  approval 单次消费；让 install Approval 被 upgrade/rollback 使用，或让
+  upgrade 与 rollback 共用不含 operation/old Binding 的摘要。
+- 在 Browser 层先锁 Version/Binding 后再调用 P5.1B，形成与标准
+  Definition -> Version -> Binding 顺序相反的锁序。
+- SDK 只用字符串前缀判断 Browser path，允许 dot segment、反斜杠、编码
+  或 query/fragment 在 URL 规范化后逃逸 `/api/v1/`；SDK response parser
+  必须拒绝 extra field、非法 closed state、非整数与 `NaN`。
 
 **必须运行的测试**
 
 - `backend/tests/test_p5_1c_registry_api.py`（10 端点 fail-closed 503、
   rejecting authorizer、DTO 严格性、OpenAPI 精确路径集合、无物理
-  locator、无 internal 请求字段）
+  locator、无 internal 请求字段、非法 UUID 稳定 422）
 - `backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py`
   （一次性 sentinel PostgreSQL：migration head 0010、API-backed
   install/upgrade/disable/rollback、exact replay、digest drift、stale
-  generation、cross-tenant、live membership、并发单赢家、approval 单次
-  消费、审计 append-only、rollback 原子性、cleanup proof）
+  generation、cross-tenant、live membership、并发单赢家、install/
+  upgrade/rollback operation-bound approval、upgrade/rollback exact replay、
+  approval 单次消费、审计 append-only、rollback 原子性、cleanup proof）
 - `make test-p5-1c-registry-api` 与
   `python scripts/production/run_p5_1c_browser_registry_disposable_gate.py --run`
   （`omnibase_test_p51c_*` 一次性隔离数据库 Gate，evidence 记录到
   `docs/evidence/p5-1/phase5-browser-registry-api-disposable-gate.json`）
 - Python SDK `sdk/python/tests/test_registry_browser_client.py` 与
-  TypeScript SDK `sdk/typescript/tests/registry-browser.test.mjs`
+  TypeScript SDK `sdk/typescript/tests/registry-browser.test.mjs`（含 path
+  normalization escape 与严格 response parsing 负例）
 
 **失败恢复**
 
@@ -1471,5 +1491,6 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
 - 不得对已 populated 的 `0010` 做 destructive downgrade；只允许
   forward-fix，或恢复到新的 `omnibase_restore_*` 数据库进行核验。
 - 仅在新的 `omnibase_test_*` sentinel 数据库上重跑 migration 与 Gate；
+  Gate 必须在 Alembic 前实际执行 `backend/tests/destructive_preflight.py`；
   Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
   全部为 0 后才能发布 passed evidence。不得触碰业务数据库。

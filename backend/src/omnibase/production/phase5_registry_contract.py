@@ -1281,7 +1281,7 @@ class RegistryContractGate:
         blockers = [
             "formal Phase 5 registry contract verification was not executed",
             "Agent Registry production database schema is not applied/proven",
-            "Agent Browser API is not implemented",
+            "Agent Invocation/Runtime API is not implemented",
             "Workspace installation public/runtime surface is not implemented",
         ]
         if config.p34_7_formal_state is not P347FormalState.READY:
@@ -1353,7 +1353,7 @@ class RegistryContractGate:
         blockers.extend(
             [
                 "Agent Registry production database schema is not applied/proven",
-                "Agent Browser API is not implemented",
+                "Agent Invocation/Runtime API is not implemented",
                 "Workspace installation public/runtime surface is not implemented",
             ]
         )

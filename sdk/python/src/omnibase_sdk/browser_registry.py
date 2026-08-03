@@ -32,6 +32,10 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SCOPE_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _DEFAULT_RESPONSE_LIMIT = 1_000_000
+_RISK_LEVELS = {"low", "medium", "high", "critical"}
+_DEFINITION_STATES = {"draft", "active", "disabled", "revoked"}
+_VERSION_STATES = {"draft", "sealed", "deprecated", "revoked"}
+_BINDING_STATES = {"pending_approval", "installed", "disabled", "superseded", "revoked"}
 
 _DEFINITION_KEYS = {
     "agent_definition_id",
@@ -90,6 +94,27 @@ def _require_digest(value: Any, label: str) -> str:
     if _DIGEST_RE.fullmatch(text) is None:
         raise ValueError(f"{label} must be a lowercase 64-character SHA-256")
     return text
+
+
+def _require_closed(value: Any, allowed: set[str], label: str) -> str:
+    text = require_string(value, label)
+    if text not in allowed:
+        raise ValueError(f"{label} is outside the closed set")
+    return text
+
+
+def _validate_browser_path(path: str) -> str:
+    """Reject URL normalization tricks before joining a Browser API path."""
+    if not isinstance(path, str) or not path.startswith("/api/v1/"):
+        raise ValueError("Browser transport only permits GET/POST under /api/v1")
+    if any(character in path for character in ("\\", "%", "?", "#", "\x00")):
+        raise ValueError("Browser transport path must be an unencoded absolute API path")
+    if "//" in path or any(segment in {".", ".."} for segment in path.split("/")):
+        raise ValueError("Browser transport path contains forbidden dot or empty segments")
+    parsed = urlparse(path)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment or parsed.path != path:
+        raise ValueError("Browser transport path is not a confined API path")
+    return path
 
 
 def _require_scope_list(value: Any, label: str) -> list[str]:
@@ -163,8 +188,10 @@ class AgentDefinitionRead:
             stable_logical_key=require_string(value["stable_logical_key"], "stable_logical_key"),
             display_name=require_string(value["display_name"], "display_name"),
             description=_optional_string(value.get("description"), "description"),
-            risk_level=require_string(value["risk_level"], "risk_level"),
-            definition_state=require_string(value["definition_state"], "definition_state"),
+            risk_level=_require_closed(value["risk_level"], _RISK_LEVELS, "risk_level"),
+            definition_state=_require_closed(
+                value["definition_state"], _DEFINITION_STATES, "definition_state"
+            ),
             metadata_version=require_integer(
                 value["metadata_version"], "metadata_version", minimum=1
             ),
@@ -196,12 +223,12 @@ class AgentVersionRead:
             agent_version_id=_require_uuid(value["agent_version_id"], "agent_version_id"),
             agent_definition_id=_require_uuid(value["agent_definition_id"], "agent_definition_id"),
             version=require_string(value["version"], "version"),
-            version_state=require_string(value["version_state"], "version_state"),
+            version_state=_require_closed(value["version_state"], _VERSION_STATES, "version_state"),
             manifest_digest=_require_digest(value["manifest_digest"], "manifest_digest"),
             instructions_digest=_require_digest(
                 value["instructions_digest"], "instructions_digest"
             ),
-            risk_level=require_string(value["risk_level"], "risk_level"),
+            risk_level=_require_closed(value["risk_level"], _RISK_LEVELS, "risk_level"),
             max_context_tokens=require_integer(
                 value["max_context_tokens"], "max_context_tokens", minimum=1
             ),
@@ -245,7 +272,7 @@ class AgentInstallationRead:
             agent_version_digest=_require_digest(
                 value["agent_version_digest"], "agent_version_digest"
             ),
-            binding_state=require_string(value["binding_state"], "binding_state"),
+            binding_state=_require_closed(value["binding_state"], _BINDING_STATES, "binding_state"),
             resource_scopes=tuple(scopes),
             default_budget_policy=DefaultBudgetPolicyRead.from_dict(value["default_budget_policy"]),
             created_at=_optional_string(value.get("created_at"), "created_at"),
@@ -353,8 +380,9 @@ class BrowserHttpTransport:
         *,
         idempotency_key: str | None = None,
     ) -> TransportResponse:
-        if method not in {"GET", "POST"} or not path.startswith("/api/v1/"):
+        if method not in {"GET", "POST"}:
             raise ValueError("Browser transport only permits GET/POST under /api/v1")
+        path = _validate_browser_path(path)
         token = self._token_provider.get_access_token()
         request_id = str(uuid4())
         headers = {

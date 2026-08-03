@@ -45,8 +45,6 @@ from omnibase.agent_registry.schemas import (
 )
 from omnibase.agent_registry.service import (
     RegistryPersistenceService,
-    _canonical_request_hash,
-    _deterministic_binding_payload,
     _lock_actor_user,
     _lock_tenant,
 )
@@ -60,7 +58,6 @@ from omnibase.workspaces.service import authorize_workspace_action
 
 _MUTATION_ACTION = "workspace.grants.manage"
 _READ_ACTION = "workspace.read"
-_LIVE_BINDING_STATES = ("pending_approval", "installed")
 
 
 class AgentRegistryControlError(ValueError):
@@ -322,7 +319,7 @@ class AgentRegistryControlService:
         )
         return workspace
 
-    def _load_sealed_target_version(
+    def _load_sealed_target_version_snapshot(
         self,
         *,
         tenant_id: str,
@@ -331,13 +328,11 @@ class AgentRegistryControlService:
         digest: str,
     ) -> AgentVersionModel:
         version = self._session.execute(
-            select(AgentVersionModel)
-            .where(
+            select(AgentVersionModel).where(
                 AgentVersionModel.tenant_id == tenant_id,
                 AgentVersionModel.id == version_id,
                 AgentVersionModel.definition_id == definition_id,
             )
-            .with_for_update()
         ).scalar_one_or_none()
         if version is None:
             raise AgentRegistryControlError(
@@ -357,7 +352,7 @@ class AgentRegistryControlService:
             )
         return version
 
-    def _require_live_binding(
+    def _load_binding_snapshot(
         self,
         *,
         tenant_id: str,
@@ -366,23 +361,15 @@ class AgentRegistryControlService:
         expected_binding_id: str | None,
     ) -> WorkspaceAgentBindingModel:
         binding = self._session.execute(
-            select(WorkspaceAgentBindingModel)
-            .where(
+            select(WorkspaceAgentBindingModel).where(
                 WorkspaceAgentBindingModel.tenant_id == tenant_id,
                 WorkspaceAgentBindingModel.workspace_id == workspace_id,
                 WorkspaceAgentBindingModel.id == binding_id,
             )
-            .with_for_update()
         ).scalar_one_or_none()
         if binding is None:
             raise AgentRegistryControlError(
                 "agent_installation_not_found", "Agent installation not found", 404
-            )
-        if binding.binding_state not in _LIVE_BINDING_STATES:
-            raise AgentRegistryControlError(
-                "agent_installation_not_live",
-                "Agent installation is not live",
-                409,
             )
         if expected_binding_id is not None and binding.id != expected_binding_id:
             raise AgentRegistryControlError(
@@ -445,7 +432,7 @@ class AgentRegistryControlService:
                 "Workspace generation is stale",
                 409,
             )
-        self._load_sealed_target_version(
+        self._load_sealed_target_version_snapshot(
             tenant_id=tenant_id,
             definition_id=payload.agent_definition_id,
             version_id=payload.agent_version_id,
@@ -473,9 +460,7 @@ class AgentRegistryControlService:
                 request_id=request_id,
                 binding=binding,
                 idempotency_key=idempotency_key,
-                request_hash_override=_canonical_request_hash(
-                    _deterministic_binding_payload(binding)
-                ),
+                request_hash_profile="browser_install",
             )
             self._session.commit()
         except Exception:
@@ -499,13 +484,13 @@ class AgentRegistryControlService:
             actor_user_id=actor_user_id,
             workspace_id=workspace_id,
         )
-        current = self._require_live_binding(
+        current = self._load_binding_snapshot(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             binding_id=binding_id,
             expected_binding_id=payload.expected_binding_id,
         )
-        self._load_sealed_target_version(
+        self._load_sealed_target_version_snapshot(
             tenant_id=tenant_id,
             definition_id=current.agent_definition_id,
             version_id=payload.target_agent_version_id,
@@ -534,12 +519,7 @@ class AgentRegistryControlService:
                 old_binding_id=current.id,
                 new_binding=new_binding,
                 idempotency_key=idempotency_key,
-                request_hash_override=_canonical_request_hash(
-                    {
-                        "old_binding_id": current.id,
-                        "new_binding": _deterministic_binding_payload(new_binding),
-                    }
-                ),
+                request_hash_profile="browser_upgrade",
             )
             self._session.commit()
         except Exception:
@@ -592,13 +572,13 @@ class AgentRegistryControlService:
             actor_user_id=actor_user_id,
             workspace_id=workspace_id,
         )
-        current = self._require_live_binding(
+        current = self._load_binding_snapshot(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             binding_id=binding_id,
             expected_binding_id=payload.expected_binding_id,
         )
-        self._load_sealed_target_version(
+        self._load_sealed_target_version_snapshot(
             tenant_id=tenant_id,
             definition_id=current.agent_definition_id,
             version_id=payload.rollback_agent_version_id,
@@ -627,12 +607,7 @@ class AgentRegistryControlService:
                 old_binding_id=current.id,
                 new_binding=new_binding,
                 idempotency_key=idempotency_key,
-                request_hash_override=_canonical_request_hash(
-                    {
-                        "old_binding_id": current.id,
-                        "new_binding": _deterministic_binding_payload(new_binding),
-                    }
-                ),
+                request_hash_profile="browser_rollback",
             )
             self._session.commit()
         except Exception:

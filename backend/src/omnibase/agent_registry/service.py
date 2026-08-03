@@ -10,7 +10,7 @@ Lock order (compatible with the P34.4 Workspace aggregate rules):
 
     Tenant -> tenant User(actor) -> Workspace aggregate
       -> AgentDefinition -> AgentVersion -> live Binding
-      -> ApprovalRequest -> IdempotencyRecord -> target row -> AuditEvent
+      -> IdempotencyRecord -> ApprovalRequest -> target row -> AuditEvent
 
 Callers must supply a verified internal principal context, never a bare
 tenant id; the service re-loads the live tenant, workspace and registry rows
@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -105,6 +105,56 @@ def _deterministic_binding_payload(binding: WorkspaceAgentBinding) -> dict[str, 
     payload.pop("workspace_agent_binding_id", None)
     payload.pop("created_at", None)
     return payload
+
+
+_BindingRequestHashProfile = Literal[
+    "internal_full",
+    "browser_install",
+    "browser_upgrade",
+    "browser_rollback",
+]
+
+
+def _binding_request_identity(
+    *,
+    binding: WorkspaceAgentBinding,
+    profile: _BindingRequestHashProfile,
+    old_binding_id: str | None = None,
+) -> tuple[str, str]:
+    """Return a service-owned request hash and its exact Approval action.
+
+    Browser callers select one closed operation profile; they never provide a
+    digest.  The service therefore proves that the idempotency and Approval
+    anchor corresponds to the actual binding payload.  Internal P5.1B callers
+    retain the original full-binding hash byte-for-byte.
+    """
+
+    if profile == "internal_full":
+        if old_binding_id is not None:
+            raise RegistryStateError("registry_request_hash_profile_invalid")
+        return _canonical_request_hash(binding.to_dict()), "agent.install"
+    deterministic = _deterministic_binding_payload(binding)
+    if profile == "browser_install":
+        if old_binding_id is not None:
+            raise RegistryStateError("registry_request_hash_profile_invalid")
+        payload: dict[str, object] = {
+            "operation": "agent.install",
+            "binding": deterministic,
+        }
+        return _canonical_request_hash(payload), "agent.install"
+    if profile not in {"browser_upgrade", "browser_rollback"} or old_binding_id is None:
+        raise RegistryStateError("registry_request_hash_profile_invalid")
+    action = "agent.upgrade" if profile == "browser_upgrade" else "agent.rollback"
+    return (
+        _canonical_request_hash(
+            {
+                "operation": action,
+                "old_binding_id": old_binding_id,
+                "binding": deterministic,
+            }
+        ),
+        action,
+    )
 
 
 def _reserve_registry_idempotency(
@@ -522,7 +572,8 @@ class RegistryPersistenceService:
         request_id: str,
         binding: WorkspaceAgentBinding,
         idempotency_key: str,
-        request_hash_override: str | None = None,
+        request_hash_profile: _BindingRequestHashProfile = "internal_full",
+        superseded_binding_id: str | None = None,
     ) -> WorkspaceAgentBindingModel:
         _validate_contract_identity(
             tenant_id=tenant_id,
@@ -543,10 +594,11 @@ class RegistryPersistenceService:
             )
             .with_for_update()
         ).scalar_one_or_none()
-        if request_hash_override is not None:
-            request_hash = request_hash_override
-        else:
-            request_hash = _canonical_request_hash(binding.to_dict())
+        request_hash, approval_action = _binding_request_identity(
+            binding=binding,
+            profile=request_hash_profile,
+            old_binding_id=superseded_binding_id,
+        )
         record, inserted = _reserve_registry_idempotency(
             self._session,
             tenant_id=tenant_id,
@@ -590,6 +642,7 @@ class RegistryPersistenceService:
             binding=binding,
             request_hash=request_hash,
             risk=risk,
+            approval_action=approval_action,
         )
         model = WorkspaceAgentBindingModel(
             id=binding.workspace_agent_binding_id,
@@ -710,6 +763,7 @@ class RegistryPersistenceService:
         binding: WorkspaceAgentBinding,
         request_hash: str,
         risk: str,
+        approval_action: str,
     ) -> tuple[str, int] | None:
         """Validate the approval without consuming it; return (id, version) if required."""
         if binding.approval_id is None:
@@ -734,7 +788,7 @@ class RegistryPersistenceService:
             raise RegistryStateError("registry_approval_requester_mismatch")
         if approval.requester_type != "user":
             raise RegistryStateError("registry_approval_requester_type_mismatch")
-        if approval.action != "agent.install":
+        if approval.action != approval_action:
             raise RegistryStateError("registry_approval_action_mismatch")
         if approval.workspace_id != binding.workspace_id:
             raise RegistryStateError("registry_approval_workspace_mismatch")
@@ -923,7 +977,9 @@ class RegistryPersistenceService:
         old_binding_id: str,
         new_binding: WorkspaceAgentBinding,
         idempotency_key: str,
-        request_hash_override: str | None = None,
+        request_hash_profile: Literal[
+            "internal_full", "browser_upgrade", "browser_rollback"
+        ] = "internal_full",
     ) -> WorkspaceAgentBindingModel:
         """Supersede the old binding and install the new one atomically.
 
@@ -950,13 +1006,16 @@ class RegistryPersistenceService:
         ).scalar_one_or_none()
         if old is None:
             raise RegistryNotFoundError("registry_binding_not_found")
-        if request_hash_override is not None:
-            request_hash = request_hash_override
-        else:
+        if request_hash_profile == "internal_full":
             request_hash = _canonical_request_hash(
                 {"old_binding_id": old_binding_id, "new_binding": new_binding.to_dict()}
             )
-        inner_install_hash = _canonical_request_hash(_deterministic_binding_payload(new_binding))
+        else:
+            request_hash, _ = _binding_request_identity(
+                binding=new_binding,
+                profile=request_hash_profile,
+                old_binding_id=old_binding_id,
+            )
         record, inserted = _reserve_registry_idempotency(
             self._session,
             tenant_id=tenant_id,
@@ -992,7 +1051,10 @@ class RegistryPersistenceService:
             request_id=request_id,
             binding=new_binding,
             idempotency_key=f"{idempotency_key}:install",
-            request_hash_override=inner_install_hash,
+            request_hash_profile=request_hash_profile,
+            superseded_binding_id=(
+                old_binding_id if request_hash_profile != "internal_full" else None
+            ),
         )
         old.superseded_by = new_model.id
         self._session.flush()

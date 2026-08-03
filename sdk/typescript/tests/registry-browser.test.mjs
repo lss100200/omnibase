@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AgentRegistryBrowserClient, RegistryBrowserError } from "../dist/index.js";
+import {
+  AgentRegistryBrowserClient,
+  BrowserFetchTransport,
+  RegistryBrowserError,
+} from "../dist/index.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const definitionId = "22222222-2222-4222-8222-222222222222";
@@ -204,4 +208,62 @@ test("invalid error envelope and wildcard scopes are rejected", async () => {
     }),
     /wildcard/u,
   );
+});
+
+test("response parsing rejects extra fields, invalid states, and non-integers", async () => {
+  const extra = fakeClient({
+    status: 200,
+    body: { ...definitionBody, physical_schema_locator: "tenant_secret" },
+  });
+  await assert.rejects(extra.client.getAgentDefinition(definitionId), /extra fields/u);
+
+  const invalidVersion = fakeClient({
+    status: 200,
+    body: {
+      items: [{ ...versionBody, version_state: "running", max_context_tokens: "many" }],
+      total: "not-an-integer",
+    },
+  });
+  await assert.rejects(invalidVersion.client.listAgentVersions(definitionId), /integer|closed set/u);
+
+  const invalidBinding = fakeClient({
+    status: 200,
+    body: {
+      ...bindingBody,
+      binding_state: "executing",
+      default_budget_policy: {
+        ...bindingBody.default_budget_policy,
+        max_tokens: Number.NaN,
+      },
+    },
+  });
+  await assert.rejects(
+    invalidBinding.client.getInstallation(workspaceId, bindingId),
+    /closed set|positive integer/u,
+  );
+});
+
+test("Browser HTTP transport rejects dot-segment and encoded path escapes", async () => {
+  let fetchCalled = false;
+  const transport = new BrowserFetchTransport({
+    baseUrl: "https://omnibase.example.invalid",
+    accessTokenProvider: { getAccessToken: () => "token-value" },
+    fetch: async () => {
+      fetchCalled = true;
+      throw new Error("fetch must not run for a rejected path");
+    },
+  });
+  for (const escaped of [
+    "/api/v1/../../gateway/v1/probe",
+    "/api/v1/%2e%2e/gateway/v1/probe",
+    "/api/v1/agent-definitions?next=/gateway/v1",
+    "/api/v1\\..\\gateway\\v1\\probe",
+    "/api/v1//agent-definitions",
+  ]) {
+    await assert.rejects(
+      transport.request("GET", escaped, undefined),
+      /path|normalization|\/api\/v1/u,
+    );
+  }
+  assert.equal(fetchCalled, false);
 });
