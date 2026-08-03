@@ -83,6 +83,8 @@ jobs:
             tests/test_p5_0_admission.py \
             tests/test_p5_1_registry_contract.py \
             tests/test_p5_1b_agent_registry.py \
+            tests/test_p5_1c_registry_api.py \
+            tests/integration/test_p5_1c_browser_registry_api_foundation.py \
             src/omnibase/agent_registry \
             tests/test_rate_limit.py \
             tests/test_reranker_boundary.py \
@@ -129,6 +131,8 @@ jobs:
         run: uv run python ../scripts/production/validate_p5_1_registry_contract.py --validate-only
       - name: P5.1B registry persistence gate contract tests
         run: uv run pytest ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q
+      - name: P5.1C browser registry API gate contract tests
+        run: uv run pytest ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q
       - name: Backend non-integration tests
         run: uv run pytest -m "not integration"
       - name: OpenAPI and Python SDK contracts
