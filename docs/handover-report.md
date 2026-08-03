@@ -1849,12 +1849,14 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    modules / 302 path specs / 977 files / 154 entrypoints / 98 commands）与
    benchmark validator 全通过。fresh `omnibase_test_p51b_*` PostgreSQL Gate
    的 integration suite `30 passed`，evidence `passed=true`，manifest
-   SHA-256 为 `14164d300c6e21b894c199f377cdcca3af03b574a1bbf946ed193ce27dba0320`，
+   SHA-256 为 `a1eddf19972815e56d174f76138831458928933d353bf7ce1cc8d13eced2102e`，
    `root_env_accessed=false`、`business_database_accessed=false`、
    `business_database_migrated=false`、cleanup `0/0/0`。
 5. **P5.1A 合同同步**：`forbidden_source_paths` 移除 `agent_registry`；
    `baseline_migration_revisions` 扩展至 `0010`；sealed digest 随文档
-   更新；P5.1A `--verify` 继续 `blocked/not_proven`（exit 2）。
+   更新；P5.1A `--verify` 继续 `blocked/not_proven`（exit 2），blocker 已准确
+   表述为“production database schema 未应用/未证明”和“公开/运行时安装表面
+   未实现”，不再错误否认 P5.1B 内部持久化地基已经存在。
 6. **明确未发生**：未新增任何 Browser/API/SDK/前端/Runtime/编排表面；
    未打开 Feature Gate；未读取根 `.env`；未访问或迁移业务数据库；未 push。
 
