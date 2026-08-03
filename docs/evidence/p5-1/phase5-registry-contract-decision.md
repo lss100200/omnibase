@@ -159,3 +159,40 @@ The original three implementation commits remain part of the provenance, but
 their pre-fix test totals and clean-checkout report are historical evidence,
 not the final independent acceptance result. A fresh clean-checkout report is
 recorded after the corrective commit below.
+
+### Post-fix clean-checkout verification
+
+The corrective implementation commit was verified from the clean linked
+worktree using host Python 3.12.10. The first container attempt could not follow
+the linked-worktree `.git` indirection outside the bind mount and failed before
+producing provenance; it did not weaken or bypass the Git check. The successful
+offline verification used explicit process-local Feature Gate values of
+`false/false/false` and did not load a dotenv file.
+
+```text
+source commit: 9c4bde0a09abea364f4c08f453fcaa75413369ca
+source tree: b39d1672e49ab86a26b07d22c70e6c6ba69c2e1f
+source clean: true
+source files: 25
+source manifest SHA-256: 37d04e372449cdf49a80fd8ada6a315e1cda55fe89c89fbed784c31edc620ed4
+configuration SHA-256: 8e0b65c460372b16cbad8c22a6da6003a685603eb2fa04f793d6793912675193
+report SHA-256: 5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9
+exit code: 2
+state: blocked/not_proven
+contract_valid: true
+activation_allowed: false
+migration head: 0009
+blockers: 7
+vetoes: 0
+feature gates: false / false / false
+```
+
+A separate negative run set only `AGENT_RUNTIME_ENABLED=true`; the report
+observed `agent_runtime_enabled=true`, retained `activation_allowed=false` and
+included the blocker `Phase 5 feature gates must remain disabled`. This proves
+the CLI no longer substitutes an empty mapping for the server environment.
+
+Independent decision: **ACCEPT_WITH_FIXES** for P5.1A offline contract
+preflight only. P5.1 database/API/runtime remains not implemented and
+unauthorized; P5.1 production remains `blocked/not_proven`; P5.2+ remains
+frozen.

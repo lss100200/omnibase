@@ -1773,6 +1773,18 @@ blocked/not_proven`、三个 Feature Gate false、P5.2+ frozen。原报告中的
 `188/1328` 与 implementation commit clean-checkout 结果保留为历史证据，
 不再作为最终独立验收口径。
 
+修补提交 `9c4bde0a09abea364f4c08f453fcaa75413369ca` 在 clean linked worktree
+用 host Python 3.12.10 完成正式 `--verify`：exit 2、
+`blocked/not_proven`、contract_valid true、activation_allowed false、
+source clean true、source tree `b39d1672e49ab86a26b07d22c70e6c6ba69c2e1f`、
+source manifest `37d04e372449cdf49a80fd8ada6a315e1cda55fe89c89fbed784c31edc620ed4`、
+configuration `8e0b65c460372b16cbad8c22a6da6003a685603eb2fa04f793d6793912675193`、
+report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
+7 blockers、0 veto、migration head `0009`。另以
+`AGENT_RUNTIME_ENABLED=true` 做负向运行，CLI 已实际观察到 runtime gate
+为 true 并保持 activation false，证明不再忽略 server environment。
+独立结论为 **ACCEPT_WITH_FIXES（仅 P5.1A offline contract preflight）**。
+
 ### Phase 3-4 下一阶段执行契约
 
 - **P34.0 ✅ 工作树**：威胁模型、逻辑资源、能力词汇和 OpenAPI/错误/审计契约已冻结。
