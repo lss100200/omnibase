@@ -646,9 +646,9 @@ def test_no_agent_runtime_planner_or_executor_packages_exist() -> None:
     if not CONFIG_PATH.exists():
         pytest.skip("full public checkout is not mounted in the backend test image")
     for forbidden in ("agent_runtime", "planner", "executor", "multi_agent"):
-        assert not (REPO_ROOT / "backend" / "src" / "omnibase" / forbidden).exists(), (
-            f"P5.0 must not introduce a runtime package: {forbidden}"
-        )
+        assert not (
+            REPO_ROOT / "backend" / "src" / "omnibase" / forbidden
+        ).exists(), f"P5.0 must not introduce a runtime package: {forbidden}"
 
 
 def test_git_provenance_hashes_only_tracked_scope_and_ignores_root_env(tmp_path: Path) -> None:
