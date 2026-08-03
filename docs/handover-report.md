@@ -1841,7 +1841,8 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    后先执行 `down -v --remove-orphans`，再按 Compose project label 检查
    container/network/volume 均为 0，任何 cleanup 失败都阻止 passed evidence。
    verifier 还强制检查 sentinel、业务数据库未访问/未迁移、物理 locator 未
-   暴露与完整 cleanup proof。
+   暴露与完整 cleanup proof；source manifest 只枚举 Git 已跟踪源码，明确
+   排除 `__pycache__`/`.pyc` 等 ignored 生成物，避免测试缓存制造伪漂移。
 4. **实测验证（2026-08-03 主 Agent）**：聚焦 service/Gate 测试
    `31 passed`；非 integration 全套 `1356 passed, 15 skipped, 14 deselected`；
    `mypy src` 为 `156 source files / 0 issues`；focused Ruff check/format、
@@ -1849,7 +1850,7 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    modules / 302 path specs / 977 files / 154 entrypoints / 98 commands）与
    benchmark validator 全通过。fresh `omnibase_test_p51b_*` PostgreSQL Gate
    的 integration suite `30 passed`，evidence `passed=true`，manifest
-   SHA-256 为 `a1eddf19972815e56d174f76138831458928933d353bf7ce1cc8d13eced2102e`，
+   SHA-256 为 `36eafb781ce6abd8bc1d04b0593f4753926e8b7d351a2ec8468095bec6a21f5b`，
    `root_env_accessed=false`、`business_database_accessed=false`、
    `business_database_migrated=false`、cleanup `0/0/0`。
 5. **P5.1A 合同同步**：`forbidden_source_paths` 移除 `agent_registry`；
