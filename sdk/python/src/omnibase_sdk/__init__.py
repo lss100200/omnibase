@@ -1,5 +1,16 @@
-"""Public OmniBase capability-gateway SDK surface."""
+"""Public OmniBase capability-gateway and Browser control-plane SDK surface."""
 
+from omnibase_sdk.browser_registry import (
+    AccessTokenProvider,
+    AgentDefinitionRead,
+    AgentInstallationRead,
+    AgentRegistryBrowserClient,
+    AgentVersionRead,
+    BrowserHttpTransport,
+    DefaultBudgetPolicyRead,
+    RegistryBrowserError,
+    StaticAccessTokenProvider,
+)
 from omnibase_sdk.client import OmniBaseClient
 from omnibase_sdk.models import (
     ArtifactReadResponse,
@@ -28,10 +39,17 @@ from omnibase_sdk.transport import (
 )
 
 __all__ = [
+    "AccessTokenProvider",
+    "AgentDefinitionRead",
+    "AgentInstallationRead",
+    "AgentRegistryBrowserClient",
+    "AgentVersionRead",
     "ArtifactReadResponse",
     "ArtifactWriteResponse",
+    "BrowserHttpTransport",
     "Citation",
     "CitationReadResponse",
+    "DefaultBudgetPolicyRead",
     "DerivedChunkWrite",
     "DerivedCreateResponse",
     "DerivedDeleteResponse",
@@ -41,10 +59,12 @@ __all__ = [
     "OrderBy",
     "RagSearchResponse",
     "RagSearchResult",
+    "RegistryBrowserError",
     "RowsQuery",
     "RowsReadResponse",
     "SchemaColumn",
     "SchemaReadResponse",
+    "StaticAccessTokenProvider",
     "StaticCredentialProvider",
     "Transport",
     "TransportResponse",
