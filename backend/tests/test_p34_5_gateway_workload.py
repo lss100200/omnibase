@@ -24,6 +24,8 @@ from omnibase.capability_gateway.adapters import (
     PostgresDataReadAdapter,
 )
 from omnibase.capability_gateway.app import create_production_gateway_app
+from omnibase.capability_gateway.contracts import TrustedWorkloadContext
+from omnibase.capability_gateway.mtls_ingress import ServerOwnedGatewayCredentialBinding
 from omnibase.capability_gateway.router import get_gateway_db
 from omnibase.capability_gateway.security import (
     CapabilityVerificationError,
@@ -31,6 +33,7 @@ from omnibase.capability_gateway.security import (
     RejectingWorkloadAttestor,
     TrustedScopeWorkloadAttestor,
 )
+from omnibase.capability_gateway.server import GatewayCredentialVendingApp
 from omnibase.capability_gateway.thumbprints import certificate_thumbprint_to_x5t_s256
 from omnibase.capability_gateway.workload import (
     EphemeralGatewayCredential,
@@ -109,6 +112,7 @@ def _issue_request(**changes: object) -> GatewayCredentialIssueRequest:
         "node_id": NODE,
         "lease_id": LEASE,
         "grant_id": GRANT,
+        "expected_profile": "read",
         "key_id": "gateway-key-2026-08",
         "opaque_identity": f"spiffe://omnibase/runtime/{RUNTIME}",
         "workspace_generation": 3,
@@ -307,6 +311,93 @@ def test_attestor_revalidates_complete_live_lease_binding(
     session.close.assert_called_once()
 
 
+def test_gateway_credential_issuer_rejects_profile_drift_before_loading_private_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = MagicMock()
+    key_provider = MagicMock()
+    monkeypatch.setattr(
+        "omnibase.workspaces.service.verify_run_lease_for_sandbox",
+        MagicMock(return_value=_facts(expires_at=NOW + timedelta(seconds=90))),
+    )
+    monkeypatch.setattr(
+        "omnibase.capabilities.service.get_grant",
+        MagicMock(return_value=SimpleNamespace(actions=["artifact.write"])),
+    )
+    issue_token = MagicMock(return_value="must-not-be-issued")
+    monkeypatch.setattr("omnibase.capabilities.service.issue_token", issue_token)
+    issuer = SqlAlchemyGatewayCredentialIssuer(
+        lambda: session,
+        key_provider,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(GatewayCredentialUnavailable):
+        issuer.issue(_issue_request(expected_profile="read"), issuer_context=_issuer_context())
+
+    key_provider.load_private_key.assert_not_called()
+    issue_token.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("path", "profile", "expected_status"),
+    [
+        ("/gateway/v1/credential/read", "read", 200),
+        ("/gateway/v1/credential/read", "workspace_data", 401),
+        ("/gateway/v1/credential/workspace-data", "workspace_data", 200),
+        ("/gateway/v1/credential/workspace-data", "read", 401),
+    ],
+)
+def test_credential_vending_paths_require_exact_server_owned_profile(
+    path: str,
+    profile: str,
+    expected_status: int,
+) -> None:
+    current = datetime.now(UTC)
+    evidence = _evidence(expires_at=current + timedelta(minutes=2))
+    binding = ServerOwnedGatewayCredentialBinding(
+        grant_id=GRANT,
+        expected_profile=profile,  # type: ignore[arg-type]
+        key_id="gateway-key-2026-08",
+        system_actor_id="gateway-credential-broker",
+        originating_user_id=ACTOR,
+    )
+    issuer = MagicMock()
+    issuer.issue.return_value = EphemeralGatewayCredential(
+        token="signed-profiled-capability",  # noqa: S106 - synthetic non-secret test token
+        opaque_identity=evidence.opaque_identity,
+        certificate_thumbprint=THUMBPRINT,
+        expires_at=current + timedelta(minutes=1),
+    )
+    attestor = MagicMock()
+    attestor.attest.return_value = TrustedWorkloadContext(
+        opaque_identity=evidence.opaque_identity,
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        runtime_instance_id=RUNTIME,
+        certificate_thumbprint=THUMBPRINT,
+    )
+    vending = GatewayCredentialVendingApp(FastAPI(), attestor=attestor, issuer=issuer)
+
+    async def transport(scope, receive, send) -> None:
+        if scope["type"] == "http":
+            scope = dict(scope)
+            scope["omnibase.trusted_gateway_peer"] = evidence
+            scope["omnibase.gateway_credential_binding"] = binding
+        await vending(scope, receive, send)
+
+    with TestClient(transport) as client:
+        response = client.post(path)
+
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        request = issuer.issue.call_args.args[0]
+        assert request.expected_profile == profile
+    else:
+        issuer.issue.assert_not_called()
+
+
 def test_attestor_rejects_node_fencing_drift(monkeypatch: pytest.MonkeyPatch) -> None:
     session = MagicMock()
     monkeypatch.setattr(
@@ -406,6 +497,10 @@ def test_gateway_credential_issuer_binds_token_to_live_run_and_certificate(
     monkeypatch.setattr(
         "omnibase.workspaces.service.verify_run_lease_for_sandbox",
         verify_lease,
+    )
+    monkeypatch.setattr(
+        "omnibase.capabilities.service.get_grant",
+        MagicMock(return_value=SimpleNamespace(actions=["data.rows.read"])),
     )
     monkeypatch.setattr("omnibase.capabilities.service.issue_token", issue_token)
     issuer = SqlAlchemyGatewayCredentialIssuer(
@@ -589,7 +684,7 @@ def test_production_gateway_requires_explicit_trusted_attestor_and_cursor_secret
         )
 
 
-def test_production_gateway_composes_read_only_core_verifier() -> None:
+def test_production_gateway_composes_core_verifier_with_fail_closed_write_surface() -> None:
     attestor = SqlAlchemyRunLeaseWorkloadAttestor(lambda: MagicMock(), clock=lambda: NOW)
     app = create_production_gateway_app(
         workload_attestor=attestor,
@@ -599,8 +694,13 @@ def test_production_gateway_composes_read_only_core_verifier() -> None:
     assert app.state.workload_attestor is attestor
     assert isinstance(app.state.capability_verifier, CoreCapabilityVerifier)
     assert set(app.openapi()["paths"]) == {
+        "/gateway/v1/artifacts/read",
+        "/gateway/v1/artifacts/write",
+        "/gateway/v1/data/rows/mutate",
         "/gateway/v1/data/schema/read",
         "/gateway/v1/data/rows/read",
+        "/gateway/v1/rag/derived/create",
+        "/gateway/v1/rag/derived/delete",
         "/gateway/v1/rag/search",
         "/gateway/v1/rag/citations/read",
     }

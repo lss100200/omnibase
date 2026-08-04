@@ -102,10 +102,10 @@ def test_0006_creates_global_foundation_and_only_tenant_payload_table(
             ).scalars()
         )
 
-    # P34.4 is global-only, but Alembic still advances both scoped revision
-    # ledgers to the repository head after its tenant no-op.
-    assert global_revision == "0008"
-    assert tenant_revision == "0008"
+    # Later global-only revisions still advance both scoped revision ledgers
+    # to the repository head after their tenant no-op.
+    assert global_revision == "0010"
+    assert tenant_revision == "0010"
     assert {
         "data_table_bindings",
         "data_column_bindings",
@@ -144,7 +144,7 @@ def test_0006_empty_downgrade_and_reupgrade_are_safe(db_engine) -> None:
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0008"
+            == "0010"
         )
 
 
@@ -153,7 +153,10 @@ def test_database_rejects_forbidden_policy_physical_name_type_and_auth_source(
     run_owned_resources,
 ) -> None:
     _upgrade_head()
-    tenant_id, _ = _create_retained_test_tenant(db_engine, run_owned_resources)
+    tenant_id, tenant_schema = _create_retained_test_tenant(
+        db_engine,
+        run_owned_resources,
+    )
     other_tenant_id, _ = _create_retained_test_tenant(
         db_engine,
         run_owned_resources,
@@ -162,14 +165,71 @@ def test_database_rejects_forbidden_policy_physical_name_type_and_auth_source(
     connection = db_engine.connect()
     transaction = connection.begin()
     try:
+        workspace_id = str(uuid.uuid4())
+        workspace_template_id = str(uuid.uuid4())
+        actor_id = str(uuid.uuid4())
+        connection.execute(
+            text(
+                f'INSERT INTO "{tenant_schema}".users '  # noqa: S608
+                "(id, email, password_hash, is_tenant_admin, is_active) "
+                "VALUES (:id, :email, :password_hash, TRUE, TRUE)"
+            ),
+            {
+                "id": actor_id,
+                "email": f"p343-foundation-{uuid.uuid4().hex[:8]}@example.invalid",
+                "password_hash": "integration-test-not-a-real-password-hash",
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.resource_registry "
+                "(id, tenant_id, kind, owner_type, owner_id, display_name, state, "
+                "version, policy_class) VALUES (:id, :tenant, 'workspace', "
+                "'workspace', :id, 'P34.3 foundation workspace', 'active', 1, "
+                "'workspace_private')"
+            ),
+            {"id": workspace_id, "tenant": tenant_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.workspace_templates "
+                "(id, tenant_id, template_key, version, display_name, digest, "
+                "template_spec, state, created_by_user_id) VALUES "
+                "(:id, :tenant, :key, 1, 'P34.3 foundation template', :digest, "
+                "'{}'::jsonb, 'active', :actor)"
+            ),
+            {
+                "id": workspace_template_id,
+                "tenant": tenant_id,
+                "key": f"p343-foundation-{uuid.uuid4().hex[:8]}",
+                "digest": "d" * 64,
+                "actor": actor_id,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO omnibase_meta.workspaces "
+                "(id, tenant_id, template_id, owner_user_id, display_name, "
+                "desired_state, observed_state, generation, version, quota) VALUES "
+                "(:id, :tenant, :template, :actor, 'P34.3 foundation workspace', "
+                "'running', 'running', 1, 1, '{}'::jsonb)"
+            ),
+            {
+                "id": workspace_id,
+                "tenant": tenant_id,
+                "template": workspace_template_id,
+                "actor": actor_id,
+            },
+        )
         resource_id = connection.execute(
             text(
                 "INSERT INTO omnibase_meta.resource_registry "
-                "(tenant_id, kind, owner_type, display_name, policy_class) "
-                "VALUES (:tenant, 'controlled_table', 'system', 'Controlled', "
+                "(tenant_id, kind, owner_type, owner_id, display_name, policy_class) "
+                "VALUES (:tenant, 'controlled_table', 'workspace', :workspace, "
+                "'Controlled', "
                 "'workspace_private') RETURNING id"
             ),
-            {"tenant": tenant_id},
+            {"tenant": tenant_id, "workspace": workspace_id},
         ).scalar_one()
 
         insert_binding = text(
@@ -182,10 +242,10 @@ def test_database_rejects_forbidden_policy_physical_name_type_and_auth_source(
         values = {
             "tenant": tenant_id,
             "resource": resource_id,
-            "workspace": str(uuid.uuid4()),
+            "workspace": workspace_id,
             "policy": "workspace_private",
             "physical": f"odt_{uuid.uuid4().hex}",
-            "actor": str(uuid.uuid4()),
+            "actor": actor_id,
         }
         table_binding_id = connection.execute(insert_binding, values).scalar_one()
 
@@ -337,5 +397,5 @@ def test_0006_downgrade_refuses_live_controlled_resources(
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0008"
+            == "0010"
         )

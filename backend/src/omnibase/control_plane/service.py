@@ -466,6 +466,7 @@ def register_resource(
     owner_type: str,
     display_name: str,
     policy_class: str,
+    resource_id: str | None = None,
     owner_id: str | None = None,
     parent_id: str | None = None,
     state: str = "active",
@@ -473,7 +474,11 @@ def register_resource(
     metadata: dict[str, object] | None = None,
     created_by_actor_id: str | None = None,
 ) -> ResourceRecord:
-    """Register a tenant-owned logical resource without committing."""
+    """Register a tenant-owned logical resource without committing.
+
+    ``resource_id`` pins the registry row to a caller-owned logical identity
+    (e.g. an Agent Registry entity id) instead of a server-generated one.
+    """
     _validate_resource_kind(kind)
     _validate_choice(owner_type, _OWNER_TYPES, "owner_type")
     _validate_choice(state, _RESOURCE_STATES, "resource state")
@@ -492,6 +497,7 @@ def register_resource(
         get_resource(session, tenant_id=tenant_id, resource_id=parent_id)
 
     resource = ResourceRecord(
+        id=resource_id,
         tenant_id=tenant_id,
         kind=kind,
         owner_type=owner_type,
@@ -571,6 +577,14 @@ def append_resource_lineage(
     created_by_operation_id: str | None = None,
 ) -> ResourceLineage:
     """Append a tenant-scoped lineage edge bound to the source's version."""
+
+    session.execute(
+        select(
+            func.pg_advisory_xact_lock(
+                func.hashtextextended(f"omnibase:resource-lineage:{tenant_id}", 0)
+            )
+        )
+    )
     _validate_choice(relation, _LINEAGE_RELATIONS, "lineage relation")
     if source_resource_id == derived_resource_id:
         raise DomainConflict("A resource cannot derive from itself")

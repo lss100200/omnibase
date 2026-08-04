@@ -202,7 +202,7 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
         tenant_revision = conn.execute(
             text(f'SELECT version_num FROM "{schema}".alembic_version')
         ).scalar_one()
-        assert tenant_revision == "0008"
+        assert tenant_revision == "0010"
 
         tables = set(
             conn.execute(

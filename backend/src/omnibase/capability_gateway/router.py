@@ -10,19 +10,33 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from omnibase.capability_gateway.contracts import (
+    ArtifactReadRequest,
+    ArtifactReadResponse,
+    ArtifactWriteRequest,
+    ArtifactWriteResponse,
     CitationReadRequest,
     CitationReadResponse,
     DataRowsRequest,
     DataRowsResponse,
     DataSchemaResponse,
+    DerivedCreateRequest,
+    DerivedCreateResponse,
+    DerivedDeleteRequest,
+    DerivedDeleteResponse,
     ErrorEnvelope,
+    PrivateRowsMutationRequest,
+    PrivateRowsMutationResponse,
     RagSearchRequest,
     RagSearchResponse,
     ResourceRequest,
     WorkloadCredential,
 )
-from omnibase.capability_gateway.security import get_workload_credential
+from omnibase.capability_gateway.security import (
+    get_workload_credential,
+    revalidate_workload_credential,
+)
 from omnibase.capability_gateway.service import GatewayService
+from omnibase.capability_gateway.write_service import WorkspaceDataGatewayService
 from omnibase.core.db import get_session_factory
 
 router = APIRouter(prefix="/gateway/v1", tags=["capability-gateway"])
@@ -70,6 +84,25 @@ _ERROR_RESPONSES: dict[int | str, dict[str, object]] = {
         "headers": _REQUEST_ID_HEADER,
     },
 }
+_WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
+    200: {"headers": _REQUEST_ID_HEADER},
+    401: _ERROR_RESPONSES[401],
+    403: _ERROR_RESPONSES[403],
+    404: _ERROR_RESPONSES[404],
+    409: {
+        "model": ErrorEnvelope,
+        "description": "Version, idempotency, or reconciliation conflict",
+        "headers": _REQUEST_ID_HEADER,
+    },
+    413: _ERROR_RESPONSES[413],
+    422: _ERROR_RESPONSES[422],
+    429: _ERROR_RESPONSES[429],
+    503: {
+        "model": ErrorEnvelope,
+        "description": "Workspace data service unavailable or outcome unknown",
+        "headers": _REQUEST_ID_HEADER,
+    },
+}
 _RESPONSES: dict[int | str, dict[str, object]] = {
     200: {"headers": _REQUEST_ID_HEADER},
     **_ERROR_RESPONSES,
@@ -89,6 +122,10 @@ def get_gateway_db() -> Iterator[Session]:
 
 def get_gateway_service(request: Request) -> GatewayService:
     return request.app.state.gateway_service
+
+
+def get_workspace_data_service(request: Request) -> WorkspaceDataGatewayService:
+    return request.app.state.workspace_data_service
 
 
 def get_request_id(request: Request) -> str:
@@ -164,4 +201,112 @@ def read_rag_citations(
     return service.read_citations(session, credential, payload, request_id)
 
 
-__all__ = ["get_gateway_db", "router"]
+@router.post(
+    "/data/rows/mutate",
+    response_model=PrivateRowsMutationResponse,
+    operation_id="gateway_private_data_rows_mutate",
+    responses=_WRITE_RESPONSES,
+)
+def mutate_private_rows(
+    request: Request,
+    payload: PrivateRowsMutationRequest,
+    credential: WorkloadCredential = Depends(get_workload_credential),
+    session: Session = Depends(get_gateway_db),
+    service: WorkspaceDataGatewayService = Depends(get_workspace_data_service),
+    request_id: str = Depends(get_request_id),
+) -> PrivateRowsMutationResponse:
+    return service.mutate_private_rows(
+        session,
+        credential,
+        payload,
+        request_id,
+        live_revalidator=lambda: revalidate_workload_credential(request, credential),
+    )
+
+
+@router.post(
+    "/artifacts/read",
+    response_model=ArtifactReadResponse,
+    operation_id="gateway_private_artifact_read",
+    responses=_RESPONSES,
+)
+def read_private_artifact(
+    payload: ArtifactReadRequest,
+    credential: WorkloadCredential = Depends(get_workload_credential),
+    session: Session = Depends(get_gateway_db),
+    service: WorkspaceDataGatewayService = Depends(get_workspace_data_service),
+    request_id: str = Depends(get_request_id),
+) -> ArtifactReadResponse:
+    return service.read_artifact(session, credential, payload, request_id)
+
+
+@router.post(
+    "/artifacts/write",
+    response_model=ArtifactWriteResponse,
+    operation_id="gateway_private_artifact_write",
+    responses=_WRITE_RESPONSES,
+)
+def write_private_artifact(
+    request: Request,
+    payload: ArtifactWriteRequest,
+    credential: WorkloadCredential = Depends(get_workload_credential),
+    session: Session = Depends(get_gateway_db),
+    service: WorkspaceDataGatewayService = Depends(get_workspace_data_service),
+    request_id: str = Depends(get_request_id),
+) -> ArtifactWriteResponse:
+    return service.write_artifact(
+        session,
+        credential,
+        payload,
+        request_id,
+        live_revalidator=lambda: revalidate_workload_credential(request, credential),
+    )
+
+
+@router.post(
+    "/rag/derived/create",
+    response_model=DerivedCreateResponse,
+    operation_id="gateway_private_rag_derived_create",
+    responses=_WRITE_RESPONSES,
+)
+def create_private_derived_index(
+    request: Request,
+    payload: DerivedCreateRequest,
+    credential: WorkloadCredential = Depends(get_workload_credential),
+    session: Session = Depends(get_gateway_db),
+    service: WorkspaceDataGatewayService = Depends(get_workspace_data_service),
+    request_id: str = Depends(get_request_id),
+) -> DerivedCreateResponse:
+    return service.create_derived(
+        session,
+        credential,
+        payload,
+        request_id,
+        live_revalidator=lambda: revalidate_workload_credential(request, credential),
+    )
+
+
+@router.post(
+    "/rag/derived/delete",
+    response_model=DerivedDeleteResponse,
+    operation_id="gateway_private_rag_derived_delete",
+    responses=_WRITE_RESPONSES,
+)
+def delete_private_derived_index(
+    request: Request,
+    payload: DerivedDeleteRequest,
+    credential: WorkloadCredential = Depends(get_workload_credential),
+    session: Session = Depends(get_gateway_db),
+    service: WorkspaceDataGatewayService = Depends(get_workspace_data_service),
+    request_id: str = Depends(get_request_id),
+) -> DerivedDeleteResponse:
+    return service.delete_derived(
+        session,
+        credential,
+        payload,
+        request_id,
+        live_revalidator=lambda: revalidate_workload_credential(request, credential),
+    )
+
+
+__all__ = ["get_gateway_db", "get_workspace_data_service", "router"]

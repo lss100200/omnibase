@@ -39,6 +39,10 @@ from omnibase.db import tenant as tenant_models  # noqa: E402, F401
 from omnibase.db.models import GLOBAL_METADATA, TENANT_METADATA  # noqa: E402
 from omnibase.sandbox import models as sandbox_models  # noqa: E402, F401
 from omnibase.tenants.service import _initialize_tenant_schema  # noqa: E402
+from omnibase.workspace_data import models as workspace_data_models  # noqa: E402, F401
+from omnibase.workspace_data import (  # noqa: E402
+    tenant_models as workspace_data_tenant_models,  # noqa: F401
+)
 from omnibase.workspaces import models as workspace_models  # noqa: E402, F401
 
 # Configure logging for Alembic

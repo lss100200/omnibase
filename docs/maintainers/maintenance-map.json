@@ -4,12 +4,12 @@
   "frozen_boundaries": [
     "Production hostile-code execution on any Runner that has not passed the P34.5 Linux isolation and attack matrix Gate",
     "Real member Overlay deployment, physical Overlay endpoint exposure to Sandbox, and direct Sandbox/Runner access to PostgreSQL, Redis or MinIO",
-    "Workspace private-write, derived RAG promotion and canonical data mutation from Sandbox workloads",
+    "Production Workspace-data adapter/provider activation, canonical mutation, and any direct Sandbox/Runner data-store access outside the P34.6 controlled Gateway contracts",
     "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0007",
+    "Alembic migrations 0001 through 0009",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -313,6 +313,186 @@
         "backend/tests/test_p34_5_gateway_workload.py",
         "backend/tests/test_p34_2_gateway_api.py"
       ]
+    },
+    {
+      "id": "INV-022",
+      "title": "Canonical and Workspace-derived storage separation",
+      "document": "docs/maintainers/security-invariants.md#inv-022-canonical-derived-storage-boundary",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/**",
+        "backend/src/omnibase/capability_gateway/write_adapters.py",
+        "backend/src/omnibase/capability_gateway/write_service.py",
+        "backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_workspace_data_contracts.py",
+        "backend/tests/test_p34_6_gateway_workload_write.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-023",
+      "title": "Promotion approval and copy-on-publish atomicity",
+      "document": "docs/maintainers/security-invariants.md#inv-023-promotion-approval-atomicity",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/promotion.py",
+        "backend/src/omnibase/workspace_data/models.py",
+        "backend/src/omnibase/control_plane/service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-024",
+      "title": "Snapshot inventory and restore-new-identity lineage",
+      "document": "docs/maintainers/security-invariants.md#inv-024-snapshot-restore-lineage",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/snapshots.py",
+        "backend/src/omnibase/workspace_data/models.py",
+        "backend/src/omnibase/workspaces/service.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-035",
+      "title": "Production evidence provenance and clean-checkout admission",
+      "document": "docs/maintainers/security-invariants.md#inv-035-production-evidence-provenance",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "deployment/production/**",
+        "scripts/production/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py"
+      ]
+    },
+    {
+      "id": "INV-036",
+      "title": "Production component identity and transport separation",
+      "document": "docs/maintainers/security-invariants.md#inv-036-production-composition-separation",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "deployment/production/**",
+        "backend/src/omnibase/sandbox/**",
+        "backend/src/omnibase/capability_gateway/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p34_5_sandbox_a4_transport.py",
+        "backend/tests/test_p34_5_gateway_workload.py"
+      ]
+    },
+    {
+      "id": "INV-037",
+      "title": "Provider committed visibility and non-disposable admission",
+      "document": "docs/maintainers/security-invariants.md#inv-037-provider-commit-admission",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/provider_adapters.py",
+        "scripts/workspace-data/**"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_workspace_provider.py"
+      ]
+    },
+    {
+      "id": "INV-038",
+      "title": "Real-member Overlay evidence, compromise and SLA admission",
+      "document": "docs/maintainers/security-invariants.md#inv-038-overlay-production-evidence",
+      "source_paths": [
+        "deployment/overlay/production/**",
+        "scripts/overlay/p34_7_*.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_overlay_production_gate.py",
+        "backend/tests/test_p34_7_overlay_sla.py"
+      ]
+    },
+    {
+      "id": "INV-039",
+      "title": "Phase 5 admission gates fail closed until P34.7 evidence is ready",
+      "document": "docs/maintainers/security-invariants.md#inv-039-phase5-admission-fail-closed",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_admission.py",
+        "deployment/production/phase5-admission.example.json",
+        "scripts/production/validate_p5_0_admission.py",
+        "docs/phase-5-threat-model.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_0_admission.py"
+      ]
+    },
+    {
+      "id": "INV-040",
+      "title": "P5.1A registry contracts stay logical, immutable, secret-free and non-executable",
+      "document": "docs/maintainers/security-invariants.md#inv-040-p51a-registry-contract-preflight",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "deployment/production/phase5-registry-contract.example.json",
+        "scripts/production/validate_p5_1_registry_contract.py",
+        "docs/phase-5-agent-registry-contract.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1_registry_contract.py"
+      ]
+    },
+    {
+      "id": "INV-041",
+      "title": "P5.1B Agent Registry persistence stays internal, tenant-safe, database-enforced and gate-sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-041-p51b-registry-persistence-foundation",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/models.py",
+        "backend/src/omnibase/agent_registry/service.py",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "docs/evidence/p5-1/phase5-registry-persistence-design.md",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1b_agent_registry.py",
+        "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
+        "scripts/production/test_run_p5_1b_registry_disposable_gate.py"
+      ]
+    },
+    {
+      "id": "INV-042",
+      "title": "P5.1C Browser Agent Registry control API stays fail-closed, principal-gated, logical and gate-sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-042-p51c-browser-registry-control-api",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/main.py",
+        "sdk/python/src/omnibase_sdk/browser_registry.py",
+        "sdk/typescript/src/registry-browser.ts",
+        "docs/evidence/p5-1/phase5-browser-registry-api-design.md",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "sdk/python/tests/test_registry_browser_client.py",
+        "sdk/typescript/tests/registry-browser.test.mjs"
+      ]
+    },
+    {
+      "id": "INV-043",
+      "title": "P5.2A Agent Task ledger contract preflight stays logical, sealed and non-runtime",
+      "document": "docs/maintainers/security-invariants.md#inv-043-phase5-task-ledger-contract-preflight",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+        "deployment/production/phase5-task-ledger-contract.example.json",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "docs/phase-5-task-ledger-contract.md",
+        "docs/phase-5-threat-model.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_2a_task_ledger_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -338,7 +518,10 @@
         "HTTP /api/v1/health"
       ],
       "depends_on": [],
-      "invariants": ["INV-005", "INV-010"],
+      "invariants": [
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_health.py tests/test_http_boundaries.py -q",
         "docker compose --env-file .env.example config --quiet"
@@ -367,8 +550,15 @@
         "HTTP /api/v1/tenants/*",
         "FastAPI dependency CurrentPrincipal"
       ],
-      "depends_on": ["runtime-composition", "migrations"],
-      "invariants": ["INV-001", "INV-002", "INV-005"],
+      "depends_on": [
+        "runtime-composition",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-005"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",
         "make test-destructive"
@@ -395,8 +585,16 @@
         "HTTP /api/v1/documents/*",
         "Celery task omnibase.workers.tasks.ingest_document_task"
       ],
-      "depends_on": ["identity-tenancy", "rag-pipeline"],
-      "invariants": ["INV-001", "INV-002", "INV-005", "INV-010"],
+      "depends_on": [
+        "identity-tenancy",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_documents.py tests/test_workers.py -q"
       ],
@@ -408,7 +606,9 @@
     {
       "id": "rag-pipeline",
       "name": "Parsing, chunking, embedding, retrieval, reranking and answer APIs",
-      "source_paths": ["backend/src/omnibase/rag/**"],
+      "source_paths": [
+        "backend/src/omnibase/rag/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/rag/router.py:router",
         "backend/src/omnibase/rag/ingest.py:ingest_document",
@@ -419,8 +619,17 @@
         "HTTP /api/v1/rag/playground",
         "HTTP /api/v1/rag/ask"
       ],
-      "depends_on": ["identity-tenancy", "document-ingestion"],
-      "invariants": ["INV-001", "INV-002", "INV-003", "INV-005", "INV-010"],
+      "depends_on": [
+        "identity-tenancy",
+        "document-ingestion"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-003",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_rag_store.py tests/test_rag_sse.py tests/test_reranker_boundary.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/rag"
@@ -433,7 +642,9 @@
     {
       "id": "control-plane",
       "name": "Logical resources, operations, approvals, idempotency and audit ledger",
-      "source_paths": ["backend/src/omnibase/control_plane/**"],
+      "source_paths": [
+        "backend/src/omnibase/control_plane/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/control_plane/router.py:router",
         "backend/src/omnibase/control_plane/service.py:authorize_operation"
@@ -444,8 +655,16 @@
         "HTTP /api/v1/control-plane/approvals/*",
         "HTTP /api/v1/control-plane/audit/events"
       ],
-      "depends_on": ["identity-tenancy", "migrations"],
-      "invariants": ["INV-002", "INV-003", "INV-006", "INV-007"],
+      "depends_on": [
+        "identity-tenancy",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_1_control_plane_api.py tests/test_p34_1_control_plane_models.py tests/test_p34_1_control_plane_service.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/control_plane"
@@ -458,7 +677,9 @@
     {
       "id": "capability-ledger",
       "name": "Disjoint read/Sandbox capability grants, delegation, tokens, revocation and operation-idempotent budgets",
-      "source_paths": ["backend/src/omnibase/capabilities/**"],
+      "source_paths": [
+        "backend/src/omnibase/capabilities/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/capabilities/service.py:create_grant",
         "backend/src/omnibase/capabilities/service.py:create_sandbox_grant",
@@ -472,8 +693,17 @@
         "Signed read-capability token contract",
         "Token-free runtime/workload-bound Sandbox lifecycle verification and idempotent budget reservation"
       ],
-      "depends_on": ["control-plane", "identity-tenancy"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "depends_on": [
+        "control-plane",
+        "identity-tenancy"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_capability_models.py tests/test_p34_2_capability_service.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capabilities"
@@ -488,7 +718,9 @@
     {
       "id": "capability-gateway",
       "name": "Independent non-browser capability gateway",
-      "source_paths": ["backend/src/omnibase/capability_gateway/**"],
+      "source_paths": [
+        "backend/src/omnibase/capability_gateway/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/capability_gateway/app.py:create_gateway_app",
         "backend/src/omnibase/capability_gateway/router.py:router",
@@ -500,8 +732,17 @@
         "HTTP /gateway/v1/rag/search",
         "HTTP /gateway/v1/rag/citations/read"
       ],
-      "depends_on": ["capability-ledger", "control-plane", "rag-pipeline"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-006"],
+      "depends_on": [
+        "capability-ledger",
+        "control-plane",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
@@ -515,7 +756,9 @@
     {
       "id": "controlled-data",
       "name": "Controlled DDL and CRUD execution lifecycle",
-      "source_paths": ["backend/src/omnibase/controlled_data/**"],
+      "source_paths": [
+        "backend/src/omnibase/controlled_data/**"
+      ],
       "entrypoints": [
         "backend/src/omnibase/controlled_data/router.py:router",
         "backend/src/omnibase/controlled_data/router.py:mutate_rows",
@@ -527,8 +770,20 @@
         "HTTP /api/v1/controlled-data/rows/mutate",
         "Internal controlled DDL contracts"
       ],
-      "depends_on": ["identity-tenancy", "control-plane", "capability-ledger", "migrations"],
-      "invariants": ["INV-002", "INV-003", "INV-004", "INV-005", "INV-006", "INV-007"],
+      "depends_on": [
+        "identity-tenancy",
+        "control-plane",
+        "capability-ledger",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests -k p34_3 -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/controlled_data",
@@ -730,11 +985,12 @@
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_sandbox_a2_dispatch.py tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/sandbox",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
-        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py ../scripts/sandbox/validate_runner_attack_evidence.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/sandbox tests/test_p34_5_sandbox_a4_runtime.py tests/test_p34_5_sandbox_a4_transport.py tests/test_p34_5_sandbox_deployment_launcher.py ../scripts/sandbox/validate_runner_attack_evidence.py",
         "python scripts/sandbox/probe_linux_runtime.py --config scripts/sandbox/linux-runtime-config.example.json",
         "python scripts/sandbox/run_a4_attack_matrix.py --help",
-        "python -m py_compile deployment/sandbox/omnibase-isolation-launcher.py deployment/sandbox/run-attack-gate.py"
+        "python -m py_compile deployment/sandbox/omnibase-isolation-launcher.py deployment/sandbox/run-attack-gate.py scripts/sandbox/validate_runner_attack_evidence.py",
+        "python -B scripts/sandbox/validate_runner_attack_evidence.py --repo-root ."
       ],
       "recovery": [
         "Restore UnavailableLinuxRuntimeDriver, UnavailableSandboxRunner and UnavailableRunnerTransport whenever host, launcher, namespace, cgroup, LSM or receipt evidence cannot be proven.",
@@ -828,6 +1084,7 @@
         "backend/tests/test_p34_5_overlay_disposable_gate.py",
         "scripts/overlay/**",
         "deployment/overlay/**",
+        "docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json",
         "docs/evidence/p34-5/overlay-disposable-gate.json",
         "docs/evidence/p34-5/overlay-disposable-gate.md"
       ],
@@ -867,7 +1124,10 @@
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py",
         "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
         "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspaces/overlay_adapters src/omnibase/sandbox/overlay_publication.py tests/test_p34_5_overlay_adapter.py",
+        "python -B -m pytest scripts/overlay/test_validate_disposable_gate.py -q",
         "python -B scripts/overlay/validate_disposable_gate.py --repo-root .",
+        "python -B scripts/overlay/validate_disposable_gate.py --repo-root . --verify-seal docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json",
+        "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1 -ValidateOnly",
         "powershell -NoProfile -File scripts/overlay/run_disposable_overlay_gate.ps1"
       ],
       "recovery": [
@@ -879,7 +1139,7 @@
     },
     {
       "id": "gateway-workload",
-      "name": "P34.5D mTLS workload identity and short-lived read Capability bridge",
+      "name": "P34.5D mTLS workload identity plus fail-closed P34.6 data bridge",
       "source_paths": [
         "backend/src/omnibase/capability_gateway/workload.py",
         "backend/src/omnibase/capability_gateway/app.py",
@@ -921,7 +1181,7 @@
         "Parameter-free mTLS credential vending whose grant, key, issuer and originating-user binding is selected only by the server registry after live attestation",
         "Fresh DB-backed P34.4 Run/Node/Lease/fencing attestation on every Gateway request",
         "Core-only read credential issuance bounded to five minutes and the earlier peer-evidence or live Run Lease expiry",
-        "Separate production Gateway composition exposing only schema, rows, RAG search and citation read actions; never mounted into Browser ASGI"
+        "Separate production Gateway composition exposing P34.2 read routes plus P34.6 logical Workspace-data routes whose adapter defaults remain unavailable; never mounted into Browser ASGI"
       ],
       "depends_on": [
         "capability-gateway",
@@ -938,13 +1198,18 @@
         "INV-014",
         "INV-015",
         "INV-019",
-        "INV-021"
+        "INV-021",
+        "INV-022",
+        "INV-023"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py -q",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/capability_gateway",
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py ../scripts/gateway/run_p34_5d_disposable_gate.py ../scripts/gateway/p34_5d_broker_client.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py ../scripts/gateway/run_p34_5d_disposable_gate.py ../scripts/gateway/p34_5d_broker_client.py ../scripts/gateway/test_run_p34_5d_disposable_gate.py",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/capability_gateway tests/test_p34_5_gateway_mtls_ingress.py tests/test_p34_5_gateway_workload.py tests/test_p34_2_gateway_api.py tests/test_p34_2_gateway_query.py tests/integration/test_p34_5_gateway_mtls_disposable.py tests/integration/test_p34_5_gateway_mtls_split_disposable.py",
+        "python -B -m pytest scripts/gateway/test_run_p34_5d_disposable_gate.py -q",
+        "python scripts/gateway/run_p34_5d_disposable_gate.py --validate-only",
+        "python scripts/gateway/run_p34_5d_disposable_gate.py --verify-evidence docs/evidence/p34-5/gateway-mtls-disposable-gate.json",
         "python scripts/gateway/run_p34_5d_disposable_gate.py"
       ],
       "recovery": [
@@ -953,7 +1218,72 @@
         "Revoke the certificate in the server-owned registry, revoke the Run Lease and stop the independent Gateway service when peer identity or transport state is uncertain; every request reloads the registry.",
         "Keep private signing keys and database sessions in Core; Runner and Sandbox receive only a short-lived read token over the authenticated channel.",
         "Treat the scored disposable Gate wrapper and minimal broker-client as byte-sealed evidence inputs: lint and compile them, but any autoformat or content change invalidates the evidence and requires the split-process Gate to be rerun.",
-        "Do not add direct database, object-store, Redis, physical locator, caller-parameterized credential-vending or runtime-write routes to the Gateway."
+        "Do not add direct database, object-store, Redis, physical locator or caller-parameterized credential-vending routes; P34.6 Workspace-data routes must use short-lived non-delegable workload grants and an explicitly installed controlled adapter."
+      ]
+    },
+    {
+      "id": "workspace-data-rag",
+      "name": "P34.6 Workspace-private data, derived RAG, publication and snapshot lineage",
+      "source_paths": [
+        "backend/src/omnibase/workspace_data/**",
+        "backend/src/omnibase/capability_gateway/write_adapters.py",
+        "backend/src/omnibase/capability_gateway/write_service.py",
+        "backend/src/omnibase/migrations/versions/0009_p34_6_workspace_data.py",
+        "backend/tests/test_p34_6_workspace_data_contracts.py",
+        "backend/tests/test_p34_6_workspace_data_service.py",
+        "backend/tests/test_p34_6_gateway_workload_write.py",
+        "backend/tests/test_p34_6_artifact_derived_lifecycle.py",
+        "backend/tests/test_p34_6_promotion_snapshot.py",
+        "backend/tests/integration/test_p34_6_workspace_data_foundation.py"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/workspace_data/service.py:create_effect",
+        "backend/src/omnibase/workspace_data/service.py:transition_effect",
+        "backend/src/omnibase/capability_gateway/write_service.py:WorkspaceDataGatewayService",
+        "backend/src/omnibase/capability_gateway/app.py:create_production_gateway_app"
+      ],
+      "public_interfaces": [
+        "Logical Workspace-private row mutation, immutable artifact and derived-index capability contracts",
+        "Copy-on-publish promotion to a new controlled_shared Resource only; canonical_readonly is not a P34.6 target",
+        "Server-generated snapshot inventory and restore-new-Workspace/resource identity metadata",
+        "No physical schema/table/bucket/object key/provider handle in public DTO, SDK, Audit, log or error"
+      ],
+      "depends_on": [
+        "control-plane",
+        "capability-ledger",
+        "capability-gateway",
+        "controlled-data",
+        "workspace-control-plane",
+        "gateway-workload",
+        "migrations"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007",
+        "INV-008",
+        "INV-011",
+        "INV-012",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py tests/integration/test_p34_6_workspace_data_foundation.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff format --check src/omnibase/workspace_data src/omnibase/capabilities src/omnibase/capability_gateway src/omnibase/controlled_data tests/test_p34_6_workspace_data_contracts.py tests/test_p34_6_workspace_data_service.py tests/test_p34_6_gateway_workload_write.py tests/test_p34_6_artifact_derived_lifecycle.py tests/test_p34_6_promotion_snapshot.py tests/integration/test_p34_6_workspace_data_foundation.py",
+        "make test-destructive"
+      ],
+      "recovery": [
+        "Restore unavailable/rejecting Workspace-data adapters and revoke affected workload-data grants before investigating scope, version, digest or storage uncertainty.",
+        "Keep pending/unknown effects, reservations, publication records, snapshot items, Audit and lineage as evidence; never delete or reset them to force replay.",
+        "Never repair promotion by changing the source policy class or locator in place; create a new target Resource only after fresh approval and exact binding verification.",
+        "Restore always creates new Workspace and Resource identities; never revive old Run, Lease, token, runtime/workload identity, PID, socket or provider handle."
       ]
     },
     {
@@ -971,12 +1301,17 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0008",
+        "Alembic revisions 0001-0010",
         "make test-destructive",
         "omnibase migrate"
       ],
       "depends_on": [],
-      "invariants": ["INV-002", "INV-006", "INV-008", "INV-009"],
+      "invariants": [
+        "INV-002",
+        "INV-006",
+        "INV-008",
+        "INV-009"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_migration_scope_fail_closed.py tests/test_destructive_test_safety.py -q",
         "make test-destructive"
@@ -1004,8 +1339,17 @@
         "Browser routes /login /register /dashboard /knowledge /database /chat /playground /settings",
         "Next.js rewrite to backend /api/v1"
       ],
-      "depends_on": ["runtime-composition", "identity-tenancy", "document-ingestion", "rag-pipeline"],
-      "invariants": ["INV-001", "INV-005", "INV-010"],
+      "depends_on": [
+        "runtime-composition",
+        "identity-tenancy",
+        "document-ingestion",
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "cd frontend && pnpm test",
         "cd frontend && pnpm typecheck",
@@ -1041,8 +1385,15 @@
         "TypeScript package @omnibase/sdk",
         "P34.2 OpenAPI snapshot"
       ],
-      "depends_on": ["capability-gateway"],
-      "invariants": ["INV-003", "INV-004", "INV-005", "INV-010"],
+      "depends_on": [
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-010"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q",
         "cd sdk/typescript && npm ci --ignore-scripts && npm test && npm run typecheck"
@@ -1050,6 +1401,368 @@
       "recovery": [
         "Regenerate and review contract snapshots only when the public interface intentionally changes.",
         "Reject physical locator fields and unsafe extra response data in both SDKs."
+      ]
+    },
+    {
+      "id": "production-readiness",
+      "name": "P34.7 production evidence, composition, provider, Overlay and release admission",
+      "source_paths": [
+        "backend/src/omnibase/production/**",
+        "backend/src/omnibase/workspace_data/provider_adapters.py",
+        "backend/tests/test_p34_7_*.py",
+        "deployment/production/**",
+        "deployment/overlay/production/**",
+        "scripts/production/**",
+        "scripts/workspace-data/**",
+        "scripts/overlay/p34_7_*.py",
+        "docs/runbooks/p34-7-overlay-sla.md",
+        "docs/evidence/p34-7/**",
+        "frontend/app/(dashboard)/spaces/**",
+        "frontend/lib/api.ts",
+        "frontend/lib/types.ts",
+        "sdk/python/src/omnibase_sdk/**",
+        "sdk/typescript/src/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/composition.py:ProductionCompositionGate",
+        "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
+        "scripts/production/validate_p34_7_composition.py:main",
+        "scripts/workspace-data/run_p34_7_provider_gate.py:main",
+        "scripts/overlay/p34_7_production_gate.py:main",
+        "scripts/overlay/p34_7_sla_report.py:main",
+        "sdk/python/src/omnibase_sdk/client.py:OmniBaseClient",
+        "sdk/typescript/src/client.ts:OmniBaseClient"
+      ],
+      "public_interfaces": [
+        "P34.7 production composition admission report",
+        "P34.7 provider/recovery disposable reference Gate",
+        "P34.7 real-member Overlay and SLA evidence contract",
+        "Browser Workspace control-plane UI without private-data write authority",
+        "Python and TypeScript Gateway Artifact/Derived helpers"
+      ],
+      "depends_on": [
+        "workspace-control-plane",
+        "sandbox-runtime",
+        "network-broker",
+        "overlay-adapter",
+        "gateway-workload",
+        "workspace-data-rag",
+        "frontend",
+        "sdk-contracts"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-005",
+        "INV-010",
+        "INV-017",
+        "INV-018",
+        "INV-019",
+        "INV-020",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024",
+        "INV-035",
+        "INV-036",
+        "INV-037",
+        "INV-038"
+      ],
+      "verification": [
+        "python scripts/production/validate_p34_7_composition.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production src/omnibase/workspace_data",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "cd sdk/typescript && pnpm test && pnpm typecheck",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q"
+      ],
+      "recovery": [
+        "Restore activation_requested=false and rejecting/unavailable production adapters whenever evidence is missing, stale or ambiguous.",
+        "Do not replay pending or unknown provider effects; retain journals, receipts, signatures and source manifests for reconciliation.",
+        "Revoke affected Run, Network Lease, workload certificate and node credentials before re-admitting a compromised component.",
+        "Phase 5 remains frozen until the clean-checkout P34.7 total Gate is independently PASS."
+      ]
+    },
+    {
+      "id": "phase5-admission",
+      "name": "P5.0 fail-closed Phase 5 admission gate and Evidence Manifest",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_admission.py",
+        "scripts/production/validate_p5_0_admission.py",
+        "deployment/production/phase5-admission.example.json",
+        "backend/tests/test_p5_0_admission.py",
+        "docs/phase-5-threat-model.md",
+        "docs/evidence/p34-7/production-readiness-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_admission.py:parse_feature_gate",
+        "backend/src/omnibase/production/phase5_admission.py:resolve_feature_gates",
+        "backend/src/omnibase/production/phase5_admission.py:Phase5AdmissionGate",
+        "backend/src/omnibase/production/phase5_admission.py:discover_migration_head",
+        "backend/src/omnibase/production/phase5_admission.py:load_phase5_admission_config",
+        "scripts/production/validate_p5_0_admission.py:main"
+      ],
+      "public_interfaces": [
+        "AGENT_RUNTIME_ENABLED / AGENT_PLANNER_ENABLED / MULTI_AGENT_ENABLED server-owned feature gate resolution (missing/empty=false, unknown=fail-closed)",
+        "P5.0 Phase 5 admission decision report (ready | blocked/not_proven | invalid/veto) with blockers, vetoes and safety negatives",
+        "P5.0 Evidence Manifest contract and clean-checkout validator"
+      ],
+      "depends_on": [
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_0_admission.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_admission.py tests/test_p5_0_admission.py ../scripts/production/validate_p5_0_admission.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_admission.py tests/test_p5_0_admission.py ../scripts/production/validate_p5_0_admission.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 feature gate false and activation_requested=false; resolve gate conflicts as configuration errors, never as silent true.",
+        "When P34.7 evidence or any sealed manifest file drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; blocked/not_proven is the only correct state until evidence is complete.",
+        "Never read the root .env, a database, or start any Agent/Planner/Executor/queue/worker/scheduler from this module or its validator."
+      ]
+    },
+    {
+      "id": "phase5-registry-contract-preflight",
+      "name": "P5.1A offline Agent Registry contract preflight (no ORM/migration/service/API)",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "scripts/production/validate_p5_1_registry_contract.py",
+        "deployment/production/phase5-registry-contract.example.json",
+        "backend/tests/test_p5_1_registry_contract.py",
+        "docs/phase-5-agent-registry-contract.md",
+        "docs/evidence/p34-7/production-readiness-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_registry_contract.py:AgentDefinition",
+        "backend/src/omnibase/production/phase5_registry_contract.py:AgentVersionManifest",
+        "backend/src/omnibase/production/phase5_registry_contract.py:WorkspaceAgentBinding",
+        "backend/src/omnibase/production/phase5_registry_contract.py:RegistryContractGate",
+        "backend/src/omnibase/production/phase5_registry_contract.py:load_registry_contract_config",
+        "scripts/production/validate_p5_1_registry_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline AgentDefinition/AgentVersion/WorkspaceAgentBinding strict DTO contracts",
+        "P5.1A registry contract preflight report (blocked/not_proven while P34.7/P5.0 are not ready)",
+        "Sealed contract/evidence digests and source-boundary scan (no ORM/migration/router/Celery/runtime)"
+      ],
+      "depends_on": [
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039",
+        "INV-040"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_1_registry_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1_registry_contract.py tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_registry_contract.py tests/test_p5_1_registry_contract.py ../scripts/production/validate_p5_1_registry_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_registry_contract.py tests/test_p5_1_registry_contract.py ../scripts/production/validate_p5_1_registry_contract.py"
+      ],
+      "recovery": [
+        "Keep all three Phase 5 feature gates false and every P5.1A DTO logical/immutable/secret-free; any ORM/migration/router/Celery/runtime package appearing in the source tree is a veto.",
+        "When P34.7/P5.0 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout.",
+        "P5.1A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, and never read the root .env or a database."
+      ]
+    },
+    {
+      "id": "agent-registry-persistence",
+      "name": "P5.1B internal Agent Registry persistence (ORM + migration 0010 + transaction service)",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/**",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "backend/tests/test_p5_1b_agent_registry.py",
+        "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py",
+        "scripts/production/test_run_p5_1b_registry_disposable_gate.py",
+        "docs/evidence/p5-1/phase5-registry-persistence-design.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_registry/service.py:RegistryPersistenceService",
+        "backend/src/omnibase/agent_registry/service.py:_binding_request_identity",
+        "backend/src/omnibase/agent_registry/models.py:AgentDefinitionModel",
+        "backend/src/omnibase/agent_registry/models.py:AgentVersionModel",
+        "backend/src/omnibase/agent_registry/models.py:WorkspaceAgentBindingModel",
+        "backend/src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py:upgrade",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py:_run_database_preflight",
+        "scripts/production/run_p5_1b_registry_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "RegistryPersistenceService (internal only; no FastAPI router, no OpenAPI, no SDK surface)",
+        "AgentDefinitionModel/AgentVersionModel/WorkspaceAgentBindingModel (global omnibase_meta schema)",
+        "Migration 0010 (composite FK + CHECK + trigger state machines + partial unique live index)",
+        "disposable PostgreSQL Gate evidence (docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json)"
+      ],
+      "depends_on": [
+        "runtime-composition",
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-040",
+        "INV-041"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1b_agent_registry.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q",
+        "make test-p5-1b-registry (disposable sentinel PostgreSQL: migration head + P5.1B integration suite)",
+        "python scripts/production/run_p5_1b_registry_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_registry src/omnibase/migrations/versions/0010_p5_1b_agent_registry.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_registry tests/test_p5_1b_agent_registry.py tests/integration/test_p5_1b_agent_registry_foundation.py ../scripts/production/run_p5_1b_registry_disposable_gate.py ../scripts/production/test_run_p5_1b_registry_disposable_gate.py"
+      ],
+      "recovery": [
+        "P5.1B is engineering-sealed: no Browser /api/v1/agents router, no SDK client, no Invocation/Task/Run/Plan/Step/Attempt, no Planner/Executor/Dispatcher/Scheduler, no Celery, no Agent Runtime, no model/tool/memory/skill runtime, no MCP, no shell/SQL/HTTP tools, no multi-agent orchestration; all three Phase 5 feature gates stay false.",
+        "Registry mutations only run inside caller-owned transactions after re-locking the live tenant User, with idempotency, approval consumption and append-only audit; never update a binding row in isolation or rewire its installation payload.",
+        "Physical PostgreSQL locators must never appear in DTOs, errors or logs; only logical identifiers cross boundaries.",
+        "0010 populated downgrade fails closed; never drop or mutate agent_registry tables destructively in place.",
+        "The disposable Gate must pass --env-file .env.example to every Compose call, execute backend/tests/destructive_preflight.py before Alembic, and may publish passed evidence only after labeled container/network/volume counts are all zero; canonical evidence replacement must be atomic and reject symlinks."
+      ]
+    },
+    {
+      "id": "agent-registry-browser-control",
+      "name": "P5.1C Browser Agent Registry control API (routers + fail-closed dependency + public DTOs)",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/main.py",
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py",
+        "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "sdk/python/src/omnibase_sdk/browser_registry.py",
+        "sdk/python/tests/test_registry_browser_client.py",
+        "sdk/typescript/src/registry-browser.ts",
+        "sdk/typescript/tests/registry-browser.test.mjs",
+        "docs/evidence/p5-1/phase5-browser-registry-api-design.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_registry/router.py:router",
+        "backend/src/omnibase/agent_registry/router.py:installation_router",
+        "backend/src/omnibase/agent_registry/router.py:get_registry_control_plane",
+        "backend/src/omnibase/agent_registry/control.py:AgentRegistryControlService",
+        "backend/src/omnibase/agent_registry/control.py:UnavailableAgentRegistryControlPlane",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py:_run_database_preflight",
+        "scripts/production/run_p5_1c_browser_registry_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "GET /api/v1/agent-definitions",
+        "GET /api/v1/agent-definitions/{id}",
+        "GET /api/v1/agent-definitions/{id}/versions",
+        "GET /api/v1/agent-definitions/{id}/versions/{version_id}",
+        "GET /api/v1/workspaces/{workspace_id}/agent-installations",
+        "GET /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations (install)",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/disable",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/upgrade",
+        "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/rollback",
+        "Python SDK omnibase_sdk.browser_registry.AgentRegistryBrowserClient",
+        "TypeScript SDK AgentRegistryBrowserClient"
+      ],
+      "depends_on": [
+        "runtime-composition",
+        "identity-tenancy",
+        "agent-registry-persistence",
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-040",
+        "INV-041",
+        "INV-042"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1c_registry_api.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q",
+        "make test-p5-1c-registry-api (disposable sentinel PostgreSQL: migration head + P5.1C integration suite)",
+        "python scripts/production/run_p5_1c_browser_registry_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_registry",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_registry tests/test_p5_1c_registry_api.py tests/integration/test_p5_1c_browser_registry_api_foundation.py ../scripts/production/run_p5_1c_browser_registry_disposable_gate.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_registry tests/test_p5_1c_registry_api.py tests/integration/test_p5_1c_browser_registry_api_foundation.py ../scripts/production/run_p5_1c_browser_registry_disposable_gate.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
+        "cd sdk/python && python -m pytest tests/test_registry_browser_client.py -q",
+        "cd sdk/typescript && pnpm test && pnpm typecheck"
+      ],
+      "recovery": [
+        "Production defaults reject until the DB-backed control plane is explicitly injected; never mount it into main.py by default. Browser endpoints only expose logical identifiers, never physical locators.",
+        "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction. Browser Version/Binding checks are non-locking snapshots; the sealed P5.1B service owns the authoritative Definition -> Version -> Binding lock order and repeats all state checks.",
+        "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
+        "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
+        "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names, run destructive_preflight.py before Alembic, and publish passed evidence only after zero labeled resources remain."
+      ]
+    },
+    {
+      "id": "agent-task-ledger-contract",
+      "name": "P5.2A offline Agent Task / Run / Lease / Fencing ledger contract preflight (no ORM/migration/router/runtime)",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "deployment/production/phase5-task-ledger-contract.example.json",
+        "backend/tests/test_p5_2a_task_ledger_contract.py",
+        "docs/phase-5-task-ledger-contract.md",
+        "docs/phase-5-threat-model.md",
+        "docs/phase-5-agent-runtime-implementation-plan.md",
+        "docs/roadmap.md",
+        "docs/handover-report.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentTaskInvocation",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentRunBinding",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentStep",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentAttempt",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLeaseContract",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:BudgetLedgerSnapshot",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:LeaseExpiryBounds",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLedgerContractGate",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLedgerContractConfig",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:compute_request_hash",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:load_task_ledger_contract_config",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline AgentTask/AgentRun/AgentStep/AgentAttempt/TaskLease/Effect/Checkpoint strict DTO contracts",
+        "Eight canonical hash profiles with exact-replay and stable-conflict semantics",
+        "Twelve-dimension budget ledger with limit/reserved/committed/released/remaining invariants",
+        "P5.2A task ledger contract preflight report (blocked/not_proven while P34.7/P5.0/P5.1 are not ready)",
+        "Sealed contract/evidence digests and source-boundary scan (no P5.2 ORM/migration 0011/router/runtime)"
+      ],
+      "depends_on": [
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039",
+        "INV-040",
+        "INV-043"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_2a_task_ledger_contract.py tests/test_p5_1_registry_contract.py tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_task_ledger_contract.py tests/test_p5_2a_task_ledger_contract.py ../scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_task_ledger_contract.py tests/test_p5_2a_task_ledger_contract.py ../scripts/production/validate_p5_2a_task_ledger_contract.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 feature gate false, activation_requested=false and every P5.2A DTO logical/immutable/secret-free; any true gate, activation_requested=true, P5.2 ORM/migration 0011/router/runtime package or Planner/Executor/scheduler/worker package appearing in the source tree is a veto. Attempt number is scoped per (task_id, step_id) and must start at exactly 1 and equal previous+1 (no duplicates, gaps, regressions or non-1 starts); task fencing is a per-Task (not system-wide or Run-wide) monotonic sequence so different Tasks own independent fencing sequences and may each start at token 1; the authoritative source of the fencing chronology is the append-only TaskLease ledger (active/completed/revoked/expired leases all participate, ordered by task_lease.created_at - terminal attempts clearing task_lease_id/task_fencing_token never erase their historical leases, and attempts remain only for the active Attempt<->active TaskLease bidirectional binding, state matrix and token consistency); every task_lease.created_at must be at or after its bound attempt.created_at so a low-token holder cannot backdate a claim and reorder the fencing history; every active/completed/revoked/expired lease must satisfy expires_at > created_at and the configured TTL ceiling, and every non-null heartbeat_at must remain inside that interval; fencing chronology is the normalized UTC instant of task_lease.created_at (the timestamp contract allows Z, +HH:MM and -HH:MM, so raw ISO-8601 string order is NOT chronological order and must never be used to order claims, and two leases of the same Task that normalize to the exact same UTC instant fail closed because the contract has no trusted secondary ordering field - never input-array order, task_lease_id/attempt_id lexicography or token values); the timestamp offset is a closed set (hour 00-23, minute 00-59 - +01:60/+00:99 are rejected explicitly instead of relying on fromisoformat normalization, and any parse/offset/UTC-normalization failure including year-bound overflow converts to TaskLedgerContractError, never a native ValueError/OverflowError); Attempt/TaskLease binding is bidirectional in both directions (active lease binds exactly one leased/dispatching/running Attempt that points back and shares the fencing token; an active lease bound to a ready/pending/terminal Attempt or whose Attempt cleared/redirected its lease is an orphan and rejected) with at most one active lease per Attempt; AgentRun binding groups are all-or-none by state; configured deadline/TTL ceilings apply to every DTO; Step plan identity and the dependency DAG are validated; parent/child deadlines are frozen. The verify path must really verify passed evidence references (repository-relative regular non-link file, raw-byte SHA-256 matching the sealed digest, assertions resolved as a machine-verifiable closed set) and report evidence_path_verified/evidence_digest_verified/evidence_assertions_verified/evidence_references_verified only when actually executed and passed; a passed reference that drifts is a veto, never an unconditional true.",
+        "When P34.7/P5.0/P5.1 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; sealed docs shared with P5.1A must be re-sealed in the P5.1A contract in the same change.",
+        "P5.2A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, never create a Task Lease or real Task/Run/Attempt, and never read the root .env or a database."
       ]
     },
     {
@@ -1078,8 +1791,18 @@
         "Safe Compose diagnostics require explicit --env-file .env.example or a disposable overlay-specific env file",
         "P34.3 maintainer-map benchmark protocol and suite"
       ],
-      "depends_on": ["migrations", "runtime-composition", "sdk-contracts"],
-      "invariants": ["INV-008", "INV-009", "INV-010"],
+      "depends_on": [
+        "migrations",
+        "runtime-composition",
+        "sdk-contracts",
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-008",
+        "INV-009",
+        "INV-010",
+        "INV-035"
+      ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",

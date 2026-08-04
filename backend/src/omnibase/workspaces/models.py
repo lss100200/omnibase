@@ -686,7 +686,7 @@ class WorkspaceSnapshot(Base):
             name="workspace_snapshots_digest_check",
         ),
         CheckConstraint(
-            "state IN ('ready', 'revoked')",
+            "state IN ('building', 'ready', 'failed', 'revoked')",
             name="workspace_snapshots_state_check",
         ),
         ForeignKeyConstraint(
@@ -727,7 +727,7 @@ class WorkspaceSnapshot(Base):
     state: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        server_default=text("'ready'"),
+        server_default=text("'building'"),
     )
     created_by_user_id: Mapped[str] = mapped_column(_UUID, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

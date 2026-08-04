@@ -54,6 +54,7 @@ def _registry(path: Path, *, state: str = "active", thumbprint: str = THUMBPRINT
                         "certificate_thumbprint": thumbprint,
                         "expires_at": (NOW + timedelta(minutes=2)).isoformat(),
                         "grant_id": GRANT,
+                        "expected_profile": "read",
                         "key_id": "gateway-key-2026-08",
                         "system_actor_id": "gateway-credential-broker",
                         "originating_user_id": ACTOR,

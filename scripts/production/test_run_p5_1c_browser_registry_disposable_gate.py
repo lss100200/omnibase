@@ -1,0 +1,378 @@
+"""Non-destructive contract tests for the P5.1C disposable Gate wrapper."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from subprocess import CompletedProcess
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.production import run_p5_1c_browser_registry_disposable_gate as gate
+
+
+def _safe_evidence(manifest_sha256: str) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "gate": "P5.1C Browser Agent Registry control API disposable Gate",
+        "passed": True,
+        "root_env_accessed": False,
+        "business_database_accessed": False,
+        "business_database_migrated": False,
+        "database_sentinel_verified": True,
+        "physical_locator_exposed": False,
+        "cleanup": {"containers": 0, "networks": 0, "volumes": 0},
+        "manifest_sha256": manifest_sha256,
+    }
+
+
+def test_static_contract_accepts_the_checked_in_tree() -> None:
+    gate._validate_static_contract()
+
+
+def test_source_manifest_is_stable_and_never_contains_root_env(monkeypatch) -> None:
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        assert check is False
+        if arguments[:2] == ["git", "status"]:
+            output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/control.py\n"
+        else:
+            raise AssertionError(arguments)
+        return CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    first = gate._source_manifest()
+    second = gate._source_manifest()
+
+    assert first == second
+    assert first["repository_clean"] is True
+    assert first["dirty_paths"] == ()
+    files = first["files"]
+    assert isinstance(files, dict)
+    assert ".env" not in files
+    assert "backend/src/omnibase/agent_registry/control.py" in files
+    assert "backend/src/omnibase/agent_registry/router.py" in files
+    assert "backend/src/omnibase/agent_registry/schemas.py" in files
+    assert "backend/src/omnibase/main.py" in files
+    assert (
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py"
+        in files
+    )
+    assert "sdk/python/src/omnibase_sdk/browser_registry.py" in files
+    assert "sdk/typescript/src/registry-browser.ts" in files
+    assert "scripts/production/run_p5_1c_browser_registry_disposable_gate.py" in files
+    assert all(len(str(digest)) == 64 for digest in files.values())
+
+
+def test_dirty_checkout_is_recorded_and_rejected_by_run_flow(monkeypatch) -> None:
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        assert check is False
+        if arguments[:2] == ["git", "status"]:
+            output = " M backend/src/omnibase/agent_registry/control.py\n"
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/control.py\n"
+        else:
+            raise AssertionError(arguments)
+        return CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    manifest = gate._source_manifest()
+    assert manifest["repository_clean"] is False
+    assert any("control.py" in item for item in manifest["dirty_paths"])
+
+
+def test_manifest_sha256_is_canonical_and_deterministic() -> None:
+    first = gate._manifest_sha256({"b": 2, "a": [1, 2], "c": {"x": "y"}})
+    second = gate._manifest_sha256({"c": {"x": "y"}, "a": [1, 2], "b": 2})
+    assert first == second
+    assert len(first) == 64
+
+
+def test_repository_artifacts_use_deterministic_lf(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.txt"
+    gate._write_text_lf(path, "first\nsecond\n")
+    assert path.read_bytes() == b"first\nsecond\n"
+
+
+def test_compose_always_uses_explicit_env_example(monkeypatch) -> None:
+    captured: list[str] = []
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        captured.extend(arguments)
+        assert check is False
+        return CompletedProcess(arguments, 0, "", "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    gate._compose("omnibase-p51c-test", "ps", env={})
+    assert captured[:4] == ["docker", "compose", "--env-file", str(gate.ENV_FILE)]
+    assert str(gate.REPO_ROOT / ".env") not in captured
+
+
+def test_verify_evidence_rejects_drifted_source(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        assert check is False
+        if arguments[:2] == ["git", "status"]:
+            output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/control.py\n"
+        else:
+            raise AssertionError(arguments)
+        return CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    manifest = gate._source_manifest()
+    evidence = _safe_evidence(gate._manifest_sha256(manifest))
+    path = tmp_path / "evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    gate._verify_recorded_evidence(json.loads(path.read_text(encoding="utf-8")))
+
+    drifted = dict(evidence)
+    drifted["manifest_sha256"] = "0" * 64
+    drifted_path = tmp_path / "drifted.json"
+    drifted_path.write_text(json.dumps(drifted), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="source manifest drifted"):
+        gate._verify_recorded_evidence(
+            json.loads(drifted_path.read_text(encoding="utf-8"))
+        )
+
+
+def test_verify_evidence_rejects_unsafe_claims(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        assert check is False
+        if arguments[:2] == ["git", "status"]:
+            output = ""
+        elif arguments[:2] == ["git", "ls-files"]:
+            output = "backend/src/omnibase/agent_registry/control.py\n"
+        else:
+            raise AssertionError(arguments)
+        return CompletedProcess(arguments, 0, output, "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    manifest = gate._source_manifest()
+    evidence = _safe_evidence(gate._manifest_sha256(manifest))
+    evidence["root_env_accessed"] = True
+    path = tmp_path / "unsafe.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="root .env"):
+        gate._verify_recorded_evidence(json.loads(path.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize(
+    ("field", "unsafe_value", "message"),
+    [
+        ("business_database_accessed", True, "business database access"),
+        ("business_database_migrated", True, "business database migration"),
+        ("database_sentinel_verified", False, "sentinel"),
+        ("physical_locator_exposed", True, "physical locator"),
+        ("cleanup", {"containers": 1, "networks": 0, "volumes": 0}, "cleanup"),
+    ],
+)
+def test_verify_evidence_rejects_incomplete_safety_proof(
+    monkeypatch, field: str, unsafe_value: object, message: str
+) -> None:
+    monkeypatch.setattr(
+        gate,
+        "_source_manifest",
+        lambda **_: {
+            "schema_version": 1,
+            "repository_clean": True,
+            "dirty_paths": (),
+            "file_count": 0,
+            "files": {},
+        },
+    )
+    manifest = gate._source_manifest()
+    evidence = _safe_evidence(gate._manifest_sha256(manifest))
+    evidence[field] = unsafe_value
+    with pytest.raises(RuntimeError, match=message):
+        gate._verify_recorded_evidence(evidence)
+
+
+def test_cleanup_project_requires_zero_labeled_resources(monkeypatch) -> None:
+    monkeypatch.setattr(
+        gate,
+        "_compose",
+        lambda *args, **kwargs: CompletedProcess(list(args), 0, "", ""),
+    )
+    monkeypatch.setattr(
+        gate,
+        "_project_resource_counts",
+        lambda project: {"containers": 0, "networks": 1, "volumes": 0},
+    )
+    with pytest.raises(RuntimeError, match="left resources"):
+        gate._cleanup_project("omnibase-p51c-test", env={})
+
+
+def test_evidence_verification_allows_only_its_two_canonical_dirty_paths(
+    monkeypatch,
+) -> None:
+    json_path = gate.EVIDENCE_JSON.relative_to(gate.REPO_ROOT).as_posix()
+    md_path = gate.EVIDENCE_MD.relative_to(gate.REPO_ROOT).as_posix()
+    monkeypatch.setattr(
+        gate,
+        "_git_clean",
+        lambda: (False, (f" M {json_path}", f" M {md_path}")),
+    )
+    allowed = gate._source_manifest(allowed_dirty_paths=frozenset({json_path, md_path}))
+    assert allowed["repository_clean"] is True
+    assert allowed["dirty_paths"] == ()
+
+    monkeypatch.setattr(
+        gate,
+        "_git_clean",
+        lambda: (
+            False,
+            (
+                f" M {json_path}",
+                f" M {md_path}",
+                " M backend/src/omnibase/agent_registry/control.py",
+            ),
+        ),
+    )
+    unexpected = gate._source_manifest(
+        allowed_dirty_paths=frozenset({json_path, md_path})
+    )
+    assert unexpected["repository_clean"] is False
+    assert unexpected["dirty_paths"] == (
+        " M backend/src/omnibase/agent_registry/control.py",
+    )
+
+
+def test_host_preflight_uses_guarded_environment_before_any_migration(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        captured.update(arguments=arguments, check=check, env=env, cwd=cwd)
+        return CompletedProcess(arguments, 0, "", "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    database_url = (
+        "postgresql+psycopg://runner:test@localhost:55432/omnibase_test_p51c_unit"
+    )
+    gate._run_database_preflight(
+        database_url,
+        project="omnibase-p51c-unit",
+        backend_executor="host",
+        env={},
+    )
+
+    assert captured["arguments"] == [sys.executable, "tests/destructive_preflight.py"]
+    assert captured["cwd"] == gate.REPO_ROOT / "backend"
+    assert captured["check"] is False
+    backend_env = captured["env"]
+    assert isinstance(backend_env, dict)
+    assert backend_env["DATABASE_URL"] == database_url
+    assert backend_env["TEST_DATABASE_URL"] == database_url
+    assert backend_env["OMNIBASE_INTEGRATION_TESTS"] == "1"
+
+
+def test_preflight_failure_blocks_migration(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> CompletedProcess[str]:
+        del check, env, cwd
+        commands.append(arguments)
+        return CompletedProcess(arguments, 1, "sentinel missing", "")
+
+    monkeypatch.setattr(gate, "_run", fake_run)
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        gate._run_database_preflight(
+            "postgresql+psycopg://runner:test@localhost:55432/omnibase_test_p51c_unit",
+            project="omnibase-p51c-unit",
+            backend_executor="host",
+            env={},
+        )
+    assert len(commands) == 1
+    assert "alembic" not in commands[0]
+
+
+def test_publish_evidence_atomically_replaces_regular_files(
+    monkeypatch, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "evidence.json").write_text('{"passed": true}\n', encoding="utf-8")
+    (run_dir / "evidence.md").write_text("new evidence\n", encoding="utf-8")
+    destination_json = tmp_path / "sealed" / "evidence.json"
+    destination_md = tmp_path / "sealed" / "evidence.md"
+    destination_json.parent.mkdir()
+    destination_json.write_text("old\n", encoding="utf-8")
+    destination_md.write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "EVIDENCE_JSON", destination_json)
+    monkeypatch.setattr(gate, "EVIDENCE_MD", destination_md)
+
+    gate._publish_evidence(run_dir)
+
+    assert destination_json.read_text(encoding="utf-8") == '{"passed": true}\n'
+    assert destination_md.read_text(encoding="utf-8") == "new evidence\n"
+    assert not list(destination_json.parent.glob(".*.tmp"))
+
+
+def test_publish_evidence_rejects_symlink_destination(
+    monkeypatch, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "evidence.json").write_text("{}\n", encoding="utf-8")
+    (run_dir / "evidence.md").write_text("evidence\n", encoding="utf-8")
+    target = tmp_path / "target.json"
+    target.write_text("protected\n", encoding="utf-8")
+    link = tmp_path / "evidence.json"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable on this host")
+    monkeypatch.setattr(gate, "EVIDENCE_JSON", link)
+    monkeypatch.setattr(gate, "EVIDENCE_MD", tmp_path / "evidence.md")
+
+    with pytest.raises(RuntimeError, match="not a regular file"):
+        gate._publish_evidence(run_dir)
+    assert target.read_text(encoding="utf-8") == "protected\n"

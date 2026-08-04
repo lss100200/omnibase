@@ -342,8 +342,13 @@ def test_openapi_exposes_only_closed_gateway_contract(
     schema = client.app.openapi()
     paths = set(schema["paths"])
     assert paths == {
+        "/gateway/v1/artifacts/read",
+        "/gateway/v1/artifacts/write",
+        "/gateway/v1/data/rows/mutate",
         "/gateway/v1/data/schema/read",
         "/gateway/v1/data/rows/read",
+        "/gateway/v1/rag/derived/create",
+        "/gateway/v1/rag/derived/delete",
         "/gateway/v1/rag/search",
         "/gateway/v1/rag/citations/read",
     }

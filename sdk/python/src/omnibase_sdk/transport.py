@@ -17,7 +17,8 @@ from uuid import uuid4
 from omnibase_sdk.models import GatewayError, JsonValue, require_mapping
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-_DEFAULT_RESPONSE_LIMIT = 1_100_000
+# A 1 MiB artifact expands to roughly 1.4 MiB as canonical base64 plus JSON fields.
+_DEFAULT_RESPONSE_LIMIT = 1_500_000
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

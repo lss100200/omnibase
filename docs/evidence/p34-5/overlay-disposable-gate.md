@@ -1,87 +1,54 @@
 # P34.5C disposable Headscale provider Gate
 
-Run `run-20260802-034054` passed against pinned Headscale `0.26.1` and an
-ephemeral mTLS Node-Daemon test double. Unlike the earlier co-residency Gate,
-this run proves a real causal chain from the OmniBase adapter, through the
-Node-Daemon wire contract, into Headscale control-plane state.
+Run `run-20260802-190724` passed from a fresh ordinary Windows clone of
+commit `cc48baa9bbd78d8824393311220ba523dfb186de` (tree
+`fd6e2b3ef0e390a9879c5cb4fa1b845ff1a42d62`). Git applied the repository
+checkout contract before execution: non-empty Python files and all shell
+scripts were LF, PowerShell scripts were CRLF, the clone was clean, and
+`core.autocrlf=true`.
 
-The precise scope is important: this is a disposable integration Gate using a
-Node-Daemon test double. It is not a production Node-Daemon deployment, a real
-member Overlay, a public relay deployment, or evidence that arbitrary Sandbox
-traffic is safe.
+## Clean-checkout and source seal
+
+- The dedicated Gate Runner was built from the public checkout, locked Backend
+  dependencies, complete required source/tests, Docker inputs, Gate scripts,
+  `.gitattributes`, and pinned upstream image digests.
+- No ambient Backend image, external virtual environment, host source mount,
+  real member device, published host port, or business database was used.
+- Source manifest SHA-256:
+  `d0d1f54c08629f7d6158d143f1db928197648403e36b3598e01be54e9a8d8740`.
+- Source tree SHA-256:
+  `8cce097c80959061cef3f3751979ca99eeea723b9942cc29a68e2dedde02470f`.
+- Git source was clean and bound to the exact commit/tree above.
 
 ## Verified provider behavior
 
-- Headscale started with isolated SQLite state and HTTP/gRPC reachable only on
-  the disposable internal Docker network. No host port was published and no
-  real member device was registered.
-- The Gate created one disposable Headscale user and a 30-minute API key. The
-  API key existed only in Gate process memory before being sent through stdin
-  into a disposable provider-secret volume.
-- The provider-secret volume was mounted read-only only by the Node-Daemon.
-  Gate Runner/Sandbox code never mounted it. The volume was destroyed by final
-  `down -v` cleanup.
-- `activate` caused the Node-Daemon to create a real Headscale preauth-key
-  record and then verified that record as active from Headscale.
-- `rotate` created a new Headscale record, expired the old record, and verified
-  the old/new revoked/active states from Headscale.
-- `revoke` expired the current Headscale record and `status` observed the
-  revoked state from Headscale rather than trusting only `state.json`.
-- The scored lifecycle produced three provider records and six successful
-  provider mutations. Raw API/preauth keys were never included in receipts,
-  state probes, reports, logs, or repository evidence.
-- A simulated response drop after provider commit crossed the real Headscale
-  mutation boundary. The durable SQLite operation ledger then rejected an
-  automatic replay of the same operation, so Headscale was not mutated twice.
-- Stale fencing was rejected before provider mutation. Stopping and restarting
-  the Node-Daemon proved fail-closed offline behavior and reconnect recovery.
-- Sandbox-facing publication still rejected direct endpoints, routes, raw
-  provider credentials, and member identity. Only logical service metadata
-  crossed the Overlay-to-Broker boundary.
+- Pinned Headscale 0.26.1 ran on an internal-only disposable network.
+- The mTLS Node-Daemon test double performed real provider-record activate,
+  status, rotate, and revoke mutations.
+- Activate created a record; rotate expired the old record and created the new
+  active record; revoke expired the current record; status used Headscale
+  truth.
+- The lifecycle produced three provider records and six provider API
+  mutations. Receipts were redacted.
+- A simulated ambiguous provider response was not replayed automatically.
+- Offline fail-closed behavior and reconnect recovery passed.
+- Containment and configuration-seal checks passed.
 
-## Configuration and containment
+## Cleanup and boundaries
 
-- Every Compose invocation, including final cleanup, used the dedicated
-  comment-only `deployment/overlay/gate.env`; the repository root `.env` was
-  not an implicit Compose source for this scored run.
-- Gate Runner image and venv volume were fixed in Compose. Before startup the
-  image ID was checked against
-  `sha256:406d67c19d7133bfefd4594dd6fa36e5aa4d8908ae1a605906139dfed9cea6f0`.
-- `scripts/overlay/validate_disposable_gate.py` verified the explicit env file,
-  fixed image/volume, Node-Daemon-only provider secret mount, stdin injection,
-  provider mutation evidence, and cleanup checks.
-- The final containment scan passed. It found no authorization header, bearer
-  credential, private key, raw provider key, URL credential, or other real
-  secret in logs, inspected container metadata, source artifacts, or the
-  report.
+- Formal report SHA-256:
+  `246f1d9b9a8bddcf9517cc7d0361ec6699660faf7a17785cecf24549216c3f38`.
+- Cleanup proved remaining containers/networks/disposable volumes `0/0/0`.
+- Root `.env` accessed by the Gate: `false`.
+- Business database accessed: `false`.
+- Real member devices: `0`; published host ports: `0`.
 
-## Cleanup and artifact
+This disposable Gate proves the provider control-plane seam for the sealed
+source only. It does not prove a hostile-code production Runner, real member
+data plane, DERP behavior, node compromise/revocation, production credential
+rotation, non-disposable tenant/RAG, capacity/SLA, or P34.7 readiness.
 
-Final cleanup proved zero remaining containers, zero networks, and zero
-disposable volumes for project `omnibase-p345-overlay-gate`. The Gate did not
-access a business database, a real member device, or a real member Overlay.
-
-The sealed report is:
-
-```text
-C:\tmp\omnibase-p345-overlay-gate\run-20260802-034054\report.json
-SHA-256 3fe977b41ef403558d88d1819e1a3488149060ba853676afca802993f1733eac
-```
-
-## Remaining production boundary
-
-This Gate closes the disposable provider-control-plane evidence gap. Production
-still requires a hardened Node-Daemon implementation and deployment, real
-member-node/relay failure and compromise tests, production credential rotation,
-and the wider P34.5 A/B/D attack and data-access Gates. Until those pass, the
-unavailable/rejecting production defaults remain mandatory.
-
-## Host diagnostic incident
-
-The Gate script itself did not read the repository root `.env`. Earlier in the
-same P34.5 host-diagnostic work, a bare root `docker compose config` command
-caused Compose to load and expand local development credentials into an
-internal sub-agent tool output. No credential value was persisted in repository
-files or Gate artifacts, committed, pushed, placed in a candidate bundle, or
-sent to an external provider. The affected local development credentials should
-nevertheless be treated as exposed and rotated by the deployment owner.
+An earlier host diagnostic in this project history implicitly expanded root
+`.env` through a bare Compose config command. That historical incident remains
+separate from this scored Gate's `root_env_accessed_by_script=false` result and
+must not be erased or reinterpreted.

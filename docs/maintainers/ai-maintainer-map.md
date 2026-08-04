@@ -10,7 +10,7 @@
 
 1. `AGENTS.md`：仓库级维护契约、冻结边界和安全工作流。
 2. `docs/maintainers/maintenance-map.json`：机器可读模块、依赖、不变量、验证和恢复入口。
-3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-010 的权威维护约束。
+3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-021 的权威维护约束。
 4. 本文：运行入口、调用方向、边界和影响矩阵。
 5. 目标模块源码，以及机器地图列出的迁移、契约和测试。
 6. `docs/handover-report.md`：当前阶段状态、最近验证证据和尚未授权的动作。
@@ -390,7 +390,7 @@ trusted controller identity + current generation/fencing
 - `sandbox.runtime_driver.AttestedLinuxLocalRuntimeDriver`：只在 attestation 与 profile digest 完整匹配时调用固定 launcher；stdin、stdout/stderr 和 deadline 都有界。超时或输出溢出先对 operation cgroup 写 `cgroup.kill` 并确认 `cgroup.events populated 0`，随后才清理 launcher process group。
 - `sandbox.runner_service.AttestedLinuxSandboxRunner`：把 host proof、execution plan、RuntimeDriver receipt 和 canonical binding 聚合为 Runner receipt；非零 exit、截断、binding drift 或无法证明强杀都不能冒充 success。
 
-该包仍没有 Browser Router、Docker/Podman socket、Core 数据凭据或宿主目录注入。A4 源码必须部署到真正独立、满足 profile 的 Linux Runner，并由 `RUN-03/04`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 的目标宿主 artifact 决定能否装配。普通 Docker Desktop/WSL smoke、focused 单测或源码审计都不能替代该 Gate。
+该包仍没有 Browser Router、Docker/Podman socket、Core 数据凭据或宿主目录注入。A4 源码必须部署到真正独立、满足 profile 的 Linux Runner，并由 `RUN-03/04/05`、`FS-01/02/03`、`NET-01/02`、`PROC-01/02`、`HOST-01` 与 `CROSS-01` 的目标宿主 artifact 决定能否装配。`RUN-05` 专门验证 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与非法身份拒绝。普通 Docker Desktop/WSL smoke、focused 单测或源码审计都不能替代该 Gate。
 
 ### 6.6 P34.5B-D：Broker、Overlay publication 与 Gateway workload bridge
 
@@ -438,7 +438,216 @@ isolated Sandbox network namespace
 - `SqlAlchemyRunLeaseWorkloadAttestor` 每个请求重新验证 live P34.4 Run/Node/Lease/fencing/runtime/certificate binding；`SqlAlchemyGatewayCredentialIssuer` 在 Core 内加载私钥，token 最长五分钟且不能晚于 Run Lease expiry。
 - `create_production_gateway_app()` 显式组合可信 workload attestor、Core capability verifier、只读 PostgreSQL/RAG adapters 与 append-only Audit；它仍是独立 Gateway ASGI，不挂入 Browser Main app。
 
-P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker Gate，覆盖真实 `setns` namespace-only connect、direct egress default-deny、地址分类、预算、challenge、PID/starttime/netns、socket identity、durable no-replay 与清理；证据位于 `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`。该 Gate 不自动证明 Core↔Broker production mTLS 联合激活。P34.5C 已通过真实 disposable Headscale control-plane Gate：mTLS Node Daemon 对 Headscale provider records 完成 activate/status/rotate/revoke，验证 ambiguous no-replay、离线/重连、凭据 containment 与清理。该 Gate 注册的真实成员设备为 0，因此不能冒充 production Node Daemon、两节点数据面、DERP relay 或节点失陷证据；这些继续属于 P34.7。P34.5D 已通过真实 split-process mTLS Gateway Gate：独立受限 client 经 server-owned registry/live lease/fencing 领取短期 credential，并在 guarded `omnibase_test_*` sentinel 内完成 schema/rows/RAG/citation 四读及 stale/revocation 矩阵。该闭环仍不允许 Runner/Sandbox 直连 PostgreSQL、Redis 或 MinIO，也不自动证明非 disposable production tenant/RAG。
+P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker Gate，覆盖真实 `setns` namespace-only connect、direct egress default-deny、地址分类、预算、challenge、PID/starttime/netns、socket identity、durable no-replay 与清理；证据位于 `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`。该 Gate 不自动证明 Core↔Broker production mTLS 联合激活。P34.5C 已从 fresh Windows clone 构建专用 Runner 并通过真实 disposable Headscale control-plane Gate：161 文件 source manifest 同时封存 `.gitattributes`、锁文件、完整 build inputs 与 upstream digests；mTLS Node Daemon 对 Headscale provider records 完成 activate/status/rotate/revoke，验证 ambiguous no-replay、离线/重连、凭据 containment 与 `0/0/0` 清理。该 Gate 注册的真实成员设备为 0，因此不能冒充 production Node Daemon、两节点数据面、DERP relay 或节点失陷证据；这些继续属于 P34.7。P34.5D 已从 clean checkout 构建独立 Gateway 与 stdlib-only client 镜像并通过真实 split-process mTLS Gateway Gate：249 文件 source manifest 封存 `.gitattributes`、完整 `backend/src`/`backend/tests` 和全部 build inputs；独立受限 client 经 server-owned registry/live lease/fencing 领取短期 credential，并在 guarded `omnibase_test_*` sentinel 内完成 schema/rows/RAG/citation 四读及 stale/revocation 矩阵，最终 `0/0/0` 清理。该闭环仍不允许 Runner/Sandbox 直连 PostgreSQL、Redis 或 MinIO，也不自动证明非 disposable production tenant/RAG。
+
+### 6.7 P34.6 Workspace 数据、Derived RAG、Promotion 与 Snapshot lineage
+
+P34.6 复用 P34.1–P34.5 的 Resource、Operation、Approval、Idempotency、Audit、Workspace membership、Run/Node/Lease/fencing 和 Controlled CRUD，不建立第二套鉴权或 SQL 执行器：
+
+```text
+trusted Runner/Broker mTLS peer
+  -> live Run/Node/Lease/generation/fencing attestation
+  -> short-lived non-delegable WORKSPACE_DATA grant
+  -> independent Gateway logical data route
+  -> operation-idempotent calls/bytes/cost reservation
+  -> P34.3 private CRUD or explicitly installed WorkspaceDataAdapter
+  -> result + Operation/Idempotency/Audit, or pending/unknown reconciliation
+
+Browser control plane
+  -> live Workspace membership and tenant-admin decision
+  -> R2 Approval + Operation + exact source version/digest/request hash
+  -> copy-on-publish to a new controlled_shared Resource
+  -> published_from lineage; source remains immutable
+```
+
+关键边界：
+
+- `capabilities.service.WORKSPACE_DATA_ACTIONS` 与 READ/SANDBOX profiles 互斥；Grant 绑定单一 Workspace、runtime instance 和 workload identity，最长五分钟、不可委派。Promotion action 不存在于 runtime token。
+- `capability_gateway.write_service.WorkspaceDataGatewayService` 只接受逻辑 ID 和 strict DTO；Browser Bearer/read token、canonical/controlled-shared write、physical locator/schema/table/object key/SQL 都在 adapter 前拒绝。Production composition 的 write adapter 默认 unavailable。
+- `workspace_data` 的 Artifact、DerivedIndex、Publication、SnapshotItem 和 DataEffect 都是 durable metadata。Artifact/derived output 不可原地覆盖；每次修订创建新的 Resource/generation，并追加 lineage。
+- tenant `workspace_derived_chunks_v2` 是独立 derived lane；任何 P34.6 build/search/promotion/restore 都不能写 canonical `documents`、`embeddings`、`embeddings_v2` 或 RAG index metadata。
+- provider/object-store/index boundary 前先持久化 pending effect；跨边界后结果不明确进入 `unknown`，禁止自动 replay。不能通过删除 reservation、effect、Audit 或 lineage 伪造 fresh attempt。
+- Promotion 只创建新的 `controlled_shared` target 和 `published_from` lineage；P34.6 不允许直接创建/修改 `canonical_readonly`，也不允许 requester self-approval 或 source 原地 policy flip。
+- Snapshot 只有在 server-generated resource/version/digest/size inventory 全部验证后才能 ready；Restore 创建新 Workspace/generation 和新 Resource ID，不恢复旧 Run、Lease、token、runtime/workload identity、PID、socket、连接或 provider handle。
+
+P34.6 的 unit/fresh-sentinel Gate 证明源码、migration、DB trigger、逻辑路由和失败语义；真实非 disposable object store/index worker、生产 snapshot payload 传输、恢复演练、容量/SLA 与 production cutover 继续由 P34.7 验收。
+
+### 6.8 P5.0 Phase 5 admission gate（只决策，不运行）
+
+`backend/src/omnibase/production/phase5_admission.py` 是 Phase 5 的唯一
+P5.0 交付物：它验证 Phase 5 是否允许开始，不实现、不导入、不启动任何
+Agent/Planner/Executor/queue/worker/scheduler。三个 Feature Gate
+（`AGENT_RUNTIME_ENABLED`、`AGENT_PLANNER_ENABLED`、`MULTI_AGENT_ENABLED`）
+独立解析、默认关闭：缺失/空值等于 `false`，只有精确 `"true"`/`"false"`
+被接受，未知值（大小写、空白、非标准字符串、非字符串）报配置错误；
+Planner 依赖 Runtime、Multi-Agent 依赖 Planner+Runtime，依赖冲突同样
+fail-closed。
+
+- `deployment/production/phase5-admission.example.json` 是 strict 合同：
+  feature gates 必须全 `false`、`critical_veto.expected` 必须为 0、
+  P34.7 formal state 当前为 `blocked/not_proven`，Runner/Broker/Gateway/
+  Overlay/Workspace-data/provider 九项生产证据全部 `not_proven`。
+- `scripts/production/validate_p5_0_admission.py --validate-only` 只解析
+  合同（exit 0）；`--verify` 从 clean checkout 校验 Git provenance、
+  migration head（当前 `0010`）、OpenAPI snapshot、Python/TypeScript SDK
+  版本、production composition、runbook 与 P34.7 decision 的 sealed
+  digest，并解析环境中的 gate 值。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7 非 ready + activation
+  关闭 + 九项证据未证明）；即使三个 gate 显式 `true` 也仍然 blocked。
+- 该模块不读取根 `.env`、不连接数据库、不执行 migration；report 固定
+  输出 `root_env_accessed=false`、`business_database_accessed=false`、
+  `business_database_migrated=false`、`hostile_code_executed=false`、
+  `phase5_runtime_activated=false`。
+- INV-025–INV-034 仍是 Phase 5 计划预留不变量，P5.0 不得把其中任何一条
+  标记为已实现。
+
+### 6.9 P5.1A Agent Registry contract preflight（离线，只验证不实现）
+
+`backend/src/omnibase/production/phase5_registry_contract.py` 是 P5.1A 的
+唯一交付物：AgentDefinition → AgentVersion → WorkspaceAgentBinding 三层
+离线 strict DTO/合同，纯离线 validator，无 ORM、migration、service、
+Browser API、SDK 调用、Planner/Executor/worker/scheduler 或 Runtime。
+
+- `deployment/production/phase5-registry-contract.example.json` 是
+  closed-set 合同：三个 Phase 5 gate 必须 false、P34.7/P5.0 formal state
+  当前 `blocked/not_proven` 且决策文档被 SHA-256 封存、approval policy
+  （high/critical 必须 approval）、server-owned budget ceilings、
+  forbidden source paths、baseline migration revisions（0001–0010）、
+  内嵌 definition/version/binding 正向示例。
+- `scripts/production/validate_p5_1_registry_contract.py --validate-only`
+  只解析合同（exit 0，永不 ready）；`--verify` 复用 P5.0 修补后的逐分量
+  symlink/reparse 路径检查与仓库外 report 规则，校验 sealed digest、
+  migration 集合/head、forbidden 包不存在、OpenAPI snapshot 无 agent
+  endpoint，并解析环境 gate。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0 非 ready + registry
+  database/API/installation 未实现 + production evidence 未证明）；
+  该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
+  用 AST 扫描证明。
+- INV-025–INV-034 仍是 Phase 5 计划预留；INV-040 只描述 P5.1A 合同的
+  离线属性，不声称数据库约束、RBAC、并发安装或 Runtime 已完成。
+
+### 6.10 P5.1B Agent Registry persistence（内部持久化地基，非公开 API）
+
+`backend/src/omnibase/agent_registry/` 是 P5.1B 的唯一交付物：三张全局
+`omnibase_meta` 表（`agent_definitions`、`agent_versions`、
+`workspace_agent_bindings`，迁移 `0010`）加内部事务服务
+`RegistryPersistenceService`。它**不是**公开 API：无 FastAPI router、
+OpenAPI endpoint、SDK surface、Invocation/Task/Run/Plan/Step/Attempt、
+Planner/Executor/Dispatcher/Scheduler、Celery、Agent Runtime、
+Model/Tool/Memory/Skill Runtime、MCP 或 shell/SQL/HTTP tools；三个 Phase 5
+Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven。
+
+- 数据库本身执行不变量：复合 `(id, tenant_id)` FK 阻断 definition/version/
+  workspace/approval/superseded target 跨租户引用；trigger 执行状态机
+  （revoked 终态、sealed 身份与内容不可变、binding 安装 payload 不可重连、
+  risk 不降级、tool ID 闭集、approval 有效性、superseded/disabled 一致性）；
+  partial unique index 保证每个 workspace+definition 只有一个 live
+  binding（`pending_approval`/`installed`）。
+- 每次变更先在调用方事务内重读 active tenant User，再原子完成：
+  `reserve_idempotency`（digest 漂移
+  转 `RegistryConflictError`）→ 实体行 + `register_resource` 登记 →
+  approval 消费（high/critical 必需，恰好一次）→ `complete_idempotency`
+  → append-only audit；安装锁序 Tenant -> tenant User -> Workspace ->
+  Definition -> Version -> live Binding -> IdempotencyRecord ->
+  ApprovalRequest（首次执行）。exact replay 在 approval 重验前返回原结果。
+- `docs/evidence/p5-1/phase5-registry-persistence-design.md` 记录 12 项
+  设计判定（全局 scope、composite FK、trigger、partial unique index、
+  复用 idempotency/approval/audit）。一次性 sentinel PostgreSQL Gate：
+  `make test-p5-1b-registry` 与
+  `scripts/production/run_p5_1b_registry_disposable_gate.py --run`，
+  证据写入 `docs/evidence/p5-1/phase5-registry-persistence-disposable-gate.json`。
+- P5.1A 合同已同步：`forbidden_source_paths` 移除 `agent_registry`，
+  baseline migration revisions 扩展到 `0010`，sealed digest 随本文档
+  更新；P5.1B 不解锁 P5.2+（保持 frozen）。
+
+### 6.11 P5.2A Agent Task ledger contract preflight（离线，只验证不实现）
+
+`backend/src/omnibase/production/phase5_task_ledger_contract.py` 是
+P5.2A 的唯一交付物：AgentTask/Invocation → AgentRun → AgentStep →
+AgentAttempt → P34.4 Workspace Run → RuntimeInstance → WorkloadIdentity
+的离线 strict DTO/合同，纯离线 validator。无 P5.2 ORM、migration `0011`、
+router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
+或 Task Lease 发放。
+
+- 身份层级冻结 36 个逻辑字段与 9 个 identity stages（task_create /
+  task_run_claim / attempt_claim / attempt_heartbeat / attempt_finish /
+  task_cancel / task_pause / task_resume_request /
+  reconciliation_request），每阶段区分 required / not_yet_generated /
+  immutable / core_generated / browser|workload submittable / forbidden；
+  Browser 永不提交 runtime_instance_id、workload thumbprint、
+  request_hash 或 lease/fencing；Browser JWT 永不进入 workload DTO。
+- 状态机闭集：Task（10 态）、Step（6 态）、Attempt（9 态）、Effect
+  （5 态）、AgentRun（7 态）；终态不可复活；`unknown` 永不自动 replay；
+  retry 必须创建新 Attempt 并提高 Task fencing；cancel 不伪装 unknown
+  为成功；模型输出不是 committed evidence。Attempt ↔ Task Lease 状态
+  矩阵：pending/ready 无 lease、leased/dispatching/running 必须有、
+  terminal（含 unknown）不得保留（历史由 append-only lease 记录承载）；
+  `attempt_number` 按 (task_id, step_id) 分组且**必须从 1 起精确连续**
+  （重复/回退/跳号/非 1 起始均拒绝，排序不得"整理"为合法）；`task_fencing_token`
+  是 **per-Task**（非系统级/Run 级）单调序列——同一 Task 内跨 Step 单调，
+  不同 Task 各自独立、可各从 token 1 开始；fencing 的**权威数据源是
+  append-only TaskLease 账本**（`active`/`completed`/`revoked`/`expired` 全部
+  参与，按 `task_lease.created_at` 排序；terminal Attempt 清空
+  `task_lease_id`/`task_fencing_token` 不抹除其历史 Lease——Attempt 只用于
+  active Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性）；
+  `task_lease.created_at` 必须不早于其绑定的 `attempt.created_at`，禁止通过
+  backdated Lease claim 把真实 token 回退重新排序为表面递增；每条 Lease
+  （含 completed/revoked/expired 历史）都必须满足 `expires_at > created_at`
+  与配置后的 TTL ceiling，任何 heartbeat 必须位于该 Lease 区间内；
+  fencing 时间轴是 `task_lease.created_at` 经 `_parse_utc_timestamp` 归一化
+  后的 **UTC instant**（timestamp 合同允许 `Z`/`+HH:MM`/`-HH:MM`，原始
+  字符串顺序不等于 UTC 顺序，禁止按字符串排序判单调，否则非法 token 回退会
+  被"整理"为合法），同一 Task 内两条 Lease 归一化为**同一 UTC instant** 时
+  必须 fail closed（无可信第二排序字段，不得用输入数组顺序/
+  task_lease_id/attempt_id 字典序/token 自身排序整理为合法）；timestamp
+  offset 是闭集（小时 `00–23`、分钟 `00–59`，`+01:60`/`+00:99` 显式拒绝，
+  不依赖 fromisoformat 归一化），任何解析/offset 运算/UTC 归一化失败（含
+  年份边界溢出）稳定转 `TaskLedgerContractError`，不泄漏原生异常；Attempt
+  与 TaskLease **双向**精确
+  绑定（active lease 必须绑定恰好一个 leased/dispatching/running Attempt 且
+  该 Attempt 指回并共享 fencing token；孤儿 active lease 拒绝）、单 active
+  lease、current lease 必须 active。
+- Task Lease 独立于 Run Lease 但依赖它：`run_lease_id`/`run_fencing_token`/
+  `node_id`/`node_fencing_token`/`workspace_generation` 必须与
+  AgentRunBinding 一致；TTL 不得晚于 deadline/Run Lease/Node
+  attestation/Grant/policy 的最早 expiry（`LeaseExpiryBounds` 五项
+  独立 reason code）。
+- 预算 12 维（input/output/reasoning/total tokens、cost_micros、
+  model/tool calls、wall_clock_ms、artifact_bytes、sandbox_jobs、
+  max_attempts、max_parallel_steps），limit/reserved/committed/released/
+  remaining 不变量，strict 非负整数、拒绝 NaN/Infinity/wildcard/超 ceiling；
+  `deadline_ceiling_seconds`/`task_lease_ttl_ceiling_seconds` 真正作用于
+  每个 Task/Lease DTO（config 只能收紧）。
+- 8 个 canonical hash profile（task_create、task_cancel、task_pause、
+  task_resume_request、attempt_claim、attempt_heartbeat、attempt_finish、
+  reconciliation_request）；attempt 三个 profile 绑定全部安全相关
+  immutable identity（agent_run_id、node_id、run_lease_id/
+  run_fencing_token、node_fencing_token、task_lease_id/
+  task_fencing_token、agent_version_digest、resource_scope_digest、
+  budget_policy_digest）；不进 hash 的字段（operation_id、runtime/
+  workload 身份、lease 时间）由 durable 记录绑定并在合同文档表中逐项
+  证明；同 key+同 operation+同 canonical payload = exact replay，否则
+  stable conflict；禁止调用方 request_hash override。
+- `scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only`
+  只解析合同（exit 0，永不 ready）；`--verify` 校验 P34.7/P5.0/P5.1
+  formal state、sealed digest（含 P5.1 registry contract）、migration
+  集合/head（0010）、forbidden source paths、OpenAPI 无 agent
+  invocation 端点；**gate true 或 activation_requested=true 是 veto**。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0/P5.1 非 ready +
+  persistence ledger/Runtime 未实现 + production evidence 未证明）；
+  该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
+  用 AST 扫描证明；报告 `verification_evidence` 区分 static
+  source-boundary assertion（本次 verify 实际执行）、import/AST
+  assertion（测试证明）、Gate 未执行行为与 direct runtime execution
+  （Gate 不执行 pytest/runtime）。evidence 引用校验**真实验证**每条
+  `status=passed` 引用（仓库内相对 regular 非链接文件、raw-byte SHA-256
+  与 sealed digest 一致、assertions 作为机器可验证闭集逐项解析），报告
+  拆分 `evidence_path_verified`/`evidence_digest_verified`/
+  `evidence_assertions_verified`/聚合 `evidence_references_verified`，
+  只有实际执行并通过才为 true；passed 引用 path 缺失/digest 漂移/assertion
+  不匹配均为 veto（fail closed），绝不无条件写 true。
+- INV-043 只描述 P5.2A 合同的离线属性；P5.2 persistence ledger
+  （P5.2B）、Runtime、API 与 Task 执行均未实现，P5.2B+ frozen。
 
 ## 7. 数据库与 migration 边界
 
@@ -446,20 +655,24 @@ P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker G
 
 | 区域 | 当前数据 |
 |---|---|
-| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 共 17 张表：`workspace_templates`、`workspaces`、`workspace_memberships`、`resource_scope_bindings`、`workspace_scope_grants`、`workspace_runs`、`run_leases`、`workspace_snapshots`、`workspace_nodes`、`node_attestations`、`peer_grants`、`service_advertisements`、`network_lease_cursors`、`network_leases`、`workspace_authorities`、`collaboration_artifacts`、`collaboration_events` |
-| 每个 `tenant_*` schema | users、documents、V1/V2 embeddings、RAG index state，以及 P34.3 `controlled_data_operation_payloads` 和受控动态业务表 |
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations`；P5.1B `agent_definitions`、`agent_versions`、`workspace_agent_bindings` |
+| 每个 `tenant_*` schema | users、documents、V1/V2 canonical embeddings、RAG index state、P34.3 `controlled_data_operation_payloads` 与受控动态业务表，以及 P34.6 独立 `workspace_derived_chunks_v2` lane |
 | MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
 | Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
 
 ### 7.2 Alembic 方向
 
-- migration 链当前为 `0001` 至 `0007`。
+- migration 链当前为 `0001` 至 `0010`。
 - `migrations/env.py` online 模式先迁移 `omnibase_meta`，再读取 registry 中所有 retained tenants（包括 inactive tenants），逐一迁移各自 schema。
 - 每个 schema 有自己的 Alembic version table；不能只检查 global revision。
 - `migration_schema_scope` 是闭集 `global | tenant`。缺失、大小写错误或未知值必须失败。
 - offline `--sql` 只生成 global SQL，不能代替 tenant online staging 演练。
 - `0006` downgrade 在存在动态资源、payload、outbox 或 compensation 状态时会拒绝执行，避免静默丢失数据。
 - `0007` 只在 global scope 创建 17 张 P34.4 控制面表（包括持久化 Network fencing 的 `network_lease_cursors`）并收紧现有 Resource tenant 复合绑定；ResourceScopeBinding→Workspace/Run、Workspace→restore snapshot、CollaborationEvent→artifact/parent event 均使用 tenant/workspace 复合 FK。tenant scope 为显式 no-op。populated downgrade fail-closed，避免静默丢失 Workspace/lease/authority 元数据。
+- `0010` 只在 global scope 创建 P5.1B Agent Registry 三表、复合 FK、状态/
+  不可变 trigger 与 live-binding 部分唯一索引；tenant scope 显式 no-op，
+  populated downgrade fail-closed。它不迁移普通业务数据库，也不解锁 Agent
+  Runtime 或任何 Phase 5 Feature Gate。
 - ORM 模型、迁移约束和运行服务必须同步审查；只修改 ORM 不会改变已部署数据库。
 - 普通业务数据库 migration、downgrade、restore、cleanup 都需要部署所有者明确授权。单元测试或 sentinel integration 通过不等于已经迁移业务数据库。
 
@@ -495,14 +708,14 @@ P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker G
 判断“系统实际上做什么”时使用以下顺序：
 
 1. 当前运行路径的源码和数据库级约束/trigger。
-2. Alembic `0001`–`0007`，包括 upgrade、downgrade 和 scope guard。
+2. Alembic `0001`–`0008`，包括 upgrade、downgrade 和 scope guard。
 3. OpenAPI 与 SDK contract snapshot，以及严格 DTO parser。
 4. 与目标行为对应且刚刚通过的单元测试、HTTP contract 测试和 disposable PostgreSQL integration tests。
 5. `security-invariants.md` 和 `maintenance-map.json` 中的维护契约。
 6. `handover-report.md` 中的阶段状态、授权边界和历史验证证据。
 7. Roadmap/实施计划中的未来设计。
 
-未来设计不能证明当前实现已经存在。P34.5A4 已有目标 Hyper-V/Linux 11/11 attack artifact；P34.5B 已有独立 PrivateNetwork Broker daemon 两轮 26/26 artifact；P34.5C 已有真实 Headscale control-plane + mTLS Node Daemon test-double disposable artifact；P34.5D 已有 split-process mTLS guarded disposable 四读 artifact。它们都不自动证明 Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、production Node Daemon、真实成员数据面、DERP relay、节点失陷、容量/SLA 或生产总验收。普通 Docker bridge、fake provider、in-memory ledger 或 metadata-only reconciler不能作为这些外部部署证据。
+未来设计不能证明当前实现已经存在。P34.5A4 旧目标 Hyper-V/Linux 11/11 artifact 只证明旧 launcher 哈希；当前 UID/GID hardening 已把矩阵扩展为 12 项并使旧 artifact 失效，新的 12/12 target-host evidence 在真实 VM 重跑前明确为 `pending/not_proven`。P34.5B 已有独立 PrivateNetwork Broker daemon 两轮 26/26 artifact；P34.5C 已有 fresh-clone/source-built Headscale control-plane + mTLS Node Daemon test-double disposable artifact；P34.5D 已有 clean-checkout/source-built split-process mTLS guarded disposable 四读 artifact。它们都不自动证明 Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、production Node Daemon、真实成员数据面、DERP relay、节点失陷、容量/SLA 或生产总验收。普通 Docker bridge、fake provider、in-memory ledger 或 metadata-only reconciler不能作为这些外部部署证据。
 
 ## 10. 模块改动影响矩阵
 
@@ -522,6 +735,8 @@ P34.5B 已在独立 Hyper-V Ubuntu Runner 上完成两轮 26/26 Network Broker G
 | `workspaces/overlay_adapters/**`, `scripts/overlay/**`, `deployment/overlay/**` | P34.5C trusted Node Daemon mutation、durable operation seam、短期 credential reference、真实 Headscale control-plane Gate 与 logical publication | P34.4 Peer/Service/Network/Node facts、Network Broker、P34.7 production Node/relay/compromise Gate | INV-003, INV-005, INV-013–INV-015, INV-019, INV-020 |
 | `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
 | `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
+| `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
+| `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
@@ -692,7 +907,50 @@ make test-destructive
 
 这些命令覆盖 A0-A3 strict DTO/authorization/durable ledger、A4 canonical digest/Runner transport/RuntimeDriver/deployment fault cleanup、B logical Network Broker、C provider-neutral Overlay adapter/publication，以及 D mTLS workload identity/read Gateway bridge。`0008`、append-only trigger、并发和 downgrade 必须只在 guarded disposable `omnibase_test_*` sentinel PostgreSQL 中验证。最后两个 host 命令必须在目标独立 Linux Runner 上使用真实配置执行；占位符不能直接交给 shell，也不能用普通 Docker/WSL 结果替代。Overlay 单元测试仍不能替代 `scripts/overlay/run_disposable_overlay_gate.ps1`，而该 disposable Gate 又不能替代 P34.7 的真实成员节点、DERP relay 与节点失陷生产 Gate。
 
-### 11.7 SDK contracts
+### 11.7 P34.6 Workspace 数据与 RAG 通道
+
+```powershell
+docker compose --env-file .env.example run --rm --no-deps backend pytest `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py -q
+docker compose --env-file .env.example run --rm --no-deps backend mypy `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data
+docker compose --env-file .env.example run --rm --no-deps backend ruff check `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data `
+  src/omnibase/migrations/versions/0009_p34_6_workspace_data.py `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py `
+  tests/integration/test_p34_6_workspace_data_foundation.py
+docker compose --env-file .env.example run --rm --no-deps backend ruff format --check `
+  src/omnibase/workspace_data `
+  src/omnibase/capabilities `
+  src/omnibase/capability_gateway `
+  src/omnibase/controlled_data `
+  src/omnibase/migrations/versions/0009_p34_6_workspace_data.py `
+  tests/test_p34_6_workspace_data_contracts.py `
+  tests/test_p34_6_workspace_data_service.py `
+  tests/test_p34_6_gateway_workload_write.py `
+  tests/test_p34_6_artifact_derived_lifecycle.py `
+  tests/test_p34_6_promotion_snapshot.py `
+  tests/integration/test_p34_6_workspace_data_foundation.py
+make test-destructive
+```
+
+`0009`、canonical/policy transition guard、lineage append-only/cycle、workspace-data reservation/effect state、tenant derived lane、跨 Workspace/tenant 和 populated downgrade 必须只在 fresh `omnibase_test_*` sentinel PostgreSQL 中验证。真实对象存储/index worker、production snapshot payload/restore rehearsal 和 canonical cutover 仍是 P34.7 Gate；不得用 metadata/unit 结果冒充。
+
+### 11.8 SDK contracts
 
 ```powershell
 Set-Location backend
@@ -708,7 +966,7 @@ node --test sdk/typescript/tests/client.test.mjs
 & ./frontend/node_modules/.bin/tsc.cmd -p sdk/typescript/tsconfig.json --noEmit
 ```
 
-### 11.8 Frontend
+### 11.9 Frontend
 
 ```powershell
 cd frontend
@@ -720,6 +978,95 @@ pnpm build
 ```
 
 只报告实际运行过的命令、退出码和测试数量。未执行 disposable integration、production build、restore rehearsal 或业务 migration 时必须明确写“未执行”。
+
+### 11.10 P34.7 production readiness
+
+```powershell
+python scripts/production/validate_p34_7_composition.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p34_7_production_composition.py `
+  tests/test_p34_7_workspace_provider.py `
+  tests/test_p34_7_overlay_production_gate.py `
+  tests/test_p34_7_overlay_sla.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production `
+  src/omnibase/workspace_data
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production `
+  src/omnibase/workspace_data/provider_adapters.py `
+  tests/test_p34_7_production_composition.py `
+  tests/test_p34_7_workspace_provider.py `
+  tests/test_p34_7_overlay_production_gate.py `
+  tests/test_p34_7_overlay_sla.py `
+  ../scripts/production `
+  ../scripts/workspace-data `
+  ../scripts/overlay/p34_7_overlay_common.py `
+  ../scripts/overlay/p34_7_production_gate.py `
+  ../scripts/overlay/p34_7_sla_report.py
+```
+
+`--validate-only` 只证明配置合同能被严格解析，不验证外部生产证据，也不启动服务。P34.7 总 Gate 必须在提交后的 public clean checkout 使用 `scripts/production/validate_p34_7_composition.py --verify`，并同时提供 current-source Runner 12/12、两轮 Broker 26/26、四条 production component roundtrip、真实 provider/non-disposable tenant/RAG、两成员 Overlay/DERP/node-compromise、双签名与 SLA 样本。缺少任一项时正确结果是 `blocked/not_proven`，Phase 5 继续冻结。
+
+### 11.11 P5.0 Phase 5 admission gate
+
+```powershell
+python scripts/production/validate_p5_0_admission.py --validate-only
+python scripts/production/validate_p5_0_admission.py --verify
+python scripts/production/validate_p5_0_admission.py --verify --gate AGENT_RUNTIME_ENABLED=false
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p5_0_admission.py `
+  tests/test_p34_7_production_composition.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production/phase5_admission.py `
+  tests/test_p5_0_admission.py `
+  ../scripts/production/validate_p5_0_admission.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check `
+  src/omnibase/production/phase5_admission.py `
+  tests/test_p5_0_admission.py `
+  ../scripts/production/validate_p5_0_admission.py
+```
+
+`--validate-only` 只证明合同有效；`--verify` 必须在提交后的 fresh clean
+checkout 运行。当前外部证据未齐时正确结果是 `blocked/not_proven`（exit 2，
+veto 0）：P34.7 formal state 非 ready、activation 关闭、九项 production
+证据未证明。`--gate NAME=VALUE` 只覆盖单个 gate 的解析输入，仍受依赖规则
+约束；任何 gate 解析为 `true` 都只增加 blocker，永不改变"P34.7 非 ready
+即 blocked"的结论。该 validator 不读取根 `.env`、不连接数据库、不启动
+任何 Phase 5 运行时组件。
+
+### 11.12 P5.2A Agent Task ledger contract preflight
+
+```powershell
+python scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only
+python scripts/production/validate_p5_2a_task_ledger_contract.py --verify
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p5_2a_task_ledger_contract.py `
+  tests/test_p5_1_registry_contract.py `
+  tests/test_p5_0_admission.py `
+  tests/test_p34_7_production_composition.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production/phase5_task_ledger_contract.py `
+  tests/test_p5_2a_task_ledger_contract.py `
+  ../scripts/production/validate_p5_2a_task_ledger_contract.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check `
+  src/omnibase/production/phase5_task_ledger_contract.py `
+  tests/test_p5_2a_task_ledger_contract.py `
+  ../scripts/production/validate_p5_2a_task_ledger_contract.py
+```
+
+`--validate-only` 只证明合同有效；`--verify` 必须在提交后的 fresh clean
+checkout 运行。当前外部证据未齐时正确结果是 `blocked/not_proven`（exit 2，
+veto 0）：P34.7/P5.0/P5.1 formal state 非 ready、activation 关闭、
+persistence ledger/Runtime 未实现。P5.2A 与 P5.0/P5.1A 的差异：**任何
+Feature Gate 解析为 `true` 或 `activation_requested=true` 都是 veto**
+（不是 blocker）。该 validator 不读取根 `.env`、不连接数据库、不启动
+任何 Phase 5 运行时组件，也不创建 Task Lease 或真实 Task/Run/Attempt。
+P5.2A 不需要 disposable PostgreSQL Gate（合同禁止访问数据库；若实现
+需要数据库才能验证，说明已越过 P5.2A 边界）。
 
 ## 12. 故障恢复路径
 
@@ -783,23 +1130,41 @@ pnpm build
 5. Gateway 故障返回拒绝/503；禁止回退 Browser JWT/cookie、静态 service secret、数据库连接串或直接 infrastructure route。
 6. 分别重跑目标 Linux attack matrix、Broker/DNS/跨 Workspace负例、真实 disposable Overlay Gate 和 Gateway live lease/mTLS tests 后再逐层装配。
 
+### 12.9 P34.6 Workspace 数据、Promotion 或 Snapshot 风险
+
+1. 立即恢复 unavailable `WorkspaceDataAdapter` 和 rejecting workload-data Grant issuance，撤销受影响 Grant/Run Lease/workload certificate；Browser Controlled Data 的 `workspace_private` 拒绝保持不变。
+2. 停止 derived build、publication、snapshot/restore worker，保留 reservation、effect、Operation、Approval、Idempotency、Audit、snapshot inventory 和 lineage；pending/unknown 不自动重放。
+3. canonical 或物理 locator 边界不明确时，关闭全部 Workspace data route并对 canonical tables/index metadata做 count/digest取证；禁止通过 policy flip、直接 SQL、删除 lineage 或改写 Audit修复。
+4. Promotion 重新执行必须使用新的、由另一名 live tenant admin 决定的 Approval 和精确 source version/digest/request hash；P34.6 目标仍只能是新的 `controlled_shared` Resource。
+5. Snapshot/restore 故障时保持新 Workspace stopped/unavailable，验证完整 inventory/object digest后 forward-fix；不能覆盖原 Workspace或恢复旧 token、Run、Lease、runtime/workload identity、PID、socket、连接和 provider handle。
+6. 在新的 guarded `omnibase_test_*` sentinel 中重跑 `0009`、trigger、cross-tenant/workspace、unknown no-replay、canonical unchanged、promotion并发与 restore-new-identity Gate 后再开放。
+
+### 12.10 P34.7 production readiness 风险
+
+1. 立即把 `activation_requested` 设回 false，恢复 unavailable Runner/provider 与 rejecting Broker/Gateway；Gate 或 UI 状态不能替代实际组件撤销。
+2. source/evidence digest、Git tree、双成员签名或 assertion 任一漂移时，冻结整份 release decision，保留原 manifest/evidence 取证并从新的 clean checkout 重跑。
+3. provider 操作处于 `pending|unknown` 时停止可见性和自动重放；读取可信 provider journal/receipt 后人工 reconciliation，不删除 reservation 或伪造 fresh operation。
+4. Overlay/Node compromise 时隔离成员与 Node Daemon，撤销 node credential、Peer Grant、Service Advertisement、Network Lease 和 workload certificate；rejoin 使用新 identity 与新 fencing。
+5. production SLA 缺样本、p95 超标、并发不足、direct path 未关闭、cleanup 非零或签名无效时保持 `blocked/not_proven`；不得用 disposable/local smoke 降级替代。
+6. Browser 继续只使用 Workspace control-plane；不要为修复 UI 开放 WorkspaceData private-write、physical locator、provider handle、数据库连接或对象存储凭据。
+
 ## 13. 解冻与继续冻结边界：P34.4 / P34.5+
 
 截至当前源码和交接状态：
 
 - P34.4A–D 已完成工程 Gate：`backend/src/omnibase/workspaces/`、migration `0007` 的 17 张 global metadata 表、Browser Workspace governance、Node-fenced Run lease、cursor-fenced logical Network Lease、实时 attestation、Node/Peer/Service/Authority 统一锁序与无真实数据 authority/collaboration harness 已实现。
 - P34.5A0-A3 已实现 strict Sandbox contracts、DB-backed P34.4 lease/runtime identity proof、互斥 lifecycle capability/幂等预算、独立 emergency control、SQLAlchemy durable operation/transition/Audit 与 no-auto-replay coordinator。
-- P34.5A4 已实现独立 Linux Runner/RuntimeDriver seam、production mTLS peer authenticator、私有 SQLite durable replay store、canonical execution binding、全异常 cgroup fail-safe cleanup 与 namespace/seccomp/LSM attestation；当前哈希已在独立 Hyper-V Ubuntu Runner 上通过 11/11 attack Gate，普通 Docker/WSL 仍不自动合格，Core↔VM production mTLS wiring 继续独立验收。
+- P34.5A4 已实现独立 Linux Runner/RuntimeDriver seam、production mTLS peer authenticator、私有 SQLite durable replay store、canonical execution binding、全异常 cgroup fail-safe cleanup 与 namespace/seccomp/LSM attestation；本轮修复了 requested UID/GID 只进入 digest、实际 workload 却以 namespace root 执行的问题，并把目标矩阵扩展为含 `RUN-05` 的 12 项。旧 11/11 artifact 与当前 launcher 哈希不匹配，不能继续作为 pass；新的 Hyper-V 12/12 在取得真实 VM 控制台/SSH 访问前保持 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。
 - P34.5B 已实现 default-deny Workspace Network Broker、logical service、双解析/DNS rebinding 防护、私有 SQLite durable budget ledger、daemon-owned non-host namespace proof、AF_UNIX/SO_PEERCRED+pinned-key transport，以及独立 PrivateNetwork Linux daemon；当前部署哈希已在 Hyper-V Ubuntu Runner 上两轮通过 26/26 namespace/egress/identity/budget/replay attack Gate。默认 Core wiring 仍为 unavailable，Core↔Broker production mTLS 联合激活继续在 P34.7 验收。
-- P34.5C 已实现 provider-neutral Headscale adapter、mTLS Node Daemon transport、短期 credential reference、durable ledger 与 Overlay→Broker logical publication，并通过真实 Headscale 0.26.1 provider-record activate/status/rotate/revoke、ambiguous no-replay、掉线/重连和 secret containment disposable Gate。该 Gate 使用 test-double Node Daemon且注册真实成员设备为 0；production Node Daemon、两节点数据面、DERP relay、真实 node revoke 与节点失陷继续留给 P34.7。
-- P34.5D 已实现可信 Runner/Broker mTLS scope evidence、live Run/Node/Lease/fencing workload attestor、Core-only 最长五分钟 read credential issuer、server-owned credential vending 和独立 Gateway composition；split-process guarded disposable schema/rows/RAG/citation Gate 已通过。默认 production wiring 与非 disposable tenant/RAG 仍保持关闭，等待 P34.7 联合激活与生产验收。
+- P34.5C 已实现 provider-neutral Headscale adapter、mTLS Node Daemon transport、短期 credential reference、durable ledger 与 Overlay→Broker logical publication，并从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 provider-record activate/status/rotate/revoke、ambiguous no-replay、掉线/重连、secret containment 与 `0/0/0` cleanup Gate。161 文件 manifest 封存 `.gitattributes`、锁文件、完整 build inputs 与 upstream digests；该 Gate 使用 test-double Node Daemon且注册真实成员设备为 0，production Node Daemon、两节点数据面、DERP relay、真实 node revoke 与节点失陷继续留给 P34.7。
+- P34.5D 已实现可信 Runner/Broker mTLS scope evidence、live Run/Node/Lease/fencing workload attestor、Core-only 最长五分钟 read credential issuer、server-owned credential vending 和独立 Gateway composition；clean-checkout source-built Gateway 与 stdlib-only client 已在 guarded `omnibase_test_*` sentinel 通过 split-process schema/rows/RAG/citation Gate、stale/revocation 矩阵与 `0/0/0` cleanup。249 文件 manifest 封存 `.gitattributes`、完整 `backend/src`/`backend/tests`、Dockerfiles、Compose、wrapper/client 与 upstream digests；默认 production wiring 与非 disposable tenant/RAG 仍保持关闭，等待 P34.7 联合激活与生产验收。
 - P34.4 的 fake/local reconciler、独立 Overlay provider harness 与 collaboration transport 只处理合成元数据；logical Network Lease 签发不调用 provider。它们不执行代码、不打开真实 peer/socket、不接真实 Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG。
 - 主 Compose 的 bridge network、tenant schema 隔离、P34.4 logical Network Lease、fake transport 或 in-memory ledger 都不能被表述为 P34.5 production deployment 已交付。
-- 当前独立 Hyper-V Linux Runner profile 已通过本阶段 11/11 敌对输入 Gate，但尚未完成 Core↔Runner/Broker production mTLS 联合激活；也没有把 disposable Headscale control-plane Gate误称为“成员无中心服务器协作”的生产虚拟局域网。
+- 当前独立 Hyper-V Linux Runner 的旧 profile 曾通过 11/11 敌对输入 Gate，但当前 UID/GID hardening 后必须重跑新的 12/12；在真实 VM 证据到位前 A4 保持 `pending/not_proven` 且 production Runner 不得启用。disposable Headscale control-plane Gate也没有被误称为“成员无中心服务器协作”的生产虚拟局域网。
 - 在对应 production Runner/Broker/Gateway/Overlay 联合 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
 - P34.5 的源码/协议解冻与 production deployment Gate 必须分开报告。当前已有目标 Linux、Broker、Headscale control-plane 和 split-process Gateway disposable evidence，但 production Core wiring、真实成员 Overlay 数据面或非 disposable tenant/RAG 任一直接证据缺失时，对应 wiring 仍继续 fail-closed；不能用字段预留、单元测试或本地 smoke 自动解冻。
 
-Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。
+Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 只交付 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate 与 P34.7 Evidence Manifest validator），它只返回 `blocked/not_proven` 决策，不解冻 Phase 5 Runtime，也不预装任何 Planner/Executor/Agent 代码；INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map 的已实现集。P5.1A/B/C 已交付 Registry 合同、内部持久化地基与 Browser 控制 API（production 默认 fail-closed）；P5.2A 只交付 Task/Run/Lease/fencing 账本的离线合同预检，不解锁 P5.2 persistence ledger（P5.2B）或任何 Agent Runtime/Planner/Executor/scheduler/worker，也不创建 Task Lease 或真实 Task/Run/Attempt。
 
 ## 14. 修改完成时的交接格式
 

@@ -1,6 +1,6 @@
 # Phase 3–4 统一实施计划：受控能力平面与安全 AI 工作空间
 
-> 状态：P34.0–P34.3 已封板；P34.4A–D 的元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A4、B、C、D 已完成工程封板。当前独立 Hyper-V Linux Runner 哈希已通过 11/11 attack Gate，独立 PrivateNetwork Broker daemon 已两轮通过 26/26 Gate，真实 Headscale 0.26.1 control-plane + mTLS Node-Daemon test-double disposable Gate 已通过，split-process mTLS Gateway 已通过 guarded disposable schema/rows/RAG/citation 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点数据面/DERP/节点失陷、容量/SLA 与生产总验收进入 P34.7；Agent Runtime 继续冻结到这些联合边界完成
+> 状态：P34.0–P34.6 已完成工程封板。P34.7A–G 的源码合同、本地参考 Gate、Workspace UI 与 Python/TypeScript SDK 已进入统一验收：A/B clean-checkout provenance 与四组件 composition、C/E provider/recovery 与 non-disposable admission、D/F real-member Overlay/DERP/node-compromise/SLA 均已实现 fail-closed validator。当前本地 disposable provider reference Gate 通过，但 production composition、真实 provider/non-disposable tenant/RAG、current-source Hyper-V Runner 12/12、两个真实成员 Linux 节点、production Node Daemon、独立 DERP、node-compromise 与 SLA 证据尚未齐备，因此 P34.7 production total Gate 为 `BLOCKED / NOT_PROVEN`。Agent Runtime 与 Phase 5 继续冻结。
 >
 > 事实基线：Phase 1.6 双索引工程与 benchmark 已完成，V2 生产回填/cutover 冻结，V1 继续作为权威主通道；Phase 2 已提供 `/api/v1`、Request ID、请求体边界、显式 CORS、Redis 限流和数据库实时 RBAC。
 >
@@ -450,7 +450,7 @@ P34.5A0-A3 已实现上述接口的**拒绝型安全、控制与持久调度骨�
 - `SandboxExecutionCoordinator` 固定 operation reservation → live authorization → host attestation → dispatch marker → transport → receipt binding 顺序；terminal exact replay 不重复 dispatch，dispatching crash、timeout 和 receipt drift 都进入 ambiguous/reconciliation-required。
 - `SandboxRunner`/`RunnerIsolationProfile` 冻结独立 Linux Runner 接口及 cgroup v2、user/PID/mount/network namespace、seccomp、LSM、有界强杀要求；`UnavailableSandboxRunner` 是生产默认，不运行命令。
 
-P34.5A4 已新增独立 Linux Runner/RuntimeDriver seam、canonical request/spec/execution digest、production `TrustedRunnerMtlsPeer` + `MtlsRunnerTransportAuthenticator`、私有 `SqliteRunnerReplayStore`、namespace/cgroup/seccomp/LSM probe 与覆盖全部 launcher failure 的 operation cgroup fail-safe cleanup。Host namespace reference 只接受直接 VM `/proc/1/ns/*` handle，或 root-owned/non-writable `/run/omnibase-host-ns/*` 中严格的 `dev:ino` snapshot。当前封存 launcher 已在独立 Hyper-V Ubuntu Runner 上通过 11/11 Gate；Docker Desktop/WSL 不自动合格，Core↔VM production mTLS wiring 仍需 P34.7 联合验收。
+P34.5A4 已新增独立 Linux Runner/RuntimeDriver seam、canonical request/spec/execution digest、production `TrustedRunnerMtlsPeer` + `MtlsRunnerTransportAuthenticator`、私有 `SqliteRunnerReplayStore`、namespace/cgroup/seccomp/LSM probe 与覆盖全部 launcher failure 的 operation cgroup fail-safe cleanup。Host namespace reference 只接受直接 VM `/proc/1/ns/*` handle，或 root-owned/non-writable `/run/omnibase-host-ns/*` 中严格的 `dev:ino` snapshot。旧 11/11 artifact 只证明 UID/GID hardening 前的 launcher；当前矩阵已扩展为 12 项，新的 Hyper-V Ubuntu Runner 12/12 evidence 在真实 VM 重跑前保持 `pending/not_proven`。Docker Desktop/WSL 不自动合格，Core↔VM production mTLS wiring 仍需 P34.7 联合验收。
 
 P34.5B 已新增 logical-service-only `ControlledWorkspaceNetworkBroker`，默认 authorizer/resolver/namespace attestor/budget ledger/transport 全部拒绝；两次解析除安全分类外还要求完整 destination binding 稳定，禁止 metadata/private/link-local/public/direct-member-overlay。独立 Linux Broker daemon 以专用非 root UID 和 `PrivateNetwork=yes` 启动，只接受 root-owned 短期 exact permit，经 live PID/starttime/netns 与 host-snapshot 复核后 durable 消费 operation，再由 worker `setns` 建立一次 TCP 连接并返回 measured receipt + pinned-key challenge。当前部署哈希已在 Hyper-V Ubuntu Runner 上首轮和重启确认轮各通过 26/26 default-deny/identity/budget/replay Gate，脱敏证据位于 `docs/evidence/p34-5/network-broker-attack-gate.{json,md}`。P34.5C 已新增 provider-neutral `HeadscaleOverlayAdapter`、durable ledger、opaque short-lived credential reference 和 Overlay→Broker logical publication，并通过真实 Headscale provider record mutation + mTLS Node-Daemon test-double disposable Gate；Sandbox 不能成为 Overlay peer。P34.5D 已新增 Runner/Broker mTLS scope evidence、每请求 live Run/Node/Lease/fencing attestor、Core-only 最长五分钟 read credential issuer和独立 production Gateway composition，并通过独立 server/client 的 guarded disposable schema/rows/RAG/citation 四读与 stale/revocation Gate。P34.7 保留 Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员 Overlay 数据面、容量/SLA 与生产总验收。
 
@@ -579,7 +579,7 @@ Gate：同 Tenant 跨 Workspace 默认拒绝；membership aggregate 并发不能
 
 **P34.5A1-A3 — 控制与持久调度闭环（2026-08-02 已完成工程 Gate）**：A1/A2 完成 DB-backed live Run lease/runtime identity、独立 emergency control、host attestation、transport 与 no-auto-replay coordinator；A3 完成互斥 Sandbox capability profile、operation-idempotent budget reservation、SQLAlchemy durable operation/transition/Audit 与 `0008` sentinel migration Gate。完成口径仍只是“副作用前授权、预算、状态和证据闭环”，不是 Runner 或敌对代码隔离完成。
 
-**P34.5A4/B/C/D — 工程封板（2026-08-02）**：A4 实现独立 attested Linux Runner/RuntimeDriver、mTLS transport 与 durable replay、canonical binding 和全异常 cgroup fail-safe cleanup，当前封存哈希已在独立 Hyper-V Linux 通过 11/11 attack Gate；B 实现 logical Network Broker、durable budget、独立 PrivateNetwork daemon 与真实 `setns` transport，并在同一 Runner 两轮通过 26/26 Gate；C 实现首个 Headscale adapter/publication，并通过真实 Headscale provider-record + mTLS Node-Daemon test-double disposable Gate；D 实现可信 workload identity、server-owned credential vending 与短期只读 Gateway credential，并通过 split-process guarded disposable 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点/DERP/节点失陷、容量/SLA 与生产总验收仍与 P34.5 工程完成口径分离，进入 P34.7。
+**P34.5A4/B/C/D — 工程封板（2026-08-02）**：A4 实现独立 attested Linux Runner/RuntimeDriver、mTLS transport 与 durable replay、canonical binding 和全异常 cgroup fail-safe cleanup，并完成 requested UID/GID hardening；旧 11/11 artifact 已失效，当前 Hyper-V Linux 12/12 target Gate 仍为 `pending/not_proven`。B 实现 logical Network Broker、durable budget、独立 PrivateNetwork daemon 与真实 `setns` transport，并在同一 Runner 两轮通过 26/26 Gate；C 实现首个 Headscale adapter/publication，并通过真实 Headscale provider-record + mTLS Node-Daemon test-double disposable Gate；D 实现可信 workload identity、server-owned credential vending 与短期只读 Gateway credential，并通过 split-process guarded disposable 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、non-disposable production tenant/RAG、真实成员节点/DERP/节点失陷、容量/SLA 与生产总验收仍与 P34.5 工程完成口径分离，进入 P34.7。
 
 拆成四个可独立验收的增量，仍属于同一个 P34.5：
 
@@ -594,13 +594,34 @@ Gate：Runner 无核心凭据且不直连 DB/MinIO/Redis；Sandbox 无成员 Ove
 
 接入 private CRUD/artifact/derived index、canonical RAG 只读、高风险审批和 snapshot/restore lineage。
 
+P34.6 按四个不可跳步的增量实施：
+
+1. **P34.6A — 私有数据实体与持久状态**：复用 `ResourceRecord`、`ResourceLineage`、`OperationRecord`、`ApprovalRequest`、`IdempotencyRecord` 与 `AuditEvent`，新增 immutable artifact、独立 derived index generation、publication、snapshot inventory 和跨外部存储副作用账本。私有结构化表继续使用 P34.3 Controlled CRUD，不建立第二套 SQL 执行器。
+2. **P34.6B — workload-data capability 与独立 Gateway 写通道**：新增与 READ/SANDBOX 互斥的短期、不可委派、Workspace/Run/runtime/workload-bound action profile；Browser JWT、普通 read token 和 Sandbox lifecycle grant 都不能调用写入口。每次请求重新验证 live membership、Run Lease、Node attestation、Workspace generation、Run/Node fencing、Grant revocation、resource version 与预算。
+3. **P34.6C — Artifact、Derived RAG 与人工 promotion**：Artifact 和 derived output 均不可原地覆盖，修改必须创建新 Resource 并追加 lineage。derived 使用独立 tenant physical lane，不能读写 canonical `documents`、`embeddings`、`embeddings_v2` 或 index metadata。promotion 不进入 workload token，只能由 Browser control plane 发起并由另一名 live tenant admin 审批；P34.6 只允许 copy-on-publish 到 `controlled_shared`，不得直接创建或改写 `canonical_readonly`。
+4. **P34.6D — 可验证 snapshot inventory 与 restore-new-identity 数据基础**：snapshot 记录服务端生成的 resource/version/digest/size 清单，只有全部条目核验后才能 ready；restore 为 Workspace 和每个可写/派生资源创建新 identity/generation，并追加 `restored_from` lineage，绝不恢复 token、Run、Lease、runtime/workload identity、PID、socket、连接、provider handle 或内存状态。P34.7 继续承担生产对象传输、完整恢复演练与总验收。
+
+统一副作用顺序固定为：短事务内 live auth/锁定/预留 `pending` effect 和 Audit → 锁外执行对象存储或索引副作用 → 第二个短事务重新验证全部 live binding 后提交 `committed|failed|unknown`。跨 provider boundary 后结果不明确时必须进入 `unknown`，不得自动 replay；只能走显式 reconciliation。canonical 和 lineage 由数据库 trigger 强制不可原地修改，promotion 必须创建新 target Resource。
+
 Gate：canonical 不可覆写；workspace 隔离；derived promotion 不自动发生；runtime 崩溃不影响核心服务；回滚成功。
 
 ### P34.7：总验收与 Agent 前置 Gate
 
-执行生产构建、目标 runtime smoke、故障注入、撤销延迟、备份恢复、审计查询、性能/容量和安全回归。
+P34.7 不再增加新的产品能力；它把 P34.1–P34.6 的独立工程证据组合成可复现的 production readiness decision。任一外部环境或证据不可用时，结果必须是 `blocked/not_proven`，不得用 Docker Desktop、mock provider、旧 evidence 或人工描述冒充通过。
 
-Gate：全部批次 Gate 通过；已知风险有接受者；文档、代码、迁移、OpenAPI、运行方式一致；此后才允许 Agent 编排。
+1. **P34.7A — clean-checkout 与 supply-chain provenance**：从公开仓库全新 clone/checkout 构建 Backend、Frontend、SDK、Runner、Broker、Overlay/Gateway Gate 镜像；校验 source manifest、lockfile、image digest、deployment script/evidence input hash、无 ambient image/外部 venv/宿主缓存依赖。修改任何 byte-sealed Runner/Broker/Gateway/Overlay 输入都必须重跑对应真实 Gate。
+2. **P34.7B — Core↔Runner/Broker/Gateway production composition**：在目标 Linux 边界验证独立进程、双向 TLS、server-owned registry、短期 credential vending、live Run/Node/Lease/generation/fencing、撤销与证书轮换。Browser、Sandbox 和 Runner 都不能获得数据库、Redis、MinIO、JWT/private key 或 direct infrastructure route。
+3. **P34.7C — provider-backed Workspace data 与恢复演练**：实现并验证 typed Artifact/Derived/Promotion copy、Snapshot payload transfer、Restore subtype binding、quota/Grant/effect journal、provider receipt binding 和人工 reconciliation。Promotion/Restore 成功可见性必须晚于 provider、binding、lineage、Audit、Operation/Idempotency 和 quota 的联合终态；partial/unknown 保持不可用且不自动 replay。
+4. **P34.7D — 真实成员 Overlay/DERP/node-compromise**：至少两个真实成员节点和独立受信 Node Daemon；验证 Headscale/Tailscale control/data plane、强制 relay/DERP、掉线重连、credential rotation、节点 revoke、stale peer、成员设备失陷与 Sandbox 不能成为 Overlay peer。Network Broker 仍只接受 logical service permit，并维持 default-deny。
+5. **P34.7E — non-disposable 最小 tenant/RAG 闭环**：只有获得数据所有者明确授权后，才在专用 staging/production-like tenant 运行真实 schema/rows/RAG/citation、Workspace Artifact/Derived 和恢复 smoke；普通业务数据库 migration、canonical cutover、V2 回填或真实用户数据访问均需独立审批，不能由本计划自动授权。
+6. **P34.7F — 故障注入、容量与 SLA**：测量 membership/Grant/certificate/Lease revoke 延迟、并发预算、队列/进程/FD/内存/磁盘/网络上限、provider timeout、Core/Runner/Broker restart、DB/Redis/MinIO/network partition、Audit failure、unknown reconciliation 和恢复时间；产出明确的容量边界、告警、runbook 与回滚阈值。
+7. **P34.7G — UI/SDK/运维一致性与 release decision**：完整 UI、Python/TypeScript SDK、OpenAPI snapshot、维护者地图、security invariants、handover、部署文档和 recovery runbook 与实际 production composition 一致；GitHub CI 和目标环境 Gate 指向同一 commit/source manifest。最终由明确责任人接受剩余风险后，才允许把 Phase 5 的 P5.0 feature Gate 从“规划”推进到“可实现”。
+
+P34.7 立即 Veto：任何跨租户/Workspace 泄漏、物理 locator/credential 暴露、Sandbox/Runner 直连基础设施、canonical mutation、旧 Lease/fencing/token 复活、unknown 自动 replay、partial restore 可见、审计缺失、敌对代码逃逸、网络 default-deny 绕过、clean-checkout 不可复现、未授权业务数据库 migration 或把缺失外部证据写成 PASS。
+
+**当前实施判定（2026-08-02）**：P34.7A–G 的可提交源码、配置合同、验证器、focused tests、Workspace Browser control-plane 页面以及 Python/TypeScript Artifact/Derived SDK helper 已完成。`validate-only` 只证明合同有效，C/E disposable local provider Gate 只证明 committed-marker visibility、copy-on-publish、snapshot/restore-new-identity 与 `unknown` no-replay 的参考实现；两者都不构成 production PASS。生产准入仍被 current-source Runner 12/12、四条真实 component roundtrip、production provider、数据所有者授权的 non-disposable tenant/RAG、双真实成员/DERP/node-compromise/双签名和容量/SLA 样本阻塞。P5.0 仍保持 `PLANNED / FROZEN`。
+
+Gate：全部批次 Gate 通过；已知风险有具名接受者；文档、代码、迁移、OpenAPI、运行方式和 source provenance 一致；此后才允许按 `docs/phase-5-agent-runtime-implementation-plan.md` 启动 P5.0。
 
 ## 13. 非目标
 

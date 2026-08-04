@@ -211,6 +211,15 @@ class ResourceLineage(Base):
             name="resource_lineage_derived_tenant_fk",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["created_by_operation_id", "tenant_id"],
+            [
+                f"{GLOBAL_SCHEMA}.operations.id",
+                f"{GLOBAL_SCHEMA}.operations.tenant_id",
+            ],
+            name="resource_lineage_operation_tenant_fk",
+            ondelete="RESTRICT",
+        ),
         Index(
             "resource_lineage_tenant_source_idx",
             "tenant_id",
@@ -391,6 +400,7 @@ class OperationRecord(Base):
             name="operations_high_risk_approval_check",
         ),
         CheckConstraint("version >= 1", name="operations_version_check"),
+        UniqueConstraint("id", "tenant_id", name="operations_id_tenant_uq"),
         Index(
             "operations_tenant_state_created_idx",
             "tenant_id",
@@ -511,6 +521,7 @@ class ApprovalRequest(Base):
             "resource_version IS NULL OR resource_version >= 1",
             name="approval_requests_resource_version_check",
         ),
+        UniqueConstraint("id", "tenant_id", name="approval_requests_id_tenant_uq"),
         CheckConstraint(
             "decided_by_actor_type IS NULL " "OR decided_by_actor_type IN ('user', 'system')",
             name="approval_requests_decider_type_check",

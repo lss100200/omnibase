@@ -1,0 +1,60 @@
+{
+  "schema": "omnibase.p34-7.overlay-production-config.v1",
+  "environment": "production",
+  "control_plane": {
+    "provider": "headscale",
+    "headscale_endpoint": "https://headscale.production.invalid",
+    "derp_hosts": [
+      "derp-production-host"
+    ]
+  },
+  "member_nodes": [
+    {
+      "node_id": "production-member-a",
+      "host_id": "production-host-a",
+      "machine_identity_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "daemon_identity_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attestation_public_key_file": "C:\\secure-operator-config\\node-a-ed25519-public.pem",
+      "attestation_public_key_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "node_daemon_endpoint": "https://node-a.production.invalid",
+      "credential_reference": "omnibase-secret://production/overlay/node-a",
+      "roles": [
+        "member",
+        "node_daemon",
+        "runner",
+        "broker"
+      ],
+      "target_linux": true,
+      "sandbox_overlay_peer": false,
+      "placeholder": true
+    },
+    {
+      "node_id": "production-member-b",
+      "host_id": "production-host-b",
+      "machine_identity_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "daemon_identity_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "attestation_public_key_file": "C:\\secure-operator-config\\node-b-ed25519-public.pem",
+      "attestation_public_key_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "node_daemon_endpoint": "https://node-b.production.invalid",
+      "credential_reference": "omnibase-secret://production/overlay/node-b",
+      "roles": [
+        "member",
+        "node_daemon"
+      ],
+      "target_linux": true,
+      "sandbox_overlay_peer": false,
+      "placeholder": true
+    }
+  ],
+  "required_fault_scenarios": [
+    "broker_restart_pending_no_replay",
+    "forced_derp_relay",
+    "gateway_timeout_unknown_no_replay",
+    "member_offline_reconnect",
+    "network_partition_fail_closed",
+    "node_credential_theft_after_revoke",
+    "node_daemon_restart",
+    "node_revoke_propagation",
+    "runner_forced_kill_cleanup"
+  ]
+}

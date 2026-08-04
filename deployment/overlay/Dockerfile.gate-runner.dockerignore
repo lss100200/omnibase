@@ -1,0 +1,10 @@
+**
+!backend/
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/src/
+!backend/src/**
+!backend/tests/
+!backend/tests/test_p34_5_overlay_adapter.py
+!backend/tests/test_p34_5_overlay_ledger.py
+!backend/tests/test_p34_5_overlay_disposable_gate.py

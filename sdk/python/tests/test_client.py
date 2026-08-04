@@ -5,7 +5,13 @@ from io import BytesIO
 
 import pytest
 
-from omnibase_sdk import GatewayError, OmniBaseClient, RowsQuery, WorkloadCredential
+from omnibase_sdk import (
+    DerivedChunkWrite,
+    GatewayError,
+    OmniBaseClient,
+    RowsQuery,
+    WorkloadCredential,
+)
 from omnibase_sdk.transport import (
     HttpTransport,
     StaticCredentialProvider,
@@ -16,6 +22,7 @@ from omnibase_sdk.transport import (
 
 RESOURCE_ID = "11111111-1111-4111-8111-111111111111"
 COLUMN_ID = "22222222-2222-4222-8222-222222222222"
+OPERATION_ID = "33333333-3333-4333-8333-333333333333"
 
 
 class FakeTransport:
@@ -167,3 +174,66 @@ def test_python_sdk_rejects_non_finite_json_values(value: float) -> None:
 def test_python_sdk_rejects_type_confused_integer_options(value: object) -> None:
     with pytest.raises(ValueError):
         RowsQuery(columns=(COLUMN_ID,), limit=value).to_payload()  # type: ignore[arg-type]
+
+
+def test_artifact_and_derived_helpers_bind_content_and_use_logical_routes() -> None:
+    class RoutedTransport:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, dict[str, object]]] = []
+
+        def request(self, method: str, path: str, body: dict[str, object]) -> TransportResponse:
+            self.calls.append((method, path, body))
+            if path.endswith("artifacts/write"):
+                return TransportResponse(
+                    200,
+                    {},
+                    {
+                        "operation_id": OPERATION_ID,
+                        "resource_id": RESOURCE_ID,
+                        "resource_version": 1,
+                        "media_type": "text/plain",
+                        "size_bytes": 5,
+                        "content_sha256": body["content_sha256"],
+                        "replayed": False,
+                        "request_id": "req-write",
+                    },
+                )
+            if path.endswith("derived/create"):
+                return TransportResponse(
+                    200,
+                    {},
+                    {
+                        "operation_id": OPERATION_ID,
+                        "resource_id": RESOURCE_ID,
+                        "resource_version": 1,
+                        "chunk_count": 1,
+                        "replayed": False,
+                        "request_id": "req-derived",
+                    },
+                )
+            raise AssertionError(path)
+
+    transport = RoutedTransport()
+    client = OmniBaseClient(transport)
+    written = client.write_artifact(
+        idempotency_key="artifact-write-1",
+        display_name="note",
+        media_type="text/plain",
+        content=b"hello",
+    )
+    assert written.size_bytes == 5
+    assert transport.calls[0][2]["content_base64"] == "aGVsbG8="
+    assert len(str(transport.calls[0][2]["content_sha256"])) == 64
+
+    derived = client.create_derived(
+        idempotency_key="derived-create-1",
+        display_name="summary",
+        source_resource_ids=(RESOURCE_ID,),
+        chunks=(DerivedChunkWrite("summary", RESOURCE_ID),),
+    )
+    assert derived.chunk_count == 1
+    assert [call[1] for call in transport.calls] == [
+        "/gateway/v1/artifacts/write",
+        "/gateway/v1/rag/derived/create",
+    ]
+    assert "workspace_id" not in transport.calls[1][2]

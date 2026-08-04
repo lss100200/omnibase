@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -29,6 +30,24 @@ def _load_launcher() -> ModuleType:
 launcher = _load_launcher()
 
 
+def _load_attack_gate() -> ModuleType:
+    repository_path = Path(__file__).resolve().parents[2] / "deployment/sandbox/run-attack-gate.py"
+    container_path = Path("/deployment/sandbox/run-attack-gate.py")
+    path = container_path if container_path.is_file() else repository_path
+    if not path.is_file():
+        raise RuntimeError("deployment_attack_gate_source_unavailable")
+    spec = importlib.util.spec_from_file_location("omnibase_deployment_attack_gate", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+attack_gate = _load_attack_gate()
+
+
 def _limits() -> dict[str, int]:
     return {
         "cpu_millis": 100,
@@ -42,17 +61,42 @@ def _limits() -> dict[str, int]:
 
 
 def _payload() -> dict[str, object]:
+    runtime_instance_id = str(uuid4())
     return {
         "binding_digest": "a" * 64,
+        "cgroup_name": runtime_instance_id,
         "command": {
             "argv": ["true"],
+            "cwd": "workspace",
             "max_output_bytes": 4096,
             "timeout_seconds": 5,
         },
+        "isolation_attestation": "b" * 64,
         "operation_id": str(uuid4()),
         "runner_id": str(uuid4()),
-        "runtime_instance_id": str(uuid4()),
-        "runtime_spec": {"limits": _limits()},
+        "runtime_handle": str(uuid4()),
+        "runtime_instance_id": runtime_instance_id,
+        "runtime_spec": {
+            "isolation": {
+                "allow_devices": False,
+                "allow_host_mounts": False,
+                "allow_runtime_socket": False,
+                "drop_all_capabilities": True,
+                "no_new_privileges": True,
+                "read_only_root": True,
+                "run_as_gid": 10_000,
+                "run_as_uid": 10_000,
+            },
+            "limits": _limits(),
+            "network": {
+                "allowed_service_ids": [],
+                "direct_overlay": False,
+                "mode": "deny_all",
+            },
+            "policy_digest": "c" * 64,
+            "template_digest": "d" * 64,
+        },
+        "schema_version": 1,
     }
 
 
@@ -64,6 +108,206 @@ def _runner_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(launcher, "LAUNCHER", tmp_path / "launcher")
     monkeypatch.setattr(launcher, "_validate_payload", lambda payload: None)
     return root
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("run_as_uid", True, "run_uid_invalid"),
+        ("run_as_uid", 9_999, "run_uid_invalid"),
+        ("run_as_uid", 2**31, "run_uid_invalid"),
+        ("run_as_gid", True, "run_gid_invalid"),
+        ("run_as_gid", 9_999, "run_gid_invalid"),
+        ("run_as_gid", 2**31, "run_gid_invalid"),
+    ],
+)
+def test_validate_payload_rejects_unmappable_workload_identity(
+    field: str,
+    value: object,
+    reason: str,
+) -> None:
+    payload = _payload()
+    runtime_spec = payload["runtime_spec"]
+    assert isinstance(runtime_spec, dict)
+    isolation = runtime_spec["isolation"]
+    assert isinstance(isolation, dict)
+    isolation[field] = value
+
+    with pytest.raises(ValueError, match=reason):
+        launcher._validate_payload(payload)
+
+
+def test_enforce_workload_identity_normalizes_all_ids_and_records_maps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, tuple[int, int, int]]] = []
+    monkeypatch.setattr(launcher.os, "getgroups", list)
+    monkeypatch.setattr(launcher.os, "getuid", lambda: 10_000)
+    monkeypatch.setattr(launcher.os, "geteuid", lambda: 10_000)
+    monkeypatch.setattr(launcher.os, "getgid", lambda: 10_001)
+    monkeypatch.setattr(launcher.os, "getegid", lambda: 10_001)
+    monkeypatch.setattr(
+        launcher.os,
+        "setresgid",
+        lambda *values: calls.append(("gid", values)),
+    )
+    monkeypatch.setattr(
+        launcher.os,
+        "setresuid",
+        lambda *values: calls.append(("uid", values)),
+    )
+
+    identity = launcher._enforce_workload_identity(
+        {"run_as_uid": 10_000, "run_as_gid": 10_001},
+        uid_map_text="10000 1000 1",
+        gid_map_text="10001 1000 1",
+        setgroups_mode="deny",
+    )
+
+    assert calls == [
+        ("gid", (10_001, 10_001, 10_001)),
+        ("uid", (10_000, 10_000, 10_000)),
+    ]
+    assert identity["uid"] == identity["euid"] == 10_000
+    assert identity["gid"] == identity["egid"] == 10_001
+    assert identity["supplementary_groups"] == []
+    assert identity["uid_map"] == [{"inside_id": 10_000, "length": 1, "outside_id": 1000}]
+    assert identity["gid_map"] == [{"inside_id": 10_001, "length": 1, "outside_id": 1000}]
+
+
+def test_enforce_workload_identity_rejects_wrong_or_root_outer_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(launcher.os, "getgroups", list)
+
+    with pytest.raises(RuntimeError, match="workload_uid_map_invalid"):
+        launcher._enforce_workload_identity(
+            {"run_as_uid": 10_000, "run_as_gid": 10_000},
+            uid_map_text="0 1000 1",
+            gid_map_text="10000 1000 1",
+            setgroups_mode="deny",
+        )
+    with pytest.raises(RuntimeError, match="workload_gid_map_invalid"):
+        launcher._enforce_workload_identity(
+            {"run_as_uid": 10_000, "run_as_gid": 10_000},
+            uid_map_text="10000 1000 1",
+            gid_map_text="10000 0 1",
+            setgroups_mode="deny",
+        )
+    with pytest.raises(RuntimeError, match="workload_setgroups_not_denied"):
+        launcher._enforce_workload_identity(
+            {"run_as_uid": 10_000, "run_as_gid": 10_000},
+            uid_map_text="10000 1000 1",
+            gid_map_text="10000 1000 1",
+            setgroups_mode="allow",
+        )
+
+
+def test_enter_clears_groups_and_maps_requested_nonroot_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cgroup_root = tmp_path / "cgroups"
+    cgroup_root.mkdir()
+    cgroup = cgroup_root / str(uuid4())
+    cgroup.mkdir()
+    (cgroup / "cgroup.procs").write_text("")
+    payload_path = tmp_path / "request.json"
+    payload_path.write_text(json.dumps(_payload()))
+    launcher_path = tmp_path / "launcher"
+    launcher_path.write_text("")
+    monkeypatch.setattr(launcher, "CGROUP_ROOT", cgroup_root)
+    monkeypatch.setattr(launcher, "LAUNCHER", launcher_path)
+    cleared: list[list[int]] = []
+    monkeypatch.setattr(launcher.os, "setgroups", lambda groups: cleared.append(groups))
+    monkeypatch.setattr(launcher.os, "getgroups", list)
+
+    captured: dict[str, object] = {}
+
+    def capture_execve(executable: str, argv: list[str], env: dict[str, str]) -> None:
+        captured.update(executable=executable, argv=argv, env=env)
+        raise OSError("stop before exec")
+
+    monkeypatch.setattr(launcher.os, "execve", capture_execve)
+
+    with pytest.raises(OSError, match="stop before exec"):
+        launcher._enter(
+            [str(cgroup), str(payload_path), str(tmp_path / "meta"), str(tmp_path / "root")]
+        )
+
+    assert cleared == [[]]
+    assert captured["executable"] == "/usr/bin/unshare"
+    assert "--map-root-user" not in captured["argv"]
+    assert "--map-user=10000" in captured["argv"]
+    assert "--map-group=10000" in captured["argv"]
+    assert "--setgroups=deny" not in captured["argv"]
+
+
+def test_enter_fails_closed_when_supplementary_groups_cannot_be_cleared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cgroup_root = tmp_path / "cgroups"
+    cgroup_root.mkdir()
+    cgroup = cgroup_root / str(uuid4())
+    cgroup.mkdir()
+    payload_path = tmp_path / "request.json"
+    payload_path.write_text(json.dumps(_payload()))
+    monkeypatch.setattr(launcher, "CGROUP_ROOT", cgroup_root)
+    monkeypatch.setattr(
+        launcher.os,
+        "setgroups",
+        lambda groups: (_ for _ in ()).throw(PermissionError("setgroups denied")),
+    )
+
+    with pytest.raises(PermissionError, match="setgroups denied"):
+        launcher._enter(
+            [str(cgroup), str(payload_path), str(tmp_path / "meta"), str(tmp_path / "root")]
+        )
+
+
+def test_attack_gate_requires_exact_requested_identity_and_single_maps() -> None:
+    payload = _payload()
+    metadata = {
+        "workload_identity": {
+            "egid": 10_000,
+            "euid": 10_000,
+            "gid": 10_000,
+            "gid_map": [{"inside_id": 10_000, "length": 1, "outside_id": 1000}],
+            "gid_map_digest": "a" * 64,
+            "setgroups_mode": "deny",
+            "supplementary_groups": [],
+            "uid": 10_000,
+            "uid_map": [{"inside_id": 10_000, "length": 1, "outside_id": 1000}],
+            "uid_map_digest": "b" * 64,
+        }
+    }
+
+    assert attack_gate._identity_evidence_matches(metadata, payload) is True
+
+    metadata["workload_identity"]["uid_map"] = [{"inside_id": 0, "length": 1, "outside_id": 1000}]
+    assert attack_gate._identity_evidence_matches(metadata, payload) is False
+
+
+def test_attack_gate_rejects_supplementary_groups_or_setgroups_allow() -> None:
+    payload = _payload()
+    identity = {
+        "egid": 10_000,
+        "euid": 10_000,
+        "gid": 10_000,
+        "gid_map": [{"inside_id": 10_000, "length": 1, "outside_id": 1000}],
+        "gid_map_digest": "a" * 64,
+        "setgroups_mode": "deny",
+        "supplementary_groups": [10_000],
+        "uid": 10_000,
+        "uid_map": [{"inside_id": 10_000, "length": 1, "outside_id": 1000}],
+        "uid_map_digest": "b" * 64,
+    }
+
+    assert attack_gate._identity_evidence_matches({"workload_identity": identity}, payload) is False
+    identity["supplementary_groups"] = []
+    identity["setgroups_mode"] = "allow"
+    assert attack_gate._identity_evidence_matches({"workload_identity": identity}, payload) is False
 
 
 def test_prepare_cgroup_cleans_partial_limit_write_failure(

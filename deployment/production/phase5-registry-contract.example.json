@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "phase": "P5.1A",
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "p34_7": {
+    "formal_state": "blocked/not_proven",
+    "decision": {
+      "path": "docs/evidence/p34-7/production-readiness-decision.md",
+      "sha256": "0ef8a35e0a5836b9aefcbf7dd444f91add95216865b6502e3183f7814c744a8d"
+    }
+  },
+  "p5_0": {
+    "formal_state": "blocked/not_proven",
+    "admission_contract": {
+      "path": "deployment/production/phase5-admission.example.json",
+      "sha256": "a029b31df551a92d4d651da7a6a3a1c0ac34c6d5adc9eff032c587d97428a183"
+    }
+  },
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      ".gitattributes",
+      "AGENTS.md",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/tests/test_p5_1_registry_contract.py",
+      "deployment/production",
+      "scripts/production",
+      "docs/maintainers/maintenance-map.json",
+      "docs/maintainers/security-invariants.md",
+      "docs/maintainers/ai-maintainer-map.md",
+      "docs/phase-5-agent-registry-contract.md",
+      "docs/phase-5-threat-model.md",
+      "docs/phase-5-agent-runtime-implementation-plan.md",
+      "docs/runbooks/p34-7-overlay-sla.md",
+      "sdk/contracts"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "phase5_registry_production_evidence",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    }
+  ],
+  "budget_ceilings": {
+    "max_tokens": 10000000,
+    "max_cost_units": 100000,
+    "max_wall_clock_seconds": 3600,
+    "max_tool_calls": 1000,
+    "max_concurrency": 64,
+    "max_context_tokens": 2000000
+  },
+  "approval_policy": {
+    "low": "optional",
+    "medium": "optional",
+    "high": "required",
+    "critical": "required"
+  },
+  "forbidden_source_paths": [
+    "backend/src/omnibase/agent_runtime",
+    "backend/src/omnibase/agents",
+    "backend/src/omnibase/planner",
+    "backend/src/omnibase/executor",
+    "backend/src/omnibase/multi_agent"
+  ],
+  "baseline_migration_revisions": [
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010"
+  ],
+  "sealed_contracts": [
+    {
+      "name": "agent_registry_contract_doc",
+      "path": "docs/phase-5-agent-registry-contract.md",
+      "sha256": "175dd12021ea32558475a77533f9f45dada25adc806d910972989bce52137c96"
+    },
+    {
+      "name": "threat_model",
+      "path": "docs/phase-5-threat-model.md",
+      "sha256": "2557be90e229e85ae8d40290bd3b90901ba8537de2bc262253d14afde454f33b"
+    },
+    {
+      "name": "maintainer_map",
+      "path": "docs/maintainers/maintenance-map.json",
+      "sha256": "dba4aa05027fe3b2723fb205c7797665c3dcfd6fae968e1d94f682c66a42e454"
+    },
+    {
+      "name": "security_invariants",
+      "path": "docs/maintainers/security-invariants.md",
+      "sha256": "60ce2055027e504998c6abdf0325fcef96b101d2d71c5301997fea186ce30f7c"
+    },
+    {
+      "name": "registry_tests",
+      "path": "backend/tests/test_p5_1_registry_contract.py",
+      "sha256": "76fde422089e652d276cae1fa4bb9287c95def103761ed2e8e7ee880110b6967"
+    }
+  ],
+  "openapi_snapshot": {
+    "path": "sdk/contracts/p34-2-openapi.snapshot.json",
+    "sha256": "8506e273959b50c3030c5a8ea3b533181a89d5db2fa449dfe503076d163da373"
+  },
+  "registry_contracts": {
+    "agent_definitions": [
+      {
+        "schema_version": 1,
+        "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+        "tenant_id": "00000000-0000-0000-0000-00000000000a",
+        "stable_logical_key": "repository-inspector",
+        "display_name": "Repository Inspector",
+        "description": "Read-only repository inspection agent",
+        "risk_level": "low",
+        "allowed_installation_scopes": [
+          "workspace"
+        ],
+        "definition_state": "active",
+        "created_by": "00000000-0000-0000-0000-0000000000aa",
+        "created_at": "2026-08-03T00:00:00Z",
+        "metadata_version": 1
+      }
+    ],
+    "agent_versions": [
+      {
+        "schema_version": 1,
+        "agent_version_id": "11111111-1111-1111-1111-111111111111",
+        "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+        "tenant_id": "00000000-0000-0000-0000-00000000000a",
+        "version": "1.0.0",
+        "manifest_digest": "4b5a26ba3980e80216db50d8d069a6c052ca472954c33247baa1b81ec69f91ca",
+        "model_policy_id": "22222222-2222-2222-2222-222222222222",
+        "instructions_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+        "max_context_tokens": 200000,
+        "allowed_tool_ids": [
+          "rag_search",
+          "artifact_read"
+        ],
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "query"
+          ]
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          }
+        },
+        "risk_level": "low",
+        "memory_policy_id": "44444444-4444-4444-4444-444444444444",
+        "max_concurrency": 2,
+        "default_budget": {
+          "max_tokens": 100000,
+          "max_cost_units": 1000,
+          "max_wall_clock_seconds": 300,
+          "max_tool_calls": 50
+        },
+        "version_state": "sealed",
+        "created_by": "00000000-0000-0000-0000-0000000000aa",
+        "created_at": "2026-08-03T00:00:00Z"
+      }
+    ],
+    "workspace_agent_bindings": [
+      {
+        "schema_version": 1,
+        "workspace_agent_binding_id": "55555555-5555-5555-5555-555555555555",
+        "tenant_id": "00000000-0000-0000-0000-00000000000a",
+        "workspace_id": "66666666-6666-6666-6666-666666666666",
+        "workspace_generation": 1,
+        "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+        "agent_version_id": "11111111-1111-1111-1111-111111111111",
+        "agent_version_digest": "4b5a26ba3980e80216db50d8d069a6c052ca472954c33247baa1b81ec69f91ca",
+        "installation_state": "installed",
+        "resource_scopes": [
+          "workspace_private_read"
+        ],
+        "default_budget_policy": {
+          "max_tokens": 50000,
+          "max_cost_units": 500,
+          "max_wall_clock_seconds": 300,
+          "max_tool_calls": 50
+        },
+        "installed_by": "00000000-0000-0000-0000-0000000000aa",
+        "approval_id": null,
+        "created_at": "2026-08-03T00:00:00Z",
+        "disabled_at": null,
+        "superseded_by": null
+      }
+    ]
+  },
+  "critical_veto": {
+    "expected": 0
+  }
+}

@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1.7
+
+ARG PYTHON_BASE_IMAGE=python:3.11-slim-bookworm
+FROM ${PYTHON_BASE_IMAGE}
+
+ARG SOURCE_MANIFEST_SHA256
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+LABEL org.opencontainers.image.title="OmniBase P34.5D minimal broker client" \
+      org.omnibase.gate="p34.5d-client" \
+      org.omnibase.source-manifest-sha256="${SOURCE_MANIFEST_SHA256}"
+
+WORKDIR /client
+COPY scripts/gateway/p34_5d_broker_client.py ./p34_5d_broker_client.py
+
+CMD ["python", "-B", "/client/p34_5d_broker_client.py"]

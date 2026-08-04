@@ -284,6 +284,8 @@ Gate：路径/符号链接/挂载/网络/进程逃逸、凭据窃取、跨 works
 - 每项派生数据记录来源 resource、源版本、生成 run/session、模板/代码版本、操作链和 citation lineage。
 - 从私有区进入租户规范数据必须走显式 promotion plan：展示 diff、目标资源、风险、审批、幂等 key、Operation 和补偿方案。
 - promotion 只能调用 P34.3 的结构化 apply 能力，不能由 workspace 自行扩权或绕过 Approval/Resource Registry。
+- P34.6 的 copy-on-publish 目标只开放 `controlled_shared`：每次发布创建新的 target Resource 和 `published_from` lineage，禁止原地修改 source policy/locator，也禁止直接创建或改写 `canonical_readonly`；canonical cutover 继续属于 P34.7 的生产总验收。
+- 本阶段建立服务端生成的 snapshot inventory、digest/size 核验和 restore-new-identity 数据基础；完整对象传输、UI/SDK 恢复体验、生产备份恢复演练与人工 cutover 仍在 P34.7 完成。
 - UI 初步提供私有数据、派生物、lineage、promotion 请求、能力、审批、资源和审计查看。
 
 Gate：私有写入物理隔离；伪造 lineage、重复 promotion、越权目标、撤销后写入、失败补偿和规范数据覆写测试全部通过。
@@ -317,6 +319,8 @@ Gate：私有写入物理隔离；伪造 lineage、重复 promotion、越权目�
 - 生产构建、SDK quickstart、跨租户安全矩阵和真实最小闭环 smoke 全部通过。
 
 **不可跳过规则**：P34.0–P34.7 可以分批演示，但任何增量不得绕过前置 Gate 暂时开放直连数据库、宿主文件、无限网络或长期凭据。P34.7 未全部通过前，不得启动 Phase 5 自主 Planner、多 Agent 长循环或宿主级工具执行。
+
+截至 2026-08-02，P34.7A–G 的工程实现与本地验证入口已经落地，但生产总 Gate 仍为 `BLOCKED / NOT_PROVEN`：本地 provider reference Gate 通过不代表真实 provider/non-disposable tenant/RAG 通过；production composition、current-source Runner 12/12、两个真实成员节点、独立 DERP、node-compromise、双成员签名与 SLA 样本仍缺直接证据。因此 Phase 5 保持 `PLANNED / FROZEN`，不能因 UI/SDK 或 validator 完成而提前解冻。
 
 ## 六、Phase 5：Agent 编排基础
 

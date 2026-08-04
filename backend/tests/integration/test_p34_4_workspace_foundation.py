@@ -355,7 +355,7 @@ def test_0007_and_0008_keep_workspace_foundation_global_only(db_engine) -> None:
                 )
             ).scalars()
         )
-    assert revision == "0008"
+    assert revision == "0010"
     assert {
         "workspaces",
         "workspace_memberships",
@@ -1098,13 +1098,13 @@ def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
         downgrade = _run_alembic("downgrade", "0006")
         assert downgrade.returncode != 0
         output = downgrade.stdout + downgrade.stderr
-        assert "P34.4 downgrade refused" in output
+        assert "downgrade refused" in output
         with db_engine.connect() as connection:
             assert (
                 connection.execute(
                     text("SELECT version_num FROM omnibase_meta.alembic_version")
                 ).scalar_one()
-                == "0008"
+                == "0010"
             )
     finally:
         if template_id is not None and tenant_id is not None:

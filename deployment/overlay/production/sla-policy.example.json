@@ -1,0 +1,115 @@
+{
+  "schema": "omnibase.p34-7.overlay-sla-policy.v1",
+  "scenarios": {
+    "member_direct_logical_service": {
+      "min_samples": 100,
+      "min_success_ratio": 0.99,
+      "max_p95_ms": 500,
+      "min_observed_concurrency": 4,
+      "required_transport_paths": [
+        "direct"
+      ],
+      "allowed_outcomes": [
+        "committed"
+      ]
+    },
+    "forced_derp_relay": {
+      "min_samples": 50,
+      "min_success_ratio": 0.99,
+      "max_p95_ms": 1500,
+      "min_observed_concurrency": 2,
+      "required_transport_paths": [
+        "derp"
+      ],
+      "allowed_outcomes": [
+        "committed"
+      ]
+    },
+    "node_daemon_restart": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 10000,
+      "min_observed_concurrency": 1,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "restored"
+      ]
+    },
+    "node_revoke_propagation": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 5000,
+      "min_observed_concurrency": 1,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "rejected"
+      ]
+    },
+    "network_partition_fail_closed": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 5000,
+      "min_observed_concurrency": 2,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "rejected",
+        "unknown"
+      ]
+    },
+    "broker_restart_pending_no_replay": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 10000,
+      "min_observed_concurrency": 2,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "restored",
+        "unknown"
+      ]
+    },
+    "runner_forced_kill_cleanup": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 10000,
+      "min_observed_concurrency": 4,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "cleaned"
+      ]
+    },
+    "gateway_timeout_unknown_no_replay": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 5000,
+      "min_observed_concurrency": 2,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "unknown"
+      ]
+    },
+    "node_credential_theft_after_revoke": {
+      "min_samples": 20,
+      "min_success_ratio": 1.0,
+      "max_p95_ms": 5000,
+      "min_observed_concurrency": 1,
+      "required_transport_paths": [
+        "not_applicable"
+      ],
+      "allowed_outcomes": [
+        "rejected"
+      ]
+    }
+  }
+}

@@ -1,6 +1,21 @@
 {
   "contract_version": 1,
   "operations": {
+    "/gateway/v1/artifacts/read": {
+      "operation_id": "gateway_private_artifact_read",
+      "request_schema": "ArtifactReadRequest",
+      "response_schema": "ArtifactReadResponse"
+    },
+    "/gateway/v1/artifacts/write": {
+      "operation_id": "gateway_private_artifact_write",
+      "request_schema": "ArtifactWriteRequest",
+      "response_schema": "ArtifactWriteResponse"
+    },
+    "/gateway/v1/data/rows/mutate": {
+      "operation_id": "gateway_private_data_rows_mutate",
+      "request_schema": "PrivateRowsMutationRequest",
+      "response_schema": "PrivateRowsMutationResponse"
+    },
     "/gateway/v1/data/rows/read": {
       "operation_id": "gateway_data_rows_read",
       "request_schema": "DataRowsRequest",
@@ -16,6 +31,16 @@
       "request_schema": "CitationReadRequest",
       "response_schema": "CitationReadResponse"
     },
+    "/gateway/v1/rag/derived/create": {
+      "operation_id": "gateway_private_rag_derived_create",
+      "request_schema": "DerivedCreateRequest",
+      "response_schema": "DerivedCreateResponse"
+    },
+    "/gateway/v1/rag/derived/delete": {
+      "operation_id": "gateway_private_rag_derived_delete",
+      "request_schema": "DerivedDeleteRequest",
+      "response_schema": "DerivedDeleteResponse"
+    },
     "/gateway/v1/rag/search": {
       "operation_id": "gateway_rag_search",
       "request_schema": "RagSearchRequest",
@@ -23,11 +48,22 @@
     }
   },
   "public_models": {
+    "ArtifactReadRequest": ["max_bytes", "resource_id", "resource_version"],
+    "ArtifactReadResponse": ["bytes_out", "content_base64", "content_sha256", "media_type", "resource_id", "resource_version", "size_bytes"],
+    "ArtifactWriteRequest": ["content_base64", "content_sha256", "display_name", "idempotency_key", "media_type", "size_bytes", "source_resource_ids"],
+    "ArtifactWriteResponse": ["content_sha256", "media_type", "operation_id", "replayed", "request_id", "resource_id", "resource_version", "size_bytes"],
     "CitationReadRequest": ["citation_ids", "max_bytes", "resource_id", "timeout_ms"],
     "CitationReadResponse": ["bytes_out", "citations", "resource_id", "truncated"],
     "DataRowsRequest": ["query", "resource_id"],
     "DataRowsResponse": ["bytes_out", "next_cursor", "resource_id", "resource_version", "row_count", "rows", "truncated"],
     "DataSchemaResponse": ["columns", "resource_id", "resource_version"],
+    "DerivedChunkWrite": ["char_end", "char_start", "chunk_type", "content", "page_number", "source_resource_id"],
+    "DerivedCreateRequest": ["chunks", "display_name", "idempotency_key", "source_resource_ids"],
+    "DerivedCreateResponse": ["chunk_count", "operation_id", "replayed", "request_id", "resource_id", "resource_version"],
+    "DerivedDeleteRequest": ["idempotency_key", "resource_id", "resource_version"],
+    "DerivedDeleteResponse": ["deleted", "operation_id", "replayed", "request_id", "resource_id", "resource_version"],
+    "PrivateRowsMutationRequest": ["mutation"],
+    "PrivateRowsMutationResponse": ["action", "affected_rows", "operation_id", "replayed", "request_id", "resource_id", "resource_version"],
     "RagSearchRequest": ["max_bytes", "query", "resource_id", "timeout_ms", "top_k"],
     "RagSearchResponse": ["bytes_out", "resource_id", "results", "total_found", "truncated"],
     "ReadQuery": ["columns", "cursor", "filter", "limit", "max_bytes", "order_by", "timeout_ms"],

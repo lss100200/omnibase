@@ -1,6 +1,6 @@
 # Phase 3–4 威胁模型：受控数据库能力、AI 工作空间与能力网关
 
-> 状态：P34.0–P34.3 已封板；P34.4 Workspace/Run/Node/lease/fencing/authority 元数据逻辑控制面与 fake/local harness 已完成工程封板；P34.5A0-A4、B、C、D 已完成工程封板。独立 Hyper-V Linux Runner 的当前 launcher 哈希已通过 11/11 attack Gate；独立 PrivateNetwork Broker daemon 已在同一 Runner 上两轮通过 26/26 Gate；真实 Headscale 0.26.1 control-plane + mTLS Node-Daemon test-double disposable Gate 已通过；split-process mTLS Gateway 已通过 guarded disposable schema/rows/RAG/citation 四读 Gate。Core↔Runner/Broker production mTLS 联合激活、非 disposable production tenant/RAG、真实成员节点数据面、DERP、节点失陷、容量/SLA 与生产总验收仍是 P34.7 独立 Gate，不得由本阶段证据冒充
+> 状态：P34.0–P34.6 已完成工程封板，P34.7A–G 的 production admission、provider/recovery、real-member Overlay/SLA 合同与 UI/SDK 已实现。旧 Runner 11/11 artifact 已因 UID/GID hardened launcher 漂移而失效，current-source Hyper-V Linux Runner 12/12 仍为 `pending/not_proven`。本地 disposable provider reference Gate 通过，但 production Core↔Runner/Broker/Gateway、真实 provider/non-disposable tenant/RAG、两个真实成员节点、production Node Daemon、独立 DERP、节点失陷、容量/SLA 与双签名证据仍缺失。P34.7 production total Gate 因此为 `BLOCKED / NOT_PROVEN`，不得由 validator、单元测试或 disposable evidence 冒充；Phase 5 继续冻结。
 >
 > 范围：Resource Registry、受控 CRUD/DDL、Capability Issuer/Ledger/Gateway、Workspace Control Plane、Sandbox Runner/Runtime、RAG/Artifact 通道。
 >
@@ -413,6 +413,8 @@ P34.7：
 - 恶意 workspace 负载下核心保持健康；
 - Git/日志/审计无凭据、locator、正文或运行工件；
 - 全绿后才允许 Agent、Skill、MCP。
+
+当前 P34.7 实现增加四个不可降级的威胁控制：clean-checkout/source/evidence provenance；Core/Runner/Broker/Gateway 独立身份与固定 transport；provider committed-marker 可见性和 non-disposable data-owner admission；真实成员 Overlay 的双 Ed25519 evidence、node-compromise 与 SLA Gate。当前外部证据未齐时这些控制必须返回 `blocked/not_proven`，并保持 activation、production provider 与 Agent Runtime 关闭。
 
 ## 8. Runtime ADR 当前推荐与必答问题
 

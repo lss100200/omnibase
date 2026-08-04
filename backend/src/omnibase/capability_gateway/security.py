@@ -32,6 +32,10 @@ class CapabilityBudgetError(CapabilityVerificationError):
     """The online ledger cannot reserve the request budget."""
 
 
+class WorkspaceDataConflictError(CapabilityScopeError):
+    """Operation replay requires explicit conflict/reconciliation handling."""
+
+
 @runtime_checkable
 class WorkloadAttestor(Protocol):
     def attest(self, scope: Scope, opaque_identity: str) -> TrustedWorkloadContext: ...
@@ -82,6 +86,31 @@ class CapabilityVerifier(Protocol):
         bytes_out_reserved: int,
     ) -> None: ...
 
+    def reserve_workspace_data(
+        self,
+        session: Session,
+        credential: WorkloadCredential,
+        capability: VerifiedCapability,
+        *,
+        operation_id: str,
+        request_hash: str,
+        action: str,
+        resource_id: str,
+        resource_version: int,
+        bytes_in: int,
+        bytes_out_reserved: int,
+        cost_units: int,
+    ) -> object: ...
+
+    def finalize_workspace_data(
+        self,
+        session: Session,
+        *,
+        operation_id: str,
+        final_state: str,
+        result_digest: str | None,
+    ) -> object: ...
+
 
 class RejectingCapabilityVerifier:
     """Fail closed until a real issuer/ledger verifier is injected."""
@@ -107,6 +136,14 @@ class RejectingCapabilityVerifier:
         bytes_out_reserved: int,
     ) -> None:
         del session, capability, calls, bytes_in, bytes_out_reserved
+        raise CapabilityVerificationError("capability verifier is not configured")
+
+    def reserve_workspace_data(self, *args, **kwargs):
+        del args, kwargs
+        raise CapabilityVerificationError("capability verifier is not configured")
+
+    def finalize_workspace_data(self, *args, **kwargs):
+        del args, kwargs
         raise CapabilityVerificationError("capability verifier is not configured")
 
 
@@ -197,6 +234,84 @@ class CoreCapabilityVerifier:
         except CapabilityBudgetExceeded as exc:
             raise CapabilityBudgetError from exc
 
+    def reserve_workspace_data(
+        self,
+        session: Session,
+        credential: WorkloadCredential,
+        capability: VerifiedCapability,
+        *,
+        operation_id: str,
+        request_hash: str,
+        action: str,
+        resource_id: str,
+        resource_version: int,
+        bytes_in: int,
+        bytes_out_reserved: int,
+        cost_units: int,
+    ) -> object:
+        from omnibase.capabilities.service import (
+            CapabilityBudgetExceeded,
+            CapabilityScopeDenied,
+            WorkspaceDataReplayForbidden,
+            WorkspaceDataReservationConflict,
+            verify_and_reserve_workspace_data_capability,
+        )
+        from omnibase.capabilities.service import (
+            VerifiedCapability as CoreVerifiedCapability,
+        )
+
+        core = capability.core_verification
+        if not isinstance(core, CoreVerifiedCapability):
+            raise CapabilityVerificationError
+        try:
+            return verify_and_reserve_workspace_data_capability(
+                session,
+                operation_id=operation_id,
+                request_hash=request_hash,
+                grant_id=capability.grant_id,
+                expected_tenant_id=capability.tenant_id,
+                expected_workspace_id=capability.workspace_id,
+                expected_runtime_instance_id=capability.runtime_instance_id,
+                expected_workload_identity_digest=credential.trusted_context.certificate_thumbprint,
+                action=action,
+                resource_id=resource_id,
+                resource_version=resource_version,
+                bytes_in=bytes_in,
+                bytes_out_reserved=bytes_out_reserved,
+                cost_units=cost_units,
+            )
+        except CapabilityBudgetExceeded as exc:
+            raise CapabilityBudgetError from exc
+        except WorkspaceDataReplayForbidden as exc:
+            raise WorkspaceDataConflictError("workspace_data_reconciliation_required") from exc
+        except WorkspaceDataReservationConflict as exc:
+            raise WorkspaceDataConflictError("workspace_data_binding_conflict") from exc
+        except (CapabilityScopeDenied, ValueError) as exc:
+            raise CapabilityScopeError from exc
+
+    def finalize_workspace_data(
+        self,
+        session: Session,
+        *,
+        operation_id: str,
+        final_state: str,
+        result_digest: str | None,
+    ) -> object:
+        from omnibase.capabilities.service import (
+            WorkspaceDataReplayForbidden,
+            finalize_workspace_data_reservation,
+        )
+
+        try:
+            return finalize_workspace_data_reservation(
+                session,
+                operation_id=operation_id,
+                final_state=final_state,
+                result_digest=result_digest,
+            )
+        except (WorkspaceDataReplayForbidden, ValueError) as exc:
+            raise CapabilityScopeError("workspace_data_reservation_conflict") from exc
+
 
 def get_workload_credential(
     request: Request,
@@ -264,6 +379,33 @@ def get_workload_credential(
     )
 
 
+def revalidate_workload_credential(
+    request: Request,
+    credential: WorkloadCredential,
+) -> WorkloadCredential:
+    """Repeat live attestation and require the exact original workload binding.
+
+    External workspace-data effects cross a transaction/provider boundary.  A
+    credential that was current at request admission is therefore not enough:
+    the Run, Node, Lease, generation, fencing and certificate binding must be
+    re-read after the effect and before its reservation is finalized.
+    """
+    attestor: WorkloadAttestor = request.app.state.workload_attestor
+    try:
+        context = attestor.attest(request.scope, credential.identity)
+    except CapabilityVerificationError:
+        raise
+    except Exception as exc:
+        raise CapabilityVerificationError from exc
+    if context != credential.trusted_context:
+        raise CapabilityVerificationError
+    return WorkloadCredential(
+        authorization=credential.authorization,
+        identity=credential.identity,
+        trusted_context=context,
+    )
+
+
 def _normalize_core_constraints(raw: dict[str, object]) -> dict[str, int]:
     allowed = {"max_rows", "max_result_bytes", "rag_top_k", "timeout_ms"}
     if set(raw) - allowed or "timeout_ms" not in raw:
@@ -286,5 +428,7 @@ __all__ = [
     "RejectingWorkloadAttestor",
     "TrustedScopeWorkloadAttestor",
     "WorkloadAttestor",
+    "WorkspaceDataConflictError",
     "get_workload_credential",
+    "revalidate_workload_credential",
 ]

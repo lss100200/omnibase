@@ -173,3 +173,93 @@ export interface Citation {
   page_number: number
   score: number
 }
+
+// -----------------------------------------------------------
+// Workspaces / AI spaces (P34.4 control-plane browser surface)
+// -----------------------------------------------------------
+export type WorkspaceDesiredState = 'stopped' | 'running' | 'paused' | 'archived'
+
+export interface WorkspaceRead {
+  id: string
+  template_id: string
+  owner_user_id: string
+  parent_workspace_id: string | null
+  restored_from_snapshot_id: string | null
+  display_name: string
+  desired_state: WorkspaceDesiredState
+  observed_state: string
+  generation: number
+  version: number
+  quota: Record<string, unknown>
+  last_error_code: string | null
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceList {
+  items: WorkspaceRead[]
+  total: number
+}
+
+export interface WorkspaceTemplateRead {
+  id: string
+  template_key: string
+  version: number
+  display_name: string
+  digest: string
+  template_spec: Record<string, unknown>
+  state: string
+  created_at: string
+}
+
+export interface WorkspaceTemplateList {
+  items: WorkspaceTemplateRead[]
+  total: number
+}
+
+export interface WorkspaceMembershipRead {
+  id: string
+  workspace_id: string
+  user_id: string
+  role: 'viewer' | 'member' | 'operator' | 'maintainer' | 'owner'
+  state: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceMembershipList {
+  items: WorkspaceMembershipRead[]
+  total: number
+}
+
+export interface WorkspaceRunRead {
+  id: string
+  workspace_id: string
+  kind: 'batch' | 'interactive'
+  generation: number
+  desired_state: string
+  observed_state: string
+  version: number
+  request_digest: string
+  last_result_digest: string | null
+  last_error_code: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceRunList {
+  items: WorkspaceRunRead[]
+  total: number
+}
+
+export interface WorkspaceSnapshotRead {
+  id: string
+  workspace_id: string
+  source_generation: number
+  manifest_digest: string
+  snapshot_metadata: Record<string, unknown>
+  state: string
+  created_at: string
+}

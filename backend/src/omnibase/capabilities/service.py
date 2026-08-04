@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import uuid
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
@@ -26,6 +27,7 @@ from omnibase.capabilities.models import (
     CapabilitySigningKey,
     CapabilityUsage,
     CapabilityUsageReservation,
+    WorkspaceDataUsageReservation,
 )
 from omnibase.capabilities.token import (
     ALGORITHM,
@@ -39,7 +41,7 @@ from omnibase.capabilities.token import (
     private_key_fingerprint,
     public_key_fingerprint,
 )
-from omnibase.control_plane.models import ResourceRecord
+from omnibase.control_plane.models import OperationRecord, ResourceRecord
 
 READ_ACTIONS = frozenset(
     {
@@ -68,6 +70,19 @@ SANDBOX_ACTIONS = frozenset(
 )
 """P34.5 workload lifecycle vocabulary; emergency control is deliberately absent."""
 
+WORKSPACE_DATA_ACTIONS = frozenset(
+    {
+        "data.rows.insert",
+        "data.rows.update",
+        "data.rows.delete",
+        "artifact.read",
+        "artifact.write",
+        "rag.derived.create",
+        "rag.derived.delete",
+    }
+)
+"""P34.6 workload data vocabulary; promotion and canonical mutation are absent."""
+
 MAX_DELEGATION_DEPTH = 8
 
 _CONSTRAINT_KEYS = frozenset({"max_rows", "max_result_bytes", "rag_top_k", "timeout_ms"})
@@ -93,6 +108,14 @@ class CapabilityBudgetExceeded(CapabilityError):
 
 class CapabilityConflict(CapabilityError):
     """A grant, key, or delegation conflicts with current durable state."""
+
+
+class WorkspaceDataReplayForbidden(CapabilityConflict):
+    """A pending or unknown workspace-data effect must be reconciled, not replayed."""
+
+
+class WorkspaceDataReservationConflict(CapabilityConflict):
+    """An operation ID was replayed with a different immutable binding."""
 
 
 @dataclass(frozen=True)
@@ -122,6 +145,28 @@ class VerifiedSandboxCapabilityFacts:
     operation_id: str
     action: str
     grant_version: int
+    verified_at: datetime
+    expires_at: datetime
+    verification_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedWorkspaceDataCapabilityFacts:
+    """Server-owned proof for one operation-idempotent P34.6 data request."""
+
+    grant_id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_instance_id: str
+    workload_identity_digest: str
+    operation_id: str
+    action: str
+    resource_id: str
+    resource_version: int | None
+    request_hash: str
+    grant_version: int
+    reservation_state: str
+    replayed: bool
     verified_at: datetime
     expires_at: datetime
     verification_digest: str
@@ -278,6 +323,56 @@ def create_sandbox_grant(
     )
 
 
+def create_workspace_data_grant(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    runtime_instance_id: str,
+    workload_identity_digest: str,
+    issuer_context: TrustedIssuerContext,
+    actions: set[str] | frozenset[str],
+    resource_ids: set[str] | frozenset[str],
+    not_before: datetime,
+    expires_at: datetime,
+    max_calls: int,
+    max_bytes: int,
+    max_cost_units: int,
+    constraints: dict[str, object] | None = None,
+) -> CapabilityGrant:
+    """Create one short-lived, non-delegable workspace-data workload grant."""
+
+    _validate_issuer_context(issuer_context, tenant_id=tenant_id)
+    _validate_digest(workload_identity_digest, "workload_identity_digest")
+    not_before = _aware(not_before)
+    expires_at = _aware(expires_at)
+    if expires_at - not_before > MAX_TOKEN_TTL:
+        raise CapabilityScopeDenied("workspace-data grant lifetime cannot exceed five minutes")
+    return _create_grant(
+        session,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        runtime_instance_id=runtime_instance_id,
+        actor_user_id=issuer_context.originating_user_id,
+        actions=actions,
+        resource_ids=resource_ids,
+        not_before=not_before,
+        expires_at=expires_at,
+        max_calls=max_calls,
+        max_bytes=max_bytes,
+        max_cost_units=max_cost_units,
+        delegation_depth=0,
+        delegation_depth_limit=0,
+        created_by_actor_type="system",
+        created_by_actor_id=issuer_context.system_actor_id,
+        constraints=constraints,
+        approval_id=None,
+        parent_grant_id=None,
+        allowed_actions=WORKSPACE_DATA_ACTIONS,
+        workload_identity_digest=workload_identity_digest,
+    )
+
+
 def delegate_grant(
     session: Session,
     *,
@@ -408,8 +503,20 @@ def issue_token(
         raise ValueError("kid has an invalid format")
     now = _now()
     grant = get_grant(session, tenant_id=tenant_id, grant_id=grant_id)
-    if not frozenset(grant.actions) <= READ_ACTIONS:
+    profile = _action_profile(frozenset(grant.actions))
+    if profile == "sandbox":
         raise CapabilityScopeDenied("sandbox grants cannot be issued as Gateway bearer tokens")
+    if profile == "workspace_data":
+        digest = getattr(grant, "workload_identity_digest", None)
+        if (
+            not isinstance(digest, str)
+            or _x5t_s256_from_hex(digest) != workload_thumbprint
+            or grant.delegation_depth != 0
+            or grant.delegation_depth_limit != 0
+            or grant.parent_grant_id is not None
+            or _aware(grant.expires_at) - _aware(grant.not_before) > MAX_TOKEN_TTL
+        ):
+            raise CapabilityScopeDenied("workspace-data grant binding is invalid")
     if grant.actor_user_id != issuer_context.originating_user_id:
         raise CapabilityScopeDenied("issuer context is not bound to the grant user")
     if grant.state != "active" or _aware(grant.not_before) > now or _aware(grant.expires_at) <= now:
@@ -453,6 +560,34 @@ def issue_token(
         expires_at=token_expiry,
         approval_id=grant.approval_id,
     )
+
+
+def _verified_gateway_profile_actions(
+    grant: CapabilityGrant,
+    *,
+    expected_workload_thumbprint: str,
+) -> frozenset[str]:
+    """Return the closed Gateway action profile after binding validation."""
+    try:
+        profile = _action_profile(frozenset(grant.actions))
+    except CapabilityScopeDenied as exc:
+        raise InvalidCapability("invalid capability") from exc
+    if profile == "sandbox":
+        raise InvalidCapability("invalid capability")
+    if profile == "workspace_data":
+        digest = getattr(grant, "workload_identity_digest", None)
+        if (
+            not isinstance(digest, str)
+            or _x5t_s256_from_hex(digest) != expected_workload_thumbprint
+            or grant.delegation_depth != 0
+            or grant.delegation_depth_limit != 0
+            or grant.parent_grant_id is not None
+        ):
+            raise InvalidCapability("invalid capability")
+        return WORKSPACE_DATA_ACTIONS
+    if getattr(grant, "workload_identity_digest", None) is not None:
+        raise InvalidCapability("invalid capability")
+    return READ_ACTIONS
 
 
 def verify_capability(
@@ -532,8 +667,12 @@ def verify_capability(
     ).scalar_one_or_none()
     if revoked is not None:
         raise InvalidCapability("invalid capability")
+    allowed_actions = _verified_gateway_profile_actions(
+        grant,
+        expected_workload_thumbprint=expected_workload_thumbprint,
+    )
     if (
-        action not in READ_ACTIONS
+        action not in allowed_actions
         or action not in grant.actions
         or resource_id not in grant.resource_ids
     ):
@@ -682,14 +821,14 @@ def verify_and_reserve_sandbox_capability(
 ) -> VerifiedSandboxCapabilityFacts:
     """Verify one Sandbox grant and reserve its budget exactly once per operation."""
 
-    for value in (
+    for identifier in (
         operation_id,
         grant_id,
         expected_tenant_id,
         expected_workspace_id,
         expected_runtime_instance_id,
     ):
-        _validate_uuid(value)
+        _validate_uuid(identifier)
     _validate_digest(expected_workload_identity_digest, "workload_identity_digest")
     if action not in SANDBOX_ACTIONS:
         raise CapabilityScopeDenied("sandbox capability action is outside the closed vocabulary")
@@ -808,6 +947,356 @@ def verify_and_reserve_sandbox_capability(
         expires_at=_aware(grant.expires_at),
         verification_digest=verification_digest,
     )
+
+
+def _validate_workspace_data_reservation_request(
+    *,
+    operation_id: str,
+    request_hash: str,
+    grant_id: str,
+    expected_tenant_id: str,
+    expected_workspace_id: str,
+    expected_runtime_instance_id: str,
+    expected_workload_identity_digest: str,
+    action: str,
+    resource_id: str,
+    resource_version: int,
+    bytes_in: int,
+    bytes_out_reserved: int,
+    cost_units: int = 1,
+) -> None:
+    for value in (
+        operation_id,
+        grant_id,
+        expected_tenant_id,
+        expected_workspace_id,
+        expected_runtime_instance_id,
+        resource_id,
+    ):
+        _validate_uuid(value)
+    _validate_digest(expected_workload_identity_digest, "workload_identity_digest")
+    _validate_digest(request_hash, "request_hash")
+    if action not in WORKSPACE_DATA_ACTIONS:
+        raise CapabilityScopeDenied("workspace-data action is outside the closed vocabulary")
+    for name, numeric_value in {
+        "resource_version": resource_version,
+        "bytes_in": bytes_in,
+        "bytes_out_reserved": bytes_out_reserved,
+        "cost_units": cost_units,
+    }.items():
+        minimum = 1 if name in {"resource_version", "cost_units"} else 0
+        if type(numeric_value) is not int or numeric_value < minimum:
+            raise ValueError(f"{name} must be an integer greater than or equal to {minimum}")
+
+
+def verify_and_reserve_workspace_data_capability(
+    session: Session,
+    *,
+    operation_id: str,
+    request_hash: str,
+    grant_id: str,
+    expected_tenant_id: str,
+    expected_workspace_id: str,
+    expected_runtime_instance_id: str,
+    expected_workload_identity_digest: str,
+    action: str,
+    resource_id: str,
+    resource_version: int,
+    bytes_in: int,
+    bytes_out_reserved: int,
+    cost_units: int = 1,
+) -> VerifiedWorkspaceDataCapabilityFacts:
+    """Verify and charge one P34.6 operation exactly once before any effect."""
+
+    _validate_workspace_data_reservation_request(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        grant_id=grant_id,
+        expected_tenant_id=expected_tenant_id,
+        expected_workspace_id=expected_workspace_id,
+        expected_runtime_instance_id=expected_runtime_instance_id,
+        expected_workload_identity_digest=expected_workload_identity_digest,
+        action=action,
+        resource_id=resource_id,
+        resource_version=resource_version,
+        bytes_in=bytes_in,
+        bytes_out_reserved=bytes_out_reserved,
+        cost_units=cost_units,
+    )
+
+    grant = get_grant(
+        session,
+        tenant_id=expected_tenant_id,
+        grant_id=grant_id,
+        lock=True,
+    )
+    now = _now()
+    if (
+        grant.state != "active"
+        or _aware(grant.not_before) > now
+        or _aware(grant.expires_at) <= now
+        or _aware(grant.expires_at) - _aware(grant.not_before) > MAX_TOKEN_TTL
+        or grant.workspace_id != expected_workspace_id
+        or grant.runtime_instance_id != expected_runtime_instance_id
+        or grant.workload_identity_digest != expected_workload_identity_digest
+        or grant.delegation_depth != 0
+        or grant.delegation_depth_limit != 0
+        or grant.parent_grant_id is not None
+        or action not in grant.actions
+        or _action_profile(frozenset(grant.actions)) != "workspace_data"
+        or resource_id not in grant.resource_ids
+    ):
+        raise CapabilityScopeDenied("workspace-data capability binding is not active")
+    _assert_active_ancestry(
+        session,
+        tenant_id=expected_tenant_id,
+        leaf=grant,
+        lock=True,
+        failure_type=CapabilityScopeDenied,
+    )
+    revoked = session.execute(
+        select(CapabilityRevocation.id).where(
+            CapabilityRevocation.tenant_id == expected_tenant_id,
+            CapabilityRevocation.grant_id == grant.id,
+            CapabilityRevocation.token_jti.is_(None),
+        )
+    ).scalar_one_or_none()
+    if revoked is not None:
+        raise CapabilityScopeDenied("workspace-data capability is revoked")
+
+    resource = session.execute(
+        select(ResourceRecord).where(
+            ResourceRecord.tenant_id == expected_tenant_id,
+            ResourceRecord.id == resource_id,
+        )
+    ).scalar_one_or_none()
+    if resource is None or resource.version != resource_version:
+        raise CapabilityScopeDenied("workspace-data resource is unavailable")
+    _authorize_workspace_data_resource(
+        resource,
+        workspace_id=expected_workspace_id,
+        action=action,
+    )
+
+    operation_values = {
+        "id": operation_id,
+        "tenant_id": expected_tenant_id,
+        "workspace_id": expected_workspace_id,
+        "run_id": None,
+        "actor_type": "user",
+        "actor_id": grant.actor_user_id,
+        "resource_id": resource_id,
+        "resource_version": resource_version,
+        "approval_id": None,
+        "request_hash": request_hash,
+        "kind": f"workspace_data.{action}",
+        "state": "running",
+        "risk_level": "R1",
+        "progress": 0,
+        "attempt_count": 1,
+        "version": 1,
+        "started_at": now,
+        "operation_metadata": {
+            "capability_profile": "workspace_data",
+            "grant_id": grant.id,
+            "runtime_instance_id": expected_runtime_instance_id,
+        },
+    }
+    operation_inserted = session.execute(
+        pg_insert(OperationRecord)
+        .values(**operation_values)
+        .on_conflict_do_nothing(index_elements=[OperationRecord.id])
+        .returning(OperationRecord.id)
+    ).scalar_one_or_none()
+    if operation_inserted is None:
+        operation = session.execute(
+            select(OperationRecord)
+            .where(
+                OperationRecord.id == operation_id,
+                OperationRecord.tenant_id == expected_tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        immutable_operation_values = {
+            key: value
+            for key, value in operation_values.items()
+            if key
+            not in {
+                "state",
+                "progress",
+                "attempt_count",
+                "version",
+                "started_at",
+                "operation_metadata",
+            }
+        }
+        if operation is None or any(
+            getattr(operation, key) != value for key, value in immutable_operation_values.items()
+        ):
+            raise WorkspaceDataReservationConflict("workspace-data operation binding drift")
+
+    values = {
+        "operation_id": operation_id,
+        "tenant_id": expected_tenant_id,
+        "grant_id": grant.id,
+        "grant_version": grant.version,
+        "workspace_id": expected_workspace_id,
+        "runtime_instance_id": expected_runtime_instance_id,
+        "workload_identity_digest": expected_workload_identity_digest,
+        "action": action,
+        "resource_id": resource_id,
+        "resource_version": resource_version,
+        "request_hash": request_hash,
+        "calls": 1,
+        "bytes_in": bytes_in,
+        "bytes_out_reserved": bytes_out_reserved,
+        "cost_units": cost_units,
+        "state": "pending",
+    }
+    inserted = session.execute(
+        pg_insert(WorkspaceDataUsageReservation)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=[WorkspaceDataUsageReservation.operation_id])
+        .returning(WorkspaceDataUsageReservation.operation_id)
+    ).scalar_one_or_none()
+    replayed = inserted is None
+    reservation_state = "pending"
+    if replayed:
+        reservation = session.execute(
+            select(WorkspaceDataUsageReservation).where(
+                WorkspaceDataUsageReservation.operation_id == operation_id
+            )
+        ).scalar_one_or_none()
+        if reservation is None or any(
+            getattr(reservation, key) != value for key, value in values.items() if key != "state"
+        ):
+            raise WorkspaceDataReservationConflict("workspace-data reservation binding drift")
+        reservation_state = reservation.state
+        if reservation_state in {"pending", "unknown"}:
+            raise WorkspaceDataReplayForbidden(
+                "workspace-data effect requires reconciliation before replay"
+            )
+        if reservation_state != "committed":
+            raise WorkspaceDataReservationConflict("workspace-data reservation state is invalid")
+    else:
+        _reserve_budget(
+            session,
+            tenant_id=expected_tenant_id,
+            grant_id=grant.id,
+            grant_version=grant.version,
+            calls=1,
+            bytes_in=bytes_in,
+            bytes_out=bytes_out_reserved,
+            cost_units=cost_units,
+        )
+
+    verification_digest = _canonical_digest(
+        {**values, "expires_at": _aware(grant.expires_at).isoformat()}
+    )
+    return VerifiedWorkspaceDataCapabilityFacts(
+        grant_id=grant.id,
+        tenant_id=expected_tenant_id,
+        workspace_id=expected_workspace_id,
+        runtime_instance_id=expected_runtime_instance_id,
+        workload_identity_digest=expected_workload_identity_digest,
+        operation_id=operation_id,
+        action=action,
+        resource_id=resource_id,
+        resource_version=resource_version,
+        request_hash=request_hash,
+        grant_version=grant.version,
+        reservation_state=reservation_state,
+        replayed=replayed,
+        verified_at=now,
+        expires_at=_aware(grant.expires_at),
+        verification_digest=verification_digest,
+    )
+
+
+def finalize_workspace_data_reservation(
+    session: Session,
+    *,
+    operation_id: str,
+    expected_state: str = "pending",
+    final_state: str,
+    result_digest: str | None = None,
+) -> WorkspaceDataUsageReservation:
+    """Move one reservation forward to committed or unknown; never back to pending."""
+
+    _validate_uuid(operation_id)
+    if expected_state != "pending" or final_state not in {"committed", "unknown"}:
+        raise ValueError("workspace-data reservation transitions only from pending")
+    if final_state == "committed" and result_digest is None:
+        raise ValueError("committed workspace-data reservation requires result_digest")
+    if final_state == "unknown" and result_digest is not None:
+        raise ValueError("unknown workspace-data reservation cannot retain result_digest")
+    if result_digest is not None:
+        _validate_digest(result_digest, "result_digest")
+    now = _now()
+    row = session.execute(
+        update(WorkspaceDataUsageReservation)
+        .where(
+            WorkspaceDataUsageReservation.operation_id == operation_id,
+            WorkspaceDataUsageReservation.state == expected_state,
+        )
+        .values(state=final_state, result_digest=result_digest, updated_at=now)
+        .returning(WorkspaceDataUsageReservation)
+    ).scalar_one_or_none()
+    if row is None:
+        raise WorkspaceDataReplayForbidden("workspace-data reservation already finalized")
+    operation_values: dict[str, object] = {
+        "state": "succeeded" if final_state == "committed" else "failed",
+        "progress": 100 if final_state == "committed" else 0,
+        "completed_at": now,
+        "updated_at": now,
+        "version": OperationRecord.version + 1,
+        "result_ref": ({"result_digest": result_digest} if final_state == "committed" else None),
+        "error_code": (None if final_state == "committed" else "workspace_data_effect_unknown"),
+        "error_detail": None,
+    }
+    operation_updated = session.execute(
+        update(OperationRecord)
+        .where(
+            OperationRecord.id == operation_id,
+            OperationRecord.tenant_id == row.tenant_id,
+            OperationRecord.state == "running",
+        )
+        .values(**operation_values)
+        .returning(OperationRecord.id)
+    ).scalar_one_or_none()
+    if operation_updated is None:
+        raise WorkspaceDataReservationConflict("workspace-data operation lifecycle binding changed")
+    return row
+
+
+def _authorize_workspace_data_resource(
+    resource: ResourceRecord,
+    *,
+    workspace_id: str,
+    action: str,
+) -> None:
+    if resource.state not in {"active", "running", "paused", "stopped"}:
+        raise CapabilityScopeDenied("workspace-data resource is unavailable")
+    if action in {"artifact.write", "rag.derived.create"} and resource.kind == "workspace":
+        if resource.id != workspace_id or resource.policy_class == "system_internal":
+            raise CapabilityScopeDenied("workspace-data create scope is unavailable")
+        return
+    expected: dict[str, tuple[frozenset[str], str]] = {
+        "data.rows.insert": (frozenset({"data_table"}), "workspace_private"),
+        "data.rows.update": (frozenset({"data_table"}), "workspace_private"),
+        "data.rows.delete": (frozenset({"data_table"}), "workspace_private"),
+        "artifact.read": (frozenset({"artifact"}), "workspace_private"),
+        "artifact.write": (frozenset({"artifact"}), "workspace_private"),
+        "rag.derived.delete": (frozenset({"derived_index"}), "workspace_derived"),
+    }
+    kinds, policy_class = expected.get(action, (frozenset(), ""))
+    if (
+        resource.kind not in kinds
+        or resource.policy_class != policy_class
+        or resource.owner_type != "workspace"
+        or resource.owner_id != workspace_id
+    ):
+        raise CapabilityScopeDenied("workspace-data resource scope denied")
 
 
 def revoke_grant(
@@ -1118,6 +1607,23 @@ def _validate_actions(
     return values
 
 
+def _action_profile(actions: frozenset[str]) -> str:
+    """Return the one closed profile containing actions; mixed profiles fail closed."""
+
+    if actions and actions <= READ_ACTIONS:
+        return "read"
+    if actions and actions <= WORKSPACE_DATA_ACTIONS:
+        return "workspace_data"
+    if actions and actions <= SANDBOX_ACTIONS:
+        return "sandbox"
+    raise CapabilityScopeDenied("capability actions mix or exceed closed profiles")
+
+
+def _x5t_s256_from_hex(value: str) -> str:
+    _validate_digest(value, "workload_identity_digest")
+    return urlsafe_b64encode(bytes.fromhex(value)).rstrip(b"=").decode("ascii")
+
+
 def _validate_resource_ids(resource_ids: set[str] | frozenset[str]) -> frozenset[str]:
     values = frozenset(resource_ids)
     if not values or "*" in values:
@@ -1211,6 +1717,7 @@ __all__ = [
     "MAX_DELEGATION_DEPTH",
     "READ_ACTIONS",
     "SANDBOX_ACTIONS",
+    "WORKSPACE_DATA_ACTIONS",
     "CapabilityBudgetExceeded",
     "CapabilityConflict",
     "CapabilityError",
@@ -1220,15 +1727,21 @@ __all__ = [
     "TrustedPlatformContext",
     "VerifiedCapability",
     "VerifiedSandboxCapabilityFacts",
+    "VerifiedWorkspaceDataCapabilityFacts",
+    "WorkspaceDataReplayForbidden",
+    "WorkspaceDataReservationConflict",
     "consume_budget",
     "create_grant",
     "create_sandbox_grant",
+    "create_workspace_data_grant",
     "delegate_grant",
+    "finalize_workspace_data_reservation",
     "get_grant",
     "issue_token",
     "register_signing_key",
     "revoke_grant",
     "revoke_token",
     "verify_and_reserve_sandbox_capability",
+    "verify_and_reserve_workspace_data_capability",
     "verify_capability",
 ]

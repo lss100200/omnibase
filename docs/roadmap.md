@@ -19,7 +19,7 @@
 | 前端性能 + 认证 | ✅ 100% | Bootstrap singleton, 节流, 分页, 生产镜像 |
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 100%（待提交） | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC、离线模型边界；工程验收已通过，尚待原子提交 |
-| Phase 3-4 安全 AI 工作空间与能力平台 | 🚧 基础设施阶段 | P34.1–P34.3 已封板；P34.4 的 17 表 Workspace metadata control plane、Browser governance、Node/Run/Network fencing 与 synthetic collaboration harness 已通过工程 Gate；P34.5 真实 Sandbox、Overlay adapter、数据通道和 Agent Runtime 仍冻结 |
+| Phase 3-4 安全 AI 工作空间与能力平台 | 🚧 P34.6 工程封板 | P34.1–P34.4 已封板；P34.5A0-A4/B/C/D 已通过独立 Runner、Network Broker、Headscale control-plane 与 split-process mTLS disposable Gates；P34.6 Workspace-private/derived data、controlled write seam、promotion、lineage、snapshot inventory 与 restore-new-identity metadata foundation 已通过工程 Gate。Production 联合装配、真实 provider/object transfer、non-disposable tenant/RAG、成员数据面/DERP/节点失陷、容量/SLA 和 Agent Runtime 仍冻结 |
 | Agent 编排 | ⬜ 0% | 仅 Celery 摄取任务 |
 | Skill/MCP 扩展 | ⬜ 0% | 无插件系统、无 MCP |
 
@@ -101,11 +101,12 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.2 只读网关与 SDK 契约** | HIGH | 只开放 data schema/rows read、`rag.search`/citation；每次调用复核 RBAC/tenant/capability，冻结 TS/Python 只读契约 |
 | **P34.3 结构化写入** | HIGH | 参数化 CRUD、DDL plan/apply、风险审批、幂等执行、Operation 跟踪和失败补偿；继续禁止任意 SQL |
 | **P34.4 Workspace 控制面** | HIGH | ✅ 工程 Gate：17 张 global metadata 表；Workspace aggregate 串行化 membership/last-owner；模板事务内实时 admin 重验与 PostgreSQL 自然幂等；Run Lease 绑定 Node fencing 和实时 attestation；终态 Run 不可复活；Network Lease 仅签逻辑授权且不调用 provider；Node/Peer/Service/Authority 统一锁序与撤销；不执行代码、不接真实网络或数据 |
-| **P34.5 沙箱隔离后接只读网关** | HIGH | 文件/网络/进程/身份/资源隔离 Gate 先通过，再接 P34.2 只读能力；普通 Docker 仅作开发基线 |
-| **P34.6 私有写入与 promotion** | HIGH | workspace 私有表/索引/记忆、完整 lineage，以及经审批、幂等和补偿进入规范资源的 promotion 流程 |
-| **P34.7 生产总验收** | HIGH | 快照恢复、完整 UI/SDK、攻击矩阵、配额/撤销/补偿和生产 smoke；P34.7 通过前不得启动 Agent |
+| **P34.5 沙箱隔离后接只读网关** | HIGH | ✅ A0-A3/B/C/D 工程 Gate；A4 current-source target-host 12/12 `pending/not_proven`：Network Broker 两轮 26/26、真实 Headscale control-plane + mTLS Node-Daemon test-double、split-process mTLS Gateway disposable Gate 已通过；旧 11/11 不适用于 UID/GID-hardened launcher。production Core↔Runner/Broker/Gateway 联合装配、真实成员数据面、DERP、节点失陷、容量和 SLA 留给 P34.7 |
+| **P34.6 私有写入、promotion 与 snapshot 基础** | HIGH | ✅ Foundation / Contracts / Fail-closed primitives：final `cc48baa` ordinary clone 的 Overlay/Gateway source-built Gates、164 related tests、Mypy、OpenAPI 与 Ruff clean-checkout Gate 通过；Workspace-private/derived 逻辑写入、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Approval/Publication metadata 与 server-generated snapshot inventory 已通过隔离 Gate。Promotion/Restore `COMMITTED`、`controlled_shared` 成功可见性、真实 provider copy/restore 和 production snapshot barrier 继续拒绝，禁止原地修改 source 或创建/改写 `canonical_readonly` |
+| **P34.7 生产总验收** | HIGH | 🟡 A–G 工程实现/本地 Gate 已落地，production total Gate=`BLOCKED / NOT_PROVEN`：clean-checkout/composition、provider committed visibility、Workspace UI、Python/TS SDK、真实成员 Overlay/DERP/node-compromise/SLA 验证器已完成；真实 provider、non-disposable tenant/RAG、current-source Runner 12/12、四组件 production roundtrip、双真实成员/独立 DERP/双签名与 SLA 样本仍待目标环境直接证据。任何 canonical cutover 需独立审批；P34.7 PASS 前不得启动 Agent |
+| **P5.0/P5.1/P5.2A 合同链** | MEDIUM | ✅ P5.0 admission gate（三 gate fail-closed + Evidence Manifest）、P5.1A Registry 合同预检、P5.1B 内部持久化地基（migration 0010 + disposable Gate）、P5.1C Browser Registry 控制 API（10 端点，production 默认 503）、P5.2A Task/Run/Lease/fencing 账本离线合同预检已实现并验证。P5.2 persistence ledger（P5.2B）与 Agent Runtime/Planner/Executor 仍未实现；三 gate 保持 false；P5.2A `--verify` 恒 `blocked/not_proven`（exit 2） |
 
-**不可跳过 Gate**：P34.0–P34.7 可以分批演示，但不能绕过前一增量的安全契约直接开放高权限能力；当前只解冻 P34.4 控制面元数据和 fake/local harness。P34.5 真实 Sandbox 隔离、真实 Overlay adapter/成员网络、真实 Tenant/RAG 数据通道与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
+**不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。真实 provider/object transfer、non-disposable tenant/RAG、成员 Overlay/DERP、生产恢复、容量/SLA 与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
 
 长期硬约束：workspace 保存身份、配置、资源意图和私有状态，是长期逻辑资源；run/session 是带短期凭据与配额、可随时销毁重建的执行实例。普通 Docker 容器只能作为开发和生命周期验证基线，不代表能够安全运行任意敌对代码；未通过 P34.5 隔离 Gate 的运行时不得连接真实数据。
 
@@ -118,6 +119,10 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > **前置条件**：Phase 3-4 的 P34.7 总 Gate（沙箱、能力网关、审批、配额、审计和恢复）全部通过
 > **预估工期**：3-4 周
 > **目标**：让 Agent 作为工作空间内的受约束负载执行复杂任务
+>
+> **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
+>
+> **合同链进度**：P5.0 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate + P34.7 Evidence Manifest validator）、P5.1A Agent Registry 离线合同预检、P5.1B Registry 内部持久化地基（migration 0010 + disposable PostgreSQL Gate）、P5.1C Browser Registry 控制 API（production 默认 503 fail-closed）与 P5.2A Agent Task/Run/Lease/fencing 账本离线合同预检均已实现并验证。Agent Runtime/Planner/Executor/scheduler/worker、Task 执行与 P5.2 persistence ledger（P5.2B）仍未实现；三个 Feature Gate 保持 `false`；P5.2A `--verify` 恒为 `blocked/not_proven`（exit 2）。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -127,6 +132,9 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **Tool 注册 + 调用** | HIGH | 参数 schema、capability 校验、超时、重试、结果大小和人工确认 |
 | **Agent 状态管理** | MEDIUM | 会话记忆、任务进度、checkpoint、恢复和行为回放 |
 | **工作流执行** | MEDIUM | 工作空间内的任务依赖、取消、结果聚合和资源配额 |
+| **Memory Compiler** | HIGH | 按 user/workspace/agent/task 与 token 预算生成短期 Context Capsule；长期记忆候选需治理、去敏和纠正 |
+| **原生 Skill 契约** | HIGH | 版本化 manifest、typed tool choreography、能力/预算声明和回滚；第三方 marketplace/MCP 后置 Phase 6 |
+| **恢复与 reconciliation** | HIGH | 新 Run/Attempt/Lease/identity 恢复，`pending|unknown` 不自动 replay，checkpoint 只引用 committed 逻辑结果 |
 
 ---
 

@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from starlette.types import Receive, Scope, Send
@@ -76,12 +76,15 @@ class ServerOwnedGatewayCredentialBinding:
     """Authorization inputs selected only by the server-owned peer registry."""
 
     grant_id: str
+    expected_profile: Literal["read", "workspace_data"]
     key_id: str
     system_actor_id: str
     originating_user_id: str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "grant_id", _uuid_text(self.grant_id, "grant_id"))
+        if self.expected_profile not in {"read", "workspace_data"}:
+            raise ValueError("expected_profile is invalid")
         object.__setattr__(
             self,
             "originating_user_id",
@@ -111,6 +114,7 @@ class ServerOwnedGatewayPeer:
     certificate_thumbprint: str
     expires_at: datetime
     grant_id: str
+    expected_profile: Literal["read", "workspace_data"]
     key_id: str
     system_actor_id: str
     originating_user_id: str
@@ -135,6 +139,7 @@ class ServerOwnedGatewayPeer:
             "certificate_thumbprint",
             "expires_at",
             "grant_id",
+            "expected_profile",
             "key_id",
             "system_actor_id",
             "originating_user_id",
@@ -160,6 +165,7 @@ class ServerOwnedGatewayPeer:
             certificate_thumbprint=str(value["certificate_thumbprint"]),
             expires_at=_parse_expiry(value["expires_at"]),
             grant_id=str(value["grant_id"]),
+            expected_profile=str(value["expected_profile"]),  # type: ignore[arg-type]
             key_id=str(value["key_id"]),
             system_actor_id=str(value["system_actor_id"]),
             originating_user_id=str(value["originating_user_id"]),
@@ -169,6 +175,7 @@ class ServerOwnedGatewayPeer:
     def credential_binding(self) -> ServerOwnedGatewayCredentialBinding:
         return ServerOwnedGatewayCredentialBinding(
             grant_id=self.grant_id,
+            expected_profile=self.expected_profile,
             key_id=self.key_id,
             system_actor_id=self.system_actor_id,
             originating_user_id=self.originating_user_id,

@@ -1,6 +1,10 @@
 # These files are byte-sealed inputs or evidence for the P34.5 runtime Gates.
 # Preserve their exact bytes and exclude only these paths from whitespace checks.
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.py text eol=lf
 deployment/overlay/gate.env -whitespace
 deployment/sandbox/omnibase-runner-seccomp.json -whitespace
 docs/evidence/p34-5/gateway-mtls-disposable-gate.json -whitespace
 docs/evidence/p34-5/gateway-mtls-disposable-gate.md -whitespace
+docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json -whitespace
