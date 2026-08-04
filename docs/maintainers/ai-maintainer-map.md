@@ -560,6 +560,51 @@ Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven
   baseline migration revisions 扩展到 `0010`，sealed digest 随本文档
   更新；P5.1B 不解锁 P5.2+（保持 frozen）。
 
+### 6.11 P5.2A Agent Task ledger contract preflight（离线，只验证不实现）
+
+`backend/src/omnibase/production/phase5_task_ledger_contract.py` 是
+P5.2A 的唯一交付物：AgentTask/Invocation → AgentRun → AgentStep →
+AgentAttempt → P34.4 Workspace Run → RuntimeInstance → WorkloadIdentity
+的离线 strict DTO/合同，纯离线 validator。无 P5.2 ORM、migration `0011`、
+router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
+或 Task Lease 发放。
+
+- 身份层级冻结 36 个逻辑字段与 9 个 identity stages（task_create /
+  task_run_claim / attempt_claim / attempt_heartbeat / attempt_finish /
+  task_cancel / task_pause / task_resume_request /
+  reconciliation_request），每阶段区分 required / not_yet_generated /
+  immutable / core_generated / browser|workload submittable / forbidden；
+  Browser 永不提交 runtime_instance_id、workload thumbprint、
+  request_hash 或 lease/fencing；Browser JWT 永不进入 workload DTO。
+- 状态机闭集：Task（10 态）、Step（6 态）、Attempt（9 态）、Effect
+  （5 态）、AgentRun（7 态）；终态不可复活；`unknown` 永不自动 replay；
+  retry 必须创建新 Attempt 并提高 Task fencing；cancel 不伪装 unknown
+  为成功；模型输出不是 committed evidence。
+- Task Lease 独立于 Run Lease 但依赖它：`run_lease_id`/`run_fencing_token`/
+  `node_id`/`node_fencing_token`/`workspace_generation` 必须与
+  AgentRunBinding 一致；TTL 不得晚于 deadline/Run Lease/Node
+  attestation/Grant/policy 的最早 expiry（`LeaseExpiryBounds` 五项
+  独立 reason code）。
+- 预算 12 维（input/output/reasoning/total tokens、cost_micros、
+  model/tool calls、wall_clock_ms、artifact_bytes、sandbox_jobs、
+  max_attempts、max_parallel_steps），limit/reserved/committed/released/
+  remaining 不变量，strict 非负整数、拒绝 NaN/Infinity/wildcard/超 ceiling。
+- 8 个 canonical hash profile（task_create、task_cancel、task_pause、
+  task_resume_request、attempt_claim、attempt_heartbeat、attempt_finish、
+  reconciliation_request）；同 key+同 operation+同 canonical payload =
+  exact replay，否则 stable conflict；禁止调用方 request_hash override。
+- `scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only`
+  只解析合同（exit 0，永不 ready）；`--verify` 校验 P34.7/P5.0/P5.1
+  formal state、sealed digest（含 P5.1 registry contract）、migration
+  集合/head（0010）、forbidden source paths、OpenAPI 无 agent
+  invocation 端点；**gate true 或 activation_requested=true 是 veto**。
+- 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0/P5.1 非 ready +
+  persistence ledger/Runtime 未实现 + production evidence 未证明）；
+  该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
+  用 AST 扫描证明。
+- INV-043 只描述 P5.2A 合同的离线属性；P5.2 persistence ledger
+  （P5.2B）、Runtime、API 与 Task 执行均未实现，P5.2B+ frozen。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
@@ -647,6 +692,7 @@ Feature Gate 保持 false，P34.7/P5.0/P5.1 production 保持 blocked/not_proven
 | `migrations/**`, ORM models | fresh install、升级、所有 global/tenant schema | backup/restore、downgrade guard、sentinel tests、应用兼容窗口 | INV-002, INV-006, INV-008, INV-009 |
 | `sdk/**` | workload client public contract | Gateway OpenAPI、snapshot、Python/TS parsers、deadline/credential handling | INV-003, INV-004, INV-005, INV-010 |
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
+| `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
@@ -946,6 +992,38 @@ veto 0）：P34.7 formal state 非 ready、activation 关闭、九项 production
 即 blocked"的结论。该 validator 不读取根 `.env`、不连接数据库、不启动
 任何 Phase 5 运行时组件。
 
+### 11.12 P5.2A Agent Task ledger contract preflight
+
+```powershell
+python scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only
+python scripts/production/validate_p5_2a_task_ledger_contract.py --verify
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p5_2a_task_ledger_contract.py `
+  tests/test_p5_1_registry_contract.py `
+  tests/test_p5_0_admission.py `
+  tests/test_p34_7_production_composition.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check `
+  src/omnibase/production/phase5_task_ledger_contract.py `
+  tests/test_p5_2a_task_ledger_contract.py `
+  ../scripts/production/validate_p5_2a_task_ledger_contract.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check `
+  src/omnibase/production/phase5_task_ledger_contract.py `
+  tests/test_p5_2a_task_ledger_contract.py `
+  ../scripts/production/validate_p5_2a_task_ledger_contract.py
+```
+
+`--validate-only` 只证明合同有效；`--verify` 必须在提交后的 fresh clean
+checkout 运行。当前外部证据未齐时正确结果是 `blocked/not_proven`（exit 2，
+veto 0）：P34.7/P5.0/P5.1 formal state 非 ready、activation 关闭、
+persistence ledger/Runtime 未实现。P5.2A 与 P5.0/P5.1A 的差异：**任何
+Feature Gate 解析为 `true` 或 `activation_requested=true` 都是 veto**
+（不是 blocker）。该 validator 不读取根 `.env`、不连接数据库、不启动
+任何 Phase 5 运行时组件，也不创建 Task Lease 或真实 Task/Run/Attempt。
+P5.2A 不需要 disposable PostgreSQL Gate（合同禁止访问数据库；若实现
+需要数据库才能验证，说明已越过 P5.2A 边界）。
+
 ## 12. 故障恢复路径
 
 ### 12.1 身份或跨 Tenant 风险
@@ -1042,7 +1120,7 @@ veto 0）：P34.7 formal state 非 ready、activation 关闭、九项 production
 - 在对应 production Runner/Broker/Gateway/Overlay 联合 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
 - P34.5 的源码/协议解冻与 production deployment Gate 必须分开报告。当前已有目标 Linux、Broker、Headscale control-plane 和 split-process Gateway disposable evidence，但 production Core wiring、真实成员 Overlay 数据面或非 disposable tenant/RAG 任一直接证据缺失时，对应 wiring 仍继续 fail-closed；不能用字段预留、单元测试或本地 smoke 自动解冻。
 
-Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 只交付 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate 与 P34.7 Evidence Manifest validator），它只返回 `blocked/not_proven` 决策，不解冻 Phase 5 Runtime，也不预装任何 Planner/Executor/Agent 代码；INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map 的已实现集。
+Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 只交付 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate 与 P34.7 Evidence Manifest validator），它只返回 `blocked/not_proven` 决策，不解冻 Phase 5 Runtime，也不预装任何 Planner/Executor/Agent 代码；INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map 的已实现集。P5.1A/B/C 已交付 Registry 合同、内部持久化地基与 Browser 控制 API（production 默认 fail-closed）；P5.2A 只交付 Task/Run/Lease/fencing 账本的离线合同预检，不解锁 P5.2 persistence ledger（P5.2B）或任何 Agent Runtime/Planner/Executor/scheduler/worker，也不创建 Task Lease 或真实 Task/Run/Attempt。
 
 ## 14. 修改完成时的交接格式
 

@@ -436,3 +436,69 @@ Browser principal（JWT）是必要非充分条件，role 以当前成员资格�
 5. 未实现 Definition/Version 创建、migration 0011、Runtime/编排；
    三个 Feature Gate 保持 false；P34.7/P5.0/P5.1 production 保持
    `blocked/not_proven`；P5.2+ frozen。
+
+---
+
+# Phase 5 威胁模型补充：P5.2A Agent Task Ledger Contract Preflight
+
+> 状态：P5.2A 离线合同预检已实现。P5.2 persistence ledger、Agent Runtime、
+> Planner、Executor、scheduler、worker、模型/工具调用**均未实现**；P5.2
+> production 为 `blocked/not_proven`；P5.2B+ 保持 frozen。本补充只覆盖
+> P5.2A 合同与 validator 自身的安全属性，不建立任何 Agent Runtime /
+> Task 执行安全主张。
+
+## P5.2A 资产与信任边界
+
+受保护资产：
+
+- AgentTask/AgentRun/AgentStep/AgentAttempt/TaskLease/Effect/Checkpoint
+  离线 strict DTO 与 canonical digest；
+- 8 个 hash profile 的封闭字段集与 exact-replay/stable-conflict 语义；
+- 12 维预算账本与 limit/reserved/committed/released/remaining 不变量；
+- Task Lease TTL 与 deadline/Run Lease/Node attestation/Grant/policy
+  五组 expiry 的边界合同；
+- identity stages 字段规则表（required/not-yet/immutable/core-generated/
+  submittable/forbidden）；
+- sealed contracts/threat model/maintainer map digest；
+- P34.7/P5.0/P5.1 formal state 与 migration 基线（0001–0010）。
+
+信任区域与 P5.0 相同；决策层 `TaskLedgerContractGate` 是纯函数验证器，
+无数据库/网络/进程副作用，模块 import 白名单（stdlib +
+omnibase.production）由 AST 测试强制。
+
+## P5.2A 威胁与控制
+
+| 威胁 | 控制 |
+|---|---|
+| 把合同当实现（"有合同=Task 账本完成"） | report 恒输出 `task_ledger_orm_created=false`、`task_ledger_migration_created=false`、`agent_invocation_api_exposed=false`、`task_execution_activated=false`；源码边界扫描拒绝 forbidden 包与 migration 0011 |
+| Browser/Workload 提交 core-generated 或未生成字段（runtime_instance_id、workload thumbprint、request_hash、lease/fencing） | identity stages 闭集表：`core_generated`/`not_yet_generated`/`forbidden` 字段提交即拒绝，稳定 reason code |
+| Browser JWT 混入 workload DTO | 身份字段宇宙闭集 + strict DTO `extra="forbid"`；未知字段（browser_jwt/authorization 等）拒绝 |
+| 调用方 request_hash override 或 digest 漂移 | `request_hash_override` 字段拒绝；`request_hash` 必须等于 profile canonical digest |
+| 同 key 复用不同 operation/payload 伪装 exact replay | `classify_replay` 稳定 conflict；只有同 key+同 operation+同 canonical payload 是 exact replay |
+| Task Lease 越过 deadline/Run Lease/attestation/Grant/policy 最早 expiry | `LeaseExpiryBounds` 逐项比较，五个独立 reason code |
+| Task/Node/Run fencing 回退或 stale holder 提交 | lease 与 run 的 run_fencing/node_fencing/workspace_generation 逐项一致校验；retry 必须提高 task fencing |
+| terminal Run/Attempt/Effect 复活 | 状态机闭集：终态无出口；`unknown` 永不 replay |
+| cancel 把跨 provider boundary 的 unknown 伪装成成功 | `validate_cancel_target`/`validate_cancel_attempt`：dispatching/running 进入 reconciliation；unknown effect 存在时禁止 cancel-success 伪装 |
+| checkpoint 携带 runtime 状态 | checkpoint DTO 无 token/lease/PID/socket/handle 字段；PID/socket/provider_handle 提交即 "unexpected fields" |
+| 模型输出被当作 committed evidence | `validate_committed_evidence` 只接受 operation/effect/audit ledger |
+| 预算扩大/负数/浮点/NaN/Infinity/wildcard/未知维度 | strict 整数 + ceiling + 闭集维度 + parse_constant 拒绝非有限数；reserved/committed/released 不变量 |
+| migration 0011 或 P5.2 ORM/router/runtime 源码出现 | forbidden source paths + migration revision 集合漂移 → veto |
+| gate 被打开或写成 TRUE/yes/on/1 | gate true → **veto**（P5.2A 比 P5.0/P5.1A 更严格）；truthy token → veto；合同内 gate true → 无效合同 |
+| `activation_requested=true` | 无效合同（解析拒绝）+ verify veto |
+| 合同/evidence 经 symlink/reparse 指向根 `.env` | P5.0 修补后的逐分量 `_safe_repo_path` 规则复用；`sealed_contracts` 路径禁止根 `.env` |
+| sealed digest 漂移 / dirty checkout / remote 不符 | clean-checkout veto；remote 精确匹配；sealed digest 逐字节重算 |
+| OpenAPI 出现 agent-invocation/agent-task/gateway-agent 端点 | snapshot digest + 路径扫描 → veto |
+| `not_proven` 被计为 passed | evidence 处理与 P5.0/P5.1A 一致，只进 blockers |
+
+## P5.2A 完成定义
+
+1. 离线 strict DTO/closed-set 合同、8 个 hash profile、validator、50 项
+   负向矩阵、威胁模型、维护者地图与 CI validate-only Gate 全部通过；
+2. `--verify` 在 fresh clean checkout 可复现 `blocked/not_proven`
+   （exit 2，veto 0）；
+3. 未实现任何 ORM/migration 0011/router/Runtime/Planner/Executor/
+   scheduler/worker；三个 Feature Gate 保持 false；P34.7/P5.0/P5.1
+   production 保持 `blocked/not_proven`；P5.2 persistence 未实现。
+
+任何缺失外部证据时正确输出是 `blocked/not_proven`；不得把 P5.2A 写成
+P5.2 PASS，也不得据此解冻 Phase 5 Runtime。

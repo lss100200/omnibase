@@ -1494,3 +1494,85 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
   Gate 必须在 Alembic 前实际执行 `backend/tests/destructive_preflight.py`；
   Compose 必须显式 `--env-file .env.example`，且只有容器、网络、卷清理计数
   全部为 0 后才能发布 passed evidence。不得触碰业务数据库。
+
+## INV-043 phase5-task-ledger-contract-preflight
+
+**权威源码**
+
+- `backend/src/omnibase/production/phase5_task_ledger_contract.py`
+- `deployment/production/phase5-task-ledger-contract.example.json`
+- `scripts/production/validate_p5_2a_task_ledger_contract.py`
+- `docs/phase-5-task-ledger-contract.md`
+- `backend/tests/test_p5_2a_task_ledger_contract.py`
+
+**为何存在**
+
+P5.2A 只是 P5.2 Agent Task/Run/Step/Attempt 账本的**离线合同预检**，不是
+账本实现。合同必须保持逻辑化（无物理 locator/凭据）、不可变（sealed
+manifest digest 基于 canonical 原始 UTF-8 字节）、无秘密（无 API
+key/base_url/Authorization/cookie/token/私钥）且非运行态（无 P5.2
+ORM/migration `0011`/router/Runtime/Planner/Executor/scheduler/worker/
+模型/工具调用）。P34.7、P5.0、P5.1 production 任一未 `ready` 时，P5.2A 恒
+`blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；**任何 gate
+意外解析为 `true` 或 `activation_requested=true` 都是 veto**（比 P5.0/
+P5.1A 的 blocker 更严格）。源码树出现任何 P5.2 ORM/migration/router/
+runtime 包或 migration revision 集合漂移都是 veto。本不变量不得声称
+Task 账本持久化、Task Lease 发放、预算 commit/release、cancellation
+runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持未实现。
+
+**允许的改法**
+
+- 收紧 DTO 闭集、hash profile 字段集、budget ceiling、deadline/TTL
+  上限或 identity stage 规则；digest 始终按 canonical JSON 原始 UTF-8
+  字节计算。
+- 为新的离线语义增加负向 fixture（50 项矩阵）；每项必须断言稳定 reason
+  code。
+- 更新 P34.7/P5.0/P5.1 evidence 或合同文档时，在同一变更中同步更新
+  P5.2A 合同的 sealed digest（含 P5.1 registry contract digest）并重新
+  验证；P5.2A 修改的 sealed 文档（threat-model、maintainer map、
+  security-invariants）必须先同步 P5.1A 合同的 sealed digest。
+
+**禁止的改法**
+
+- 在本模块或 validator 中实现/预装 P5.2 ORM、migration `0011`、
+  agent-invocation/agent-task router、Browser/Workload SDK、Agent
+  Runtime、Planner、Executor、dispatcher、scheduler、worker、Celery
+  task、polling/heartbeat loop、model/tool provider、Memory/Skill
+  runtime 或 shell/SQL/HTTP tool；以"代码存在但 gate 关闭"为理由同样
+  禁止。
+- 允许 Task Lease 越过 deadline/Run Lease/Node attestation/Grant/
+  policy 的最早 expiry；允许 Task/Node/Run fencing 或 attempt number
+  回退；允许 terminal Run/Attempt/Effect 复活；允许 `unknown` 自动
+  replay；允许 cancel 伪装 unknown 为成功；允许 checkpoint 携带
+  token/lease/PID/socket/provider handle；允许模型输出作为 committed
+  evidence；允许调用方扩大预算或覆盖 request hash。
+- 允许 Browser 提交 core-generated/未生成字段（runtime_instance_id、
+  workload_identity_thumbprint、request_hash、lease/fencing），或允许
+  Browser JWT 进入 workload DTO。
+- 让 validator 读取根 `.env`、凭据、数据库、migration 或外网；把 report
+  写到仓库内；把 `not_proven` 计为 passed；把 safety negatives 写死为
+  true 而不经源码边界/import 约束/负向测试证明。
+- 把 P5.2A 写成 P5.2 PASS；把 P34.7 改成 ready；打开 Phase 5 Feature
+  Gate；把 P5.2B 的 ORM/migration/内部 service 伪装成已完成 Runtime 或
+  公开 API。
+
+**必须运行的测试**
+
+- `backend/tests/test_p5_2a_task_ledger_contract.py`（50 项负向矩阵：
+  DTO 闭集、hash profile、预算不变量、TTL 边界、fencing 单调、terminal
+  resurrection、unknown no-replay、cancel 语义、identity stages、
+  symlink/reparse `.env` 逃逸、dirty checkout、gate true veto、forbidden
+  包/migration 0011、OpenAPI agent endpoint、仓库内 report、not_proven
+  计数、safety negatives）
+- `python scripts/production/validate_p5_2a_task_ledger_contract.py
+  --validate-only`（合法合同 exit 0，永不 ready）
+- 提交后从 fresh clean checkout 运行 `--verify`；当前正确结果是
+  `blocked/not_proven`（exit 2，veto 0）。
+
+**失败恢复**
+
+保持 gate false、`activation_requested=false`，删除/回退任何意外出现的
+P5.2 runtime/ORM/API 源码，从新的 clean checkout 重跑 validator。sealed
+digest 漂移时保留原合同与 report 取证，更新证据或合同后重新封存并
+re-verify。任何情况下都不得从该模块启动 Phase 5 运行时组件或访问业务
+数据库。

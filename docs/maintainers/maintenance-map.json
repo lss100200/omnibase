@@ -478,6 +478,21 @@
         "sdk/python/tests/test_registry_browser_client.py",
         "sdk/typescript/tests/registry-browser.test.mjs"
       ]
+    },
+    {
+      "id": "INV-043",
+      "title": "P5.2A Agent Task ledger contract preflight stays logical, sealed and non-runtime",
+      "document": "docs/maintainers/security-invariants.md#inv-043-phase5-task-ledger-contract-preflight",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+        "deployment/production/phase5-task-ledger-contract.example.json",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "docs/phase-5-task-ledger-contract.md",
+        "docs/phase-5-threat-model.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_2a_task_ledger_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -1688,6 +1703,66 @@
         "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
         "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
         "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names, run destructive_preflight.py before Alembic, and publish passed evidence only after zero labeled resources remain."
+      ]
+    },
+    {
+      "id": "agent-task-ledger-contract",
+      "name": "P5.2A offline Agent Task / Run / Lease / Fencing ledger contract preflight (no ORM/migration/router/runtime)",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "deployment/production/phase5-task-ledger-contract.example.json",
+        "backend/tests/test_p5_2a_task_ledger_contract.py",
+        "docs/phase-5-task-ledger-contract.md",
+        "docs/phase-5-threat-model.md",
+        "docs/phase-5-agent-runtime-implementation-plan.md",
+        "docs/roadmap.md",
+        "docs/handover-report.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentTaskInvocation",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentRunBinding",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentStep",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:AgentAttempt",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLeaseContract",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:BudgetLedgerSnapshot",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:LeaseExpiryBounds",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLedgerContractGate",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:TaskLedgerContractConfig",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:compute_request_hash",
+        "backend/src/omnibase/production/phase5_task_ledger_contract.py:load_task_ledger_contract_config",
+        "scripts/production/validate_p5_2a_task_ledger_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline AgentTask/AgentRun/AgentStep/AgentAttempt/TaskLease/Effect/Checkpoint strict DTO contracts",
+        "Eight canonical hash profiles with exact-replay and stable-conflict semantics",
+        "Twelve-dimension budget ledger with limit/reserved/committed/released/remaining invariants",
+        "P5.2A task ledger contract preflight report (blocked/not_proven while P34.7/P5.0/P5.1 are not ready)",
+        "Sealed contract/evidence digests and source-boundary scan (no P5.2 ORM/migration 0011/router/runtime)"
+      ],
+      "depends_on": [
+        "phase5-registry-contract-preflight",
+        "phase5-admission"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-035",
+        "INV-039",
+        "INV-040",
+        "INV-043"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_2a_task_ledger_contract.py tests/test_p5_1_registry_contract.py tests/test_p5_0_admission.py tests/test_p34_7_production_composition.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_task_ledger_contract.py tests/test_p5_2a_task_ledger_contract.py ../scripts/production/validate_p5_2a_task_ledger_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_task_ledger_contract.py tests/test_p5_2a_task_ledger_contract.py ../scripts/production/validate_p5_2a_task_ledger_contract.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 feature gate false, activation_requested=false and every P5.2A DTO logical/immutable/secret-free; any true gate, activation_requested=true, P5.2 ORM/migration 0011/router/runtime package or Planner/Executor/scheduler/worker package appearing in the source tree is a veto.",
+        "When P34.7/P5.0/P5.1 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; sealed docs shared with P5.1A must be re-sealed in the P5.1A contract in the same change.",
+        "P5.2A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, never create a Task Lease or real Task/Run/Attempt, and never read the root .env or a database."
       ]
     },
     {

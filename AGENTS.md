@@ -69,7 +69,12 @@ runtime evidence; then correct the stale documentation in the same change.
   controlled adapter are all present. Browser private-write, direct
   Sandbox/Runner access to PostgreSQL/Redis/MinIO, canonical mutation,
   production provider activation, Agent Runtime, and orchestration remain
-  frozen.
+  frozen. P5.2A is the offline Agent Task/Run/Lease/fencing ledger contract
+  preflight only: it never creates a Task Lease or a real Task/Run/Attempt,
+  never starts a Planner/Executor/scheduler/worker, and remains
+  `blocked/not_proven`; the P5.2 persistence ledger, Agent Runtime and
+  invocation APIs stay frozen until the roadmap and handover explicitly
+  unlock them.
 - P34.4 membership mutations serialize on the tenant-bound Workspace aggregate,
   then re-lock the actor and target membership before evaluating the active-owner
   invariant. Template registration revalidates the live tenant administrator in

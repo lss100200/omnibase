@@ -178,6 +178,22 @@ Gate：跨 Tenant/Workspace 安装拒绝；同 key 不同 digest 冲突；禁用
 
 ## 5. P5.2 Task、Run、Lease 与执行账本
 
+> **P5.2A 实施状态（2026-08-04）**：P5.2 的**离线合同预检**已实现并验证
+> （`backend/src/omnibase/production/phase5_task_ledger_contract.py` +
+> `deployment/production/phase5-task-ledger-contract.example.json` +
+> `scripts/production/validate_p5_2a_task_ledger_contract.py` +
+> `backend/tests/test_p5_2a_task_ledger_contract.py` +
+> `docs/phase-5-task-ledger-contract.md`）。P5.2A 只冻结合同（身份层级、
+> 状态机、Task Lease/fencing 复用规则、预算 12 维、8 个 hash profile、
+> identity stages、checkpoint 限制），**不实现**任何 P5.2 ORM、migration
+> `0011`、Agent Invocation 路由、Runtime/Planner/Executor/scheduler/
+> worker、模型/工具调用，也不创建 Task Lease 或真实 Task/Run/Attempt。
+> 完整 P5.2 尚未标记完成：P5.2B persistence ledger（ORM + migration +
+> 事务服务 + guarded disposable PostgreSQL Gate）未实现，必须在主 Agent
+> 独立复核 P5.2A 通过后才允许规划。P5.2A `--verify` 当前恒为
+> `blocked/not_proven`（exit 2）；三个 Feature Gate 保持 false；
+> `gate true` 或 `activation_requested=true` 是 veto。
+
 - 创建 AgentTask 时冻结 request hash、Workspace generation、AgentVersion、模型策略、Resource scope、预算和 deadline。
 - 启动 AgentRun 必须复用 P34.4 Run/Node/Lease/runtime/workload identity，不创建第二套独立身份系统。
 - Run lease 与每个 Step lease 分离；Step claim 绑定当前 Run lease、Node fencing、Workspace generation 和 Attempt number。

@@ -1934,6 +1934,61 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    `database_sentinel_verified=true`、业务数据库访问/迁移 false、
    physical locator false、cleanup `0/0/0`，且发布后 source seal 立即通过。
 
+### P5.2A Agent Task ledger contract preflight（2026-08-04）
+
+> P5.2A 是 P5.2 唯一被允许的离线部分：AgentTask/Invocation → AgentRun →
+> AgentStep → AgentAttempt → P34.4 Workspace Run → RuntimeInstance →
+> WorkloadIdentity 的 strict DTO/合同 + 纯离线 validator。没有 P5.2 ORM、
+> migration `0011`、Agent Invocation 路由、Browser/Workload SDK、Agent
+> Runtime、Planner/Executor/scheduler/worker、模型/工具调用、Task Lease
+> 发放或真实 Task/Run/Attempt；P5.2 persistence ledger（P5.2B）未实现。
+> 三个 Feature Gate 保持 false；P34.7/P5.0/P5.1 production 恒
+> `blocked/not_proven`；P5.2B+ frozen。
+
+1. **合同与 DTO**：`backend/src/omnibase/production/phase5_task_ledger_contract.py`
+   冻结 36 个逻辑身份字段与 9 个 identity stages（required /
+   not_yet_generated / immutable / core_generated / browser|workload
+   submittable / forbidden；Browser 永不提交 runtime_instance_id、
+   workload thumbprint、request_hash 或 lease/fencing），闭集状态机
+   （Task 10 态 / Step 6 态 / Attempt 9 态 / Effect 5 态 / AgentRun 7 态，
+   终态不可复活、`unknown` 永不自动 replay、cancel 不伪装 unknown 为
+   成功、模型输出不是 committed evidence）、Task Lease 对 P34.4 Run
+   Lease/Node attestation/Workspace generation 的四组一致性与五组 expiry
+   边界（deadline/Run Lease/attestation/Grant/policy）、12 维预算账本
+   （limit/reserved/committed/released/remaining 不变量）、8 个 canonical
+   hash profile（exact replay / stable conflict）与 checkpoint
+   只引用 committed logical state 的限制。
+2. **合同配置与 validator**：
+   `deployment/production/phase5-task-ledger-contract.example.json` 封存
+   P34.7/P5.0/P5.1 决策 digest、migration 基线（0001–0010）、六个 sealed
+   合同/模块/测试 digest、闭集 hash profiles 与 identity stages 表并
+   内嵌正向示例（task/run/step/attempt×2/task lease/effect/checkpoint/
+   budget ledger/lease expiry bounds）。
+   `scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only`
+   永不 ready；`--verify` 复用 P5.0 修补后的逐分量 symlink/reparse 路径
+   规则与仓库外 report 要求，校验 Git provenance、P34.7/P5.0/P5.1 formal
+   state、sealed digest、migration 集合/head、forbidden source paths、
+   OpenAPI 无 agent invocation 端点与三个 gate；**gate true 或
+   activation_requested=true 是 veto**（比 P5.0/P5.1A 的 blocker 更严）。
+   13 项 safety negatives 恒 false，由模块 import 白名单（AST 测试）与
+   源码边界扫描证明。
+3. **当前状态**：P5.2A offline contract `implemented / verified`；P5.2
+   persistence ledger（P5.2B）/ Agent Runtime / Task 执行均
+   `not implemented`；P5.2 production `blocked/not_proven`；P5.2B+ frozen。
+4. **验证**：P5.2A focused 142 项测试（含 50 项负向矩阵，稳定 reason
+   code）+ P5.0/P5.1A 回归；Backend non-integration 全套；Mypy、Ruff
+   check/format、compileall、maintainer map validator、benchmark
+   validator、Compose config 与 `git diff --check` 全部通过。
+5. **P5.1A 合同同步**：P5.2A 修改了三个 P5.1A sealed 文档
+   （threat-model、maintenance-map、security-invariants），已同步重算并
+   回填 `phase5-registry-contract.example.json` 的 sealed digest；P5.1A
+   `--verify` 继续 `blocked/not_proven`（exit 2）。P5.1B/P5.1C 源码与
+   evidence 未改动，其 disposable Gate evidence 继续有效。
+6. **明确未发生**：未创建 P5.2 ORM/migration 0011/router/Runtime/
+   Planner/Executor/scheduler/worker；未创建 Task Lease 或真实
+   Task/Run/Attempt；未调用模型/工具；未读取根 `.env`；未访问或迁移
+   业务数据库；未 push/PR；未修改 P5.1B/P5.1C 业务语义。
+
 ## 八、常用命令
 
 ```bash
