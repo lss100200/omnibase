@@ -85,6 +85,10 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _LOGICAL_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 _LOGICAL_REF_RE = re.compile(r"^[a-z0-9][a-z0-9_:-]{1,127}$")
+# Offset closed set for the ISO-8601 timestamp contract: [+-]HH:MM with the
+# hour in 00-23 and the minute in 00-59 (enforced in _parse_utc_timestamp,
+# never left to datetime.fromisoformat normalization).
+_UTC_OFFSET_RE = re.compile(r"^(?P<sign>[+-])(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2})$")
 # Server-owned ceiling for any single budget value or integer identity field.
 _MAX_INT = (1 << 63) - 1
 
@@ -509,14 +513,30 @@ class ReplayClass(StrEnum):
 
 
 def _parse_utc_timestamp(text: str, *, name: str) -> datetime:
+    # The timestamp contract is a closed set: YYYY-MM-DDTHH:MM:SS with a Z or
+    # a +HH:MM / -HH:MM offset where the offset hour is 00-23 and the offset
+    # minute is 00-59. The offset spelling is validated explicitly (never
+    # relying on datetime.fromisoformat, which silently normalizes +01:60 to
+    # +02:00). Any parse, offset-arithmetic or UTC-normalization failure --
+    # including overflow at the 0001-01-01 / 9999-12-31 year bounds -- converts
+    # to TaskLedgerContractError; native ValueError/OverflowError never escape.
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    offset_part = normalized[-6:]
+    offset_match = _UTC_OFFSET_RE.fullmatch(offset_part)
+    if offset_match is None:
+        raise TaskLedgerContractError(f"{name} must be an ISO-8601 UTC timestamp")
+    if int(offset_match.group("hour")) > 23 or int(offset_match.group("minute")) > 59:
+        raise TaskLedgerContractError(f"{name} must be an ISO-8601 UTC timestamp")
     try:
         parsed = datetime.fromisoformat(normalized)
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         raise TaskLedgerContractError(f"{name} must be an ISO-8601 UTC timestamp") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise TaskLedgerContractError(f"{name} must be an ISO-8601 UTC timestamp")
-    return parsed.astimezone(UTC)
+    try:
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError) as exc:
+        raise TaskLedgerContractError(f"{name} must be an ISO-8601 UTC timestamp") from exc
 
 
 def _strict_non_negative_int(value: object, *, name: str) -> int:
@@ -2277,10 +2297,13 @@ class TaskLedgerContractConfig:
             ledger, tasks_by_id, runs_by_id, steps_by_id, leases_by_id
         )
         self._validate_attempt_ordering(attempts_by_step)
-        self._validate_task_fencing_monotonic(ledger.attempts)
         self._validate_task_lease_references(
             ledger, tasks_by_id, attempts_by_id, runs_by_id, leases_by_id
         )
+        # The fencing chronology is a ledger-wide property, so it runs after
+        # the per-attempt ordering and the lease reference/binding checks;
+        # those structural errors are reported first when both apply.
+        self._validate_task_fencing_monotonic(ledger.task_leases)
         self._validate_effect_references(ledger, attempts_by_id)
         self._validate_checkpoint_references(ledger, tasks_by_id, attempts_by_id)
 
@@ -2466,29 +2489,34 @@ class TaskLedgerContractConfig:
                 )
 
     @staticmethod
-    def _validate_task_fencing_monotonic(attempts: tuple[AgentAttempt, ...]) -> None:
-        # task_fencing_token is a per-Task monotonically increasing sequence:
-        # within a single Task, every Task Lease claim (across all of its Steps
-        # and Attempts) must use a strictly higher token so an old holder can
-        # never resubmit. Different Tasks own independent fencing sequences, so
-        # Task A and Task B may each start at token 1; the sequence must never
-        # be flattened into a system-wide or Run-wide shared sequence.
+    def _validate_task_fencing_monotonic(leases: tuple[TaskLeaseContract, ...]) -> None:
+        # task_fencing_token is a per-Task monotonically increasing sequence
+        # whose authoritative source is the append-only TaskLease ledger, never
+        # the Attempt records: terminal attempts must clear task_lease_id and
+        # task_fencing_token (historical holder identity lives only in the
+        # lease), so scanning attempts would silently drop the history a
+        # terminal attempt's completed/revoked/expired lease carries and would
+        # accept a regressing holder. Every lease state (active, completed,
+        # revoked, expired) participates; within a single Task every claim
+        # across all of its Steps and Attempts must use a strictly higher token
+        # so an old holder can never resubmit. Different Tasks own independent
+        # fencing sequences, so Task A and Task B may each start at token 1;
+        # the sequence must never be flattened into a system-wide or Run-wide
+        # shared sequence.
         #
-        # Chronology is the normalized UTC instant of attempt.created_at, never
-        # the raw string: the project timestamp contract allows Z, +HH:MM and
-        # -HH:MM spellings, so string order is not chronological order and
-        # would let an illegal token regression (an older wall-clock claim
-        # carrying a lower token) be tidied into an increasing sequence.
-        # When two fenced claims of the same Task normalize to the exact same
-        # UTC instant the contract has no trusted secondary ordering field, so
-        # the ledger fails closed instead of inventing an order: never
-        # attempt_id lexicography, never token values, never input-array order.
+        # Chronology is the normalized UTC instant of task_lease.created_at,
+        # never the raw string: the project timestamp contract allows Z, +HH:MM
+        # and -HH:MM spellings, so string order is not chronological order and
+        # would let an illegal token regression be tidied into an increasing
+        # sequence. When two leases of the same Task normalize to the exact
+        # same UTC instant the contract has no trusted secondary ordering
+        # field, so the ledger fails closed instead of inventing an order:
+        # never input-array order, never task_lease_id/attempt_id
+        # lexicography, never token values.
         fenced_by_task: dict[str, list[tuple[datetime, int]]] = {}
-        for attempt in attempts:
-            token = attempt.task_fencing_token
-            if token is not None:
-                instant = _parse_utc_timestamp(attempt.created_at, name="attempt.created_at")
-                fenced_by_task.setdefault(attempt.task_id, []).append((instant, token))
+        for lease in leases:
+            instant = _parse_utc_timestamp(lease.created_at, name="task_lease.created_at")
+            fenced_by_task.setdefault(lease.task_id, []).append((instant, lease.task_fencing_token))
         for task_id, task_tokens in fenced_by_task.items():
             ordered = sorted(task_tokens, key=lambda item: item[0])
             for (previous_instant, previous_token), (

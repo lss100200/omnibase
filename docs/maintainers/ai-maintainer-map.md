@@ -585,13 +585,21 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   `attempt_number` 按 (task_id, step_id) 分组且**必须从 1 起精确连续**
   （重复/回退/跳号/非 1 起始均拒绝，排序不得"整理"为合法）；`task_fencing_token`
   是 **per-Task**（非系统级/Run 级）单调序列——同一 Task 内跨 Step 单调，
-  不同 Task 各自独立、可各从 token 1 开始；fencing 时间轴是
-  `attempt.created_at` 经 `_parse_utc_timestamp` 归一化后的 **UTC instant**
-  （timestamp 合同允许 `Z`/`+HH:MM`/`-HH:MM`，原始字符串顺序不等于 UTC
-  顺序，禁止按字符串排序判单调，否则非法 token 回退会被"整理"为合法），
-  同一 Task 内两个 fenced claim 归一化为**同一 UTC instant** 时必须
-  fail closed（无可信第二排序字段，不得用输入数组顺序/attempt_id 字典序/
-  token 自身排序整理为合法）；Attempt 与 TaskLease **双向**精确
+  不同 Task 各自独立、可各从 token 1 开始；fencing 的**权威数据源是
+  append-only TaskLease 账本**（`active`/`completed`/`revoked`/`expired` 全部
+  参与，按 `task_lease.created_at` 排序；terminal Attempt 清空
+  `task_lease_id`/`task_fencing_token` 不抹除其历史 Lease——Attempt 只用于
+  active Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性）；
+  fencing 时间轴是 `task_lease.created_at` 经 `_parse_utc_timestamp` 归一化
+  后的 **UTC instant**（timestamp 合同允许 `Z`/`+HH:MM`/`-HH:MM`，原始
+  字符串顺序不等于 UTC 顺序，禁止按字符串排序判单调，否则非法 token 回退会
+  被"整理"为合法），同一 Task 内两条 Lease 归一化为**同一 UTC instant** 时
+  必须 fail closed（无可信第二排序字段，不得用输入数组顺序/
+  task_lease_id/attempt_id 字典序/token 自身排序整理为合法）；timestamp
+  offset 是闭集（小时 `00–23`、分钟 `00–59`，`+01:60`/`+00:99` 显式拒绝，
+  不依赖 fromisoformat 归一化），任何解析/offset 运算/UTC 归一化失败（含
+  年份边界溢出）稳定转 `TaskLedgerContractError`，不泄漏原生异常；Attempt
+  与 TaskLease **双向**精确
   绑定（active lease 必须绑定恰好一个 leased/dispatching/running Attempt 且
   该 Attempt 指回并共享 fencing token；孤儿 active lease 拒绝）、单 active
   lease、current lease 必须 active。

@@ -1550,13 +1550,24 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
   1 起精确连续：重复/回退/跳号/非 1 起始均拒绝）或 Task fencing 跨 Step
   回退；允许把 task_fencing_token 拍平为系统级或 Run 级共享序列（它必须是
   per-Task 序列：同一 Task 内跨 Step 单调，不同 Task 各自独立、可各从 1
-  开始）；允许按 `attempt.created_at` 的**原始 ISO-8601 字符串**排序判定
-  fencing 单调（时间轴必须是 `_parse_utc_timestamp` 归一化后的 UTC
-  instant：`Z`/`+HH:MM`/`-HH:MM` 都合法，字符串顺序不等于真实 UTC 顺序，
-  按字符串排序会把非法 token 回退"整理"成升序）；允许同一 Task 内两个
-  fenced claim 归一化为**同一 UTC instant** 时仍按任意顺序通过（合同没有
-  可信第二排序字段，必须 fail closed：不得依赖输入数组顺序、不得用
-  attempt_id 字典序或 token 自身排序把歧义整理为合法）；允许
+  开始）；允许以 Attempt 记录作为 fencing 的权威数据源（**必须是
+  append-only TaskLease 账本**：`active`/`completed`/`revoked`/`expired`
+  全部参与、按 `task_lease.created_at` 排序，terminal Attempt 清空
+  `task_lease_id`/`task_fencing_token` 不抹除其历史 Lease；Attempt 只用于
+  active Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性，
+  不能充当历史 fencing 账本）；允许按 `task_lease.created_at` 的**原始
+  ISO-8601 字符串**排序判定 fencing 单调（时间轴必须是
+  `_parse_utc_timestamp` 归一化后的 UTC instant：`Z`/`+HH:MM`/`-HH:MM` 都
+  合法，字符串顺序不等于真实 UTC 顺序，按字符串排序会把非法 token 回退
+  "整理"成升序）；允许同一 Task 内两条 Lease 归一化为**同一 UTC instant**
+  时仍按任意顺序通过（合同没有可信第二排序字段，必须 fail closed：不得
+  依赖输入数组顺序、不得用 `task_lease_id`/`attempt_id` 字典序或 token
+  自身排序把歧义整理为合法）；允许 timestamp offset 越界被静默接受或泄漏
+  原生异常（offset 是闭集：小时 `00–23`、分钟 `00–59`，`+01:60`/`+00:99`
+  显式拒绝，不依赖 `datetime.fromisoformat` 归一化；任何解析、offset 运算
+  或 UTC 归一化失败——含 `0001-01-01T00:00:00+23:59` 与
+  `9999-12-31T23:59:59-23:59` 的年份边界溢出——都必须稳定转换为
+  `TaskLedgerContractError`，不得泄漏 `ValueError`/`OverflowError`）；允许
   pending/ready 携带 lease、leased/dispatching/running 缺失
   lease、terminal（含 unknown）保留 lease；允许 Attempt 引用另一 Attempt
   的 Lease、同 Attempt 双 active Lease 或 stale/revoked/expired lease 作为

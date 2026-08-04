@@ -232,16 +232,33 @@ running | committed | failed | unknown | cancelled`。
   holder 无法用旧 token 复活；**不同 Task 拥有互相独立的 fencing 序列**，
   Task A 与 Task B 可各自从 token 1 开始，不得把 task_fencing_token 拍平为
   系统级或 Run 级共享序列；
+- **fencing 的权威数据源是 append-only TaskLease 账本，不是 Attempt**：
+  terminal Attempt（`committed`/`failed`/`unknown`/`cancelled`）必须清除
+  `task_lease_id` 与 `task_fencing_token`，历史 holder 身份只存在于 Task
+  Lease 记录中；因此 fencing chronology 校验遍历 `ledger.task_leases` 的
+  **全部**历史记录（`active`/`completed`/`revoked`/`expired` 都参与，不能
+  只看 active），否则 terminal Attempt 的 completed/revoked/expired Lease
+  历史会被静默丢弃、回退的 holder 会被错误接受。Attempt 仍用于 active
+  Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性校验，但
+  不作为历史 fencing 账本；
 - **fencing 时间轴 = 归一化 UTC instant**：项目 timestamp 合同允许
   `Z`、`+HH:MM`、`-HH:MM` 三种写法，原始 ISO-8601 字符串顺序**不等于**真实
   UTC 顺序（如 `2026-08-02T23:11:00-01:00` 的字符串小于
   `2026-08-03T00:10:00Z`，但真实 UTC 是 00:11Z 晚于 00:10Z），因此校验必须
-  先把每个 `attempt.created_at` 用 `_parse_utc_timestamp` 归一化为 UTC
+  先把每个 `task_lease.created_at` 用 `_parse_utc_timestamp` 归一化为 UTC
   datetime 再排序，按 UTC 时间轴校验单调性——禁止按原始字符串排序（否则可
-  把非法 token 回退"整理"成升序从而绕过）；同一 Task 内两个 fenced claim
+  把非法 token 回退"整理"成升序从而绕过）；同一 Task 内两条 Lease
   归一化后落在**完全相同**的 UTC instant 时，合同没有可信的第二排序字段，
-  必须 **fail closed**（拒绝），不得依赖输入数组顺序、不得用 `attempt_id`
-  字典序冒充真实 claim 顺序、不得用 token 自身排序把歧义整理为合法；
+  必须 **fail closed**（拒绝），不得依赖输入数组顺序、不得用
+  `task_lease_id`/`attempt_id` 字典序冒充真实 claim 顺序、不得用 token
+  自身排序把歧义整理为合法；
+- **timestamp 闭集**：时间戳为 ISO-8601 `YYYY-MM-DDTHH:MM:SS` 带 `Z` 或
+  `±HH:MM` offset；offset 小时闭集 `00–23`、分钟闭集 `00–59`
+  （`+01:60`/`+00:99` 等非法 offset 显式拒绝，不依赖
+  `datetime.fromisoformat` 的静默归一化）；任何解析、offset 运算或 UTC
+  归一化失败（含 `0001-01-01T00:00:00+23:59` 与
+  `9999-12-31T23:59:59-23:59` 的年份边界溢出）都稳定转换为
+  `TaskLedgerContractError`，绝不泄漏原生 `ValueError`/`OverflowError`；
 - Task Lease 是 Task 级逻辑授权（绑定一个 Attempt 与当前 Run Lease/
   Node fencing/Workspace generation），每次 claim 分配更高 token。
 
@@ -305,6 +322,10 @@ running | committed | failed | unknown | cancelled`。
 - lease 未绑定当前 run lease / 当前 run fencing / 当前 node fencing /
   当前 workspace generation（四组逐一比较）；
 - lease 的 `task_fencing_token` 与 attempt 不一致；
+- 同一 Task 内 Task Lease **历史 fencing 回退**：`ledger.task_leases`
+  （active/completed/revoked/expired 全部）按 `task_lease.created_at` 归一化
+  UTC instant 排序后 token 必须严格递增；同一 Task 两条 Lease 归一化为
+  相同 UTC instant（无第二排序字段）或高 token 后出现低 token 一律拒绝；
 - lease `expires_at` 与 `lease_expiry_bounds.task_lease_expiry` 不一致；
 - lease TTL 超出 ceiling；`active` lease 立即过期；
 - `completed` lease 无最终 heartbeat。
@@ -574,6 +595,18 @@ assertion 不匹配均不报告 verified 且 fail closed（veto）、passed 引�
 必须通过；同 Task 两个 Attempt 用不同 offset 表达同一 UTC instant（token
 已递增）仍必须 fail closed（不得按 token/attempt_id/输入顺序整理为合法）；
 两个 Task 各自独立使用不同 offset 且各从 token 1 开始必须通过。
+
+第四轮独立复核新增反例（fencing 权威数据源 = TaskLease 账本 + timestamp
+parser 闭集）：completed/revoked/expired Lease token 9 @ 00:06Z 之后 active
+token 3 @ 00:10Z 均拒绝（terminal Attempt 清空 lease/token 不抹除历史）；
+completed 3 / revoked 9 / expired 15 / active 21 真实 UTC 严格递增通过；
+两条历史 Lease 用不同 offset 表达同一 UTC instant（token 3 → 9）fail
+closed；反转 `task_leases` 数组不改变接受/拒绝；Task A 与 Task B 各有历史
+且各从 token 1 开始通过；terminal Attempt 的 token 缺失不影响其历史 Lease
+参与 chronology（仅翻转历史 Lease token 即翻转接受/拒绝）；offset 分钟
+`+01:60`/`+00:99` 拒绝、`0001-01-01T00:00:00+23:59` 与
+`9999-12-31T23:59:59-23:59` 的 UTC 归一化溢出稳定转
+`TaskLedgerContractError`、合法 `Z`/正/负 offset 正向通过。
 
 ## 12. 决策语义
 

@@ -2153,6 +2153,79 @@ Compose config、`git diff --check` 与 clean-checkout 三项 `--verify`
 `blocked/not_proven`、`activation_allowed=false`、migration head 0010、
 三个 Phase 5 Feature Gate false；P5.2B/Agent Runtime 继续冻结。
 
+#### P5.2A 第四轮独立复核修复（2026-08-04）
+
+第四轮独立复核对上一轮修复提交判定 REJECT，指出一个 P1（fencing 权威数据源）
+与一个 P2（timestamp parser 闭集）；本轮关闭（新增本地修复提交，不 amend 原
+提交），状态保持 P5.2A `blocked/not_proven`、P5.2B/Agent Runtime frozen：
+
+1. **fencing 权威数据源改为 TaskLease 账本（P1）**：
+   `TaskLedgerContractConfig._validate_task_fencing_monotonic` 原只遍历
+   `ledger.attempts` 并收集 `task_fencing_token` 非空的 Attempt。合同要求
+   terminal Attempt（committed/failed/unknown/cancelled）清除
+   `task_lease_id`/`task_fencing_token`，历史 fencing 身份只存在于
+   append-only TaskLease 中——Attempt 扫描会静默丢弃 terminal Attempt 的
+   completed/revoked/expired Lease 历史。已接受的反例：committed Attempt
+   正确清空字段，其 completed Lease token 9 @ 00:06Z + heartbeat，后续
+   running Attempt 的 active Lease token 3 @ 00:10Z——真实 Lease chronology
+   9 → 3 是回退但原合同接受。改为遍历 `ledger.task_leases`（
+   `active`/`completed`/`revoked`/`expired` 全部参与），按
+   `task_lease.created_at` 经 `_parse_utc_timestamp` 归一化 UTC instant 排序
+   校验严格递增；仍按 task_id 分组（同 Task 跨 Step 单调、不同 Task 独立、
+   不退回全系统/Run 级序列）；相同 UTC instant fail closed（不依赖输入数组
+   顺序/task_lease_id/attempt_id 字典序/token 排序）；Attempt 仍用于 active
+   Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性，但不充当
+   历史 fencing 账本。校验顺序调整为：per-Step attempt 序列 → Task Lease
+   引用/绑定 → fencing chronology（结构错误先于账本级错误报告）。基线 fixture
+   与 example config 的 LEASE_1 created_at 改为 00:14:00Z（3 @ 00:10:00Z →
+   9 @ 00:14:00Z 严格递增）。
+2. **timestamp parser 闭集（P2）**：`_parse_utc_timestamp` 现在显式校验
+   offset 拼写闭集（小时 `00–23`、分钟 `00–59`；`+01:60`/`+00:99` 拒绝，
+   不依赖 `datetime.fromisoformat` 的静默归一化——fromisoformat 会把
+   `+01:60` 归一化成 `+02:00`），并把 `datetime.fromisoformat` 与
+   `astimezone(UTC)` 的 `ValueError`/`OverflowError` 全部转换为
+   `TaskLedgerContractError`（`0001-01-01T00:00:00+23:59` 与
+   `9999-12-31T23:59:59-23:59` 的年份边界溢出不再泄漏原生 OverflowError）。
+3. **新增测试（全部经 `TaskLedgerContractConfig.from_mapping` 入口）**：
+   - `test_completed_history_high_then_active_low_negative`、
+     `test_revoked_history_high_then_active_low_negative`、
+     `test_expired_history_high_then_active_low_negative`：completed/revoked/
+     expired Lease token 9 @ 00:06Z 后 active token 3 @ 00:10Z 均拒绝；
+   - `test_historical_and_active_strictly_increasing_positive`：completed 3 /
+     revoked 9 / expired 15 / active 21 真实 UTC 严格递增，跨 Step/Attempt
+     接受；
+   - `test_historical_leases_equivalent_utc_instants_negative`：两条历史
+     Lease 不同 offset 表达同一 UTC instant（token 3 → 9）fail closed；
+   - `test_historical_lease_input_order_independent`：反转 `task_leases`
+     数组不改变接受/拒绝（负向与正向都验证）；
+   - `test_different_tasks_history_is_independent_positive`：Task A 与 Task B
+     各有历史、各从 token 1 开始，不拍平为系统级/Run 级序列；
+   - `test_terminal_attempt_token_absence_does_not_remove_history`：terminal
+     Attempt 清空 token 后其历史 Lease 仍参与 chronology（仅翻转历史 Lease
+     token 即翻转接受/拒绝）；
+   - `test_invalid_offset_minutes_60_negative`、`test_invalid_offset_minutes_99_negative`、
+     `test_utc_normalization_overflow_lower_bound_negative`、
+     `test_utc_normalization_overflow_upper_bound_negative`、
+     `test_timestamp_offset_spelling_positive_controls`：offset 闭集与溢出
+     转换（全部断言 `TaskLedgerContractError`）。
+   上一轮已关闭的三项（per-(task_id, step_id) Attempt 序列从 1 起连续、
+   active TaskLease 与 active Attempt 双向绑定、passed evidence 的
+   path/digest/assertions 真实验证）未回退。
+4. **同步**：合同文档（§4.3 作用域冻结、§5.2 失效路径、§11 负向矩阵）、
+   INV-043、ai-maintainer-map §6.11、maintenance-map
+   `agent-task-ledger-contract` recovery、example config 内嵌 ledger
+   （LEASE_1 created_at）同步；P5.2A sealed digest 与共享的 P5.1A registry
+   contract sealed digest（threat-model/maintenance-map/security-invariants）
+   重算并复验。
+
+第四轮修复后的验证：P5.2A focused 项全部通过（50 项负向矩阵 + 四轮复核反例，
+新增 8 项历史 Lease 用例 + 5 项 timestamp parser 用例）；P5.0/P5.1/P5.1B/
+P5.2A/P34.7 combined regression、Mypy、Ruff、compileall、maintainer
+map/benchmark validator、Compose config、`git diff --check` 与 clean-checkout
+三项 `--verify`（P5.2A/P5.1A/P5.0，均 exit 2、veto 0）全部通过。状态保持
+`blocked/not_proven`、`activation_allowed=false`、migration head 0010、
+三个 Phase 5 Feature Gate false；P5.2B/Agent Runtime 继续冻结。
+
 ## 八、常用命令
 
 ```bash

@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "c4a322a9282c5906bc29858135448f5e20a43e2e76248c9dd75441afc24b1d38"
+      "sha256": "f21d75f0001cbb3974d10c726fa3a6b97236b726efe516754f2f62214ad93fba"
     }
   },
   "source": {
@@ -620,17 +620,17 @@
     {
       "name": "task_ledger_contract_doc",
       "path": "docs/phase-5-task-ledger-contract.md",
-      "sha256": "d2e4a138364483256bf3da7e344ccc25eef679d4950f48cd75d5cbfbe6dce104"
+      "sha256": "69d6cc6fe4b06a6e7ced03b064f8af8c3258f2cf6fda861a3838c922aff01f0a"
     },
     {
       "name": "task_ledger_contract_module",
       "path": "backend/src/omnibase/production/phase5_task_ledger_contract.py",
-      "sha256": "008796c6ce7072105f0af43f38b7a9313f133b3e45c3c00ad88967894da8b5a7"
+      "sha256": "a76746bc4c1f1cae2494adbc5a797dadc948342e7b8a52e2e7653952b3d34f28"
     },
     {
       "name": "task_ledger_tests",
       "path": "backend/tests/test_p5_2a_task_ledger_contract.py",
-      "sha256": "9ee0525c10bdaaebd54690423cfa5f7ebda99d5f060690712676fe30ce67d3c3"
+      "sha256": "2df179db46b5ecfdd0a9f134fb9b043eb32e03cfea321868758d4c457b2d9b4e"
     },
     {
       "name": "threat_model",
@@ -640,12 +640,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "8bb86a99cb3431ce5ae648dbbd54dabee40e5ff5448a4c41873ac1b611f3ecdf"
+      "sha256": "62609e383c1de414d33d01b85a54f7ac452b04003f2028dc899710b37f536eec"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "46e6fad1b1f44a73fbcaea99d8f9e98dfed45167b5d08aa7a1edbc6a1b8421f4"
+      "sha256": "248c18fafed0a7eb8dcb6744be8f73596ccecd766d2e078dc7b2e69b050a9840"
     }
   ],
   "openapi_snapshot": {
@@ -787,7 +787,7 @@
         "state": "active",
         "expires_at": "2026-08-03T00:15:00Z",
         "heartbeat_at": null,
-        "created_at": "2026-08-03T00:10:00Z"
+        "created_at": "2026-08-03T00:14:00Z"
       },
       {
         "schema_version": 1,
