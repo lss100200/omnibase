@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "488a13f40552a4148e52d645c6c818d67a831fc321603a892800a52536824120"
+      "sha256": "2d8d1be2df368c2d86478893da85a3fb8bf189b38fed2d3264fd16e3058a5105"
     }
   },
   "source": {
@@ -620,32 +620,32 @@
     {
       "name": "task_ledger_contract_doc",
       "path": "docs/phase-5-task-ledger-contract.md",
-      "sha256": "13698b893d8e3ee2e306f8666e8908db5938239ce500611059709ae385ab7937"
+      "sha256": "7f4f29a44724644bd55b83b6d3f8cf20bd2419647b35445232061d6eb14e7e1c"
     },
     {
       "name": "task_ledger_contract_module",
       "path": "backend/src/omnibase/production/phase5_task_ledger_contract.py",
-      "sha256": "57919a779535d25cbfb589c2fb6e4da3d4c536d2511808149541a66520bc2e06"
+      "sha256": "232123f2bb9ed88a60d388a30654d495ea2099dede56b4b2cc8e335406ba65f8"
     },
     {
       "name": "task_ledger_tests",
       "path": "backend/tests/test_p5_2a_task_ledger_contract.py",
-      "sha256": "a8bc1412338033830f9c24feae11a9f59c34e8594969c8d1ab34825a4b2867b3"
+      "sha256": "8bf95e2901ec305a7334514d5e23f315670c2521f8bcef6939277ff214c33bdb"
     },
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "fde44ea0f29f93190eec1a5ab9bd847ff197d97615b4f609f0b9d9646cf3be09"
+      "sha256": "7c56fd4f7547a85b0a133565869a5cc87078559213ccaf2ea56e7f7a7533823b"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "d142298146771a9233fe9dee10dd6d17617bda20f310cd416e784484d32825df"
+      "sha256": "29432aa52085932b083ac02aea8230a0d5f832bb1505df88c290f247494427f7"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "f43432ff5c272861c8131874ac30df7a754975bc80ecc900e94ee91e4e54479c"
+      "sha256": "14947eb898e668f85b9249fdcadcf9c001ca3cee43502f875d2e47e4f3c2b857"
     }
   ],
   "openapi_snapshot": {
@@ -710,6 +710,21 @@
         "dependencies": [],
         "state": "running",
         "created_at": "2026-08-03T00:02:00Z"
+      },
+      {
+        "schema_version": 1,
+        "step_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbc2",
+        "task_id": "00000000-0000-0000-0000-0000000000e1",
+        "agent_run_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "step_number": 2,
+        "plan_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "plan_version": "1",
+        "plan_digest": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "dependencies": [
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        ],
+        "state": "ready",
+        "created_at": "2026-08-03T00:03:00Z"
       }
     ],
     "attempts": [
@@ -740,6 +755,20 @@
         "expected_previous_state": "running",
         "deadline": "2026-08-03T12:00:00Z",
         "created_at": "2026-08-03T00:10:00Z"
+      },
+      {
+        "schema_version": 1,
+        "attempt_id": "88888888-8888-8888-8888-888888888883",
+        "task_id": "00000000-0000-0000-0000-0000000000e1",
+        "step_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbc2",
+        "agent_run_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "attempt_number": 1,
+        "state": "running",
+        "task_lease_id": "77777777-7777-7777-7777-777777777778",
+        "task_fencing_token": 3,
+        "expected_previous_state": "running",
+        "deadline": "2026-08-03T12:00:00Z",
+        "created_at": "2026-08-03T00:06:00Z"
       }
     ],
     "task_leases": [
@@ -755,6 +784,23 @@
         "node_fencing_token": 1,
         "workspace_generation": 1,
         "task_fencing_token": 9,
+        "state": "active",
+        "expires_at": "2026-08-03T00:15:00Z",
+        "heartbeat_at": null,
+        "created_at": "2026-08-03T00:10:00Z"
+      },
+      {
+        "schema_version": 1,
+        "task_lease_id": "77777777-7777-7777-7777-777777777778",
+        "task_id": "00000000-0000-0000-0000-0000000000e1",
+        "attempt_id": "88888888-8888-8888-8888-888888888883",
+        "agent_run_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "run_lease_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "run_fencing_token": 3,
+        "node_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "node_fencing_token": 1,
+        "workspace_generation": 1,
+        "task_fencing_token": 3,
         "state": "active",
         "expires_at": "2026-08-03T00:15:00Z",
         "heartbeat_at": null,

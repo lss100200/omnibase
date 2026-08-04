@@ -1989,6 +1989,63 @@ report `5421750a37f15a6200e4702ac66c43e736fab83cf71578bd9e1f8f64380e39e9`、
    Task/Run/Attempt；未调用模型/工具；未读取根 `.env`；未访问或迁移
    业务数据库；未 push/PR；未修改 P5.1B/P5.1C 业务语义。
 
+#### P5.2A 独立复核修复（2026-08-04）
+
+主 Agent 独立复核判定原候选提交 REJECTED 后，按复核缺口逐项修复（新增
+本地修复提交，不 amend 原四个提交）：
+
+1. **Attempt 重试按 Step 序列**：`attempt_number` 改为按 (task_id,
+   step_id) 分组（同一 Task 的每个 Step 都从 1 开始）；`task_fencing_token`
+   按 Task 级 `created_at` 排序单调校验；新增两个 Step 各含 Attempt 1 的
+   正向测试与同 Step 内回退负向测试。
+2. **Attempt ↔ Task Lease 状态矩阵**：pending/ready 不得携带 lease/
+   fencing；leased/dispatching/running 必须携带；committed/failed/
+   unknown/cancelled 不得保留（历史由 append-only lease 记录承载，
+   Attempt 上无 active holder 引用）；新增 running/dispatching 无 lease
+   负向测试。
+3. **Attempt ↔ TaskLease 精确双向绑定**：`attempt.task_lease_id` 必须
+   解析到 attempt_id/task_id/agent_run_id 一致的 lease；非 terminal
+   Attempt 必须指回；同一 Attempt 最多一个 active lease（集合级扫描）；
+   leased/dispatching/running 引用的 lease 必须 active；新增三个对应
+   负向测试。
+4. **AgentRun binding all-or-none**：`run_lease_id/run_fencing_token/
+   node_id/node_fencing_token` 四元组与 `runtime_instance_id/
+   workload_identity_thumbprint` 二元组各自 all-or-none，按状态矩阵
+   （created 全空、leased/running/paused 全有、terminal 全空）校验；
+   新增 8 个矩阵负例。
+5. **配置收紧值真正生效**：`deadline_ceiling_seconds` 与
+   `task_lease_ttl_ceiling_seconds` 传入每个 AgentTaskInvocation /
+   TaskLeaseContract 解析器逐实例校验（config 只能收紧）；新增收紧到
+   60 秒后既有 12h Task/5min Lease 被拒的测试。
+6. **Step ↔ Task Plan identity + DAG**：step 的 plan_id/plan_version/
+   plan_digest 必须等于父 Task；dependency 必须存在、同 Task/Plan/
+   AgentRun；step_number 在 Task 内唯一；依赖图无环；新增 plan_digest
+   drift、unknown/cross-run dependency、cycle、duplicate step_number
+   负向与合法多 Step DAG 正向测试。
+7. **父子 deadline**：`attempt.created_at < attempt.deadline <=
+   task.deadline`、`task_lease.expires_at <= attempt.deadline <=
+   task.deadline`（末条为防御性冗余，文档说明蕴含关系）；原有五组
+   expiry 约束保留。
+8. **hash profiles 重新审计**：attempt_claim/heartbeat/finish 补齐
+   agent_run_id、node_id、run_lease_id/run_fencing_token、
+   node_fencing_token、agent_version_digest、resource_scope_digest、
+   budget_policy_digest；不进 hash 的字段（operation_id、runtime/
+   workload 身份、lease 时间）由 durable 记录绑定，合同文档给出逐字段
+   分工表与证明；新增 profile 字段缺失负向测试。
+9. **报告语义**：`verification_evidence` 区分 static source-boundary
+   assertion（本次 verify 实际执行）、import/AST assertion（测试证明）、
+   gate 本次未执行的行为与 direct runtime execution（Gate 不执行）；
+   新增报告语义测试。
+10. **同步**：example config 增加第二个 Step/Attempt/Lease 正向示例；
+   合同文档、威胁模型、INV-043、ai-maintainer-map 同步；P5.2A sealed
+   digests 与共享的 P5.1A registry contract digests 重算并复验。
+
+复核修复后的验证：P5.2A focused 164 项通过（含 50 项负向矩阵 + 复核
+新增反例）；P5.0/P5.1/P5.2A combined regression、非 integration 全套、
+Mypy、Ruff、compileall、maintainer map/benchmark validator、Compose
+config、`git diff --check` 与 clean-checkout 三项 `--verify`
+（P5.2A/P5.1A/P5.0，均 exit 2、veto 0）全部通过。
+
 ## 八、常用命令
 
 ```bash

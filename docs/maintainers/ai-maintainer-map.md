@@ -579,7 +579,12 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
 - 状态机闭集：Task（10 态）、Step（6 态）、Attempt（9 态）、Effect
   （5 态）、AgentRun（7 态）；终态不可复活；`unknown` 永不自动 replay；
   retry 必须创建新 Attempt 并提高 Task fencing；cancel 不伪装 unknown
-  为成功；模型输出不是 committed evidence。
+  为成功；模型输出不是 committed evidence。Attempt ↔ Task Lease 状态
+  矩阵：pending/ready 无 lease、leased/dispatching/running 必须有、
+  terminal（含 unknown）不得保留（历史由 append-only lease 记录承载）；
+  `attempt_number` 按 (task_id, step_id) 分组、`task_fencing_token` 按
+  Task 级单调；Attempt 与 TaskLease 精确双向绑定、单 active lease、
+  current lease 必须 active。
 - Task Lease 独立于 Run Lease 但依赖它：`run_lease_id`/`run_fencing_token`/
   `node_id`/`node_fencing_token`/`workspace_generation` 必须与
   AgentRunBinding 一致；TTL 不得晚于 deadline/Run Lease/Node
@@ -588,11 +593,19 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
 - 预算 12 维（input/output/reasoning/total tokens、cost_micros、
   model/tool calls、wall_clock_ms、artifact_bytes、sandbox_jobs、
   max_attempts、max_parallel_steps），limit/reserved/committed/released/
-  remaining 不变量，strict 非负整数、拒绝 NaN/Infinity/wildcard/超 ceiling。
+  remaining 不变量，strict 非负整数、拒绝 NaN/Infinity/wildcard/超 ceiling；
+  `deadline_ceiling_seconds`/`task_lease_ttl_ceiling_seconds` 真正作用于
+  每个 Task/Lease DTO（config 只能收紧）。
 - 8 个 canonical hash profile（task_create、task_cancel、task_pause、
   task_resume_request、attempt_claim、attempt_heartbeat、attempt_finish、
-  reconciliation_request）；同 key+同 operation+同 canonical payload =
-  exact replay，否则 stable conflict；禁止调用方 request_hash override。
+  reconciliation_request）；attempt 三个 profile 绑定全部安全相关
+  immutable identity（agent_run_id、node_id、run_lease_id/
+  run_fencing_token、node_fencing_token、task_lease_id/
+  task_fencing_token、agent_version_digest、resource_scope_digest、
+  budget_policy_digest）；不进 hash 的字段（operation_id、runtime/
+  workload 身份、lease 时间）由 durable 记录绑定并在合同文档表中逐项
+  证明；同 key+同 operation+同 canonical payload = exact replay，否则
+  stable conflict；禁止调用方 request_hash override。
 - `scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only`
   只解析合同（exit 0，永不 ready）；`--verify` 校验 P34.7/P5.0/P5.1
   formal state、sealed digest（含 P5.1 registry contract）、migration
@@ -601,7 +614,10 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
 - 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0/P5.1 非 ready +
   persistence ledger/Runtime 未实现 + production evidence 未证明）；
   该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
-  用 AST 扫描证明。
+  用 AST 扫描证明；报告 `verification_evidence` 区分 static
+  source-boundary assertion（本次 verify 实际执行）、import/AST
+  assertion（测试证明）、Gate 未执行行为与 direct runtime execution
+  （Gate 不执行 pytest/runtime）。
 - INV-043 只描述 P5.2A 合同的离线属性；P5.2 persistence ledger
   （P5.2B）、Runtime、API 与 Task 执行均未实现，P5.2B+ frozen。
 

@@ -502,3 +502,19 @@ omnibase.production）由 AST 测试强制。
 
 任何缺失外部证据时正确输出是 `blocked/not_proven`；不得把 P5.2A 写成
 P5.2 PASS，也不得据此解冻 Phase 5 Runtime。
+
+## P5.2A 复核修复补充（2026-08-04）
+
+主 Agent 独立复核后的修复边界（仍在 P5.2A 纯离线合同层）：
+
+| 威胁/缺口 | 修复控制 |
+|---|---|
+| 同 Task 第二个 Step 无法拥有 attempt_number=1 | `attempt_number` 按 (task_id, step_id) 分组校验；`task_fencing_token` 按 Task 级 created_at 排序单调校验；两个 Step 各含 Attempt 1 的正向测试 |
+| pending/ready 携带 lease、leased/dispatching/running 无 lease、terminal 保留 lease | Attempt ↔ Task Lease 状态矩阵：pre-dispatch 无 lease、运行三态必须有、terminal（含 unknown）不得保留；历史 lease 由 append-only lease 记录（revoked/expired/completed）承载，Attempt 上无 active holder 引用 |
+| Attempt 引用另一 Attempt 的 Lease / 同 Attempt 双 active Lease / stale lease 作为 current | 精确双向绑定：`attempt.task_lease_id` 必须解析到 attempt_id/task_id/agent_run_id 一致的 lease；非 terminal Attempt 必须指回；集合级单 active lease 扫描；运行态 Attempt 的 current lease 必须 active |
+| AgentRun 绑定组不完整 | `run_lease_id/run_fencing_token/node_id/node_fencing_token` all-or-none + `runtime_instance_id/workload_identity_thumbprint` all-or-none；created 全空、leased/running/paused 全有、terminal 全空 |
+| ceiling 收紧值未生效 | `deadline_ceiling_seconds`/`task_lease_ttl_ceiling_seconds` 传入每个 DTO 解析器逐实例校验；收紧到 60 秒即拒绝 12h Task/5min Lease 的负向测试 |
+| Step 与 Task Plan 身份漂移、未知/跨 Task/跨 Run 依赖、环、重复 step_number | step.plan_id/plan_version/plan_digest 必须等于 task；dependency 必须存在、同 Task/Plan/AgentRun；step_number task 内唯一；DFS 无环 |
+| 父子 deadline 未冻结 | `attempt.created_at < attempt.deadline <= task.deadline`；`task_lease.expires_at <= attempt.deadline <= task.deadline`（最后一条为防御性冗余，文档说明蕴含关系） |
+| attempt hash 缺安全身份字段 | attempt_claim/heartbeat/finish profile 补齐 agent_run_id、node_id、run_lease_id/run_fencing_token、node_fencing_token、agent_version_digest、resource_scope_digest、budget_policy_digest；不进 hash 的字段（operation_id、runtime/workload 身份、lease 时间）由 durable 记录绑定并在文档表中逐项证明 |
+| 报告把 safety negative 当运行证明 | `verification_evidence` 区分 static source-boundary assertion（本次 verify 实际执行）、import/AST assertion（由测试证明）、gate 本次未执行的行为、direct runtime execution（Gate 不执行） |

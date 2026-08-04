@@ -167,13 +167,20 @@ cancelled`。
 `workload_identity_thumbprint`（可空）、`node_id`、`node_fencing_token`、
 `run_lease_id`、`run_fencing_token`、`state`、`created_at`。
 
-规则：
+规则（**all-or-none 状态矩阵**）：
 
-- `node_id`/`node_fencing_token` 与 `run_lease_id`/`run_fencing_token`
-  必须同现；lease 绑定必须同时带 fencing；
-- runtime/workload identity 在 P34.4 `leased` 态单次绑定、不可变更；
-- 终态 Run 不得保留 `runtime_instance_id` / `workload_identity_thumbprint`
-  （P34.4 terminal 清理语义：lease completed/revoked + 身份清空）；
+- `run_lease_id`、`run_fencing_token`、`node_id`、`node_fencing_token`
+  组成一个严格运行绑定组：四者必须同现或同缺；只有 ID 无 fencing、
+  只有 fencing 无 ID、只有 Run 组无 Node 组、只有 Node 组无 Run 组
+  一律拒绝；
+- `runtime_instance_id` 与 `workload_identity_thumbprint` 组成第二个组，
+  必须同现或同缺；
+- 状态矩阵：
+  - `created`：两组必须全空；
+  - `leased`/`running`/`paused`：两组必须全有（P34.4 leased 态单次绑定、
+    不可变更）；
+  - `succeeded`/`failed`/`cancelled`：两组必须全空（P34.4 terminal 清理
+    语义：lease completed/revoked + 身份清空）；
 - 终态 AgentRun 不可回到运行态；checkpoint/resume 不得复活 terminal
   P34.4 Run（P34.4 复用规则 #12）；
 - 恢复必须创建新的 lease/runtime/workload identity，旧
@@ -199,14 +206,29 @@ running | committed | failed | unknown | cancelled`。
 `task_fencing_token`（可空，与 lease 同现）、`expected_previous_state`
 （TaskState 闭集）、`deadline`、`created_at`。
 
-规则：
+规则（**Attempt ↔ Task Lease 状态矩阵**）：
 
-- `leased` 必须带 lease + fencing；终态（含 `committed`）不得保留 lease；
-- 终态不可回到运行态；`unknown` 不可回到 `pending|ready|leased|
-  dispatching|running`——`unknown` 只能进入 reconciliation（创建新
-  Attempt 或 reconciliation case），绝不自动 replay；
-- retry 必须创建**新** Attempt（新 `attempt_id`）并提高
-  `task_fencing_token`；attempt number 与 task fencing 单调递增，禁止回退。
+- `pending`/`ready`（pre-dispatch）：不得携带 `task_lease_id` /
+  `task_fencing_token`；
+- `leased`/`dispatching`/`running`：必须同时携带 `task_lease_id` +
+  `task_fencing_token`；
+- `committed`/`failed`/`unknown`/`cancelled`（terminal）：不得携带
+  lease/fencing——历史 Lease identity 由 append-only lease 记录本身
+  （revoked/expired/completed）作为不可变引用保留，Attempt 上不出现
+  active holder 引用；`unknown` 进入 reconciliation，绝不自动 replay；
+- `created_at < deadline`，且 `deadline <= task.deadline`（父子 deadline
+  见 §8）；
+- retry 必须创建**新** Attempt（新 `attempt_id`）并提高 Task fencing。
+
+**作用域冻结**：
+
+- `attempt_number` 是 **per-(task_id, step_id)** 序列：同一 Task 的每个
+  Step 都从 1 开始，同 Step 的 retry 递增，禁止回退；
+- `task_fencing_token` 是 **Task 级**单调序列：同一 Task 内（跨所有
+  Step）每次 Task Lease claim 的 token 必须严格高于此前所有（按
+  Attempt `created_at` 顺序校验），旧 holder 无法用旧 token 复活；
+- Task Lease 是 Task 级逻辑授权（绑定一个 Attempt 与当前 Run Lease/
+  Node fencing/Workspace generation），每次 claim 分配更高 token。
 
 ## 5. Task Lease 与 Task fencing
 
@@ -244,11 +266,21 @@ running | committed | failed | unknown | cancelled`。
 
 `task_lease_ttl_ceiling_seconds` 冻结为 ≤ P34.4 Run Lease TTL 域上限
 （300s）；`active` lease 必须 `expires_at > created_at` 且 TTL ≤ ceiling。
+配置收紧值（`deadline_ceiling_seconds`、`task_lease_ttl_ceiling_seconds`）
+**真正作用于每个 DTO**：AgentTaskInvocation 与 TaskLeaseContract 的
+解析器接收 config 值并逐实例校验，不是只验证 config 值不超过模块默认
+上限；config 只能收紧，不能扩大 server-owned ceiling。
 
 ### 5.2 失效路径（离线合同必须拒绝的输入）
 
 任何以下输入都属于 `TaskLedgerContractError`：
 
+- Attempt ↔ TaskLease 精确**双向绑定**：`attempt.task_lease_id` 必须解析
+  到 `attempt_id`/`task_id`/`agent_run_id` 完全一致的 lease；非 terminal
+  Attempt 必须指回它引用的 lease；Attempt 引用另一 Attempt 的 Lease 拒绝；
+- 同一 Attempt 最多一个 `active` Task Lease（集合级扫描，先于逐条校验）；
+- leased/dispatching/running Attempt 引用的 lease 必须是 `active`——
+  stale/revoked/expired lease 作为 current 拒绝；
 - lease 未绑定当前 run lease / 当前 run fencing / 当前 node fencing /
   当前 workspace generation（四组逐一比较）；
 - lease 的 `task_fencing_token` 与 attempt 不一致；
@@ -323,16 +355,21 @@ reconciliation_request
   tenant/workspace/generation、task_id、task_generation、
   expected_previous_state；
 - `attempt_claim`：operation、tenant/workspace/generation、task_id、
-  task_generation、step_id、attempt_id、attempt_number、
-  expected_previous_state、run_lease_id、run_fencing_token、
-  node_fencing_token、deadline；
+  task_generation、agent_run_id、step_id、attempt_id、attempt_number、
+  expected_previous_state、run_lease_id、run_fencing_token、node_id、
+  node_fencing_token、agent_version_digest、resource_scope_digest、
+  budget_policy_digest、deadline；
 - `attempt_heartbeat`：operation、tenant/workspace/generation、task_id、
-  task_generation、step_id、attempt_id、attempt_number、task_lease_id、
-  task_fencing_token；
+  task_generation、agent_run_id、step_id、attempt_id、attempt_number、
+  run_lease_id、run_fencing_token、node_id、node_fencing_token、
+  task_lease_id、task_fencing_token、agent_version_digest、
+  resource_scope_digest、budget_policy_digest；
 - `attempt_finish`：operation、tenant/workspace/generation、task_id、
-  task_generation、step_id、attempt_id、attempt_number、task_lease_id、
-  task_fencing_token、expected_previous_state、outcome、result_digest、
-  budget_ledger；
+  task_generation、agent_run_id、step_id、attempt_id、attempt_number、
+  run_lease_id、run_fencing_token、node_id、node_fencing_token、
+  task_lease_id、task_fencing_token、agent_version_digest、
+  resource_scope_digest、budget_policy_digest、expected_previous_state、
+  outcome、result_digest、budget_ledger；
 - `reconciliation_request`：operation、tenant/workspace/generation、
   task_id、task_generation、attempt_id、reconciliation_target。
 
@@ -340,6 +377,20 @@ hash 必须包含与操作语义有关的全部稳定字段（含 expected previ
 deadline、scope、budget、cancellation/reconciliation target）；**不得**包含
 每次请求随机生成的 server timestamp 或随机 UUID（除非该 UUID 是预先分配
 的逻辑身份，如 `task_id`/`attempt_id`）。
+
+**进 hash 与 durable 绑定的字段分工**（不是把所有字段塞进 hash）：
+
+| 字段 | 进 hash？ | 不进的绑定证明 |
+|---|---|---|
+| operation、tenant/workspace/generation、task/step/attempt identity、agent_run_id、attempt_number | 是（请求稳定字段） | — |
+| agent_version_digest、resource_scope_digest、budget_policy_digest | 是（不可变身份引用，防漂移） | — |
+| run_lease_id/run_fencing_token、node_id/node_fencing_token | 是（attempt_claim 提交的授权引用） | — |
+| task_lease_id/task_fencing_token | 是（heartbeat/finish 的 holder 声明） | 服务端同时按 durable Task Lease 记录 + 当前 Attempt 状态矩阵重验（active、attempt 指回、fencing 一致） |
+| expected_previous_state、deadline、outcome、result_digest、budget_ledger、cancellation/reconciliation target | 是（语义字段） | — |
+| operation_id | 否 | Core 生成并持久化于 OperationRecord；effect 通过 operation_id 绑定，调用方无法提交 |
+| workspace_run_id、runtime_instance_id、workload_identity_thumbprint | 否 | server-owned P34.4 Run/attestation 记录解析（`bind_run_runtime_identity`/`verify_run_lease_for_sandbox` 语义），workload 不提交 |
+| lease expires_at/created_at/heartbeat_at | 否 | 服务器时钟签发并持久化于 lease 记录；`expires_at <= attempt.deadline <= task.deadline` 由 durable 记录校验 |
+| request_hash | 否 | hash 输出本身 |
 
 幂等语义（`classify_replay`）：
 
@@ -372,6 +423,22 @@ dispatching | committed | failed | unknown`。
 `ProviderEffect` 字段：`effect_id`、`attempt_id`、`state`、`operation_id`、
 `request_hash`、`result_digest`（仅 committed 可携带且必须携带）、
 `created_at`。
+
+**父子 deadline 关系（冻结）**：
+
+```text
+attempt.created_at < attempt.deadline
+attempt.deadline   <= task.deadline
+task_lease.expires_at <= attempt.deadline
+task_lease.expires_at <= task.deadline
+```
+
+`task_lease.expires_at <= task.deadline` 在
+`attempt.deadline <= task.deadline` 与
+`task_lease.expires_at <= attempt.deadline` 同时成立时自动蕴含，但作为
+独立防御性检查保留（防止未来任一约束被移除）。Task Lease 不晚于 Run
+Lease / Node attestation / Capability Grant / Workspace policy 最早
+expiry 的约束继续由 `LeaseExpiryBounds` 强制。
 
 ## 9. Checkpoint 限制
 
@@ -420,6 +487,22 @@ committed outputs，遇到 `unknown` 保持 blocked。
   `business_database_accessed`、`business_database_migrated`、
   `external_network_accessed`——由模块 import 白名单（AST 测试）、源码
   边界扫描与负向测试共同证明，不是写死的字段。
+
+**报告语义（`verification_evidence`）**：固定输出的 safety negative 不是
+运行时证明。报告区分四类证据：
+
+- `static_source_boundary`：本次 `--verify` **实际执行**的 forbidden
+  source paths / migration 集合与 head / OpenAPI snapshot 扫描（checked
+  与 verified 布尔值）；
+- `import_ast_analysis`：模块 import 白名单由
+  `tests/test_p5_2a_task_ledger_contract.py` 的 AST 测试证明，Gate 本身
+  不执行（`proven_by_tests_not_by_gate`）；
+- `gate_execution`：本次模式（validate_only/verify）、合同解析、
+  feature gate 解析、sealed digest 校验与 evidence 引用校验的实际执行
+  状态；
+- `direct_runtime_execution`：本 Gate 不运行 pytest/runtime
+  （`not_executed_by_gate`）——运行证据只来自独立的测试与 Gate 报告，
+  不写进 validator 输出冒充。
 
 缺少 P34.7 ready evidence 时 `--verify` 正确输出
 `state=blocked/not_proven`、`activation_allowed=false`、exit code 2

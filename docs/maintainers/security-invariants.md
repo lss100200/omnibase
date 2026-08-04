@@ -1546,6 +1546,29 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
   replay；允许 cancel 伪装 unknown 为成功；允许 checkpoint 携带
   token/lease/PID/socket/provider handle；允许模型输出作为 committed
   evidence；允许调用方扩大预算或覆盖 request hash。
+- 允许 attempt_number 跨 Step 混排（它按 (task_id, step_id) 分组）或
+  Task fencing 跨 Step 回退；允许 pending/ready 携带 lease、
+  leased/dispatching/running 缺失 lease、terminal（含 unknown）保留
+  lease；允许 Attempt 引用另一 Attempt 的 Lease、同 Attempt 双 active
+  Lease 或 stale/revoked/expired lease 作为 current。
+- 允许 AgentRun 四元运行绑定组（run_lease_id/run_fencing_token/
+  node_id/node_fencing_token）或 runtime/workload 身份组不完整（all-or-
+  none 状态矩阵：created 全空、leased/running/paused 全有、terminal
+  全空）。
+- 允许 config 收紧值（deadline_ceiling_seconds、
+  task_lease_ttl_ceiling_seconds）不作用于每个 DTO，或允许 config 扩大
+  server-owned ceiling。
+- 允许 Step 与父 Task 的 plan_id/plan_version/plan_digest 漂移；允许
+  dependency 引用未知/跨 Task/跨 Run 节点、step_number 重复或依赖图有环。
+- 允许 attempt.deadline 晚于 task.deadline，或 task lease expiry 晚于
+  attempt/task deadline。
+- 允许 attempt_claim/heartbeat/finish hash profile 缺失安全相关
+  immutable identity（agent_run_id、node_id、run_lease_id/
+  run_fencing_token、node_fencing_token、agent_version_digest、
+  resource_scope_digest、budget_policy_digest）。
+- 把固定输出的 safety negative 当作运行时证明：报告必须区分 static
+  source-boundary assertion、import/AST assertion、Gate 本次未执行的
+  行为与直接运行证据（`verification_evidence`）。
 - 允许 Browser 提交 core-generated/未生成字段（runtime_instance_id、
   workload_identity_thumbprint、request_hash、lease/fencing），或允许
   Browser JWT 进入 workload DTO。

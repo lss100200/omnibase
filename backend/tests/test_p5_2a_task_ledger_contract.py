@@ -71,14 +71,18 @@ VERSION_DIGEST = "4b5a26ba3980e80216db50d8d069a6c052ca472954c33247baa1b81ec69f91
 BINDING_ID = "55555555-5555-5555-5555-555555555555"
 PLAN_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 STEP_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+STEP_2_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbc2"
 RUN_ID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 WORKSPACE_RUN_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 NODE_ID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
 RUN_LEASE_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 TASK_LEASE_ID = "77777777-7777-7777-7777-777777777777"
+LEASE_2_ID = "77777777-7777-7777-7777-777777777778"
+LEASE_3_ID = "77777777-7777-7777-7777-777777777779"
 ATTEMPT_1_ID = "88888888-8888-8888-8888-888888888881"
 ATTEMPT_2_ID = "88888888-8888-8888-8888-888888888882"
 ATTEMPT_3_ID = "88888888-8888-8888-8888-888888888883"
+ATTEMPT_4_ID = "88888888-8888-8888-8888-888888888884"
 EFFECT_ID = "99999999-9999-9999-9999-999999999991"
 CHECKPOINT_ID = "99999999-9999-9999-9999-999999999992"
 OPERATION_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab"
@@ -218,6 +222,49 @@ def _lease_mapping() -> dict[str, object]:
         "heartbeat_at": None,
         "created_at": "2026-08-03T00:10:00Z",
     }
+
+
+def _step_2_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "step_id": STEP_2_ID,
+        "task_id": TASK_ID,
+        "agent_run_id": RUN_ID,
+        "step_number": 2,
+        "plan_id": PLAN_ID,
+        "plan_version": "1",
+        "plan_digest": PLAN_DIGEST,
+        "dependencies": [STEP_ID],
+        "state": "ready",
+        "created_at": "2026-08-03T00:03:00Z",
+    }
+
+
+def _attempt_3_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "attempt_id": ATTEMPT_3_ID,
+        "task_id": TASK_ID,
+        "step_id": STEP_2_ID,
+        "agent_run_id": RUN_ID,
+        "attempt_number": 1,
+        "state": "running",
+        "task_lease_id": LEASE_2_ID,
+        "task_fencing_token": 3,
+        "expected_previous_state": "running",
+        "deadline": "2026-08-03T12:00:00Z",
+        "created_at": "2026-08-03T00:06:00Z",
+    }
+
+
+def _lease_2_mapping() -> dict[str, object]:
+    mapping = _lease_mapping()
+    mapping["task_lease_id"] = LEASE_2_ID
+    mapping["attempt_id"] = ATTEMPT_3_ID
+    mapping["task_fencing_token"] = 3
+    # claim happens after the attempt is created; TTL stays within 300s
+    mapping["created_at"] = "2026-08-03T00:10:00Z"
+    return mapping
 
 
 def _effect_mapping() -> dict[str, object]:
@@ -849,9 +896,9 @@ def _contract_mapping() -> dict[str, object]:
         "ledger_contracts": {
             "tasks": [_task_mapping()],
             "runs": [_run_mapping()],
-            "steps": [_step_mapping()],
-            "attempts": [_attempt_1_mapping(), _attempt_mapping()],
-            "task_leases": [_lease_mapping()],
+            "steps": [_step_mapping(), _step_2_mapping()],
+            "attempts": [_attempt_1_mapping(), _attempt_mapping(), _attempt_3_mapping()],
+            "task_leases": [_lease_mapping(), _lease_2_mapping()],
             "effects": [_effect_mapping()],
             "checkpoints": [_checkpoint_mapping()],
             "budget_ledgers": [_budget_ledger_mapping()],
@@ -1245,12 +1292,12 @@ def test_request_hash_drift_is_rejected() -> None:
         # 19. missing Node fencing
         (
             lambda r: r.update({"node_fencing_token": None}),
-            "run.node_fencing_token is required with run.node_id",
+            "must be all-or-none",
         ),
         # 20. missing Run fencing
         (
             lambda r: r.update({"run_fencing_token": None}),
-            "run.run_fencing_token is required with run.run_lease_id",
+            "must be all-or-none",
         ),
         # 30. workload credential as a plain field
         (lambda r: r.update({"workload_token": "raw-token"}), "unexpected fields"),
@@ -1267,9 +1314,7 @@ def test_run_negative_fixtures(mutation, message: str) -> None:
 def test_terminal_run_must_not_retain_runtime_identity() -> None:
     mapping = _run_mapping()
     mapping["state"] = "succeeded"
-    with pytest.raises(
-        TaskLedgerContractError, match="must not retain runtime or workload identity"
-    ):
+    with pytest.raises(TaskLedgerContractError, match="terminal agent run must not retain"):
         AgentRunBinding.from_mapping(mapping)
 
 
@@ -1299,20 +1344,48 @@ def test_step_negative_fixtures(mutation, message: str) -> None:
         (lambda a: a.update({"task_fencing_token": None}), "must be provided together"),
         (lambda a: a.update({"task_lease_id": None}), "must be provided together"),
         (
-            lambda a: a.update({"state": "dispatching", "task_lease_id": None}),
-            "must be provided together",
+            lambda a: a.update(
+                {"state": "dispatching", "task_lease_id": None, "task_fencing_token": None}
+            ),
+            "leased, dispatching and running attempts require",
         ),
         (
             lambda a: a.update(
                 {"state": "leased", "task_lease_id": None, "task_fencing_token": None}
             ),
-            "leased attempt requires",
+            "leased, dispatching and running attempts require",
+        ),
+        (
+            lambda a: a.update(
+                {"state": "running", "task_lease_id": None, "task_fencing_token": None}
+            ),
+            "leased, dispatching and running attempts require",
+        ),
+        (
+            lambda a: a.update({"state": "pending", "task_lease_id": TASK_LEASE_ID}),
+            "pre-dispatch attempt must not carry",
+        ),
+        (
+            lambda a: a.update({"state": "ready", "task_lease_id": TASK_LEASE_ID}),
+            "pre-dispatch attempt must not carry",
         ),
         (
             lambda a: a.update(
                 {"state": "committed", "task_lease_id": TASK_LEASE_ID, "task_fencing_token": 9}
             ),
-            "must not retain a task lease",
+            "terminal attempt must not retain",
+        ),
+        (
+            lambda a: a.update(
+                {"state": "unknown", "task_lease_id": TASK_LEASE_ID, "task_fencing_token": 9}
+            ),
+            "terminal attempt must not retain",
+        ),
+        (
+            lambda a: a.update(
+                {"state": "cancelled", "task_lease_id": TASK_LEASE_ID, "task_fencing_token": 9}
+            ),
+            "terminal attempt must not retain",
         ),
         (
             lambda a: a.update({"expected_previous_state": "suspended"}),
@@ -1357,7 +1430,7 @@ def test_task_lease_negative_fixtures(mutation, message: str) -> None:
 def test_task_lease_ttl_ceiling_is_enforced() -> None:
     mapping = _lease_mapping()
     mapping["expires_at"] = "2026-08-03T00:20:00Z"
-    with pytest.raises(TaskLedgerContractError, match="exceeds the server-owned ceiling"):
+    with pytest.raises(TaskLedgerContractError, match="exceeds the configured ceiling"):
         TaskLeaseContract.from_mapping(mapping)
 
 
@@ -1508,12 +1581,19 @@ def test_contract_level_negatives() -> None:
     with pytest.raises(TaskLedgerContractError, match="binds a stale workspace generation"):
         TaskLedgerContractConfig.from_mapping(mapping)
 
-    # 22. Task fencing regression
+    # 22. Task fencing regression (same step, later attempt with lower fencing)
     mapping = _contract_mapping()
     attempts = mapping["ledger_contracts"]["attempts"]
-    third = _attempt_mapping(ATTEMPT_3_ID, 3)
+    third = _attempt_mapping(ATTEMPT_4_ID, 3)
+    third["task_lease_id"] = LEASE_3_ID
     third["task_fencing_token"] = 5
     attempts.append(third)
+    lease3 = _lease_mapping()
+    lease3["task_lease_id"] = LEASE_3_ID
+    lease3["attempt_id"] = ATTEMPT_4_ID
+    lease3["task_fencing_token"] = 5
+    lease3["created_at"] = "2026-08-03T00:10:00Z"
+    mapping["ledger_contracts"]["task_leases"].append(lease3)
     with pytest.raises(TaskLedgerContractError, match="retry task fencing must increase"):
         TaskLedgerContractConfig.from_mapping(mapping)
 
@@ -2136,3 +2216,321 @@ def test_validator_validate_only_exit_code_is_zero() -> None:
     assert payload["state"] == "blocked/not_proven"
     assert payload["contract_valid"] is True
     assert payload["activation_allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Independent-review fixes: per-step retry scoping, bidirectional lease
+# binding, all-or-none run binding, configured ceilings, Step DAG, deadline
+# hierarchy, hash identity binding and report evidence scope.
+# ---------------------------------------------------------------------------
+
+
+# Independent-review fixes: per-step retry scoping, bidirectional lease
+# binding, all-or-none run binding, configured ceilings, Step DAG, deadline
+# hierarchy, hash identity binding and report evidence scope.
+# ---------------------------------------------------------------------------
+
+
+def test_two_steps_each_with_attempt_one_positive() -> None:
+    # Two Steps of one Task each own an Attempt 1; attempt_number is scoped
+    # per (task_id, step_id) and the Task-wide fencing stays monotonic.
+    config = TaskLedgerContractConfig.from_mapping(_contract_mapping())
+    steps = config.ledger_contracts.steps
+    assert {step.step_id for step in steps} == {STEP_ID, STEP_2_ID}
+    step_numbers = {step.step_id: step.step_number for step in steps}
+    assert step_numbers[STEP_ID] == 1
+    assert step_numbers[STEP_2_ID] == 2
+    step1_attempts = [a for a in config.ledger_contracts.attempts if a.step_id == STEP_ID]
+    step2_attempts = [a for a in config.ledger_contracts.attempts if a.step_id == STEP_2_ID]
+    assert {a.attempt_number for a in step1_attempts} == {1, 2}
+    assert {a.attempt_number for a in step2_attempts} == {1}
+    assert len(config.ledger_contracts.task_leases) == 2
+    # Task-wide fencing monotonic across steps: step2 attempt1 (3) before
+    # step1 attempt2 (9) in created_at order.
+    fenced = sorted(
+        (a for a in config.ledger_contracts.attempts if a.task_fencing_token is not None),
+        key=lambda a: a.created_at,
+    )
+    assert [a.task_fencing_token for a in fenced] == [3, 9]
+
+
+def test_multi_step_dag_positive() -> None:
+    config = TaskLedgerContractConfig.from_mapping(_contract_mapping())
+    step2 = next(step for step in config.ledger_contracts.steps if step.step_id == STEP_2_ID)
+    assert step2.dependencies == (STEP_ID,)
+    assert step2.plan_id == PLAN_ID
+    assert step2.plan_version == "1"
+    assert step2.plan_digest == PLAN_DIGEST
+
+
+def test_attempt_lease_bidirectional_binding_negatives() -> None:
+    # 3a. attempt points at a lease bound to a different attempt
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    attempts[1]["task_lease_id"] = LEASE_2_ID
+    with pytest.raises(
+        TaskLedgerContractError, match="references a task lease bound to a different attempt"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # 3b. two active leases for the same attempt
+    mapping = _contract_mapping()
+    leases = mapping["ledger_contracts"]["task_leases"]
+    second_active = _lease_mapping()
+    second_active["task_lease_id"] = LEASE_3_ID
+    second_active["attempt_id"] = ATTEMPT_2_ID
+    leases.append(second_active)
+    with pytest.raises(TaskLedgerContractError, match="at most one active task lease"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # 3c. revoked/expired lease referenced as the current lease
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["task_leases"][0]["state"] = "revoked"
+    with pytest.raises(TaskLedgerContractError, match="must be active"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["task_leases"][0]["state"] = "expired"
+    with pytest.raises(TaskLedgerContractError, match="must be active"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_attempt_lease_state_matrix_negatives() -> None:
+    # dispatching without a lease is rejected by the state matrix
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    attempts[1]["state"] = "dispatching"
+    attempts[1]["task_lease_id"] = None
+    attempts[1]["task_fencing_token"] = None
+    with pytest.raises(
+        TaskLedgerContractError, match="leased, dispatching and running attempts require"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # running without a lease
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    attempts[1]["task_lease_id"] = None
+    attempts[1]["task_fencing_token"] = None
+    with pytest.raises(
+        TaskLedgerContractError, match="leased, dispatching and running attempts require"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        # only ID without fencing
+        (lambda r: r.update({"run_fencing_token": None}), "must be all-or-none"),
+        # only fencing without ID
+        (lambda r: r.update({"run_lease_id": None}), "must be all-or-none"),
+        # only the Run group without the Node group
+        (
+            lambda r: r.update({"node_id": None, "node_fencing_token": None}),
+            "must be all-or-none",
+        ),
+        # only the Node group without the Run group
+        (
+            lambda r: r.update({"run_lease_id": None, "run_fencing_token": None}),
+            "must be all-or-none",
+        ),
+        # created state must not carry any binding
+        (lambda r: r.update({"state": "created"}), "created agent run must not carry"),
+        # terminal state must not carry any binding
+        (
+            lambda r: r.update({"state": "cancelled"}),
+            "terminal agent run must not retain",
+        ),
+        # runtime identity without workload thumbprint
+        (
+            lambda r: r.update({"workload_identity_thumbprint": None}),
+            "must be provided together",
+        ),
+        # leased state missing the runtime/workload identity
+        (
+            lambda r: r.update({"state": "leased", "runtime_instance_id": None}),
+            "must be provided together",
+        ),
+    ],
+)
+def test_agent_run_binding_all_or_none_negatives(mutation, message: str) -> None:
+    mapping = _run_mapping()
+    mutation(mapping)
+    with pytest.raises(TaskLedgerContractError, match=message):
+        AgentRunBinding.from_mapping(mapping)
+
+
+def test_configured_ceilings_are_enforced() -> None:
+    # Tightening deadline_ceiling_seconds to 60 must reject the 12h sample task.
+    mapping = _contract_mapping()
+    mapping["deadline_ceiling_seconds"] = 60
+    with pytest.raises(TaskLedgerContractError, match="exceeds the configured ceiling"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # Tightening task_lease_ttl_ceiling_seconds to 60 must reject the 5min lease.
+    mapping = _contract_mapping()
+    mapping["task_lease_ttl_ceiling_seconds"] = 60
+    with pytest.raises(TaskLedgerContractError, match="exceeds the configured ceiling"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_step_plan_identity_and_dag_negatives() -> None:
+    # plan_digest drift between the Step and its parent Task
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["steps"][0]["plan_digest"] = "0" * 64
+    with pytest.raises(TaskLedgerContractError, match="plan identity drifts"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # unknown dependency step
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["steps"][1]["dependencies"] = [
+        "99999999-9999-9999-9999-999999999999"
+    ]
+    with pytest.raises(TaskLedgerContractError, match="unknown dependency step"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # cross-task/cross-run dependency (a step of a different run)
+    mapping = _contract_mapping()
+    run2 = _run_mapping()
+    run2["agent_run_id"] = "99999999-9999-9999-9999-999999999999"
+    run2["workspace_run_id"] = "99999999-9999-9999-9999-999999999998"
+    mapping["ledger_contracts"]["runs"].append(run2)
+    step3 = _step_mapping()
+    step3["step_id"] = "99999999-9999-9999-9999-999999999997"
+    step3["agent_run_id"] = run2["agent_run_id"]
+    step3["step_number"] = 3
+    step3["dependencies"] = [STEP_ID]
+    mapping["ledger_contracts"]["steps"].append(step3)
+    with pytest.raises(TaskLedgerContractError, match="cross-task or cross-run"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # dependency cycle
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["steps"][0]["dependencies"] = [STEP_2_ID]
+    with pytest.raises(TaskLedgerContractError, match="contains a cycle"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # duplicate step_number within the task
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["steps"][1]["step_number"] = 1
+    with pytest.raises(TaskLedgerContractError, match="unique within the task"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_deadline_hierarchy_negatives() -> None:
+    # attempt.deadline after the task deadline
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    attempts[1]["deadline"] = "2026-08-03T13:00:00Z"
+    with pytest.raises(
+        TaskLedgerContractError, match="deadline must not be later than the task deadline"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # task lease expiry after the attempt deadline
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    attempts[1]["deadline"] = "2026-08-03T00:12:00Z"
+    with pytest.raises(
+        TaskLedgerContractError, match="expiry must not be later than the attempt deadline"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # attempt.created_at not before its deadline
+    mapping = _attempt_mapping()
+    mapping["deadline"] = "2026-08-03T00:10:00Z"
+    with pytest.raises(TaskLedgerContractError, match="attempt.deadline must be after"):
+        AgentAttempt.from_mapping(mapping)
+
+
+def test_hash_profile_identity_binding() -> None:
+    claim_payload = {
+        "operation": "agent.attempt.claim",
+        "tenant_id": TENANT_ID,
+        "workspace_id": WORKSPACE_ID,
+        "workspace_generation": 1,
+        "task_id": TASK_ID,
+        "task_generation": 1,
+        "agent_run_id": RUN_ID,
+        "step_id": STEP_ID,
+        "attempt_id": ATTEMPT_2_ID,
+        "attempt_number": 2,
+        "expected_previous_state": "running",
+        "run_lease_id": RUN_LEASE_ID,
+        "run_fencing_token": 3,
+        "node_id": NODE_ID,
+        "node_fencing_token": 1,
+        "agent_version_digest": VERSION_DIGEST,
+        "resource_scope_digest": RESOURCE_SCOPE_DIGEST,
+        "budget_policy_digest": BUDGET_POLICY_DIGEST,
+        "deadline": "2026-08-03T12:00:00Z",
+    }
+    first = compute_request_hash("attempt_claim", claim_payload)
+    assert compute_request_hash("attempt_claim", dict(claim_payload)) == first
+    # any security-relevant immutable identity is required by the closed set
+    with pytest.raises(TaskLedgerContractError, match="is missing fields"):
+        compute_request_hash(
+            "attempt_claim",
+            {key: value for key, value in claim_payload.items() if key != "agent_run_id"},
+        )
+    with pytest.raises(TaskLedgerContractError, match="is missing fields"):
+        compute_request_hash(
+            "attempt_claim",
+            {key: value for key, value in claim_payload.items() if key != "node_id"},
+        )
+    with pytest.raises(TaskLedgerContractError, match="is missing fields"):
+        compute_request_hash(
+            "attempt_claim",
+            {key: value for key, value in claim_payload.items() if key != "agent_version_digest"},
+        )
+    heartbeat_payload = {
+        "operation": "agent.attempt.heartbeat",
+        "tenant_id": TENANT_ID,
+        "workspace_id": WORKSPACE_ID,
+        "workspace_generation": 1,
+        "task_id": TASK_ID,
+        "task_generation": 1,
+        "agent_run_id": RUN_ID,
+        "step_id": STEP_ID,
+        "attempt_id": ATTEMPT_2_ID,
+        "attempt_number": 2,
+        "run_lease_id": RUN_LEASE_ID,
+        "run_fencing_token": 3,
+        "node_id": NODE_ID,
+        "node_fencing_token": 1,
+        "task_lease_id": TASK_LEASE_ID,
+        "task_fencing_token": 9,
+        "agent_version_digest": VERSION_DIGEST,
+        "resource_scope_digest": RESOURCE_SCOPE_DIGEST,
+        "budget_policy_digest": BUDGET_POLICY_DIGEST,
+    }
+    compute_request_hash("attempt_heartbeat", heartbeat_payload)
+    with pytest.raises(TaskLedgerContractError, match="is missing fields"):
+        compute_request_hash(
+            "attempt_heartbeat",
+            {key: value for key, value in heartbeat_payload.items() if key != "task_lease_id"},
+        )
+
+
+def test_report_evidence_scope_semantics(tmp_path: Path) -> None:
+    config = _synthetic_config(tmp_path)
+    # validate_only never claims source-boundary or gate execution
+    only = TaskLedgerContractGate(tmp_path / "repo").validate_only(config)
+    scope = only.to_dict()["verification_evidence"]
+    assert scope["mode"] == "validate_only"
+    assert scope["static_source_boundary"]["checked"] is False
+    assert scope["gate_execution"]["feature_gates_resolved"] is False
+    assert scope["gate_execution"]["sealed_digests_verified"] is False
+    assert scope["direct_runtime_execution"] == "not_executed_by_gate"
+    assert scope["import_ast_analysis"] == "proven_by_tests_not_by_gate"
+
+    # verify actually executed the static source boundary and sealed checks
+    verified = TaskLedgerContractGate(tmp_path / "repo").verify(config, source=_source())
+    scope = verified.to_dict()["verification_evidence"]
+    assert scope["mode"] == "verify"
+    assert scope["static_source_boundary"]["checked"] is True
+    assert scope["static_source_boundary"]["migration_head_verified"] is True
+    assert scope["gate_execution"]["feature_gates_resolved"] is True
+    assert scope["gate_execution"]["sealed_digests_verified"] is True
+    assert scope["direct_runtime_execution"] == "not_executed_by_gate"

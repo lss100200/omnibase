@@ -265,13 +265,18 @@ _HASH_PROFILE_FIELDS: dict[str, frozenset[str]] = {
             "workspace_generation",
             "task_id",
             "task_generation",
+            "agent_run_id",
             "step_id",
             "attempt_id",
             "attempt_number",
             "expected_previous_state",
             "run_lease_id",
             "run_fencing_token",
+            "node_id",
             "node_fencing_token",
+            "agent_version_digest",
+            "resource_scope_digest",
+            "budget_policy_digest",
             "deadline",
         }
     ),
@@ -283,11 +288,19 @@ _HASH_PROFILE_FIELDS: dict[str, frozenset[str]] = {
             "workspace_generation",
             "task_id",
             "task_generation",
+            "agent_run_id",
             "step_id",
             "attempt_id",
             "attempt_number",
+            "run_lease_id",
+            "run_fencing_token",
+            "node_id",
+            "node_fencing_token",
             "task_lease_id",
             "task_fencing_token",
+            "agent_version_digest",
+            "resource_scope_digest",
+            "budget_policy_digest",
         }
     ),
     "attempt_finish": frozenset(
@@ -298,11 +311,19 @@ _HASH_PROFILE_FIELDS: dict[str, frozenset[str]] = {
             "workspace_generation",
             "task_id",
             "task_generation",
+            "agent_run_id",
             "step_id",
             "attempt_id",
             "attempt_number",
+            "run_lease_id",
+            "run_fencing_token",
+            "node_id",
+            "node_fencing_token",
             "task_lease_id",
             "task_fencing_token",
+            "agent_version_digest",
+            "resource_scope_digest",
+            "budget_policy_digest",
             "expected_previous_state",
             "outcome",
             "result_digest",
@@ -854,7 +875,9 @@ class AgentTaskInvocation:
     created_at: str
 
     @classmethod
-    def from_mapping(cls, value: object) -> AgentTaskInvocation:
+    def from_mapping(
+        cls, value: object, *, deadline_ceiling_seconds: int | None = None
+    ) -> AgentTaskInvocation:
         data = _strict_object(value, name="task")
         _only_keys(
             data,
@@ -950,7 +973,7 @@ class AgentTaskInvocation:
             created_at=_strict_timestamp(data.get("created_at"), name="task.created_at"),
         )
         task._verify_create_request_hash()
-        task._validate_deadline_ceiling()
+        task._validate_deadline_ceiling(deadline_ceiling_seconds)
         return task
 
     def _verify_create_request_hash(self) -> None:
@@ -978,7 +1001,7 @@ class AgentTaskInvocation:
             raise TaskLedgerContractError("task.deadline must be after task.created_at")
         if (deadline - created).total_seconds() > ceiling:
             raise TaskLedgerContractError(
-                f"task deadline exceeds the server-owned ceiling of {ceiling} seconds"
+                f"task deadline exceeds the configured ceiling of {ceiling} seconds"
             )
 
     def to_dict(self) -> dict[str, object]:
@@ -1101,22 +1124,49 @@ class AgentRunBinding:
         return run
 
     def _validate_identity_binding(self) -> None:
-        if self.state.value in _AGENT_RUN_TERMINAL_STATES and (
-            self.runtime_instance_id is not None or self.workload_identity_thumbprint is not None
-        ):
+        # The four run-binding fields form one strict group and the two
+        # runtime/workload identity fields form another.  Within each group
+        # all fields are present together or all are absent; the group is
+        # required exactly while the AgentRun is bound to a live P34.4 Run
+        # (leased/running/paused) and absent before binding and after the
+        # terminal cleanup.
+        binding_fields = (
+            self.run_lease_id,
+            self.run_fencing_token,
+            self.node_id,
+            self.node_fencing_token,
+        )
+        binding_present = all(field is not None for field in binding_fields)
+        binding_absent = all(field is None for field in binding_fields)
+        if not binding_present and not binding_absent:
             raise TaskLedgerContractError(
-                "terminal agent run must not retain runtime or workload identity"
+                "agent run binding fields (run_lease_id, run_fencing_token, node_id, "
+                "node_fencing_token) must be all-or-none"
             )
-        lease_bound = self.run_lease_id is not None or self.run_fencing_token is not None
-        node_bound = self.node_id is not None or self.node_fencing_token is not None
-        if lease_bound != node_bound:
+        identity_fields = (self.runtime_instance_id, self.workload_identity_thumbprint)
+        identity_present = all(field is not None for field in identity_fields)
+        identity_absent = all(field is None for field in identity_fields)
+        if not identity_present and not identity_absent:
             raise TaskLedgerContractError(
-                "agent run lease and node binding fields must be provided together"
+                "runtime_instance_id and workload_identity_thumbprint must be provided together"
             )
-        if self.run_lease_id is not None and self.run_fencing_token is None:
-            raise TaskLedgerContractError("run.run_fencing_token is required with run.run_lease_id")
-        if self.node_id is not None and self.node_fencing_token is None:
-            raise TaskLedgerContractError("run.node_fencing_token is required with run.node_id")
+        if self.state.value in _AGENT_RUN_TERMINAL_STATES:
+            if binding_present or identity_present:
+                raise TaskLedgerContractError(
+                    "terminal agent run must not retain run binding or runtime/workload identity"
+                )
+            return
+        if self.state is AgentRunState.CREATED:
+            if binding_present or identity_present:
+                raise TaskLedgerContractError(
+                    "created agent run must not carry run binding or runtime/workload identity"
+                )
+            return
+        if not binding_present or not identity_present:
+            raise TaskLedgerContractError(
+                "leased, running and paused agent runs require the full run binding group "
+                "and runtime/workload identity"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1293,12 +1343,29 @@ class AgentAttempt:
         return attempt
 
     def _validate_state_fields(self) -> None:
-        if self.state.value in _ATTEMPT_TERMINAL_STATES and self.task_lease_id is not None:
-            raise TaskLedgerContractError("terminal attempt must not retain a task lease")
-        if self.state is AttemptState.LEASED and self.task_lease_id is None:
+        if self.state in (AttemptState.PENDING, AttemptState.READY) and (
+            self.task_lease_id is not None or self.task_fencing_token is not None
+        ):
             raise TaskLedgerContractError(
-                "leased attempt requires a task lease and task fencing token"
+                "pre-dispatch attempt must not carry a task lease or fencing token"
             )
+        if self.state in (AttemptState.LEASED, AttemptState.DISPATCHING, AttemptState.RUNNING) and (
+            self.task_lease_id is None or self.task_fencing_token is None
+        ):
+            raise TaskLedgerContractError(
+                "leased, dispatching and running attempts require a task lease and task fencing token"
+            )
+        if self.state.value in _ATTEMPT_TERMINAL_STATES and (
+            self.task_lease_id is not None or self.task_fencing_token is not None
+        ):
+            raise TaskLedgerContractError(
+                "terminal attempt must not retain a task lease or fencing token; "
+                "the historical lease record is the immutable reference"
+            )
+        created = _parse_utc_timestamp(self.created_at, name="attempt.created_at")
+        deadline = _parse_utc_timestamp(self.deadline, name="attempt.deadline")
+        if deadline <= created:
+            raise TaskLedgerContractError("attempt.deadline must be after attempt.created_at")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1338,7 +1405,9 @@ class TaskLeaseContract:
     created_at: str
 
     @classmethod
-    def from_mapping(cls, value: object) -> TaskLeaseContract:
+    def from_mapping(
+        cls, value: object, *, task_lease_ttl_ceiling_seconds: int | None = None
+    ) -> TaskLeaseContract:
         data = _strict_object(value, name="task_lease")
         _only_keys(
             data,
@@ -1395,19 +1464,19 @@ class TaskLeaseContract:
             heartbeat_at=heartbeat_at,
             created_at=_strict_timestamp(data.get("created_at"), name="task_lease.created_at"),
         )
-        lease._validate_state_fields()
+        lease._validate_state_fields(task_lease_ttl_ceiling_seconds)
         return lease
 
-    def _validate_state_fields(self) -> None:
+    def _validate_state_fields(self, ttl_ceiling_seconds: int | None = None) -> None:
         if self.state is LeaseState.ACTIVE:
             created = _parse_utc_timestamp(self.created_at, name="task_lease.created_at")
             expires = _parse_utc_timestamp(self.expires_at, name="task_lease.expires_at")
             if expires <= created:
                 raise TaskLedgerContractError("active task lease must expire after creation")
-            if (expires - created).total_seconds() > _DEFAULT_TASK_LEASE_TTL_CEILING_SECONDS:
+            ceiling = ttl_ceiling_seconds or _DEFAULT_TASK_LEASE_TTL_CEILING_SECONDS
+            if (expires - created).total_seconds() > ceiling:
                 raise TaskLedgerContractError(
-                    "task lease TTL exceeds the server-owned ceiling of "
-                    f"{_DEFAULT_TASK_LEASE_TTL_CEILING_SECONDS} seconds"
+                    "task lease TTL exceeds the configured ceiling of " f"{ceiling} seconds"
                 )
         if self.state is LeaseState.COMPLETED and self.heartbeat_at is None:
             raise TaskLedgerContractError("completed task lease must record a final heartbeat_at")
@@ -1845,7 +1914,14 @@ class LedgerContracts:
     lease_expiry_bounds: LeaseExpiryBounds
 
     @classmethod
-    def from_mapping(cls, value: object, *, ceilings: Mapping[str, int]) -> LedgerContracts:
+    def from_mapping(
+        cls,
+        value: object,
+        *,
+        ceilings: Mapping[str, int],
+        deadline_ceiling_seconds: int | None = None,
+        task_lease_ttl_ceiling_seconds: int | None = None,
+    ) -> LedgerContracts:
         data = _strict_object(value, name="ledger_contracts")
         _only_keys(
             data,
@@ -1863,7 +1939,9 @@ class LedgerContracts:
             name="ledger_contracts",
         )
         tasks = tuple(
-            AgentTaskInvocation.from_mapping(item)
+            AgentTaskInvocation.from_mapping(
+                item, deadline_ceiling_seconds=deadline_ceiling_seconds
+            )
             for item in _strict_list(data.get("tasks"), name="ledger_contracts.tasks")
         )
         runs = tuple(
@@ -1879,7 +1957,9 @@ class LedgerContracts:
             for item in _strict_list(data.get("attempts"), name="ledger_contracts.attempts")
         )
         task_leases = tuple(
-            TaskLeaseContract.from_mapping(item)
+            TaskLeaseContract.from_mapping(
+                item, task_lease_ttl_ceiling_seconds=task_lease_ttl_ceiling_seconds
+            )
             for item in _strict_list(data.get("task_leases"), name="ledger_contracts.task_leases")
         )
         effects = tuple(
@@ -2131,7 +2211,10 @@ class TaskLedgerContractConfig:
         evidence = _parse_evidence_block(data)
         critical_veto = _parse_critical_block(data.get("critical_veto"))
         ledger = LedgerContracts.from_mapping(
-            data.get("ledger_contracts"), ceilings=ceilings.as_mapping()
+            data.get("ledger_contracts"),
+            ceilings=ceilings.as_mapping(),
+            deadline_ceiling_seconds=deadline_ceiling,
+            task_lease_ttl_ceiling_seconds=lease_ttl_ceiling,
         )
         config = cls(
             schema_version=1,
@@ -2175,7 +2258,7 @@ class TaskLedgerContractConfig:
         runs_by_id = {run.agent_run_id: run for run in ledger.runs}
         steps_by_id = {step.step_id: step for step in ledger.steps}
         attempts_by_id = {attempt.attempt_id: attempt for attempt in ledger.attempts}
-        lease_ids = {lease.task_lease_id for lease in ledger.task_leases}
+        leases_by_id = {lease.task_lease_id: lease for lease in ledger.task_leases}
         if len(tasks_by_id) != len(ledger.tasks):
             raise TaskLedgerContractError("task IDs must be unique")
         if len(runs_by_id) != len(ledger.runs):
@@ -2184,16 +2267,19 @@ class TaskLedgerContractConfig:
             raise TaskLedgerContractError("step IDs must be unique")
         if len(attempts_by_id) != len(ledger.attempts):
             raise TaskLedgerContractError("attempt IDs must be unique")
-        if len(lease_ids) != len(ledger.task_leases):
+        if len(leases_by_id) != len(ledger.task_leases):
             raise TaskLedgerContractError("task lease IDs must be unique")
 
         self._validate_run_references(ledger, tasks_by_id)
-        self._validate_step_references(ledger, tasks_by_id, runs_by_id)
-        attempts_by_task = self._validate_attempt_references(
-            ledger, tasks_by_id, runs_by_id, steps_by_id, lease_ids
+        self._validate_step_references(ledger, tasks_by_id, runs_by_id, steps_by_id)
+        attempts_by_step = self._validate_attempt_references(
+            ledger, tasks_by_id, runs_by_id, steps_by_id, leases_by_id
         )
-        self._validate_attempt_ordering(attempts_by_task)
-        self._validate_task_lease_references(ledger, tasks_by_id, attempts_by_id, runs_by_id)
+        self._validate_attempt_ordering(attempts_by_step)
+        self._validate_task_fencing_monotonic(ledger.attempts)
+        self._validate_task_lease_references(
+            ledger, tasks_by_id, attempts_by_id, runs_by_id, leases_by_id
+        )
         self._validate_effect_references(ledger, attempts_by_id)
         self._validate_checkpoint_references(ledger, tasks_by_id, attempts_by_id)
 
@@ -2222,7 +2308,9 @@ class TaskLedgerContractConfig:
         ledger: LedgerContracts,
         tasks_by_id: Mapping[str, AgentTaskInvocation],
         runs_by_id: Mapping[str, AgentRunBinding],
+        steps_by_id: Mapping[str, AgentStep],
     ) -> None:
+        steps_by_task: dict[str, list[AgentStep]] = {}
         for step in ledger.steps:
             bound_task = tasks_by_id.get(step.task_id)
             bound_run = runs_by_id.get(step.agent_run_id)
@@ -2234,6 +2322,62 @@ class TaskLedgerContractConfig:
                 raise TaskLedgerContractError(
                     f"step {step.step_id} crosses the task/run binding boundary"
                 )
+            if bound_task.plan_id is None:
+                raise TaskLedgerContractError(
+                    f"step {step.step_id} requires a task with an immutable plan identity"
+                )
+            if (
+                step.plan_id != bound_task.plan_id
+                or step.plan_version != bound_task.plan_version
+                or step.plan_digest != bound_task.plan_digest
+            ):
+                raise TaskLedgerContractError(
+                    f"step {step.step_id} plan identity drifts from the task plan identity"
+                )
+            for dependency in step.dependencies:
+                bound_dependency = steps_by_id.get(dependency)
+                if bound_dependency is None:
+                    raise TaskLedgerContractError(
+                        f"step {step.step_id} references an unknown dependency step {dependency}"
+                    )
+                if (
+                    bound_dependency.task_id != step.task_id
+                    or bound_dependency.agent_run_id != step.agent_run_id
+                ):
+                    raise TaskLedgerContractError(
+                        f"step {step.step_id} references a cross-task or cross-run "
+                        f"dependency step {dependency}"
+                    )
+            steps_by_task.setdefault(step.task_id, []).append(step)
+        for task_steps in steps_by_task.values():
+            numbers = [step.step_number for step in task_steps]
+            if len(numbers) != len(set(numbers)):
+                raise TaskLedgerContractError("step_number values must be unique within the task")
+        TaskLedgerContractConfig._validate_step_dag(ledger.steps)
+
+    @staticmethod
+    def _validate_step_dag(steps: tuple[AgentStep, ...]) -> None:
+        """Reject dependency cycles over the resolved same-task step graph."""
+        by_id = {step.step_id: step for step in steps}
+
+        def visit(step: AgentStep, visiting: set[str], visited: set[str]) -> None:
+            if step.step_id in visited:
+                return
+            if step.step_id in visiting:
+                raise TaskLedgerContractError(
+                    f"step dependency graph contains a cycle at step {step.step_id}"
+                )
+            visiting.add(step.step_id)
+            for dependency in step.dependencies:
+                target = by_id.get(dependency)
+                if target is not None:
+                    visit(target, visiting, visited)
+            visiting.remove(step.step_id)
+            visited.add(step.step_id)
+
+        visited: set[str] = set()
+        for step in steps:
+            visit(step, set(), visited)
 
     @staticmethod
     def _validate_attempt_references(
@@ -2241,9 +2385,9 @@ class TaskLedgerContractConfig:
         tasks_by_id: Mapping[str, AgentTaskInvocation],
         runs_by_id: Mapping[str, AgentRunBinding],
         steps_by_id: Mapping[str, AgentStep],
-        lease_ids: set[str],
-    ) -> dict[str, list[AgentAttempt]]:
-        attempts_by_task: dict[str, list[AgentAttempt]] = {}
+        leases_by_id: Mapping[str, TaskLeaseContract],
+    ) -> dict[tuple[str, str], list[AgentAttempt]]:
+        attempts_by_step: dict[tuple[str, str], list[AgentAttempt]] = {}
         for attempt in ledger.attempts:
             bound_task = tasks_by_id.get(attempt.task_id)
             bound_run = runs_by_id.get(attempt.agent_run_id)
@@ -2260,17 +2404,43 @@ class TaskLedgerContractConfig:
                 raise TaskLedgerContractError(
                     f"attempt {attempt.attempt_id} binds a step from a different agent run"
                 )
-            if attempt.task_lease_id is not None and attempt.task_lease_id not in lease_ids:
+            if attempt.task_lease_id is not None:
+                bound_lease = leases_by_id.get(attempt.task_lease_id)
+                if bound_lease is None:
+                    raise TaskLedgerContractError(
+                        f"attempt {attempt.attempt_id} references an unknown task lease "
+                        f"{attempt.task_lease_id}"
+                    )
+                if bound_lease.attempt_id != attempt.attempt_id:
+                    raise TaskLedgerContractError(
+                        f"attempt {attempt.attempt_id} references a task lease bound to a "
+                        f"different attempt {bound_lease.attempt_id}"
+                    )
+                if (
+                    bound_lease.task_id != attempt.task_id
+                    or bound_lease.agent_run_id != attempt.agent_run_id
+                ):
+                    raise TaskLedgerContractError(
+                        f"attempt {attempt.attempt_id} task lease crosses the task/run "
+                        "binding boundary"
+                    )
+            task_deadline = _parse_utc_timestamp(bound_task.deadline, name="task.deadline")
+            attempt_deadline = _parse_utc_timestamp(attempt.deadline, name="attempt.deadline")
+            if attempt_deadline > task_deadline:
                 raise TaskLedgerContractError(
-                    f"attempt {attempt.attempt_id} references an unknown task lease "
-                    f"{attempt.task_lease_id}"
+                    f"attempt {attempt.attempt_id} deadline must not be later than the "
+                    "task deadline"
                 )
-            attempts_by_task.setdefault(attempt.task_id, []).append(attempt)
-        return attempts_by_task
+            attempts_by_step.setdefault((attempt.task_id, attempt.step_id), []).append(attempt)
+        return attempts_by_step
 
     @staticmethod
-    def _validate_attempt_ordering(attempts_by_task: Mapping[str, list[AgentAttempt]]) -> None:
-        for attempts in attempts_by_task.values():
+    def _validate_attempt_ordering(
+        attempts_by_step: Mapping[tuple[str, str], list[AgentAttempt]],
+    ) -> None:
+        # attempt_number is a per-(task_id, step_id) sequence: every Step of a
+        # Task restarts at 1 and a retry of the same Step increases it.
+        for attempts in attempts_by_step.values():
             ordered = sorted(attempts, key=lambda item: item.attempt_number)
             for previous, current in pairwise(ordered):
                 validate_retry(
@@ -2281,59 +2451,131 @@ class TaskLedgerContractConfig:
                 )
 
     @staticmethod
+    def _validate_task_fencing_monotonic(attempts: tuple[AgentAttempt, ...]) -> None:
+        # task_fencing_token is a Task-wide monotonically increasing sequence:
+        # every Task Lease claim of the Task (across all Steps) must use a
+        # strictly higher token, so an old holder can never resubmit.
+        fenced = sorted(
+            [
+                (attempt.created_at, attempt.task_fencing_token)
+                for attempt in attempts
+                if attempt.task_fencing_token is not None
+            ],
+            key=lambda item: item[0],
+        )
+        for (_, previous_token), (_, current_token) in pairwise(fenced):
+            if current_token <= previous_token:
+                raise TaskLedgerContractError(
+                    "task fencing must increase monotonically across the task attempts"
+                )
+
+    @staticmethod
     def _validate_task_lease_references(
         ledger: LedgerContracts,
         tasks_by_id: Mapping[str, AgentTaskInvocation],
         attempts_by_id: Mapping[str, AgentAttempt],
         runs_by_id: Mapping[str, AgentRunBinding],
+        leases_by_id: Mapping[str, TaskLeaseContract],
     ) -> None:
+        active_leases_by_attempt: dict[str, list[TaskLeaseContract]] = {}
         for lease in ledger.task_leases:
-            bound_task = tasks_by_id.get(lease.task_id)
-            bound_attempt = attempts_by_id.get(lease.attempt_id)
-            bound_run = runs_by_id.get(lease.agent_run_id)
-            if bound_task is None or bound_attempt is None or bound_run is None:
+            if lease.state is LeaseState.ACTIVE:
+                active_leases_by_attempt.setdefault(lease.attempt_id, []).append(lease)
+        for attempt_id, active_leases in active_leases_by_attempt.items():
+            if len(active_leases) > 1:
                 raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} references an unknown task, attempt or run"
+                    f"attempt {attempt_id} must have at most one active task lease"
                 )
-            if bound_attempt.task_id != lease.task_id or bound_run.task_id != lease.task_id:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} crosses the task binding boundary"
-                )
-            if bound_attempt.agent_run_id != lease.agent_run_id:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} binds an attempt from a different agent run"
-                )
-            if lease.run_lease_id != bound_run.run_lease_id:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} does not bind the current run lease"
-                )
-            if lease.run_fencing_token != bound_run.run_fencing_token:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} binds a stale run fencing token"
-                )
-            if (
-                lease.node_id != bound_run.node_id
-                or lease.node_fencing_token != bound_run.node_fencing_token
-            ):
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} does not bind the current node fencing"
-                )
-            if lease.workspace_generation != bound_run.workspace_generation:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} binds a stale workspace generation"
-                )
-            if bound_attempt.task_fencing_token is not None and (
-                lease.task_fencing_token != bound_attempt.task_fencing_token
-            ):
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} binds a task fencing token that "
-                    "does not match the attempt"
-                )
-            if lease.expires_at != ledger.lease_expiry_bounds.task_lease_expiry:
-                raise TaskLedgerContractError(
-                    f"task lease {lease.task_lease_id} expiry disagrees with the "
-                    "lease_expiry_bounds contract"
-                )
+        for lease in ledger.task_leases:
+            TaskLedgerContractConfig._validate_one_task_lease(
+                lease, ledger, tasks_by_id, attempts_by_id, runs_by_id
+            )
+
+    @staticmethod
+    def _validate_one_task_lease(
+        lease: TaskLeaseContract,
+        ledger: LedgerContracts,
+        tasks_by_id: Mapping[str, AgentTaskInvocation],
+        attempts_by_id: Mapping[str, AgentAttempt],
+        runs_by_id: Mapping[str, AgentRunBinding],
+    ) -> None:
+        bound_task = tasks_by_id.get(lease.task_id)
+        bound_attempt = attempts_by_id.get(lease.attempt_id)
+        bound_run = runs_by_id.get(lease.agent_run_id)
+        if bound_task is None or bound_attempt is None or bound_run is None:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} references an unknown task, attempt or run"
+            )
+        if bound_attempt.task_id != lease.task_id or bound_run.task_id != lease.task_id:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} crosses the task binding boundary"
+            )
+        if bound_attempt.agent_run_id != lease.agent_run_id:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} binds an attempt from a different agent run"
+            )
+        if (
+            bound_attempt.state
+            in (AttemptState.LEASED, AttemptState.DISPATCHING, AttemptState.RUNNING)
+            and bound_attempt.task_lease_id != lease.task_lease_id
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} is not the current lease of its attempt; "
+                "an active attempt must point back to exactly this lease"
+            )
+        if lease.run_lease_id != bound_run.run_lease_id:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} does not bind the current run lease"
+            )
+        if lease.run_fencing_token != bound_run.run_fencing_token:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} binds a stale run fencing token"
+            )
+        if (
+            lease.node_id != bound_run.node_id
+            or lease.node_fencing_token != bound_run.node_fencing_token
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} does not bind the current node fencing"
+            )
+        if lease.workspace_generation != bound_run.workspace_generation:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} binds a stale workspace generation"
+            )
+        if bound_attempt.task_fencing_token is not None and (
+            lease.task_fencing_token != bound_attempt.task_fencing_token
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} binds a task fencing token that "
+                "does not match the attempt"
+            )
+        if lease.expires_at != ledger.lease_expiry_bounds.task_lease_expiry:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} expiry disagrees with the "
+                "lease_expiry_bounds contract"
+            )
+        attempt_deadline = _parse_utc_timestamp(bound_attempt.deadline, name="attempt.deadline")
+        task_deadline = _parse_utc_timestamp(bound_task.deadline, name="task.deadline")
+        lease_expiry = _parse_utc_timestamp(lease.expires_at, name="task_lease.expires_at")
+        if lease_expiry > attempt_deadline:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} expiry must not be later than the "
+                "attempt deadline"
+            )
+        if lease_expiry > task_deadline:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} expiry must not be later than the "
+                "task deadline"
+            )
+        if lease.state is not LeaseState.ACTIVE and bound_attempt.state in (
+            AttemptState.LEASED,
+            AttemptState.DISPATCHING,
+            AttemptState.RUNNING,
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} referenced by a leased, dispatching "
+                "or running attempt must be active"
+            )
 
     @staticmethod
     def _validate_effect_references(
@@ -2485,6 +2727,7 @@ class TaskLedgerContractReport:
     blockers: tuple[str, ...]
     vetoes: tuple[str, ...]
     migration_head: str | None
+    evidence_scope: dict[str, object]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -2516,6 +2759,7 @@ class TaskLedgerContractReport:
             "business_database_accessed": False,
             "business_database_migrated": False,
             "external_network_accessed": False,
+            "verification_evidence": self.evidence_scope,
         }
 
 
@@ -2561,6 +2805,23 @@ class TaskLedgerContractGate:
             blockers=tuple(blockers),
             vetoes=(),
             migration_head=None,
+            evidence_scope={
+                "mode": "validate_only",
+                "static_source_boundary": {
+                    "checked": False,
+                    "migration_head_verified": False,
+                    "forbidden_paths_verified": False,
+                    "openapi_snapshot_verified": False,
+                },
+                "import_ast_analysis": "proven_by_tests_not_by_gate",
+                "gate_execution": {
+                    "contract_parsed": True,
+                    "feature_gates_resolved": False,
+                    "sealed_digests_verified": False,
+                    "evidence_references_verified": False,
+                },
+                "direct_runtime_execution": "not_executed_by_gate",
+            },
         )
 
     def verify(
@@ -2618,6 +2879,7 @@ class TaskLedgerContractGate:
                 "Task execution is not authorized",
             ]
         )
+        source_boundary_ok = False
         try:
             migration_head = self._verify_source_boundaries(config)
         except (
@@ -2629,6 +2891,9 @@ class TaskLedgerContractGate:
         ) as exc:
             vetoes.append(f"source boundaries: {exc}")
             migration_head = None
+        else:
+            source_boundary_ok = True
+        sealed_ok = True
         try:
             self._verify_sealed_files(config)
         except (
@@ -2639,6 +2904,8 @@ class TaskLedgerContractGate:
             OSError,
         ) as exc:
             vetoes.append(f"sealed contracts: {exc}")
+            sealed_ok = False
+        gates_resolved = not any(veto.startswith("feature gates:") for veto in vetoes)
         state = AdmissionState.INVALID if vetoes else AdmissionState.BLOCKED
         return TaskLedgerContractReport(
             state=state,
@@ -2654,6 +2921,23 @@ class TaskLedgerContractGate:
             blockers=tuple(blockers),
             vetoes=tuple(vetoes),
             migration_head=migration_head,
+            evidence_scope={
+                "mode": "verify",
+                "static_source_boundary": {
+                    "checked": True,
+                    "migration_head_verified": source_boundary_ok,
+                    "forbidden_paths_verified": source_boundary_ok,
+                    "openapi_snapshot_verified": source_boundary_ok,
+                },
+                "import_ast_analysis": "proven_by_tests_not_by_gate",
+                "gate_execution": {
+                    "contract_parsed": True,
+                    "feature_gates_resolved": gates_resolved,
+                    "sealed_digests_verified": sealed_ok,
+                    "evidence_references_verified": True,
+                },
+                "direct_runtime_execution": "not_executed_by_gate",
+            },
         )
 
     def _verify_source_boundaries(self, config: TaskLedgerContractConfig) -> str:

@@ -94,17 +94,17 @@
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "fde44ea0f29f93190eec1a5ab9bd847ff197d97615b4f609f0b9d9646cf3be09"
+      "sha256": "7c56fd4f7547a85b0a133565869a5cc87078559213ccaf2ea56e7f7a7533823b"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "d142298146771a9233fe9dee10dd6d17617bda20f310cd416e784484d32825df"
+      "sha256": "29432aa52085932b083ac02aea8230a0d5f832bb1505df88c290f247494427f7"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "f43432ff5c272861c8131874ac30df7a754975bc80ecc900e94ee91e4e54479c"
+      "sha256": "14947eb898e668f85b9249fdcadcf9c001ca3cee43502f875d2e47e4f3c2b857"
     },
     {
       "name": "registry_tests",
