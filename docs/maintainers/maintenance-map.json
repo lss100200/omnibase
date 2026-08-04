@@ -1301,7 +1301,7 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0009",
+        "Alembic revisions 0001-0010",
         "make test-destructive",
         "omnibase migrate"
       ],

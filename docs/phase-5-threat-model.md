@@ -87,7 +87,7 @@ Runtime 代码、不创建进程/队列/网络连接，也没有任何"验证通
 7. **CLEAN-PROVENANCE**：`--verify` 只接受 clean checkout、精确匹配的
    Git remote 与 tracked source manifest；dirty 工作树是 veto。
 8. **CHAIN-HEAD**：迁移链必须是完整连通、无循环且恰好有一个 head 的链，
-   该 head 必须等于合同声明的 `expected_revision`（当前 `0009`）。
+   该 head 必须等于合同声明的 `expected_revision`（当前 `0010`）。
 9. **NO-SECRET-NO-DB**：validator 永不读取根 `.env`、凭据、证书载荷、
    数据库或业务存储；report 固定输出 `root_env_accessed=false`、
    `business_database_accessed=false`、`business_database_migrated=false`。

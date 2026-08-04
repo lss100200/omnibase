@@ -489,7 +489,7 @@ fail-closed。
   Overlay/Workspace-data/provider 九项生产证据全部 `not_proven`。
 - `scripts/production/validate_p5_0_admission.py --validate-only` 只解析
   合同（exit 0）；`--verify` 从 clean checkout 校验 Git provenance、
-  migration head（当前 `0009`）、OpenAPI snapshot、Python/TypeScript SDK
+  migration head（当前 `0010`）、OpenAPI snapshot、Python/TypeScript SDK
   版本、production composition、runbook 与 P34.7 decision 的 sealed
   digest，并解析环境中的 gate 值。
 - 当前正确输出恒为 `blocked/not_proven`（P34.7 非 ready + activation

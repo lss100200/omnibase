@@ -94,12 +94,12 @@
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "7c56fd4f7547a85b0a133565869a5cc87078559213ccaf2ea56e7f7a7533823b"
+      "sha256": "2557be90e229e85ae8d40290bd3b90901ba8537de2bc262253d14afde454f33b"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "3fb0efbaa5dcb1a7dcd1c8052ecfed4d9305306b65836e75f7f8a925a24b323f"
+      "sha256": "dba4aa05027fe3b2723fb205c7797665c3dcfd6fae968e1d94f682c66a42e454"
     },
     {
       "name": "security_invariants",
