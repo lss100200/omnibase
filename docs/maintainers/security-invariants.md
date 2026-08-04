@@ -1568,6 +1568,12 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
   或 UTC 归一化失败——含 `0001-01-01T00:00:00+23:59` 与
   `9999-12-31T23:59:59-23:59` 的年份边界溢出——都必须稳定转换为
   `TaskLedgerContractError`，不得泄漏 `ValueError`/`OverflowError`）；允许
+  `task_lease.created_at` 早于其绑定的 `attempt.created_at`（这会允许后来低
+  token holder 通过 backdate claim 时间把真实回退重新排序为表面递增）；允许
+  `completed`/`revoked`/`expired` 历史 Lease 绕过 `expires_at > created_at` 或
+  `task_lease_ttl_ceiling_seconds`（每条 append-only Lease 都是在签发时受同一
+  ceiling 约束的授权记录）；允许非空 `heartbeat_at` 落在 Lease 创建/过期
+  区间之外；允许
   pending/ready 携带 lease、leased/dispatching/running 缺失
   lease、terminal（含 unknown）保留 lease；允许 Attempt 引用另一 Attempt
   的 Lease、同 Attempt 双 active Lease 或 stale/revoked/expired lease 作为

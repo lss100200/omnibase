@@ -1489,18 +1489,29 @@ class TaskLeaseContract:
         return lease
 
     def _validate_state_fields(self, ttl_ceiling_seconds: int | None = None) -> None:
-        if self.state is LeaseState.ACTIVE:
-            created = _parse_utc_timestamp(self.created_at, name="task_lease.created_at")
-            expires = _parse_utc_timestamp(self.expires_at, name="task_lease.expires_at")
-            if expires <= created:
-                raise TaskLedgerContractError("active task lease must expire after creation")
-            ceiling = ttl_ceiling_seconds or _DEFAULT_TASK_LEASE_TTL_CEILING_SECONDS
-            if (expires - created).total_seconds() > ceiling:
-                raise TaskLedgerContractError(
-                    "task lease TTL exceeds the configured ceiling of " f"{ceiling} seconds"
-                )
+        # Every TaskLease is an immutable record of a lease that was originally
+        # issued, even after its state becomes completed/revoked/expired.  The
+        # creation/expiry interval and configured TTL ceiling therefore apply
+        # to the complete append-only ledger, not only to currently active
+        # rows.  Otherwise a historical row could evade the same server-owned
+        # bounds that governed it when it was issued.
+        created = _parse_utc_timestamp(self.created_at, name="task_lease.created_at")
+        expires = _parse_utc_timestamp(self.expires_at, name="task_lease.expires_at")
+        if expires <= created:
+            raise TaskLedgerContractError("task lease must expire after creation")
+        ceiling = ttl_ceiling_seconds or _DEFAULT_TASK_LEASE_TTL_CEILING_SECONDS
+        if (expires - created).total_seconds() > ceiling:
+            raise TaskLedgerContractError(
+                "task lease TTL exceeds the configured ceiling of " f"{ceiling} seconds"
+            )
         if self.state is LeaseState.COMPLETED and self.heartbeat_at is None:
             raise TaskLedgerContractError("completed task lease must record a final heartbeat_at")
+        if self.heartbeat_at is not None:
+            heartbeat = _parse_utc_timestamp(self.heartbeat_at, name="task_lease.heartbeat_at")
+            if heartbeat < created or heartbeat > expires:
+                raise TaskLedgerContractError(
+                    "task lease heartbeat_at must be within the lease creation/expiry interval"
+                )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -2615,6 +2626,13 @@ class TaskLedgerContractConfig:
         if bound_attempt.agent_run_id != lease.agent_run_id:
             raise TaskLedgerContractError(
                 f"task lease {lease.task_lease_id} binds an attempt from a different agent run"
+            )
+        lease_created = _parse_utc_timestamp(lease.created_at, name="task_lease.created_at")
+        attempt_created = _parse_utc_timestamp(bound_attempt.created_at, name="attempt.created_at")
+        if lease_created < attempt_created:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} must not be created before its bound "
+                f"attempt {bound_attempt.attempt_id}"
             )
         if (
             bound_attempt.state

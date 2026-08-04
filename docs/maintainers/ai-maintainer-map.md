@@ -590,6 +590,10 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   参与，按 `task_lease.created_at` 排序；terminal Attempt 清空
   `task_lease_id`/`task_fencing_token` 不抹除其历史 Lease——Attempt 只用于
   active Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性）；
+  `task_lease.created_at` 必须不早于其绑定的 `attempt.created_at`，禁止通过
+  backdated Lease claim 把真实 token 回退重新排序为表面递增；每条 Lease
+  （含 completed/revoked/expired 历史）都必须满足 `expires_at > created_at`
+  与配置后的 TTL ceiling，任何 heartbeat 必须位于该 Lease 区间内；
   fencing 时间轴是 `task_lease.created_at` 经 `_parse_utc_timestamp` 归一化
   后的 **UTC instant**（timestamp 合同允许 `Z`/`+HH:MM`/`-HH:MM`，原始
   字符串顺序不等于 UTC 顺序，禁止按字符串排序判单调，否则非法 token 回退会

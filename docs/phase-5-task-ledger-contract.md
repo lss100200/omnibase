@@ -241,6 +241,11 @@ running | committed | failed | unknown | cancelled`。
   历史会被静默丢弃、回退的 holder 会被错误接受。Attempt 仍用于 active
   Attempt ↔ active Task Lease 双向绑定、状态矩阵与 token 一致性校验，但
   不作为历史 fencing 账本；
+- **Lease claim 时间必须绑定 Attempt 时间**：`task_lease.created_at` 不得早于
+  其 `attempt_id` 所指向的 `attempt.created_at`。否则后来的低 token holder
+  可以把 Lease claim 倒填到 Attempt 尚未存在的时刻，把真实 `9 → 3` 回退在
+  Lease 时间轴上伪装成 `3 → 9`；这种 backdated claim 必须在 fencing chronology
+  之前 fail closed；
 - **fencing 时间轴 = 归一化 UTC instant**：项目 timestamp 合同允许
   `Z`、`+HH:MM`、`-HH:MM` 三种写法，原始 ISO-8601 字符串顺序**不等于**真实
   UTC 顺序（如 `2026-08-02T23:11:00-01:00` 的字符串小于
@@ -297,7 +302,11 @@ running | committed | failed | unknown | cancelled`。
 12. terminal P34.4 Run 不可因 Agent Task 恢复而复活。
 
 `task_lease_ttl_ceiling_seconds` 冻结为 ≤ P34.4 Run Lease TTL 域上限
-（300s）；`active` lease 必须 `expires_at > created_at` 且 TTL ≤ ceiling。
+（300s）；**每一条** append-only TaskLease（`active`/`completed`/`revoked`/
+`expired`）都必须 `expires_at > created_at` 且 TTL ≤ ceiling。历史态 Lease
+只是状态改变，不会抹掉它签发时必须满足的 TTL 边界；不能让非 active 状态
+绕过 ceiling。任何非空 `heartbeat_at` 必须落在 `[created_at, expires_at]`
+区间内，`completed` 仍然必须存在 final heartbeat。
 配置收紧值（`deadline_ceiling_seconds`、`task_lease_ttl_ceiling_seconds`）
 **真正作用于每个 DTO**：AgentTaskInvocation 与 TaskLeaseContract 的
 解析器接收 config 值并逐实例校验，不是只验证 config 值不超过模块默认
@@ -470,6 +479,8 @@ dispatching | committed | failed | unknown`。
 
 ```text
 attempt.created_at < attempt.deadline
+attempt.created_at <= task_lease.created_at
+task_lease.created_at < task_lease.expires_at
 attempt.deadline   <= task.deadline
 task_lease.expires_at <= attempt.deadline
 task_lease.expires_at <= task.deadline

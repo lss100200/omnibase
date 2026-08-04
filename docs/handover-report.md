@@ -2357,4 +2357,32 @@ cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build
 
 ---
 
+### P5.2A Round 5 主 Agent 直接修复（2026-08-04）
+
+Round 4 已把 fencing 权威来源迁移到 append-only TaskLease 账本并收紧
+timestamp parser，但主 Agent 的验收反例继续发现 TaskLease 时间矩阵可被
+backdate：后来的 token 3 Attempt 创建于 00:20，其 active Lease 却可声明
+`created_at=00:11`，而较早 token 9 Lease 为 00:14；合同按 Lease 时间排序后
+看到伪造的 `3 → 9` 并接受，尽管真实 Attempt chronology 是 `9 → 3`。
+
+本轮直接修复：
+
+1. 每条 TaskLease 的 `created_at` 必须不早于其绑定 Attempt 的
+   `created_at`，结构绑定校验先于 Task-wide fencing chronology，任何
+   backdated claim fail closed；
+2. `expires_at > created_at` 与 `task_lease_ttl_ceiling_seconds` 现在作用于
+   `active`、`completed`、`revoked`、`expired` 全部 append-only Lease，历史
+   状态不再绕过签发时的 300 秒 ceiling；
+3. 任意非空 `heartbeat_at` 必须位于 `[created_at, expires_at]`，completed
+   Lease 继续要求 final heartbeat；
+4. 新增完整 `TaskLedgerContractConfig.from_mapping` 反例：backdated Lease
+   重排、三种历史态 TTL 绕过、三种历史态反向 expiry、heartbeat 早于创建或
+   晚于过期；Round 4 历史 Lease fixtures 同步收紧到有效 TTL 区间。
+
+P5.2A 仍是 engineering-only 离线合同；P5.2B、ORM、migration `0011`、Task
+API/SDK、Planner/Executor/Scheduler/Worker/Agent Runtime 均未实现或解锁，
+正式状态继续由 Gate 保持 `blocked/not_proven`。
+
+---
+
 *报告完。*
