@@ -582,9 +582,13 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   为成功；模型输出不是 committed evidence。Attempt ↔ Task Lease 状态
   矩阵：pending/ready 无 lease、leased/dispatching/running 必须有、
   terminal（含 unknown）不得保留（历史由 append-only lease 记录承载）；
-  `attempt_number` 按 (task_id, step_id) 分组、`task_fencing_token` 按
-  Task 级单调；Attempt 与 TaskLease 精确双向绑定、单 active lease、
-  current lease 必须 active。
+  `attempt_number` 按 (task_id, step_id) 分组且**必须从 1 起精确连续**
+  （重复/回退/跳号/非 1 起始均拒绝，排序不得"整理"为合法）；`task_fencing_token`
+  是 **per-Task**（非系统级/Run 级）单调序列——同一 Task 内跨 Step 单调，
+  不同 Task 各自独立、可各从 token 1 开始；Attempt 与 TaskLease **双向**精确
+  绑定（active lease 必须绑定恰好一个 leased/dispatching/running Attempt 且
+  该 Attempt 指回并共享 fencing token；孤儿 active lease 拒绝）、单 active
+  lease、current lease 必须 active。
 - Task Lease 独立于 Run Lease 但依赖它：`run_lease_id`/`run_fencing_token`/
   `node_id`/`node_fencing_token`/`workspace_generation` 必须与
   AgentRunBinding 一致；TTL 不得晚于 deadline/Run Lease/Node
@@ -617,7 +621,13 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   用 AST 扫描证明；报告 `verification_evidence` 区分 static
   source-boundary assertion（本次 verify 实际执行）、import/AST
   assertion（测试证明）、Gate 未执行行为与 direct runtime execution
-  （Gate 不执行 pytest/runtime）。
+  （Gate 不执行 pytest/runtime）。evidence 引用校验**真实验证**每条
+  `status=passed` 引用（仓库内相对 regular 非链接文件、raw-byte SHA-256
+  与 sealed digest 一致、assertions 作为机器可验证闭集逐项解析），报告
+  拆分 `evidence_path_verified`/`evidence_digest_verified`/
+  `evidence_assertions_verified`/聚合 `evidence_references_verified`，
+  只有实际执行并通过才为 true；passed 引用 path 缺失/digest 漂移/assertion
+  不匹配均为 veto（fail closed），绝不无条件写 true。
 - INV-043 只描述 P5.2A 合同的离线属性；P5.2 persistence ledger
   （P5.2B）、Runtime、API 与 Task 执行均未实现，P5.2B+ frozen。
 

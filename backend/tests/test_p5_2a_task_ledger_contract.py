@@ -1056,6 +1056,65 @@ def _synthetic_config(tmp_path: Path, repo: Path | None = None) -> TaskLedgerCon
     return TaskLedgerContractConfig.from_mapping(mapping)
 
 
+def _synthetic_config_with_evidence(
+    tmp_path: Path,
+    *,
+    evidence: list[dict[str, object]],
+) -> tuple[TaskLedgerContractConfig, Path]:
+    """Build a sealed synthetic config whose evidence block is fully customizable.
+
+    Mirrors ``_synthetic_config`` but lets the caller supply passed/not_proven
+    evidence references (with real paths/digests/assertions) so the verify path
+    exercises real evidence verification instead of the checked-in not_proven
+    reference. The caller must write any passed-evidence file itself and seal
+    the digest into the evidence block before calling this helper.
+    """
+    repo = _build_synthetic_repo(tmp_path)
+    mapping = _contract_mapping()
+    mapping["evidence"] = evidence
+
+    def seal(relative: str, content: str) -> str:
+        _write_file(repo, relative, content)
+        return _digest((repo / relative).read_text(encoding="utf-8"))
+
+    mapping["p34_7"]["decision"]["sha256"] = seal(
+        "docs/evidence/p34-7/production-readiness-decision.md",
+        "# P34.7 decision\nP34.7 production total Gate: BLOCKED / NOT_PROVEN\n",
+    )
+    mapping["p5_0"]["admission_contract"]["sha256"] = seal(
+        "deployment/production/phase5-admission.example.json",
+        json.dumps({"activation_requested": False}),
+    )
+    mapping["p5_1"]["registry_contract"]["sha256"] = seal(
+        "deployment/production/phase5-registry-contract.example.json",
+        json.dumps({"phase": "P5.1A"}),
+    )
+    mapping["openapi_snapshot"]["sha256"] = _digest(
+        (repo / "sdk/contracts/p34-2-openapi.snapshot.json").read_text(encoding="utf-8")
+    )
+    sealed = [
+        ("task_ledger_contract_doc", "docs/phase-5-task-ledger-contract.md", "# contract\n"),
+        (
+            "task_ledger_contract_module",
+            "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+            "# module\n",
+        ),
+        ("task_ledger_tests", "backend/tests/test_p5_2a_task_ledger_contract.py", "# tests\n"),
+        ("threat_model", "docs/phase-5-threat-model.md", "# threat model\n"),
+        ("maintainer_map", "docs/maintainers/maintenance-map.json", "{}\n"),
+        ("security_invariants", "docs/maintainers/security-invariants.md", "# invariants\n"),
+    ]
+    mapping["sealed_contracts"] = [
+        {"name": name, "path": path, "sha256": seal(path, content)}
+        for name, path, content in sealed
+    ]
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "sealed fixtures"], check=True, capture_output=True
+    )
+    return TaskLedgerContractConfig.from_mapping(mapping), repo
+
+
 # ---------------------------------------------------------------------------
 # Positive fixtures
 # ---------------------------------------------------------------------------
@@ -1597,13 +1656,16 @@ def test_contract_level_negatives() -> None:
     with pytest.raises(TaskLedgerContractError, match="retry task fencing must increase"):
         TaskLedgerContractConfig.from_mapping(mapping)
 
-    # 23. Attempt number regression
+    # 23. Attempt number regression / duplicate (now caught by the contiguous
+    # from-1 sequence check before the retry fencing rule)
     mapping = _contract_mapping()
     attempts = mapping["ledger_contracts"]["attempts"]
     second = _attempt_mapping()
     second["attempt_number"] = 1
     attempts[1] = second
-    with pytest.raises(TaskLedgerContractError, match="retry attempt number must increase"):
+    with pytest.raises(
+        TaskLedgerContractError, match="must form a contiguous sequence starting at 1"
+    ):
         TaskLedgerContractConfig.from_mapping(mapping)
 
     # 39. retry reusing the old attempt identity
@@ -2534,3 +2596,474 @@ def test_report_evidence_scope_semantics(tmp_path: Path) -> None:
     assert scope["gate_execution"]["feature_gates_resolved"] is True
     assert scope["gate_execution"]["sealed_digests_verified"] is True
     assert scope["direct_runtime_execution"] == "not_executed_by_gate"
+
+
+# ---------------------------------------------------------------------------
+# Round-2 independent review: task fencing scope, bidirectional lease binding,
+# contiguous-from-1 attempt sequence, and real evidence verification scope.
+# ---------------------------------------------------------------------------
+
+TASK_2_ID = "00000000-0000-0000-0000-0000000000e2"
+RUN_2_ID = "cccccccc-cccc-cccc-cccc-ccccccccccc2"
+WORKSPACE_RUN_2_ID = "dddddddd-dddd-dddd-dddd-ddddddddddd2"
+STEP_3_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbc3bb"
+STEP_4_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbc4bb"
+RUNTIME_INSTANCE_2_ID = "12345678-1234-1234-1234-123456789122"
+RUN_LEASE_2_ID = "ffffffff-ffff-ffff-ffff-ffffffffff2f"
+TASK_LEASE_4_ID = "77777777-7777-7777-7777-777777777774"
+TASK_LEASE_5_ID = "77777777-7777-7777-7777-777777777775"
+ATTEMPT_5_ID = "88888888-8888-8888-8888-888888888885"
+ATTEMPT_6_ID = "88888888-8888-8888-8888-888888888886"
+
+
+def _task_2_mapping() -> dict[str, object]:
+    mapping = _task_mapping()
+    mapping["task_id"] = TASK_2_ID
+    mapping["request_hash"] = compute_request_hash(
+        "task_create",
+        {
+            "operation": "agent.task.create",
+            "task_id": TASK_2_ID,
+            "tenant_id": TENANT_ID,
+            "workspace_id": WORKSPACE_ID,
+            "workspace_generation": 1,
+            "agent_definition_id": DEFINITION_ID,
+            "agent_version_id": VERSION_ID,
+            "agent_version_digest": VERSION_DIGEST,
+            "workspace_agent_binding_id": BINDING_ID,
+            "resource_scope_digest": RESOURCE_SCOPE_DIGEST,
+            "budget_policy_digest": BUDGET_POLICY_DIGEST,
+            "deadline": "2026-08-03T12:00:00Z",
+        },
+    )
+    return mapping
+
+
+def _run_2_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "agent_run_id": RUN_2_ID,
+        "task_id": TASK_2_ID,
+        "tenant_id": TENANT_ID,
+        "workspace_id": WORKSPACE_ID,
+        "workspace_generation": 1,
+        "workspace_run_id": WORKSPACE_RUN_2_ID,
+        "runtime_instance_id": RUNTIME_INSTANCE_2_ID,
+        "workload_identity_thumbprint": WORKLOAD_THUMBPRINT,
+        "node_id": NODE_ID,
+        "node_fencing_token": 1,
+        "run_lease_id": RUN_LEASE_2_ID,
+        "run_fencing_token": 4,
+        "state": "running",
+        "created_at": "2026-08-03T00:01:30Z",
+    }
+
+
+def _step_3_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "step_id": STEP_3_ID,
+        "task_id": TASK_2_ID,
+        "agent_run_id": RUN_2_ID,
+        "step_number": 1,
+        "plan_id": PLAN_ID,
+        "plan_version": "1",
+        "plan_digest": PLAN_DIGEST,
+        "dependencies": [],
+        "state": "running",
+        "created_at": "2026-08-03T00:02:30Z",
+    }
+
+
+def _step_4_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "step_id": STEP_4_ID,
+        "task_id": TASK_2_ID,
+        "agent_run_id": RUN_2_ID,
+        "step_number": 2,
+        "plan_id": PLAN_ID,
+        "plan_version": "1",
+        "plan_digest": PLAN_DIGEST,
+        "dependencies": [STEP_3_ID],
+        "state": "running",
+        "created_at": "2026-08-03T00:02:45Z",
+    }
+
+
+def _attempt_5_mapping() -> dict[str, object]:
+    # Task B's first attempt reuses task_fencing_token=1, which Task A also
+    # uses; both must be allowed because task fencing is per-Task.
+    return {
+        "schema_version": 1,
+        "attempt_id": ATTEMPT_5_ID,
+        "task_id": TASK_2_ID,
+        "step_id": STEP_3_ID,
+        "agent_run_id": RUN_2_ID,
+        "attempt_number": 1,
+        "state": "running",
+        "task_lease_id": TASK_LEASE_4_ID,
+        "task_fencing_token": 1,
+        "expected_previous_state": "running",
+        "deadline": "2026-08-03T12:00:00Z",
+        "created_at": "2026-08-03T00:10:30Z",
+    }
+
+
+def _attempt_6_mapping() -> dict[str, object]:
+    # Task B's second Step, also attempt 1 of that Step, but created later and
+    # reusing token 1 (a Task-wide regression that per-Step ordering cannot see
+    # because each Step sequence is just [1]).
+    return {
+        "schema_version": 1,
+        "attempt_id": ATTEMPT_6_ID,
+        "task_id": TASK_2_ID,
+        "step_id": STEP_4_ID,
+        "agent_run_id": RUN_2_ID,
+        "attempt_number": 1,
+        "state": "running",
+        "task_lease_id": TASK_LEASE_5_ID,
+        "task_fencing_token": 1,
+        "expected_previous_state": "running",
+        "deadline": "2026-08-03T12:00:00Z",
+        "created_at": "2026-08-03T00:10:45Z",
+    }
+
+
+def _lease_4_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "task_lease_id": TASK_LEASE_4_ID,
+        "task_id": TASK_2_ID,
+        "attempt_id": ATTEMPT_5_ID,
+        "agent_run_id": RUN_2_ID,
+        "run_lease_id": RUN_LEASE_2_ID,
+        "run_fencing_token": 4,
+        "node_id": NODE_ID,
+        "node_fencing_token": 1,
+        "workspace_generation": 1,
+        "task_fencing_token": 1,
+        "state": "active",
+        "expires_at": "2026-08-03T00:15:00Z",
+        "heartbeat_at": None,
+        "created_at": "2026-08-03T00:10:30Z",
+    }
+
+
+def _lease_5_mapping() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "task_lease_id": TASK_LEASE_5_ID,
+        "task_id": TASK_2_ID,
+        "attempt_id": ATTEMPT_6_ID,
+        "agent_run_id": RUN_2_ID,
+        "run_lease_id": RUN_LEASE_2_ID,
+        "run_fencing_token": 4,
+        "node_id": NODE_ID,
+        "node_fencing_token": 1,
+        "workspace_generation": 1,
+        "task_fencing_token": 1,
+        "state": "active",
+        "expires_at": "2026-08-03T00:15:00Z",
+        "heartbeat_at": None,
+        "created_at": "2026-08-03T00:10:45Z",
+    }
+
+
+def _contract_with_two_tasks() -> dict[str, object]:
+    """A second Task/Run/Step/Attempt/Lease whose fencing restarts at token 1."""
+    mapping = _contract_mapping()
+    mapping["ledger_contracts"]["tasks"].append(_task_2_mapping())
+    mapping["ledger_contracts"]["runs"].append(_run_2_mapping())
+    mapping["ledger_contracts"]["steps"].append(_step_3_mapping())
+    mapping["ledger_contracts"]["attempts"].append(_attempt_5_mapping())
+    mapping["ledger_contracts"]["task_leases"].append(_lease_4_mapping())
+    return mapping
+
+
+def test_task_fencing_is_scoped_per_task_positive() -> None:
+    # Two independent Tasks may each start their task_fencing_token sequence at
+    # 1; the contract must NOT flatten them into one shared system-wide or
+    # Run-wide sequence. Task A uses tokens {3, 9} and Task B uses {1}.
+    config = TaskLedgerContractConfig.from_mapping(_contract_with_two_tasks())
+    fenced_by_task: dict[str, list[int]] = {}
+    for attempt in config.ledger_contracts.attempts:
+        if attempt.task_fencing_token is not None:
+            fenced_by_task.setdefault(attempt.task_id, []).append(attempt.task_fencing_token)
+    task_a = sorted(fenced_by_task[TASK_ID])
+    task_b = sorted(fenced_by_task[TASK_2_ID])
+    assert task_a == [3, 9]
+    assert task_b == [1]
+
+
+def test_task_fencing_regression_within_same_task_negative() -> None:
+    # Within ONE Task, a later holder (by created_at) must use a strictly higher
+    # fencing token; regressing within the same Task is rejected, independent of
+    # any other Task's sequence. The regression is placed across two Steps of
+    # Task B so the per-Step attempt-ordering rule cannot mask it; only the
+    # Task-wide fencing rule sees [1, 1].
+    mapping = _contract_with_two_tasks()
+    # Add a second Step to Task B whose lone attempt reuses token 1 later.
+    mapping["ledger_contracts"]["steps"].append(_step_4_mapping())
+    mapping["ledger_contracts"]["attempts"].append(_attempt_6_mapping())
+    mapping["ledger_contracts"]["task_leases"].append(_lease_5_mapping())
+    with pytest.raises(
+        TaskLedgerContractError,
+        match=r"task fencing must increase monotonically within task " + TASK_2_ID,
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_active_task_lease_requires_active_attempt_negative() -> None:
+    # An active Task Lease must bind exactly one attempt that is in an active
+    # execution state (leased/dispatching/running) and points straight back at
+    # it. The base fixture for STEP_2_ID is a single attempt (ATTEMPT_3) bound
+    # to a single active lease (LEASE_2), so the per-Step ordering and the
+    # Task-wide fencing rules never mask the lease-binding checks.
+
+    # (a) active lease + ready attempt
+    mapping = _contract_mapping()
+    attempt3 = mapping["ledger_contracts"]["attempts"][2]
+    attempt3["state"] = "ready"
+    attempt3["task_lease_id"] = None
+    attempt3["task_fencing_token"] = None
+    with pytest.raises(
+        TaskLedgerContractError, match="is active but its attempt .* is not in an active"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # (b) active lease + pending attempt
+    mapping = _contract_mapping()
+    attempt3 = mapping["ledger_contracts"]["attempts"][2]
+    attempt3["state"] = "pending"
+    attempt3["task_lease_id"] = None
+    attempt3["task_fencing_token"] = None
+    with pytest.raises(
+        TaskLedgerContractError, match="is active but its attempt .* is not in an active"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # (c) active lease + terminal attempt
+    mapping = _contract_mapping()
+    attempt3 = mapping["ledger_contracts"]["attempts"][2]
+    attempt3["state"] = "failed"
+    attempt3["task_lease_id"] = None
+    attempt3["task_fencing_token"] = None
+    with pytest.raises(
+        TaskLedgerContractError, match="is active but its attempt .* is not in an active"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # (d) active lease whose running attempt points back at it but binds a
+    # task fencing token that disagrees with the active lease's token (4 vs 3,
+    # both below the later token 9 so Task-wide fencing stays monotonic).
+    mapping = _contract_mapping()
+    attempt3 = mapping["ledger_contracts"]["attempts"][2]
+    attempt3["task_lease_id"] = LEASE_2_ID  # points back at LEASE_2 (correct)
+    attempt3["task_fencing_token"] = 4  # LEASE_2 carries token 3 -> mismatch
+    with pytest.raises(
+        TaskLedgerContractError,
+        match="does not bind the lease fencing token",
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # (e) active lease pointing at attempt A, but attempt A points at lease B.
+    # The attempt->lease side of the bidirectional binding rejects this first
+    # (the named lease must be bound back to this attempt); together with (d)
+    # and the active-lease->attempt checks this closes both directions.
+    mapping = _contract_mapping()
+    attempt3 = mapping["ledger_contracts"]["attempts"][2]
+    attempt3["task_lease_id"] = TASK_LEASE_ID  # points at LEASE_1, not LEASE_2
+    attempt3["task_fencing_token"] = 9  # match LEASE_1's token to isolate the pointer drift
+    with pytest.raises(
+        TaskLedgerContractError,
+        match="references a task lease bound to a different attempt",
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+    # (f) one attempt with two active leases (set-level scan)
+    mapping = _contract_mapping()
+    second_active = _lease_2_mapping()
+    second_active["task_lease_id"] = LEASE_3_ID
+    second_active["attempt_id"] = ATTEMPT_3_ID
+    mapping["ledger_contracts"]["task_leases"].append(second_active)
+    with pytest.raises(TaskLedgerContractError, match="must have at most one active task lease"):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_attempt_sequence_must_start_at_one_negative() -> None:
+    # A single attempt whose attempt_number is not 1 must be rejected even
+    # though there is no neighbor to compare against.
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    # STEP_2_ID currently has a lone attempt_number=1; bump it to 2.
+    for attempt in attempts:
+        if attempt["attempt_id"] == ATTEMPT_3_ID:
+            attempt["attempt_number"] = 2
+    with pytest.raises(
+        TaskLedgerContractError, match="must form a contiguous sequence starting at 1"
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_attempt_sequence_must_be_contiguous_negative() -> None:
+    # A 1 -> 3 jump (gap) within one Step must be rejected; sorting must not
+    # tidy the gap into validity.
+    mapping = _contract_mapping()
+    # Make STEP_2_ID jump 1 -> 3 (skipping 2): add a third attempt with
+    # attempt_number 3 to STEP_2_ID alongside its existing attempt_number 1.
+    jumped = _attempt_3_mapping()
+    jumped["attempt_id"] = ATTEMPT_4_ID
+    jumped["attempt_number"] = 3
+    jumped["task_lease_id"] = TASK_LEASE_4_ID
+    jumped["task_fencing_token"] = 11
+    jumped["created_at"] = "2026-08-03T00:10:30Z"
+    mapping["ledger_contracts"]["attempts"].append(jumped)
+    jumped_lease = _lease_2_mapping()
+    jumped_lease["task_lease_id"] = TASK_LEASE_4_ID
+    jumped_lease["attempt_id"] = ATTEMPT_4_ID
+    jumped_lease["task_fencing_token"] = 11
+    jumped_lease["created_at"] = "2026-08-03T00:10:30Z"
+    mapping["ledger_contracts"]["task_leases"].append(jumped_lease)
+    with pytest.raises(
+        TaskLedgerContractError,
+        match=r"must form a contiguous sequence starting at 1; found 3 where 2 was expected",
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_attempt_sequence_is_independent_per_step_positive() -> None:
+    # Two Steps may each independently start their attempt_number sequence at 1.
+    config = TaskLedgerContractConfig.from_mapping(_contract_mapping())
+    step1 = sorted(
+        a.attempt_number for a in config.ledger_contracts.attempts if a.step_id == STEP_ID
+    )
+    step2 = sorted(
+        a.attempt_number for a in config.ledger_contracts.attempts if a.step_id == STEP_2_ID
+    )
+    assert step1 == [1, 2]
+    assert step2 == [1]
+
+
+def test_missing_evidence_reference_is_not_verified(tmp_path: Path) -> None:
+    # A passed evidence reference whose sealed path does not exist must NOT be
+    # reported as verified; the gate must fail closed (veto) rather than claim
+    # evidence_references_verified=true.
+    evidence = [
+        {
+            "id": "phase5_task_ledger_production_evidence",
+            "status": "passed",
+            "path": "docs/evidence/p5-2a/does-not-exist.json",
+            "sha256": "0" * 64,
+            "assertions": {"phase": "P5.2A"},
+            "required_for_activation": True,
+        }
+    ]
+    config, repo = _synthetic_config_with_evidence(tmp_path, evidence=evidence)
+    report = TaskLedgerContractGate(repo).verify(config, source=_source())
+    scope = report.to_dict()["verification_evidence"]["gate_execution"]
+    assert scope["evidence_references_verified"] is False
+    assert scope["evidence_path_verified"] is False
+    assert scope["evidence_digest_verified"] is False
+    assert scope["evidence_assertions_verified"] is False
+    assert report.state is AdmissionState.INVALID
+    assert any("phase5_task_ledger_production_evidence" in v for v in report.vetoes)
+
+
+def test_evidence_digest_drift_is_not_verified(tmp_path: Path) -> None:
+    # The file exists but its raw-byte SHA-256 disagrees with the sealed digest;
+    # the gate must veto (fail closed) and must not report verified=true.
+    evidence_rel = "docs/evidence/p5-2a/task-ledger-evidence.json"
+    evidence = [
+        {
+            "id": "phase5_task_ledger_production_evidence",
+            "status": "passed",
+            "path": evidence_rel,
+            "sha256": "f" * 64,  # wrong digest on purpose
+            "assertions": {"phase": "P5.2A"},
+            "required_for_activation": True,
+        }
+    ]
+    config, repo = _synthetic_config_with_evidence(tmp_path, evidence=evidence)
+    # Create the evidence file with a digest that disagrees with the seal above.
+    _write_file(repo, evidence_rel, json.dumps({"phase": "P5.2A"}) + "\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "evidence fixture"],
+        check=True,
+        capture_output=True,
+    )
+    report = TaskLedgerContractGate(repo).verify(config, source=_source())
+    scope = report.to_dict()["verification_evidence"]["gate_execution"]
+    assert scope["evidence_references_verified"] is False
+    assert scope["evidence_digest_verified"] is False
+    assert report.state is AdmissionState.INVALID
+    assert any("SHA-256 drifted" in v for v in report.vetoes)
+
+
+def test_unexecuted_evidence_assertions_are_not_overclaimed(tmp_path: Path) -> None:
+    # A passed evidence reference whose assertion does not match the parsed
+    # payload must fail closed; the gate may never write verified=true for an
+    # assertion it did not actually execute and pass.
+    evidence_rel = "docs/evidence/p5-2a/task-ledger-evidence.json"
+    content = json.dumps({"phase": "P5.2A"}) + "\n"
+    evidence = [
+        {
+            "id": "phase5_task_ledger_production_evidence",
+            "status": "passed",
+            "path": evidence_rel,
+            "sha256": _digest(content),  # digest passes
+            "assertions": {"phase": "P5.2B"},  # assertion does NOT match
+            "required_for_activation": True,
+        }
+    ]
+    config, repo = _synthetic_config_with_evidence(tmp_path, evidence=evidence)
+    _write_file(repo, evidence_rel, content)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "evidence fixture"],
+        check=True,
+        capture_output=True,
+    )
+    report = TaskLedgerContractGate(repo).verify(config, source=_source())
+    scope = report.to_dict()["verification_evidence"]["gate_execution"]
+    assert scope["evidence_path_verified"] is False
+    assert scope["evidence_digest_verified"] is False
+    assert scope["evidence_assertions_verified"] is False
+    assert scope["evidence_references_verified"] is False
+    assert report.state is AdmissionState.INVALID
+    assert any("assertion failed" in v for v in report.vetoes)
+
+
+def test_passed_evidence_reference_is_verified_when_sealed(tmp_path: Path) -> None:
+    # Positive control: a passed evidence reference whose path exists, digest
+    # matches and assertions resolve is genuinely verified and reports true.
+    evidence_rel = "docs/evidence/p5-2a/task-ledger-evidence.json"
+    content = json.dumps({"phase": "P5.2A"}) + "\n"
+    evidence = [
+        {
+            "id": "phase5_task_ledger_production_evidence",
+            "status": "passed",
+            "path": evidence_rel,
+            "sha256": _digest(content),
+            "assertions": {"phase": "P5.2A"},
+            "required_for_activation": True,
+        }
+    ]
+    config, repo = _synthetic_config_with_evidence(tmp_path, evidence=evidence)
+    _write_file(repo, evidence_rel, content)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "evidence fixture"],
+        check=True,
+        capture_output=True,
+    )
+    report = TaskLedgerContractGate(repo).verify(config, source=_source())
+    scope = report.to_dict()["verification_evidence"]["gate_execution"]
+    assert scope["evidence_path_verified"] is True
+    assert scope["evidence_digest_verified"] is True
+    assert scope["evidence_assertions_verified"] is True
+    assert scope["evidence_references_verified"] is True
+    # It must still be blocked (not ready): gates off, P34.7/P5.0/P5.1 not ready.
+    assert report.state is AdmissionState.BLOCKED
+    assert report.activation_allowed is False

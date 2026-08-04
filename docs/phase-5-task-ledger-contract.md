@@ -222,11 +222,16 @@ running | committed | failed | unknown | cancelled`。
 
 **作用域冻结**：
 
-- `attempt_number` 是 **per-(task_id, step_id)** 序列：同一 Task 的每个
-  Step 都从 1 开始，同 Step 的 retry 递增，禁止回退；
-- `task_fencing_token` 是 **Task 级**单调序列：同一 Task 内（跨所有
-  Step）每次 Task Lease claim 的 token 必须严格高于此前所有（按
-  Attempt `created_at` 顺序校验），旧 holder 无法用旧 token 复活；
+- `attempt_number` 是 **per-(task_id, step_id)** 闭集序列：同一 Task 的每个
+  Step 都从 **1** 开始，同 Step 的 retry 必须 **精确等于前一个 + 1**，禁止
+  重复、回退、跳号或从 1 以外的值起始（单个 `attempt_number=2` 或 `1 → 3`
+  均拒绝）；不同 Step 的序列相互独立，两个 Step 都可各自从 1 开始。排序
+  仅用于确定校验顺序，不得把不合法序列"整理"为合法序列；
+- `task_fencing_token` 是 **per-Task**（Task 级）单调序列：同一 Task 内
+  （跨所有 Step）每次 Task Lease claim 的 token 必须严格高于此前所有（按
+  Attempt `created_at` 顺序校验），旧 holder 无法用旧 token 复活；**不同
+  Task 拥有互相独立的 fencing 序列**，Task A 与 Task B 可各自从 token 1
+  开始，不得把 task_fencing_token 拍平为系统级或 Run 级共享序列；
 - Task Lease 是 Task 级逻辑授权（绑定一个 Attempt 与当前 Run Lease/
   Node fencing/Workspace generation），每次 claim 分配更高 token。
 
@@ -275,9 +280,15 @@ running | committed | failed | unknown | cancelled`。
 
 任何以下输入都属于 `TaskLedgerContractError`：
 
-- Attempt ↔ TaskLease 精确**双向绑定**：`attempt.task_lease_id` 必须解析
-  到 `attempt_id`/`task_id`/`agent_run_id` 完全一致的 lease；非 terminal
-  Attempt 必须指回它引用的 lease；Attempt 引用另一 Attempt 的 Lease 拒绝；
+- Attempt ↔ TaskLease 精确**双向绑定**（两个方向都校验）：
+  - `attempt.task_lease_id` 必须解析到 `attempt_id`/`task_id`/
+    `agent_run_id` 完全一致的 lease；非 terminal Attempt 必须指回它引用的
+    lease；Attempt 引用另一 Attempt 的 Lease 拒绝；
+  - `active` TaskLease 必须绑定**恰好一个**处于 `leased`/`dispatching`/
+    `running` 的 Attempt，且该 Attempt 的 `task_lease_id` 必须指回这条
+    lease、`task_fencing_token` 必须与 lease 一致；`active` lease 绑定
+    `ready`/`pending`/terminal Attempt（孤儿 active lease）、Attempt 清空
+    lease 引用、或 Attempt 指向另一 lease 一律拒绝；
 - 同一 Attempt 最多一个 `active` Task Lease（集合级扫描，先于逐条校验）；
 - leased/dispatching/running Attempt 引用的 lease 必须是 `active`——
   stale/revoked/expired lease 作为 current 拒绝；
@@ -499,7 +510,17 @@ committed outputs，遇到 `unknown` 保持 blocked。
   不执行（`proven_by_tests_not_by_gate`）；
 - `gate_execution`：本次模式（validate_only/verify）、合同解析、
   feature gate 解析、sealed digest 校验与 evidence 引用校验的实际执行
-  状态；
+  状态。evidence 引用校验**真实验证**每条 `status=passed` 的引用：路径
+  必须是仓库内相对 regular 非链接文件（`_safe_repo_file` 拒绝绝对路径、
+  `..` 穿越、symlink、reparse point、非 regular 文件与根 `.env`），按 raw
+  bytes 计算 SHA-256 必须与 sealed digest 完全一致，assertions 作为机器可
+  验证闭集逐项解析。报告因此拆分为
+  `evidence_path_verified`、`evidence_digest_verified`、
+  `evidence_assertions_verified` 与聚合 `evidence_references_verified`，
+  其中只有实际执行并通过的项才为 true；`not_proven`/blocked 引用不写成
+  verified，没有 passed 引用时聚合为 false。一条 passed 引用 path 缺失 /
+  digest 漂移 / assertion 不匹配均为 veto（合同作废、fail closed），绝不
+  无条件写 `true`；
 - `direct_runtime_execution`：本 Gate 不运行 pytest/runtime
   （`not_executed_by_gate`）——运行证据只来自独立的测试与 Gate 报告，
   不写进 validator 输出冒充。
@@ -526,6 +547,15 @@ retry 复用旧 Attempt/Task fencing、恢复旧 Run Lease/runtime/workload
 identity、模型输出作为 committed evidence、parser 静默丢弃未知字段、
 合同配置 symlink/junction、配置路径 realpath 逃逸、sealed digest 漂移、
 根 `.env` 进入 manifest、migration 0011、未授权 Agent Runtime 源路径。
+
+第二轮独立复核新增反例（task fencing 作用域、双向绑定、连续序列、evidence
+真实校验）：per-Task fencing 正向（两 Task 各从 token 1 开始通过）、同 Task
+内跨 Step fencing 回退拒绝、active lease 绑定 ready/pending/terminal
+Attempt 拒绝、active lease 的 Attempt 未指回/指向另一 lease/fencing token
+不一致拒绝、Attempt `attempt_number=2`（无邻居）拒绝、`1 → 3` 跳号拒绝、
+两 Step 各自 `1 → 2` 通过、passed evidence path 缺失 / digest 漂移 /
+assertion 不匹配均不报告 verified 且 fail closed（veto）、passed 引用真实验证
+通过时聚合 `evidence_references_verified=true`。
 
 ## 12. 决策语义
 

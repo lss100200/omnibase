@@ -1546,11 +1546,25 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
   replay；允许 cancel 伪装 unknown 为成功；允许 checkpoint 携带
   token/lease/PID/socket/provider handle；允许模型输出作为 committed
   evidence；允许调用方扩大预算或覆盖 request hash。
-- 允许 attempt_number 跨 Step 混排（它按 (task_id, step_id) 分组）或
-  Task fencing 跨 Step 回退；允许 pending/ready 携带 lease、
-  leased/dispatching/running 缺失 lease、terminal（含 unknown）保留
-  lease；允许 Attempt 引用另一 Attempt 的 Lease、同 Attempt 双 active
-  Lease 或 stale/revoked/expired lease 作为 current。
+- 允许 attempt_number 跨 Step 混排（它按 (task_id, step_id) 分组、必须从
+  1 起精确连续：重复/回退/跳号/非 1 起始均拒绝）或 Task fencing 跨 Step
+  回退；允许把 task_fencing_token 拍平为系统级或 Run 级共享序列（它必须是
+  per-Task 序列：同一 Task 内跨 Step 单调，不同 Task 各自独立、可各从 1
+  开始）；允许 pending/ready 携带 lease、leased/dispatching/running 缺失
+  lease、terminal（含 unknown）保留 lease；允许 Attempt 引用另一 Attempt
+  的 Lease、同 Attempt 双 active Lease 或 stale/revoked/expired lease 作为
+  current；允许 active Task Lease 绑定 ready/pending/terminal Attempt
+  （孤儿 active lease）或其 Attempt 未指回/未共享 fencing（active Lease 必
+  须绑定恰好一个 leased/dispatching/running Attempt 且 Attempt 指回并共享
+  fencing token）。
+- 把 `--verify` 的 `evidence_references_verified` 无条件写成 true 而不实际
+  校验 config.evidence[].path/sha256/assertions；允许 passed evidence
+  指向不存在文件、digest 漂移或 assertion 不匹配仍报告 verified。evidence
+  引用必须真实验证（路径仓库内相对 regular 非链接文件、raw-byte SHA-256 与
+  sealed digest 一致、assertions 作为机器可验证闭集逐项解析），只有实际
+  执行并通过的项（`evidence_path_verified`/`evidence_digest_verified`/
+  `evidence_assertions_verified`/聚合 `evidence_references_verified`）才为
+  true；未执行或失败必须为 false/not_executed 且 fail closed（veto）。
 - 允许 AgentRun 四元运行绑定组（run_lease_id/run_fencing_token/
   node_id/node_fencing_token）或 runtime/workload 身份组不完整（all-or-
   none 状态矩阵：created 全空、leased/running/paused 全有、terminal

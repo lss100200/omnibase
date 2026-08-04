@@ -61,6 +61,7 @@ from omnibase.production.phase5_admission import (
     _REVISION_LINE,
     P347FormalState,
     _canonical_json,
+    _nested_value,
     _only_keys,
     _relative_repo_path,
     _safe_repo_dir,
@@ -2438,10 +2439,24 @@ class TaskLedgerContractConfig:
     def _validate_attempt_ordering(
         attempts_by_step: Mapping[tuple[str, str], list[AgentAttempt]],
     ) -> None:
-        # attempt_number is a per-(task_id, step_id) sequence: every Step of a
-        # Task restarts at 1 and a retry of the same Step increases it.
-        for attempts in attempts_by_step.values():
+        # attempt_number is a per-(task_id, step_id) closed sequence: every Step
+        # of every Task restarts at exactly 1 and a retry of the same Step must
+        # equal previous + 1 with no duplicates, gaps or regressions. Sorting is
+        # used only to determine the verification order; it must never tidy an
+        # illegal sequence (single attempt_number=2, or 1 -> 3) into validity.
+        for (task_id, step_id), attempts in attempts_by_step.items():
             ordered = sorted(attempts, key=lambda item: item.attempt_number)
+            expected = 1
+            for attempt in ordered:
+                if attempt.attempt_number != expected:
+                    raise TaskLedgerContractError(
+                        f"attempt_number for task {task_id} step {step_id} must form a "
+                        f"contiguous sequence starting at 1; found {attempt.attempt_number} "
+                        f"where {expected} was expected"
+                    )
+                expected += 1
+            # After the first attempt the cross-attempt Task fencing rule still
+            # applies: a retry of the same Step must raise the Task fencing token.
             for previous, current in pairwise(ordered):
                 validate_retry(
                     previous_attempt_number=previous.attempt_number,
@@ -2452,22 +2467,25 @@ class TaskLedgerContractConfig:
 
     @staticmethod
     def _validate_task_fencing_monotonic(attempts: tuple[AgentAttempt, ...]) -> None:
-        # task_fencing_token is a Task-wide monotonically increasing sequence:
-        # every Task Lease claim of the Task (across all Steps) must use a
-        # strictly higher token, so an old holder can never resubmit.
-        fenced = sorted(
-            [
-                (attempt.created_at, attempt.task_fencing_token)
-                for attempt in attempts
-                if attempt.task_fencing_token is not None
-            ],
-            key=lambda item: item[0],
-        )
-        for (_, previous_token), (_, current_token) in pairwise(fenced):
-            if current_token <= previous_token:
-                raise TaskLedgerContractError(
-                    "task fencing must increase monotonically across the task attempts"
-                )
+        # task_fencing_token is a per-Task monotonically increasing sequence:
+        # within a single Task, every Task Lease claim (across all of its Steps
+        # and Attempts) must use a strictly higher token so an old holder can
+        # never resubmit. Different Tasks own independent fencing sequences, so
+        # Task A and Task B may each start at token 1; the sequence must never
+        # be flattened into a system-wide or Run-wide shared sequence.
+        fenced_by_task: dict[str, list[tuple[str, int]]] = {}
+        for attempt in attempts:
+            token = attempt.task_fencing_token
+            if token is not None:
+                fenced_by_task.setdefault(attempt.task_id, []).append((attempt.created_at, token))
+        for task_id, task_tokens in fenced_by_task.items():
+            ordered = sorted(task_tokens, key=lambda item: item[0])
+            for (_, previous_token), (_, current_token) in pairwise(ordered):
+                if current_token <= previous_token:
+                    raise TaskLedgerContractError(
+                        f"task fencing must increase monotonically within task {task_id}; "
+                        "an older task lease holder must not reuse a fencing token"
+                    )
 
     @staticmethod
     def _validate_task_lease_references(
@@ -2489,6 +2507,43 @@ class TaskLedgerContractConfig:
         for lease in ledger.task_leases:
             TaskLedgerContractConfig._validate_one_task_lease(
                 lease, ledger, tasks_by_id, attempts_by_id, runs_by_id
+            )
+
+    @staticmethod
+    def _assert_active_lease_binds_active_attempt(
+        lease: TaskLeaseContract, attempt: AgentAttempt
+    ) -> None:
+        # Reverse binding: an active Task Lease must bind one attempt that is in
+        # an active execution state and points straight back at it. A
+        # ready/pending/terminal attempt with an active lease (an orphan lease),
+        # or an active lease whose attempt cleared its lease id / fencing, is
+        # rejected so an active lease can never outlive or drift from the
+        # attempt it authorizes.
+        if attempt.state not in (
+            AttemptState.LEASED,
+            AttemptState.DISPATCHING,
+            AttemptState.RUNNING,
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} is active but its attempt "
+                f"{attempt.attempt_id} is not in an active execution state; "
+                "an active task lease requires a leased, dispatching or running attempt"
+            )
+        if attempt.task_lease_id != lease.task_lease_id:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} is active but its attempt "
+                f"{attempt.attempt_id} points at a different task lease "
+                f"{attempt.task_lease_id}; an active task lease must be the "
+                "current lease of its attempt"
+            )
+        if (
+            attempt.task_fencing_token is None
+            or attempt.task_fencing_token != lease.task_fencing_token
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} is active but its attempt "
+                f"{attempt.attempt_id} does not bind the lease fencing token; "
+                "an active task lease and its attempt must share the task fencing token"
             )
 
     @staticmethod
@@ -2523,6 +2578,36 @@ class TaskLedgerContractConfig:
                 f"task lease {lease.task_lease_id} is not the current lease of its attempt; "
                 "an active attempt must point back to exactly this lease"
             )
+        if lease.state is LeaseState.ACTIVE:
+            TaskLedgerContractConfig._assert_active_lease_binds_active_attempt(lease, bound_attempt)
+        TaskLedgerContractConfig._assert_lease_run_binding(lease, bound_run)
+        if bound_attempt.task_fencing_token is not None and (
+            lease.task_fencing_token != bound_attempt.task_fencing_token
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} binds a task fencing token that "
+                "does not match the attempt"
+            )
+        if lease.expires_at != ledger.lease_expiry_bounds.task_lease_expiry:
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} expiry disagrees with the "
+                "lease_expiry_bounds contract"
+            )
+        TaskLedgerContractConfig._assert_lease_expiry_within_deadlines(
+            lease, bound_task, bound_attempt
+        )
+        if lease.state is not LeaseState.ACTIVE and bound_attempt.state in (
+            AttemptState.LEASED,
+            AttemptState.DISPATCHING,
+            AttemptState.RUNNING,
+        ):
+            raise TaskLedgerContractError(
+                f"task lease {lease.task_lease_id} referenced by a leased, dispatching "
+                "or running attempt must be active"
+            )
+
+    @staticmethod
+    def _assert_lease_run_binding(lease: TaskLeaseContract, bound_run: AgentRunBinding) -> None:
         if lease.run_lease_id != bound_run.run_lease_id:
             raise TaskLedgerContractError(
                 f"task lease {lease.task_lease_id} does not bind the current run lease"
@@ -2542,18 +2627,13 @@ class TaskLedgerContractConfig:
             raise TaskLedgerContractError(
                 f"task lease {lease.task_lease_id} binds a stale workspace generation"
             )
-        if bound_attempt.task_fencing_token is not None and (
-            lease.task_fencing_token != bound_attempt.task_fencing_token
-        ):
-            raise TaskLedgerContractError(
-                f"task lease {lease.task_lease_id} binds a task fencing token that "
-                "does not match the attempt"
-            )
-        if lease.expires_at != ledger.lease_expiry_bounds.task_lease_expiry:
-            raise TaskLedgerContractError(
-                f"task lease {lease.task_lease_id} expiry disagrees with the "
-                "lease_expiry_bounds contract"
-            )
+
+    @staticmethod
+    def _assert_lease_expiry_within_deadlines(
+        lease: TaskLeaseContract,
+        bound_task: AgentTaskInvocation,
+        bound_attempt: AgentAttempt,
+    ) -> None:
         attempt_deadline = _parse_utc_timestamp(bound_attempt.deadline, name="attempt.deadline")
         task_deadline = _parse_utc_timestamp(bound_task.deadline, name="task.deadline")
         lease_expiry = _parse_utc_timestamp(lease.expires_at, name="task_lease.expires_at")
@@ -2566,15 +2646,6 @@ class TaskLedgerContractConfig:
             raise TaskLedgerContractError(
                 f"task lease {lease.task_lease_id} expiry must not be later than the "
                 "task deadline"
-            )
-        if lease.state is not LeaseState.ACTIVE and bound_attempt.state in (
-            AttemptState.LEASED,
-            AttemptState.DISPATCHING,
-            AttemptState.RUNNING,
-        ):
-            raise TaskLedgerContractError(
-                f"task lease {lease.task_lease_id} referenced by a leased, dispatching "
-                "or running attempt must be active"
             )
 
     @staticmethod
@@ -2818,6 +2889,9 @@ class TaskLedgerContractGate:
                     "contract_parsed": True,
                     "feature_gates_resolved": False,
                     "sealed_digests_verified": False,
+                    "evidence_path_verified": False,
+                    "evidence_digest_verified": False,
+                    "evidence_assertions_verified": False,
                     "evidence_references_verified": False,
                 },
                 "direct_runtime_execution": "not_executed_by_gate",
@@ -2906,6 +2980,23 @@ class TaskLedgerContractGate:
             vetoes.append(f"sealed contracts: {exc}")
             sealed_ok = False
         gates_resolved = not any(veto.startswith("feature gates:") for veto in vetoes)
+        # Verify every passed evidence reference for real (path/digest/
+        # assertions); a passed reference that drifts is a veto (fail closed).
+        passed_references = [
+            reference for reference in config.evidence if reference.status is EvidenceStatus.PASSED
+        ]
+        evidence_path_verified, evidence_digest_verified, evidence_assertions_verified = (
+            self._verify_passed_evidence(passed_references, vetoes)
+        )
+        # The aggregate is true only when path + digest + assertions were all
+        # actually executed and passed for at least one passed reference. When
+        # there is no passed reference, nothing was verified.
+        evidence_references_verified = (
+            passed_references != []
+            and evidence_path_verified
+            and evidence_digest_verified
+            and evidence_assertions_verified
+        )
         state = AdmissionState.INVALID if vetoes else AdmissionState.BLOCKED
         return TaskLedgerContractReport(
             state=state,
@@ -2934,7 +3025,10 @@ class TaskLedgerContractGate:
                     "contract_parsed": True,
                     "feature_gates_resolved": gates_resolved,
                     "sealed_digests_verified": sealed_ok,
-                    "evidence_references_verified": True,
+                    "evidence_path_verified": evidence_path_verified,
+                    "evidence_digest_verified": evidence_digest_verified,
+                    "evidence_assertions_verified": evidence_assertions_verified,
+                    "evidence_references_verified": evidence_references_verified,
                 },
                 "direct_runtime_execution": "not_executed_by_gate",
             },
@@ -2993,6 +3087,75 @@ class TaskLedgerContractGate:
             path = _safe_repo_file(self._repo_root, relative)
             if _sha256_bytes(path.read_bytes()) != digest:
                 raise TaskLedgerContractError(f"sealed reference drifted: {relative}")
+
+    def _verify_evidence_reference(self, reference: EvidenceReference) -> None:
+        """Verify one ``passed`` evidence reference against its sealed file.
+
+        The path must be a repository-relative regular non-link file (the shared
+        ``_safe_repo_file`` helper rejects absolute paths, ``..`` traversal,
+        symlinks, reparse points, non-regular files and the root ``.env``), its
+        raw-byte SHA-256 must equal the sealed digest, and each assertion must
+        resolve against the parsed JSON payload as a machine-verifiable closed
+        set. A failure raises ``TaskLedgerContractError``; callers treat passed
+        evidence drift as a veto (the contract is void, never silently blocked).
+        """
+        if reference.path is None or reference.sha256 is None:
+            raise TaskLedgerContractError(
+                f"passed evidence {reference.evidence_id} has no sealed path or digest"
+            )
+        path = _safe_repo_file(self._repo_root, reference.path)
+        content = path.read_bytes()
+        if _sha256_bytes(content) != reference.sha256:
+            raise TaskLedgerContractError(
+                f"passed evidence {reference.evidence_id} SHA-256 drifted from the seal"
+            )
+        if not reference.assertions:
+            raise TaskLedgerContractError(
+                f"passed evidence {reference.evidence_id} declares no machine-verifiable "
+                "assertions; nothing can be verified"
+            )
+        payload = json.loads(content.decode("utf-8"))
+        for dotted_path, expected in reference.assertions:
+            if _nested_value(payload, dotted_path) != expected:
+                raise TaskLedgerContractError(
+                    f"passed evidence {reference.evidence_id} assertion failed: {dotted_path}"
+                )
+
+    def _verify_passed_evidence(
+        self,
+        passed_references: list[EvidenceReference],
+        vetoes: list[str],
+    ) -> tuple[bool, bool, bool]:
+        """Verify all passed evidence references; return the split scope flags.
+
+        Each flag is true only while every passed reference passed its path,
+        digest and assertions verification; the first drift flips all three to
+        false (the report must never over-claim a partially-verified reference)
+        and appends a veto so the gate fails closed. With no passed reference
+        the flags stay false: nothing was verified.
+        """
+        path_verified = False
+        digest_verified = False
+        assertions_verified = False
+        if passed_references:
+            path_verified = True
+            digest_verified = True
+            assertions_verified = True
+            for reference in passed_references:
+                try:
+                    self._verify_evidence_reference(reference)
+                except (
+                    TaskLedgerContractError,
+                    ConfigurationError,
+                    json.JSONDecodeError,
+                    UnicodeDecodeError,
+                    OSError,
+                ) as exc:
+                    vetoes.append(f"evidence {reference.evidence_id}: {exc}")
+                    path_verified = False
+                    digest_verified = False
+                    assertions_verified = False
+        return path_verified, digest_verified, assertions_verified
 
 
 def _discover_migration_revisions(repo_root: Path, directory: str) -> tuple[str, ...]:

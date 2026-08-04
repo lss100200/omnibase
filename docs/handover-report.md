@@ -2046,6 +2046,66 @@ Mypy、Ruff、compileall、maintainer map/benchmark validator、Compose
 config、`git diff --check` 与 clean-checkout 三项 `--verify`
 （P5.2A/P5.1A/P5.0，均 exit 2、veto 0）全部通过。
 
+#### P5.2A 第二轮独立复核修复（2026-08-04）
+
+第二轮独立复核对上一轮修复提交判定 REJECT，指出四个合同缺口；本轮逐项
+关闭（新增本地修复提交，不 amend 原提交），状态保持 P5.2A
+`blocked/not_proven`、P5.2B/Agent Runtime frozen：
+
+1. **Task fencing 作用域（P1）**：`_validate_task_fencing_monotonic` 原把
+   所有 Task 的 Attempt 拍平到同一条序列按 `created_at` 比较 task_fencing_token，
+   导致 Task A token=1 与 Task B token=1 被误判回退。改为**先按 task_id 分
+   组**，在每个 Task 内独立按 `created_at` 排序校验单调性；不同 Task 拥有
+   独立 fencing 序列、可各从 token 1 开始，不得拍平为系统级/Run 级共享序列。
+   新增 `test_task_fencing_is_scoped_per_task_positive`（两 Task 各从 token 1
+   通过）与 `test_task_fencing_regression_within_same_task_negative`
+   （同 Task 跨 Step 回退拒绝）。
+2. **Attempt ↔ TaskLease 双向绑定（P1）**：`_validate_one_task_lease` 原只校验
+   active Attempt → active Lease 方向，缺少反向约束（active Lease → active
+   execution-state Attempt 且指回并共享 fencing）。孤儿 active Lease
+   （Attempt 被 flip 为 ready/pending/terminal 且清空 lease 字段、Lease 仍
+   active）可通过。补齐反向校验：active Lease 必须绑定恰好一个
+   leased/dispatching/running Attempt，该 Attempt 的 task_lease_id 必须指回、
+   task_fencing_token 必须一致。新增 `test_active_task_lease_requires_active_attempt_negative`
+   覆盖 ready/pending/terminal Attempt、fencing token 不一致、指向另一 lease
+   与同一 Attempt 双 active Lease 六类。
+3. **Attempt 序列从 1 起且连续（P2）**：`_validate_attempt_ordering` 原只对
+   排序后相邻项校验 `next > previous`，无法阻止单个 `attempt_number=2` 或
+   `1 → 3` 跳号。改为对每个 (task_id, step_id) 组要求序列恰为 `[1, 2, 3, …]`
+   （首项必须 1、后续必须精确等于前项+1，禁止重复/回退/跳号/非 1 起始）；
+   排序仅用于确定校验顺序，不得"整理"为合法。新增
+   `test_attempt_sequence_must_start_at_one_negative`、
+   `test_attempt_sequence_must_be_contiguous_negative` 与
+   `test_attempt_sequence_is_independent_per_step_positive`（两 Step 各 1→2 通过）。
+4. **Evidence scope 不再无条件 over-claim（P2）**：`verify` 原无条件写
+   `evidence_references_verified=true`，但从未实际读取/校验
+   `config.evidence[].path/sha256/assertions`（passed 引用指向不存在文件仍报告 true）。
+   新增 `_verify_evidence_reference` 复用 `_safe_repo_file`/`_sha256_bytes`/
+   `_nested_value` 真实验证每条 passed 引用（仓库内相对 regular 非链接文件、
+   raw-byte SHA-256 与 sealed digest 一致、assertions 作为机器可验证闭集逐项解析）；
+   报告拆分为 `evidence_path_verified`/`evidence_digest_verified`/
+   `evidence_assertions_verified`/聚合 `evidence_references_verified`，只有实际
+   执行并通过才为 true；passed 引用 path 缺失/digest 漂移/assertion 不匹配均
+   为 veto（fail closed）。checked-in example 的 `not_proven` evidence 因此正确
+   报告 `evidence_references_verified=false`。新增
+   `test_missing_evidence_reference_is_not_verified`、
+   `test_evidence_digest_drift_is_not_verified`、
+   `test_unexecuted_evidence_assertions_are_not_overclaimed` 与正向
+   `test_passed_evidence_reference_is_verified_when_sealed`。
+5. **同步**：合同文档（§4.3 作用域冻结、§5.2 双向绑定、§10 报告语义、§11
+   负向矩阵）、INV-043、ai-maintainer-map §6.11、maintenance-map
+   `agent-task-ledger-contract` recovery 同步；P5.2A sealed digest 与共享的
+   P5.1A registry contract sealed digest（threat-model/maintenance-map/
+   security-invariants）重算并复验。
+
+第二轮修复后的验证：P5.2A focused 项全部通过（含 50 项负向矩阵 + 两轮复核
+反例）；P5.0/P5.1/P5.1B/P5.2A/P34.7 combined regression、Mypy、Ruff、
+compileall、maintainer map/benchmark validator、Compose config、
+`git diff --check` 与 clean-checkout 三项 `--verify`
+（P5.2A/P5.1A/P5.0，均 exit 2、veto 0，evidence scope 无"未执行却 true"字段）
+全部通过。状态保持 `blocked/not_proven`、`activation_allowed=false`、
+migration head 0010、三个 Phase 5 Feature Gate false。
+
 ## 八、常用命令
 
 ```bash
