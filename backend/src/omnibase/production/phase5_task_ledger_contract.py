@@ -2473,14 +2473,33 @@ class TaskLedgerContractConfig:
         # never resubmit. Different Tasks own independent fencing sequences, so
         # Task A and Task B may each start at token 1; the sequence must never
         # be flattened into a system-wide or Run-wide shared sequence.
-        fenced_by_task: dict[str, list[tuple[str, int]]] = {}
+        #
+        # Chronology is the normalized UTC instant of attempt.created_at, never
+        # the raw string: the project timestamp contract allows Z, +HH:MM and
+        # -HH:MM spellings, so string order is not chronological order and
+        # would let an illegal token regression (an older wall-clock claim
+        # carrying a lower token) be tidied into an increasing sequence.
+        # When two fenced claims of the same Task normalize to the exact same
+        # UTC instant the contract has no trusted secondary ordering field, so
+        # the ledger fails closed instead of inventing an order: never
+        # attempt_id lexicography, never token values, never input-array order.
+        fenced_by_task: dict[str, list[tuple[datetime, int]]] = {}
         for attempt in attempts:
             token = attempt.task_fencing_token
             if token is not None:
-                fenced_by_task.setdefault(attempt.task_id, []).append((attempt.created_at, token))
+                instant = _parse_utc_timestamp(attempt.created_at, name="attempt.created_at")
+                fenced_by_task.setdefault(attempt.task_id, []).append((instant, token))
         for task_id, task_tokens in fenced_by_task.items():
             ordered = sorted(task_tokens, key=lambda item: item[0])
-            for (_, previous_token), (_, current_token) in pairwise(ordered):
+            for (previous_instant, previous_token), (
+                current_instant,
+                current_token,
+            ) in pairwise(ordered):
+                if previous_instant == current_instant:
+                    raise TaskLedgerContractError(
+                        f"task fencing chronology within task {task_id} is ambiguous: "
+                        "two fenced claims normalize to the same UTC instant"
+                    )
                 if current_token <= previous_token:
                     raise TaskLedgerContractError(
                         f"task fencing must increase monotonically within task {task_id}; "

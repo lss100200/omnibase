@@ -1550,7 +1550,14 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
   1 起精确连续：重复/回退/跳号/非 1 起始均拒绝）或 Task fencing 跨 Step
   回退；允许把 task_fencing_token 拍平为系统级或 Run 级共享序列（它必须是
   per-Task 序列：同一 Task 内跨 Step 单调，不同 Task 各自独立、可各从 1
-  开始）；允许 pending/ready 携带 lease、leased/dispatching/running 缺失
+  开始）；允许按 `attempt.created_at` 的**原始 ISO-8601 字符串**排序判定
+  fencing 单调（时间轴必须是 `_parse_utc_timestamp` 归一化后的 UTC
+  instant：`Z`/`+HH:MM`/`-HH:MM` 都合法，字符串顺序不等于真实 UTC 顺序，
+  按字符串排序会把非法 token 回退"整理"成升序）；允许同一 Task 内两个
+  fenced claim 归一化为**同一 UTC instant** 时仍按任意顺序通过（合同没有
+  可信第二排序字段，必须 fail closed：不得依赖输入数组顺序、不得用
+  attempt_id 字典序或 token 自身排序把歧义整理为合法）；允许
+  pending/ready 携带 lease、leased/dispatching/running 缺失
   lease、terminal（含 unknown）保留 lease；允许 Attempt 引用另一 Attempt
   的 Lease、同 Attempt 双 active Lease 或 stale/revoked/expired lease 作为
   current；允许 active Task Lease 绑定 ready/pending/terminal Attempt

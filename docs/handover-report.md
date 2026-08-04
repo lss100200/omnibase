@@ -2106,6 +2106,53 @@ compileall、maintainer map/benchmark validator、Compose config、
 全部通过。状态保持 `blocked/not_proven`、`activation_allowed=false`、
 migration head 0010、三个 Phase 5 Feature Gate false。
 
+#### P5.2A 第三轮独立复核修复（2026-08-04）
+
+第三轮独立复核对上一轮修复提交判定 REJECT，仅剩一个 P1：fencing 单调校验
+的时间轴。本轮关闭（新增本地修复提交，不 amend 原提交），状态保持 P5.2A
+`blocked/not_proven`、P5.2B/Agent Runtime frozen：
+
+1. **fencing 时间轴 UTC 归一化（P1）**：
+   `_validate_task_fencing_monotonic` 原已按 task_id 分组，但直接对
+   `attempt.created_at` 原始 ISO-8601 字符串排序。项目 timestamp 合同允许
+   `Z`/`+HH:MM`/`-HH:MM`，字符串顺序不等于真实 UTC 顺序，可绕过 fencing
+   单调性：反例为同 Task 内 token 9 @ `2026-08-03T00:10:00Z` 与 token 3 @
+   `2026-08-02T23:11:00-01:00`（真实 UTC `2026-08-03T00:11:00Z`），真实顺序
+   9 → 3 是回退，字符串排序会错误整理成 3 → 9 而接受。改为先用
+   `_parse_utc_timestamp` 把所有 `created_at` 归一化为 UTC datetime，再按
+   UTC instant 排序并校验单调；仍然先按 task_id 分组（同 Task 跨 Step 严格
+   单调、不同 Task 序列独立、不退回全系统/Run 级共享序列）；**同一 Task 内
+   两个 fenced claim 归一化后为相同 UTC instant 时 fail closed**——合同没有
+   可信第二排序字段，不得依赖输入数组顺序、不得用 attempt_id 字典序冒充
+   claim 顺序、不得用 token 自身排序把歧义整理为升序。
+2. **新增四个 timestamp 反例**：
+   - `test_task_fencing_uses_normalized_utc_order_negative`：同 Task，token 9
+     @ `2026-08-03T00:10:00Z`、token 3 @ `2026-08-02T23:11:00-01:00`，真实
+     UTC 顺序 9 → 3，必须拒绝；
+   - `test_task_fencing_mixed_offsets_positive`：同 Task 混合 `Z`/`-HH:MM`/
+     `+HH:MM`，真实 UTC 与 token 均严格递增，必须通过；
+   - `test_task_fencing_equivalent_instants_fail_closed`：同 Task 两个
+     Attempt 用不同 offset 表达同一 UTC instant（token 已递增），仍必须按
+     文档语义 fail closed，不得靠 token/attempt_id/输入顺序自动整理为合法；
+   - `test_task_fencing_different_tasks_mixed_offsets_positive`：两个 Task
+     各自独立使用不同 offset、各从 token 1 开始，必须通过。
+   上一轮关闭的三项（per-(task_id, step_id) Attempt 序列从 1 起连续、active
+   TaskLease 与 active Attempt 双向绑定、passed evidence 的
+   path/digest/assertions 真实验证）未回退。
+3. **同步**：合同文档（§4.3 作用域冻结、§11 负向矩阵）、INV-043、
+   ai-maintainer-map §6.11、maintenance-map `agent-task-ledger-contract`
+   recovery 同步；P5.2A sealed digest 与共享的 P5.1A registry contract
+   sealed digest（threat-model/maintenance-map/security-invariants）重算并
+   复验。
+
+第三轮修复后的验证：P5.2A focused 项全部通过（50 项负向矩阵 + 三轮复核反例，
+新增 4 项 timestamp 用例）；P5.0/P5.1/P5.1B/P5.2A/P34.7 combined
+regression、Mypy、Ruff、compileall、maintainer map/benchmark validator、
+Compose config、`git diff --check` 与 clean-checkout 三项 `--verify`
+（P5.2A/P5.1A/P5.0，均 exit 2、veto 0）全部通过。状态保持
+`blocked/not_proven`、`activation_allowed=false`、migration head 0010、
+三个 Phase 5 Feature Gate false；P5.2B/Agent Runtime 继续冻结。
+
 ## 八、常用命令
 
 ```bash

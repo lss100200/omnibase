@@ -2814,6 +2814,115 @@ def test_task_fencing_regression_within_same_task_negative() -> None:
         TaskLedgerContractConfig.from_mapping(mapping)
 
 
+def test_task_fencing_uses_normalized_utc_order_negative() -> None:
+    # Fencing chronology is the normalized UTC instant, never the raw ISO-8601
+    # string. Within one Task, token 9 at 2026-08-03T00:10:00Z precedes token 3
+    # at 2026-08-02T23:11:00-01:00 (real UTC 2026-08-03T00:11:00Z): the real
+    # order 9 -> 3 is a regression that string sorting would tidy into 3 -> 9
+    # and wrongly accept. The regression spans two Steps so the per-Step
+    # attempt-ordering rule cannot mask it.
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    for attempt in attempts:
+        if attempt["attempt_id"] == ATTEMPT_3_ID:
+            attempt["created_at"] = "2026-08-02T23:11:00-01:00"
+    with pytest.raises(
+        TaskLedgerContractError,
+        match=r"task fencing must increase monotonically within task " + TASK_ID,
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_task_fencing_mixed_offsets_positive() -> None:
+    # Same Task, timestamps spelled with Z, -HH:MM and +HH:MM. The real UTC
+    # order (3 at 00:06:00Z, 9 at 00:11:00Z, 15 at 00:12:00Z) strictly matches
+    # the token order, so the ledger must accept it even though the raw string
+    # order would differ (2026-08-02T23:11:00-01:00 sorts before
+    # 2026-08-03T00:06:00Z lexicographically).
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    for attempt in attempts:
+        if attempt["attempt_id"] == ATTEMPT_2_ID:
+            attempt["task_fencing_token"] = 3
+            attempt["created_at"] = "2026-08-03T00:06:00Z"
+        if attempt["attempt_id"] == ATTEMPT_3_ID:
+            attempt["task_fencing_token"] = 9
+            attempt["created_at"] = "2026-08-02T23:11:00-01:00"
+    # keep the active leases' tokens consistent with their attempts
+    for lease in mapping["ledger_contracts"]["task_leases"]:
+        if lease["task_lease_id"] == TASK_LEASE_ID:
+            lease["task_fencing_token"] = 3
+        if lease["task_lease_id"] == LEASE_2_ID:
+            lease["task_fencing_token"] = 9
+    # A third fenced claim expressed with a +HH:MM offset, after the -01:00 one
+    # in real UTC time: STEP_2_ID now owns attempts 1 -> 2.
+    attempt4 = _attempt_mapping(ATTEMPT_4_ID, 2)
+    attempt4["step_id"] = STEP_2_ID
+    attempt4["task_lease_id"] = LEASE_3_ID
+    attempt4["task_fencing_token"] = 15
+    attempt4["created_at"] = "2026-08-03T01:12:00+01:00"
+    attempts.append(attempt4)
+    lease4 = _lease_2_mapping()
+    lease4["task_lease_id"] = LEASE_3_ID
+    lease4["attempt_id"] = ATTEMPT_4_ID
+    lease4["task_fencing_token"] = 15
+    mapping["ledger_contracts"]["task_leases"].append(lease4)
+    config = TaskLedgerContractConfig.from_mapping(mapping)
+    fenced = sorted(
+        (a for a in config.ledger_contracts.attempts if a.task_fencing_token is not None),
+        key=lambda a: a.task_fencing_token,
+    )
+    assert [a.task_fencing_token for a in fenced] == [3, 9, 15]
+
+
+def test_task_fencing_equivalent_instants_fail_closed() -> None:
+    # Two fenced claims of the same Task that normalize to the exact same UTC
+    # instant (here spelled with Z and +01:00) have no trusted secondary
+    # ordering field. The contract must fail closed instead of inventing an
+    # order: the tokens are already increasing (3 -> 9), yet the ledger must
+    # still reject rather than sort by token value, attempt_id or input order.
+    mapping = _contract_mapping()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    for attempt in attempts:
+        if attempt["attempt_id"] == ATTEMPT_2_ID:
+            attempt["task_fencing_token"] = 3
+        if attempt["attempt_id"] == ATTEMPT_3_ID:
+            attempt["task_fencing_token"] = 9
+            attempt["created_at"] = "2026-08-03T01:10:00+01:00"
+    # keep the active leases' tokens consistent with their attempts so the
+    # ambiguity rule is the only thing under test
+    for lease in mapping["ledger_contracts"]["task_leases"]:
+        if lease["task_lease_id"] == TASK_LEASE_ID:
+            lease["task_fencing_token"] = 3
+        if lease["task_lease_id"] == LEASE_2_ID:
+            lease["task_fencing_token"] = 9
+    with pytest.raises(
+        TaskLedgerContractError,
+        match=r"task fencing chronology within task " + TASK_ID + r" is ambiguous",
+    ):
+        TaskLedgerContractConfig.from_mapping(mapping)
+
+
+def test_task_fencing_different_tasks_mixed_offsets_positive() -> None:
+    # Different Tasks own independent fencing sequences and may each start at
+    # token 1, regardless of offset spellings: Task A uses Z and -01:00 (tokens
+    # 3 -> 9 in UTC order) while Task B uses +01:00 and starts at token 1.
+    mapping = _contract_with_two_tasks()
+    attempts = mapping["ledger_contracts"]["attempts"]
+    for attempt in attempts:
+        if attempt["attempt_id"] == ATTEMPT_3_ID:
+            attempt["created_at"] = "2026-08-02T23:06:00-01:00"
+        if attempt["attempt_id"] == ATTEMPT_5_ID:
+            attempt["created_at"] = "2026-08-03T00:11:00+01:00"
+    config = TaskLedgerContractConfig.from_mapping(mapping)
+    fenced_by_task: dict[str, list[int]] = {}
+    for attempt in config.ledger_contracts.attempts:
+        if attempt.task_fencing_token is not None:
+            fenced_by_task.setdefault(attempt.task_id, []).append(attempt.task_fencing_token)
+    assert sorted(fenced_by_task[TASK_ID]) == [3, 9]
+    assert fenced_by_task[TASK_2_ID] == [1]
+
+
 def test_active_task_lease_requires_active_attempt_negative() -> None:
     # An active Task Lease must bind exactly one attempt that is in an active
     # execution state (leased/dispatching/running) and points straight back at

@@ -228,10 +228,20 @@ running | committed | failed | unknown | cancelled`。
   均拒绝）；不同 Step 的序列相互独立，两个 Step 都可各自从 1 开始。排序
   仅用于确定校验顺序，不得把不合法序列"整理"为合法序列；
 - `task_fencing_token` 是 **per-Task**（Task 级）单调序列：同一 Task 内
-  （跨所有 Step）每次 Task Lease claim 的 token 必须严格高于此前所有（按
-  Attempt `created_at` 顺序校验），旧 holder 无法用旧 token 复活；**不同
-  Task 拥有互相独立的 fencing 序列**，Task A 与 Task B 可各自从 token 1
-  开始，不得把 task_fencing_token 拍平为系统级或 Run 级共享序列；
+  （跨所有 Step）每次 Task Lease claim 的 token 必须严格高于此前所有，旧
+  holder 无法用旧 token 复活；**不同 Task 拥有互相独立的 fencing 序列**，
+  Task A 与 Task B 可各自从 token 1 开始，不得把 task_fencing_token 拍平为
+  系统级或 Run 级共享序列；
+- **fencing 时间轴 = 归一化 UTC instant**：项目 timestamp 合同允许
+  `Z`、`+HH:MM`、`-HH:MM` 三种写法，原始 ISO-8601 字符串顺序**不等于**真实
+  UTC 顺序（如 `2026-08-02T23:11:00-01:00` 的字符串小于
+  `2026-08-03T00:10:00Z`，但真实 UTC 是 00:11Z 晚于 00:10Z），因此校验必须
+  先把每个 `attempt.created_at` 用 `_parse_utc_timestamp` 归一化为 UTC
+  datetime 再排序，按 UTC 时间轴校验单调性——禁止按原始字符串排序（否则可
+  把非法 token 回退"整理"成升序从而绕过）；同一 Task 内两个 fenced claim
+  归一化后落在**完全相同**的 UTC instant 时，合同没有可信的第二排序字段，
+  必须 **fail closed**（拒绝），不得依赖输入数组顺序、不得用 `attempt_id`
+  字典序冒充真实 claim 顺序、不得用 token 自身排序把歧义整理为合法；
 - Task Lease 是 Task 级逻辑授权（绑定一个 Attempt 与当前 Run Lease/
   Node fencing/Workspace generation），每次 claim 分配更高 token。
 
@@ -556,6 +566,14 @@ Attempt 拒绝、active lease 的 Attempt 未指回/指向另一 lease/fencing t
 两 Step 各自 `1 → 2` 通过、passed evidence path 缺失 / digest 漂移 /
 assertion 不匹配均不报告 verified 且 fail closed（veto）、passed 引用真实验证
 通过时聚合 `evidence_references_verified=true`。
+
+第三轮独立复核新增反例（fencing 时间轴 UTC 归一化）：同 Task 内 token 9 @
+`2026-08-03T00:10:00Z` 与 token 3 @ `2026-08-02T23:11:00-01:00`（真实 UTC
+00:11:00Z）——真实顺序 9 → 3 是回退，字符串排序会错误整理成 3 → 9，必须
+拒绝；同 Task 混合 `Z`/`-HH:MM`/`+HH:MM` 且真实 UTC 与 token 均严格递增
+必须通过；同 Task 两个 Attempt 用不同 offset 表达同一 UTC instant（token
+已递增）仍必须 fail closed（不得按 token/attempt_id/输入顺序整理为合法）；
+两个 Task 各自独立使用不同 offset 且各从 token 1 开始必须通过。
 
 ## 12. 决策语义
 
