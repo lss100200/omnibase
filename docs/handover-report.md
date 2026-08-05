@@ -2383,6 +2383,232 @@ P5.2A 仍是 engineering-only 离线合同；P5.2B、ORM、migration `0011`、Ta
 API/SDK、Planner/Executor/Scheduler/Worker/Agent Runtime 均未实现或解锁，
 正式状态继续由 Gate 保持 `blocked/not_proven`。
 
+### P5.2B0 Task Ledger Persistence admission 与设计封板（2026-08-04）
+
+独立 admission/readiness 审查（PLAN_P5_2B0，基于 merged `33dfac5` =
+PR #12）判定 **BLOCKED_NOT_AUTHORIZED**：三份 `--verify` 实测 exit 2、
+veto 0、migration head 0010、Feature Gates false/false/false、source clean、
+sealed digests 通过、root `.env` 与业务数据库均未触碰；当前未获用户对
+migration `0011` 与 P5.2B ORM/事务服务/disposable Gate 的显式实现授权。
+P34.7/P5.0/P5.1 的 `blocked/not_proven` 继续阻止 Runtime/production
+activation，但不再被错误写成 engineering-only 持久化实现的循环前置条件：
+P5.2A validator 在 P5.2B 未实现时本就包含 “persistence ledger is not
+implemented” blocker，要求其先 ready 才实现 P5.2B 不可满足。产出
+（docs-only，未实现任何代码/迁移）：
+
+- `docs/phase-5-task-ledger-persistence-design.md`：11 表边界（不提前创建
+  P5.3 PlanVersion 表）、复合租户 FK 与 tenant-schema User 例外、
+  Attempt↔Lease deferred FK/constraint trigger、五类状态机、历史 Lease
+  identity 不可变与定向终态转换、Round 1–5 时间矩阵、兼容 P5.1B 的
+  Definition→Version→Binding 锁序、commit 后 provider boundary、migration
+  `0011` head/tenant no-op/downgrade 语义、engineering 与 production 双层
+  admission；
+- `docs/evidence/p5-2/p5-2b-admission-decision.md`：逐项证据与决策记录。
+
+未修改 maintenance-map.json、security-invariants.md、ai-maintainer-map.md
+与 Phase 5 example contract sealed digests（权威运行合同未变，无需重算
+sealed digest；未来实际加入 `0011` 时必须同步更新）。P5.2B/Agent Runtime
+继续冻结；roadmap 的 Phase 5
+"P5.2 persistence ledger（P5.2B）未实现"描述仍然准确，未改动。
+
 ---
 
 *报告完。*
+
+### P5 Fast Track：P5.2B、Model Gateway 与无工具单 Agent Alpha（2026-08-04）
+
+用户显式批准以 **engineering-only、Feature Gates 默认关闭** 的方式实施
+P5.2B migration `0011`、Model Gateway 与无工具单 Agent Alpha；生产 Runtime
+激活仍需单独批准。该决策 supersede 了上一节 P5.2B0 的
+`BLOCKED_NOT_AUTHORIZED` 工程结论，但不改变 P34.7/P5.0/P5.1 production
+`blocked/not_proven`。
+
+本地分支 `codex/p5-fast-track` 当前实现：
+
+- migration `0011` 与 `backend/src/omnibase/task_ledger/`：11 张 global
+  durable ledger 表、复合 tenant FK、Attempt→current TaskLease deferred FK、
+  deferred 双向一致性 trigger、per-Task DB-clock fencing cursor、append-only
+  TaskLease、unknown Effect no-replay、populated downgrade SQLSTATE `55000`；
+- internal Model Gateway：OpenAI-compatible streaming/non-streaming、server-owned
+  secret、requested/actual model identity 精确匹配、silent fallback 拒绝、
+  bounded input/output/concurrency/timeout、provider error 脱敏，payload 不含
+  tools/tool_choice；现有 RAG answer 通过该 gateway；
+- tool-free single-Agent Alpha：workspace-scoped status/invoke SSE/cancel API 与
+  Browser workbench；只接受无 `allowed_tool_ids` 的 sealed installed version，
+  取消绑定 tenant/workspace/actor/invocation，最终 digest 使用实际模型身份；
+  production dependency 仍是 `UnavailableAgentAlpha`，默认返回 503；
+- 正式 disposable Gate wrapper、P5.2B focused/integration tests、Makefile guarded
+  target、维护者地图 INV-044/INV-045 与 Phase 5 文档同步。
+
+实际验证：后端 focused `19 passed`，Gate wrapper `4 passed`，Phase 5/P34.7
+组合 `459 passed`，全套 non-integration `1599 passed / 17 skipped / 14
+deselected`；前端 `46 passed` + `tsc --noEmit` + selected Prettier；全量 Mypy
+172 source files 0 issue；本次改动路径 Ruff/format clean；合同链 `378
+passed`，maintainer map（35 invariants/28 modules）、benchmark 与 Compose
+配置通过。一次性 `omnibase_test_p52b_local` 预验证从 `0001` 升到唯一 head
+`0011`，P5.2B integration `6 passed`，清理 `0/0/0`。
+
+源提交 `7bff71c` 后执行正式 clean-source disposable Gate：`passed=true`、
+head `0011`、source manifest SHA-256
+`4ec50ef08b59c5edf87bd39919029cf9858198ceee7e666ff335fa3bad4d8a2c`、
+容器/网络/卷 `0/0/0`、production Runtime=false、Feature Gates=false、
+root env/business database=false；canonical evidence 位于
+`docs/evidence/p5-2/phase5-task-ledger-disposable-gate.{json,md}`。
+
+明确未发生：所有 Phase 5 Feature Gates 仍为 false；没有生产 Runtime、
+Planner/Executor/scheduler/worker、shell/SQL/arbitrary HTTP tool、MCP、Skill、
+多 Agent；未读取根 `.env`，未访问或迁移业务数据库，未 push/PR/merge/deploy。
+
+### P5.2C engineering Agent Alpha runtime（2026-08-04）
+
+在 P5.2B ledger 之上实现 engineering-only 单 Agent Alpha runtime（本地分支
+`external/p5-2c-agent-alpha-runtime`，基于 `661177b` = P5 Fast Track 文档
+封存；无 upstream）：
+
+- `backend/src/omnibase/agent_alpha/engineering.py`：`AGENT_ALPHA_ENGINEERING_ENABLED`
+  严格 true/false（禁止 pydantic coercion，非法值 raise
+  `EngineeringAlphaConfigurationError`）+ `ENV=development` + 三个 Phase 5
+  Feature Gate 全 false + Model Gateway 已装配 + migration head `0011` 全满足
+  才允许 `build_engineering_agent_alpha()` 装配 DB-backed service；任一不满足
+  返回 `UnavailableAgentAlpha`；
+- `adapters.py`：live profile resolver（tenant/user/workspace/membership/
+  binding/definition/version 重锁校验，稳定 error codes）、只读 capped RAG
+  retriever（top_k/字符数服务端上限，embedding 不可用时明确降级）、
+  `LedgerInvocationAdapter`：transaction A（provider 边界前 durable
+  reservation，状态机按 guard 允许的转换跨 flush 推进：task
+  `created->scheduled->running`、run `leased->running`、attempt
+  `leased->dispatching`、effect `reserved->dispatching`）、transaction B
+  （重锁校验 + terminalize + 终态 run 清空全部 binding）；
+- exact replay：从已提交 idempotency record（response_ref）恢复 task id 与
+  不可变 deadline，逐字节复现 task_create canonical payload；同 key 同
+  payload 只返回原 task，绝不重复调用 provider/创建 Attempt/扣费；in-flight
+  attempt 拒绝二次 dispatch（`agent_alpha_replay_in_flight`）；`unknown`
+  只进 reconciliation；`create_task` 的 deadline 校验移到 replay 分支之后
+  （replay 不创建新 deadline）；
+- 取消：进程内 module-level signal 注册表（router 每请求新建 service 实例，
+  注册表必须共享），cancel endpoint 校验 tenant/workspace/actor/invocation
+  四元组；durable 终态只来自 ledger；SSE disconnect 记 unknown/reconciliation，
+  绝不伪造 cancelled；cancellation 集成测试改用真实 uvicorn + httpx（TestClient
+  ASGI transport 串行化请求，无法表达并发 cancel）；
+- 工具型 AgentVersion 在 adapter 与 service 双层拒绝（稳定 409）；前端
+  workbench 提供 workspace/agent 选择、SSE 流式回答、取消、citations/
+  usage/latency/actual model identity 与 ENGINEERING ALPHA / TOOLS DISABLED /
+  PRODUCTION RUNTIME OFF 徽标；
+- 未创建 migration `0012`；无 tools/Planner/Executor/Scheduler/Worker/MCP/
+  Skill/Memory/多 Agent；三个 Feature Gate 保持 false。
+
+2026-08-05 独立复核修复补充：原实现把 `workspace_id` 丢弃后调用 tenant-wide
+canonical RAG，无法证明跨 Workspace 隔离；现已改为仅查询当前 tenant +
+Workspace 下 `ready` 的 P34.6 derived-index generation，并增加同 tenant 双
+Workspace 负向集成测试。三个 Phase 5 Gate 改为严格闭集解析；status 的
+`assembled` 现在同时验证 gateway 与 migration head `0011`，数据库不可用或
+head 漂移时不再过报。Alpha 调用意图哈希不再包含可变 chunk IDs，而由
+`create_task(request_hash_override=...)` 纳入 task canonical payload；终态 exact
+replay 在 RAG 前返回，同 key 不同消息稳定冲突。Provider deadline 与缺失实际
+model identity 在已跨 Provider 边界后统一记录 `unknown` + reconciliation。
+
+实际验证：P5.2C 集成（一次性 `omnibase_test_p52c_*` sentinel）`5 passed`；
+focused `44 passed`；合同链（P5.0/P5.1B/P5.2A/Alpha/P5.2B）`313 passed`；
+全套 non-integration `1629 passed / 18 skipped / 14 deselected`；前端 `46
+passed` + `tsc --noEmit` + lint clean；Mypy 10 files 0 issue；改动路径
+ruff check/format clean；P5.0/P5.1/P5.2A `--validate-only` 均 exit 0；
+maintainer map（36 invariants/29 modules）通过；Compose `config` 与
+`git diff --check` 通过。正式 clean-source disposable Gate 在
+`docs/evidence/p5-2/phase5-agent-alpha-engineering-gate.{json,md}` 记录
+（工程 seam、模型身份、tool-free、tenant scope、取消 scope、unknown
+no-replay、无外部网络访问）。
+
+明确未发生：所有 Phase 5 Feature Gates 仍为 false；没有生产 Runtime、
+Planner/Executor/scheduler/worker、shell/SQL/arbitrary HTTP tool、MCP、
+Skill、多 Agent、migration `0012`；未读取根 `.env`，未访问或迁移业务
+数据库，未 push/PR/merge/deploy。live provider smoke 未执行（
+`reason=credential not supplied through approved ephemeral channel`）。
+
+### P5 Fast Usable Slice：真实用户设置、个人 Provider 与首个 Agent Workspace（2026-08-05）
+
+本节是上述历史 P5.2C 报告之后的新增事实。上述“未创建 migration `0012`”、
+“head `0011`”和“未执行 live provider smoke”只描述当时已经封存的 P5.2C
+source/evidence boundary，不能被继续当作当前仓库状态；历史 evidence 未被改写，
+也没有被过度声称为已证明当前 `0012` 源码。
+
+本轮交付了面向真实用户的最小可用生产切片：
+
+- migration `0012` 增加 tenant-scoped `user_profiles` 与
+  `model_provider_credentials`。新 tenant bootstrap 与 Alembic revision 会
+  收敛到同一闭集结构；只出现一张表或列/约束/索引漂移时 fail closed。
+- `0012` global downgrade 在全局 revision row 移动前遍历全部 retained tenant，
+  对 server-owned schema 名做严格闭集校验，并拒绝任何已 populated 的资料或
+  Provider 表，避免先回退 global head、再被某个 tenant 拒绝形成 split head。
+  恢复策略仍是 forward-fix 或恢复到新的 `omnibase_restore_*` 数据库。
+- `/api/v1/users/me/profile` 支持真实用户资料、locale/theme、助手名称、语气和
+  用户指令；个性设定进入真实 Agent system prompt，并以摘要绑定调用幂等意图。
+- `/api/v1/model-provider-credentials` 支持个人 Provider 的创建、更新、密钥轮换、
+  激活、撤销和真实连接测试。API key 使用 AES-256-GCM，AAD 绑定 tenant/user/
+  credential/provider/key version；Browser DTO、日志、Audit 和 artifacts 不返回
+  API key、ciphertext、nonce、Authorization 或 Provider 原始响应。
+- Provider 测试只允许显式 allowlist 的 HTTPS host，拒绝 userinfo/query/
+  fragment/IP literal/private DNS/redirect/proxy inheritance，并要求 requested /
+  actual model identity 逐字符一致。外呼位于两个短事务之间；回写前重锁 live
+  User 与 credential 并比较完整非秘密配置摘要，配置漂移返回 409 且不写 stale
+  PASS。Redis 以 tenant/user/credential 为单位 fail closed 限流。
+- 内置模板 `omnibase.ai-workbench` 与 sealed、low-risk、tool-free Agent
+  `omnibase.tool-free-research-assistant@1.0.0` 会为新用户创建；从默认模板创建
+  Workspace 时自动安装 Agent binding。新增只读 profiles API，Browser 可明确
+  看到当前 Workspace 可用 Agent。
+- 每次 fresh Alpha invocation 在 Provider 前创建短期 P34 WorkspaceRun 与
+  RunLease；server-owned local Model Gateway Node identity 绑定 deployment
+  instance，attestation 为短期，revoked/rejected Node 不得原地复活。同一非占位
+  runtime_instance_id/workload_identity_digest 同时绑定 P34 WorkspaceRun 与 P5
+  AgentRun；Provider/Agent deadline、TaskLease TTL、Workspace RunLease TTL
+  按 `75s < 90s < 120s` 留出终结余量。success/failure/cancel/unknown 均走既有
+  fencing/state-machine terminalization；exact replay 在创建 WorkspaceRun 前返回。
+- Agent invocation identity 现在绑定 credential source、credential ID/version、
+  key fingerprint、provider/model 与配置摘要；用户切换模型或轮换 Key 后，旧
+  Idempotency-Key 不会错误复用先前 Provider 意图。
+
+直接环境证据：
+
+- pre-0012 备份：`E:\OmniBase Backups\omnibase_pre_0012_20260805T073231Z.dump`，
+  SHA-256 `40ca7330601780a075c3551834d69eac062504b0564af61a134d2d891588ecb6`，
+  `397048` bytes；已恢复到新的 `omnibase_restore_20260805_pre0012`，只读确认
+  revision `0011`、tenant count `1`，未覆盖源数据库。
+- 当前开发数据库 global/tenant head 均为 `0012`。一次性
+  `omnibase_test_p512_20260805` PostgreSQL fresh upgrade 实际经过
+  `0011 -> 0012`，重复 upgrade 收敛，focused result `1 passed in 11.34s`，
+  disposable 容器/网络/卷已清理。
+- 已创建首个 Workspace“我的第一个 AI 工作空间”
+  (`a2836189-2109-47db-98e8-4b87d8edcfc6`)；用户资料保存为
+  `OmniBase Builder` / assistant `Omni`，真实模型回答确认 user-facing 名称为
+  `Omni`。
+- 个人 DeepSeek credential 的脱敏连接测试通过：requested/actual model 均为
+  `deepseek-v4-flash`；随后真实个人凭据 Agent 调用返回
+  `personal credential active`，最终事件标记 credential source `personal`。
+  API key、密文、nonce、Authorization、Provider raw response 均未进入本报告。
+- 调用终结后 active WorkspaceRun 与 RunLease 均回到 `0`；未运行工具、Planner、
+  多 Agent、MCP、Skills、Shell、SQL、任意 HTTP 或 hostile-code Sandbox。
+- 最终一次性 `omnibase_test_p512_downgrade_20260805` 迁移/降级防护回归为
+  `3 passed in 20.52s`，覆盖 fresh `0011 -> 0012`、retained tenant 收敛、重复
+  upgrade，以及 populated tenant 在任何 global/tenant head 移动前拒绝 downgrade；
+  隔离容器、网络和卷已执行 `down -v --remove-orphans` 清理。
+- 最终验证矩阵：focused 产品链 `190 passed`，Phase 5 合同链 `431 passed`，
+  全套 non-integration `1652 passed / 19 skipped / 15 deselected`，Mypy
+  `181` source files 0 issue；前端 `46 passed`，并通过 typecheck、lint 与 build。
+  Maintainer map、benchmark validator、Compose config 与 `git diff --check` 均通过。
+- Runtime anchor 修复后的 fresh `omnibase_test_p52c_runtime3_20260805` sentinel
+  integration 为 `10 passed in 54.03s`：覆盖 process-boot identity、member attestation
+  续签、revoked/rejected 不可复活、live P34/P5 identity 对齐，以及 success/failed/
+  unknown/cancelled 四种终态的 Run/Lease 清理；隔离资源已全部清理。
+- 生产工作台在 `http://127.0.0.1:3100` 完成 Browser E2E：设置页显示真实资料与
+  脱敏个人 Provider，Workspace 页显示首个 Workspace，Agent 页使用个人
+  `deepseek-v4-flash` 在 runtime-anchor 修复并热重载后，对“请只回复：final runtime
+  verified”返回逐字符一致的 `final runtime verified`，并记录 actual model identity、
+  `183` input / `36` output / `219` total tokens 与 `2263 ms` latency。
+- 最终只读数据库验收只查询非秘密字段：global/tenant head 均为 `0012`，
+  `user_profiles=1`，active+default 且 `last_test_status=passed` 的个人 Provider 为
+  `1`，active WorkspaceRun 与 active RunLease 均为 `0`。查询未触碰 API key、
+  ciphertext、nonce、Authorization 或 Provider 原始响应。
+
+边界与证据解释：三个 Phase 5 Feature Gates 继续为 false，production Runtime
+激活仍需单独批准。历史 P5.1/P5.2B/P5.2C sealed evidence只证明其原始 `0011`
+source boundary；本轮没有伪造或覆盖这些 evidence，也不把它们描述为当前 `0012`
+production Gate。根 `.env` 未读取、打印、stage 或提交。

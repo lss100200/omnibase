@@ -137,6 +137,7 @@ class Settings(BaseSettings):
     auth_rate_limit_per_window: int = Field(default=5, ge=1, le=10_000)
     rag_rate_limit_per_window: int = Field(default=10, ge=1, le=10_000)
     upload_rate_limit_per_window: int = Field(default=10, ge=1, le=10_000)
+    provider_test_rate_limit_per_window: int = Field(default=3, ge=1, le=100)
 
     # ---------------------------------------------------------
     # Local AI model boundary (no implicit network by default)
@@ -209,6 +210,26 @@ class Settings(BaseSettings):
         description="Base URL for OpenAI-compatible LLM API",
     )
     llm_model: str = Field(default="deepseek-chat", description="LLM model name")
+    llm_provider: str = Field(
+        default="openai_compatible",
+        description="Logical provider identity recorded by the internal Model Gateway",
+    )
+    provider_credential_encryption_key: str = Field(
+        default="",
+        description=(
+            "Base64url-encoded 32-byte AES-GCM key for user model-provider credentials. "
+            "Production and staging require an independent key."
+        ),
+    )
+    provider_endpoint_allowlist: tuple[str, ...] = Field(
+        default=(
+            "api.deepseek.com",
+            "open.bigmodel.cn",
+            "dashscope.aliyuncs.com",
+            "api.openai.com",
+        ),
+        description="Exact HTTPS host allowlist for user-configured model providers.",
+    )
 
     # ---------------------------------------------------------
     # Embedding index migration (Phase 1.6)

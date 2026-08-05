@@ -3,6 +3,7 @@ import test, { afterEach, beforeEach } from 'node:test'
 import axios from 'axios'
 import {
   API_PREFIX,
+  agentAlphaApi,
   api,
   authApi,
   databaseApi,
@@ -254,4 +255,58 @@ test('askStream does not retry when aborted during token refresh', async () => {
     return error instanceof DOMException && error.name === 'AbortError'
   })
   assert.equal(fetchCount, 1)
+})
+
+test('Agent Alpha stream preserves idempotency and abort signal across a 401 retry', async () => {
+  setTokens('old-access', 'refresh-token', Date.now() + 60_000)
+  const controller = new AbortController()
+  const requests: RequestInit[] = []
+  const urls: Array<string | URL | Request> = []
+  globalThis.fetch = async (input, init = {}) => {
+    urls.push(input)
+    requests.push(init)
+    return new Response(null, { status: requests.length === 1 ? 401 : 200 })
+  }
+  axios.post = (async () => ({
+    data: { access_token: 'new-access', expires_in: 300 },
+  })) as typeof axios.post
+
+  const response = await agentAlphaApi.invokeStream(
+    'workspace-1',
+    { agent_version_id: 'version-1', message: 'hello' },
+    { signal: controller.signal, idempotencyKey: 'stable-alpha-key' },
+  )
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(urls, [
+    '/api/v1/workspaces/workspace-1/agent-alpha/invoke',
+    '/api/v1/workspaces/workspace-1/agent-alpha/invoke',
+  ])
+  assert.equal(requests[0]?.signal, controller.signal)
+  assert.equal(requests[1]?.signal, controller.signal)
+  assert.equal(new Headers(requests[0]?.headers).get('Idempotency-Key'), 'stable-alpha-key')
+  assert.equal(new Headers(requests[1]?.headers).get('Idempotency-Key'), 'stable-alpha-key')
+  assert.equal(new Headers(requests[0]?.headers).get('Authorization'), 'Bearer old-access')
+  assert.equal(new Headers(requests[1]?.headers).get('Authorization'), 'Bearer new-access')
+})
+
+test('Agent Alpha cancel uses the versioned workspace invocation path', async () => {
+  let requestUrl = ''
+  api.defaults.adapter = async (config) => {
+    requestUrl = axios.getUri(config)
+    return {
+      data: { invocation_id: 'invocation-1', cancellation_requested: true },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    }
+  }
+
+  await agentAlphaApi.cancel('workspace-1', 'invocation-1')
+
+  assert.equal(
+    requestUrl,
+    '/api/v1/workspaces/workspace-1/agent-alpha/invocations/invocation-1/cancel',
+  )
 })

@@ -1,0 +1,147 @@
+"""Focused engineering tests for the tool-free internal Model Gateway."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from omnibase.model_gateway import ModelGateway, ModelMessage
+from omnibase.model_gateway.providers import (
+    ModelIdentityMismatch,
+    OpenAICompatibleProvider,
+)
+from omnibase.model_gateway.service import (
+    ModelGatewayBudgetExceeded,
+    ModelGatewayUnavailable,
+    UnavailableModelGateway,
+)
+from omnibase.rag.llm import generate_answer
+
+
+class _Completions:
+    def __init__(self, response: object) -> None:
+        self.response = response
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **payload: object) -> object:
+        self.calls.append(payload)
+        return self.response
+
+
+class _Client:
+    def __init__(self, response: object) -> None:
+        self.chat = SimpleNamespace(completions=_Completions(response))
+
+
+def _factory(response: object) -> tuple[Any, _Client]:
+    client = _Client(response)
+
+    def create_client(**kwargs: object) -> _Client:
+        assert kwargs["api_key"] == "server-secret"
+        assert kwargs["base_url"] == "https://provider.example/v1"
+        return client
+
+    return create_client, client
+
+
+def _response(*, model: str = "model-alpha", content: str = "answer") -> object:
+    usage = SimpleNamespace(
+        prompt_tokens=7,
+        completion_tokens=3,
+        total_tokens=10,
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=0),
+    )
+    choice = SimpleNamespace(
+        message=SimpleNamespace(content=content),
+        finish_reason="stop",
+    )
+    return SimpleNamespace(model=model, choices=[choice], usage=usage)
+
+
+def test_complete_records_exact_identity_and_never_sends_tools() -> None:
+    client_factory, client = _factory(_response())
+    provider = OpenAICompatibleProvider(
+        provider_id="test-provider",
+        api_key="server-secret",
+        base_url="https://provider.example/v1",
+        client_factory=client_factory,
+    )
+    gateway = ModelGateway(provider=provider, model_id="model-alpha")
+
+    result = gateway.complete((ModelMessage(role="user", content="hello"),))
+
+    assert result.requested_model_id == result.actual_model_id == "model-alpha"
+    assert result.provider_id == "test-provider"
+    assert result.usage.total_tokens == 10
+    payload = client.chat.completions.calls[0]
+    assert payload["model"] == "model-alpha"
+    assert "tools" not in payload
+    assert "tool_choice" not in payload
+
+
+def test_silent_model_fallback_is_rejected() -> None:
+    client_factory, _ = _factory(_response(model="fallback-model"))
+    gateway = ModelGateway(
+        provider=OpenAICompatibleProvider(
+            provider_id="test-provider",
+            api_key="server-secret",
+            base_url="https://provider.example/v1",
+            client_factory=client_factory,
+        ),
+        model_id="model-alpha",
+    )
+
+    with pytest.raises(ModelIdentityMismatch, match="model_actual_identity_mismatch"):
+        gateway.complete((ModelMessage(role="user", content="hello"),))
+
+
+def test_gateway_fails_closed_when_unavailable() -> None:
+    with pytest.raises(ModelGatewayUnavailable, match="model_gateway_unavailable"):
+        UnavailableModelGateway().complete((ModelMessage(role="user", content="hello"),))
+
+
+def test_output_and_input_budgets_are_server_owned() -> None:
+    client_factory, _ = _factory(_response())
+    gateway = ModelGateway(
+        provider=OpenAICompatibleProvider(
+            provider_id="test-provider",
+            api_key="server-secret",
+            base_url="https://provider.example/v1",
+            client_factory=client_factory,
+        ),
+        model_id="model-alpha",
+        max_output_tokens=8,
+        max_input_characters=4,
+    )
+
+    with pytest.raises(ModelGatewayBudgetExceeded, match="model_output_budget_exceeded"):
+        gateway.complete((ModelMessage(role="user", content="hey"),), max_output_tokens=9)
+    with pytest.raises(ModelGatewayBudgetExceeded, match="model_input_budget_exceeded"):
+        gateway.complete((ModelMessage(role="user", content="hello"),))
+
+
+def test_rag_uses_gateway_without_changing_legacy_return_shape() -> None:
+    client_factory, client = _factory(_response(content="grounded [1]"))
+    gateway = ModelGateway(
+        provider=OpenAICompatibleProvider(
+            provider_id="test-provider",
+            api_key="server-secret",
+            base_url="https://provider.example/v1",
+            client_factory=client_factory,
+        ),
+        model_id="model-alpha",
+        max_output_tokens=2000,
+    )
+
+    answer = generate_answer(
+        "question",
+        [{"content": "source text", "chunk_id": "c1", "document_id": "d1"}],
+        gateway=gateway,
+    )
+
+    assert answer == "grounded [1]"
+    messages = client.chat.completions.calls[0]["messages"]
+    assert isinstance(messages, list)
+    assert "[1] source text" in str(messages)

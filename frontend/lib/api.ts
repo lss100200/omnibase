@@ -8,12 +8,17 @@ import type {
   HealthResponse,
   LoginRequest,
   PlaygroundResponse,
+  ProviderCredentialList,
+  ProviderCredentialRead,
+  ProviderRuntimePosture,
+  ProviderTestResult,
   RefreshResponse,
   RegisterRequest,
   SearchResponse,
   TableInfo,
   TokenResponse,
   UserPublic,
+  UserProfileRead,
   WorkspaceList,
   WorkspaceMembershipList,
   WorkspaceRead,
@@ -149,6 +154,79 @@ export const authApi = {
   me: () => api.get<UserPublic>('/auth/me').then((r) => r.data),
 }
 
+export const userSettingsApi = {
+  profile: () => api.get<UserProfileRead>('/users/me/profile').then((response) => response.data),
+
+  updateProfile: (payload: {
+    expected_version: number
+    display_name: string
+    locale: string
+    theme: UserProfileRead['theme']
+    assistant_name: string
+    assistant_tone: UserProfileRead['assistant_tone']
+    assistant_instructions: string
+  }) => api.patch<UserProfileRead>('/users/me/profile', payload).then((response) => response.data),
+
+  credentials: () =>
+    api
+      .get<ProviderCredentialList>('/model-provider-credentials')
+      .then((response) => response.data),
+
+  createCredential: (payload: {
+    display_name: string
+    provider_id: string
+    base_url: string
+    model_id: string
+    api_key: string
+    is_default: boolean
+  }) =>
+    api
+      .post<ProviderCredentialRead>('/model-provider-credentials', payload)
+      .then((response) => response.data),
+
+  updateCredential: (
+    credentialId: string,
+    payload: {
+      expected_version: number
+      display_name?: string
+      provider_id?: string
+      base_url?: string
+      model_id?: string
+      is_default?: boolean
+    },
+  ) =>
+    api
+      .patch<ProviderCredentialRead>(`/model-provider-credentials/${credentialId}`, payload)
+      .then((response) => response.data),
+
+  replaceSecret: (credentialId: string, expectedVersion: number, apiKey: string) =>
+    api
+      .put<ProviderCredentialRead>(`/model-provider-credentials/${credentialId}/secret`, {
+        expected_version: expectedVersion,
+        api_key: apiKey,
+      })
+      .then((response) => response.data),
+
+  activate: (credentialId: string, expectedVersion: number) =>
+    api
+      .post<ProviderCredentialRead>(`/model-provider-credentials/${credentialId}/activate`, {
+        expected_version: expectedVersion,
+        make_default: true,
+      })
+      .then((response) => response.data),
+
+  revoke: (credentialId: string) =>
+    api.delete<void>(`/model-provider-credentials/${credentialId}`).then(() => undefined),
+
+  test: (credentialId: string) =>
+    api
+      .post<ProviderTestResult>(`/model-provider-credentials/${credentialId}/test`)
+      .then((response) => response.data),
+
+  runtime: () =>
+    api.get<ProviderRuntimePosture>('/model-provider-runtime').then((response) => response.data),
+}
+
 export const documentsApi = {
   list: (params?: { limit?: number; offset?: number; status?: string }) =>
     api.get<DocumentList>('/documents', { params }).then((r) => r.data),
@@ -227,6 +305,106 @@ export const ragApi = {
   },
 }
 
+export interface AgentAlphaInvokePayload {
+  readonly agent_version_id: string
+  readonly message: string
+  readonly top_k?: number
+  readonly retry_of?: string | null
+}
+
+export interface AgentInstallation {
+  readonly binding_id: string
+  readonly workspace_id: string
+  readonly workspace_generation: number
+  readonly agent_definition_id: string
+  readonly agent_version_id: string
+  readonly agent_version_digest: string
+  readonly binding_state: string
+  readonly created_at?: string | null
+  readonly disabled_at?: string | null
+  readonly superseded_by?: string | null
+}
+
+export interface AgentInstallationList {
+  readonly items: AgentInstallation[]
+  readonly total: number
+}
+
+export interface AgentAlphaProfile {
+  readonly agent_definition_id: string
+  readonly agent_version_id: string
+  readonly agent_version_digest: string
+  readonly workspace_agent_binding_id: string
+  readonly display_name: string
+}
+
+export interface AgentAlphaProfileList {
+  readonly items: AgentAlphaProfile[]
+  readonly total: number
+}
+
+export const workspaceInstallationsApi = {
+  list: (workspaceId: string) =>
+    api
+      .get<AgentInstallationList>(`/workspaces/${workspaceId}/agent-installations`)
+      .then((response) => response.data),
+}
+
+export const agentAlphaApi = {
+  profiles: (workspaceId: string) =>
+    api
+      .get<AgentAlphaProfileList>(`/workspaces/${workspaceId}/agent-alpha/profiles`)
+      .then((response) => response.data),
+
+  status: (workspaceId: string) =>
+    api
+      .get<{
+        engineering_implemented: boolean
+        engineering_assembled: boolean
+        engineering_flag_enabled: boolean
+        environment_allowed: boolean
+        phase5_gates_all_false: boolean
+        production_activation_allowed: boolean
+        tools_enabled: boolean
+        multi_agent_enabled: boolean
+      }>(`/workspaces/${workspaceId}/agent-alpha/status`)
+      .then((response) => response.data),
+
+  invokeStream: async (
+    workspaceId: string,
+    payload: AgentAlphaInvokePayload,
+    options: { signal?: AbortSignal; idempotencyKey?: string } = {},
+  ): Promise<Response> => {
+    const key = options.idempotencyKey ?? crypto.randomUUID()
+    const requestStream = (accessToken: string | null): Promise<Response> => {
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': key,
+      })
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+      return fetch(apiUrl(`/workspaces/${workspaceId}/agent-alpha/invoke`), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: options.signal,
+      })
+    }
+    const response = await requestStream(getAccessToken())
+    if (response.status !== 401) return response
+    const accessToken = await refreshAccessToken()
+    options.signal?.throwIfAborted()
+    return requestStream(accessToken)
+  },
+
+  cancel: (workspaceId: string, invocationId: string) =>
+    api
+      .post<{
+        invocation_id: string
+        cancellation_requested: boolean
+      }>(`/workspaces/${workspaceId}/agent-alpha/invocations/${invocationId}/cancel`)
+      .then((response) => response.data),
+}
+
 export const workspacesApi = {
   listTemplates: () =>
     api.get<WorkspaceTemplateList>('/workspace-templates').then((response) => response.data),
@@ -236,7 +414,11 @@ export const workspacesApi = {
   get: (workspaceId: string) =>
     api.get<WorkspaceRead>(`/workspaces/${workspaceId}`).then((response) => response.data),
 
-  create: (payload: { display_name: string; template_id: string; quota?: Record<string, number> }) =>
+  create: (payload: {
+    display_name: string
+    template_id: string
+    quota?: Record<string, number>
+  }) =>
     api
       .post<WorkspaceRead>('/workspaces', payload, {
         headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -260,9 +442,7 @@ export const workspacesApi = {
       .then((response) => response.data),
 
   listRuns: (workspaceId: string) =>
-    api
-      .get<WorkspaceRunList>(`/workspaces/${workspaceId}/runs`)
-      .then((response) => response.data),
+    api.get<WorkspaceRunList>(`/workspaces/${workspaceId}/runs`).then((response) => response.data),
 
   createRun: async (workspaceId: string, generation: number, kind: 'batch' | 'interactive') => {
     const operationId = crypto.randomUUID()

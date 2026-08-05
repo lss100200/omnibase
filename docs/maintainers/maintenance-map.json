@@ -9,7 +9,7 @@
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0009",
+    "Alembic migrations 0001 through 0012",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -492,6 +492,76 @@
       ],
       "test_paths": [
         "backend/tests/test_p5_2a_task_ledger_contract.py"
+      ]
+    },
+    {
+      "id": "INV-044",
+      "title": "P5.2B durable Task ledger stays tenant-bound, database-fenced, engineering-only and gate-sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-044-p52b-durable-task-ledger",
+      "source_paths": [
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
+        "backend/src/omnibase/workspaces/models.py",
+        "scripts/production/run_p5_2b_task_ledger_disposable_gate.py",
+        "docs/phase-5-task-ledger-persistence-design.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_2b_task_ledger.py",
+        "backend/tests/integration/test_p5_2b_task_ledger_foundation.py",
+        "scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py"
+      ]
+    },
+    {
+      "id": "INV-045",
+      "title": "Model identity, provider secrets and tool-free Agent Alpha stay fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-045-model-gateway-and-tool-free-agent-alpha",
+      "source_paths": [
+        "backend/src/omnibase/model_gateway/**",
+        "backend/src/omnibase/agent_alpha/**",
+        "backend/src/omnibase/rag/llm.py",
+        "backend/src/omnibase/main.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_model_gateway.py",
+        "backend/tests/test_agent_alpha.py",
+        "frontend/lib/api.test.ts"
+      ]
+    },
+    {
+      "id": "INV-046",
+      "title": "Engineering-only Agent Alpha runtime stays seam-gated, ledger-backed and disposable-gate sealed",
+      "document": "docs/maintainers/security-invariants.md#inv-046-agent-alpha-engineering-runtime",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/**",
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
+        "scripts/production/run_p5_2c_agent_alpha_disposable_gate.py",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_engineering.py",
+        "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
+        "scripts/production/test_run_p5_2c_agent_alpha_disposable_gate.py"
+      ]
+    },
+    {
+      "id": "INV-047",
+      "title": "Personal provider credentials are encrypted, tenant/user bound, SSRF constrained and never silently substituted",
+      "document": "docs/maintainers/security-invariants.md#inv-047-user-profile-and-personal-provider-credentials",
+      "source_paths": [
+        "backend/src/omnibase/user_settings/**",
+        "backend/src/omnibase/db/tenant.py",
+        "backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py",
+        "frontend/app/(dashboard)/settings/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_user_settings.py",
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_engineering.py"
       ]
     }
   ],
@@ -1301,7 +1371,7 @@
         "backend/src/omnibase/cli/main.py:main"
       ],
       "public_interfaces": [
-        "Alembic revisions 0001-0010",
+        "Alembic revisions 0001-0012",
         "make test-destructive",
         "omnibase migrate"
       ],
@@ -1702,7 +1772,7 @@
         "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction. Browser Version/Binding checks are non-locking snapshots; the sealed P5.1B service owns the authoritative Definition -> Version -> Binding lock order and repeats all state checks.",
         "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
         "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
-        "No AgentDefinition/AgentVersion creation surface, no migration 0011, all three Phase 5 feature gates stay false; the disposable Gate must use omnibase_test_p51c_* names, run destructive_preflight.py before Alembic, and publish passed evidence only after zero labeled resources remain."
+        "No AgentDefinition/AgentVersion creation surface and no migration is owned by P5.1C. Repository head is 0012 after the separately authorized user-profile/provider-credential migration; all three Phase 5 feature gates stay false. The historical P5.1C disposable evidence proves its 0011 boundary only and must not be overclaimed as an 0012 Gate."
       ]
     },
     {
@@ -1738,7 +1808,7 @@
         "Eight canonical hash profiles with exact-replay and stable-conflict semantics",
         "Twelve-dimension budget ledger with limit/reserved/committed/released/remaining invariants",
         "P5.2A task ledger contract preflight report (blocked/not_proven while P34.7/P5.0/P5.1 are not ready)",
-        "Sealed contract/evidence digests and source-boundary scan (no P5.2 ORM/migration 0011/router/runtime)"
+        "Sealed contract/evidence digests and source-boundary scan: authorized P5.2B persistence, Model Gateway and tool-free Alpha are allowed, while production Runtime activation, tools, Planner/Executor/scheduler/worker and future unapproved migrations remain vetoes"
       ],
       "depends_on": [
         "phase5-registry-contract-preflight",
@@ -1760,9 +1830,266 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_task_ledger_contract.py tests/test_p5_2a_task_ledger_contract.py ../scripts/production/validate_p5_2a_task_ledger_contract.py"
       ],
       "recovery": [
-        "Keep every Phase 5 feature gate false, activation_requested=false and every P5.2A DTO logical/immutable/secret-free; any true gate, activation_requested=true, P5.2 ORM/migration 0011/router/runtime package or Planner/Executor/scheduler/worker package appearing in the source tree is a veto. Attempt number is scoped per (task_id, step_id) and must start at exactly 1 and equal previous+1 (no duplicates, gaps, regressions or non-1 starts); task fencing is a per-Task (not system-wide or Run-wide) monotonic sequence so different Tasks own independent fencing sequences and may each start at token 1; the authoritative source of the fencing chronology is the append-only TaskLease ledger (active/completed/revoked/expired leases all participate, ordered by task_lease.created_at - terminal attempts clearing task_lease_id/task_fencing_token never erase their historical leases, and attempts remain only for the active Attempt<->active TaskLease bidirectional binding, state matrix and token consistency); every task_lease.created_at must be at or after its bound attempt.created_at so a low-token holder cannot backdate a claim and reorder the fencing history; every active/completed/revoked/expired lease must satisfy expires_at > created_at and the configured TTL ceiling, and every non-null heartbeat_at must remain inside that interval; fencing chronology is the normalized UTC instant of task_lease.created_at (the timestamp contract allows Z, +HH:MM and -HH:MM, so raw ISO-8601 string order is NOT chronological order and must never be used to order claims, and two leases of the same Task that normalize to the exact same UTC instant fail closed because the contract has no trusted secondary ordering field - never input-array order, task_lease_id/attempt_id lexicography or token values); the timestamp offset is a closed set (hour 00-23, minute 00-59 - +01:60/+00:99 are rejected explicitly instead of relying on fromisoformat normalization, and any parse/offset/UTC-normalization failure including year-bound overflow converts to TaskLedgerContractError, never a native ValueError/OverflowError); Attempt/TaskLease binding is bidirectional in both directions (active lease binds exactly one leased/dispatching/running Attempt that points back and shares the fencing token; an active lease bound to a ready/pending/terminal Attempt or whose Attempt cleared/redirected its lease is an orphan and rejected) with at most one active lease per Attempt; AgentRun binding groups are all-or-none by state; configured deadline/TTL ceilings apply to every DTO; Step plan identity and the dependency DAG are validated; parent/child deadlines are frozen. The verify path must really verify passed evidence references (repository-relative regular non-link file, raw-byte SHA-256 matching the sealed digest, assertions resolved as a machine-verifiable closed set) and report evidence_path_verified/evidence_digest_verified/evidence_assertions_verified/evidence_references_verified only when actually executed and passed; a passed reference that drifts is a veto, never an unconditional true.",
+        "Keep every Phase 5 feature gate false, activation_requested=false and every P5.2A DTO logical/immutable/secret-free. Migrations 0011 and 0012 plus the task_ledger, model_gateway, user_settings and tool-free agent_alpha engineering modules are explicitly authorized; any true gate, activation_requested=true, production Runtime wiring, Planner/Executor/scheduler/worker, real tool/MCP/Skill execution or unapproved migration 0013+ is a veto. Attempt number is scoped per (task_id, step_id) and must start at exactly 1 and equal previous+1 (no duplicates, gaps, regressions or non-1 starts); task fencing is a per-Task (not system-wide or Run-wide) monotonic sequence so different Tasks own independent fencing sequences and may each start at token 1; the authoritative source of the fencing chronology is the append-only TaskLease ledger (active/completed/revoked/expired leases all participate, ordered by task_lease.created_at - terminal attempts clearing task_lease_id/task_fencing_token never erase their historical leases, and attempts remain only for the active Attempt<->active TaskLease bidirectional binding, state matrix and token consistency); every task_lease.created_at must be at or after its bound attempt.created_at so a low-token holder cannot backdate a claim and reorder the fencing history; every active/completed/revoked/expired lease must satisfy expires_at > created_at and the configured TTL ceiling, and every non-null heartbeat_at must remain inside that interval; fencing chronology is the normalized UTC instant of task_lease.created_at (the timestamp contract allows Z, +HH:MM and -HH:MM, so raw ISO-8601 string order is NOT chronological order and must never be used to order claims, and two leases of the same Task that normalize to the exact same UTC instant fail closed because the contract has no trusted secondary ordering field - never input-array order, task_lease_id/attempt_id lexicography or token values); the timestamp offset is a closed set (hour 00-23, minute 00-59 - +01:60/+00:99 are rejected explicitly instead of relying on fromisoformat normalization, and any parse/offset/UTC-normalization failure including year-bound overflow converts to TaskLedgerContractError, never a native ValueError/OverflowError); Attempt/TaskLease binding is bidirectional in both directions (active lease binds exactly one leased/dispatching/running Attempt that points back and shares the fencing token; an active lease bound to a ready/pending/terminal Attempt or whose Attempt cleared/redirected its lease is an orphan and rejected) with at most one active lease per Attempt; AgentRun binding groups are all-or-none by state; configured deadline/TTL ceilings apply to every DTO; Step plan identity and the dependency DAG are validated; parent/child deadlines are frozen. The verify path must really verify passed evidence references (repository-relative regular non-link file, raw-byte SHA-256 matching the sealed digest, assertions resolved as a machine-verifiable closed set) and report evidence_path_verified/evidence_digest_verified/evidence_assertions_verified/evidence_references_verified only when actually executed and passed; a passed reference that drifts is a veto, never an unconditional true.",
         "When P34.7/P5.0/P5.1 evidence or any sealed contract digest drifts, freeze the decision, retain the old manifest/report for forensics and re-verify from a new clean checkout; sealed docs shared with P5.1A must be re-sealed in the P5.1A contract in the same change.",
         "P5.2A is a preflight: never start an Agent, Planner, Executor, queue, worker or scheduler from this module or its validator, never create a Task Lease or real Task/Run/Attempt, and never read the root .env or a database."
+      ]
+    },
+    {
+      "id": "p5-task-ledger-persistence",
+      "name": "P5.2B engineering-only durable Task ledger (migration 0011 + ORM + transaction service)",
+      "source_paths": [
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
+        "backend/src/omnibase/workspaces/models.py",
+        "backend/tests/test_p5_2b_task_ledger.py",
+        "backend/tests/integration/test_p5_2b_task_ledger_foundation.py",
+        "scripts/production/run_p5_2b_task_ledger_disposable_gate.py",
+        "scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py",
+        "docs/phase-5-task-ledger-persistence-design.md",
+        "docs/handover-report.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/task_ledger/service.py:TaskLedgerPersistenceService",
+        "backend/src/omnibase/task_ledger/service.py:canonical_digest",
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py:upgrade",
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py:downgrade"
+      ],
+      "public_interfaces": [
+        "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
+        "create_task may receive a validated caller-intent hash which is nested into the canonical task payload so exact replay binds caller intent without discarding immutable task fields",
+        "Migration 0011 owns the durable task ledger; the repository and admission head is 0012 after the separately authorized user-profile/provider-credential migration, while production activation remains blocked",
+        "No Browser runtime DTO exposes physical locators, credentials, provider handles or database identities"
+      ],
+      "depends_on": [
+        "agent-task-ledger-contract",
+        "agent-registry-persistence",
+        "workspace-control-plane"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-041",
+        "INV-043",
+        "INV-044"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend python -m compileall -q src/omnibase/task_ledger src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/task_ledger src/omnibase/workspaces/models.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/task_ledger src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py src/omnibase/workspaces/models.py",
+        "make test-p5-2b-task-ledger with an omnibase_test_p52b_* PostgreSQL sentinel",
+        "python scripts/production/run_p5_2b_task_ledger_disposable_gate.py --run, then --verify-evidence on the committed canonical report"
+      ],
+      "recovery": [
+        "All three Phase 5 Feature Gates remain false. Migration 0011 is engineering admission only and does not authorize production Runtime composition.",
+        "A populated 0011 downgrade must fail with SQLSTATE 55000. Recover by forward-fix or restore into a new omnibase_restore_* database.",
+        "TaskLease history is append-only; Attempt and active Lease are bidirectionally checked at deferred commit, fencing chronology is allocated from the locked per-Task cursor using the database clock, and unknown Effects are never replayed automatically."
+      ]
+    },
+    {
+      "id": "agent-alpha-engineering-runtime",
+      "name": "P5.2C engineering-only Agent Alpha runtime (DB-backed adapters + activation seam + disposable Gate)",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/src/omnibase/agent_alpha/engineering.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/contracts.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/onboarding.py",
+        "backend/tests/test_agent_alpha_engineering.py",
+        "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
+        "scripts/production/run_p5_2c_agent_alpha_disposable_gate.py",
+        "scripts/production/test_run_p5_2c_agent_alpha_disposable_gate.py",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_alpha/engineering.py:build_engineering_agent_alpha",
+        "backend/src/omnibase/agent_alpha/engineering.py:resolve_engineering_alpha_flag",
+        "backend/src/omnibase/agent_alpha/adapters.py:LedgerInvocationAdapter",
+        "backend/src/omnibase/agent_alpha/adapters.py:RegistryProfileResolver",
+        "backend/src/omnibase/agent_alpha/adapters.py:RagKnowledgeRetriever",
+        "backend/src/omnibase/onboarding.py:ensure_local_model_runtime_anchor",
+        "scripts/production/run_p5_2c_agent_alpha_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "AGENT_ALPHA_ENGINEERING_ENABLED strict true/false seam; build fails closed to UnavailableAgentAlpha unless ENV=development, all Phase 5 gates false, gateway configured and migration head 0012",
+        "Migration 0011 owns the durable Task/Run/Step/Attempt/Lease/Budget/Effect lifecycle; repository/admission head is 0012, with transaction A reservation and transaction B revalidate+terminalize",
+        "Exact replay binds stable Browser caller intent and the non-secret selected Provider configuration digest inside the task_create canonical payload, returns before mutable RAG retrieval or WorkspaceRun creation, and conflicts on payload drift; unknown outcomes never auto-replay",
+        "Fresh invocation creates one short-lived P34 WorkspaceRun/RunLease on a deployment-bound server-owned Model Gateway Node, binds the same non-placeholder runtime/workload identity to P34 and P5, and terminalizes both ledgers together",
+        "RAG reads only ready P34.6 derived-index generations bound to the current tenant and Workspace; tenant-wide canonical RAG is forbidden for Alpha",
+        "Disposable Gate uses omnibase-p52c-* project and omnibase_test_p52c_* database/role"
+      ],
+      "depends_on": [
+        "p5-task-ledger-persistence",
+        "agent-registry-persistence",
+        "agent-alpha-workbench",
+        "agent-model-gateway",
+        "workspace-data-rag"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-041",
+        "INV-043",
+        "INV-044",
+        "INV-045",
+        "INV-046"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_agent_alpha_engineering.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_alpha src/omnibase/task_ledger",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_alpha src/omnibase/task_ledger",
+        "python scripts/production/run_p5_2c_agent_alpha_disposable_gate.py --run, then --verify-evidence on the committed canonical report"
+      ],
+      "recovery": [
+        "The engineering seam must never activate the production Agent Runtime: AGENT_RUNTIME_ENABLED/AGENT_PLANNER_ENABLED/MULTI_AGENT_ENABLED stay false and no tools/planner/executor/scheduler/worker/MCP/Skill/memory port exists.",
+        "Guard transitions are enforced per UPDATE (task created->scheduled->running, run leased->running, attempt leased->dispatching, effect reserved->dispatching); never jump a state machine straight to a terminal state.",
+        "Exact replay is anchored to the committed idempotency record and the immutable task deadline; in-flight attempts reject a second dispatch and unknown effects require explicit reconciliation before any replay."
+      ]
+    },
+    {
+      "id": "agent-model-gateway",
+      "name": "P5 Fast Track internal Model Gateway (tool-free OpenAI-compatible providers)",
+      "source_paths": [
+        "backend/src/omnibase/model_gateway/**",
+        "backend/src/omnibase/rag/llm.py",
+        "backend/src/omnibase/core/config.py",
+        "backend/tests/test_model_gateway.py"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/model_gateway/service.py:ModelGateway",
+        "backend/src/omnibase/model_gateway/service.py:configured_model_gateway",
+        "backend/src/omnibase/model_gateway/providers.py:OpenAICompatibleProvider",
+        "backend/src/omnibase/rag/llm.py:generate_answer"
+      ],
+      "public_interfaces": [
+        "Internal streaming and non-streaming tool-free model request/response contracts",
+        "Existing RAG answer generation routed through the gateway without changing the Browser RAG API",
+        "Requested and actual model identity, logical provider id, usage and latency; no silent fallback"
+      ],
+      "depends_on": [
+        "rag-pipeline"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-045"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_model_gateway.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/model_gateway src/omnibase/rag/llm.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/model_gateway src/omnibase/rag/llm.py"
+      ],
+      "recovery": [
+        "Unset the server-owned provider secret or restore UnavailableModelGateway to reject model calls immediately.",
+        "Never log or return API keys, Authorization headers, raw provider errors or connection details. A requested/actual model mismatch is a hard failure, not a fallback.",
+        "Tools/function calling are outside this phase; provider payloads must not contain tools or tool_choice."
+      ]
+    },
+    {
+      "id": "agent-alpha-workbench",
+      "name": "P5 Fast Track tool-free single-Agent Alpha Browser/API workbench (production default unavailable)",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/**",
+        "backend/src/omnibase/user_settings/**",
+        "backend/src/omnibase/main.py",
+        "backend/tests/test_agent_alpha.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/components/layout/sidebar.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
+        "backend/src/omnibase/agent_alpha/service.py:UnavailableAgentAlpha",
+        "backend/src/omnibase/agent_alpha/router.py:router",
+        "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
+        "frontend/app/(dashboard)/agents/page.tsx:AgentAlphaPage"
+      ],
+      "public_interfaces": [
+        "Authenticated /api/v1/workspaces/{workspace_id}/agent-alpha status, invoke SSE and cancel routes",
+        "One installed sealed AgentVersion, read-only workspace knowledge, one request-scoped personal-or-operator Model Gateway stream and durable invocation callbacks",
+        "Frontend AI Employee Workbench; production calls still return 503 agent_alpha_unavailable until separately authorized"
+      ],
+      "depends_on": [
+        "p5-task-ledger-persistence",
+        "agent-model-gateway",
+        "agent-registry-browser-control"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-042",
+        "INV-044",
+        "INV-045",
+        "INV-047"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_alpha src/omnibase/model_gateway src/omnibase/main.py",
+        "frontend: tsc --noEmit, lib tests and Prettier check"
+      ],
+      "recovery": [
+        "Do not override get_agent_alpha in production without a separate activation decision. The checked-in dependency must remain UnavailableAgentAlpha.",
+        "Alpha rejects any AgentVersion with allowed_tool_ids. It has no shell, SQL, arbitrary HTTP, MCP, Skill, Planner or multi-Agent port.",
+        "Provider ambiguity records an unknown outcome through the ledger port; cancellation is a new terminal outcome and retry is a new invocation identity.",
+        "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider."
+      ]
+    },
+    {
+      "id": "user-settings-provider-control",
+      "name": "Tenant user profile and encrypted personal model-provider control plane (migration 0012)",
+      "source_paths": [
+        "backend/src/omnibase/user_settings/**",
+        "backend/src/omnibase/db/tenant.py",
+        "backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py",
+        "backend/src/omnibase/tenants/service.py",
+        "frontend/app/(dashboard)/settings/page.tsx",
+        "frontend/lib/api.ts",
+        "frontend/lib/types.ts",
+        "backend/tests/test_user_settings.py"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/user_settings/router.py:router",
+        "backend/src/omnibase/user_settings/service.py:UserSettingsService",
+        "backend/src/omnibase/user_settings/gateway.py:UserModelGatewayResolver",
+        "backend/src/omnibase/user_settings/crypto.py:CredentialCipher",
+        "backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py:upgrade"
+      ],
+      "public_interfaces": [
+        "Authenticated GET/PATCH /api/v1/users/me/profile",
+        "Authenticated list/create/update/secret-rotate/activate/revoke/test /api/v1/model-provider-credentials",
+        "Authenticated GET /api/v1/model-provider-runtime",
+        "API responses contain only logical provider metadata, masked keyed fingerprint and test posture; API key, ciphertext, nonce, Authorization and provider body are never returned"
+      ],
+      "depends_on": [
+        "identity-tenancy",
+        "agent-model-gateway",
+        "operations-recovery"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-002",
+        "INV-005",
+        "INV-008",
+        "INV-009",
+        "INV-010",
+        "INV-045",
+        "INV-047"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_user_settings.py tests/test_agent_alpha.py tests/test_agent_alpha_engineering.py tests/test_model_gateway.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/user_settings src/omnibase/agent_alpha src/omnibase/db/tenant.py src/omnibase/main.py",
+        "docker compose --env-file .env.example run --rm --no-deps backend ruff check src/omnibase/user_settings src/omnibase/agent_alpha src/omnibase/db/tenant.py src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py tests/test_user_settings.py",
+        "frontend: pnpm typecheck, pnpm lint, pnpm build",
+        "Restore-verified pre-0012 backup, then Alembic global+tenant upgrade to unique head 0012"
+      ],
+      "recovery": [
+        "Production and staging require an independent PROVIDER_CREDENTIAL_ENCRYPTION_KEY. Development-only JWT-derived fallback is not a production rotation strategy.",
+        "0012 global downgrade preflights every retained, strictly validated tenant schema before the global revision can move; any populated profile/provider table refuses destructive removal. Recover through a forward fix or a verified omnibase_restore_* database.",
+        "Only exact allowlisted HTTPS hosts are accepted; reject userinfo/query/fragment/IP literals/private DNS answers/redirects, use trust_env=false, preserve exact requested/actual model identity, and apply fail-closed Redis rate limiting per tenant/user/credential.",
+        "Provider testing releases its first database transaction before the outbound request, then re-locks and compares the full non-secret configuration digest before recording PASS; concurrent key/model/config drift returns a conflict and never blesses the new configuration.",
+        "Revocation clears ciphertext and nonce. Never print, log, export, stage or commit API keys or the root .env."
       ]
     },
     {

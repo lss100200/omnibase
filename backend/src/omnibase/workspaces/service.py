@@ -606,9 +606,14 @@ def create_workspace(
         version=1,
         quota=dict(quota),
     )
+    # The composite scope and membership foreign keys are immediate.  Flush
+    # the Workspace aggregate explicitly before its dependent rows instead of
+    # relying on SQLAlchemy to infer ordering across the control-plane model
+    # graph.  All rows still live in the same caller-owned transaction.
+    session.add(workspace)
+    session.flush()
     session.add_all(
         [
-            workspace,
             ResourceScopeBinding(
                 resource_id=resource.id,
                 tenant_id=tenant_id,
@@ -1221,17 +1226,18 @@ def create_run(
         request_digest=request_digest,
         created_by_user_id=actor_user_id,
     )
-    session.add_all(
-        [
-            run,
-            ResourceScopeBinding(
-                resource_id=resource.id,
-                tenant_id=tenant_id,
-                scope_class="run_ephemeral",
-                workspace_id=workspace_id,
-                run_id=resource.id,
-            ),
-        ]
+    # The run-bound scope FK is immediate.  Flush the WorkspaceRun before its
+    # dependent scope row; both remain in the same caller-owned transaction.
+    session.add(run)
+    session.flush()
+    session.add(
+        ResourceScopeBinding(
+            resource_id=resource.id,
+            tenant_id=tenant_id,
+            scope_class="run_ephemeral",
+            workspace_id=workspace_id,
+            run_id=resource.id,
+        )
     )
     session.flush()
     complete_idempotency(

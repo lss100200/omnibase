@@ -51,6 +51,68 @@ export interface LoginRequest {
 }
 
 // -----------------------------------------------------------
+// User profile and personal model providers
+// -----------------------------------------------------------
+export interface UserProfileRead {
+  user_id: string
+  display_name: string
+  locale: string
+  theme: 'system' | 'light' | 'dark'
+  assistant_name: string
+  assistant_tone: 'concise' | 'balanced' | 'detailed'
+  assistant_instructions: string
+  version: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface ProviderCredentialRead {
+  id: string
+  display_name: string
+  provider_id: string
+  base_url: string
+  model_id: string
+  key_fingerprint: string | null
+  secret_configured: boolean
+  is_default: boolean
+  is_active: boolean
+  version: number
+  last_test_status:
+    | 'passed'
+    | 'auth_failed'
+    | 'timeout'
+    | 'identity_mismatch'
+    | 'unreachable'
+    | 'failed'
+    | null
+  last_test_latency_ms: number | null
+  last_tested_at: string | null
+  revoked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProviderCredentialList {
+  items: ProviderCredentialRead[]
+  total: number
+  operator_fallback_available: boolean
+}
+
+export interface ProviderTestResult {
+  status: NonNullable<ProviderCredentialRead['last_test_status']>
+  latency_ms: number | null
+  requested_model_id: string
+  actual_model_id: string | null
+}
+
+export interface ProviderRuntimePosture {
+  credential_source: 'personal' | 'operator_default' | 'unavailable'
+  provider_id: string | null
+  model_id: string | null
+  credential_id: string | null
+}
+
+// -----------------------------------------------------------
 // Documents
 // -----------------------------------------------------------
 export type DocumentStatus = 'pending' | 'queued' | 'processing' | 'indexed' | 'failed'

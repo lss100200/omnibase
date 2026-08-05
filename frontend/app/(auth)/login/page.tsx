@@ -68,13 +68,25 @@ function LoginFormCard() {
   }
 
   return (
-    <Card className="border-border/60 shadow-lg">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">欢迎回来</CardTitle>
-        <CardDescription>输入你的账号信息以继续</CardDescription>
+    <Card className="overflow-hidden rounded-none border-stone-300/80 bg-[#f7f3ea] text-stone-950 shadow-[0_28px_80px_-48px_rgba(0,0,0,.55)] dark:border-stone-700 dark:bg-[#211f1b] dark:text-stone-100">
+      <div className="h-0.5 w-full bg-amber-400" />
+      <CardHeader className="space-y-2 px-6 pb-6 pt-7 sm:px-8 sm:pt-9">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
+            Work session access
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[7px] uppercase tracking-wider text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Browser control plane
+          </div>
+        </div>
+        <CardTitle className="pt-3 text-3xl tracking-[-0.05em]">进入你的工作台</CardTitle>
+        <CardDescription className="text-sm leading-6">
+          继续管理知识、空间与受控 AI 能力。登录不会自动启动任何 Agent Runtime。
+        </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 px-6 sm:px-8">
           <div className="space-y-2">
             <Label htmlFor="email">邮箱</Label>
             <Input
@@ -83,6 +95,7 @@ function LoginFormCard() {
               placeholder="you@example.com"
               autoComplete="email"
               autoFocus
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('email')}
             />
             {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
@@ -93,6 +106,7 @@ function LoginFormCard() {
               id="password"
               type="password"
               autoComplete="current-password"
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('password')}
             />
             {errors.password && (
@@ -100,8 +114,12 @@ function LoginFormCard() {
             )}
           </div>
         </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={submitting}>
+        <CardFooter className="flex flex-col gap-4 px-6 pb-7 pt-2 sm:px-8 sm:pb-9">
+          <Button
+            type="submit"
+            className="h-12 w-full rounded-none border-0 bg-stone-950 text-stone-50 hover:bg-amber-400 hover:text-stone-950 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-amber-300"
+            disabled={submitting}
+          >
             {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -127,7 +145,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <Card className="border-border/60 shadow-lg">
+        <Card className="rounded-none border-stone-300 bg-[#f7f3ea] shadow-2xl dark:border-stone-700 dark:bg-[#211f1b]">
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             正在加载登录页…
           </CardContent>

@@ -523,7 +523,7 @@ def test_0010_migration_is_head(db_engine) -> None:
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
         )
-    assert revision == "0010"
+    assert revision == "0012"
 
 
 # ---------------------------------------------------------------------------

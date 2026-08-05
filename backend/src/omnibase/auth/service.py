@@ -37,6 +37,7 @@ from omnibase.core.config import Settings, get_settings
 from omnibase.core.db import get_engine, get_session_factory
 from omnibase.core.logging import get_logger
 from omnibase.db.tenant import User
+from omnibase.onboarding import ensure_default_onboarding_assets
 from omnibase.tenants.context import tenant_scope
 from omnibase.tenants.service import (
     TenantAlreadyExists,
@@ -162,6 +163,13 @@ def register(
                 raise EmailAlreadyRegistered(
                     f"Email {email!r} already exists in this tenant"
                 ) from exc
+
+            ensure_default_onboarding_assets(
+                session,
+                tenant_id=str(tenant.id),
+                actor_user_id=str(user.id),
+                request_id=f"registration:{user.id}",
+            )
 
             session.commit()
             session.refresh(user)

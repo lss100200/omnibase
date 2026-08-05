@@ -489,7 +489,7 @@ fail-closed。
   Overlay/Workspace-data/provider 九项生产证据全部 `not_proven`。
 - `scripts/production/validate_p5_0_admission.py --validate-only` 只解析
   合同（exit 0）；`--verify` 从 clean checkout 校验 Git provenance、
-  migration head（当前 `0010`）、OpenAPI snapshot、Python/TypeScript SDK
+  migration head（当前 `0011`）、OpenAPI snapshot、Python/TypeScript SDK
   版本、production composition、runbook 与 P34.7 decision 的 sealed
   digest，并解析环境中的 gate 值。
 - 当前正确输出恒为 `blocked/not_proven`（P34.7 非 ready + activation
@@ -512,7 +512,7 @@ Browser API、SDK 调用、Planner/Executor/worker/scheduler 或 Runtime。
   closed-set 合同：三个 Phase 5 gate 必须 false、P34.7/P5.0 formal state
   当前 `blocked/not_proven` 且决策文档被 SHA-256 封存、approval policy
   （high/critical 必须 approval）、server-owned budget ceilings、
-  forbidden source paths、baseline migration revisions（0001–0010）、
+  forbidden source paths、baseline migration revisions（0001–0011）、
   内嵌 definition/version/binding 正向示例。
 - `scripts/production/validate_p5_1_registry_contract.py --validate-only`
   只解析合同（exit 0，永不 ready）；`--verify` 复用 P5.0 修补后的逐分量
@@ -631,10 +631,10 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
 - `scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only`
   只解析合同（exit 0，永不 ready）；`--verify` 校验 P34.7/P5.0/P5.1
   formal state、sealed digest（含 P5.1 registry contract）、migration
-  集合/head（0010）、forbidden source paths、OpenAPI 无 agent
+  集合/head（0011）、forbidden source paths、OpenAPI 无 agent
   invocation 端点；**gate true 或 activation_requested=true 是 veto**。
 - 当前正确输出恒为 `blocked/not_proven`（P34.7/P5.0/P5.1 非 ready +
-  persistence ledger/Runtime 未实现 + production evidence 未证明）；
+  production Runtime 未实现 + production evidence 未证明）；
   该模块不读取根 `.env`、不连接数据库/网络，import 白名单约束由测试
   用 AST 扫描证明；报告 `verification_evidence` 区分 static
   source-boundary assertion（本次 verify 实际执行）、import/AST
@@ -646,8 +646,9 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   `evidence_assertions_verified`/聚合 `evidence_references_verified`，
   只有实际执行并通过才为 true；passed 引用 path 缺失/digest 漂移/assertion
   不匹配均为 veto（fail closed），绝不无条件写 true。
-- INV-043 只描述 P5.2A 合同的离线属性；P5.2 persistence ledger
-  （P5.2B）、Runtime、API 与 Task 执行均未实现，P5.2B+ frozen。
+- INV-043 只描述 P5.2A 合同的离线属性；P5.2B persistence ledger、内部
+  Model Gateway 与无工具 Alpha 是另行授权的 engineering modules。生产
+  Runtime、Planner/Executor/scheduler/worker、工具与多 Agent 仍 frozen。
 
 ## 7. 数据库与 migration 边界
 
@@ -655,7 +656,7 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
 
 | 区域 | 当前数据 |
 |---|---|
-| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations`；P5.1B `agent_definitions`、`agent_versions`、`workspace_agent_bindings` |
+| `omnibase_meta` global schema | Tenant registry；P34.1 Resource/Lineage/Operation/Approval/Idempotency/Audit；P34.2 signing keys/grants/usage/revocations；P34.3 table/column/index bindings、authorization contexts、schema plans、outbox、compensations；P34.4 Workspace/Run/Node/Network/Authority 元数据；P34.5 Sandbox durable dispatch；P34.6 `workspace_artifacts`、`workspace_derived_indexes`、`workspace_publications`、`workspace_snapshot_items`、`workspace_data_effects`、`workspace_data_usage_reservations`；P5.1B registry 三表；P5.2B migration 0011 的 11 张 Task ledger 表 |
 | 每个 `tenant_*` schema | users、documents、V1/V2 canonical embeddings、RAG index state、P34.3 `controlled_data_operation_payloads` 与受控动态业务表，以及 P34.6 独立 `workspace_derived_chunks_v2` lane |
 | MinIO | 原始文档对象，key 以 tenant schema 前缀隔离 |
 | Redis | Celery broker/result backend、限流与相关短期状态；不是 tenant 业务事实的最终来源 |
@@ -1061,7 +1062,7 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 `--validate-only` 只证明合同有效；`--verify` 必须在提交后的 fresh clean
 checkout 运行。当前外部证据未齐时正确结果是 `blocked/not_proven`（exit 2，
 veto 0）：P34.7/P5.0/P5.1 formal state 非 ready、activation 关闭、
-persistence ledger/Runtime 未实现。P5.2A 与 P5.0/P5.1A 的差异：**任何
+production Runtime 未实现。P5.2A 与 P5.0/P5.1A 的差异：**任何
 Feature Gate 解析为 `true` 或 `activation_requested=true` 都是 veto**
 （不是 blocker）。该 validator 不读取根 `.env`、不连接数据库、不启动
 任何 Phase 5 运行时组件，也不创建 Task Lease 或真实 Task/Run/Attempt。
@@ -1158,13 +1159,14 @@ P5.2A 不需要 disposable PostgreSQL Gate（合同禁止访问数据库；若�
 - P34.5B 已实现 default-deny Workspace Network Broker、logical service、双解析/DNS rebinding 防护、私有 SQLite durable budget ledger、daemon-owned non-host namespace proof、AF_UNIX/SO_PEERCRED+pinned-key transport，以及独立 PrivateNetwork Linux daemon；当前部署哈希已在 Hyper-V Ubuntu Runner 上两轮通过 26/26 namespace/egress/identity/budget/replay attack Gate。默认 Core wiring 仍为 unavailable，Core↔Broker production mTLS 联合激活继续在 P34.7 验收。
 - P34.5C 已实现 provider-neutral Headscale adapter、mTLS Node Daemon transport、短期 credential reference、durable ledger 与 Overlay→Broker logical publication，并从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 provider-record activate/status/rotate/revoke、ambiguous no-replay、掉线/重连、secret containment 与 `0/0/0` cleanup Gate。161 文件 manifest 封存 `.gitattributes`、锁文件、完整 build inputs 与 upstream digests；该 Gate 使用 test-double Node Daemon且注册真实成员设备为 0，production Node Daemon、两节点数据面、DERP relay、真实 node revoke 与节点失陷继续留给 P34.7。
 - P34.5D 已实现可信 Runner/Broker mTLS scope evidence、live Run/Node/Lease/fencing workload attestor、Core-only 最长五分钟 read credential issuer、server-owned credential vending 和独立 Gateway composition；clean-checkout source-built Gateway 与 stdlib-only client 已在 guarded `omnibase_test_*` sentinel 通过 split-process schema/rows/RAG/citation Gate、stale/revocation 矩阵与 `0/0/0` cleanup。249 文件 manifest 封存 `.gitattributes`、完整 `backend/src`/`backend/tests`、Dockerfiles、Compose、wrapper/client 与 upstream digests；默认 production wiring 与非 disposable tenant/RAG 仍保持关闭，等待 P34.7 联合激活与生产验收。
+- P5.2C 已实现 engineering-only Agent Alpha runtime：`AGENT_ALPHA_ENGINEERING_ENABLED` 与三个 Phase 5 Feature Gate 均严格闭集解析 + `ENV=development` + Model Gateway 已装配 + migration head `0011` 才允许 `build_engineering_agent_alpha()` 装配 DB-backed service，否则保持 `UnavailableAgentAlpha`；status 也用同一 head/gateway 前置条件，禁止过报 assembled。DB-backed registry/RAG/ledger adapters 中，RAG 只读当前 tenant + Workspace 的 ready P34.6 derived-index generation，禁止退回 tenant-wide canonical RAG；transaction A 在 provider 边界前 durable reservation，transaction B 重锁校验并 terminalize。Browser 调用意图哈希进入 task canonical payload，但不包含可变 RAG chunk IDs；终态 exact replay 不重跑 RAG/provider，同 key 不同消息稳定冲突，in-flight 重复拒绝二次 dispatch；Provider deadline、缺失 actual model identity 与其他歧义 outcome 只进 unknown/reconciliation。进程内取消 signal + ledger durable 终态；此授权不开启 production Agent Runtime：Feature Gates 仍 false，无 tools/Planner/Executor/Scheduler/Worker/MCP/Skill/memory runtime/多 Agent。
 - P34.4 的 fake/local reconciler、独立 Overlay provider harness 与 collaboration transport 只处理合成元数据；logical Network Lease 签发不调用 provider。它们不执行代码、不打开真实 peer/socket、不接真实 Git credential、业务 PostgreSQL、MinIO、Redis 或 canonical RAG。
 - 主 Compose 的 bridge network、tenant schema 隔离、P34.4 logical Network Lease、fake transport 或 in-memory ledger 都不能被表述为 P34.5 production deployment 已交付。
 - 当前独立 Hyper-V Linux Runner 的旧 profile 曾通过 11/11 敌对输入 Gate，但当前 UID/GID hardening 后必须重跑新的 12/12；在真实 VM 证据到位前 A4 保持 `pending/not_proven` 且 production Runner 不得启用。disposable Headscale control-plane Gate也没有被误称为“成员无中心服务器协作”的生产虚拟局域网。
 - 在对应 production Runner/Broker/Gateway/Overlay 联合 Gate 通过前，任何 Sandbox/Workspace Runtime 都不得访问真实 tenant 数据、canonical RAG、数据库、MinIO、Redis、成员设备 Overlay 或宿主凭据。
 - P34.5 的源码/协议解冻与 production deployment Gate 必须分开报告。当前已有目标 Linux、Broker、Headscale control-plane 和 split-process Gateway disposable evidence，但 production Core wiring、真实成员 Overlay 数据面或非 disposable tenant/RAG 任一直接证据缺失时，对应 wiring 仍继续 fail-closed；不能用字段预留、单元测试或本地 smoke 自动解冻。
 
-Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 只交付 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate 与 P34.7 Evidence Manifest validator），它只返回 `blocked/not_proven` 决策，不解冻 Phase 5 Runtime，也不预装任何 Planner/Executor/Agent 代码；INV-025–INV-034 继续作为 Phase 5 计划预留，不进入当前 authoritative map 的已实现集。P5.1A/B/C 已交付 Registry 合同、内部持久化地基与 Browser 控制 API（production 默认 fail-closed）；P5.2A 只交付 Task/Run/Lease/fencing 账本的离线合同预检，不解锁 P5.2 persistence ledger（P5.2B）或任何 Agent Runtime/Planner/Executor/scheduler/worker，也不创建 Task Lease 或真实 Task/Run/Attempt。
+Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只能作为 Workspace 内受约束 workload，通过 Capability Gateway/SDK 使用宿主能力，不能继承 Main backend 的数据库连接、用户 JWT 或宿主网络权限。P5.0 仍只返回 `blocked/not_proven`；P5.1A/B/C 已交付 Registry 合同、内部持久化地基与 Browser 控制 API。2026-08-04 用户批准了 engineering-only P5 Fast Track：P5.2B durable Task ledger/migration `0011`、内部 Model Gateway 与无工具单 Agent Alpha/API/Workbench 可以实现和进行 disposable 验证。此授权不启用 production Runtime：三个 Feature Gates 仍为 false，Alpha 默认 503，Planner/Executor/scheduler/worker、真实工具/MCP/Skill、多 Agent 与生产 wiring 仍冻结。
 
 ## 14. 修改完成时的交接格式
 
@@ -1179,3 +1181,51 @@ Agent Runtime 编排也继续冻结在这些基础设施之后。未来 Agent �
 7. 出现故障时应先禁用哪个入口、撤销什么凭据、保留哪些证据，以及采用 forward-fix 还是 restore-to-new。
 
 本地 AI 的正确目标不是“让当前机器暂时能跑”，而是让干净 checkout 能从源码、锁文件、迁移、测试和公开维护文档中重建同一行为。
+## 6.12 P5 fast usable slice: real user settings, personal providers and Agent workspaces
+
+- Migration `0012` is explicitly authorized for tenant-scoped `user_profiles`
+  and `model_provider_credentials`. Global scope is a no-op; both global and
+  tenant Alembic heads advance to `0012`. Populated downgrade refuses data
+  destruction.
+- `/api/v1/users/me/profile` is a real current-user surface. Profile mutations
+  lock and revalidate the live tenant user, use optimistic `version` fencing
+  and write append-only audit in the same transaction.
+- Personal provider credentials are AES-256-GCM encrypted. AAD binds tenant,
+  user, credential, logical provider and key version. Browser DTOs never contain
+  API key, ciphertext or nonce; only a keyed masked fingerprint is returned.
+- Provider tests accept exact allowlisted HTTPS hosts only, reject IP literals
+  and non-global DNS answers, disable proxy inheritance and redirects, cap the
+  timeout, and require exact requested/actual model identity. Raw Provider
+  response data is not persisted or returned. The outbound request runs between
+  two short transactions: the second transaction re-locks the live credential
+  and rejects any configuration digest drift instead of writing a stale PASS.
+  Redis rate limiting is fail-closed per tenant/user/credential.
+- Agent Alpha resolves the current user's tested active default on every
+  invocation. A broken/untested personal default fails closed; only absence of
+  a personal default permits the explicitly labelled operator fallback.
+- User assistant name, tone and instructions now affect the actual Agent system
+  prompt and their digest participates in invocation idempotency. This remains
+  a single sealed tool-free Agent: Planner, tools, MCP, Skills, Shell, SQL,
+  arbitrary HTTP and multi-Agent remain disabled.
+- New users receive the built-in `omnibase.ai-workbench` template and sealed
+  `omnibase.tool-free-research-assistant`; creating a Workspace from that
+  template installs the Agent binding and creates a server-owned local Model
+  Gateway Node anchor. The anchor is not a hostile-code Sandbox/Runner
+  attestation.
+- Every invocation creates a short-lived P34 WorkspaceRun/RunLease, advances it
+  through the existing state machine, and terminalizes it together with the P5
+  Task/Attempt/Effect result. `create_workspace` and `create_run` explicitly
+  flush parent rows before immediate composite-FK dependants. The server-owned
+  Model Gateway Node identity is deployment-bound, uses short-lived attestation,
+  never revives a revoked Node, and binds the same non-placeholder runtime and
+  workload identity to the P34 WorkspaceRun and P5 AgentRun. Provider/Agent,
+  TaskLease and Workspace RunLease deadlines are ordered to leave terminalization
+  time.
+- Migration `0012` global downgrade preflights every retained, strictly
+  validated tenant schema before the global version row can move. Any populated
+  profile/provider table refuses the downgrade, preventing a known split-head
+  failure mode; recovery remains forward-fix or restore-to-new-database.
+- Real environment evidence on 2026-08-05: first Workspace created, DeepSeek
+  `deepseek-v4-flash` calls succeeded through operator and personal credential
+  sources, profile name `Omni` affected the answer, and active WorkspaceRun /
+  RunLease counts returned to zero after each invocation.

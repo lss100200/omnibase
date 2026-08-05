@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from omnibase import __version__
+from omnibase.agent_alpha.router import router as agent_alpha_router
 from omnibase.agent_registry.router import (
     installation_router as agent_installation_router,
 )
@@ -36,6 +37,7 @@ from omnibase.database.router import router as database_router
 from omnibase.documents.router import router as documents_router
 from omnibase.rag.router import router as rag_router
 from omnibase.tenants.router import router as tenants_router
+from omnibase.user_settings.router import router as user_settings_router
 from omnibase.workspaces.router import router as workspaces_router
 from omnibase.workspaces.router import template_router as workspace_templates_router
 
@@ -206,6 +208,8 @@ def create_app() -> FastAPI:
     api_router.include_router(controlled_data_router)
     api_router.include_router(agent_registry_router)
     api_router.include_router(agent_installation_router)
+    api_router.include_router(agent_alpha_router)
+    api_router.include_router(user_settings_router)
 
     # Convenience: /health at root too (without /api prefix) for simple probes
     app.include_router(health_router)
