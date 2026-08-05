@@ -2647,3 +2647,43 @@ production Gate。根 `.env` 未读取、打印、stage 或提交。
 
 验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
 production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。
+
+### P5.6A first-party native Skill contract admission（2026-08-05）
+
+用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
+engineering-only 的 P5.6A 合同，不把该批准扩张为 Skill Runtime、MCP、
+Marketplace 或 migration `0013` 授权。
+
+新增 `phase5_skill_contract.py`、focused tests、严格示例
+`phase5-skill-contract.example.json`、CLI validator、合同文档与
+review/revoke/rollback runbook。合同冻结 first-party、Workspace-only、exact
+version/digest、closed local JSON Schema、server-owned budget、network deny、
+secret-free、strictly-older rollback 与输入顺序独立 canonical digest。
+
+独立审查发现并关闭了 migration baseline 可由输入放宽、clean-checkout 可关闭、
+Git provenance 异常未转 veto、forbidden path 过窄、仅凭 `verified` 字符串伪造
+published、rollback 自指/前进/跨 Definition、canonical order 漂移与 `$ref`
+解析错误等缺口。P5.6A 现在最多接受 `tested`；`approved|published` 必须等待
+真实 sealed source/dependency lock/SBOM/signature/secret scan/paired eval/human
+review/rollback evidence。
+
+当前已执行证据：focused tests `46 passed`；P5.6A/P5.2A/P5.1A/P5.0/P34.7
+组合回归 `446 passed`；全套 non-integration `1699 passed / 18 skipped /
+15 deselected`；目标 Ruff check/format PASS；Mypy `182` 个 source files
+`0 issues`；compileall exit 0；maintainer map `39 invariants / 31 modules / 937
+matched files / 205 entrypoints / 136 verification commands` 与 benchmark
+validator、Compose config、git diff check 均通过；`--validate-only` exit 0 且报告
+`blocked/not_proven`、`activation_allowed=false`。正式 `--verify` 必须在本次
+文件提交后的 clean checkout 运行，预期 exit 2、veto 0；提交前 dirty 状态不能
+伪称正式通过。
+
+未创建 ORM/service/router/SDK/UI、未创建 migration `0013`、未挂载
+`/api/v1/skills`、未安装或执行 Skill、未执行 manifest 中的 verification
+command、未访问数据库/provider/network、未读取根 `.env`。三项 Phase 5
+Feature Gates 保持 false。
+
+下一条单线计划：PR #15 CI 收口 → 当前 Agent Builder/monochrome 合入 → P5.3A
+独立审查合入 → P5.4 typed single-Agent Executor → 另行授权 P5.6B persistence
+→ P5.6C catalog/install/rollback API+UI → P5.6D instruction Skill exact-version
+pin。workflow 等 P5.3/P5.4，script 等 production P34.5/P34.7，MCP/third-party
+Marketplace 等 Phase 6。

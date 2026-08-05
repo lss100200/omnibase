@@ -585,6 +585,21 @@
         "backend/tests/test_agent_alpha.py",
         "frontend/lib/api.test.ts"
       ]
+    },
+    {
+      "id": "INV-049",
+      "title": "First-party native Skill manifests are compile-only, exact-version, non-escalating and evidence-bound",
+      "document": "docs/maintainers/security-invariants.md#inv-049-first-party-native-skill-contract",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_skill_contract.py",
+        "deployment/production/phase5-skill-contract.example.json",
+        "scripts/production/validate_p5_6a_skill_contract.py",
+        "docs/phase-5-native-skill-contract.md",
+        "docs/runbooks/skill-review-revoke-rollback.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_6a_skill_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -2125,6 +2140,53 @@
         "Only exact allowlisted HTTPS hosts are accepted; reject userinfo/query/fragment/IP literals/private DNS answers/redirects, use trust_env=false, preserve exact requested/actual model identity, and apply fail-closed Redis rate limiting per tenant/user/credential.",
         "Provider testing releases its first database transaction before the outbound request, then re-locks and compares the full non-secret configuration digest before recording PASS; concurrent key/model/config drift returns a conflict and never blesses the new configuration.",
         "Revocation clears ciphertext and nonce. Never print, log, export, stage or commit API keys or the root .env."
+      ]
+    },
+    {
+      "id": "native-skill-contract-preflight",
+      "name": "P5.6A first-party native Skill compile-only contract admission",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_skill_contract.py",
+        "backend/tests/test_p5_6a_skill_contract.py",
+        "deployment/production/phase5-skill-contract.example.json",
+        "scripts/production/validate_p5_6a_skill_contract.py",
+        "docs/phase-5-native-skill-contract.md",
+        "docs/runbooks/skill-review-revoke-rollback.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_skill_contract.py:SkillContractConfig",
+        "backend/src/omnibase/production/phase5_skill_contract.py:SkillContractGate",
+        "backend/src/omnibase/production/phase5_skill_contract.py:load_skill_contract_config",
+        "scripts/production/validate_p5_6a_skill_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline first-party SkillDefinition/SkillVersion manifest contract with strict local JSON Schema, digest, budget and rollback validation",
+        "P5.6A admission report that remains blocked/not_proven and activation_allowed=false even when the compile-only contract is valid",
+        "Workspace Librarian tested/unverified contract fixture; no Browser API, persistence, installation or runtime"
+      ],
+      "depends_on": [
+        "phase5-admission",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-045",
+        "INV-048",
+        "INV-049"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_6a_skill_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_6a_skill_contract.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
+        "Reject migration head drift beyond 0012, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A has no database or runtime to roll back."
       ]
     },
     {

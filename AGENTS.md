@@ -177,6 +177,12 @@ runtime evidence; then correct the stale documentation in the same change.
   signing that logical Network lease. Every use revalidates the current live
   attestation. Terminal Runs cannot return to a running state or retain runtime
   or workload identity metadata.
+- P5.6A freezes a compile-only first-party native Skill contract. It does not
+  authorize Skill persistence, migration `0013`, Browser Skill APIs,
+  installation, execution, MCP, Marketplace or production Runtime. Instruction
+  Skills cannot request tools or capability; workflow/script versions cannot
+  be approved or published. Skill execution remains blocked until the roadmap
+  explicitly proves the required P5.4 and P34.7 boundaries.
 
 ## Safe change workflow
 

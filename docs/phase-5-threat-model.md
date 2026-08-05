@@ -553,3 +553,20 @@ runtime。该层新增的主要威胁与控制：
 | RAG 检索越权或不可控 | 检索只读、按 workspace 隔离、top_k/context/字符数服务端上限；embedding model 不可用时降级为无 context（明确不确定），不泄漏 |
 | disposable Gate 触碰业务库 | 只接受 `omnibase_test_p52c_*` database/role 与 `omnibase-p52c-*` Compose project；destructive preflight 先跑；容器/网络/卷最后 0/0/0；根 `.env` 禁止读取 |
 | 生产 Runtime 被误激活 | 不创建 migration `0012`；无 tools/Planner/Executor/Scheduler/Worker/MCP/Skill/Memory/多 Agent；三个 Feature Gate 保持 false；生产 wiring/credential 注入需要新的显式批准 |
+
+## P5.6A first-party native Skill contract threat delta（2026-08-05）
+
+P5.6A 只建立 compile-only manifest 合同，不建立 persistence、Browser API、
+Workspace installation 或 Skill runtime。Gate 即使合同完全有效也保持
+`blocked/not_proven` 与 `activation_allowed=false`。
+
+| 威胁 | 强制控制 |
+|---|---|
+| 用合同字段伪造“已签名/已发布” | P5.6A 拒绝 `approved|published`；`signature_status` 和 SHA-256 形状字段不是 sealed evidence |
+| instruction Skill 暗中增权 | `required_tool_ids=[]`、`capability_requirements=[]`、`max_tool_calls=0`；wildcard/root/host 等标识拒绝 |
+| workflow/script 提前执行 | 最多解析 `tested` manifest；无 expansion/dispatch/worker；script 禁止在 Core 执行 |
+| schema 注入或外部 schema 漂移 | JSON Schema 字段闭集、object 必须 `additionalProperties=false`、只允许本地存在且无环的 `$ref`、深度/集合/pattern 有界 |
+| rollback 指向未来、跨 Definition 或成环 | 只允许同 Definition、严格旧 SemVer、非自身且已审查的历史版本；严格旧版本关系消除回滚环 |
+| 配置自行放宽 source/migration Gate | 强制 clean checkout；migration baseline 硬编码 `0012`；新增 `0013+` 或 dirty source 为 veto |
+| 第三方/MCP/隐藏网络进入 Phase 5 | `first_party=true`、Workspace-only、`network_policy=deny`、`secrets_allowed=false`；MCP/Marketplace 开关必须 false |
+| validator 被当作运行入口 | CLI 不执行 verification command、不访问 provider/DB/network、不安装 Skill；报告明确 runtime/API/persistence/migration 均为 false |

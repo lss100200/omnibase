@@ -1256,3 +1256,34 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   Product UI must not depend on blue/purple/green/orange/gold status colors.
   Semantic state remains legible through text, icons, border weight, fill,
   spacing and labels.
+
+## 6.14 P5.6A first-party native Skill contract
+
+- The product Skill contract is
+  `backend/src/omnibase/production/phase5_skill_contract.py`. P5.6A is strictly
+  compile-only and always reports `activation_allowed=false`.
+- A Skill is first-party, Workspace-only and exact-version/digest pinned. It
+  cannot carry secrets, enable network access, use wildcard capability or
+  override the Platform Security Kernel.
+- `instruction` Skills require empty tools/capabilities and zero tool-call
+  budget. `workflow` and `script` may exist only as `draft|tested` metadata;
+  no Planner expansion, dispatch, Sandbox launch or Core execution exists.
+- P5.6A refuses `approved|published`. Do not weaken this by trusting a
+  `signature_status` string or SHA-256-shaped placeholders. Publication needs
+  later sealed source/lock/SBOM/signature/secret-scan/eval/review evidence.
+- JSON Schema is a bounded closed subset with local-only, existing and acyclic
+  `$ref`. Rollback targets the same Definition and a strictly older reviewed
+  release.
+- Verification requires clean Git provenance, all three Phase 5 gates false
+  and migration head exactly `0012`. Migration `0013`, Browser `/skills`, ORM,
+  installation and runtime remain absent and require later authorization.
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p5_6a_skill_contract.py --validate-only
+python scripts/production/validate_p5_6a_skill_contract.py --verify
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_6a_skill_contract.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py
+```
