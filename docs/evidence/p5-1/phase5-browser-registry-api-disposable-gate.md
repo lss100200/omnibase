@@ -2,9 +2,9 @@
 
 - Gate: P5.1C Browser Agent Registry control API disposable Gate
 - Passed: True
-- Manifest SHA-256: 7e03b53ccfcd9bc8f111a1e81111f449e27e03a7284566a0cd68481df98ac390
-- Started: 2026-08-05T12:03:29.037650+00:00
-- Finished: 2026-08-05T12:06:12.765104+00:00
+- Manifest SHA-256: 920ece35dc8a7a57318adea532ba324bd4494dc056a57c226993c6e61d1cdc2f
+- Started: 2026-08-05T14:21:37.280419+00:00
+- Finished: 2026-08-05T14:24:18.057292+00:00
 - Root env accessed: False
 - Business database accessed: False
 - Business database migrated: False
