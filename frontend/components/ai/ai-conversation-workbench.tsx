@@ -241,7 +241,7 @@ export function AIConversationWorkbench({
   return (
     <section
       className={cn(
-        'ai-workbench flex min-h-0 flex-col overflow-hidden rounded-2xl border border-indigo-400/15 bg-[#080d1e] text-slate-100 shadow-[0_28px_80px_-48px_rgba(49,46,129,.95)]',
+        'ai-workbench flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-black text-white shadow-[0_28px_80px_-48px_rgba(255,255,255,.18)]',
         className,
       )}
       aria-label="OmniBase AI 工作区"
@@ -321,7 +321,7 @@ export function AIConversationWorkbench({
         )}
       </div>
 
-      <footer className="shrink-0 border-t border-white/[0.07] bg-[#070b18]/95 p-3 sm:p-4">
+      <footer className="shrink-0 border-t border-white/[0.07] bg-black p-3 sm:p-4">
         <div className="mx-auto max-w-4xl rounded-2xl border border-indigo-300/15 bg-indigo-950/25 p-2.5 shadow-[0_18px_55px_-38px_rgba(99,102,241,.9)] focus-within:border-cyan-300/25">
           <textarea
             value={input}

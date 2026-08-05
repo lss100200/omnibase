@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "32a7d6f665ee9e29dd9808d485c05640e4a63f8260b099be6e84a5acd7b68ee4"
+      "sha256": "d3e7a051febfa8b8d29d757d3b7c90648bafda22ca7ee39f3f34f7d839af785d"
     }
   },
   "source": {
@@ -641,12 +641,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "7cd821f8bf341e4759b3370b90fa56bc48894e90d5d9df860dfd0231adc407bf"
+      "sha256": "c2faaf6ba37a3a248a6a11c088f37a8b9bd4cbbdcd3e495d2a3ee73aff04dc12"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "62cc136f823c7f44f411068c6dc7803e4f2e176b27fa333ae0e3731d2c05f179"
+      "sha256": "f0969861b717b6a7b325dba9b5b6fec4806372fff9269058e3e9d43d9775a24e"
     }
   ],
   "openapi_snapshot": {

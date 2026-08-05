@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <div className="hidden items-center gap-2 border border-border/70 bg-card/55 px-3 py-1.5 xl:flex">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+              <ShieldCheck className="h-3.5 w-3.5 text-foreground" />
               <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-muted-foreground">
                 governed workspace
               </span>

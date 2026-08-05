@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { BrandMark } from '@/components/layout/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -119,9 +120,7 @@ export default function PublicPreviewPage() {
             className="group flex items-center gap-3"
             aria-label="OmniBase 首页"
           >
-            <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border border-cyan-500/25 bg-gradient-to-br from-cyan-500/15 via-background to-violet-500/15 shadow-sm">
-              <Orbit className="h-5 w-5 text-cyan-500 transition-transform duration-500 group-hover:rotate-45" />
-            </span>
+            <BrandMark className="h-9 w-9 transition-transform duration-500 group-hover:rotate-45" />
             <span>
               <span className="block text-sm font-semibold leading-none tracking-tight">
                 OmniBase

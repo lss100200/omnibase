@@ -1229,3 +1229,30 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   `deepseek-v4-flash` calls succeeded through operator and personal credential
   sources, profile name `Omni` affected the answer, and active WorkspaceRun /
   RunLease counts returned to zero after each invocation.
+
+## 6.13 User-created tool-free Agents and monochrome workbench
+
+- `POST /api/v1/workspaces/{workspace_id}/agents` is the only Browser surface
+  allowed to create an Agent Definition and sealed Version. It re-locks the
+  live Tenant, User, Workspace and WorkspaceMembership and requires
+  `workspace.grants.manage` in the caller-owned transaction.
+- Creation is atomic across Definition, Version, optional Workspace binding,
+  logical resource registration, idempotency and append-only Audit. The
+  application-controlled request hash covers the complete Browser intent while
+  excluding generated UUIDs and timestamps; it is never accepted from a
+  Browser field.
+- The sealed manifest contains the complete system instructions. Its raw UTF-8
+  SHA-256 must equal `instructions_digest`, the manifest digest covers the
+  instructions, and Agent Alpha revalidates the digest before use.
+- The Browser contract is closed to `provider_policy=user_default` and
+  `knowledge_mode=workspace_read_only`. Created Agents are low-risk,
+  single-concurrency and tool-free. Tools, Planner, multi-Agent, MCP, Skills,
+  Shell, SQL, arbitrary HTTP and hostile-code Sandbox remain unavailable.
+- The former P5.1C catalog/install dependency still rejects by default. The
+  Builder is a separate explicitly authorized route and must not be used to
+  silently wire the general Registry control plane.
+- The frontend uses a system-wide monochrome contract: light mode is white
+  with black content and mark; dark mode is black with white content and mark.
+  Product UI must not depend on blue/purple/green/orange/gold status colors.
+  Semantic state remains legible through text, icons, border weight, fill,
+  spacing and labels.

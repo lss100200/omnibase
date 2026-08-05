@@ -2612,3 +2612,31 @@ source/evidence boundary，不能被继续当作当前仓库状态；历史 evid
 激活仍需单独批准。历史 P5.1/P5.2B/P5.2C sealed evidence只证明其原始 `0011`
 source boundary；本轮没有伪造或覆盖这些 evidence，也不把它们描述为当前 `0012`
 production Gate。根 `.env` 未读取、打印、stage 或提交。
+
+### 用户自建 Agent 与全系统黑白工作台（2026-08-05）
+
+本轮在独立分支增加了面向真实用户的 Agent Builder，并将前端视觉合同统一为
+纯黑白双主题。它不是通用 Agent Runtime 解锁，也不是只保存表单的演示页面。
+
+- 新增 `POST /api/v1/workspaces/{workspace_id}/agents`。请求在同一事务中重锁
+  live Tenant/User/Workspace/WorkspaceMembership，要求
+  `workspace.grants.manage`，随后注册用户拥有的 Definition、封存 `1.0.0`
+  Version、可选安装 Workspace binding、登记 logical resources、完成幂等记录并
+  写 append-only Audit；失败整体回滚。
+- Builder 可配置名称、角色与职责、system instructions、回答风格、上下文、输出
+  token 与 deadline。Provider 固定为用户默认凭据，知识固定为当前 Workspace
+  只读范围。
+- 完整 system instructions 进入 sealed manifest；原始 UTF-8 SHA-256 必须匹配
+  `instructions_digest`，manifest digest 同时覆盖指令，Agent Alpha 调用前再次
+  校验。用户指令因此会被真实保存并执行，而不是只保存 digest 或前端状态。
+- 创建结果固定 low-risk、`allowed_tool_ids=[]`、单并发。Planner、multi-Agent、
+  MCP、Skills、Shell、SQL、任意 HTTP 与 hostile-code Sandbox 仍关闭；三个
+  Phase 5 Feature Gate 仍为 false，production Runtime activation 仍需单独批准。
+- 前端 light mode 使用纯白背景、黑色文字和黑色 Logo；dark mode 使用纯黑背景、
+  白色文字和白色 Logo。旧蓝/紫/绿/橙/金强调色由全局 monochrome guard 降级为
+  黑、白和中性灰，状态差异改用标签、图标、边框、填充和字重表达。
+- `/agents` 增加 New employee Builder；创建成功后重新读取 Workspace profiles、
+  自动选择新 AgentVersion，并进入现有真实 Agent Alpha 工作台。
+
+验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
+production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。

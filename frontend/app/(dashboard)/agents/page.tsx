@@ -11,9 +11,11 @@ import {
   Settings2,
   ShieldCheck,
   Square,
+  UserPlus,
   Wrench,
 } from 'lucide-react'
 import {
+  agentBuilderApi,
   agentAlphaApi,
   workspacesApi,
   type AgentAlphaProfile,
@@ -21,6 +23,16 @@ import {
 } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -103,6 +115,18 @@ export default function AgentAlphaPage() {
     multi_agent_enabled: boolean
   } | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const [builderSaving, setBuilderSaving] = useState(false)
+  const [builderMessage, setBuilderMessage] = useState<string | null>(null)
+  const [builder, setBuilder] = useState({
+    displayName: '',
+    roleDescription: '',
+    instructions: '',
+    assistantTone: 'Professional, concise and explicit about uncertainty.',
+    maxContextTokens: 16_384,
+    maxOutputTokens: 2_048,
+    maxWallClockSeconds: 120,
+  })
   const controllerRef = useRef<AbortController | null>(null)
   const startedAtRef = useRef<number | null>(null)
 
@@ -138,6 +162,43 @@ export default function AgentAlphaPage() {
   }, [workspaceId])
 
   const selectedInstallation = installations.find((item) => item.agent_version_id === bindingId)
+
+  const createAgent = async () => {
+    if (!workspaceId || builderSaving) return
+    setBuilderSaving(true)
+    setBuilderMessage(null)
+    try {
+      const result = await agentBuilderApi.create(workspaceId, {
+        display_name: builder.displayName,
+        role_description: builder.roleDescription,
+        instructions: builder.instructions,
+        assistant_tone: builder.assistantTone,
+        provider_policy: 'user_default',
+        knowledge_mode: 'workspace_read_only',
+        max_context_tokens: builder.maxContextTokens,
+        max_output_tokens: builder.maxOutputTokens,
+        max_wall_clock_seconds: builder.maxWallClockSeconds,
+        install_immediately: true,
+      })
+      const profiles = await agentAlphaApi.profiles(workspaceId)
+      setInstallations(profiles.items)
+      setBindingId(result.version.agent_version_id)
+      setBuilderMessage(`${result.definition.display_name} is sealed and installed.`)
+      setBuilder({
+        displayName: '',
+        roleDescription: '',
+        instructions: '',
+        assistantTone: 'Professional, concise and explicit about uncertainty.',
+        maxContextTokens: 16_384,
+        maxOutputTokens: 2_048,
+        maxWallClockSeconds: 120,
+      })
+    } catch (error) {
+      setBuilderMessage(error instanceof Error ? error.message : 'agent_builder_failed')
+    } finally {
+      setBuilderSaving(false)
+    }
+  }
 
   const invoke = async () => {
     const userMessage = input.trim()
@@ -298,6 +359,9 @@ export default function AgentAlphaPage() {
             </div>
             <div className="flex items-center gap-3">
               {postureBadges}
+              <Button size="sm" onClick={() => setBuilderOpen(true)} disabled={!workspaceId}>
+                <UserPlus className="h-4 w-4" /> New employee
+              </Button>
               <Button asChild variant="outline" size="sm">
                 <Link href="/settings">
                   <Settings2 className="h-4 w-4" /> 模型设置
@@ -440,7 +504,7 @@ export default function AgentAlphaPage() {
           <h2 className="text-sm font-semibold">Runtime posture</h2>
           <div className="mt-4 space-y-3 text-sm">
             <div className="flex items-start gap-3">
-              <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-500" />
+              <ShieldCheck className="mt-0.5 h-4 w-4 text-foreground" />
               <div>
                 <p className="font-medium">Engineering-only</p>
                 <p className="text-xs text-muted-foreground">
@@ -452,7 +516,7 @@ export default function AgentAlphaPage() {
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <Database className="mt-0.5 h-4 w-4 text-blue-500" />
+              <Database className="mt-0.5 h-4 w-4 text-foreground" />
               <div>
                 <p className="font-medium">Durable ledger</p>
                 <p className="text-xs text-muted-foreground">
@@ -466,7 +530,7 @@ export default function AgentAlphaPage() {
               {running ? (
                 <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-primary" />
               ) : (
-                <BrainCircuit className="mt-0.5 h-4 w-4 text-violet-500" />
+                <BrainCircuit className="mt-0.5 h-4 w-4 text-foreground" />
               )}
               <div>
                 <p className="font-medium">Model identity</p>
@@ -474,7 +538,7 @@ export default function AgentAlphaPage() {
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <BrainCircuit className="mt-0.5 h-4 w-4 text-amber-500" />
+              <BrainCircuit className="mt-0.5 h-4 w-4 text-muted-foreground" />
               <div>
                 <p className="font-medium">Usage / latency</p>
                 <p className="text-xs text-muted-foreground">
@@ -488,6 +552,134 @@ export default function AgentAlphaPage() {
           </div>
         </section>
       </aside>
+
+      <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto border-foreground/20 bg-background sm:rounded-none">
+          <DialogHeader>
+            <DialogTitle>Create an AI employee</DialogTitle>
+            <DialogDescription>
+              The first version is sealed, Workspace-scoped and strictly tool-free. It uses your
+              tested default Provider and read-only Workspace knowledge.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="agent-name">Name</Label>
+              <Input
+                id="agent-name"
+                value={builder.displayName}
+                onChange={(event) => setBuilder({ ...builder, displayName: event.target.value })}
+                placeholder="Research analyst"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="agent-role">Role and responsibilities</Label>
+              <textarea
+                id="agent-role"
+                value={builder.roleDescription}
+                onChange={(event) =>
+                  setBuilder({ ...builder, roleDescription: event.target.value })
+                }
+                className="min-h-24 border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="What this employee owns, what good work looks like, and when it should say no."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="agent-instructions">System instructions</Label>
+              <textarea
+                id="agent-instructions"
+                value={builder.instructions}
+                onChange={(event) => setBuilder({ ...builder, instructions: event.target.value })}
+                className="min-h-36 border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="Describe the reasoning process, output structure, evidence requirements and refusal conditions."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="agent-tone">Answer style</Label>
+              <Input
+                id="agent-tone"
+                value={builder.assistantTone}
+                onChange={(event) => setBuilder({ ...builder, assistantTone: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-3 border-y py-4 sm:grid-cols-3">
+              <BuilderNumber
+                label="Context tokens"
+                value={builder.maxContextTokens}
+                min={512}
+                max={32_768}
+                onChange={(value) => setBuilder({ ...builder, maxContextTokens: value })}
+              />
+              <BuilderNumber
+                label="Output tokens"
+                value={builder.maxOutputTokens}
+                min={64}
+                max={8_192}
+                onChange={(value) => setBuilder({ ...builder, maxOutputTokens: value })}
+              />
+              <BuilderNumber
+                label="Deadline (seconds)"
+                value={builder.maxWallClockSeconds}
+                min={1}
+                max={300}
+                onChange={(value) => setBuilder({ ...builder, maxWallClockSeconds: value })}
+              />
+            </div>
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+              <div className="border p-3">Provider: user default</div>
+              <div className="border p-3">Knowledge: Workspace read-only</div>
+              <div className="border p-3">Tools / Planner / multi-Agent: off</div>
+            </div>
+            {builderMessage && <div className="border px-3 py-2 text-sm">{builderMessage}</div>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBuilderOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={createAgent}
+              disabled={
+                builderSaving ||
+                !workspaceId ||
+                !builder.displayName.trim() ||
+                !builder.roleDescription.trim() ||
+                !builder.instructions.trim() ||
+                !builder.assistantTone.trim()
+              }
+            >
+              {builderSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Seal and install
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function BuilderNumber({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label>{label}</Label>
+      <Input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </div>
   )
 }

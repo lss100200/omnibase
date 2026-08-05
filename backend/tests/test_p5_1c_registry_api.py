@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from omnibase.agent_registry.control import (
     AgentRegistryControlService,
@@ -19,6 +20,7 @@ from omnibase.agent_registry.router import (
     installation_router,
     router,
 )
+from omnibase.agent_registry.schemas import AgentBuilderCreate
 from omnibase.tenants.dependencies import get_current_tenant
 
 TENANT_ID = "00000000-0000-0000-0000-00000000000a"
@@ -215,6 +217,28 @@ def test_mutation_requires_idempotency_key() -> None:
         json=_install_payload(),
     )
     assert response.status_code == 422
+
+
+def test_agent_builder_request_is_closed_and_tool_free() -> None:
+    payload = {
+        "display_name": "Researcher",
+        "role_description": "Review evidence.",
+        "instructions": "Cite the supplied context.",
+        "assistant_tone": "Concise.",
+        "provider_policy": "user_default",
+        "knowledge_mode": "workspace_read_only",
+    }
+    parsed = AgentBuilderCreate.model_validate(payload)
+    assert parsed.install_immediately is True
+    assert parsed.max_context_tokens == 16_384
+    for drift in (
+        {**payload, "provider_policy": "operator_default"},
+        {**payload, "knowledge_mode": "tenant_wide"},
+        {**payload, "allowed_tool_ids": ["shell"]},
+        {**payload, "instructions": "   "},
+    ):
+        with pytest.raises(ValidationError):
+            AgentBuilderCreate.model_validate(drift)
 
 
 # ---------------------------------------------------------------------------

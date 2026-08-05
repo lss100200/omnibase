@@ -1819,3 +1819,70 @@ operator default only as an explicitly labelled fallback. If the encryption key
 is lost or ciphertext authentication fails, do not guess or bypass GCM: require
 the user to submit a new secret. If migration recovery is required, retain the
 source database and restore the verified pre-0012 dump to a new database.
+
+## INV-048 user-created-tool-free-agent-builder
+
+**Authoritative source**
+
+- `backend/src/omnibase/agent_registry/control.py:create_custom_agent`
+- `backend/src/omnibase/agent_registry/router.py:builder_router`
+- `backend/src/omnibase/production/phase5_registry_contract.py:AgentVersionManifest`
+- `backend/src/omnibase/agent_alpha/adapters.py:RegistryProfileResolver`
+- `frontend/app/(dashboard)/agents/page.tsx`
+
+**Why it exists**
+
+An authenticated Workspace member may create a real user-owned Agent, but the
+first public builder is deliberately narrower than the general Registry
+contract. One caller-owned transaction revalidates the live Tenant, live User,
+Workspace generation and live `workspace.grants.manage` membership; registers
+the AgentDefinition; seals a Version whose manifest contains the real system
+instructions and matching SHA-256; optionally installs the Version; registers
+logical Resources; completes idempotency records; and appends Audit records.
+
+The complete client intent is the idempotency anchor. Server-generated UUIDs
+and timestamps must not make exact replay drift, while the same key with a
+different name, role, instructions, tone, budget, Workspace, Provider policy or
+knowledge policy must conflict. Raw Browser fields never supply a digest.
+
+The accepted profile is a closed set: `provider_policy=user_default`,
+`knowledge_mode=workspace_read_only`, low risk, one sealed Version, no memory
+runtime, and an empty `allowed_tool_ids`. The runtime re-hashes stored
+instructions before use. Tools, shell, SQL, arbitrary HTTP, MCP, Skills,
+Planner, multi-Agent execution and hostile-code Sandbox access remain absent;
+all three Phase 5 Feature Gates remain false.
+
+**Allowed changes**
+
+- Add bounded presentation fields or additional sealed versions while keeping
+  the manifest digest, instruction digest, idempotency and Audit lifecycle
+  atomic.
+- Add server-owned, closed Provider or knowledge policies after their runtime
+  semantics and negative tests exist.
+
+**Forbidden changes**
+
+- Saving only an instruction digest while displaying a claim that custom
+  instructions execute, or using unsealed mutable text at invocation time.
+- Accepting Browser-provided tool IDs, physical locators, Provider secrets,
+  arbitrary URLs, Planner graphs or multi-Agent topology.
+- Creating Definition, Version and Binding in separate committed transactions,
+  or authorizing from a JWT/workspace snapshot without live row revalidation.
+- Replaying an old Agent after any client-intent drift under the same
+  Idempotency-Key.
+
+**Required verification**
+
+- `backend/tests/test_p5_1c_registry_api.py`
+- `backend/tests/test_p5_1_registry_contract.py`
+- `backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py`
+- `backend/tests/test_agent_alpha.py`
+- Frontend `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`
+- Browser E2E: create, install, select and invoke one custom Agent in both themes
+
+**Recovery**
+
+Disable the Builder route while preserving all Registry rows and Audit history.
+Disable or revoke the affected binding/version through existing lifecycle
+transitions; never edit a sealed manifest or delete ledger evidence to make a
+profile appear valid.

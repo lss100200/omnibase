@@ -23,6 +23,9 @@ from fastapi.responses import JSONResponse
 from omnibase import __version__
 from omnibase.agent_alpha.router import router as agent_alpha_router
 from omnibase.agent_registry.router import (
+    builder_router as agent_builder_router,
+)
+from omnibase.agent_registry.router import (
     installation_router as agent_installation_router,
 )
 from omnibase.agent_registry.router import router as agent_registry_router
@@ -208,6 +211,7 @@ def create_app() -> FastAPI:
     api_router.include_router(controlled_data_router)
     api_router.include_router(agent_registry_router)
     api_router.include_router(agent_installation_router)
+    api_router.include_router(agent_builder_router)
     api_router.include_router(agent_alpha_router)
     api_router.include_router(user_settings_router)
 

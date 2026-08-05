@@ -563,6 +563,28 @@
         "backend/tests/test_agent_alpha.py",
         "backend/tests/test_agent_alpha_engineering.py"
       ]
+    },
+    {
+      "id": "INV-048",
+      "title": "User-created Agents remain atomic, instruction-authentic, Workspace-bound and tool-free",
+      "document": "docs/maintainers/security-invariants.md#inv-048-user-created-tool-free-agent-builder",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/src/omnibase/main.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/test_p5_1_registry_contract.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "backend/tests/test_agent_alpha.py",
+        "frontend/lib/api.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -1406,7 +1428,9 @@
         "frontend/lib/api.ts:api"
       ],
       "public_interfaces": [
-        "Browser routes /login /register /dashboard /knowledge /database /chat /playground /settings",
+        "Browser routes /login /register /dashboard /spaces /knowledge /database /chat /playground /settings /agents /public-preview",
+        "Product-wide black/white light and dark themes with currentColor Logo variants",
+        "Tool-free Agent Builder form and same-origin Browser client",
         "Next.js rewrite to backend /api/v1"
       ],
       "depends_on": [
@@ -1418,7 +1442,8 @@
       "invariants": [
         "INV-001",
         "INV-005",
-        "INV-010"
+        "INV-010",
+        "INV-048"
       ],
       "verification": [
         "cd frontend && pnpm test",
@@ -1703,14 +1728,18 @@
     },
     {
       "id": "agent-registry-browser-control",
-      "name": "P5.1C Browser Agent Registry control API (routers + fail-closed dependency + public DTOs)",
+      "name": "P5.1C Browser Agent Registry control API plus user tool-free Agent Builder",
       "source_paths": [
         "backend/src/omnibase/agent_registry/control.py",
         "backend/src/omnibase/agent_registry/router.py",
         "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
         "backend/src/omnibase/main.py",
         "backend/tests/test_p5_1c_registry_api.py",
         "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
         "scripts/production/run_p5_1c_browser_registry_disposable_gate.py",
         "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
         "sdk/python/src/omnibase_sdk/browser_registry.py",
@@ -1722,6 +1751,7 @@
       "entrypoints": [
         "backend/src/omnibase/agent_registry/router.py:router",
         "backend/src/omnibase/agent_registry/router.py:installation_router",
+        "backend/src/omnibase/agent_registry/router.py:builder_router",
         "backend/src/omnibase/agent_registry/router.py:get_registry_control_plane",
         "backend/src/omnibase/agent_registry/control.py:AgentRegistryControlService",
         "backend/src/omnibase/agent_registry/control.py:UnavailableAgentRegistryControlPlane",
@@ -1739,6 +1769,7 @@
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/disable",
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/upgrade",
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/rollback",
+        "POST /api/v1/workspaces/{workspace_id}/agents (create, seal and optionally install one user-owned tool-free Agent)",
         "Python SDK omnibase_sdk.browser_registry.AgentRegistryBrowserClient",
         "TypeScript SDK AgentRegistryBrowserClient"
       ],
@@ -1747,7 +1778,8 @@
         "identity-tenancy",
         "agent-registry-persistence",
         "phase5-registry-contract-preflight",
-        "phase5-admission"
+        "phase5-admission",
+        "agent-alpha-engineering-runtime"
       ],
       "invariants": [
         "INV-005",
@@ -1755,7 +1787,8 @@
         "INV-039",
         "INV-040",
         "INV-041",
-        "INV-042"
+        "INV-042",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1c_registry_api.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q",
@@ -1768,11 +1801,11 @@
         "cd sdk/typescript && pnpm test && pnpm typecheck"
       ],
       "recovery": [
-        "Production defaults reject until the DB-backed control plane is explicitly injected; never mount it into main.py by default. Browser endpoints only expose logical identifiers, never physical locators.",
+        "Legacy catalog/install/upgrade/disable/rollback defaults still reject until the DB-backed control plane is explicitly injected. The separately authorized Builder route is wired with a tenant-bound session and may only create the closed low-risk tool-free profile. Browser endpoints expose logical identifiers, never physical locators.",
         "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction. Browser Version/Binding checks are non-locking snapshots; the sealed P5.1B service owns the authoritative Definition -> Version -> Binding lock order and repeats all state checks.",
         "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
         "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
-        "No AgentDefinition/AgentVersion creation surface and no migration is owned by P5.1C. Repository head is 0012 after the separately authorized user-profile/provider-credential migration; all three Phase 5 feature gates stay false. The historical P5.1C disposable evidence proves its 0011 boundary only and must not be overclaimed as an 0012 Gate."
+        "The Builder is the only Browser AgentDefinition/AgentVersion creation surface: it binds real instructions into the sealed manifest, requires user_default plus workspace_read_only, and always writes an empty tool set. No new migration is required because the sealed JSON manifest already owns the payload. Repository head stays 0012 and all three Phase 5 feature gates stay false. Historical P5.1C evidence must not be overclaimed for this new surface."
       ]
     },
     {
@@ -1934,7 +1967,8 @@
         "INV-043",
         "INV-044",
         "INV-045",
-        "INV-046"
+        "INV-046",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_agent_alpha_engineering.py -q",
@@ -2022,7 +2056,8 @@
         "INV-042",
         "INV-044",
         "INV-045",
-        "INV-047"
+        "INV-047",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",

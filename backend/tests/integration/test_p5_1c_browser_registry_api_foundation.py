@@ -28,12 +28,13 @@ from sqlalchemy.orm import Session
 
 from omnibase.agent_registry.control import AgentRegistryControlService
 from omnibase.agent_registry.router import (
+    builder_router,
     get_registry_control_plane,
     installation_router,
     router,
 )
 from omnibase.production.phase5_registry_contract import BindingState
-from omnibase.tenants.dependencies import get_current_tenant
+from omnibase.tenants.dependencies import get_current_tenant, get_tenant_db
 
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
@@ -392,7 +393,7 @@ def _install_error_handler(app: FastAPI) -> None:
         return JSONResponse(status_code=exc.status_code, content=content)
 
 
-def _client(db_engine, tenant_id: str) -> TestClient:
+def _client(db_engine, tenant_id: str, *, actor_user_id: str = ACTOR_ID) -> TestClient:
     app = FastAPI()
     _install_error_handler(app)
     from fastapi import APIRouter
@@ -400,12 +401,13 @@ def _client(db_engine, tenant_id: str) -> TestClient:
     prefix = APIRouter(prefix="/api/v1")
     prefix.include_router(router)
     prefix.include_router(installation_router)
+    prefix.include_router(builder_router)
     app.include_router(prefix)
 
     def _override_tenant() -> object:
         from types import SimpleNamespace
 
-        return SimpleNamespace(tenant_id=tenant_id, user_id=ACTOR_ID)
+        return SimpleNamespace(tenant_id=tenant_id, user_id=actor_user_id)
 
     def _override_control() -> Iterator[AgentRegistryControlService]:
         session = _session(db_engine, tenant_id)
@@ -416,7 +418,33 @@ def _client(db_engine, tenant_id: str) -> TestClient:
 
     app.dependency_overrides[get_current_tenant] = _override_tenant
     app.dependency_overrides[get_registry_control_plane] = _override_control
+
+    def _override_tenant_db() -> Iterator[Session]:
+        session = _session(db_engine, tenant_id)
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_tenant_db] = _override_tenant_db
     return TestClient(app, raise_server_exceptions=False)
+
+
+def _builder_body(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "display_name": "Evidence Analyst",
+        "role_description": "Review Workspace evidence and explain gaps.",
+        "instructions": "Use the exact marker BUILDER_INSTRUCTIONS_REACHED in every answer.",
+        "assistant_tone": "Concise, technical and explicit about uncertainty.",
+        "provider_policy": "user_default",
+        "knowledge_mode": "workspace_read_only",
+        "max_context_tokens": 8192,
+        "max_output_tokens": 1024,
+        "max_wall_clock_seconds": 60,
+        "install_immediately": True,
+    }
+    payload.update(overrides)
+    return payload
 
 
 def _install_body(
@@ -559,6 +587,92 @@ def test_catalog_projection_has_no_locators(db_engine, run_owned_resources) -> N
     serialized = json.dumps(response.json())
     for forbidden in ("omnibase_meta", "tenant_", "schema_name", "postgresql", "password"):
         assert forbidden not in serialized
+
+
+# ---------------------------------------------------------------------------
+# User Agent Builder
+# ---------------------------------------------------------------------------
+
+
+def test_builder_creates_sealed_tool_free_agent_with_real_instructions(
+    db_engine, run_owned_resources
+) -> None:
+    tenant_id, workspace_id, _, _ = _seed(db_engine, run_owned_resources, "builder-create")
+    client = _client(db_engine, tenant_id)
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agents",
+        headers={"Idempotency-Key": "p51c-builder-create-0001"},
+        json=_builder_body(),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["definition"]["display_name"] == "Evidence Analyst"
+    assert body["version"]["allowed_tool_ids"] == []
+    assert body["installation"]["binding_state"] == "installed"
+    assert body["tools_enabled"] is False
+    assert body["planner_enabled"] is False
+    assert body["multi_agent_enabled"] is False
+    with db_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT version_state, allowed_tool_ids, manifest_payload, instructions_digest "
+                "FROM omnibase_meta.agent_versions "
+                "WHERE id = :version_id AND tenant_id = :tenant_id"
+            ),
+            {
+                "version_id": body["version"]["agent_version_id"],
+                "tenant_id": tenant_id,
+            },
+        ).one()
+    instructions = row.manifest_payload["instructions"]
+    assert row.version_state == "sealed"
+    assert row.allowed_tool_ids == []
+    assert "BUILDER_INSTRUCTIONS_REACHED" in instructions
+    assert hashlib.sha256(instructions.encode("utf-8")).hexdigest() == row.instructions_digest
+
+
+def test_builder_exact_replay_and_intent_drift(db_engine, run_owned_resources) -> None:
+    tenant_id, workspace_id, _, _ = _seed(db_engine, run_owned_resources, "builder-replay")
+    client = _client(db_engine, tenant_id)
+    key = "p51c-builder-replay-0001"
+    first = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agents",
+        headers={"Idempotency-Key": key},
+        json=_builder_body(),
+    )
+    second = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agents",
+        headers={"Idempotency-Key": key},
+        json=_builder_body(),
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert (
+        second.json()["definition"]["agent_definition_id"]
+        == first.json()["definition"]["agent_definition_id"]
+    )
+    assert (
+        second.json()["version"]["agent_version_id"] == first.json()["version"]["agent_version_id"]
+    )
+    assert second.json()["installation"]["binding_id"] == first.json()["installation"]["binding_id"]
+    drift = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agents",
+        headers={"Idempotency-Key": key},
+        json=_builder_body(instructions="A different system instruction."),
+    )
+    assert drift.status_code == 409
+    assert drift.json()["error"]["code"] == "registry_replay_input_mismatch"
+
+
+def test_builder_requires_live_workspace_membership(db_engine, run_owned_resources) -> None:
+    tenant_id, workspace_id, _, _ = _seed(db_engine, run_owned_resources, "builder-membership")
+    client = _client(db_engine, tenant_id, actor_user_id=MEMBER_ID)
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/agents",
+        headers={"Idempotency-Key": "p51c-builder-member-0001"},
+        json=_builder_body(),
+    )
+    assert response.status_code in (403, 404)
 
 
 # ---------------------------------------------------------------------------
