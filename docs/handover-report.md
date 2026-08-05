@@ -2673,9 +2673,15 @@ review/rollback evidence。
 `0 issues`；compileall exit 0；maintainer map `39 invariants / 31 modules / 937
 matched files / 205 entrypoints / 136 verification commands` 与 benchmark
 validator、Compose config、git diff check 均通过；`--validate-only` exit 0 且报告
-`blocked/not_proven`、`activation_allowed=false`。正式 `--verify` 必须在本次
-文件提交后的 clean checkout 运行，预期 exit 2、veto 0；提交前 dirty 状态不能
-伪称正式通过。
+`blocked/not_proven`、`activation_allowed=false`。提交 `99bfc96` 后在同一
+clean linked worktree 使用宿主 Python 执行正式 `--verify`：exit 2、state
+`blocked/not_proven`、`contract_valid=true`、`activation_allowed=false`、
+`migration_head=0012`、feature gates false/false/false、vetoes `[]`、source
+clean=true、44 tracked files、manifest SHA-256
+`dff5c5063cbb77ba2aac278fd6f3153cd5abee3be9a90fc787f20ec9634496f3`。
+容器内首次 formal verify 因只挂载 linked worktree、无法解析指向主仓库外部的
+`.git/worktrees` metadata 而正确返回 `invalid/veto`；未把该宿主装载失败隐藏或
+误报为合同失败，随后使用可见真实 Git metadata 的宿主 validator 完成验证。
 
 未创建 ORM/service/router/SDK/UI、未创建 migration `0013`、未挂载
 `/api/v1/skills`、未安装或执行 Skill、未执行 manifest 中的 verification
