@@ -106,6 +106,7 @@
   /* Product-wide monochrome guard: legacy feature surfaces may still carry
      semantic Tailwind hue names, but no chromatic color is rendered. */
   [class*='text-blue-'],
+  [class*='text-slate-'],
   [class*='text-cyan-'],
   [class*='text-emerald-'],
   [class*='text-green-'],
@@ -123,6 +124,7 @@
   }
 
   [class*='bg-blue-'],
+  [class*='bg-slate-'],
   [class*='bg-cyan-'],
   [class*='bg-emerald-'],
   [class*='bg-green-'],
@@ -140,6 +142,7 @@
   }
 
   [class*='border-blue-'],
+  [class*='border-slate-'],
   [class*='border-cyan-'],
   [class*='border-emerald-'],
   [class*='border-green-'],
@@ -157,6 +160,7 @@
   }
 
   [class*='ring-blue-'],
+  [class*='ring-slate-'],
   [class*='ring-cyan-'],
   [class*='ring-emerald-'],
   [class*='ring-green-'],
@@ -174,6 +178,7 @@
   }
 
   [class*='shadow-blue-'],
+  [class*='shadow-slate-'],
   [class*='shadow-cyan-'],
   [class*='shadow-emerald-'],
   [class*='shadow-green-'],
