@@ -168,7 +168,7 @@ def register(
                 session,
                 tenant_id=str(tenant.id),
                 actor_user_id=str(user.id),
-                request_id=f"registration:{user.id}",
+                request_id=f"registration-{user.id}",
             )
 
             session.commit()

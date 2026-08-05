@@ -208,9 +208,12 @@ test-destructive: ## 在一次性隔离数据库中运行破坏性集成测试
 		uv run python tests/destructive_preflight.py; \
 		uv run alembic upgrade head; \
 		uv run pytest -m integration \
-			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_empty_downgrade_and_reupgrade_are_safe; \
+			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_empty_downgrade_and_reupgrade_are_safe \
+			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_downgrade_refuses_live_controlled_resources; \
 		uv run pytest -m integration tests/integration \
-			-k "not test_0006_empty_downgrade_and_reupgrade_are_safe"
+			--ignore=tests/integration/test_auth_e2e.py \
+			-k "not test_0006_empty_downgrade_and_reupgrade_are_safe and not test_0006_downgrade_refuses_live_controlled_resources"; \
+		uv run pytest -m integration tests/integration/test_auth_e2e.py
 
 test-p5-1b-registry: ## 一次性隔离数据库上的 P5.1B Agent Registry 持久化 Gate
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-ci-*|omnibase-p34-*|omnibase-p51b-*|omnibase-test-*) ;; 		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated prefix$(RESET)"; exit 1 ;; 	esac
