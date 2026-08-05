@@ -2637,6 +2637,13 @@ production Gate。根 `.env` 未读取、打印、stage 或提交。
   黑、白和中性灰，状态差异改用标签、图标、边框、填充和字重表达。
 - `/agents` 增加 New employee Builder；创建成功后重新读取 Workspace profiles、
   自动选择新 AgentVersion，并进入现有真实 Agent Alpha 工作台。
+- clean-database Browser E2E 发现并修复了首用户注册阻塞：默认 onboarding 曾传入
+  `registration:{uuid}`，但共享 control-plane request ID 闭集禁止冒号，导致租户
+  schema 初始化后请求被误报为 `weak_password`。现改为安全的
+  `registration-{uuid}`；没有放宽 request ID validator。
+- Builder UI 将 Registry 创建成功与后续 Agent Alpha profile refresh 分开处理。
+  Alpha seam 未装配时 profile 请求仍正确返回 503，但已经原子提交的 Definition、
+  sealed Version 与 binding 不再被前端误报为“创建失败”。
 
 验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
 production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。

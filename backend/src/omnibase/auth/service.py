@@ -168,6 +168,9 @@ def register(
                 session,
                 tenant_id=str(tenant.id),
                 actor_user_id=str(user.id),
+                # Control-plane request IDs use the shared safe identifier
+                # alphabet; ':' would make first-user onboarding fail after
+                # the tenant schema had already been bootstrapped.
                 request_id=f"registration-{user.id}",
             )
 

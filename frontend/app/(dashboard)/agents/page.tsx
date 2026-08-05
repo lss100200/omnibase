@@ -180,10 +180,20 @@ export default function AgentAlphaPage() {
         max_wall_clock_seconds: builder.maxWallClockSeconds,
         install_immediately: true,
       })
-      const profiles = await agentAlphaApi.profiles(workspaceId)
-      setInstallations(profiles.items)
-      setBindingId(result.version.agent_version_id)
-      setBuilderMessage(`${result.definition.display_name} is sealed and installed.`)
+      const createdMessage = `${result.definition.display_name} is sealed and installed.`
+      setBuilderMessage(createdMessage)
+      try {
+        const profiles = await agentAlphaApi.profiles(workspaceId)
+        setInstallations(profiles.items)
+        setBindingId(result.version.agent_version_id)
+      } catch {
+        // Creation is an atomic Registry success even when the separately
+        // gated Alpha profile resolver is not assembled in this environment.
+        // Do not misreport a successful durable write as a failed Builder call.
+        setBuilderMessage(
+          `${createdMessage} Runtime profile refresh is unavailable; it will appear when Agent Alpha is assembled.`,
+        )
+      }
       setBuilder({
         displayName: '',
         roleDescription: '',
