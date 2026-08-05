@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "phase": "P5.3A",
+  "activation_requested": false,
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "p34_7": {
+    "formal_state": "blocked/not_proven",
+    "decision": {
+      "path": "docs/evidence/p34-7/production-readiness-decision.md",
+      "sha256": "0ef8a35e0a5836b9aefcbf7dd444f91add95216865b6502e3183f7814c744a8d"
+    }
+  },
+  "p5_0": {
+    "formal_state": "blocked/not_proven",
+    "admission_contract": {
+      "path": "deployment/production/phase5-admission.example.json",
+      "sha256": "4cc7b08f554e60261178ab93d576c2b105294edc1790f241b86de873e9f189fc"
+    }
+  },
+  "p5_1": {
+    "formal_state": "blocked/not_proven",
+    "registry_contract": {
+      "path": "deployment/production/phase5-registry-contract.example.json",
+      "sha256": "0f254c40022da31d925e3a4a895865b37fb7d3f0e89cabafbdc97a9821289871"
+    }
+  },
+  "p5_2a": {
+    "formal_state": "blocked/not_proven",
+    "task_ledger_contract": {
+      "path": "deployment/production/phase5-task-ledger-contract.example.json",
+      "sha256": "bd97b07ddbd3f327ea461fa4d9a3e8d70eab2d81448f9c54384ae86449e5be88"
+    }
+  },
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      ".gitattributes",
+      "AGENTS.md",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/tests/test_p5_3a_planner_contract.py",
+      "deployment/production",
+      "scripts/production",
+      "docs/maintainers/maintenance-map.json",
+      "docs/maintainers/security-invariants.md",
+      "docs/maintainers/ai-maintainer-map.md",
+      "docs/phase-5-planner-contract.md",
+      "docs/phase-5-threat-model.md",
+      "docs/phase-5-agent-runtime-implementation-plan.md",
+      "docs/roadmap.md",
+      "docs/handover-report.md",
+      "docs/runbooks/p34-7-overlay-sla.md",
+      "sdk/contracts"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "phase5_planner_proposal_production_evidence",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    }
+  ],
+  "budget_ceilings": {
+    "input_tokens": 10000000,
+    "output_tokens": 5000000,
+    "reasoning_tokens": 5000000,
+    "total_tokens": 20000000,
+    "cost_micros": 10000000,
+    "model_calls": 5000,
+    "tool_calls": 2000,
+    "wall_clock_ms": 3600000,
+    "artifact_bytes": 1073741824,
+    "sandbox_jobs": 500,
+    "max_attempts": 32,
+    "max_parallel_steps": 8
+  },
+  "planner_policy": {
+    "schema_version": 1,
+    "policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "allowed_node_kinds": [
+      "model_reasoning",
+      "knowledge_read",
+      "aggregate",
+      "review",
+      "human_approval",
+      "artifact_read_proposal",
+      "artifact_write_proposal",
+      "sandbox_job_proposal"
+    ],
+    "allowed_tool_ids": [
+      "knowledge_search"
+    ],
+    "max_replan": 2,
+    "approval_policy": {
+      "low": "optional",
+      "medium": "optional",
+      "high": "required",
+      "critical": "required"
+    },
+    "ceilings": {
+      "max_nodes": 32,
+      "max_depth": 8,
+      "max_fan_out": 8,
+      "max_concurrency": 4,
+      "max_replan": 2,
+      "max_attempts_per_node": 2
+    }
+  },
+  "agent_version_snapshots": [
+    {
+      "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+      "agent_version_id": "11111111-1111-1111-1111-111111111111",
+      "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+      "tenant_id": "00000000-0000-0000-0000-00000000000a",
+      "version_state": "sealed",
+      "risk_level": "low",
+      "allowed_tool_ids": [
+        "knowledge_search"
+      ],
+      "resource_scopes": [
+        "workspace-docs"
+      ],
+      "instructions_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "tool_version_snapshots": [
+    {
+      "tool_id": "knowledge_search",
+      "tool_version": "1.0.0",
+      "tool_digest": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "effect_class": "read_only",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ],
+  "workspace_scope": {
+    "workspace_id": "66666666-6666-6666-6666-666666666666",
+    "workspace_generation": 1,
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "resource_scopes": [
+      "workspace-docs"
+    ],
+    "tool_binding_ids": [
+      "knowledge_search"
+    ],
+    "scope_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+  },
+  "frozen_task": {
+    "task_id": "00000000-0000-0000-0000-0000000000e1",
+    "task_generation": 1,
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "workspace_id": "66666666-6666-6666-6666-666666666666",
+    "workspace_generation": 1,
+    "actor_user_id": "00000000-0000-0000-0000-0000000000aa",
+    "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+    "agent_version_id": "11111111-1111-1111-1111-111111111111",
+    "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+    "resource_scope_digest": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+    "budget_policy_digest": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "deadline": "2026-08-12T00:00:00Z",
+    "task_budget": {
+      "input_tokens": 1000000,
+      "output_tokens": 500000,
+      "reasoning_tokens": 500000,
+      "total_tokens": 2000000,
+      "cost_micros": 100000,
+      "model_calls": 10,
+      "tool_calls": 5,
+      "wall_clock_ms": 60000,
+      "artifact_bytes": 1048576,
+      "sandbox_jobs": 1,
+      "max_attempts": 4,
+      "max_parallel_steps": 2
+    }
+  },
+  "plan_proposals": [
+    {
+      "schema_version": 1,
+      "proposal_id": "aa000000-aa00-aa00-aa00-aa0000000001",
+      "tenant_id": "00000000-0000-0000-0000-00000000000a",
+      "workspace_id": "66666666-6666-6666-6666-666666666666",
+      "workspace_generation": 1,
+      "task_id": "00000000-0000-0000-0000-0000000000e1",
+      "task_generation": 1,
+      "actor_user_id": "00000000-0000-0000-0000-0000000000aa",
+      "root_agent_definition_id": "00000000-0000-0000-0000-000000000001",
+      "root_agent_version_id": "11111111-1111-1111-1111-111111111111",
+      "root_agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+      "request_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "goal_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planner_policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "resource_scope_digest": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "budget_policy_digest": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+      "deadline": "2026-08-12T00:00:00Z",
+      "proposal_version": 1,
+      "created_at": "2026-08-05T00:00:00Z",
+      "nodes": [
+        {
+          "node_id": "bb000000-bb00-bb00-bb00-bb0000000001",
+          "node_kind": "model_reasoning",
+          "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+          "agent_version_id": "11111111-1111-1111-1111-111111111111",
+          "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+          "depends_on": [],
+          "input_bindings": [],
+          "output_contract": {
+            "output_schema": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "summary"
+              ]
+            },
+            "output_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "allowed_tool_ids": [
+            "knowledge_search"
+          ],
+          "resource_scopes": [
+            "workspace-docs"
+          ],
+          "risk_level": "low",
+          "budget": {
+            "input_tokens": 100000,
+            "output_tokens": 50000,
+            "reasoning_tokens": 50000,
+            "total_tokens": 200000,
+            "cost_micros": 10000,
+            "model_calls": 1,
+            "tool_calls": 1,
+            "wall_clock_ms": 10000,
+            "artifact_bytes": 102400,
+            "sandbox_jobs": 1,
+            "max_attempts": 1,
+            "max_parallel_steps": 1
+          },
+          "timeout_ms": 10000,
+          "retry_policy": {
+            "policy": "no_retry",
+            "max_retries": 0,
+            "backoff_base_ms": 0
+          },
+          "approval_requirement": null,
+          "effect_class": "read_only",
+          "execution_requirement": null,
+          "node_digest": "17c895687f87a9662b869e78c766fee4380ae326ee265a2b7a5e71e70acd7817"
+        }
+      ],
+      "plan_budget": {
+        "input_tokens": 1000000,
+        "output_tokens": 500000,
+        "reasoning_tokens": 500000,
+        "total_tokens": 2000000,
+        "cost_micros": 100000,
+        "model_calls": 10,
+        "tool_calls": 5,
+        "wall_clock_ms": 60000,
+        "artifact_bytes": 1048576,
+        "sandbox_jobs": 1,
+        "max_attempts": 4,
+        "max_parallel_steps": 2
+      },
+      "plan_risk_summary": {
+        "critical": 0,
+        "high": 0,
+        "low": 1,
+        "medium": 0
+      },
+      "proposal_digest": "2b68b997c14066c1b200a45b783fd4cf96bd034ec2db720fa0f694405de30313",
+      "parent_proposal_id": null,
+      "parent_proposal_version": null
+    }
+  ],
+  "forbidden_source_paths": [
+    "backend/src/omnibase/agent_runtime",
+    "backend/src/omnibase/agent_tasks",
+    "backend/src/omnibase/agent_task_ledger",
+    "backend/src/omnibase/agent_invocations",
+    "backend/src/omnibase/planner",
+    "backend/src/omnibase/executor",
+    "backend/src/omnibase/dispatcher",
+    "backend/src/omnibase/scheduler",
+    "backend/src/omnibase/multi_agent",
+    "backend/src/omnibase/tool_gateway"
+  ],
+  "baseline_migration_revisions": [
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+    "0011"
+  ],
+  "sealed_contracts": [
+    {
+      "name": "task_ledger_contract_module",
+      "path": "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+      "sha256": "1e8a15dc245eaf0cd2de4f4236851b14aad12f1b69d0eb300250124320224229"
+    },
+    {
+      "name": "registry_contract_module",
+      "path": "backend/src/omnibase/production/phase5_registry_contract.py",
+      "sha256": "c43d40e73a99f2efc38013034cbe16cc56cd38f0a71541a45f772adbae37e6ec"
+    },
+    {
+      "name": "admission_module",
+      "path": "backend/src/omnibase/production/phase5_admission.py",
+      "sha256": "d11c6037dd6ac30e30822906c357b86da59d76dcdcda9a87abc1d2ebdca376aa"
+    },
+    {
+      "name": "threat_model",
+      "path": "docs/phase-5-threat-model.md",
+      "sha256": "bbb1f5a87e66f64792c435fa0def65e4cd5c57aaf84cb522fd55b6d27ea13b2d"
+    },
+    {
+      "name": "maintainer_map",
+      "path": "docs/maintainers/maintenance-map.json",
+      "sha256": "22dd8114204de51c7fa9cf05efb2246abc3396e201641a36579cf919cc077eb9"
+    },
+    {
+      "name": "security_invariants",
+      "path": "docs/maintainers/security-invariants.md",
+      "sha256": "5e69fd9b5b6ad25a73687d9dfb38e22db5fca2a50ab96e438f46221df49c5fe4"
+    }
+  ],
+  "openapi_snapshot": {
+    "path": "sdk/contracts/p34-2-openapi.snapshot.json",
+    "sha256": "8506e273959b50c3030c5a8ea3b533181a89d5db2fa449dfe503076d163da373"
+  },
+  "critical_veto": {
+    "expected": 0
+  }
+}
