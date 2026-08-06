@@ -112,7 +112,7 @@ class _Authority:
     ) -> None:
         assert credential.trusted_context.tenant_id == context.tenant_id
         assert credential.trusted_context.workspace_id == context.workspace_id
-        assert context.run_fencing_token == 7
+        assert context.run_fencing_token == 1
 
 
 def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
