@@ -81,7 +81,7 @@ class _Resolver:
             parent_id=WORKSPACE,
             state="active",
             version=1,
-            policy_class="workspace_private",
+            policy_class="workspace_derived",
         )
 
 
@@ -135,7 +135,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
         )
         connection.execute(
             text(
-                "INSERT INTO omnibase_meta.resource_registry (id,tenant_id,kind,owner_type,owner_id,display_name,state,version,policy_class) VALUES (:id,:tenant,'knowledge_resource','workspace',:workspace,'P5.4B resource','active',1,'workspace_private') ON CONFLICT (id) DO NOTHING"
+                "INSERT INTO omnibase_meta.resource_registry (id,tenant_id,kind,owner_type,owner_id,display_name,state,version,policy_class) VALUES (:id,:tenant,'derived_index','workspace',:workspace,'P5.4B resource','active',1,'workspace_derived') ON CONFLICT (id) DO NOTHING"
             ),
             {"id": RESOURCE, "tenant": TENANT, "workspace": WORKSPACE},
         )
@@ -243,11 +243,13 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         knowledge_search=port,
     )
     assert isinstance(executor, TypedSingleAgentExecutor)
-    result = port.search(
+    result = executor.execute(
         context=context,
+        plan=plan,
         request=KnowledgeSearchRequest(resource_id=RESOURCE, query="composition", max_bytes=1_048_576),
     )
-    assert result.resource_id == RESOURCE
+    assert result.output.resource_id == RESOURCE
+    assert result.receipt.status == "succeeded"
     with db_engine.connect() as connection:
         assert (
             connection.execute(
