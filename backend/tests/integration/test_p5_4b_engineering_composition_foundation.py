@@ -230,7 +230,8 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         session_factory=lambda: Session(db_engine),
         credential_provider=lambda *, context: credential,
         authority_validator=_Authority(),
-    )
+        request_id_factory=lambda _context, _request: "p54b-search-1",
+
     executor = build_engineering_typed_executor(
         enabled=True,
         feature_gates={
