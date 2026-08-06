@@ -75,7 +75,7 @@ class _Resolver:
         return ResourceDescriptor(
             id=RESOURCE,
             tenant_id=TENANT,
-            kind="knowledge_resource",
+            kind="derived_index",
             owner_type="workspace",
             owner_id=WORKSPACE,
             parent_id=WORKSPACE,
