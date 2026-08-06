@@ -206,7 +206,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         core_verification=core,
     )
     credential = WorkloadCredential(
-        authorization="server-owned",
+        authorization="Capability server-owned",
         identity="runtime",
         trusted_context=TrustedWorkloadContext(
             opaque_identity="runtime",
