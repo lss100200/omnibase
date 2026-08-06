@@ -141,7 +141,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
         )
         connection.execute(
             text(
-                "INSERT INTO omnibase_meta.capability_grants (id,tenant_id,workspace_id,runtime_instance_id,workload_identity_digest,actor_user_id,actions,resource_ids,constraints,version,state,not_before,expires_at,max_calls,max_bytes,max_cost_units,delegation_depth,delegation_depth_limit,created_by_actor_type,created_by_actor_id) VALUES (:id,:tenant,:workspace,:runtime,NULL,:actor,ARRAY['rag.search']::varchar[],ARRAY[:resource]::uuid[],CAST(:constraints AS jsonb),1,'active',now(),now()+interval '10 minutes',100,104857600,100,0,0,'system',:actor) ON CONFLICT (id) DO NOTHING"
+                "INSERT INTO omnibase_meta.capability_grants (id,tenant_id,workspace_id,runtime_instance_id,workload_identity_digest,actor_user_id,actions,resource_ids,constraints,version,state,not_before,expires_at,max_calls,max_bytes,max_cost_units,delegation_depth,delegation_depth_limit,created_by_actor_type,created_by_actor_id) VALUES (:id,:tenant,:workspace,:runtime,NULL,:actor,ARRAY['rag.search']::varchar[],ARRAY[:resource]::uuid[],CAST(:constraints AS jsonb),1,'active',now(),now()+interval '10 minutes',100,1048576,100,0,0,'system',:actor) ON CONFLICT (id) DO NOTHING"
             ),
             {
                 "id": GRANT,
@@ -191,7 +191,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         actor_user_id=ACTOR,
         action="rag.search",
         resource_id=RESOURCE,
-        constraints={"max_bytes": 10_485_760, "timeout_ms": 3000},
+        constraints={"max_bytes": 128, "timeout_ms": 3000},
     )
     capability = VerifiedCapability(
         tenant_id=TENANT,
@@ -202,7 +202,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         token_jti=claims.jti,
         actions=frozenset({"rag.search"}),
         resource_ids=frozenset({RESOURCE}),
-        constraints=CapabilityConstraints(max_bytes=10_485_760, max_timeout_ms=3000),
+        constraints=CapabilityConstraints(max_bytes=128, max_timeout_ms=3000),
         core_verification=core,
     )
     credential = WorkloadCredential(
