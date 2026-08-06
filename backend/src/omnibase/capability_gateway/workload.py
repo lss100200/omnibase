@@ -185,6 +185,7 @@ class SqlAlchemyRunLeaseWorkloadAttestor(WorkloadAttestor):
             workspace_id=evidence.workspace_id,
             runtime_instance_id=evidence.runtime_instance_id,
             certificate_thumbprint=evidence.certificate_thumbprint,
+            workload_identity_digest=facts.workload_identity_digest,
         )
 
 

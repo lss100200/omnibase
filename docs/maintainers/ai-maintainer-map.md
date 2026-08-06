@@ -1299,10 +1299,11 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   fencing must match exactly. Stale or revoked authority is rejected.
 - The disposable runner
   `scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`
-  uses only an `omnibase_test_p54b_*` sentinel. Its evidence must state
-  migration `0012`, no migration `0013`, production/runtime and feature gates
-  disabled, root `.env` and business database untouched, and cleanup `0/0/0`.
-  It is not production evidence.
+  uses only an `omnibase_test_p54b_*` sentinel. Gate v2 writes unique run-scoped
+  evidence under `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`, preserves
+  the legacy evidence directory as superseded/incomplete, and independently
+  verifies raw command sidecars, source/artifact digests, measured head and
+  cleanup `0/0/0`. It is not production evidence.
 - SHA-256 source manifests and evidence are sealed raw-byte chains. Never edit
   historical evidence to repair a mismatch. Stop admission, retain the old
   chain and forward-fix from a clean checkout with a new explicit seal.

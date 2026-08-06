@@ -1756,12 +1756,14 @@ generations, active unexpired lease, runtime identity, verified node and exact
 Run/Node fencing.
 
 The P5.4B disposable Gate may use only an isolated `omnibase_test_p54b_*`
-sentinel and must pin the sentinel migration head to `0012`. It must record
+sentinel and must pin the sentinel migration head to `0012`. Gate v2 records
 production/runtime and feature gates disabled, migration `0013` absent, root
 `.env` and business database untouched, external network unused, and cleanup
-`0/0/0`. Raw-byte source manifests and evidence SHA-256 chains are sealed
-records: digest drift stops admission and requires a forward fix from a clean
-checkout; historical chains must not be rewritten or replaced.
+`0/0/0` under a unique run-scoped directory. It preserves the legacy evidence
+chain as superseded/incomplete, captures raw command/exit-code sidecars, and
+independently seals source, artifact and evidence bytes. Digest drift stops
+admission and requires a forward fix from a clean checkout; historical chains
+must not be rewritten or replaced.
 
 **Allowed changes**
 

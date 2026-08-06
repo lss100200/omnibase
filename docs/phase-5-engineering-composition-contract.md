@@ -50,12 +50,16 @@ composition inputs.
 
 ## Authority revalidation
 
-`LiveRuntimeAuthorityValidator` reads the live task, Agent Run, Workspace Run
-lease and Workspace Node rows in a fresh session before each Gateway call. It
-requires matching tenant/workspace/task/run generations, an active unexpired
-lease, matching run and node fencing tokens, a live runtime identity and a
-verified active node. A stale, revoked, expired or mismatched fact rejects the
-call before the Gateway boundary.
+`LiveRuntimeAuthorityValidator` reads the live task, Agent Run, Workspace Run and
+RunLease rows in a fresh session before each Gateway call. The persisted chain is
+`AgentRun.workspace_run_id -> WorkspaceRun.id -> RunLease.run_id`; an
+`AgentRun.id` is never treated as the `WorkspaceRun.id`. It requires matching
+tenant/workspace/task/run generations, task and AgentVersion digests, runtime and
+workload identity, an active unexpired lease using the same database clock,
+matching run and node fencing tokens, and a live active node with a verified,
+unexpired attestation. A stale, revoked, expired or mismatched fact rejects the
+call before the Gateway boundary. The formal builder always installs this live
+validator and does not accept an injected authority-validator bypass.
 
 The runtime identity and workload digest are server-owned and must be bound to
 the same P34 Workspace Run and P5 Agent Run. Terminalization clears the live
@@ -63,11 +67,15 @@ lease, fencing and runtime bindings; an old holder cannot resume the run.
 
 ## Evidence and recovery
 
-The current-baseline disposable Gate is
-`scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`. It
-uses only an isolated `omnibase_test_p54b_*` PostgreSQL sentinel, upgrades that
-sentinel to `0012`, runs the focused integration suite, and verifies mandatory
-`0/0/0` cleanup. It must never be described as a production Gate.
+The Gate has two evidence generations. The historical artifacts under the
+legacy `.tmp/p5-4b-engineering-composition-gate` directory are retained and
+marked superseded/incomplete. Gate v2 writes every artifact into a unique
+run-scoped directory under `.tmp/p5-4b-engineering-composition-gate-v2/`,
+records raw command outputs and exit-code sidecars, measures the sentinel
+Alembic head and cleanup, and independently recomputes source, artifact and
+evidence SHA-256 digests. Failed runs remain retained but cannot verify as a
+successful seal. A v2 disposable run proves only the documented sentinel and
+composition boundary; it does not unlock production.
 
 The Gate and its evidence explicitly record:
 

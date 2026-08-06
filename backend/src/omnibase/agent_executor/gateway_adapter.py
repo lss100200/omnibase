@@ -8,6 +8,7 @@ loops never enter this boundary.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from importlib import import_module
 from typing import Any, Protocol, cast
@@ -130,8 +131,9 @@ class CapabilityGatewayKnowledgeSearchPort(KnowledgeSearchPort):
             max_bytes=request.max_bytes,
         )
         request_id = self._request_id_factory(context, request)
-        if not isinstance(request_id, str) or not request_id or len(request_id) > 128:
+        if not isinstance(request_id, str) or not request_id or len(request_id) > 64:
             raise GatewayAdapterError("invalid_request_id")
+        request_id = request_id[:64]
 
         session = self._session_factory()
         try:
@@ -173,6 +175,8 @@ def _validate_server_credential(
         raise GatewayAdapterDenied("workload_workspace_mismatch")
     if not trusted.runtime_instance_id or not trusted.opaque_identity:
         raise GatewayAdapterDenied("workload_runtime_identity_missing")
+    if not trusted.workload_identity_digest:
+        raise GatewayAdapterDenied("workload_identity_digest_missing")
 
 
 def _convert_response(*, resource_uuid: UUID, response: Any) -> KnowledgeSearchResult:
@@ -223,8 +227,16 @@ def _default_request_id(
     context: ExecutorInvocationContext,
     request: KnowledgeSearchRequest,
 ) -> str:
-    del request
-    return f"p54a-{context.run_id}-{context.task_id}-{context.node_id}"
+    material = "|".join(
+        (
+            context.run_id,
+            context.task_id,
+            context.node_id,
+            request.resource_id,
+            request.request_digest,
+        )
+    ).encode("utf-8")
+    return f"p54a-{hashlib.sha256(material).hexdigest()[:59]}"
 
 
 __all__ = [

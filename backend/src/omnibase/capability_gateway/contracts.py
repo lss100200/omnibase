@@ -375,6 +375,14 @@ class TrustedWorkloadContext:
     workspace_id: str
     runtime_instance_id: str
     certificate_thumbprint: str
+    workload_identity_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.workload_identity_digest is not None:
+            import re
+
+            if re.fullmatch(r"[0-9a-f]{64}", self.workload_identity_digest) is None:
+                raise ValueError("workload_identity_digest must be a lowercase SHA-256 digest")
 
 
 @dataclass(frozen=True)

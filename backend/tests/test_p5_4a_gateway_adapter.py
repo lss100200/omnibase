@@ -78,7 +78,8 @@ def _credential(*, tenant_id: str = TENANT, workspace_id: str = WORKSPACE) -> Wo
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             runtime_instance_id="runtime-1",
-            certificate_thumbprint="thumbprint",
+            certificate_thumbprint="a" * 64,
+            workload_identity_digest="a" * 64,
         ),
     )
 

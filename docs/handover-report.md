@@ -2719,11 +2719,20 @@ P5.4B integration suite；它不是 production Gate。正式 evidence 必须明�
 证据均为 raw-byte SHA-256 sealed chain；历史链不得重写，digest drift 必须
 停止 admission 并从 clean checkout forward-fix。
 
-本轮只更新文档，未修改
-`backend/src/omnibase/production/composition.py`，未修改 P5.4B disposable
-Gate 脚本，也未读取 root `.env` 或 push。验证命令和实际结果必须以本节所在
-提交之后的 clean checkout 重跑结果为准；文档合同本身不替代 disposable
-sentinel、migration 或 production admission evidence。
+本轮修复已继续完成 live-authority disposable integration 的 forward-fix：seed 不再尝试违反
+`agent_task` immutable identity trigger 的 upsert，而是在受保护的 sentinel 中删除并重建
+固定测试 Run/Task/Lease 记录，同时刷新 verified NodeAttestation 的时间窗口。真实
+`AgentRun.id`、`WorkspaceRun.id` 与 `RunLease.run_id` 关系已通过正式 builder 和
+`LiveRuntimeAuthorityValidator` 验证，P5.4B integration 当前 `2 passed`；focused
+P5.4A/P5.4B 回归当前 `30 passed`。这仍只是 engineering composition proof，不能写成
+admission 或 production readiness。
+
+Gate v2 已改为唯一 run-scoped evidence 目录 `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`，
+保留旧 `.tmp/p5-4b-engineering-composition-gate` 不变并视为 superseded/incomplete；v2
+记录命令输出、exit-code sidecars、sentinel Alembic head、cleanup 与 source/artifact/raw-byte
+SHA-256 seal，并提供独立 `--verify-evidence` 路径。v2 的实际 `--run`、证据复验和完整
+negative integration matrix 尚未完成，因此当前状态仍为 `P5.4B engineering composition
+admission=not proven`、`production blocked/not_proven`。
 
 ---
 
@@ -2772,3 +2781,79 @@ Feature Gates 保持 false。
 → P5.6C catalog/install/rollback API+UI → P5.6D instruction Skill exact-version
 pin。workflow 等 P5.3/P5.4，script 等 production P34.5/P34.7，MCP/third-party
 Marketplace 等 Phase 6。
+
+---
+
+### 产品交付、Runtime 分级与跨平台路线批准（2026-08-07）
+
+用户批准调整 OmniBase 的后续产品化方向：不再把高安全 Sandbox 的最终生产
+准入作为所有 Agent 用户价值的唯一前置条件；同时也不降低 P34、Capability
+Gateway、lease/fencing、workload identity、预算、审计和 fail-closed 边界。
+项目采用“先交付低风险 Agent，按执行风险分级解锁后端”的双线策略。
+
+产品运行姿态冻结为三个等级：
+
+- **Lite**：面向 macOS、低配 PC、无 Hyper-V/KVM 或不希望安装本地容器运行时的
+  用户。允许 Workspace、云端 LLM、只读知识检索、无工具/低风险单 Agent 与
+  Agent Builder；禁止任意代码、Shell、SQL、任意 HTTP、高风险插件和敌对代码
+  Sandbox。设备能力不足时应降级功能，而不是让整个工作台不可用。
+- **Local**：面向具备 Docker/Podman 或受支持本地运行时的普通开发设备。允许
+  本地数据库、RAG、可选本地模型和后续经合同准入的低风险工具；普通容器不得
+  被描述为敌对代码的强安全边界。
+- **Hardened**：面向通过 Hyper-V/KVM、独立或远程 Runner、PrivateNetwork
+  Broker、mTLS Gateway、Run/Network lease 与 fencing 等正式准入的宿主。只有
+  此等级在 P34.7 生产 Gate 真实通过后，才可承载高风险插件、任意代码或敌对
+  workload。
+
+控制平面不得继续把 Hyper-V、WSL、Docker 或特定 Windows 内核实现当作所有
+功能的硬依赖。后续应建立 provider-neutral `ExecutionBackend` 边界，至少规划：
+
+- `NoToolBackend`：云模型、只读 RAG 和无工具 Agent；
+- `LocalContainerBackend`：用户信任的本地受控任务，不宣称 hostile-code
+  isolation；
+- `HardenedSandboxBackend`：P34.5/P34.7 强隔离链路；
+- `RemoteRunnerBackend`：让 macOS、低配 PC 和无本地虚拟化设备把高风险执行
+  委托给用户控制的 Linux/Runner 主机。
+
+近期优先级同步调整为：
+
+1. 完成 P5.4B Review-Fix，证明真实
+   `ValidatedPlan -> engineering composition -> TypedSingleAgentExecutor ->
+   CapabilityGatewayKnowledgeSearchPort -> GatewayService.rag_search -> receipt`
+   链路；
+2. 交付第一个可理解、可创建、可运行的 Lite 单 Agent 与 Workspace 闭环；
+3. 建立 Execution Backend 能力探测、分级拒绝和降级合同，再推进 Hardened
+   P34.7 production admission；
+4. 增加中英文图文 Quick Start、Demo Workspace、部署/首个 Agent 视频和明确的
+   能力状态矩阵；普通贡献入口与核心安全维护合同分层，降低首次贡献门槛；
+5. 规划轻量桌面启动器，优先承担安装、升级、端口检查、Runtime/GPU 探测、
+   服务启停、日志和脱敏诊断包，不以隐藏命令行为由隐藏失败原因；
+6. 增加 GPU/CPU/Apple Silicon/远程模型能力档位，优先治理 BGE embedding/
+   reranker 的常驻、异步预热、readiness、keep-alive、缓存、批处理和显式降级，
+   而不是只提供驱动安装脚本。
+
+社区交付必须如实区分 `available`、`alpha`、`engineering-only`、`contract-only`、
+`locked` 与 `blocked/not_proven`。Quick Start 和宣传材料不得把 Roadmap、
+Disposable Gate 或 engineering seam 写成 production availability。
+
+当前 P5.4B 外部实现仍处于 Review-Fix：独立审查确认其首次 disposable integration
+绕过新增 composition/`LiveRuntimeAuthorityValidator`，并发现 AgentRun ID 与
+WorkspaceRun/RunLease ID 混用、负向矩阵不足以及 source/evidence seal 不完整。
+因此旧 P5.4B evidence 只能标记为 superseded/incomplete，不能声明
+`engineering_composition_ready=true`。外部模型正在同一独立工作树执行修复；
+在其完成并经独立复验前，不开始本节其余实现工作。
+
+本次批准仅更新路线和交接文档，不授权 migration `0013`、production Runtime
+激活、三个 Phase 5 Feature Gate 开启、Browser execution API、高风险插件、
+Sandbox production wiring、业务数据库迁移、push、PR 或 merge。当前状态继续为：
+
+```text
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+P34.7=blocked/not_proven
+P5.4B engineering composition admission=not proven
+production Runtime=disabled
+```
