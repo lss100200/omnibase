@@ -151,7 +151,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
                 "digest": "3" * 64,
                 "actor": ACTOR,
                 "resource": RESOURCE,
-                "constraints": '{"max_bytes":512,"timeout_ms":3000}',
+                "constraints": '{"max_result_bytes":512,"timeout_ms":3000}',
             },
         )
         connection.execute(
