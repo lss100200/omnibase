@@ -2136,8 +2136,10 @@
         "backend/src/omnibase/agent_executor/**",
         "backend/src/omnibase/production/phase5_planner_contract.py",
         "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
         "deployment/production/phase5-typed-executor.example.json",
         "docs/phase-5-typed-executor-contract.md",
+        "scripts/production/run_p5_4a_gateway_adapter_gate.py",
         "docs/maintainers/security-invariants.md",
         "docs/maintainers/ai-maintainer-map.md",
         "Makefile"
@@ -2146,11 +2148,13 @@
         "backend/src/omnibase/agent_executor/service.py:TypedSingleAgentExecutor",
         "backend/src/omnibase/agent_executor/service.py:UnavailableTypedSingleAgentExecutor",
         "backend/src/omnibase/agent_executor/service.py:build_engineering_typed_executor",
-        "backend/src/omnibase/agent_executor/contracts.py:KnowledgeSearchPort"
+        "backend/src/omnibase/agent_executor/contracts.py:KnowledgeSearchPort",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py:CapabilityGatewayKnowledgeSearchPort"
       ],
       "public_interfaces": [
         "Internal typed executor DTOs carrying only bounded logical identifiers and data",
         "Exactly one knowledge_search -> workspace.knowledge.search read-only capability",
+        "Explicit GatewayService.rag_search adapter with server-owned credential and lease/fencing revalidation",
         "Default unavailable engineering seam; no Browser route, SDK, persistence or production Runtime activation"
       ],
       "depends_on": [
@@ -2167,15 +2171,17 @@
         "INV-049"
       ],
       "verification": [
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4a_typed_executor.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py -q",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_executor",
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py",
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py"
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
+        "python scripts/production/run_p5_4a_gateway_adapter_gate.py --validate-only"
       ],
       "recovery": [
         "The default builder must remain UnavailableTypedSingleAgentExecutor. Never fall back to direct database/RAG access when a Gateway port is absent.",
         "Keep migration 0013, Browser APIs, queue/worker/scheduler, tools, MCP, Skills, Shell, SQL, arbitrary HTTP, Sandbox and multi-Agent frozen until a separately admitted Gate exists.",
-        "A future Gateway adapter must record budget, authorization, audit, lease/fencing and unknown no-replay evidence before this seam can be considered executable."
+        "The Gateway adapter must not accept Browser JWTs or physical locators, must revalidate runtime/lease/fencing before each call, and must not retry unknown outcomes.",
+        "A disposable Gate must record budget, authorization, audit, lease/fencing and unknown no-replay evidence before this seam can be considered executable."
       ]
     },
     {

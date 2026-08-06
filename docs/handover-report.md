@@ -2667,9 +2667,19 @@ Sandbox 或 multi-Agent。
 
 P5.4A focused `11 passed`、compileall、Ruff check/format、Mypy（3 files）和维护者
 地图/benchmark validator 均通过。三个 Phase 5 Feature Gates 保持 false，
-production Runtime 仍不激活；下一步是给这个 seam 接入明确的 Capability Gateway
-adapter，并在 disposable sentinel 中证明 tenant/workspace scope、budget、Audit、
-fencing 和 unknown no-replay，而不是直接开放更多工具。
+production Runtime 仍不激活。随后加入了显式的
+`CapabilityGatewayKnowledgeSearchPort`：它只接受 server-owned
+`WorkloadCredential`，调用独立 `GatewayService.rag_search`，在调用前执行注入的
+runtime/lease/fencing validator，拒绝 Browser JWT、物理 locator 和未知重放，并在
+每次尝试后关闭 Session。typed executor + adapter focused 结果为 `19 passed`，
+Ruff、compileall、Mypy（4 files）均通过。
+
+本轮新增 `scripts/production/run_p5_4a_gateway_adapter_gate.py`。其 adapter contract
+Gate 已运行并封存证据到 git-ignored `.tmp/p5-4a-gateway-adapter-gate/`，证明
+scope、budget、Gateway audit 调用边界、lease/fencing revalidation 和 unknown
+no-replay；它明确记录 `database_sentinel_verified=false`，因为 Docker Desktop
+Linux Engine 当时未运行。因此这不是 PostgreSQL/container Gate，也不能称为
+production PASS。下一步是 Docker 恢复后补跑真正的 sentinel Gateway/数据库集成 Gate。
 
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 

@@ -1745,7 +1745,9 @@ Task、Run fencing、AgentVersion digest 和 node identity。
 
 P5.4A 的 node 必须是 low risk、`read_only` effect、未扩大 tool allowlist，且
 tool budget 与 response bytes 不能超过 server-owned ceilings。结果只能通过
-注入的 Capability-Gateway-backed `KnowledgeSearchPort` 获得；默认 builder 必须
+注入的 Capability-Gateway-backed `KnowledgeSearchPort` 获得；当前唯一实现
+`CapabilityGatewayKnowledgeSearchPort` 必须使用 server-owned `WorkloadCredential`、
+独立 Gateway 的 `rag_search` 和每次调用前的 runtime/lease/fencing validator；默认 builder 必须
 返回 `UnavailableTypedSingleAgentExecutor`，不能因为缺少 adapter、attestor、
 verifier 或 Gateway wiring 而回退为直连数据库/RAG、允许执行或宽松鉴权。
 

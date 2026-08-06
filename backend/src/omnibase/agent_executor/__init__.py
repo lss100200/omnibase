@@ -12,6 +12,15 @@ from omnibase.agent_executor.contracts import (
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
 )
+from omnibase.agent_executor.gateway_adapter import (
+    CapabilityGatewayKnowledgeSearchPort,
+    GatewayAdapterDenied,
+    GatewayAdapterError,
+    GatewayAdapterUnavailable,
+    RuntimeAuthorityValidator,
+    ServerWorkloadCredentialProvider,
+    SessionFactory,
+)
 from omnibase.agent_executor.service import (
     TypedExecutorError,
     TypedExecutorPolicyDenied,
@@ -24,14 +33,21 @@ from omnibase.agent_executor.service import (
 __all__ = [
     "KNOWLEDGE_SEARCH_CAPABILITY",
     "KNOWLEDGE_SEARCH_TOOL_ID",
+    "CapabilityGatewayKnowledgeSearchPort",
     "ExecutorContractError",
     "ExecutorInvocationContext",
     "ExecutorNodeResult",
     "ExecutorToolReceipt",
+    "GatewayAdapterDenied",
+    "GatewayAdapterError",
+    "GatewayAdapterUnavailable",
     "KnowledgeSearchHit",
     "KnowledgeSearchPort",
     "KnowledgeSearchRequest",
     "KnowledgeSearchResult",
+    "RuntimeAuthorityValidator",
+    "ServerWorkloadCredentialProvider",
+    "SessionFactory",
     "TypedExecutorError",
     "TypedExecutorPolicyDenied",
     "TypedExecutorUnavailable",

@@ -33,6 +33,7 @@
     "tracked_pathspecs": [
       "AGENTS.md",
       "backend/src/omnibase/agent_executor",
+      "backend/tests/test_p5_4a_gateway_adapter.py",
       "backend/src/omnibase/production/phase5_planner_contract.py",
       "backend/tests/test_p5_4a_typed_executor.py",
       "deployment/production/phase5-typed-executor.example.json",
@@ -40,6 +41,7 @@
       "docs/phase-5-planner-contract.md",
       "docs/phase-5-typed-executor-contract.md",
       "docs/phase-5-threat-model.md",
+      "scripts/production/run_p5_4a_gateway_adapter_gate.py",
       "Makefile"
     ]
   },

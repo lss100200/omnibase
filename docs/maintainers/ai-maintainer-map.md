@@ -1266,10 +1266,17 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   identity, AgentVersion digest, node kind, low risk, read-only effect, tool
   allowlist and node byte/tool budgets before calling the injected
   `KnowledgeSearchPort`.
-- The default builder is `UnavailableTypedSingleAgentExecutor`. No Browser route,
-  SDK, queue, worker, scheduler, migration `0013`, production Gateway wiring or
-  direct database/RAG fallback may be added as a shortcut. The adapter must be
-  Capability-Gateway-backed and must return only logical, bounded DTOs.
+- The default builder is `UnavailableTypedSingleAgentExecutor`. The explicit
+  `CapabilityGatewayKnowledgeSearchPort` uses a server-owned workload credential,
+  the independent `GatewayService.rag_search` boundary and an injected
+  runtime/lease/fencing validator; it rejects Browser JWTs, physical locators
+  and unknown-result retries, returning only logical, bounded DTOs. No Browser
+  route, SDK, queue, worker, scheduler, migration `0013`, production Gateway
+  wiring or direct database/RAG fallback may be added as a shortcut.
+- `scripts/production/run_p5_4a_gateway_adapter_gate.py` currently seals only
+  adapter-contract evidence. It must not be described as a PostgreSQL/container
+  or production Gate until the Docker-backed sentinel run records its own
+  evidence.
 - P5.4A deliberately does not implement tools, MCP, Skills, Shell, SQL, arbitrary
   HTTP, Sandbox execution or multi-Agent orchestration. All three Phase 5 Feature
   Gates remain false and P34.7 production admission remains blocked/not_proven.

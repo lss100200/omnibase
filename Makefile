@@ -287,7 +287,7 @@ test-p5-3a-planner-contract: ## 离线 P5.3A Planner Proposal 合同预检（val
 
 test-p5-4a-typed-executor: ## 离线 P5.4A 单 Agent typed Executor 合同预检（无数据库、无运行时）
 	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace/backend backend \
-	  pytest tests/test_p5_4a_typed_executor.py -q
+	  pytest tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py -q
 	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace/backend backend \
 	  python -m compileall -q src/omnibase/agent_executor
 
