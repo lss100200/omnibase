@@ -587,6 +587,28 @@
       ]
     },
     {
+      "id": "INV-050",
+      "title": "P5.4B engineering composition is fail-closed, migration-0012-bound and non-production",
+      "document": "docs/maintainers/security-invariants.md#inv-050-p54b-engineering-composition",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py",
+        "backend/src/omnibase/agent_executor/service.py",
+        "backend/src/omnibase/capability_gateway/**",
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/workspaces/**",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
+        "docs/phase-5-engineering-composition-contract.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py"
+      ]
+    },
+    {
       "id": "INV-049",
       "title": "First-party native Skill manifests are compile-only, exact-version, non-escalating and evidence-bound",
       "document": "docs/maintainers/security-invariants.md#inv-049-first-party-native-skill-contract",
@@ -2127,6 +2149,63 @@
       "recovery": [
         "Keep Planner Runtime, AGENT_PLANNER_ENABLED and all other Phase 5 gates false; a valid proposal never grants authority or starts execution.",
         "If a digest, scope, budget or evidence reference drifts, freeze admission and rebuild from a clean checkout. Do not persist or execute the proposal."
+      ]
+    },
+    {
+      "id": "engineering-composition",
+      "name": "P5.4B engineering-only composition and recovery evidence",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "backend/src/omnibase/agent_executor/contracts.py",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py",
+        "backend/src/omnibase/agent_executor/service.py",
+        "backend/src/omnibase/capability_gateway/**",
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/workspaces/**",
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
+        "deployment/production/composition.example.json",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
+        "docs/phase-5-engineering-composition-contract.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_executor/engineering.py:build_engineering_single_agent_executor",
+        "backend/src/omnibase/agent_executor/engineering.py:LiveRuntimeAuthorityValidator",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "Internal engineering composition of the existing typed knowledge_search executor",
+        "Server-owned workload credential seam and live runtime/lease/fencing revalidation",
+        "Disposable sentinel evidence only; no Browser route, SDK or production Runtime"
+      ],
+      "depends_on": [
+        "typed-single-agent-executor",
+        "p5-task-ledger-persistence",
+        "agent-alpha-engineering-runtime",
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-043",
+        "INV-044",
+        "INV-050"
+      ],
+      "verification": [
+        "python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only",
+        "python -m pytest backend/tests/test_p34_7_production_composition.py -q",
+        "python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q",
+        "python -m compileall -q backend/src/omnibase/agent_executor",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep P5.4B unavailable unless the explicit engineering flag, migration head 0012, all-false Phase 5 gates and every injected dependency pass strict checks.",
+        "Keep production Runtime activation false and migration 0013 absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
+        "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
       ]
     },
     {

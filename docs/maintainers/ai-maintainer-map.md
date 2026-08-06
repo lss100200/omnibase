@@ -1281,7 +1281,44 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   HTTP, Sandbox execution or multi-Agent orchestration. All three Phase 5 Feature
   Gates remain false and P34.7 production admission remains blocked/not_proven.
 
-## 6.14 P5.6A first-party native Skill contract
+## 6.14 P5.4B engineering composition and evidence recovery
+
+- `backend/src/omnibase/agent_executor/engineering.py` is an internal,
+  **engineering-only** composition seam over P5.4A. The default is
+  `UnavailableEngineeringSingleAgentExecutor`; no Browser route, SDK, queue,
+  worker, scheduler or production Runtime is installed by this module.
+- `build_engineering_single_agent_executor()` admits only an explicit
+  engineering flag, migration head exactly `0012`, all three Phase 5 Feature
+  Gates false, and explicitly injected Gateway/session/server-owned workload
+  credential dependencies. It never migrates or connects merely to inspect the
+  head. Production activation is disabled and migration `0013` is not created.
+- The only composed capability remains `knowledge_search` →
+  `workspace.knowledge.search`. `LiveRuntimeAuthorityValidator` re-reads live
+  Task, Agent Run, Workspace RunLease and Workspace Node facts before each call;
+  tenant/workspace/generation, runtime identity, lease expiry and Run/Node
+  fencing must match exactly. Stale or revoked authority is rejected.
+- The disposable runner
+  `scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`
+  uses only an `omnibase_test_p54b_*` sentinel. Its evidence must state
+  migration `0012`, no migration `0013`, production/runtime and feature gates
+  disabled, root `.env` and business database untouched, and cleanup `0/0/0`.
+  It is not production evidence.
+- SHA-256 source manifests and evidence are sealed raw-byte chains. Never edit
+  historical evidence to repair a mismatch. Stop admission, retain the old
+  chain and forward-fix from a clean checkout with a new explicit seal.
+
+Focused commands:
+
+```text
+python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only
+python -m pytest backend/tests/test_p34_7_production_composition.py -q
+python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q
+python -m compileall -q backend/src/omnibase/agent_executor
+python scripts/maintenance/validate_maintainer_map.py --repo-root .
+python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+```
+
+## 6.15 P5.6A first-party native Skill contract
 
 - The product Skill contract is
   `backend/src/omnibase/production/phase5_skill_contract.py`. P5.6A is strictly

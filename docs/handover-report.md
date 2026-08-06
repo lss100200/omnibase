@@ -2689,6 +2689,44 @@ P34.2 capability foundation 与 P34.6 Gateway Core 集成，共 `7 passed`，并
 `production_runtime_activated=false`、三个 Feature Gates 为 false、migration
 `0013` 未创建。
 
+### P5.4B engineering composition and evidence recovery（2026-08-07）
+
+本轮把 P5.4A typed Executor 的内部组合边界记录为独立的 P5.4B
+engineering-only contract。新增
+`docs/phase-5-engineering-composition-contract.md`，并同步维护者地图、
+安全不变量、AI 维护者地图和本交接报告；未把该 seam 扩大为 Browser/API、SDK、
+队列、Worker、Scheduler、Provider production wiring 或 Agent Runtime。
+生产激活明确保持 disabled，三个 Phase 5 Feature Gates 保持
+`false / false / false`，migration head 固定为 `0012`，未创建 migration
+`0013`。
+
+P5.4B 的显式 builder 只有在 engineering flag 精确开启、migration head
+为 `0012`、三个 Feature Gates 全 false 且 Gateway、session factory 和
+server-owned workload credential seam 都被显式注入时才组合真实 executor；
+否则返回 unavailable。每次 Gateway 调用前，live Task、Agent Run、Workspace
+RunLease 和 Workspace Node 的 tenant/workspace/generation、runtime identity、
+lease expiry、node/run fencing 与 verified attestation 必须重新匹配。唯一
+能力仍为 `knowledge_search -> workspace.knowledge.search`，不接受 Browser
+JWT、physical locator、provider secret、host path 或任意 tool 扩展。
+
+当前 disposable runner 为
+`scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`，仅
+使用隔离 `omnibase_test_p54b_*` sentinel，升级 sentinel 到 `0012` 并运行
+P5.4B integration suite；它不是 production Gate。正式 evidence 必须明确
+记录 production Runtime 未激活、Feature Gates 全 false、migration `0013`
+未创建、root `.env` 未访问、business database 未访问/迁移、external network
+未访问以及 cleanup `containers=0, networks=0, volumes=0`。source manifest 和
+证据均为 raw-byte SHA-256 sealed chain；历史链不得重写，digest drift 必须
+停止 admission 并从 clean checkout forward-fix。
+
+本轮只更新文档，未修改
+`backend/src/omnibase/production/composition.py`，未修改 P5.4B disposable
+Gate 脚本，也未读取 root `.env` 或 push。验证命令和实际结果必须以本节所在
+提交之后的 clean checkout 重跑结果为准；文档合同本身不替代 disposable
+sentinel、migration 或 production admission evidence。
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、

@@ -1734,6 +1734,74 @@ server-owned runtime identity 与非占位 workload digest 绑定到 P34 Workspa
 必须严格留出终结余量。Server-created Model Gateway Node identity 绑定 deployment
 instance，attestation 为短期；revoked/rejected Node 不得被原地复活。
 
+## INV-050 p54b-engineering-composition
+
+P5.4B is an **engineering-only** composition seam over the P5.4A typed
+single-Agent Executor. `build_engineering_single_agent_executor()` must remain
+fail closed unless the explicit engineering flag is enabled, migration head is
+exactly `0012`, all three Phase 5 Feature Gates are false, and the Gateway,
+server-owned workload credential seam and session factory are explicitly
+injected. The builder never migrates or connects merely to inspect the head.
+Production Runtime activation remains disabled and migration `0013` is not
+created.
+
+The composition exposes only `knowledge_search -> workspace.knowledge.search`.
+The Gateway adapter accepts server-owned `WorkloadCredential` material and
+bounded logical DTOs only; Browser JWTs, physical PostgreSQL/object-store
+locators, provider secrets, host paths, process/socket handles and arbitrary
+tool expansion remain forbidden. `LiveRuntimeAuthorityValidator` must read
+live Task, Agent Run, Workspace RunLease and Workspace Node facts in a fresh
+session before each Gateway call, requiring matching tenant/workspace/task/run
+generations, active unexpired lease, runtime identity, verified node and exact
+Run/Node fencing.
+
+The P5.4B disposable Gate may use only an isolated `omnibase_test_p54b_*`
+sentinel and must pin the sentinel migration head to `0012`. It must record
+production/runtime and feature gates disabled, migration `0013` absent, root
+`.env` and business database untouched, external network unused, and cleanup
+`0/0/0`. Raw-byte source manifests and evidence SHA-256 chains are sealed
+records: digest drift stops admission and requires a forward fix from a clean
+checkout; historical chains must not be rewritten or replaced.
+
+**Allowed changes**
+
+- Tighten the engineering composition's closed flag, migration, identity,
+  fencing, DTO or fail-closed checks.
+- Add focused negative tests and maintainer/evidence documentation without
+  adding Browser/API, SDK, persistence or production Runtime authority.
+- Add a new isolated disposable evidence run only with explicit sentinel
+  prefixes, explicit cleanup and a newly sealed manifest.
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating a disposable Gate as production admission.
+- Falling back to direct database/RAG access, Browser credentials, provider
+  clients, arbitrary tools, queue/worker scheduling or a second capability.
+- Mutating historical sealed evidence, bypassing clean-checkout/source digest
+  checks, reading the root `.env`, or touching the business database.
+- Changing production composition implementation or a sealed/disposable Gate
+  script as a documentation-only maintenance task.
+
+**Required verification**
+
+- `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p5_4a_typed_executor.py`
+- `backend/tests/test_p5_4a_gateway_adapter.py`
+- `backend/tests/integration/test_p5_4b_engineering_composition_foundation.py`
+- `python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On flag, migration-head, feature-gate, identity, lease/fencing, source-manifest
+or evidence drift, return the seam to unavailable and keep production disabled.
+Preserve the old sealed chain, capture the failing report, and forward-fix in a
+new reviewed commit or isolated sentinel run. Do not downgrade the business
+database, create `0013`, retry an unknown provider outcome, or activate a
+production component while evidence is incomplete.
+
 ## INV-049 p54a-typed-single-agent-executor
 
 P5.4A 是 engineering-only 的第一个 typed Executor 切片。它只能接收一份
