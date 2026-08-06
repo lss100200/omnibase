@@ -151,7 +151,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
                 "digest": "3" * 64,
                 "actor": ACTOR,
                 "resource": RESOURCE,
-                "constraints": '{"max_bytes":128,"timeout_ms":3000}',
+                "constraints": '{"max_bytes":512,"timeout_ms":3000}',
             },
         )
         connection.execute(
@@ -191,7 +191,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         actor_user_id=ACTOR,
         action="rag.search",
         resource_id=RESOURCE,
-        constraints={"max_bytes": 128, "timeout_ms": 3000},
+        constraints={"max_bytes": 512, "timeout_ms": 3000},
     )
     capability = VerifiedCapability(
         tenant_id=TENANT,
@@ -202,7 +202,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         token_jti=claims.jti,
         actions=frozenset({"rag.search"}),
         resource_ids=frozenset({RESOURCE}),
-        constraints=CapabilityConstraints(max_bytes=128, max_timeout_ms=3000),
+        constraints=CapabilityConstraints(max_bytes=512, max_timeout_ms=3000),
         core_verification=core,
     )
     credential = WorkloadCredential(
@@ -245,7 +245,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         context=context,
         plan=plan,
         request=KnowledgeSearchRequest(
-            resource_id=RESOURCE, query="composition", max_bytes=128
+            resource_id=RESOURCE, query="composition", max_bytes=512
         ),
     )
     assert result.output.resource_id == RESOURCE
