@@ -518,3 +518,38 @@ P5.2 PASS，也不得据此解冻 Phase 5 Runtime。
 | 父子 deadline 未冻结 | `attempt.created_at < attempt.deadline <= task.deadline`；`task_lease.expires_at <= attempt.deadline <= task.deadline`（最后一条为防御性冗余，文档说明蕴含关系） |
 | attempt hash 缺安全身份字段 | attempt_claim/heartbeat/finish profile 补齐 agent_run_id、node_id、run_lease_id/run_fencing_token、node_fencing_token、agent_version_digest、resource_scope_digest、budget_policy_digest；不进 hash 的字段（operation_id、runtime/workload 身份、lease 时间）由 durable 记录绑定并在文档表中逐项证明 |
 | 报告把 safety negative 当运行证明 | `verification_evidence` 区分 static source-boundary assertion（本次 verify 实际执行）、import/AST assertion（由测试证明）、gate 本次未执行的行为、direct runtime execution（Gate 不执行） |
+
+## P5 Fast Track threat delta（2026-08-04）
+
+用户已批准 engineering-only P5.2B migration `0011`、内部 Model Gateway 与
+无工具单 Agent Alpha。该授权 supersede 上文“源码中不得存在 0011/Model
+Gateway/Agent UI”的历史 P5.2A source-boundary 条件，但不授权 production
+Runtime。新的主要威胁与控制如下：
+
+| 威胁 | 强制控制 |
+|---|---|
+| 跨 tenant/workspace 伪造 Task/Lease | migration 0011 使用 composite tenant FK；服务在 caller-owned transaction 内重锁 live aggregate；跨租户 disposable 反例必须由 PostgreSQL 拒绝 |
+| stale Task holder 提交结果 | per-Task cursor 加锁分配 fencing token，数据库 clock 固化 chronology；Attempt↔active Lease deferred 双向校验；历史 Lease append-only |
+| provider 已执行但结果未知时自动重试 | Effect `unknown` 终态 + reconciliation；禁止自动 replay 或伪装 cancellation/success |
+| provider 静默换模型 | requested model ID 必须与 actual model ID 精确一致；缺失/不一致 fail closed，最终事件与 digest 使用实际身份 |
+| secret/provider error 泄漏 | API key/base URL/Authorization/server connection detail 不进入公共 DTO、日志、错误或 ledger；原始 provider error 只映射为稳定脱敏 reason code |
+| Alpha 借 function calling 获得宿主能力 | provider payload 无 `tools`/`tool_choice`；AgentVersion `allowed_tool_ids` 必须为空；无 shell/SQL/arbitrary HTTP/MCP/Skill port |
+| 猜测 invocation ID 取消他人任务 | cancel identity 同时绑定 tenant/workspace/actor/invocation；任一不匹配均拒绝 |
+| engineering slice 被误装配为生产 Runtime | `get_agent_alpha` checked-in 默认始终 `UnavailableAgentAlpha`；所有 Feature Gates false；生产 override/wiring 需要新的明确批准 |
+| disposable Gate 误伤业务数据库 | 只接受 `omnibase_test_p52b_*` database/role 和 `omnibase-p52b-*` Compose project；先 destructive preflight，最后容器/网络/卷 0/0/0；根 `.env` 禁止读取 |
+
+## P5.2C engineering Agent Alpha runtime threat delta（2026-08-04）
+
+在 P5.2B ledger 与 P5 Fast Track 之上实现 engineering-only 单 Agent Alpha
+runtime。该层新增的主要威胁与控制：
+
+| 威胁 | 强制控制 |
+|---|---|
+| engineering seam 被误装配进生产 Browser | `AGENT_ALPHA_ENGINEERING_ENABLED` 严格解析（true/false，禁止 pydantic coercion）+ `ENV=development` + 三个 Phase 5 Feature Gate 全 false + Model Gateway 已装配 + migration head `0011` 全部满足才返回 DB-backed service；任一不满足即 `UnavailableAgentAlpha`，且不触碰 registry/ledger/RAG/provider |
+| 状态机一次跳到终态绕过 guard | transaction A 按 guard 允许的转换跨 flush 推进（task `created->scheduled->running`、run `leased->running`、attempt `leased->dispatching`、effect `reserved->dispatching`）；terminalize 只发生在 transaction B 重锁校验后 |
+| replay 语义漂移或重复执行 | exact replay 从已提交 idempotency record（response_ref）恢复 task id 与不可变 deadline，逐字节复现 task_create payload；同 key 不同 payload 是 stable conflict；in-flight attempt（active 三态）拒绝二次 dispatch；`unknown` 只进 reconciliation，绝不自动 replay |
+| 取消伪造/跨主体 | cancel 注册表是进程内 signal（module-level），endpoint 校验 tenant/workspace/actor/invocation 四元组；durable 终态只来自 ledger；SSE disconnect 记 unknown/reconciliation，绝不伪造 cancelled |
+| 工具型 AgentVersion 借 Alpha 拿能力 | adapter 与 service 双层拒绝 `allowed_tool_ids` 非空（稳定 409）；payload 无 tools/tool_choice；无 shell/SQL/HTTP/MCP/Skill port |
+| RAG 检索越权或不可控 | 检索只读、按 workspace 隔离、top_k/context/字符数服务端上限；embedding model 不可用时降级为无 context（明确不确定），不泄漏 |
+| disposable Gate 触碰业务库 | 只接受 `omnibase_test_p52c_*` database/role 与 `omnibase-p52c-*` Compose project；destructive preflight 先跑；容器/网络/卷最后 0/0/0；根 `.env` 禁止读取 |
+| 生产 Runtime 被误激活 | 不创建 migration `0012`；无 tools/Planner/Executor/Scheduler/Worker/MCP/Skill/Memory/多 Agent；三个 Feature Gate 保持 false；生产 wiring/credential 注入需要新的显式批准 |

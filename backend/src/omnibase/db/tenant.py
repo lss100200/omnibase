@@ -21,9 +21,11 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     func,
@@ -83,6 +85,110 @@ class User(TenantBase):
         return f"<User email={self.email!r}>"
 
 
+class UserProfile(TenantBase):
+    """User-owned workbench presentation and assistant preferences."""
+
+    __tablename__ = "user_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "theme IN ('system', 'light', 'dark')",
+            name="user_profiles_theme_check",
+        ),
+        CheckConstraint(
+            "assistant_tone IN ('concise', 'balanced', 'detailed')",
+            name="user_profiles_assistant_tone_check",
+        ),
+        CheckConstraint("version >= 1", name="user_profiles_version_check"),
+        CheckConstraint(
+            "char_length(assistant_instructions) <= 4000",
+            name="user_profiles_instructions_length_check",
+        ),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), nullable=False, default="zh-CN")
+    theme: Mapped[str] = mapped_column(String(16), nullable=False, default="system")
+    assistant_name: Mapped[str] = mapped_column(String(80), nullable=False, default="Omni")
+    assistant_tone: Mapped[str] = mapped_column(String(16), nullable=False, default="balanced")
+    assistant_instructions: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_CREATED_SERVER_DEFAULT
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=_CREATED_SERVER_DEFAULT,
+        onupdate=_CREATED_SERVER_DEFAULT,
+    )
+
+
+class ModelProviderCredential(TenantBase):
+    """Encrypted, user-owned OpenAI-compatible provider configuration."""
+
+    __tablename__ = "model_provider_credentials"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="model_provider_credentials_version_check"),
+        CheckConstraint("key_version >= 1", name="model_provider_credentials_key_version_check"),
+        CheckConstraint(
+            "last_test_status IS NULL OR last_test_status IN "
+            "('passed', 'auth_failed', 'timeout', 'identity_mismatch', 'unreachable', 'failed')",
+            name="model_provider_credentials_test_status_check",
+        ),
+        CheckConstraint(
+            "last_test_latency_ms IS NULL OR last_test_latency_ms >= 0",
+            name="model_provider_credentials_latency_check",
+        ),
+        CheckConstraint(
+            "(is_active AND revoked_at IS NULL) OR (NOT is_active)",
+            name="model_provider_credentials_active_revoked_check",
+        ),
+        Index("model_provider_credentials_user_idx", "user_id", "created_at"),
+        Index(
+            "model_provider_credentials_one_default_uq",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_active AND is_default AND revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=_PK_SERVER_DEFAULT
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    encrypted_api_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    key_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    key_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    key_fingerprint: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_test_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_test_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_CREATED_SERVER_DEFAULT
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=_CREATED_SERVER_DEFAULT,
+        onupdate=_CREATED_SERVER_DEFAULT,
+    )
+
+
 class Document(TenantBase):
     """A user-uploaded file's metadata.
 
@@ -110,12 +216,8 @@ class Document(TenantBase):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     minio_key: Mapped[str] = mapped_column(String(500), nullable=False)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    error_detail: Mapped[str | None] = mapped_column(
-        String(1000), nullable=True, default=None
-    )
-    metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict
-    )
+    error_detail: Mapped[str | None] = mapped_column(String(1000), nullable=True, default=None)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=_CREATED_SERVER_DEFAULT
     )
@@ -172,13 +274,9 @@ class Embedding(TenantBase):
     # Citation backlink data
     char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    chunk_type: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="paragraph"
-    )
+    chunk_type: Mapped[str] = mapped_column(String(20), nullable=False, default="paragraph")
     # Per-chunk metadata (page number, section heading, language, etc.)
-    metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict
-    )
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=_CREATED_SERVER_DEFAULT
     )
@@ -218,12 +316,8 @@ class EmbeddingV2(TenantBase):
     tsv = mapped_column(TSVECTOR, nullable=True)
     char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    chunk_type: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="paragraph"
-    )
-    metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict
-    )
+    chunk_type: Mapped[str] = mapped_column(String(20), nullable=False, default="paragraph")
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=_CREATED_SERVER_DEFAULT
     )
@@ -279,7 +373,9 @@ __all__ = [
     "Document",
     "Embedding",
     "EmbeddingV2",
+    "ModelProviderCredential",
     "RagDocumentIndexState",
     "TenantBase",
     "User",
+    "UserProfile",
 ]

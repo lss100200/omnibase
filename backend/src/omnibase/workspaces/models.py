@@ -632,6 +632,7 @@ class RunLease(Base):
             "fencing_token",
             name="run_leases_fencing_uq",
         ),
+        UniqueConstraint("id", "tenant_id", name="run_leases_id_tenant_uq"),
         Index(
             "run_leases_run_state_idx",
             "tenant_id",

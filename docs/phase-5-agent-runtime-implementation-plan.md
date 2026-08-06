@@ -185,12 +185,12 @@ Gate：跨 Tenant/Workspace 安装拒绝；同 key 不同 digest 冲突；禁用
 > `backend/tests/test_p5_2a_task_ledger_contract.py` +
 > `docs/phase-5-task-ledger-contract.md`）。P5.2A 只冻结合同（身份层级、
 > 状态机、Task Lease/fencing 复用规则、预算 12 维、8 个 hash profile、
-> identity stages、checkpoint 限制），**不实现**任何 P5.2 ORM、migration
-> `0011`、Agent Invocation 路由、Runtime/Planner/Executor/scheduler/
-> worker、模型/工具调用，也不创建 Task Lease 或真实 Task/Run/Attempt。
-> 完整 P5.2 尚未标记完成：P5.2B persistence ledger（ORM + migration +
-> 事务服务 + guarded disposable PostgreSQL Gate）未实现，必须在主 Agent
-> 独立复核 P5.2A 通过后才允许规划。P5.2A `--verify` 当前恒为
+> identity stages、checkpoint 限制）。用户已显式批准 engineering-only
+> Fast Track，P5.2B persistence ledger（ORM + migration `0011` + caller-owned
+> transaction service + guarded disposable PostgreSQL Gate）、内部 Model
+> Gateway 与无工具单 Agent Alpha 已进入实现；这些独立模块不改变 P5.2A
+> validator 的离线性质。完整 P5.2 production 尚未标记完成：Runtime/
+> Planner/Executor/scheduler/worker、真实工具与多 Agent 仍冻结。P5.2A `--verify` 当前恒为
 > `blocked/not_proven`（exit 2）；三个 Feature Gate 保持 false；
 > `gate true` 或 `activation_requested=true` 是 veto。
 
@@ -506,6 +506,37 @@ P34.7 PASS
   -> P5.8
   -> P5.9
 ```
+
+2026-08-04 的用户决策为这条主链增加了一个严格受限的 engineering Fast
+Track：允许提前实现 P5.2B durable ledger/migration `0011`、内部 Model
+Gateway 与无工具单 Agent Alpha，以便尽早验证真实 LLM 接入和单 Agent 产品
+闭环。该例外不改变 production 主链：三个 Feature Gates 仍为 false，Alpha
+默认 503，生产 Runtime 激活仍需单独批准；Planner、Executor、scheduler、
+worker、真实工具/MCP/Skill、多 Agent DAG 与宿主能力执行仍按原顺序冻结。
+
+> **P5.2C 实施状态（2026-08-04）**：在 P5.2B ledger 之上实现了
+> engineering-only Agent Alpha runtime：
+> `AGENT_ALPHA_ENGINEERING_ENABLED`（严格 true/false，禁止布尔 coercion）
+> + `ENV=development` + 三个 Phase 5 Feature Gate 全 false + Model Gateway
+> 已装配 + migration head `0011` 才允许 `build_engineering_agent_alpha()`
+> 装配 DB-backed service，否则保持 `UnavailableAgentAlpha`（fail closed）。
+> DB-backed adapters（live profile resolver / 只读 capped RAG /
+> `LedgerInvocationAdapter`）只经 migration `0011` 的
+> `TaskLedgerPersistenceService` 写入：transaction A 在 provider 边界前
+> durable reservation（task `created->scheduled->running`、run
+> `leased->running`、attempt `leased->dispatching`、effect
+> `reserved->dispatching` 均按 guard 允许的转换跨 flush 推进），transaction
+> B 重新加锁校验后 terminalize（终态 run 清空全部 binding）。Exact replay
+> 从已提交 idempotency record（response_ref）与其不可变 deadline 逐字节
+> 复现 task_create payload；in-flight 重复拒绝二次 dispatch；`unknown`
+> 只进 reconciliation。取消注册表是进程内 signal，durable 终态来自 ledger；
+> SSE disconnect 只记 unknown。前端 workbench 提供 workspace/agent 选择、
+> SSE 流式回答、取消、citations/usage/latency/actual model identity 展示
+> 与 ENGINEERING ALPHA / TOOLS DISABLED / PRODUCTION RUNTIME OFF 姿态徽标。
+> 全部验证由 `omnibase-p52c-*` disposable Gate 封存（evidence 见
+> `docs/evidence/p5-2/`）。仍不创建 migration `0012`，不实现 tools/
+> Planner/Executor/Scheduler/Worker/MCP/Skill/Memory/多 Agent，不激活生产
+> Runtime。
 
 允许 P5.1 数据模型与 P5.3 Proposal Schema 并行设计，但 Validator 通过前不能 dispatch；P5.5 Memory 与 P5.6 Skill schema 可在 P5.4 单 Agent Executor Gate 后并行；UI 只能在对应 API contract 冻结后实现。禁止 P34.7 未通过时装配 Planner/Executor、单 Agent 未通过时启动多 Agent、Memory scope 未通过时注入用户库、Skill provenance 未通过时执行脚本、Reconciliation 未完成时开放外部写工具，或把 fake/disposable evidence 描述成 production。
 

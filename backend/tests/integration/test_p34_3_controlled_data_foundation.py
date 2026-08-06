@@ -104,8 +104,8 @@ def test_0006_creates_global_foundation_and_only_tenant_payload_table(
 
     # Later global-only revisions still advance both scoped revision ledgers
     # to the repository head after their tenant no-op.
-    assert global_revision == "0010"
-    assert tenant_revision == "0010"
+    assert global_revision == "0012"
+    assert tenant_revision == "0012"
     assert {
         "data_table_bindings",
         "data_column_bindings",
@@ -144,7 +144,7 @@ def test_0006_empty_downgrade_and_reupgrade_are_safe(db_engine) -> None:
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0010"
+            == "0012"
         )
 
 
@@ -363,6 +363,7 @@ def test_0006_downgrade_refuses_live_controlled_resources(
 ) -> None:
     _upgrade_head()
     tenant_id, _ = _create_retained_test_tenant(db_engine, run_owned_resources)
+    _upgrade_head()
     with db_engine.begin() as connection:
         resource_id = connection.execute(
             text(
@@ -391,11 +392,13 @@ def test_0006_downgrade_refuses_live_controlled_resources(
 
     downgrade = _run_alembic("downgrade", "0005")
     assert downgrade.returncode != 0
-    assert "downgrade refused" in (downgrade.stdout + downgrade.stderr)
+    assert "P34.3 downgrade refused: controlled dynamic resources exist" in (
+        downgrade.stdout + downgrade.stderr
+    )
     with db_engine.connect() as connection:
         assert (
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0010"
+            == "0012"
         )

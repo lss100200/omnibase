@@ -203,6 +203,23 @@ def enforce_upload_rate_limit(
     )
 
 
+def enforce_provider_test_rate_limit(
+    credential_id: str,
+    ctx: Annotated[TenantContext, Depends(get_current_tenant)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Bound real, potentially billable provider probes per user credential."""
+    _enforce(
+        policy=RateLimitPolicy(
+            name="provider-test",
+            limit=settings.provider_test_rate_limit_per_window,
+            window_seconds=settings.rate_limit_window_seconds,
+        ),
+        identity=f"{ctx.tenant_id}:{ctx.user_id}:{credential_id}",
+        settings=settings,
+    )
+
+
 def reset_rate_limiter_cache() -> None:
     """Clear cached Redis clients (tests and settings reloads)."""
     _get_limiter.cache_clear()
@@ -213,6 +230,7 @@ __all__ = [
     "RateLimitPolicy",
     "RedisRateLimiter",
     "enforce_auth_rate_limit",
+    "enforce_provider_test_rate_limit",
     "enforce_rag_rate_limit",
     "enforce_upload_rate_limit",
     "reset_rate_limiter_cache",

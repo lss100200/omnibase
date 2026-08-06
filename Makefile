@@ -173,7 +173,7 @@ shell: backend-shell ## 别名：后端 shell
 # 测试与质量
 # ------------------------------------------------------------
 
-.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract lint lint-backend lint-frontend typecheck format format-check
+.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger lint lint-backend lint-frontend typecheck format format-check
 
 test: test-backend test-frontend ## 运行所有测试
 
@@ -208,9 +208,12 @@ test-destructive: ## 在一次性隔离数据库中运行破坏性集成测试
 		uv run python tests/destructive_preflight.py; \
 		uv run alembic upgrade head; \
 		uv run pytest -m integration \
-			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_empty_downgrade_and_reupgrade_are_safe; \
+			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_empty_downgrade_and_reupgrade_are_safe \
+			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_downgrade_refuses_live_controlled_resources; \
 		uv run pytest -m integration tests/integration \
-			-k "not test_0006_empty_downgrade_and_reupgrade_are_safe"
+			--ignore=tests/integration/test_auth_e2e.py \
+			-k "not test_0006_empty_downgrade_and_reupgrade_are_safe and not test_0006_downgrade_refuses_live_controlled_resources"; \
+		uv run pytest -m integration tests/integration/test_auth_e2e.py
 
 test-p5-1b-registry: ## 一次性隔离数据库上的 P5.1B Agent Registry 持久化 Gate
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-ci-*|omnibase-p34-*|omnibase-p51b-*|omnibase-test-*) ;; 		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated prefix$(RESET)"; exit 1 ;; 	esac
@@ -234,6 +237,37 @@ test-p5-2a-task-ledger-contract: ## 离线 P5.2A Agent Task/Run/Lease/fencing �
 	    tests/test_p5_1_registry_contract.py \
 	    tests/test_p5_0_admission.py \
 	    tests/test_p34_7_production_composition.py -q
+
+test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engineering Gate
+	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p52b-*|omnibase-test-*) ;; \
+		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated P5.2B prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_NAME)" in omnibase_test_p52b_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_NAME must use the omnibase_test_p52b_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_ROLE)" in omnibase_test_p52b_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_ROLE must use the omnibase_test_p52b_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@if [ -z "$(TEST_DATABASE_PORT)" ] || [ -z "$(TEST_DATABASE_OWNER_PASSWORD)" ] || [ -z "$(TEST_DATABASE_PASSWORD)" ]; then \
+		echo "$(YELLOW)Explicit P5.2B disposable database port and passwords are required$(RESET)"; exit 1; \
+	fi
+	@set -eu; \
+		repo_root="$$(pwd)"; \
+		compose_file="$$(pwd)/docker-compose.destructive-tests.yml"; \
+		trap 'cd "$$repo_root"; $(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" down -v --remove-orphans' EXIT INT TERM; \
+		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" up -d --wait postgres-test; \
+		export OMNIBASE_INTEGRATION_TESTS=1; \
+		export TEST_DATABASE_URL="postgresql+psycopg://$${TEST_DATABASE_ROLE}:$${TEST_DATABASE_PASSWORD}@localhost:$${TEST_DATABASE_PORT}/$${TEST_DATABASE_NAME}"; \
+		export DATABASE_URL="$$TEST_DATABASE_URL"; \
+		export MINIO_ENDPOINT=localhost:9000 MINIO_ACCESS_KEY=test_access MINIO_SECRET_KEY=test_secret; \
+		export REDIS_URL=redis://localhost:6379/15; \
+		export JWT_SECRET=test_secret_at_least_32_characters_long_for_validation; \
+		cd backend; \
+		uv run python tests/destructive_preflight.py; \
+		uv run alembic upgrade head; \
+		uv run pytest -m integration tests/integration/test_p5_2b_task_ledger_foundation.py -q; \
+		cd "$$repo_root"; \
+		uv run pytest scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py -q
 
 test-destructive-down: ## 强制移除一次性破坏性测试数据库
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-ci-*|omnibase-p34-*|omnibase-test-*) ;; \

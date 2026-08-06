@@ -1,0 +1,23 @@
+{
+  "business_database_accessed": false,
+  "business_database_migrated": false,
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "volumes": 0
+  },
+  "database_sentinel_verified": true,
+  "feature_gates_enabled": false,
+  "finished_at": "2026-08-05T01:25:32.858253+00:00",
+  "gate": "P5.2B Task ledger persistence disposable Gate",
+  "integration_tests": [
+    "backend/tests/integration/test_p5_2b_task_ledger_foundation.py"
+  ],
+  "migration_head": "0011",
+  "passed": true,
+  "production_runtime_activated": false,
+  "root_env_accessed": false,
+  "schema_version": 1,
+  "source_manifest_sha256": "b1b52e8b5adcfde26dc06d3baf76e7d21bb4f512f00e82696199ead761aec79b",
+  "started_at": "2026-08-05T01:24:38.304065+00:00"
+}

@@ -165,6 +165,19 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-}
+      PROVIDER_ENDPOINT_ALLOWLIST: ${PROVIDER_ENDPOINT_ALLOWLIST:-["api.deepseek.com","open.bigmodel.cn","dashscope.aliyuncs.com","api.openai.com"]}
+      PROVIDER_TEST_RATE_LIMIT_PER_WINDOW: ${PROVIDER_TEST_RATE_LIMIT_PER_WINDOW:-3}
+      # Optional stable deployment identity for the server-owned, tool-free
+      # local Model Gateway node. Empty falls back to the container hostname.
+      OMNIBASE_DEPLOYMENT_INSTANCE_ID: ${OMNIBASE_DEPLOYMENT_INSTANCE_ID:-}
+      # Controlled, tool-free single-Agent Alpha. These values never enable
+      # Planner, multi-Agent, MCP, Skills, shell, SQL or arbitrary HTTP tools.
+      AGENT_ALPHA_ENGINEERING_ENABLED: ${AGENT_ALPHA_ENGINEERING_ENABLED:-false}
+      AGENT_RUNTIME_ENABLED: ${AGENT_RUNTIME_ENABLED:-false}
+      AGENT_PLANNER_ENABLED: ${AGENT_PLANNER_ENABLED:-false}
+      MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
       # Embedding index write lanes
       EMBEDDING_INDEX_VERSION: ${EMBEDDING_INDEX_VERSION:-v1}
       EMBEDDING_SHADOW_INDEX_VERSION: ${EMBEDDING_SHADOW_INDEX_VERSION:-}
@@ -232,6 +245,8 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-}
+      PROVIDER_ENDPOINT_ALLOWLIST: ${PROVIDER_ENDPOINT_ALLOWLIST:-["api.deepseek.com","open.bigmodel.cn","dashscope.aliyuncs.com","api.openai.com"]}
       # Embedding index write lanes
       EMBEDDING_INDEX_VERSION: ${EMBEDDING_INDEX_VERSION:-v1}
       EMBEDDING_SHADOW_INDEX_VERSION: ${EMBEDDING_SHADOW_INDEX_VERSION:-}

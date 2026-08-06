@@ -138,11 +138,31 @@ runtime evidence; then correct the stale documentation in the same change.
   `agent_registry_unavailable` (503) before touching any registry table, and
   the DB-backed service is only injected explicitly. P5.1C never creates
   AgentDefinition/AgentVersion (registration and version sealing stay
-  internal), never adds migration `0011`, keeps all three Phase 5 feature
-  gates false, revalidates live tenant/user/role/WorkspaceMembership inside
+  internal), does not own migrations, keeps all three Phase 5 feature gates
+  false, revalidates live tenant/user/role/WorkspaceMembership inside
   the caller-owned transaction on every mutation, and its disposable
   `omnibase_test_p51c_*` Gate (evidence under `docs/evidence/p5-1/`) does
-  not unlock production Registry, Runtime or orchestration readiness.
+  not unlock production Registry, Runtime or orchestration readiness. The
+  user-approved P5 Fast Track separately permits the engineering-only P5.2B
+  durable Task ledger (`backend/src/omnibase/task_ledger/`, migration `0011`),
+  internal tool-free Model Gateway (`backend/src/omnibase/model_gateway/`) and
+  tool-free single-Agent Alpha (`backend/src/omnibase/agent_alpha/` plus the
+  Browser workbench). P5.2C adds the engineering-only Agent Alpha runtime on
+  top of the same tables: `AGENT_ALPHA_ENGINEERING_ENABLED` (strict true/false)
+  plus `ENV=development`, all three Phase 5 Feature Gates false, a configured
+  Model Gateway and migration head `0011` are required before
+  `build_engineering_agent_alpha()` may assemble the DB-backed service, which
+  writes only through migration `0011` `TaskLedgerPersistenceService`
+  transactions (durable reservation before the provider boundary; revalidate
+  and terminalize after), reproduces the exact task_create payload on replay
+  from the committed idempotency record, never re-dispatches an in-flight or
+  unknown attempt, and is sealed by the `omnibase-p52c-*` disposable Gate
+  (evidence under `docs/evidence/p5-2/`). This exception does not activate
+  production Runtime:
+  all Phase 5 Feature Gates remain false, `get_agent_alpha` stays unavailable
+  by default, provider secrets stay server-owned, requested/actual model
+  identity must match exactly, and no shell/SQL/arbitrary-HTTP tool, MCP,
+  Skill, Planner, scheduler, worker, DAG or multi-Agent runtime is authorized.
 - Read, Sandbox, and Workspace-data capability profiles are mutually exclusive.
   Promotion may only create a new `controlled_shared` Resource and must not
   modify the source or create/reclassify `canonical_readonly`. External effects

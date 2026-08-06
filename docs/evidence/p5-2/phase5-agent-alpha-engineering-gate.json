@@ -1,0 +1,30 @@
+{
+  "business_database_accessed": false,
+  "business_database_migrated": false,
+  "cancellation_scope_verified": true,
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "volumes": 0
+  },
+  "database_sentinel_verified": true,
+  "engineering_alpha_ready": true,
+  "external_network_accessed": false,
+  "feature_gates_enabled": false,
+  "finished_at": "2026-08-05T01:32:13.090843+00:00",
+  "gate": "P5.2C Agent Alpha engineering disposable Gate",
+  "integration_tests": [
+    "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py"
+  ],
+  "migration_head": "0011",
+  "model_identity_verified": true,
+  "passed": true,
+  "production_runtime_activated": false,
+  "root_env_accessed": false,
+  "schema_version": 1,
+  "source_manifest_sha256": "a79a1f0b40239397e11f383f3ddbcfaca35c1707e3497dbd1d3db503b44d56dd",
+  "started_at": "2026-08-05T01:31:19.233115+00:00",
+  "tenant_scope_verified": true,
+  "tool_free_verified": true,
+  "unknown_no_replay_verified": true
+}

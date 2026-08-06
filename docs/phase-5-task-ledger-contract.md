@@ -1,8 +1,9 @@
 # P5.2A Agent Task / Run / Lease / Fencing Ledger Contract（离线合同预检）
 
 > 状态：`P5.2A offline task ledger contract preflight: implemented / verified`
-> （engineering-only）。P5.2 persistence ledger、Agent Runtime、Planner、
-> Executor、scheduler、worker、模型/工具调用**均未实现**；P5.2 production
+> （engineering-only）。用户已批准并实现 P5.2B persistence ledger、内部
+> Model Gateway 与无工具单 Agent Alpha；Agent Runtime、Planner、Executor、
+> scheduler、worker、真实工具/MCP/Skill 与多 Agent **仍未实现/未激活**；P5.2 production
 > 为 `blocked / not_proven`；`AGENT_RUNTIME_ENABLED`、
 > `AGENT_PLANNER_ENABLED`、`MULTI_AGENT_ENABLED` 三个 Feature Gate 保持
 > `false`；P34.7/P5.0/P5.1 production 恒 `blocked/not_proven`。
@@ -12,7 +13,7 @@
 > RuntimeInstance → WorkloadIdentity 的身份层级、状态机、Task Lease /
 > Task fencing、预算账本、canonical hash profile、checkpoint 限制与
 > Browser/Workload/Core 身份分离规则。任何读到本文件的人都不得把
-> "有合同"理解为"Task 账本已实现"。
+> "有合同"理解为"生产 Task Runtime 已激活"。
 
 ## 1. 目的与边界
 
@@ -20,19 +21,20 @@ P5.2A 只允许：离线 strict DTO、closed-set schema、canonical hashing、
 离线 validator、正/负向 fixture、威胁模型补充、维护者地图、CI
 validate-only Gate、测试与 handover 记录。
 
-P5.2A 明确不交付（且合同在 `--verify` 中把出现下列源码视为 veto）：
+P5.2A 模块自身明确不执行下列能力；Fast Track 允许的 P5.2B/Model
+Gateway/Alpha 必须位于独立模块，不能被 validator 启动：
 
-- P5.2 ORM、Alembic revision `0011` 或任何新 revision、数据库表/trigger；
+- 未批准的 Alembic revision `0013+` 或 production Runtime wiring；
 - `/api/v1/agent-invocations`、`/api/v1/agent-tasks`、
   `/gateway/v1/agent/*` 等 Agent Invocation 路由；
 - Browser Invocation SDK、Workload SDK；
 - Agent Runtime、Runtime Coordinator、Planner、Plan Validator、Executor、
   Dispatcher、Scheduler、worker、Celery task、Task polling/heartbeat
   loop、后台 coroutine；
-- Model provider、Model Gateway、Tool Gateway、ToolDefinition、Memory
-  Runtime、ContextCapsule、Skill Runtime、MCP、shell/SQL/HTTP tool、
+- Tool Gateway、ToolDefinition、Memory Runtime、ContextCapsule、Skill
+  Runtime、MCP、shell/SQL/arbitrary-HTTP tool、
   Docker socket、宿主进程执行；
-- Agent UI、DAG、多 Agent 编排、生产配置解冻。
+- DAG、多 Agent 编排、生产配置解冻。
 
 P5.2A 不运行 Agent，不启动 Planner，不创建 Executor，不调用模型，不提交
 Sandbox job，不产生 Task Lease，不创建真实 Task/Run/Attempt。
@@ -526,14 +528,14 @@ committed outputs，遇到 `unknown` 保持 blocked。
   - sealed contracts（合同文档、合同模块、测试、威胁模型、维护者地图、
     安全不变量）+ P34.7 decision + P5.0 admission + P5.1 registry
     contract digest；
-  - migration head == `0010` 且 revision 集合 == 封存基线（出现 `0011`
-    即 veto）；
-  - forbidden source paths 不存在（出现 P5.2 ORM/Planner/Executor/
-    Dispatcher/Scheduler/Runtime 包即 veto）；
+  - migration head == `0011` 且 revision 集合 == 封存基线（出现未批准的
+    `0013+` 即 veto）；
+  - forbidden source paths 不存在（出现 Planner/Executor/Dispatcher/
+    Scheduler/worker/production Runtime/tool/MCP/Skill 包即 veto；已批准的
+    task_ledger/model_gateway/agent_alpha 不在禁止集合）；
   - OpenAPI snapshot 无 agent-invocation/agent-task/gateway-agent 端点；
   - clean-checkout provenance（dirty 即 veto）。
-- safety negatives 恒为 false：`task_ledger_orm_created`、
-  `task_ledger_migration_created`、`agent_invocation_api_exposed`、
+- safety negatives 区分 engineering source 与 production activation：
   `agent_runtime_created`、`planner_created`、`executor_created`、
   `scheduler_or_worker_started`、`model_or_tool_invoked`、
   `task_execution_activated`、`root_env_accessed`、
@@ -588,7 +590,7 @@ PID/socket/provider handle 出现在 checkpoint、cancel 伪装 unknown、
 retry 复用旧 Attempt/Task fencing、恢复旧 Run Lease/runtime/workload
 identity、模型输出作为 committed evidence、parser 静默丢弃未知字段、
 合同配置 symlink/junction、配置路径 realpath 逃逸、sealed digest 漂移、
-根 `.env` 进入 manifest、migration 0011、未授权 Agent Runtime 源路径。
+  根 `.env` 进入 manifest、migration 0013+、未授权 Agent Runtime 源路径。
 
 第二轮独立复核新增反例（task fencing 作用域、双向绑定、连续序列、evidence
 真实校验）：per-Task fencing 正向（两 Task 各从 token 1 开始通过）、同 Task
@@ -633,26 +635,33 @@ formal_state=blocked/not_proven
 查询网络、不启动 Runtime、不因合同有效而返回 Phase 5 ready。
 `--verify`：在 clean checkout 上组合 P34.7/P5.0/P5.1 formal decision、
 三个 Feature Gate、migration 基线/head、P5.2A sealed source digest、
-forbidden source paths、未授权 P5.2 Runtime/ORM/router/migration、required
+forbidden source paths、未授权 production Runtime/Planner/tools/migration 0013+、required
 docs/tests/validator 与 clean-checkout 可复现条件；当前预期
 `formal_state=blocked/not_proven`、`activation_allowed=false`、exit 2。
 
 ## 13. 未证明项与解冻条件
 
+当前明确已实现但仅限 engineering：
+
+- P5.2B Agent Task/Run/Step/Attempt 持久化账本（ORM + migration `0011` +
+  caller-owned transaction service + guarded disposable PostgreSQL Gate）；
+- 内部 Model Gateway 与无工具单 Agent Alpha API/Workbench；生产组合默认仍
+  `UnavailableAgentAlpha`，所有 Feature Gates 为 false。
+
 当前明确未证明/未实现：
 
-- P5.2 Agent Task/Run/Step/Attempt 持久化账本（P5.2B：ORM + migration +
-  事务服务 + guarded disposable PostgreSQL Gate，未实现）；
 - Task Lease 发放、Task fencing、预算 reservation/commit/release 的
-  runtime 实现；
-- Agent Runtime、Planner、Executor、scheduler、worker、模型/工具调用；
+  production runtime 实现；
+- Agent Runtime、Planner、Executor、scheduler、worker、工具/MCP/Skill 与
+  多 Agent；
 - `/api/v1/agent-invocations`、`/api/v1/agent-tasks`、
   `/gateway/v1/agent/*`、Browser/Workload SDK；
 - 生产 Core↔Runner/Broker/Gateway 激活（P34.7 production total Gate
   仍 `blocked/not_proven`）。
 
 解冻条件（与 `docs/phase-5-agent-runtime-implementation-plan.md` 一致）：
-主 Agent 独立复核 P5.2A 通过后，才允许规划 P5.2B 持久化账本；P34.7
-production total Gate 独立 PASS 前，任何 P5.2 Runtime 保持冻结。本文件与
+用户已经显式批准 engineering-only P5.2B/Model Gateway/Alpha Fast Track；
+P34.7 production total Gate 独立 PASS 且另获生产激活批准前，任何 P5.2
+Runtime wiring 保持冻结。本文件与
 `phase5-task-ledger-contract.example.json` 必须在同一变更中同步更新并
 重新封存 digest。

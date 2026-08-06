@@ -77,13 +77,19 @@ function RegisterFormCard() {
   }
 
   return (
-    <Card className="border-border/60 shadow-lg">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">创建账号</CardTitle>
-        <CardDescription>注册后将自动创建一个专属工作空间，所有数据都只属于你</CardDescription>
+    <Card className="overflow-hidden rounded-none border-stone-300/80 bg-[#f7f3ea] text-stone-950 shadow-[0_28px_80px_-48px_rgba(0,0,0,.55)] dark:border-stone-700 dark:bg-[#211f1b] dark:text-stone-100">
+      <div className="h-0.5 w-full bg-amber-400" />
+      <CardHeader className="space-y-2 px-6 pb-6 pt-7 sm:px-8 sm:pt-9">
+        <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
+          New governed workspace
+        </div>
+        <CardTitle className="pt-3 text-3xl tracking-[-0.05em]">创建你的 OmniBase</CardTitle>
+        <CardDescription className="text-sm leading-6">
+          注册后将建立专属租户空间；数据、成员与能力访问都从这里开始隔离。
+        </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 px-6 sm:px-8">
           <div className="space-y-2">
             <Label htmlFor="email">邮箱</Label>
             <Input
@@ -92,6 +98,7 @@ function RegisterFormCard() {
               placeholder="you@example.com"
               autoComplete="email"
               autoFocus
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('email')}
             />
             {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
@@ -102,6 +109,7 @@ function RegisterFormCard() {
               id="tenantName"
               type="text"
               placeholder="我的知识库"
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('tenantName')}
             />
             <p className="text-xs text-muted-foreground">留空将根据邮箱自动生成一个默认名称</p>
@@ -112,6 +120,7 @@ function RegisterFormCard() {
               id="password"
               type="password"
               autoComplete="new-password"
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('password')}
             />
             {errors.password && (
@@ -125,6 +134,7 @@ function RegisterFormCard() {
               id="confirmPassword"
               type="password"
               autoComplete="new-password"
+              className="h-12 rounded-none border-stone-300 bg-white/50 dark:border-stone-700 dark:bg-black/15"
               {...register('confirmPassword')}
             />
             {errors.confirmPassword && (
@@ -132,8 +142,12 @@ function RegisterFormCard() {
             )}
           </div>
         </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={submitting}>
+        <CardFooter className="flex flex-col gap-4 px-6 pb-7 pt-2 sm:px-8 sm:pb-9">
+          <Button
+            type="submit"
+            className="h-12 w-full rounded-none bg-stone-950 text-stone-50 hover:bg-amber-400 hover:text-stone-950 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-amber-300"
+            disabled={submitting}
+          >
             {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -159,7 +173,7 @@ export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <Card className="border-border/60 shadow-lg">
+        <Card className="rounded-none border-stone-300 bg-[#f7f3ea] shadow-2xl dark:border-stone-700 dark:bg-[#211f1b]">
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             正在加载注册页…
           </CardContent>

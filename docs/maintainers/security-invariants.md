@@ -1255,8 +1255,8 @@ cookie/token/私钥）且非运行态（无 ORM/migration/service/API/Planner/
 Executor/worker/scheduler）。P34.7 或 P5.0 未 `ready` 时，P5.1A 恒
 `blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；源码树中
 出现任何 forbidden runtime/ORM/API 包或 migration revision 漂移都是 veto。
-本不变量不得声称数据库约束、RBAC、并发安装或 Runtime 已经完成——那些
-属于 P5.1B+，当前保持未实现。
+本不变量不得用 P5.1A 的离线结果证明数据库约束、RBAC、并发安装或
+Runtime；P5.1B/P5.1C 的独立 engineering 实现与 Gate 必须单独取证。
 
 **允许的改法**
 
@@ -1426,7 +1426,8 @@ User(actor) -> Workspace -> WorkspaceMembership；Browser 对 Version/Binding
 live Binding -> IdempotencyRecord -> ApprovalRequest -> target row ->
 Resource -> AuditEvent 的权威锁序复核。API 层不得创建
 AgentDefinition/AgentVersion：定义注册与版本 sealed 仍 internal，三个
-Phase 5 Feature Gate 保持 false，migration head 保持 0010。
+Phase 5 Feature Gate 保持 false。P5.1C 不拥有迁移；仓库 migration head 已因
+单独授权的 P5.2B engineering migration 推进到 `0011`。
 
 **允许的改法**
 
@@ -1448,8 +1449,8 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
 
 - 移除或绕过 fail-closed 默认依赖（production 默认必须 503）；把 DB-backed
   control plane 直接装配进 main.py 生产组合而不经显式注入。
-- 新增 AgentDefinition/AgentVersion 创建端点、migration 0011、打开任何
-  Phase 5 Feature Gate、暴露 Invocation/Runtime/Orchestration 表面。
+- 新增 AgentDefinition/AgentVersion 创建端点、由 P5.1C 创建新的 migration、
+  打开任何 Phase 5 Feature Gate、暴露未授权 Runtime/Orchestration 表面。
 - 在公共 DTO/OpenAPI/SDK/错误体中出现物理 schema/table/column locator、
   凭据或审计内部字段；请求只用逻辑标识。
 - 用事务前角色快照、cookie 或裸资源 id 替代 mutation 内的 live
@@ -1469,7 +1470,7 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
   rejecting authorizer、DTO 严格性、OpenAPI 精确路径集合、无物理
   locator、无 internal 请求字段、非法 UUID 稳定 422）
 - `backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py`
-  （一次性 sentinel PostgreSQL：migration head 0010、API-backed
+  （一次性 sentinel PostgreSQL：migration head 0011、API-backed
   install/upgrade/disable/rollback、exact replay、digest drift、stale
   generation、cross-tenant、live membership、并发单赢家、install/
   upgrade/rollback operation-bound approval、upgrade/rollback exact replay、
@@ -1507,18 +1508,21 @@ Phase 5 Feature Gate 保持 false，migration head 保持 0010。
 
 **为何存在**
 
-P5.2A 只是 P5.2 Agent Task/Run/Step/Attempt 账本的**离线合同预检**，不是
-账本实现。合同必须保持逻辑化（无物理 locator/凭据）、不可变（sealed
+P5.2A 仍是 P5.2 Agent Task/Run/Step/Attempt 账本的**离线合同预检**，不是
+运行时组合根。合同必须保持逻辑化（无物理 locator/凭据）、不可变（sealed
 manifest digest 基于 canonical 原始 UTF-8 字节）、无秘密（无 API
-key/base_url/Authorization/cookie/token/私钥）且非运行态（无 P5.2
-ORM/migration `0011`/router/Runtime/Planner/Executor/scheduler/worker/
-模型/工具调用）。P34.7、P5.0、P5.1 production 任一未 `ready` 时，P5.2A 恒
+key/base_url/Authorization/cookie/token/私钥）且非运行态。用户已显式批准
+P5 Fast Track，因此 migration `0011`、P5.2B durable ledger、内部 Model
+Gateway 与默认不可用的无工具单 Agent Alpha 是允许的 engineering source；
+它们不改变 P5.2A 的离线性质。P34.7、P5.0、P5.1 production 任一未 `ready`
+时，P5.2A 恒
 `blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；**任何 gate
 意外解析为 `true` 或 `activation_requested=true` 都是 veto**（比 P5.0/
-P5.1A 的 blocker 更严格）。源码树出现任何 P5.2 ORM/migration/router/
-runtime 包或 migration revision 集合漂移都是 veto。本不变量不得声称
-Task 账本持久化、Task Lease 发放、预算 commit/release、cancellation
-runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持未实现。
+P5.1A 的 blocker 更严格）。源码树出现生产 Runtime wiring、Planner/
+Executor/scheduler/worker、真实工具/MCP/Skill 执行或未批准的 migration
+未经用户批准的 `0013+` 是 veto。本不变量现在承认 P5.2B 持久化地基、migration
+`0012` 的用户资料/Provider 凭据控制面与 Alpha engineering
+slice；不得声称 Task dispatch/worker、生产 Agent Runtime 或多 Agent 已完成。
 
 **允许的改法**
 
@@ -1534,12 +1538,11 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
 
 **禁止的改法**
 
-- 在本模块或 validator 中实现/预装 P5.2 ORM、migration `0011`、
-  agent-invocation/agent-task router、Browser/Workload SDK、Agent
-  Runtime、Planner、Executor、dispatcher、scheduler、worker、Celery
-  task、polling/heartbeat loop、model/tool provider、Memory/Skill
-  runtime 或 shell/SQL/HTTP tool；以"代码存在但 gate 关闭"为理由同样
-  禁止。
+- 在本模块或 validator 中启动 Agent、访问数据库或 provider；把已授权的
+  P5.2B/Model Gateway/Alpha source 自动装配成生产 Runtime；新增 Planner、
+  Executor、dispatcher、scheduler、worker、Celery 长循环、Memory/Skill
+  runtime、MCP 或 shell/SQL/arbitrary-HTTP tool；新增未经批准的 migration `0013+`
+  而无新的用户授权。
 - 允许 Task Lease 越过 deadline/Run Lease/Node attestation/Grant/
   policy 的最早 expiry；允许 Task/Node/Run fencing 或 attempt number
   回退；允许 terminal Run/Attempt/Effect 复活；允许 `unknown` 自动
@@ -1619,11 +1622,11 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
 
 **必须运行的测试**
 
-- `backend/tests/test_p5_2a_task_ledger_contract.py`（50 项负向矩阵：
+- `backend/tests/test_p5_2a_task_ledger_contract.py`（完整负向矩阵：
   DTO 闭集、hash profile、预算不变量、TTL 边界、fencing 单调、terminal
   resurrection、unknown no-replay、cancel 语义、identity stages、
   symlink/reparse `.env` 逃逸、dirty checkout、gate true veto、forbidden
-  包/migration 0011、OpenAPI agent endpoint、仓库内 report、not_proven
+  未批准的 runtime 包/migration 0013+、OpenAPI 边界、仓库内 report、not_proven
   计数、safety negatives）
 - `python scripts/production/validate_p5_2a_task_ledger_contract.py
   --validate-only`（合法合同 exit 0，永不 ready）
@@ -1632,8 +1635,187 @@ runtime 或 Agent Runtime 已经完成——那些属于 P5.2B+，当前保持�
 
 **失败恢复**
 
-保持 gate false、`activation_requested=false`，删除/回退任何意外出现的
-P5.2 runtime/ORM/API 源码，从新的 clean checkout 重跑 validator。sealed
+保持 gate false、`activation_requested=false`，禁用任何意外生产 wiring，
+保留已批准的 P5.2B/Model Gateway/Alpha engineering source，并从新的 clean
+checkout 重跑 validator。sealed
 digest 漂移时保留原合同与 report 取证，更新证据或合同后重新封存并
 re-verify。任何情况下都不得从该模块启动 Phase 5 运行时组件或访问业务
 数据库。
+
+## INV-044 p52b-durable-task-ledger
+
+P5.2B 是 engineering-only 的持久化地基。Migration `0011` 在
+`omnibase_meta` 创建 11 张 Agent Task/Run/Step/Attempt/TaskLease/Budget/
+Effect/Checkpoint/Reconciliation 表；tenant scope 只推进 revision、不得复制
+global ledger。所有聚合引用都必须使用包含 `tenant_id` 的复合外键，Attempt
+到 current TaskLease 的环必须由 `DEFERRABLE INITIALLY DEFERRED` 外键与
+constraint trigger 在事务提交时双向核对。
+
+Task fencing 只能由按 Task 锁定的 cursor 分配，并使用数据库
+`clock_timestamp()` 固化 chronology；TaskLease 历史 append-only，terminal
+Attempt 清空 current lease 不能抹除历史。Effect `unknown` 是终态，禁止自动
+replay。服务只参加调用方拥有的事务，不自行 commit，不调用模型、provider 或
+工具。Populated `0011` downgrade 必须以 SQLSTATE `55000` fail closed；恢复
+只能 forward-fix 或 restore 到新的 `omnibase_restore_*` 数据库。
+
+所有 Phase 5 Feature Gates 必须继续为 false；migration `0011` 与 disposable
+Gate 通过都不授权生产 Runtime。验证只能使用 `omnibase_test_p52b_*` sentinel
+数据库，先运行 destructive preflight，最后证明容器/网络/卷 `0/0/0`，并对
+source/evidence 做 raw-byte SHA-256 seal。不得读取根 `.env`、访问或迁移业务
+数据库。
+
+## INV-045 model-gateway-and-tool-free-agent-alpha
+
+Model Gateway 的 provider credential、base URL 和 Authorization header 都是
+server-owned，不得进入 Browser DTO、SDK、日志、错误体、Task ledger 或审计
+详情。请求模型 ID 必须与 provider 返回的 actual model ID 精确一致；缺失或
+不一致一律 fail closed，禁止静默 fallback。Provider 原始错误必须转换为稳定、
+脱敏的 reason code。输入、输出、并发和 timeout 都必须有服务端上限。
+
+本阶段 payload 不得包含 `tools`/`tool_choice`，AgentVersion 的
+`allowed_tool_ids` 必须为空。Alpha 只允许一个已安装 sealed AgentVersion、一个
+Model Gateway stream 与只读 Workspace knowledge；没有 shell、SQL、任意 HTTP、
+MCP、Skill、Planner、DAG 或多 Agent 端口。取消权绑定 tenant、workspace、actor
+与 invocation identity，猜到另一主体的 invocation ID 不得取消。
+
+生产依赖必须继续返回 `UnavailableAgentAlpha`，即 Browser API 默认
+`503 agent_alpha_unavailable`；只有测试/engineering dependency override 可以
+装配实现。实际模型身份必须写入最终事件和结果 digest；provider outcome 不明确
+时只能记录 unknown/reconciliation，不得伪装成功或自动重放。生产 Runtime
+激活、Feature Gate 开启与 provider production wiring 均需要新的显式批准。
+
+## INV-046 agent-alpha-engineering-runtime
+
+Engineering-only Agent Alpha 只能通过 `AGENT_ALPHA_ENGINEERING_ENABLED`
+严格解析（true/false，禁止 pydantic 布尔 coercion）+ `ENV=development` +
+三个 Phase 5 Feature Gate 均通过同样的严格闭集解析且全 false（缺失/空值/
+精确 `false` 为关闭，精确 `true` 为开启，任何其他拼写都是配置错误）+
+Model Gateway 已装配 + migration head
+`0012` 才能通过 `build_engineering_agent_alpha()` 装配 DB-backed service；
+任何一步不满足都返回 `UnavailableAgentAlpha`（fail closed，且不触碰
+registry/ledger/RAG/provider）。该 seam 不激活生产 Agent Runtime，不开启
+`AGENT_RUNTIME_ENABLED`/`AGENT_PLANNER_ENABLED`/`MULTI_AGENT_ENABLED`。
+
+Task/Run/Step/Attempt/Lease/Budget/Effect 只通过 migration `0011` 的
+`TaskLedgerPersistenceService` 写入：transaction A 在 provider 边界前完成
+durable reservation（task `created->scheduled->running`、run
+`leased->running`、attempt `leased->dispatching`、effect
+`reserved->dispatching` 分别跨 flush 走 guard 允许的转换），transaction B
+重新加锁校验后 terminalize（effect/attempt/run/task 按 outcome 转换，终态
+run 必须清空全部 lease/fencing/runtime binding）。禁止绕过 guard 或一次性
+把状态机跳到终态。
+
+Exact replay 必须逐字节复现 task_create canonical payload，并把稳定的
+Browser 调用意图哈希（workspace、冻结 AgentVersion、message、top_k、retry_of、
+用户个性摘要、credential source/ID/version/key fingerprint/provider/model 的非秘密
+configuration digest）
+纳入 canonical payload：task id 与
+server-assigned deadline 从已提交的 idempotency record（response_ref）与其
+durable task 恢复，同 key 同 payload 只返回原 task，绝不重复调用 provider、
+不创建新 Attempt、不重复扣费，也不得重新执行可变 RAG 检索；同 key 不同
+payload 是 stable conflict。RAG 命中 ID 不得进入调用意图哈希，否则索引漂移
+会破坏合法 exact replay。
+In-flight 重复（attempt 仍在 active 状态）必须拒绝二次 dispatch。`unknown`
+outcome 只进入 reconciliation，绝不自动重放。
+
+取消注册表是进程内 signal（module-level），cancel endpoint 通过
+tenant/workspace/actor/invocation 四元组匹配；durable 终态永远来自 ledger，
+SSE disconnect、Provider deadline、Provider 返回缺失 actual model identity 均只
+记录 unknown/reconciliation，绝不伪造 deterministic failure/cancelled。RAG 检索
+只能读取当前 tenant + Workspace 下 `ready` 的 P34.6 derived-index generation；
+禁止退回 tenant-wide canonical RAG，top_k 与 context 有服务端上限；工具型
+AgentVersion（`allowed_tool_ids`
+非空）在 adapter 与 service 双层拒绝且返回稳定 409。disposable Gate 只使用
+`omnibase-p52c-*` project / `omnibase_test_p52c_*` 数据库与角色；生产
+Runtime 激活、Feature Gate 开启与 provider production wiring 均需要新的
+显式批准。Fresh invocation 必须创建短期 P34 WorkspaceRun/RunLease，并把同一
+server-owned runtime identity 与非占位 workload digest 绑定到 P34 WorkspaceRun
+和 P5 AgentRun；Provider/Agent deadline、TaskLease TTL、Workspace RunLease TTL
+必须严格留出终结余量。Server-created Model Gateway Node identity 绑定 deployment
+instance，attestation 为短期；revoked/rejected Node 不得被原地复活。
+## INV-047 user-profile-and-personal-provider-credentials
+
+**Authoritative source**
+
+- `backend/src/omnibase/user_settings/`
+- `backend/src/omnibase/db/tenant.py`
+- `backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py`
+- `backend/src/omnibase/tenants/dependencies.py:get_current_principal`
+- `frontend/app/(dashboard)/settings/page.tsx`
+
+**Why it exists**
+
+User preferences and personal model credentials are now a real Browser control
+plane, not a placeholder. Every request must still revalidate the live Tenant
+and live User and must operate only in that tenant schema. Provider secrets are
+server-owned after submission: Browser responses expose only a keyed masked
+fingerprint and posture. AES-256-GCM AAD binds tenant, user, credential,
+provider and key version, so ciphertext cannot be copied across identities.
+
+Provider endpoint testing is an outbound security boundary. The accepted URL
+is exact-host allowlisted HTTPS without userinfo, query, fragment or IP literal;
+resolved addresses must be globally routable. Tests use `trust_env=false`, do
+not follow redirects, have a fixed timeout and require exact requested/actual
+model identity. Provider body, headers, request IDs, trace IDs and raw errors
+are neither returned nor audited.
+
+The outbound request runs without holding the first database transaction. The
+service captures a non-secret credential configuration digest, releases the
+connection, performs the bounded request, then re-locks the live user and
+credential in a new transaction. Any version, provider, URL, model, key
+version/fingerprint, active/default or revocation drift returns a stable
+conflict and must not write PASS. The endpoint is additionally protected by a
+fail-closed Redis rate limit scoped to tenant, user and credential.
+
+Agent Alpha resolves a tested active personal default on every invocation. If a
+personal default exists but is untested, corrupted or undecryptable, invocation
+fails closed; it must never silently fall back to the operator provider. Only
+the absence of a personal default permits the explicitly labelled operator
+default. User assistant name, tone and instruction digest are part of the
+invocation intent so idempotency detects preference drift.
+
+**Allowed changes**
+
+- Add logical provider presets or profile fields with closed schemas, bounded
+  lengths, tenant/user ownership checks, optimistic versioning and append-only
+  audit in the same transaction.
+- Rotate ciphertext by incrementing `key_version` and recomputing identity-bound
+  AAD; production/staging must use an independent
+  `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`.
+- Tighten the hostname/DNS allowlist, timeout, response parser or test-state
+  classification without exposing provider material.
+
+**Forbidden changes**
+
+- Returning, logging, tracing, exporting, committing or placing an API key,
+  ciphertext, nonce, Authorization header or provider response body in an
+  artifact.
+- Trusting JWT ownership without the live principal and tenant session, or
+  reading another user/tenant credential by raw UUID possession.
+- Allowing HTTP, arbitrary hosts, userinfo, query/fragment, IP literals,
+  private/loopback/link-local/reserved DNS answers, redirects or proxy
+  inheritance for personal Provider tests.
+- Silent model/provider fallback, model identity aliasing, or using an untested
+  personal default.
+- Populated destructive downgrade of migration `0012`; global scope must first
+  preflight every retained server-owned tenant schema before the global revision
+  row can move, preventing a populated tenant from leaving split global/tenant
+  heads. Use a forward fix or a verified new `omnibase_restore_*` database.
+
+**Required verification**
+
+- `backend/tests/test_user_settings.py`
+- `backend/tests/test_agent_alpha.py`
+- `backend/tests/test_agent_alpha_engineering.py`
+- Frontend `pnpm typecheck`, `pnpm lint`, `pnpm build`
+- Maintainer map and benchmark validators
+- Pre-0012 backup checksum plus restore-to-new-database verification before the
+  business/development database migration
+
+**Recovery**
+
+Revoke the affected credential, which clears ciphertext and nonce; restore the
+operator default only as an explicitly labelled fallback. If the encryption key
+is lost or ciphertext authentication fails, do not guess or bypass GCM: require
+the user to submit a new secret. If migration recovery is required, retain the
+source database and restore the verified pre-0012 dump to a new database.

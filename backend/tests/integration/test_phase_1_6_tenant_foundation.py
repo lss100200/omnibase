@@ -32,6 +32,17 @@ def _upgrade_head() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def _downgrade_0011() -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", "0011"],
+        cwd=_BACKEND_ROOT,
+        env=os.environ.copy(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_unversioned_legacy_schema_converges_without_touching_v1(db_engine) -> None:
     schema = f"tenant_{uuid.uuid4().hex[:8]}"
     create_schema(db_engine, schema)
@@ -202,7 +213,7 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
         tenant_revision = conn.execute(
             text(f'SELECT version_num FROM "{schema}".alembic_version')
         ).scalar_one()
-        assert tenant_revision == "0010"
+        assert tenant_revision == "0012"
 
         tables = set(
             conn.execute(
@@ -213,4 +224,70 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
                 {"schema": schema},
             ).scalars()
         )
-        assert {"embeddings_v2", "rag_document_index_state"}.issubset(tables)
+        assert {
+            "embeddings_v2",
+            "rag_document_index_state",
+            "user_profiles",
+            "model_provider_credentials",
+        }.issubset(tables)
+
+
+def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
+    db_engine,
+    run_owned_resources,
+) -> None:
+    tenant_ids = (uuid.uuid4(), uuid.uuid4())
+    schemas = tuple(f"tenant_{tenant_id.hex[:8]}" for tenant_id in tenant_ids)
+    with db_engine.begin() as conn:
+        for tenant_id, schema in zip(tenant_ids, schemas, strict=True):
+            conn.execute(
+                text(
+                    "INSERT INTO omnibase_meta.tenants "
+                    "(id, name, slug, schema_name, is_default, is_active) "
+                    "VALUES (:id, :name, :slug, :schema, FALSE, FALSE)"
+                ),
+                {
+                    "id": tenant_id,
+                    "name": "0012 downgrade guard tenant",
+                    "slug": f"downgrade-{tenant_id.hex[:12]}",
+                    "schema": schema,
+                },
+            )
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+            _initialize_tenant_schema(conn, schema)
+            run_owned_resources.add(str(tenant_id), schema)
+
+        user_id = uuid.uuid4()
+        conn.execute(
+            text(
+                f'INSERT INTO "{schemas[1]}".users '
+                "(id, email, password_hash, is_tenant_admin, is_active) "
+                "VALUES (:id, :email, 'not-a-real-hash', TRUE, TRUE)"
+            ),
+            {"id": user_id, "email": f"downgrade-{user_id.hex[:12]}@example.invalid"},
+        )
+        conn.execute(
+            text(
+                f'INSERT INTO "{schemas[1]}".user_profiles '
+                "(user_id, display_name) VALUES (:user_id, 'Downgrade guard')"
+            ),
+            {"user_id": user_id},
+        )
+
+    _upgrade_head()
+    downgrade = _downgrade_0011()
+    assert downgrade.returncode != 0
+    assert "refused before global revision change" in (downgrade.stdout + downgrade.stderr)
+
+    with db_engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
+            == "0012"
+        )
+        for schema in schemas:
+            assert (
+                conn.execute(
+                    text(f'SELECT version_num FROM "{schema}".alembic_version')
+                ).scalar_one()
+                == "0012"
+            )

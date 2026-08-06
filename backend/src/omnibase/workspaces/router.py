@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from omnibase.onboarding import install_default_agent_for_workspace
 from omnibase.tenants.dependencies import (
     TenantContext,
     get_current_tenant,
@@ -160,6 +161,13 @@ def create_workspace_endpoint(
                     else None
                 ),
                 idempotency_key=idempotency_key,
+                request_id=_request_id(request),
+            )
+            install_default_agent_for_workspace(
+                db,
+                tenant_id=ctx.tenant_id,
+                actor_user_id=ctx.user_id,
+                workspace=workspace,
                 request_id=_request_id(request),
             )
     except Exception as exc:

@@ -226,8 +226,12 @@ jobs:
       - name: Generate ephemeral disposable-database credentials
         shell: bash
         run: |
-          echo "TEST_DATABASE_OWNER_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-          echo "TEST_DATABASE_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+          owner_password="$(openssl rand -hex 24)"
+          runner_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$owner_password"
+          echo "::add-mask::$runner_password"
+          echo "TEST_DATABASE_OWNER_PASSWORD=$owner_password" >> "$GITHUB_ENV"
+          echo "TEST_DATABASE_PASSWORD=$runner_password" >> "$GITHUB_ENV"
       - name: Fresh migration and isolated integration gate
         run: make test-destructive
 

@@ -376,6 +376,56 @@ def _initialize_tenant_schema(connection: Connection, schema_name: str) -> None:
         CREATE INDEX IF NOT EXISTS rag_document_index_state_readiness_idx
         ON "{schema_name}".rag_document_index_state (readiness)
         """,
+        # User-owned workbench preferences (migration 0012 convergence for
+        # newly registered tenants before the next operator migration sweep).
+        f"""
+        CREATE TABLE IF NOT EXISTS "{schema_name}".user_profiles (
+            user_id UUID PRIMARY KEY REFERENCES "{schema_name}".users(id) ON DELETE CASCADE,
+            display_name VARCHAR(120) NOT NULL,
+            locale VARCHAR(16) NOT NULL DEFAULT 'zh-CN',
+            theme VARCHAR(16) NOT NULL DEFAULT 'system',
+            assistant_name VARCHAR(80) NOT NULL DEFAULT 'Omni',
+            assistant_tone VARCHAR(16) NOT NULL DEFAULT 'balanced',
+            assistant_instructions TEXT NOT NULL DEFAULT '',
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT user_profiles_theme_check CHECK (theme IN ('system', 'light', 'dark')),
+            CONSTRAINT user_profiles_assistant_tone_check CHECK (assistant_tone IN ('concise', 'balanced', 'detailed')),
+            CONSTRAINT user_profiles_version_check CHECK (version >= 1),
+            CONSTRAINT user_profiles_instructions_length_check CHECK (char_length(assistant_instructions) <= 4000)
+        )
+        """,
+        f"""
+        CREATE TABLE IF NOT EXISTS "{schema_name}".model_provider_credentials (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES "{schema_name}".users(id) ON DELETE CASCADE,
+            display_name VARCHAR(120) NOT NULL,
+            provider_id VARCHAR(64) NOT NULL,
+            base_url VARCHAR(500) NOT NULL,
+            model_id VARCHAR(200) NOT NULL,
+            encrypted_api_key BYTEA,
+            key_nonce BYTEA,
+            key_version INTEGER NOT NULL DEFAULT 1,
+            key_fingerprint VARCHAR(24),
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            version INTEGER NOT NULL DEFAULT 1,
+            last_test_status VARCHAR(32),
+            last_test_latency_ms INTEGER,
+            last_tested_at TIMESTAMPTZ,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT model_provider_credentials_version_check CHECK (version >= 1),
+            CONSTRAINT model_provider_credentials_key_version_check CHECK (key_version >= 1),
+            CONSTRAINT model_provider_credentials_test_status_check CHECK (last_test_status IS NULL OR last_test_status IN ('passed', 'auth_failed', 'timeout', 'identity_mismatch', 'unreachable', 'failed')),
+            CONSTRAINT model_provider_credentials_latency_check CHECK (last_test_latency_ms IS NULL OR last_test_latency_ms >= 0),
+            CONSTRAINT model_provider_credentials_active_revoked_check CHECK ((is_active AND revoked_at IS NULL) OR (NOT is_active))
+        )
+        """,
+        f'CREATE INDEX IF NOT EXISTS model_provider_credentials_user_idx ON "{schema_name}".model_provider_credentials (user_id, created_at)',
+        f'CREATE UNIQUE INDEX IF NOT EXISTS model_provider_credentials_one_default_uq ON "{schema_name}".model_provider_credentials (user_id) WHERE is_active AND is_default AND revoked_at IS NULL',
     ]
 
     # IMPORTANT: pgvector extension must exist before the embeddings table can
@@ -388,7 +438,15 @@ def _initialize_tenant_schema(connection: Connection, schema_name: str) -> None:
     log.info(
         "tenant.schema.initialized",
         schema=schema_name,
-        tables=["users", "documents", "embeddings", "embeddings_v2", "rag_document_index_state"],
+        tables=[
+            "users",
+            "documents",
+            "embeddings",
+            "embeddings_v2",
+            "rag_document_index_state",
+            "user_profiles",
+            "model_provider_credentials",
+        ],
     )
 
 

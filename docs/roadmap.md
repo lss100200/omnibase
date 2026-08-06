@@ -104,7 +104,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.5 沙箱隔离后接只读网关** | HIGH | ✅ A0-A3/B/C/D 工程 Gate；A4 current-source target-host 12/12 `pending/not_proven`：Network Broker 两轮 26/26、真实 Headscale control-plane + mTLS Node-Daemon test-double、split-process mTLS Gateway disposable Gate 已通过；旧 11/11 不适用于 UID/GID-hardened launcher。production Core↔Runner/Broker/Gateway 联合装配、真实成员数据面、DERP、节点失陷、容量和 SLA 留给 P34.7 |
 | **P34.6 私有写入、promotion 与 snapshot 基础** | HIGH | ✅ Foundation / Contracts / Fail-closed primitives：final `cc48baa` ordinary clone 的 Overlay/Gateway source-built Gates、164 related tests、Mypy、OpenAPI 与 Ruff clean-checkout Gate 通过；Workspace-private/derived 逻辑写入、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Approval/Publication metadata 与 server-generated snapshot inventory 已通过隔离 Gate。Promotion/Restore `COMMITTED`、`controlled_shared` 成功可见性、真实 provider copy/restore 和 production snapshot barrier 继续拒绝，禁止原地修改 source 或创建/改写 `canonical_readonly` |
 | **P34.7 生产总验收** | HIGH | 🟡 A–G 工程实现/本地 Gate 已落地，production total Gate=`BLOCKED / NOT_PROVEN`：clean-checkout/composition、provider committed visibility、Workspace UI、Python/TS SDK、真实成员 Overlay/DERP/node-compromise/SLA 验证器已完成；真实 provider、non-disposable tenant/RAG、current-source Runner 12/12、四组件 production roundtrip、双真实成员/独立 DERP/双签名与 SLA 样本仍待目标环境直接证据。任何 canonical cutover 需独立审批；P34.7 PASS 前不得启动 Agent |
-| **P5.0/P5.1/P5.2A 合同链** | MEDIUM | ✅ P5.0 admission gate（三 gate fail-closed + Evidence Manifest）、P5.1A Registry 合同预检、P5.1B 内部持久化地基（migration 0010 + disposable Gate）、P5.1C Browser Registry 控制 API（10 端点，production 默认 503）、P5.2A Task/Run/Lease/fencing 账本离线合同预检已实现并验证。P5.2 persistence ledger（P5.2B）与 Agent Runtime/Planner/Executor 仍未实现；三 gate 保持 false；P5.2A `--verify` 恒 `blocked/not_proven`（exit 2） |
+| **P5 Fast Track engineering slice** | MEDIUM | 🟢 用户已批准 engineering-only Fast Track：P5.2B durable ledger + migration 0011、内部 Model Gateway 与无工具单 Agent Alpha/API/Workbench 已实现；P5.2C engineering Agent Alpha runtime（严格 seam + DB-backed adapters + exact replay + 进程内取消 signal）已通过 `omnibase-p52c-*` disposable Gate 封存（evidence 见 `docs/evidence/p5-2/`）。生产依赖仍默认 503，三 gate 保持 false；Planner/Executor/scheduler/worker、真实工具/MCP/Skill、多 Agent、migration 0012 与生产 Runtime 激活未授权 |
 
 **不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。真实 provider/object transfer、non-disposable tenant/RAG、成员 Overlay/DERP、生产恢复、容量/SLA 与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
 
@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0 admission gate（三个独立、默认关闭、fail-closed 的 Feature Gate + P34.7 Evidence Manifest validator）、P5.1A Agent Registry 离线合同预检、P5.1B Registry 内部持久化地基（migration 0010 + disposable PostgreSQL Gate）、P5.1C Browser Registry 控制 API（production 默认 503 fail-closed）与 P5.2A Agent Task/Run/Lease/fencing 账本离线合同预检均已实现并验证。Agent Runtime/Planner/Executor/scheduler/worker、Task 执行与 P5.2 persistence ledger（P5.2B）仍未实现；三个 Feature Gate 保持 `false`；P5.2A `--verify` 恒为 `blocked/not_proven`（exit 2）。
+> **合同链进度**：P5.0、P5.1A/B/C 与 P5.2A 已建立 fail-closed 合同链。用户已批准 engineering-only Fast Track，P5.2B migration 0011/持久化地基、内部 Model Gateway、无工具单 Agent Alpha 与 P5.2C engineering Agent Alpha runtime（DB-backed adapters、严格 seam、exact replay、disposable Gate）已实现；生产 Runtime 仍默认 unavailable，三个 Feature Gate 保持 `false`，Planner/Executor/scheduler/worker、真实工具/MCP/Skill、多 Agent 与生产激活仍冻结。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -198,5 +198,5 @@ Phase 7: 开源准备
 | 安全元数据与只读能力先于写入 | Resource Registry、Audit、Operation、Approval、Idempotency 和只读 gateway 是 CRUD/DDL、私有写入与 promotion 的强制基础，不允许以后补票 |
 | workspace 与 run/session 分离 | workspace 是长期逻辑资源；run/session 是可销毁执行实例，短期凭据、资源配额和攻击影响不得沉淀为 workspace 宿主权限 |
 | 普通 Docker 不是敌对代码安全声明 | Docker 可用于开发和空沙箱生命周期基线；连接真实数据前必须以 P34.0 威胁模型通过 P34.5 隔离 Gate |
-| Agent 编排严格后置 | P34.7 未通过前不得实现自主 Planner、多 Agent 长循环或宿主级工具；Agent 必须作为工作空间内的受约束负载运行 |
+| P5 Fast Track 与生产激活分离 | 允许 engineering-only P5.2B ledger、Model Gateway 和无工具单 Agent Alpha；P34.7 未通过且未获单独批准前，仍不得启用生产 Runtime、自主 Planner、多 Agent 长循环或宿主级工具 |
 | MCP 在工作空间和 Agent 之后 | 工作空间提供隔离边界，Agent 框架定义工具协议，MCP 是扩展实现之一 |
