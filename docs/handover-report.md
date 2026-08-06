@@ -2677,9 +2677,17 @@ Ruff、compileall、Mypy（4 files）均通过。
 本轮新增 `scripts/production/run_p5_4a_gateway_adapter_gate.py`。其 adapter contract
 Gate 已运行并封存证据到 git-ignored `.tmp/p5-4a-gateway-adapter-gate/`，证明
 scope、budget、Gateway audit 调用边界、lease/fencing revalidation 和 unknown
-no-replay；它明确记录 `database_sentinel_verified=false`，因为 Docker Desktop
-Linux Engine 当时未运行。因此这不是 PostgreSQL/container Gate，也不能称为
-production PASS。下一步是 Docker 恢复后补跑真正的 sentinel Gateway/数据库集成 Gate。
+no-replay；它明确记录 `database_sentinel_verified=false`，因此不被称为
+PostgreSQL/container Gate。
+
+Docker Desktop Linux Engine 恢复后，新增并运行了
+`scripts/production/run_p5_4a_gateway_disposable_gate.py`。该 runner 使用隔离的
+`omnibase_test_p54a_*` 数据库，从空库升级到 migration `0012`，执行真实的
+P34.2 capability foundation 与 P34.6 Gateway Core 集成，共 `7 passed`，并在
+结束时验证 `containers=0, networks=0, volumes=0`。当前-baseline Gate evidence
+写入 git-ignored `.tmp/p5-4a-gateway-disposable-gate/`；它仍保持
+`production_runtime_activated=false`、三个 Feature Gates 为 false、migration
+`0013` 未创建。
 
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 

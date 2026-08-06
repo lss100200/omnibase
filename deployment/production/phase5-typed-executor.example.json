@@ -42,6 +42,7 @@
       "docs/phase-5-typed-executor-contract.md",
       "docs/phase-5-threat-model.md",
       "scripts/production/run_p5_4a_gateway_adapter_gate.py",
+      "scripts/production/run_p5_4a_gateway_disposable_gate.py",
       "Makefile"
     ]
   },

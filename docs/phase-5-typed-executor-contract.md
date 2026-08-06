@@ -71,3 +71,10 @@ The current adapter-contract evidence is written by
 `.tmp/p5-4a-gateway-adapter-gate/` directory. It deliberately records
 `database_sentinel_verified=false`; Docker-backed persistence and Gateway
 integration evidence must be run separately when the Linux engine is available.
+
+The current-baseline disposable runner is
+`scripts/production/run_p5_4a_gateway_disposable_gate.py`. It provisions only
+an `omnibase_test_p54a_*` PostgreSQL database, upgrades it through `0012`, runs
+the real P34.2 capability and P34.6 Gateway Core integration suites, verifies
+the scope/budget/audit/resource boundaries, and proves `0/0/0` cleanup. It
+does not activate the production Runtime or create migration `0013`.

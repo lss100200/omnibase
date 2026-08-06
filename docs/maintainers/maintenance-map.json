@@ -2140,6 +2140,7 @@
         "deployment/production/phase5-typed-executor.example.json",
         "docs/phase-5-typed-executor-contract.md",
         "scripts/production/run_p5_4a_gateway_adapter_gate.py",
+        "scripts/production/run_p5_4a_gateway_disposable_gate.py",
         "docs/maintainers/security-invariants.md",
         "docs/maintainers/ai-maintainer-map.md",
         "Makefile"
@@ -2175,7 +2176,9 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_executor",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
-        "python scripts/production/run_p5_4a_gateway_adapter_gate.py --validate-only"
+        "python scripts/production/run_p5_4a_gateway_adapter_gate.py --validate-only",
+        "python scripts/production/run_p5_4a_gateway_disposable_gate.py --validate-only",
+        "python scripts/production/run_p5_4a_gateway_disposable_gate.py --run"
       ],
       "recovery": [
         "The default builder must remain UnavailableTypedSingleAgentExecutor. Never fall back to direct database/RAG access when a Gateway port is absent.",
