@@ -1819,3 +1819,135 @@ operator default only as an explicitly labelled fallback. If the encryption key
 is lost or ciphertext authentication fails, do not guess or bypass GCM: require
 the user to submit a new secret. If migration recovery is required, retain the
 source database and restore the verified pre-0012 dump to a new database.
+
+## INV-048 user-created-tool-free-agent-builder
+
+**Authoritative source**
+
+- `backend/src/omnibase/agent_registry/control.py:create_custom_agent`
+- `backend/src/omnibase/agent_registry/router.py:builder_router`
+- `backend/src/omnibase/production/phase5_registry_contract.py:AgentVersionManifest`
+- `backend/src/omnibase/agent_alpha/adapters.py:RegistryProfileResolver`
+- `frontend/app/(dashboard)/agents/page.tsx`
+
+**Why it exists**
+
+An authenticated Workspace member may create a real user-owned Agent, but the
+first public builder is deliberately narrower than the general Registry
+contract. One caller-owned transaction revalidates the live Tenant, live User,
+Workspace generation and live `workspace.grants.manage` membership; registers
+the AgentDefinition; seals a Version whose manifest contains the real system
+instructions and matching SHA-256; optionally installs the Version; registers
+logical Resources; completes idempotency records; and appends Audit records.
+
+The complete client intent is the idempotency anchor. Server-generated UUIDs
+and timestamps must not make exact replay drift, while the same key with a
+different name, role, instructions, tone, budget, Workspace, Provider policy or
+knowledge policy must conflict. Raw Browser fields never supply a digest.
+
+The accepted profile is a closed set: `provider_policy=user_default`,
+`knowledge_mode=workspace_read_only`, low risk, one sealed Version, no memory
+runtime, and an empty `allowed_tool_ids`. The runtime re-hashes stored
+instructions before use. Tools, shell, SQL, arbitrary HTTP, MCP, Skills,
+Planner, multi-Agent execution and hostile-code Sandbox access remain absent;
+all three Phase 5 Feature Gates remain false.
+
+**Allowed changes**
+
+- Add bounded presentation fields or additional sealed versions while keeping
+  the manifest digest, instruction digest, idempotency and Audit lifecycle
+  atomic.
+- Add server-owned, closed Provider or knowledge policies after their runtime
+  semantics and negative tests exist.
+
+**Forbidden changes**
+
+- Saving only an instruction digest while displaying a claim that custom
+  instructions execute, or using unsealed mutable text at invocation time.
+- Accepting Browser-provided tool IDs, physical locators, Provider secrets,
+  arbitrary URLs, Planner graphs or multi-Agent topology.
+- Creating Definition, Version and Binding in separate committed transactions,
+  or authorizing from a JWT/workspace snapshot without live row revalidation.
+- Replaying an old Agent after any client-intent drift under the same
+  Idempotency-Key.
+
+**Required verification**
+
+- `backend/tests/test_p5_1c_registry_api.py`
+- `backend/tests/test_p5_1_registry_contract.py`
+- `backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py`
+- `backend/tests/test_agent_alpha.py`
+- Frontend `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`
+- Browser E2E: create, install, select and invoke one custom Agent in both themes
+
+**Recovery**
+
+Disable the Builder route while preserving all Registry rows and Audit history.
+Disable or revoke the affected binding/version through existing lifecycle
+transitions; never edit a sealed manifest or delete ledger evidence to make a
+profile appear valid.
+
+## INV-049 first-party-native-skill-contract
+
+**Authoritative source**
+
+- `backend/src/omnibase/production/phase5_skill_contract.py`
+- `deployment/production/phase5-skill-contract.example.json`
+- `scripts/production/validate_p5_6a_skill_contract.py`
+- `docs/phase-5-native-skill-contract.md`
+- `docs/runbooks/skill-review-revoke-rollback.md`
+
+**Why it exists**
+
+P5.6A freezes the product Skill identity, schema, provenance, budget and
+rollback vocabulary before any persistence or runtime exists. A Skill is a
+first-party, Workspace-scoped, exact-version behavior package; it is not a raw
+plugin, credential container, dynamic download, MCP server or authority grant.
+
+The compile-only contract must remain incapable of claiming production
+publication. P5.6A accepts at most `tested` behavior; `approved|published`
+requires later sealed source, dependency lock, SBOM, signature, secret scan,
+paired evaluation, human review and rollback evidence. Instruction Skills have
+zero tools, capabilities and tool-call budget. Workflow and script manifests
+may be parsed as tested metadata only; they are never expanded or executed.
+
+**Allowed changes**
+
+- Tighten the closed manifest, JSON Schema subset, digest rules, server-owned
+  ceilings or rollback validation.
+- Add first-party `draft|tested` instruction fixtures whose digest fields are
+  explicitly identified as contract fixtures rather than release evidence.
+- Extend offline negative tests and maintainer documentation without creating
+  persistence, API routes or runtime authority.
+
+**Forbidden changes**
+
+- Creating migration `0013`, Skill ORM/service/router/SDK/UI installation or a
+  runtime under P5.6A without a separately authorized phase.
+- Treating a SHA-256-shaped value or `signature_status=verified` as proof of
+  review/publication.
+- Allowing third-party definitions, non-Workspace installation, secrets,
+  network access, wildcard tools/capabilities, external/cyclic schema refs, or
+  an instruction Skill that expands AgentVersion authority.
+- Executing `verification_commands` through Core shell, executing script Skills
+  in Core, or using a workflow Skill without the complete P5.3/P5.4 Validator
+  and Executor gates.
+- Enabling any Phase 5 Feature Gate, MCP or Marketplace because this contract
+  parses successfully.
+
+**Required verification**
+
+- `backend/tests/test_p5_6a_skill_contract.py`
+- `python scripts/production/validate_p5_6a_skill_contract.py --validate-only`
+- `python scripts/production/validate_p5_6a_skill_contract.py --verify` from a
+  committed clean checkout; expected state is `blocked/not_proven`, exit 2
+- Focused Ruff and Mypy for the contract, test and CLI
+- Maintainer map and benchmark validators
+- Compose config with explicit `.env.example`
+
+**Recovery**
+
+If the contract, Git source, migration head or example manifest drifts, stop
+admission and restore the last reviewed compile-only contract or forward-fix it
+in a new commit. Keep every Phase 5 Feature Gate false. Do not create a database
+rollback or runtime fallback: P5.6A has no database and executes no Skill.

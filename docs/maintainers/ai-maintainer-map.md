@@ -1229,3 +1229,61 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   `deepseek-v4-flash` calls succeeded through operator and personal credential
   sources, profile name `Omni` affected the answer, and active WorkspaceRun /
   RunLease counts returned to zero after each invocation.
+
+## 6.13 User-created tool-free Agents and monochrome workbench
+
+- `POST /api/v1/workspaces/{workspace_id}/agents` is the only Browser surface
+  allowed to create an Agent Definition and sealed Version. It re-locks the
+  live Tenant, User, Workspace and WorkspaceMembership and requires
+  `workspace.grants.manage` in the caller-owned transaction.
+- Creation is atomic across Definition, Version, optional Workspace binding,
+  logical resource registration, idempotency and append-only Audit. The
+  application-controlled request hash covers the complete Browser intent while
+  excluding generated UUIDs and timestamps; it is never accepted from a
+  Browser field.
+- The sealed manifest contains the complete system instructions. Its raw UTF-8
+  SHA-256 must equal `instructions_digest`, the manifest digest covers the
+  instructions, and Agent Alpha revalidates the digest before use.
+- The Browser contract is closed to `provider_policy=user_default` and
+  `knowledge_mode=workspace_read_only`. Created Agents are low-risk,
+  single-concurrency and tool-free. Tools, Planner, multi-Agent, MCP, Skills,
+  Shell, SQL, arbitrary HTTP and hostile-code Sandbox remain unavailable.
+- The former P5.1C catalog/install dependency still rejects by default. The
+  Builder is a separate explicitly authorized route and must not be used to
+  silently wire the general Registry control plane.
+- The frontend uses a system-wide monochrome contract: light mode is white
+  with black content and mark; dark mode is black with white content and mark.
+  Product UI must not depend on blue/purple/green/orange/gold status colors.
+  Semantic state remains legible through text, icons, border weight, fill,
+  spacing and labels.
+
+## 6.14 P5.6A first-party native Skill contract
+
+- The product Skill contract is
+  `backend/src/omnibase/production/phase5_skill_contract.py`. P5.6A is strictly
+  compile-only and always reports `activation_allowed=false`.
+- A Skill is first-party, Workspace-only and exact-version/digest pinned. It
+  cannot carry secrets, enable network access, use wildcard capability or
+  override the Platform Security Kernel.
+- `instruction` Skills require empty tools/capabilities and zero tool-call
+  budget. `workflow` and `script` may exist only as `draft|tested` metadata;
+  no Planner expansion, dispatch, Sandbox launch or Core execution exists.
+- P5.6A refuses `approved|published`. Do not weaken this by trusting a
+  `signature_status` string or SHA-256-shaped placeholders. Publication needs
+  later sealed source/lock/SBOM/signature/secret-scan/eval/review evidence.
+- JSON Schema is a bounded closed subset with local-only, existing and acyclic
+  `$ref`. Rollback targets the same Definition and a strictly older reviewed
+  release.
+- Verification requires clean Git provenance, all three Phase 5 gates false
+  and migration head exactly `0012`. Migration `0013`, Browser `/skills`, ORM,
+  installation and runtime remain absent and require later authorization.
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p5_6a_skill_contract.py --validate-only
+python scripts/production/validate_p5_6a_skill_contract.py --verify
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_6a_skill_contract.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py
+```

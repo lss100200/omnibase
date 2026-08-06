@@ -342,8 +342,15 @@ class RegistryProfileResolver:
         if version.risk_level != "low":
             raise AlphaAdapterUnavailable("agent_alpha_low_risk_only")
         manifest = version.manifest_payload if isinstance(version.manifest_payload, dict) else {}
-        instructions_text = str(manifest.get("instructions", "")).strip()
-        if not instructions_text:
+        raw_instructions = manifest.get("instructions")
+        instructions_text = raw_instructions if isinstance(raw_instructions, str) else ""
+        if instructions_text.strip():
+            actual_instructions_digest = hashlib.sha256(
+                instructions_text.encode("utf-8")
+            ).hexdigest()
+            if actual_instructions_digest != version.instructions_digest:
+                raise AlphaAdapterUnavailable("agent_alpha_instructions_digest_mismatch")
+        else:
             # The sealed manifest carries no instructions: fall back to the
             # server-owned tool-free research posture instead of sending an
             # empty system message.

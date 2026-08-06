@@ -2612,3 +2612,84 @@ source/evidence boundary，不能被继续当作当前仓库状态；历史 evid
 激活仍需单独批准。历史 P5.1/P5.2B/P5.2C sealed evidence只证明其原始 `0011`
 source boundary；本轮没有伪造或覆盖这些 evidence，也不把它们描述为当前 `0012`
 production Gate。根 `.env` 未读取、打印、stage 或提交。
+
+### 用户自建 Agent 与全系统黑白工作台（2026-08-05）
+
+本轮在独立分支增加了面向真实用户的 Agent Builder，并将前端视觉合同统一为
+纯黑白双主题。它不是通用 Agent Runtime 解锁，也不是只保存表单的演示页面。
+
+- 新增 `POST /api/v1/workspaces/{workspace_id}/agents`。请求在同一事务中重锁
+  live Tenant/User/Workspace/WorkspaceMembership，要求
+  `workspace.grants.manage`，随后注册用户拥有的 Definition、封存 `1.0.0`
+  Version、可选安装 Workspace binding、登记 logical resources、完成幂等记录并
+  写 append-only Audit；失败整体回滚。
+- Builder 可配置名称、角色与职责、system instructions、回答风格、上下文、输出
+  token 与 deadline。Provider 固定为用户默认凭据，知识固定为当前 Workspace
+  只读范围。
+- 完整 system instructions 进入 sealed manifest；原始 UTF-8 SHA-256 必须匹配
+  `instructions_digest`，manifest digest 同时覆盖指令，Agent Alpha 调用前再次
+  校验。用户指令因此会被真实保存并执行，而不是只保存 digest 或前端状态。
+- 创建结果固定 low-risk、`allowed_tool_ids=[]`、单并发。Planner、multi-Agent、
+  MCP、Skills、Shell、SQL、任意 HTTP 与 hostile-code Sandbox 仍关闭；三个
+  Phase 5 Feature Gate 仍为 false，production Runtime activation 仍需单独批准。
+- 前端 light mode 使用纯白背景、黑色文字和黑色 Logo；dark mode 使用纯黑背景、
+  白色文字和白色 Logo。旧蓝/紫/绿/橙/金强调色由全局 monochrome guard 降级为
+  黑、白和中性灰，状态差异改用标签、图标、边框、填充和字重表达。
+- `/agents` 增加 New employee Builder；创建成功后重新读取 Workspace profiles、
+  自动选择新 AgentVersion，并进入现有真实 Agent Alpha 工作台。
+- clean-database Browser E2E 发现并修复了首用户注册阻塞：默认 onboarding 曾传入
+  `registration:{uuid}`，但共享 control-plane request ID 闭集禁止冒号，导致租户
+  schema 初始化后请求被误报为 `weak_password`。现改为安全的
+  `registration-{uuid}`；没有放宽 request ID validator。
+- Builder UI 将 Registry 创建成功与后续 Agent Alpha profile refresh 分开处理。
+  Alpha seam 未装配时 profile 请求仍正确返回 503，但已经原子提交的 Definition、
+  sealed Version 与 binding 不再被前端误报为“创建失败”。
+
+验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
+production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。
+
+### P5.6A first-party native Skill contract admission（2026-08-05）
+
+用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
+engineering-only 的 P5.6A 合同，不把该批准扩张为 Skill Runtime、MCP、
+Marketplace 或 migration `0013` 授权。
+
+新增 `phase5_skill_contract.py`、focused tests、严格示例
+`phase5-skill-contract.example.json`、CLI validator、合同文档与
+review/revoke/rollback runbook。合同冻结 first-party、Workspace-only、exact
+version/digest、closed local JSON Schema、server-owned budget、network deny、
+secret-free、strictly-older rollback 与输入顺序独立 canonical digest。
+
+独立审查发现并关闭了 migration baseline 可由输入放宽、clean-checkout 可关闭、
+Git provenance 异常未转 veto、forbidden path 过窄、仅凭 `verified` 字符串伪造
+published、rollback 自指/前进/跨 Definition、canonical order 漂移与 `$ref`
+解析错误等缺口。P5.6A 现在最多接受 `tested`；`approved|published` 必须等待
+真实 sealed source/dependency lock/SBOM/signature/secret scan/paired eval/human
+review/rollback evidence。
+
+当前已执行证据：focused tests `46 passed`；P5.6A/P5.2A/P5.1A/P5.0/P34.7
+组合回归 `446 passed`；全套 non-integration `1699 passed / 18 skipped /
+15 deselected`；目标 Ruff check/format PASS；Mypy `182` 个 source files
+`0 issues`；compileall exit 0；maintainer map `39 invariants / 31 modules / 937
+matched files / 205 entrypoints / 136 verification commands` 与 benchmark
+validator、Compose config、git diff check 均通过；`--validate-only` exit 0 且报告
+`blocked/not_proven`、`activation_allowed=false`。提交 `99bfc96` 后在同一
+clean linked worktree 使用宿主 Python 执行正式 `--verify`：exit 2、state
+`blocked/not_proven`、`contract_valid=true`、`activation_allowed=false`、
+`migration_head=0012`、feature gates false/false/false、vetoes `[]`、source
+clean=true、44 tracked files、manifest SHA-256
+`dff5c5063cbb77ba2aac278fd6f3153cd5abee3be9a90fc787f20ec9634496f3`。
+容器内首次 formal verify 因只挂载 linked worktree、无法解析指向主仓库外部的
+`.git/worktrees` metadata 而正确返回 `invalid/veto`；未把该宿主装载失败隐藏或
+误报为合同失败，随后使用可见真实 Git metadata 的宿主 validator 完成验证。
+
+未创建 ORM/service/router/SDK/UI、未创建 migration `0013`、未挂载
+`/api/v1/skills`、未安装或执行 Skill、未执行 manifest 中的 verification
+command、未访问数据库/provider/network、未读取根 `.env`。三项 Phase 5
+Feature Gates 保持 false。
+
+下一条单线计划：PR #15 CI 收口 → 当前 Agent Builder/monochrome 合入 → P5.3A
+独立审查合入 → P5.4 typed single-Agent Executor → 另行授权 P5.6B persistence
+→ P5.6C catalog/install/rollback API+UI → P5.6D instruction Skill exact-version
+pin。workflow 等 P5.3/P5.4，script 等 production P34.5/P34.7，MCP/third-party
+Marketplace 等 Phase 6。

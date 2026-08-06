@@ -20,8 +20,8 @@
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 100%（待提交） | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC、离线模型边界；工程验收已通过，尚待原子提交 |
 | Phase 3-4 安全 AI 工作空间与能力平台 | 🚧 P34.6 工程封板 | P34.1–P34.4 已封板；P34.5A0-A4/B/C/D 已通过独立 Runner、Network Broker、Headscale control-plane 与 split-process mTLS disposable Gates；P34.6 Workspace-private/derived data、controlled write seam、promotion、lineage、snapshot inventory 与 restore-new-identity metadata foundation 已通过工程 Gate。Production 联合装配、真实 provider/object transfer、non-disposable tenant/RAG、成员数据面/DERP/节点失陷、容量/SLA 和 Agent Runtime 仍冻结 |
-| Agent 编排 | ⬜ 0% | 仅 Celery 摄取任务 |
-| Skill/MCP 扩展 | ⬜ 0% | 无插件系统、无 MCP |
+| Agent 编排 | 🟡 Fast Track engineering | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、用户 Agent Builder 已实现；P5.3A 待合入，P5.4 Executor 与 production activation 未完成 |
+| Skill/MCP 扩展 | 🟡 合同起步 | P5.6A 第一方原生 Skill compile-only 合同已建立；无 persistence/API/install/runtime，第三方 Marketplace 与 MCP 仍关闭 |
 
 ---
 
@@ -135,6 +135,14 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **Memory Compiler** | HIGH | 按 user/workspace/agent/task 与 token 预算生成短期 Context Capsule；长期记忆候选需治理、去敏和纠正 |
 | **原生 Skill 契约** | HIGH | 版本化 manifest、typed tool choreography、能力/预算声明和回滚；第三方 marketplace/MCP 后置 Phase 6 |
 | **恢复与 reconciliation** | HIGH | 新 Run/Attempt/Lease/identity 恢复，`pending|unknown` 不自动 replay，checkpoint 只引用 committed 逻辑结果 |
+
+> **P5.6A 当前状态（2026-08-05）**：已建立 first-party-only 的
+> `SkillDefinition/SkillVersion` compile-only 合同、严格 schema/digest/budget/
+> rollback Gate、示例 `Workspace Librarian` 与离线 validator。正式状态保持
+> `blocked/not_proven`；最多接受 `tested` manifest，不接受无真实 sealed
+> evidence 的 `approved/published`，不创建 migration `0013`，不暴露
+> `/api/v1/skills`，不安装或执行 Skill。下一条产品主链是 P5.3A 合入 →
+> P5.4 typed single-Agent Executor → 经单独授权的 P5.6B persistence。
 
 ---
 

@@ -241,30 +241,32 @@ export function AIConversationWorkbench({
   return (
     <section
       className={cn(
-        'ai-workbench flex min-h-0 flex-col overflow-hidden rounded-2xl border border-indigo-400/15 bg-[#080d1e] text-slate-100 shadow-[0_28px_80px_-48px_rgba(49,46,129,.95)]',
+        'ai-workbench flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-xl shadow-foreground/5',
         className,
       )}
       aria-label="OmniBase AI 工作区"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/[0.07] px-4 sm:px-5">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500/25 to-cyan-400/15 text-indigo-200 ring-1 ring-indigo-300/15">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground ring-1 ring-border">
             <Bot className="h-4 w-4" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-sm font-semibold">OmniBase AI</h1>
-              <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 font-mono text-[7px] uppercase tracking-wider text-emerald-300">
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[7px] uppercase tracking-wider text-foreground">
                 Available
               </span>
             </div>
-            <p className="truncate text-[9px] text-slate-500">{contextLabel}</p>
+            <p className="truncate text-[9px] text-muted-foreground">{contextLabel}</p>
           </div>
         </div>
-        <div className="flex items-center rounded-lg border border-white/[0.07] bg-white/[0.025] p-0.5 text-[9px]">
-          <span className="rounded-md bg-indigo-400/15 px-2.5 py-1 text-indigo-200">问答</span>
-          <span className="px-2.5 py-1 text-slate-600">规划 · Preview</span>
-          <span className="hidden px-2.5 py-1 text-slate-700 sm:block">执行 · Locked</span>
+        <div className="flex items-center rounded-lg border border-border bg-muted/35 p-0.5 text-[9px]">
+          <span className="rounded-md bg-foreground px-2.5 py-1 text-background">问答</span>
+          <span className="px-2.5 py-1 text-muted-foreground">规划 · Preview</span>
+          <span className="hidden px-2.5 py-1 text-muted-foreground/70 sm:block">
+            执行 · Locked
+          </span>
         </div>
       </header>
 
@@ -275,16 +277,16 @@ export function AIConversationWorkbench({
       >
         {!hasConversation ? (
           <div className="mx-auto flex h-full min-h-full max-w-3xl flex-col items-center justify-center text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-400/10 text-indigo-200 ring-1 ring-indigo-300/15">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-foreground ring-1 ring-border">
               <Sparkles className="h-6 w-6" />
             </span>
-            <p className="mt-5 font-mono text-[8px] uppercase tracking-[0.22em] text-indigo-300/60">
+            <p className="mt-5 font-mono text-[8px] uppercase tracking-[0.22em] text-muted-foreground">
               AI-first workspace
             </p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">
+            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-foreground sm:text-5xl">
               从一个问题开始
             </h2>
-            <p className="mt-3 max-w-xl text-xs leading-5 text-slate-400 sm:text-sm">
+            <p className="mt-3 max-w-xl text-xs leading-5 text-muted-foreground sm:text-sm">
               先和人工智能一起理解问题，再组织知识、工作空间和可验证的引用。
             </p>
             <div className="mt-7 grid w-full gap-2 sm:grid-cols-3">
@@ -293,7 +295,7 @@ export function AIConversationWorkbench({
                   key={suggestion}
                   type="button"
                   onClick={() => setInput(suggestion)}
-                  className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-3 text-left text-[10px] leading-4 text-slate-400 transition-colors hover:border-indigo-300/25 hover:bg-indigo-400/[0.06] hover:text-slate-200"
+                  className="rounded-xl border border-border bg-muted/25 px-3 py-3 text-left text-[10px] leading-4 text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-muted hover:text-foreground"
                 >
                   {suggestion}
                 </button>
@@ -321,8 +323,8 @@ export function AIConversationWorkbench({
         )}
       </div>
 
-      <footer className="shrink-0 border-t border-white/[0.07] bg-[#070b18]/95 p-3 sm:p-4">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-indigo-300/15 bg-indigo-950/25 p-2.5 shadow-[0_18px_55px_-38px_rgba(99,102,241,.9)] focus-within:border-cyan-300/25">
+      <footer className="shrink-0 border-t border-border bg-background p-3 sm:p-4">
+        <div className="mx-auto max-w-4xl rounded-2xl border border-border bg-card p-2.5 shadow-lg shadow-foreground/5 focus-within:border-foreground/30">
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -335,11 +337,11 @@ export function AIConversationWorkbench({
             placeholder="描述你想研究、设计或推进的工作…"
             disabled={loading}
             rows={embedded ? 3 : 4}
-            className="w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 disabled:cursor-not-allowed"
+            className="w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             aria-label="向 OmniBase 提问"
           />
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
-            <div className="flex flex-wrap items-center gap-2 text-[8px] text-slate-500">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+            <div className="flex flex-wrap items-center gap-2 text-[8px] text-muted-foreground">
               <ToolState icon={FileSearch} label="知识上下文" state="开启" />
               <ToolState icon={CheckCircle2} label="引用" state="开启" />
               <ToolState icon={Wrench} label="工具执行" state="关闭" muted />
@@ -350,7 +352,7 @@ export function AIConversationWorkbench({
                 size="sm"
                 variant="outline"
                 onClick={() => abortControllerRef.current?.abort()}
-                className="h-9 border-amber-300/20 bg-amber-400/5 text-amber-200 hover:bg-amber-400/10"
+                className="h-9 border-border bg-muted text-foreground hover:bg-muted/80"
               >
                 <Square className="mr-2 h-3.5 w-3.5" />
                 停止
@@ -361,7 +363,7 @@ export function AIConversationWorkbench({
                 size="sm"
                 onClick={() => void handleSend()}
                 disabled={!input.trim()}
-                className="h-9 bg-gradient-to-r from-indigo-400 to-cyan-400 px-4 text-slate-950 hover:from-indigo-300 hover:to-cyan-300"
+                className="h-9 bg-foreground px-4 text-background hover:bg-foreground/85"
               >
                 交给 OmniBase
                 <Send className="ml-2 h-3.5 w-3.5" />
@@ -369,7 +371,7 @@ export function AIConversationWorkbench({
             )}
           </div>
         </div>
-        <div className="mx-auto mt-2 flex max-w-4xl items-center justify-center gap-1.5 text-center text-[8px] text-slate-600">
+        <div className="mx-auto mt-2 flex max-w-4xl items-center justify-center gap-1.5 text-center text-[8px] text-muted-foreground">
           <ShieldCheck className="h-3 w-3" />
           模型回答不会自动执行工具；重要结论请检查引用。
         </div>
@@ -392,8 +394,8 @@ function ToolState({
   return (
     <span
       className={cn(
-        'flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2 py-1',
-        muted ? 'text-slate-600' : 'text-slate-400',
+        'flex items-center gap-1.5 rounded-md border border-border px-2 py-1',
+        muted ? 'text-muted-foreground/65' : 'text-muted-foreground',
       )}
     >
       <Icon className="h-3 w-3" />
@@ -416,8 +418,8 @@ const MessageBubble = memo(function MessageBubble({
         className={cn(
           'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border',
           isUser
-            ? 'border-cyan-300/15 bg-cyan-400/10 text-cyan-200'
-            : 'border-indigo-300/15 bg-indigo-400/10 text-indigo-200',
+            ? 'border-foreground/25 bg-foreground text-background'
+            : 'border-border bg-muted text-foreground',
         )}
       >
         {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
@@ -427,8 +429,8 @@ const MessageBubble = memo(function MessageBubble({
           className={cn(
             'rounded-2xl px-4 py-3 text-left text-sm leading-6',
             isUser
-              ? 'rounded-tr-sm bg-cyan-400/10 text-slate-100 ring-1 ring-cyan-300/10'
-              : 'rounded-tl-sm bg-white/[0.045] text-slate-200 ring-1 ring-white/[0.06]',
+              ? 'rounded-tr-sm bg-foreground text-background ring-1 ring-foreground'
+              : 'rounded-tl-sm bg-muted text-foreground ring-1 ring-border',
           )}
         >
           {message.content || (streaming ? '正在组织回答…' : '')}
@@ -442,7 +444,7 @@ const MessageBubble = memo(function MessageBubble({
               <Badge
                 key={citation.index}
                 variant="outline"
-                className="border-indigo-300/15 bg-indigo-400/5 text-[9px] text-indigo-200"
+                className="border-border bg-muted text-[9px] text-foreground"
               >
                 [{citation.index}] {citation.snippet.slice(0, 48)}...
               </Badge>

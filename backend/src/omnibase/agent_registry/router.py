@@ -13,6 +13,7 @@ from typing import Never
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from sqlalchemy.orm import Session
 
 from omnibase.agent_registry.control import (
     AgentRegistryControlError,
@@ -21,6 +22,8 @@ from omnibase.agent_registry.control import (
     UnavailableAgentRegistryControlPlane,
 )
 from omnibase.agent_registry.schemas import (
+    AgentBuilderCreate,
+    AgentBuilderCreateResult,
     AgentDefinitionList,
     AgentDefinitionRead,
     AgentInstallationList,
@@ -38,13 +41,17 @@ from omnibase.agent_registry.service import (
     RegistryNotFoundError,
     RegistryStateError,
 )
-from omnibase.tenants.dependencies import TenantContext, get_current_tenant
+from omnibase.tenants.dependencies import TenantContext, get_current_tenant, get_tenant_db
 from omnibase.workspaces.service import WorkspacePolicyDenied
 
 router = APIRouter(prefix="/agent-definitions", tags=["agent-definitions"])
 installation_router = APIRouter(
     prefix="/workspaces/{workspace_id}/agent-installations",
     tags=["agent-installations"],
+)
+builder_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/agents",
+    tags=["agent-builder"],
 )
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -64,6 +71,34 @@ def get_registry_control_plane() -> UnavailableAgentRegistryControlPlane:
     ``AgentRegistryControlService`` (constructed from their own session).
     """
     return UnavailableAgentRegistryControlPlane()
+
+
+@builder_router.post(
+    "",
+    response_model=AgentBuilderCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_custom_agent(
+    workspace_id: str,
+    payload: AgentBuilderCreate,
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=128),
+    ctx: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_tenant_db),
+) -> AgentBuilderCreateResult:
+    """Create a sealed, low-risk, tool-free Agent and optionally install it."""
+
+    try:
+        return AgentRegistryControlService(db).create_custom_agent(
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+            workspace_id=_as_uuid(workspace_id),
+            request_id=_request_id(request),
+            payload=payload,
+            idempotency_key=idempotency_key,
+        )
+    except Exception as exc:
+        _raise_control(exc)
 
 
 def _http_error(status_code: int, code: str, message: str) -> HTTPException:
@@ -315,6 +350,7 @@ def rollback_agent_installation(
 
 
 __all__ = [
+    "builder_router",
     "get_registry_control_plane",
     "installation_router",
     "router",

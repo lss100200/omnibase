@@ -20,6 +20,7 @@ from omnibase.production.phase5_registry_contract import (
     AgentVersionManifest,
     BudgetCeilings,
     RegistryContractConfig,
+    RegistryContractError,
     RegistryContractGate,
     RiskLevel,
     VersionState,
@@ -447,6 +448,23 @@ def test_definition_version_binding_parse_positive() -> None:
     binding = WorkspaceAgentBinding.from_mapping(_binding_mapping(), ceilings=_ceilings())
     assert binding.workspace_generation == 1
     assert binding.installation_state.value == "installed"
+
+
+def test_version_can_seal_real_instructions_and_binds_their_digest() -> None:
+    mapping = _version_mapping()
+    instructions = "You are a tool-free Workspace research employee."
+    mapping["instructions"] = instructions
+    mapping["instructions_digest"] = _digest(instructions)
+    mapping["manifest_digest"] = _version_canonical_digest(mapping)
+    version = AgentVersionManifest.from_mapping(mapping, ceilings=_ceilings())
+    assert version.instructions == instructions
+    assert version.to_dict()["instructions"] == instructions
+
+    drifted = dict(mapping)
+    drifted["instructions"] = "A different instruction."
+    drifted["manifest_digest"] = _version_canonical_digest(drifted)
+    with pytest.raises(RegistryContractError, match="instructions_digest does not match"):
+        AgentVersionManifest.from_mapping(drifted, ceilings=_ceilings())
 
 
 def test_version_canonical_digest_ignores_line_endings() -> None:

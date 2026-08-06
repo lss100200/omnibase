@@ -173,7 +173,7 @@ shell: backend-shell ## 别名：后端 shell
 # 测试与质量
 # ------------------------------------------------------------
 
-.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger lint lint-backend lint-frontend typecheck format format-check
+.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-6a-skill-contract lint lint-backend lint-frontend typecheck format format-check
 
 test: test-backend test-frontend ## 运行所有测试
 
@@ -237,6 +237,12 @@ test-p5-2a-task-ledger-contract: ## 离线 P5.2A Agent Task/Run/Lease/fencing �
 	    tests/test_p5_1_registry_contract.py \
 	    tests/test_p5_0_admission.py \
 	    tests/test_p34_7_production_composition.py -q
+
+test-p5-6a-skill-contract: ## 离线 P5.6A 第一方原生 Skill 合同预检（无数据库、无运行时）
+	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace backend \
+	  python scripts/production/validate_p5_6a_skill_contract.py --validate-only
+	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace/backend backend \
+	  pytest tests/test_p5_6a_skill_contract.py -q
 
 test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engineering Gate
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p52b-*|omnibase-test-*) ;; \

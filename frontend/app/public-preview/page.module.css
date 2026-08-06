@@ -1,7 +1,7 @@
 .page {
-  --preview-cyan: 188 94% 43%;
-  --preview-blue: 217 91% 60%;
-  --preview-violet: 263 70% 58%;
+  --preview-cyan: 0 0% 30%;
+  --preview-blue: 0 0% 50%;
+  --preview-violet: 0 0% 70%;
   background: radial-gradient(circle at 8% 4%, hsl(var(--preview-cyan) / 0.1), transparent 27rem),
     radial-gradient(circle at 92% 8%, hsl(var(--preview-violet) / 0.1), transparent 30rem),
     hsl(var(--background));
@@ -17,8 +17,8 @@
 .heroGlow {
   box-shadow:
     0 0 0 1px hsl(var(--foreground) / 0.06),
-    0 22px 80px -36px hsl(var(--preview-cyan) / 0.32),
-    0 24px 96px -42px hsl(var(--preview-violet) / 0.3);
+    0 22px 80px -36px hsl(var(--foreground) / 0.18),
+    0 24px 96px -42px hsl(var(--foreground) / 0.12);
 }
 
 .signal {

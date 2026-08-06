@@ -343,6 +343,45 @@ export interface AgentAlphaProfileList {
   readonly total: number
 }
 
+export interface AgentBuilderPayload {
+  readonly display_name: string
+  readonly role_description: string
+  readonly instructions: string
+  readonly assistant_tone: string
+  readonly provider_policy: 'user_default'
+  readonly knowledge_mode: 'workspace_read_only'
+  readonly max_context_tokens: number
+  readonly max_output_tokens: number
+  readonly max_wall_clock_seconds: number
+  readonly install_immediately: boolean
+}
+
+export interface AgentBuilderResult {
+  readonly definition: {
+    readonly agent_definition_id: string
+    readonly display_name: string
+    readonly description?: string | null
+  }
+  readonly version: {
+    readonly agent_version_id: string
+    readonly manifest_digest: string
+    readonly allowed_tool_ids: string[]
+  }
+  readonly installation: AgentInstallation | null
+  readonly tools_enabled: false
+  readonly planner_enabled: false
+  readonly multi_agent_enabled: false
+}
+
+export const agentBuilderApi = {
+  create: (workspaceId: string, payload: AgentBuilderPayload) =>
+    api
+      .post<AgentBuilderResult>(`/workspaces/${workspaceId}/agents`, payload, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      })
+      .then((response) => response.data),
+}
+
 export const workspaceInstallationsApi = {
   list: (workspaceId: string) =>
     api

@@ -68,8 +68,8 @@ function LoginFormCard() {
   }
 
   return (
-    <Card className="overflow-hidden rounded-none border-stone-300/80 bg-[#f7f3ea] text-stone-950 shadow-[0_28px_80px_-48px_rgba(0,0,0,.55)] dark:border-stone-700 dark:bg-[#211f1b] dark:text-stone-100">
-      <div className="h-0.5 w-full bg-amber-400" />
+    <Card className="overflow-hidden rounded-none border-border bg-white text-black shadow-[0_28px_80px_-48px_rgba(0,0,0,.55)] dark:bg-black dark:text-white">
+      <div className="h-px w-full bg-foreground" />
       <CardHeader className="space-y-2 px-6 pb-6 pt-7 sm:px-8 sm:pt-9">
         <div className="flex items-center justify-between gap-3">
           <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
@@ -117,7 +117,7 @@ function LoginFormCard() {
         <CardFooter className="flex flex-col gap-4 px-6 pb-7 pt-2 sm:px-8 sm:pb-9">
           <Button
             type="submit"
-            className="h-12 w-full rounded-none border-0 bg-stone-950 text-stone-50 hover:bg-amber-400 hover:text-stone-950 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-amber-300"
+            className="h-12 w-full rounded-none border bg-black text-white hover:bg-white hover:text-black dark:bg-white dark:text-black dark:hover:bg-black dark:hover:text-white"
             disabled={submitting}
           >
             {submitting ? (
@@ -145,7 +145,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <Card className="rounded-none border-stone-300 bg-[#f7f3ea] shadow-2xl dark:border-stone-700 dark:bg-[#211f1b]">
+        <Card className="rounded-none border-border bg-white shadow-2xl dark:bg-black">
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             正在加载登录页…
           </CardContent>

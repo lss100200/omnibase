@@ -6,17 +6,17 @@
     "networks": 0,
     "volumes": 0
   },
-  "database_name": "omnibase_test_p51c_20260803164155",
+  "database_name": "omnibase_test_p51c_20260805142136",
   "database_sentinel_verified": true,
-  "finished_at": "2026-08-03T16:43:21.784670+00:00",
+  "finished_at": "2026-08-05T14:24:18.057292+00:00",
   "gate": "P5.1C Browser Agent Registry control API disposable Gate",
   "integration_tests": [
     "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py"
   ],
-  "manifest_sha256": "484888cfd7eeb9e2948272ddae336efcf6626e01dabb4ef735552f8202e1455d",
+  "manifest_sha256": "920ece35dc8a7a57318adea532ba324bd4494dc056a57c226993c6e61d1cdc2f",
   "passed": true,
   "physical_locator_exposed": false,
   "root_env_accessed": false,
   "schema_version": 1,
-  "started_at": "2026-08-03T16:41:55.315705+00:00"
+  "started_at": "2026-08-05T14:21:37.280419+00:00"
 }

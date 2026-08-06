@@ -101,6 +101,52 @@ class AgentInstallationList(RegistryApiModel):
     total: int = Field(ge=0)
 
 
+class AgentBuilderCreate(RegistryApiModel):
+    """Create one user-owned, sealed and strictly tool-free Agent."""
+
+    display_name: str = Field(min_length=1, max_length=120)
+    role_description: str = Field(min_length=1, max_length=1_000)
+    instructions: str = Field(min_length=1, max_length=8_000)
+    assistant_tone: str = Field(min_length=1, max_length=500)
+    provider_policy: str = Field(default="user_default")
+    knowledge_mode: str = Field(default="workspace_read_only")
+    max_context_tokens: int = Field(default=16_384, ge=512, le=32_768)
+    max_output_tokens: int = Field(default=2_048, ge=64, le=8_192)
+    max_wall_clock_seconds: int = Field(default=120, ge=1, le=300)
+    install_immediately: bool = True
+
+    @field_validator("display_name", "role_description", "instructions", "assistant_tone")
+    @classmethod
+    def _non_blank_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+    @field_validator("provider_policy")
+    @classmethod
+    def _user_default_provider_only(cls, value: str) -> str:
+        if value != "user_default":
+            raise ValueError("provider_policy must be user_default")
+        return value
+
+    @field_validator("knowledge_mode")
+    @classmethod
+    def _workspace_read_only_only(cls, value: str) -> str:
+        if value != "workspace_read_only":
+            raise ValueError("knowledge_mode must be workspace_read_only")
+        return value
+
+
+class AgentBuilderCreateResult(RegistryApiModel):
+    definition: AgentDefinitionRead
+    version: AgentVersionRead
+    installation: AgentInstallationRead | None
+    tools_enabled: bool = False
+    planner_enabled: bool = False
+    multi_agent_enabled: bool = False
+
+
 class DefaultBudgetPolicyWrite(RegistryApiModel):
     """Client budget expression; server ceilings still apply at install time."""
 
@@ -241,6 +287,8 @@ def project_binding(model: Any) -> AgentInstallationRead:
 
 
 __all__ = [
+    "AgentBuilderCreate",
+    "AgentBuilderCreateResult",
     "AgentDefinitionList",
     "AgentDefinitionRead",
     "AgentInstallCreate",

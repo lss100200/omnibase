@@ -91,6 +91,25 @@ def _canonical_request_hash(payload: dict[str, object]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _resolve_request_hash(
+    payload: dict[str, object],
+    *,
+    trusted_override: str | None,
+) -> str:
+    """Use a service-computed hash unless a trusted application seam freezes intent.
+
+    The Browser Agent Builder owns server-generated UUIDs and timestamps, so its
+    application service supplies a SHA-256 of the complete client intent.  The
+    value never comes from a Browser field and remains closed to lowercase hex.
+    """
+
+    if trusted_override is None:
+        return _canonical_request_hash(payload)
+    if len(trusted_override) != 64 or any(ch not in "0123456789abcdef" for ch in trusted_override):
+        raise RegistryStateError("registry_request_hash_override_invalid")
+    return trusted_override
+
+
 def _deterministic_binding_payload(binding: WorkspaceAgentBinding) -> dict[str, object]:
     """Client-visible binding payload without server-derived identity fields.
 
@@ -325,6 +344,7 @@ class RegistryPersistenceService:
         request_id: str,
         definition: AgentDefinition,
         idempotency_key: str,
+        request_hash_override: str | None = None,
     ) -> AgentDefinitionModel:
         _validate_contract_identity(
             tenant_id=tenant_id,
@@ -334,7 +354,10 @@ class RegistryPersistenceService:
         )
         _lock_tenant(self._session, tenant_id=tenant_id)
         _lock_actor_user(self._session, actor_user_id=actor_user_id)
-        request_hash = _canonical_request_hash(definition.to_dict())
+        request_hash = _resolve_request_hash(
+            definition.to_dict(),
+            trusted_override=request_hash_override,
+        )
         record, inserted = _reserve_registry_idempotency(
             self._session,
             tenant_id=tenant_id,
@@ -438,6 +461,7 @@ class RegistryPersistenceService:
         request_id: str,
         version: AgentVersionManifest,
         idempotency_key: str,
+        request_hash_override: str | None = None,
     ) -> AgentVersionModel:
         _validate_contract_identity(
             tenant_id=tenant_id,
@@ -459,7 +483,10 @@ class RegistryPersistenceService:
             raise RegistryNotFoundError("registry_definition_not_found")
         if definition.definition_state != "active":
             raise RegistryStateError("registry_definition_not_active")
-        request_hash = _canonical_request_hash(version.to_dict())
+        request_hash = _resolve_request_hash(
+            version.to_dict(),
+            trusted_override=request_hash_override,
+        )
         record, inserted = _reserve_registry_idempotency(
             self._session,
             tenant_id=tenant_id,

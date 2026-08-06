@@ -1,12 +1,5 @@
 <svg width="256" height="256" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="omnibase-gradient" x1="9" y1="9" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B44CFF"/>
-      <stop offset="0.48" stop-color="#7C6CFF"/>
-      <stop offset="1" stop-color="#39B8FF"/>
-    </linearGradient>
-  </defs>
-  <path d="M32 4.75 55 18v28L32 59.25 9 46V18L32 4.75Z" stroke="url(#omnibase-gradient)" stroke-width="4.5" stroke-linejoin="round"/>
-  <path d="m13.75 20.75 18.25-10.5 18.25 10.5-11.5 6.65M13.75 25v18.25l13.75 7.9V39.3M50.25 25v18.25l-13.75 7.9V39.3M32 39.5v14.75" stroke="url(#omnibase-gradient)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="32" cy="32" r="7.75" fill="#070A12" stroke="url(#omnibase-gradient)" stroke-width="4.5"/>
+  <path d="M32 4.75 55 18v28L32 59.25 9 46V18L32 4.75Z" stroke="#000000" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="m13.75 20.75 18.25-10.5 18.25 10.5-11.5 6.65M13.75 25v18.25l13.75 7.9V39.3M50.25 25v18.25l-13.75 7.9V39.3M32 39.5v14.75" stroke="#000000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="7.75" fill="none" stroke="#000000" stroke-width="4.5"/>
 </svg>

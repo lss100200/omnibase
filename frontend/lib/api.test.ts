@@ -3,6 +3,7 @@ import test, { afterEach, beforeEach } from 'node:test'
 import axios from 'axios'
 import {
   API_PREFIX,
+  agentBuilderApi,
   agentAlphaApi,
   api,
   authApi,
@@ -166,6 +167,42 @@ test('workspace browser client exposes control-plane routes without workspace-da
   assert.equal('workspace_data' in workspacesApi, false)
   assert.equal('promotion' in workspacesApi, false)
   assert.equal('snapshot' in workspacesApi, false)
+})
+
+test('agent builder creates only the closed tool-free profile', async () => {
+  let requestUrl = ''
+  let requestBody = ''
+  let requestHeaders: unknown
+  api.defaults.adapter = async (config) => {
+    requestUrl = axios.getUri(config)
+    requestBody = String(config.data ?? '')
+    requestHeaders = config.headers
+    return {
+      data: { definition: {}, version: {}, installation: null },
+      status: 201,
+      statusText: 'Created',
+      headers: {},
+      config,
+    }
+  }
+  await agentBuilderApi.create('workspace-1', {
+    display_name: 'Evidence analyst',
+    role_description: 'Review evidence.',
+    instructions: 'Cite the supplied context.',
+    assistant_tone: 'Concise.',
+    provider_policy: 'user_default',
+    knowledge_mode: 'workspace_read_only',
+    max_context_tokens: 8192,
+    max_output_tokens: 1024,
+    max_wall_clock_seconds: 60,
+    install_immediately: true,
+  })
+  assert.equal(requestUrl, '/api/v1/workspaces/workspace-1/agents')
+  const body = JSON.parse(requestBody) as Record<string, unknown>
+  assert.equal(body.provider_policy, 'user_default')
+  assert.equal(body.knowledge_mode, 'workspace_read_only')
+  assert.equal('allowed_tool_ids' in body, false)
+  assert.match(JSON.stringify(requestHeaders), /Idempotency-Key/i)
 })
 
 test('askStream remains backward compatible when options are omitted', async () => {

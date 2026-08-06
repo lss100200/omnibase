@@ -458,6 +458,7 @@ class AgentVersionManifest:
     version_state: VersionState
     created_by: str
     created_at: str
+    instructions: str | None = None
 
     @classmethod
     def from_mapping(cls, value: object, *, ceilings: Mapping[str, int]) -> AgentVersionManifest:
@@ -484,6 +485,7 @@ class AgentVersionManifest:
                 "version_state",
                 "created_by",
                 "created_at",
+                "instructions",
             },
             name="agent_version",
         )
@@ -535,6 +537,21 @@ class AgentVersionManifest:
         instructions_digest = _strict_digest(
             data.get("instructions_digest"), name="agent_version.instructions_digest"
         )
+        instructions = data.get("instructions")
+        if instructions is not None:
+            instructions = _strict_string(
+                instructions,
+                name="agent_version.instructions",
+            )
+            if len(instructions) > 16_000:
+                raise RegistryContractError(
+                    "agent_version.instructions exceeds the 16000 character ceiling"
+                )
+            actual_instructions_digest = _sha256_bytes(instructions.encode("utf-8"))
+            if actual_instructions_digest != instructions_digest:
+                raise RegistryContractError(
+                    "agent_version.instructions_digest does not match instructions"
+                )
         manifest = cls(
             schema_version=1,
             agent_version_id=_strict_uuid(
@@ -577,6 +594,7 @@ class AgentVersionManifest:
             ),
             created_by=_strict_uuid(data.get("created_by"), name="agent_version.created_by"),
             created_at=_strict_timestamp(data.get("created_at"), name="agent_version.created_at"),
+            instructions=instructions,
         )
         actual_digest = manifest.canonical_digest()
         if actual_digest != declared_digest:
@@ -586,7 +604,7 @@ class AgentVersionManifest:
         return manifest
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "agent_version_id": self.agent_version_id,
             "agent_definition_id": self.agent_definition_id,
@@ -607,6 +625,9 @@ class AgentVersionManifest:
             "created_by": self.created_by,
             "created_at": self.created_at,
         }
+        if self.instructions is not None:
+            payload["instructions"] = self.instructions
+        return payload
 
     def canonical_digest(self) -> str:
         payload = dict(self.to_dict())

@@ -213,8 +213,35 @@ P5.1A 之后按计划逐级交付并各自通过 disposable Gate：
   精确匹配；`expected_binding_id` 期望绑定校验；幂等 replay 使用确定性
   hash 锚点（去掉 server 生成的 binding_id/created_at）；Python 与
   TypeScript SDK 同步；一次性 `omnibase_test_p51c_*` 数据库 Gate 通过。
-- 三个 Phase 5 Feature Gate 保持 false；migration head 保持 `0010`；
-  禁止新增 migration。
+- 以上条目记录 P5.1C 当时的 sealed boundary；后续已授权的 migration `0011`、
+  `0012` 与 fast usable slice 不回写或伪造该历史 evidence。
+
+### 8.1 用户创建的 tool-free Agent Builder（2026-08-05 amendment）
+
+P5 Fast Track 现允许一条受控 Browser 创建入口：
+`POST /api/v1/workspaces/{workspace_id}/agents`。该 amendment 只 supersede
+“Browser 永远不得创建 AgentDefinition/AgentVersion”这一条历史限制，不开放
+通用 Registry 写入面，也不改变旧 catalog/install dependency 的默认 503
+fail-closed 行为。
+
+- 请求必须经过 live Tenant、live User、Workspace 与 live
+  WorkspaceMembership 复核，并要求 `workspace.grants.manage`。
+- 服务在一个调用者事务中注册用户拥有的 Definition、封存 `1.0.0` Version、
+  可选安装 Workspace binding、登记 logical resources、完成幂等记录并写入
+  append-only Audit；任一步失败整体回滚。
+- sealed manifest 保存完整 system instructions，并保存原始 UTF-8 bytes 的
+  SHA-256；manifest digest 同时覆盖 instructions。Agent Alpha 解析 profile 时
+  重新校验该摘要，漂移时 fail closed，因而不是仅保存 digest 的前端假功能。
+- Browser 可配置名称、角色/职责、system instructions、回答风格、上下文上限、
+  输出 token 上限与 deadline。Provider 策略闭集为 `user_default`，知识范围闭集
+  为 `workspace_read_only`。
+- 创建结果固定为 low-risk、`allowed_tool_ids=[]`、单并发、只读 Workspace
+  knowledge scope。Planner、multi-Agent、MCP、Skills、Shell、SQL、任意 HTTP 与
+  hostile-code Sandbox 均不可由 Browser 打开。
+- 客户端完整意图参与确定性幂等摘要；server-generated UUID/timestamp 不导致
+  exact replay 漂移，同 key 不同意图必须 409 fail closed。
+- 当前 migration head 为 `0012`；三个 Phase 5 Feature Gate 仍为 false，本文
+  不构成 production Runtime activation 证明。
 
 ## 9. 未证明项与解冻条件
 
@@ -226,7 +253,8 @@ P5.1A 之后按计划逐级交付并各自通过 disposable Gate：
 - Agent Invocation/Task/Run/Plan/Step/Attempt 与 Planner/Executor/
   dispatcher/scheduler、Agent Runtime、model/tool/memory/skill runtime、
   MCP、shell/SQL/HTTP tools、multi-agent orchestration；
-- 通过 Browser API 创建 AgentDefinition/AgentVersion（P5.1C 明确禁止）；
+- 通用 Browser Registry Definition/Version 写入仍未开放；唯一例外是 8.1 所述
+  low-risk、tool-free、Workspace-bound Builder；
 - 跨租户数据库隔离证据的 production 形态（一次性 Gate 只证明 disposable
   形态）。
 

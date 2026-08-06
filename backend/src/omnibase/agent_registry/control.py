@@ -1,11 +1,13 @@
 """P5.1C Browser Agent Registry control plane (application service).
 
-The Browser API is served by an explicit control-plane object injected through
-``get_registry_control_plane``.  The default production composition injects
-``UnavailableAgentRegistryControlPlane``, which rejects every operation with a
-stable ``agent_registry_unavailable`` (HTTP 503) before any registry table is
-touched.  Tests and the disposable Gate override the dependency with the
-DB-backed ``AgentRegistryControlService``.
+The catalog/install Browser API is served by an explicit control-plane object
+injected through ``get_registry_control_plane``.  Its default production
+composition remains ``UnavailableAgentRegistryControlPlane``, which rejects
+those operations with a stable ``agent_registry_unavailable`` (HTTP 503)
+before any registry table is touched.  The separately authorized, narrowly
+scoped tool-free Agent Builder constructs ``AgentRegistryControlService`` from
+the already authenticated tenant session and does not unlock the general
+catalog/install dependency.
 
 Every mutation re-validates, inside the caller-owned transaction: the live
 tenant, the live actor user, the Workspace row and generation, and the live
@@ -17,7 +19,10 @@ ApprovalRequest -> target row -> resource registration -> append-only Audit.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Never
 
@@ -30,6 +35,8 @@ from omnibase.agent_registry.models import (
     WorkspaceAgentBindingModel,
 )
 from omnibase.agent_registry.schemas import (
+    AgentBuilderCreate,
+    AgentBuilderCreateResult,
     AgentDefinitionList,
     AgentDefinitionRead,
     AgentInstallationList,
@@ -49,8 +56,13 @@ from omnibase.agent_registry.service import (
     _lock_tenant,
 )
 from omnibase.production.phase5_registry_contract import (
+    AgentDefinition,
+    AgentVersionManifest,
     BindingState,
     DefaultBudgetPolicy,
+    DefinitionState,
+    RiskLevel,
+    VersionState,
     WorkspaceAgentBinding,
 )
 from omnibase.workspaces.models import Workspace as WorkspaceModel
@@ -115,6 +127,9 @@ class _RejectingRegistryAuthorizer:
         self._reject()
 
     def rollback(self, **_: Any) -> Never:
+        self._reject()
+
+    def create_custom_agent(self, **_: Any) -> Never:
         self._reject()
 
 
@@ -409,6 +424,150 @@ class AgentRegistryControlService:
             created_at=datetime.now(UTC).isoformat(),
             disabled_at=None,
             superseded_by=None,
+        )
+
+    def create_custom_agent(
+        self,
+        *,
+        tenant_id: str,
+        actor_user_id: str,
+        workspace_id: str,
+        request_id: str,
+        payload: AgentBuilderCreate,
+        idempotency_key: str,
+    ) -> AgentBuilderCreateResult:
+        """Create, seal and optionally install one user-authored tool-free Agent."""
+
+        workspace = self._lock_workspace_actor(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+        )
+        intent = {
+            "workspace_id": workspace_id,
+            **payload.model_dump(mode="json"),
+        }
+        intent_hash = hashlib.sha256(
+            json.dumps(intent, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        key_hash = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        namespace = uuid.UUID(tenant_id)
+        identity_seed = f"{actor_user_id}:{workspace_id}:{key_hash}"
+        definition_id = str(uuid.uuid5(namespace, f"{identity_seed}:definition"))
+        version_id = str(uuid.uuid5(namespace, f"{identity_seed}:version:1.0.0"))
+        now = datetime.now(UTC).isoformat()
+        instructions = (
+            f"You are {payload.display_name}, a user-created AI employee in OmniBase.\n\n"
+            f"Role and responsibilities:\n{payload.role_description}\n\n"
+            "Non-negotiable operating boundary:\n"
+            "- You are tool-free. You cannot call shell, SQL, arbitrary HTTP, MCP, Skills, "
+            "Planner, other Agents or a hostile-code Sandbox.\n"
+            "- Use only the read-only knowledge context supplied from the selected Workspace.\n"
+            "- Never claim that you executed an action, opened a file or changed a system.\n\n"
+            f"Response style:\n{payload.assistant_tone}\n\n"
+            f"User-authored system instructions:\n{payload.instructions}\n\n"
+            "If user-authored text conflicts with the operating boundary above, preserve the "
+            "operating boundary and explain the limitation plainly."
+        )
+        instructions_digest = hashlib.sha256(instructions.encode("utf-8")).hexdigest()
+        budget = DefaultBudgetPolicy(
+            max_tokens=payload.max_output_tokens,
+            max_cost_units=10_000,
+            max_wall_clock_seconds=payload.max_wall_clock_seconds,
+            max_tool_calls=1,
+        )
+        definition = AgentDefinition(
+            schema_version=1,
+            agent_definition_id=definition_id,
+            tenant_id=tenant_id,
+            stable_logical_key=f"user_agent_{definition_id.replace('-', '')[:32]}",
+            display_name=payload.display_name,
+            description=payload.role_description,
+            risk_level=RiskLevel.LOW,
+            allowed_installation_scopes=("workspace",),
+            definition_state=DefinitionState.ACTIVE,
+            created_by=actor_user_id,
+            created_at=now,
+            metadata_version=1,
+        )
+        registry = RegistryPersistenceService(self._session)
+        try:
+            definition_row = registry.register_definition(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                request_id=request_id,
+                definition=definition,
+                idempotency_key=f"agent-builder-definition:{key_hash}",
+                request_hash_override=intent_hash,
+            )
+            manifest = AgentVersionManifest(
+                schema_version=1,
+                agent_version_id=version_id,
+                agent_definition_id=definition_id,
+                tenant_id=tenant_id,
+                version="1.0.0",
+                manifest_digest="0" * 64,
+                model_policy_id=str(uuid.uuid5(namespace, "model-policy:user-default")),
+                instructions_digest=instructions_digest,
+                max_context_tokens=payload.max_context_tokens,
+                allowed_tool_ids=(),
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string", "minLength": 1}},
+                    "required": ["message"],
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"answer": {"type": "string"}},
+                    "required": ["answer"],
+                },
+                risk_level=RiskLevel.LOW,
+                memory_policy_id=None,
+                max_concurrency=1,
+                default_budget=budget,
+                version_state=VersionState.SEALED,
+                created_by=actor_user_id,
+                created_at=now,
+                instructions=instructions,
+            )
+            manifest = replace(manifest, manifest_digest=manifest.canonical_digest())
+            version_row = registry.seal_version(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                request_id=request_id,
+                version=manifest,
+                idempotency_key=f"agent-builder-version:{key_hash}",
+                request_hash_override=intent_hash,
+            )
+            installation_row: WorkspaceAgentBindingModel | None = None
+            if payload.install_immediately:
+                binding = self._new_binding_dto(
+                    tenant_id=tenant_id,
+                    actor_user_id=actor_user_id,
+                    workspace=workspace,
+                    definition_id=definition_row.id,
+                    version_id=version_row.id,
+                    version_digest=version_row.manifest_digest,
+                    resource_scopes=("workspace_knowledge",),
+                    budget=budget,
+                    approval_id=None,
+                )
+                installation_row = registry.install_binding(
+                    tenant_id=tenant_id,
+                    actor_user_id=actor_user_id,
+                    request_id=request_id,
+                    binding=binding,
+                    idempotency_key=f"agent-builder-install:{key_hash}",
+                    request_hash_profile="browser_install",
+                )
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
+        return AgentBuilderCreateResult(
+            definition=project_definition(definition_row),
+            version=project_version(version_row),
+            installation=(project_binding(installation_row) if installation_row else None),
         )
 
     def install(

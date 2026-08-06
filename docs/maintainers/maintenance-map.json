@@ -563,6 +563,43 @@
         "backend/tests/test_agent_alpha.py",
         "backend/tests/test_agent_alpha_engineering.py"
       ]
+    },
+    {
+      "id": "INV-048",
+      "title": "User-created Agents remain atomic, instruction-authentic, Workspace-bound and tool-free",
+      "document": "docs/maintainers/security-invariants.md#inv-048-user-created-tool-free-agent-builder",
+      "source_paths": [
+        "backend/src/omnibase/agent_registry/control.py",
+        "backend/src/omnibase/agent_registry/router.py",
+        "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/src/omnibase/main.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_1c_registry_api.py",
+        "backend/tests/test_p5_1_registry_contract.py",
+        "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "backend/tests/test_agent_alpha.py",
+        "frontend/lib/api.test.ts"
+      ]
+    },
+    {
+      "id": "INV-049",
+      "title": "First-party native Skill manifests are compile-only, exact-version, non-escalating and evidence-bound",
+      "document": "docs/maintainers/security-invariants.md#inv-049-first-party-native-skill-contract",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_skill_contract.py",
+        "deployment/production/phase5-skill-contract.example.json",
+        "scripts/production/validate_p5_6a_skill_contract.py",
+        "docs/phase-5-native-skill-contract.md",
+        "docs/runbooks/skill-review-revoke-rollback.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_6a_skill_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -1406,7 +1443,9 @@
         "frontend/lib/api.ts:api"
       ],
       "public_interfaces": [
-        "Browser routes /login /register /dashboard /knowledge /database /chat /playground /settings",
+        "Browser routes /login /register /dashboard /spaces /knowledge /database /chat /playground /settings /agents /public-preview",
+        "Product-wide black/white light and dark themes with currentColor Logo variants",
+        "Tool-free Agent Builder form and same-origin Browser client",
         "Next.js rewrite to backend /api/v1"
       ],
       "depends_on": [
@@ -1418,7 +1457,8 @@
       "invariants": [
         "INV-001",
         "INV-005",
-        "INV-010"
+        "INV-010",
+        "INV-048"
       ],
       "verification": [
         "cd frontend && pnpm test",
@@ -1703,14 +1743,18 @@
     },
     {
       "id": "agent-registry-browser-control",
-      "name": "P5.1C Browser Agent Registry control API (routers + fail-closed dependency + public DTOs)",
+      "name": "P5.1C Browser Agent Registry control API plus user tool-free Agent Builder",
       "source_paths": [
         "backend/src/omnibase/agent_registry/control.py",
         "backend/src/omnibase/agent_registry/router.py",
         "backend/src/omnibase/agent_registry/schemas.py",
+        "backend/src/omnibase/production/phase5_registry_contract.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
         "backend/src/omnibase/main.py",
         "backend/tests/test_p5_1c_registry_api.py",
         "backend/tests/integration/test_p5_1c_browser_registry_api_foundation.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
         "scripts/production/run_p5_1c_browser_registry_disposable_gate.py",
         "scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py",
         "sdk/python/src/omnibase_sdk/browser_registry.py",
@@ -1722,6 +1766,7 @@
       "entrypoints": [
         "backend/src/omnibase/agent_registry/router.py:router",
         "backend/src/omnibase/agent_registry/router.py:installation_router",
+        "backend/src/omnibase/agent_registry/router.py:builder_router",
         "backend/src/omnibase/agent_registry/router.py:get_registry_control_plane",
         "backend/src/omnibase/agent_registry/control.py:AgentRegistryControlService",
         "backend/src/omnibase/agent_registry/control.py:UnavailableAgentRegistryControlPlane",
@@ -1739,6 +1784,7 @@
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/disable",
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/upgrade",
         "POST /api/v1/workspaces/{workspace_id}/agent-installations/{binding_id}/rollback",
+        "POST /api/v1/workspaces/{workspace_id}/agents (create, seal and optionally install one user-owned tool-free Agent)",
         "Python SDK omnibase_sdk.browser_registry.AgentRegistryBrowserClient",
         "TypeScript SDK AgentRegistryBrowserClient"
       ],
@@ -1747,7 +1793,8 @@
         "identity-tenancy",
         "agent-registry-persistence",
         "phase5-registry-contract-preflight",
-        "phase5-admission"
+        "phase5-admission",
+        "agent-alpha-engineering-runtime"
       ],
       "invariants": [
         "INV-005",
@@ -1755,7 +1802,8 @@
         "INV-039",
         "INV-040",
         "INV-041",
-        "INV-042"
+        "INV-042",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_1c_registry_api.py ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q",
@@ -1768,11 +1816,11 @@
         "cd sdk/typescript && pnpm test && pnpm typecheck"
       ],
       "recovery": [
-        "Production defaults reject until the DB-backed control plane is explicitly injected; never mount it into main.py by default. Browser endpoints only expose logical identifiers, never physical locators.",
+        "Legacy catalog/install/upgrade/disable/rollback defaults still reject until the DB-backed control plane is explicitly injected. The separately authorized Builder route is wired with a tenant-bound session and may only create the closed low-risk tool-free profile. Browser endpoints expose logical identifiers, never physical locators.",
         "Every mutation re-locks the live tenant, actor user, Workspace and WorkspaceMembership in the caller-owned transaction. Browser Version/Binding checks are non-locking snapshots; the sealed P5.1B service owns the authoritative Definition -> Version -> Binding lock order and repeats all state checks.",
         "Browser idempotency and Approval anchors are service-computed closed profiles: install, upgrade and rollback bind distinct actions, supersede binds old_binding_id, and exact replay reaches Idempotency before old-live-state rejection. Never accept a caller-provided digest.",
         "Python and TypeScript Browser transports reject dot segments, backslashes, percent encoding, query/fragment and normalization escape before URL joining; response parsers reject unknown fields, invalid closed states, non-integers and NaN.",
-        "No AgentDefinition/AgentVersion creation surface and no migration is owned by P5.1C. Repository head is 0012 after the separately authorized user-profile/provider-credential migration; all three Phase 5 feature gates stay false. The historical P5.1C disposable evidence proves its 0011 boundary only and must not be overclaimed as an 0012 Gate."
+        "The Builder is the only Browser AgentDefinition/AgentVersion creation surface: it binds real instructions into the sealed manifest, requires user_default plus workspace_read_only, and always writes an empty tool set. No new migration is required because the sealed JSON manifest already owns the payload. Repository head stays 0012 and all three Phase 5 feature gates stay false. Historical P5.1C evidence must not be overclaimed for this new surface."
       ]
     },
     {
@@ -1934,7 +1982,8 @@
         "INV-043",
         "INV-044",
         "INV-045",
-        "INV-046"
+        "INV-046",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_agent_alpha_engineering.py -q",
@@ -2022,7 +2071,8 @@
         "INV-042",
         "INV-044",
         "INV-045",
-        "INV-047"
+        "INV-047",
+        "INV-048"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
@@ -2090,6 +2140,53 @@
         "Only exact allowlisted HTTPS hosts are accepted; reject userinfo/query/fragment/IP literals/private DNS answers/redirects, use trust_env=false, preserve exact requested/actual model identity, and apply fail-closed Redis rate limiting per tenant/user/credential.",
         "Provider testing releases its first database transaction before the outbound request, then re-locks and compares the full non-secret configuration digest before recording PASS; concurrent key/model/config drift returns a conflict and never blesses the new configuration.",
         "Revocation clears ciphertext and nonce. Never print, log, export, stage or commit API keys or the root .env."
+      ]
+    },
+    {
+      "id": "native-skill-contract-preflight",
+      "name": "P5.6A first-party native Skill compile-only contract admission",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_skill_contract.py",
+        "backend/tests/test_p5_6a_skill_contract.py",
+        "deployment/production/phase5-skill-contract.example.json",
+        "scripts/production/validate_p5_6a_skill_contract.py",
+        "docs/phase-5-native-skill-contract.md",
+        "docs/runbooks/skill-review-revoke-rollback.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_skill_contract.py:SkillContractConfig",
+        "backend/src/omnibase/production/phase5_skill_contract.py:SkillContractGate",
+        "backend/src/omnibase/production/phase5_skill_contract.py:load_skill_contract_config",
+        "scripts/production/validate_p5_6a_skill_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline first-party SkillDefinition/SkillVersion manifest contract with strict local JSON Schema, digest, budget and rollback validation",
+        "P5.6A admission report that remains blocked/not_proven and activation_allowed=false even when the compile-only contract is valid",
+        "Workspace Librarian tested/unverified contract fixture; no Browser API, persistence, installation or runtime"
+      ],
+      "depends_on": [
+        "phase5-admission",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-045",
+        "INV-048",
+        "INV-049"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_6a_skill_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_6a_skill_contract.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py"
+      ],
+      "recovery": [
+        "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
+        "Reject migration head drift beyond 0012, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A has no database or runtime to roll back."
       ]
     },
     {

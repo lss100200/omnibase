@@ -331,6 +331,14 @@ Skill runtime 限定为三类：
 
 Skill lifecycle 固定为 `draft -> tested -> approved -> published -> deprecated|revoked`。每个版本必须通过 Manifest closed-set、strict schema、dependency lock、source digest、SBOM/signature、secret scan、symlink/junction/realpath escape、capability/memory/network policy diff、有 Skill/无 Skill paired eval、安全负例、人工 review 和回滚演练。Skill 更新不会替换正在运行 Invocation 的 pinned version；revoke 使新 Task 无法使用，但历史证据继续保留。
 
+P5.6A 先冻结 compile-only 合同：只接受 first-party、Workspace-only、
+network-deny、secret-free 的 `draft|tested|deprecated|revoked` manifest，并把
+`approved|published` 留给后续真实 sealed review Gate。P5.6A 不创建数据库表、
+Browser API、安装记录或运行时；示例 digest 只是合同 fixture，不是签名或发布
+证据。P5.6B persistence 与 migration `0013` 需要再次取得明确授权；P5.6C
+冻结 catalog/install/disable/rollback API 后，P5.6D 才允许 Agent Alpha 精确 pin
+一个已批准的 instruction Skill，且不得增加 AgentVersion capability。
+
 Gate：Skill 声明外工具、版本漂移、循环调用、隐藏网络、预算扩大、输入 schema 注入和卸载后继续运行全部拒绝。
 
 ## 10. P5.7 Specialist 与多 Agent DAG
