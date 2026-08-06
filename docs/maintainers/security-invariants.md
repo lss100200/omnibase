@@ -1733,6 +1733,33 @@ server-owned runtime identity 与非占位 workload digest 绑定到 P34 Workspa
 和 P5 AgentRun；Provider/Agent deadline、TaskLease TTL、Workspace RunLease TTL
 必须严格留出终结余量。Server-created Model Gateway Node identity 绑定 deployment
 instance，attestation 为短期；revoked/rejected Node 不得被原地复活。
+
+## INV-049 p54a-typed-single-agent-executor
+
+P5.4A 是 engineering-only 的第一个 typed Executor 切片。它只能接收一份
+通过 P5.3A Validator 的 immutable `ValidatedPlan`，并且只能执行一个节点、
+一个固定的只读逻辑能力：`knowledge_search` →
+`workspace.knowledge.search`。Planner 的“提案已通过”不是执行授权；Executor
+在边界上必须再次核对 proposal digest、Tenant、Workspace、generation、Actor、
+Task、Run fencing、AgentVersion digest 和 node identity。
+
+P5.4A 的 node 必须是 low risk、`read_only` effect、未扩大 tool allowlist，且
+tool budget 与 response bytes 不能超过 server-owned ceilings。结果只能通过
+注入的 Capability-Gateway-backed `KnowledgeSearchPort` 获得；默认 builder 必须
+返回 `UnavailableTypedSingleAgentExecutor`，不能因为缺少 adapter、attestor、
+verifier 或 Gateway wiring 而回退为直连数据库/RAG、允许执行或宽松鉴权。
+
+Executor DTO 只接受 bounded logical identifiers 和 bounded search data，禁止
+physical PostgreSQL/object-store locator、Browser JWT、Provider credential、
+process/socket/host path、model handle 以及任意 `tools`/`tool_choice` 扩展。适配器
+异常必须 fail closed，不能生成成功 receipt；未来的 timeout、断线和未知 effect
+必须进入 durable Task/Effect reconciliation，不能自动 replay。
+
+P5.4A 不创建 migration `0013`，不挂载 Browser route/SDK，不启用 Planner Runtime、
+queue、worker、scheduler、Skill/MCP、Shell、SQL、任意 HTTP、Sandbox 或 multi-Agent。
+三个 Phase 5 Feature Gates 继续为 false，production Runtime activation 仍需单独
+准入。
+
 ## INV-047 user-profile-and-personal-provider-credentials
 
 **Authoritative source**

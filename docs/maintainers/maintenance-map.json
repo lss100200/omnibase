@@ -2087,6 +2087,98 @@
       ]
     },
     {
+      "id": "planner-proposal-contract",
+      "name": "P5.3A compile-only Planner Proposal contract and deterministic DAG validator",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_planner_contract.py",
+        "backend/tests/test_p5_3a_planner_contract.py",
+        "deployment/production/phase5-planner-contract.example.json",
+        "scripts/production/validate_p5_3a_planner_contract.py",
+        "docs/phase-5-planner-contract.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlanProposal",
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlanProposalValidator",
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlannerContractGate",
+        "scripts/production/validate_p5_3a_planner_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Strict immutable PlanProposal/PlanNode/ExecutionRequirement DTOs",
+        "Deterministic DAG, digest, scope, budget, risk, approval and portability validation",
+        "P5.3A compile-only admission; no Planner Runtime, persistence or execution"
+      ],
+      "depends_on": [
+        "phase5-admission",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-043",
+        "INV-049"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_3a_planner_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_3a_planner_contract.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_planner_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_planner_contract.py tests/test_p5_3a_planner_contract.py ../scripts/production/validate_p5_3a_planner_contract.py"
+      ],
+      "recovery": [
+        "Keep Planner Runtime, AGENT_PLANNER_ENABLED and all other Phase 5 gates false; a valid proposal never grants authority or starts execution.",
+        "If a digest, scope, budget or evidence reference drifts, freeze admission and rebuild from a clean checkout. Do not persist or execute the proposal."
+      ]
+    },
+    {
+      "id": "typed-single-agent-executor",
+      "name": "P5.4A engineering-only typed single-Agent Executor (one read-only Workspace capability)",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/**",
+        "backend/src/omnibase/production/phase5_planner_contract.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "deployment/production/phase5-typed-executor.example.json",
+        "docs/phase-5-typed-executor-contract.md",
+        "docs/maintainers/security-invariants.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "Makefile"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_executor/service.py:TypedSingleAgentExecutor",
+        "backend/src/omnibase/agent_executor/service.py:UnavailableTypedSingleAgentExecutor",
+        "backend/src/omnibase/agent_executor/service.py:build_engineering_typed_executor",
+        "backend/src/omnibase/agent_executor/contracts.py:KnowledgeSearchPort"
+      ],
+      "public_interfaces": [
+        "Internal typed executor DTOs carrying only bounded logical identifiers and data",
+        "Exactly one knowledge_search -> workspace.knowledge.search read-only capability",
+        "Default unavailable engineering seam; no Browser route, SDK, persistence or production Runtime activation"
+      ],
+      "depends_on": [
+        "planner-proposal-contract",
+        "p5-task-ledger-persistence",
+        "agent-alpha-engineering-runtime",
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-043",
+        "INV-044",
+        "INV-049"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4a_typed_executor.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_executor",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py"
+      ],
+      "recovery": [
+        "The default builder must remain UnavailableTypedSingleAgentExecutor. Never fall back to direct database/RAG access when a Gateway port is absent.",
+        "Keep migration 0013, Browser APIs, queue/worker/scheduler, tools, MCP, Skills, Shell, SQL, arbitrary HTTP, Sandbox and multi-Agent frozen until a separately admitted Gate exists.",
+        "A future Gateway adapter must record budget, authorization, audit, lease/fencing and unknown no-replay evidence before this seam can be considered executable."
+      ]
+    },
+    {
       "id": "user-settings-provider-control",
       "name": "Tenant user profile and encrypted personal model-provider control plane (migration 0012)",
       "source_paths": [

@@ -1257,6 +1257,23 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   Semantic state remains legible through text, icons, border weight, fill,
   spacing and labels.
 
+## 6.13 P5.4A typed single-Agent Executor
+
+- `backend/src/omnibase/agent_executor/` is an engineering-only typed seam. It
+  accepts one P5.3A `ValidatedPlan` node and one fixed read-only logical
+  capability: `knowledge_search` mapped to `workspace.knowledge.search`.
+- `TypedSingleAgentExecutor` rechecks the plan digest, tenant/workspace/task/run
+  identity, AgentVersion digest, node kind, low risk, read-only effect, tool
+  allowlist and node byte/tool budgets before calling the injected
+  `KnowledgeSearchPort`.
+- The default builder is `UnavailableTypedSingleAgentExecutor`. No Browser route,
+  SDK, queue, worker, scheduler, migration `0013`, production Gateway wiring or
+  direct database/RAG fallback may be added as a shortcut. The adapter must be
+  Capability-Gateway-backed and must return only logical, bounded DTOs.
+- P5.4A deliberately does not implement tools, MCP, Skills, Shell, SQL, arbitrary
+  HTTP, Sandbox execution or multi-Agent orchestration. All three Phase 5 Feature
+  Gates remain false and P34.7 production admission remains blocked/not_proven.
+
 ## 6.14 P5.6A first-party native Skill contract
 
 - The product Skill contract is

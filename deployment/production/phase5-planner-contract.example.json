@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "0f254c40022da31d925e3a4a895865b37fb7d3f0e89cabafbdc97a9821289871"
+      "sha256": "2972c51697b10d6de0638226c2f01b0275ca14ac2f4ebbdb1c34f1f072ff7906"
     }
   },
   "p5_2a": {

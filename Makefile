@@ -173,7 +173,7 @@ shell: backend-shell ## 别名：后端 shell
 # 测试与质量
 # ------------------------------------------------------------
 
-.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-3a-planner-contract test-p5-6a-skill-contract lint lint-backend lint-frontend typecheck format format-check
+.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-3a-planner-contract test-p5-4a-typed-executor test-p5-6a-skill-contract lint lint-backend lint-frontend typecheck format format-check
 
 test: test-backend test-frontend ## 运行所有测试
 
@@ -284,6 +284,12 @@ test-p5-3a-planner-contract: ## 离线 P5.3A Planner Proposal 合同预检（val
 	    tests/test_p5_1_registry_contract.py \
 	    tests/test_p5_0_admission.py \
 	    tests/test_p34_7_production_composition.py -q
+
+test-p5-4a-typed-executor: ## 离线 P5.4A 单 Agent typed Executor 合同预检（无数据库、无运行时）
+	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace/backend backend \
+	  pytest tests/test_p5_4a_typed_executor.py -q
+	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace/backend backend \
+	  python -m compileall -q src/omnibase/agent_executor
 
 test-destructive-down: ## 强制移除一次性破坏性测试数据库
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-ci-*|omnibase-p34-*|omnibase-test-*) ;; \

@@ -2648,6 +2648,29 @@ production Gate。根 `.env` 未读取、打印、stage 或提交。
 验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
 production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。
 
+### P5.4A typed single-Agent Executor engineering slice（2026-08-06）
+
+在 PR #16 合并后的最新 `main` 上重建 P5.3A 后，本轮开始执行 P5.4A。P5.3A
+Planner Proposal 合同的宿主 focused 验证为 `78 passed`；P5.3A/P5.6A/P5.2A/
+P5.1/P5.0/P34.7 组合回归为 `524 passed`。Docker 版本因本机 Docker Desktop
+Linux Engine 未运行而未执行，不能把宿主结果扩大为 container Gate。
+
+本轮新增 `backend/src/omnibase/agent_executor/` typed seam 和 11 个 focused
+测试。Executor 只接受一份通过 P5.3A Validator 的单节点 `ValidatedPlan`，并且
+只允许 `knowledge_search` 映射到 `workspace.knowledge.search` 的 low-risk、
+`read_only` 能力。执行边界重新验证 tenant/workspace/task/run generation、
+AgentVersion/proposal/node digest、tool allowlist、effect class 与 node budget；
+结果只能来自注入的 Capability-Gateway-backed `KnowledgeSearchPort`。默认 builder
+为 `UnavailableTypedSingleAgentExecutor`，没有 Browser route、SDK、queue/worker/
+scheduler、migration `0013`、直连数据库/RAG fallback、Shell/SQL/HTTP/MCP/Skill/
+Sandbox 或 multi-Agent。
+
+P5.4A focused `11 passed`、compileall、Ruff check/format、Mypy（3 files）和维护者
+地图/benchmark validator 均通过。三个 Phase 5 Feature Gates 保持 false，
+production Runtime 仍不激活；下一步是给这个 seam 接入明确的 Capability Gateway
+adapter，并在 disposable sentinel 中证明 tenant/workspace scope、budget、Audit、
+fencing 和 unknown no-replay，而不是直接开放更多工具。
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
