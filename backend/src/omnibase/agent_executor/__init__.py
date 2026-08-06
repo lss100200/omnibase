@@ -12,6 +12,18 @@ from omnibase.agent_executor.contracts import (
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
 )
+from omnibase.agent_executor.engineering import (
+    ENGINEERING_FLAG,
+    EXPECTED_MIGRATION_HEAD,
+    EngineeringCompositionError,
+    EngineeringCompositionUnavailable,
+    EngineeringSingleAgentExecutor,
+    LiveRuntimeAuthorityValidator,
+    ServerWorkloadCredentialSeam,
+    UnavailableEngineeringSingleAgentExecutor,
+    build_engineering_executor,
+    build_engineering_single_agent_executor,
+)
 from omnibase.agent_executor.gateway_adapter import (
     CapabilityGatewayKnowledgeSearchPort,
     GatewayAdapterDenied,
@@ -31,9 +43,14 @@ from omnibase.agent_executor.service import (
 )
 
 __all__ = [
+    "ENGINEERING_FLAG",
+    "EXPECTED_MIGRATION_HEAD",
     "KNOWLEDGE_SEARCH_CAPABILITY",
     "KNOWLEDGE_SEARCH_TOOL_ID",
     "CapabilityGatewayKnowledgeSearchPort",
+    "EngineeringCompositionError",
+    "EngineeringCompositionUnavailable",
+    "EngineeringSingleAgentExecutor",
     "ExecutorContractError",
     "ExecutorInvocationContext",
     "ExecutorNodeResult",
@@ -45,13 +62,18 @@ __all__ = [
     "KnowledgeSearchPort",
     "KnowledgeSearchRequest",
     "KnowledgeSearchResult",
+    "LiveRuntimeAuthorityValidator",
     "RuntimeAuthorityValidator",
     "ServerWorkloadCredentialProvider",
+    "ServerWorkloadCredentialSeam",
     "SessionFactory",
     "TypedExecutorError",
     "TypedExecutorPolicyDenied",
     "TypedExecutorUnavailable",
     "TypedSingleAgentExecutor",
+    "UnavailableEngineeringSingleAgentExecutor",
     "UnavailableTypedSingleAgentExecutor",
+    "build_engineering_executor",
+    "build_engineering_single_agent_executor",
     "build_engineering_typed_executor",
 ]
