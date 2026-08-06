@@ -241,10 +241,8 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
         knowledge_search=port,
     )
     assert isinstance(executor, TypedSingleAgentExecutor)
-    result = executor.execute(
-        context=context,
-        plan=plan,
-        request=KnowledgeSearchRequest(resource_id=RESOURCE, query="composition"),
+    result = port.search(
+        context=context, request=KnowledgeSearchRequest(resource_id=RESOURCE, query="composition")
     )
     assert result.output.resource_id == RESOURCE
     assert result.receipt.status == "succeeded"
