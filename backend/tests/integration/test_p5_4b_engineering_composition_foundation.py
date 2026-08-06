@@ -251,7 +251,9 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
     result = executor.execute(
         context=context,
         plan=plan,
-        request=KnowledgeSearchRequest(resource_id=RESOURCE, query="composition", max_bytes=1_048_576),
+        request=KnowledgeSearchRequest(
+            resource_id=RESOURCE, query="composition", max_bytes=1_048_576
+        ),
     )
     assert result.output.resource_id == RESOURCE
     assert result.receipt.status == "succeeded"
