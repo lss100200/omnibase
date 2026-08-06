@@ -141,7 +141,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
         )
         connection.execute(
             text(
-                "INSERT INTO omnibase_meta.capability_grants (id,tenant_id,workspace_id,runtime_instance_id,workload_identity_digest,actor_user_id,actions,resource_ids,constraints,version,state,not_before,expires_at,max_calls,max_bytes,max_cost_units,delegation_depth,delegation_depth_limit,created_by_actor_type,created_by_actor_id) VALUES (:id,:tenant,:workspace,:runtime,:digest,:actor,ARRAY['rag.search']::varchar[],ARRAY[:resource]::uuid[],CAST(:constraints AS jsonb),1,'active',now(),now()+interval '10 minutes',10,1048576,10,0,0,'system',:actor) ON CONFLICT (id) DO NOTHING"
+                "INSERT INTO omnibase_meta.capability_grants (id,tenant_id,workspace_id,runtime_instance_id,workload_identity_digest,actor_user_id,actions,resource_ids,constraints,version,state,not_before,expires_at,max_calls,max_bytes,max_cost_units,delegation_depth,delegation_depth_limit,created_by_actor_type,created_by_actor_id) VALUES (:id,:tenant,:workspace,:runtime,:digest,:actor,ARRAY['rag.search']::varchar[],ARRAY[]::uuid[],CAST(:constraints AS jsonb),1,'active',now(),now()+interval '10 minutes',10,1048576,10,0,0,'system',:actor) ON CONFLICT (id) DO NOTHING"
             ),
             {
                 "id": GRANT,
