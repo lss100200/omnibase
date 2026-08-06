@@ -116,7 +116,7 @@ class _Authority:
 
 
 def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
-    schema = "tenant_p54b"
+    schema = "tenant_p54b0001"
     with db_engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
         connection.execute(
@@ -129,7 +129,7 @@ def _seed(db_engine) -> None:  # type: ignore[no-untyped-def]
     with db_engine.begin() as connection:
         connection.execute(
             text(
-                "INSERT INTO tenant_p54b.users (id,email,password_hash,is_tenant_admin,is_active) VALUES (:id,:email,:hash,TRUE,TRUE) ON CONFLICT (id) DO NOTHING"
+                "INSERT INTO tenant_p54b0001.users (id,email,password_hash,is_tenant_admin,is_active) VALUES (:id,:email,:hash,TRUE,TRUE) ON CONFLICT (id) DO NOTHING"
             ),
             {"id": ACTOR, "email": "p54b@example.invalid", "hash": "integration-test"},
         )
