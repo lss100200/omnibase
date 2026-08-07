@@ -355,7 +355,7 @@ def _expected_commands(project: str, override: Path) -> dict[str, list[str]]:
         "measured-alembic-head": container(
             "python",
             "-c",
-            "from sqlalchemy import create_engine,text; import os; e=create_engine(os.environ['DATABASE_URL']); print(e.connect().execute(text('select version_num from alembic_version')).scalar_one())",
+            "from sqlalchemy import create_engine,text; import os; e=create_engine(os.environ['DATABASE_URL']); print(e.connect().execute(text('select version_num from omnibase_meta.alembic_version')).scalar_one())",
         ),
         "measured-alembic-graph": container(
             "python",
@@ -520,7 +520,7 @@ def _run_gate(
             database_url,
             "python",
             "-c",
-            "from sqlalchemy import create_engine,text; import os; e=create_engine(os.environ['DATABASE_URL']); print(e.connect().execute(text('select version_num from alembic_version')).scalar_one())",
+            "from sqlalchemy import create_engine,text; import os; e=create_engine(os.environ['DATABASE_URL']); print(e.connect().execute(text('select version_num from omnibase_meta.alembic_version')).scalar_one())",
         ),
     )
     commands.append(head)
