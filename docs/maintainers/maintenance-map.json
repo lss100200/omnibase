@@ -1605,6 +1605,7 @@
       ],
       "entrypoints": [
         "backend/src/omnibase/production/composition.py:ProductionCompositionGate",
+        "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence",
         "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
         "scripts/production/validate_p34_7_composition.py:main",
         "scripts/workspace-data/run_p34_7_provider_gate.py:main",
@@ -1649,6 +1650,7 @@
       ],
       "verification": [
         "python scripts/production/validate_p34_7_composition.py --validate-only",
+        "python scripts/production/validate_p34_7_joint_gate.py --help",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production src/omnibase/workspace_data",
         "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
