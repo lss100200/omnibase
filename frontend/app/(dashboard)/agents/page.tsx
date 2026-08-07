@@ -107,6 +107,7 @@ export default function AgentAlphaPage() {
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [posture, setPosture] = useState<{
     engineering_assembled: boolean
+    lite_gate_enabled: boolean
     engineering_flag_enabled: boolean
     environment_allowed: boolean
     phase5_gates_all_false: boolean
@@ -340,9 +341,10 @@ export default function AgentAlphaPage() {
 
   const postureBadges = (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge className="shrink-0" variant="secondary">
-        ENGINEERING ALPHA
+      <Badge className="shrink-0" variant="outline">
+        LITE GATE {posture?.lite_gate_enabled ? 'ON' : 'OFF'}
       </Badge>
+
       <Badge className="shrink-0" variant="outline">
         <Wrench className="mr-1 h-3 w-3" />
         TOOLS DISABLED
@@ -450,7 +452,7 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={!input.trim() || !workspaceId || !bindingId}
+                disabled={!posture?.lite_gate_enabled || !input.trim() || !workspaceId || !bindingId}
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -511,6 +513,16 @@ export default function AgentAlphaPage() {
         </section>
 
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <h2 className="text-sm font-semibold">Workspace surfaces</h2>
+          <div className="mt-4 space-y-2 text-xs text-muted-foreground">
+            <p>Projects / branches / files <span className="float-right font-mono">ROADMAP</span></p>
+            <p>Skills <span className="float-right font-mono">ROADMAP</span></p>
+            <p>MCP <span className="float-right font-mono">LOCKED</span></p>
+            <p>Marketplace <span className="float-right font-mono">ROADMAP</span></p>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Runtime posture</h2>
           <div className="mt-4 space-y-3 text-sm">
             <div className="flex items-start gap-3">
@@ -519,9 +531,11 @@ export default function AgentAlphaPage() {
                 <p className="font-medium">Engineering-only</p>
                 <p className="text-xs text-muted-foreground">
                   {statusError ??
-                    (posture?.engineering_assembled
-                      ? 'Assembled in this environment.'
-                      : 'Not assembled; production remains locked.')}
+                    (!posture?.lite_gate_enabled
+                      ? 'Lite product gate is closed. Enable the engineering-only gate before invoking.'
+                      : posture?.engineering_assembled
+                        ? 'Assembled in this environment.'
+                        : 'Not assembled; check Provider, Gateway, environment and migration head 0012.')}
                 </p>
               </div>
             </div>

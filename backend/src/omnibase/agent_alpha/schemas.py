@@ -38,6 +38,7 @@ class AlphaProfileList(AlphaApiModel):
 
 class AlphaStatusResponse(AlphaApiModel):
     engineering_implemented: bool
+    lite_gate_enabled: bool = False
     engineering_assembled: bool = False
     engineering_flag_enabled: bool = False
     environment_allowed: bool = False

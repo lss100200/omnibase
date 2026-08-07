@@ -399,6 +399,7 @@ export const agentAlphaApi = {
     api
       .get<{
         engineering_implemented: boolean
+        lite_gate_enabled: boolean
         engineering_assembled: boolean
         engineering_flag_enabled: boolean
         environment_allowed: boolean

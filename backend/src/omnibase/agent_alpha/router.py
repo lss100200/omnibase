@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from omnibase.agent_alpha.engineering import build_engineering_agent_alpha, engineering_alpha_status
+from omnibase.agent_alpha.lite import lite_agent_posture, resolve_lite_agent_flag
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
     AlphaInvokeRequest,
@@ -32,13 +33,9 @@ _SAFE_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
-    """Production default remains rejecting until the engineering seam assembles it.
-
-    The engineering seam is the only path that may return the DB-backed
-    service; it is never opened by a request parameter, Browser cookie, JWT
-    claim or URL query.
-    """
-
+    """Keep the Lite product entry point independently fail-closed."""
+    if not resolve_lite_agent_flag():
+        return UnavailableAgentAlpha()
     return build_engineering_agent_alpha()
 
 
@@ -72,8 +69,10 @@ def alpha_status(
 ) -> AlphaStatusResponse:
     del ctx
     posture = engineering_alpha_status()
+    lite = lite_agent_posture()
     return AlphaStatusResponse(
         engineering_implemented=True,
+        lite_gate_enabled=lite["lite_gate_enabled"],
         engineering_assembled=posture["assembled"],
         engineering_flag_enabled=posture["engineering_flag_enabled"],
         environment_allowed=posture["environment_allowed"],
