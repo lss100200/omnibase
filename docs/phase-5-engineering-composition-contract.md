@@ -50,20 +50,37 @@ composition inputs.
 
 ## Authority revalidation
 
-`LiveRuntimeAuthorityValidator` reads the live task, Agent Run, Workspace Run and
-RunLease rows in a fresh session before each Gateway call. The persisted chain is
+`LiveRuntimeAuthorityValidator` locks and reads the live Workspace, Task,
+AgentVersion, installed Workspace binding, Agent Run, Workspace Run and RunLease
+rows in a fresh session before each Gateway call. The persisted chain is
 `AgentRun.workspace_run_id -> WorkspaceRun.id -> RunLease.run_id`; an
 `AgentRun.id` is never treated as the `WorkspaceRun.id`. It requires matching
-tenant/workspace/task/run generations, task and AgentVersion digests, runtime and
-workload identity, an active unexpired lease using the same database clock,
-matching run and node fencing tokens, and a live active node with a verified,
-unexpired attestation. A stale, revoked, expired or mismatched fact rejects the
-call before the Gateway boundary. The formal builder always installs this live
-validator and does not accept an injected authority-validator bypass.
+tenant/workspace/task/run generations, Task actor, proposal version/digest,
+resource-scope and budget-policy digests, sealed AgentVersion and installed
+binding identities, runtime and workload identity, the current WorkspaceRun
+fencing cursor, and an active lease whose expiry is compared with
+`clock_timestamp()`. Run/Node fencing must agree with a live active Node and a
+verified, unexpired attestation. A stale, revoked, expired or mismatched fact
+rejects the call before the Gateway boundary. The formal builder always installs
+this validator and does not accept an injected authority-validator bypass.
 
 The runtime identity and workload digest are server-owned and must be bound to
-the same P34 Workspace Run and P5 Agent Run. Terminalization clears the live
-lease, fencing and runtime bindings; an old holder cannot resume the run.
+the same P34 Workspace Run and P5 Agent Run. The workload digest is a distinct
+identity domain from the mTLS certificate thumbprint: the former binds runtime
+execution facts, while the latter binds transport proof and capability-token
+`cnf`. Both are mandatory lowercase SHA-256 values and swapping either value
+fails closed. Terminalization clears the live lease, fencing and runtime
+bindings; an old holder cannot resume the run.
+
+The credential attestor, P5.4B live validator and Gateway Core verification run
+in separate transactions. Credential issuance revalidates the P34 Run/Lease/
+Node/fencing chain, the P5.4B validator revalidates the persisted Task/Run chain,
+and Gateway Core revalidates capability scope, resource policy, budget and
+audit. This is layered fail-closed verification, not an atomic authority
+closure. A revocation may race between those transactions. P5.4B therefore
+keeps production admission blocked/not_proven; it does not hold database locks
+across arbitrary RAG/provider work and does not overclaim the residual TOCTOU
+risk as solved.
 
 ## Evidence and recovery
 
@@ -85,7 +102,14 @@ The Gate and its evidence explicitly record:
 - migration `0013`: not created;
 - root `.env`: not accessed;
 - business database: not accessed or migrated;
-- external network: not accessed.
+- workload-container external network: denied by an internal-only Docker
+  network;
+- Docker image acquisition: disabled with local image preflight and
+  `pull_policy/--pull never`;
+- backend image, PostgreSQL image, shared venv volume and installed package
+  inventory: measured and sealed; the evidence explicitly remains
+  `ambient_runtime_dependent=true` because it does not hash every installed
+  dependency byte.
 
 Source manifests and evidence SHA-256 values are sealed raw-byte records. Do
 not rewrite, normalize, or replace historical evidence chains. If a sealed
@@ -104,8 +128,7 @@ rollback, direct database repair, provider retry, or production activation.
 P5.4B adds no Browser route, SDK, queue, worker, scheduler, Planner Runtime,
 second tool, Skill/MCP runtime, Shell, SQL, arbitrary HTTP, Sandbox execution,
 file access, provider production client, or multi-Agent orchestration. It does
-not change `backend/src/omnibase/production/composition.py` or the disposable
-Gate implementation as part of this documentation contract.
+not change `backend/src/omnibase/production/composition.py`.
 
 ## Focused verification
 
@@ -114,8 +137,8 @@ is needed:
 
 ```text
 python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only
-python -m pytest backend/tests/test_p34_7_production_composition.py -q
-python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4b_gate_v2.py -q
+docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4b_engineering_composition.py tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py -q
 python -m compileall -q backend/src/omnibase/agent_executor
 python scripts/maintenance/validate_maintainer_map.py --repo-root .
 python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .

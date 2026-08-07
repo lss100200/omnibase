@@ -1750,20 +1750,32 @@ The Gateway adapter accepts server-owned `WorkloadCredential` material and
 bounded logical DTOs only; Browser JWTs, physical PostgreSQL/object-store
 locators, provider secrets, host paths, process/socket handles and arbitrary
 tool expansion remain forbidden. `LiveRuntimeAuthorityValidator` must read
-live Task, Agent Run, Workspace RunLease and Workspace Node facts in a fresh
-session before each Gateway call, requiring matching tenant/workspace/task/run
-generations, active unexpired lease, runtime identity, verified node and exact
-Run/Node fencing.
+live Workspace, Task, sealed AgentVersion, installed binding, Agent Run,
+Workspace RunLease and Workspace Node facts in a fresh session before each
+Gateway call. Task actor, plan/version/scope/budget digests, generation,
+runtime/workload identity, current WorkspaceRun fencing cursor, database-clock
+lease expiry, verified Node and exact Run/Node fencing must all agree. The mTLS
+certificate thumbprint and workload identity digest are distinct mandatory
+server-owned SHA-256 facts; the certificate binds transport/token `cnf`, while
+the workload digest binds persisted execution authority.
 
 The P5.4B disposable Gate may use only an isolated `omnibase_test_p54b_*`
 sentinel and must pin the sentinel migration head to `0012`. Gate v2 records
 production/runtime and feature gates disabled, migration `0013` absent, root
-`.env` and business database untouched, external network unused, and cleanup
-`0/0/0` under a unique run-scoped directory. It preserves the legacy evidence
+`.env` and business database untouched, workload-container egress denied,
+local-only image acquisition enforced by pull-never, and cleanup `0/0/0` under
+a unique run-scoped directory. It preserves the legacy evidence
 chain as superseded/incomplete, captures raw command/exit-code sidecars, and
-independently seals source, artifact and evidence bytes. Digest drift stops
+independently seals source, artifact and evidence bytes. Image/venv/package
+measurements are sealed but explicitly ambient-runtime-dependent. Digest drift stops
 admission and requires a forward fix from a clean checkout; historical chains
 must not be rewritten or replaced.
+
+Credential attestation, the live P5.4B validator and Gateway Core verification
+are layered separate transactions, not an atomic authority closure. The
+residual revocation race must be documented; database locks must not be held
+across arbitrary RAG/provider work, and production admission remains
+blocked/not_proven.
 
 **Allowed changes**
 
@@ -1790,6 +1802,7 @@ must not be rewritten or replaced.
 - `backend/tests/test_p34_7_production_composition.py`
 - `backend/tests/test_p5_4a_typed_executor.py`
 - `backend/tests/test_p5_4a_gateway_adapter.py`
+- `backend/tests/test_p5_4b_gate_v2.py`
 - `backend/tests/integration/test_p5_4b_engineering_composition_foundation.py`
 - `python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only`
 - Maintainer map and benchmark validators

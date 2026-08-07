@@ -2709,30 +2709,60 @@ lease expiry、node/run fencing 与 verified attestation 必须重新匹配。�
 能力仍为 `knowledge_search -> workspace.knowledge.search`，不接受 Browser
 JWT、physical locator、provider secret、host path 或任意 tool 扩展。
 
-当前 disposable runner 为
-`scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`，仅
-使用隔离 `omnibase_test_p54b_*` sentinel，升级 sentinel 到 `0012` 并运行
-P5.4B integration suite；它不是 production Gate。正式 evidence 必须明确
-记录 production Runtime 未激活、Feature Gates 全 false、migration `0013`
-未创建、root `.env` 未访问、business database 未访问/迁移、external network
-未访问以及 cleanup `containers=0, networks=0, volumes=0`。source manifest 和
-证据均为 raw-byte SHA-256 sealed chain；历史链不得重写，digest drift 必须
-停止 admission 并从 clean checkout forward-fix。
+Review-Fix Round 1 已在同一工作树继续 forward-fix，未新建 migration 或生产
+wiring。formal builder 不再接受 authority-validator injection，并固定安装
+`LiveRuntimeAuthorityValidator`。validator 现在区分 Planner node 与 Runtime
+WorkspaceNode，沿 `AgentRun.workspace_run_id -> WorkspaceRun.id -> RunLease.run_id`
+解析真实权威链，锁定并核对 Workspace、Task、sealed AgentVersion、installed
+binding、AgentRun、WorkspaceRun、RunLease、Node 和 live Attestation；Task actor、
+proposal version/digest、resource-scope/budget-policy digest、generation、runtime/
+workload identity、当前 WorkspaceRun fencing cursor、数据库时钟 lease expiry 与
+Run/Node fencing 任一漂移都 fail closed。`scheduled|running` Task 与
+`leased|running` AgentRun 是本 engineering 合同明确覆盖的 pre-execution/execution
+闭集；created/planning/awaiting-approval/paused/terminal 状态全部拒绝。
 
-本轮修复已继续完成 live-authority disposable integration 的 forward-fix：seed 不再尝试违反
-`agent_task` immutable identity trigger 的 upsert，而是在受保护的 sentinel 中删除并重建
-固定测试 Run/Task/Lease 记录，同时刷新 verified NodeAttestation 的时间窗口。真实
-`AgentRun.id`、`WorkspaceRun.id` 与 `RunLease.run_id` 关系已通过正式 builder 和
-`LiveRuntimeAuthorityValidator` 验证，P5.4B integration 当前 `2 passed`；focused
-P5.4A/P5.4B 回归当前 `30 passed`。这仍只是 engineering composition proof，不能写成
-admission 或 production readiness。
+共享 Gateway workload 合同同时完成了关键身份域纠正：mTLS certificate
+thumbprint 与 runtime workload identity digest 不再合并。证书摘要只绑定 TLS
+transport 与 capability token `cnf`；独立的 server-owned workload digest 绑定
+WorkspaceRun、AgentRun、RunLease/Node/fencing 运行事实。两者都是必填 64 位小写
+SHA-256，P34.5 workload attestor、credential issuer、mTLS registry/vending、P5.4B
+credential seam 和相关测试 constructor 均已贯通。Gateway HTTP 入口也统一保留
+canonical `Capability <token>` envelope，由 Core verifier 唯一剥离 scheme；不接受
+raw token 双重表示。
 
-Gate v2 已改为唯一 run-scoped evidence 目录 `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`，
-保留旧 `.tmp/p5-4b-engineering-composition-gate` 不变并视为 superseded/incomplete；v2
-记录命令输出、exit-code sidecars、sentinel Alembic head、cleanup 与 source/artifact/raw-byte
-SHA-256 seal，并提供独立 `--verify-evidence` 路径。v2 的实际 `--run`、证据复验和完整
-negative integration matrix 尚未完成，因此当前状态仍为 `P5.4B engineering composition
-admission=not proven`、`production blocked/not_proven`。
+focused 正向已通过 formal builder、真实 `LiveRuntimeAuthorityValidator`、server-owned
+credential seam、Gateway adapter 和 mocked Gateway；无 `_Authority`/no-op validator。
+截至本文本更新，P34.2/P34.5/P34.6/P5.4A/P5.4B 受影响 focused 回归为
+`175 passed`，Gate v2 专用 synthetic seal/command/cleanup 单测为 `16 passed`。
+P5.4B disposable integration 已改为每个用例使用同一数据库连接上的 function-scoped
+outer transaction，并在用例后整体 rollback，避免通过 generation 倒退、revoked
+Node 原地复活或 terminal Attestation 改回 verified 来重置夹具。过期 Task 也改为
+初始 INSERT 时构造合法 `created_at < deadline <= db_now`，不再 UPDATE migration
+`0011` 明确 immutable 的 deadline。正式 disposable integration/Gate v2 仍需在
+clean commit 上执行，本文不得提前记录 passed。
+
+Gate v2 使用唯一、non-overwriting 的 run-scoped evidence 目录
+`.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`，旧
+`.tmp/p5-4b-engineering-composition-gate` 保留为 superseded/incomplete。v2 固定
+`.env.example`、本地镜像 preflight、Compose `pull_policy: never`、Docker
+`--pull never` 与 internal-only workload network；它逐条复验 command semantics、
+stdout/exitcode、sentinel `0012` Alembic graph、Feature Gates、backend/PostgreSQL
+image identity、共享 venv 名称、Python package inventory、source/artifact/evidence
+raw-byte SHA-256 与 cleanup `0/0/0`。该证据明确标记
+`ambient_runtime_dependent=true`，不能声称已哈希共享 venv 内每个依赖字节，也只能
+声称 workload container egress denied，不能把它扩大为宿主/daemon 网络审计。
+
+credential attestor、P5.4B live validator 与 Gateway Core 位于三个分离事务：前两者
+重验 Run/Lease/Node/Task/Run 权威，Core 再验证 capability/resource/budget/audit。
+这不是 atomic authority closure，validator 返回后到 Gateway 使用前仍有 revocation
+TOCTOU residual risk。不得通过跨任意 RAG/provider 调用长期持锁制造新死锁；该风险
+必须保留在合同中，因此即使 engineering Gate 最终通过，production admission 仍为
+blocked/not_proven。
+
+当前状态（正式 v2 Gate 运行前）继续为：`P5.4B implementation present`、
+`P5.4B engineering composition admission not proven`、`old P5.4B evidence
+superseded/incomplete`、`production Runtime disabled`、`migration 0013 absent`、
+`production blocked/not_proven`。
 
 ---
 

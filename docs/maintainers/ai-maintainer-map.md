@@ -1294,16 +1294,27 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   head. Production activation is disabled and migration `0013` is not created.
 - The only composed capability remains `knowledge_search` →
   `workspace.knowledge.search`. `LiveRuntimeAuthorityValidator` re-reads live
-  Task, Agent Run, Workspace RunLease and Workspace Node facts before each call;
-  tenant/workspace/generation, runtime identity, lease expiry and Run/Node
-  fencing must match exactly. Stale or revoked authority is rejected.
+  Workspace, Task, sealed AgentVersion, installed binding, Agent Run, Workspace
+  RunLease and Workspace Node facts before each call. Task actor,
+  plan/version/scope/budget digests, tenant/workspace/generation,
+  runtime/workload identity, the current WorkspaceRun fencing cursor,
+  database-clock lease expiry and Run/Node fencing must match exactly. The mTLS
+  certificate thumbprint remains distinct from the persisted workload digest.
+  Stale or revoked authority is rejected.
 - The disposable runner
   `scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`
   uses only an `omnibase_test_p54b_*` sentinel. Gate v2 writes unique run-scoped
   evidence under `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`, preserves
   the legacy evidence directory as superseded/incomplete, and independently
-  verifies raw command sidecars, source/artifact digests, measured head and
-  cleanup `0/0/0`. It is not production evidence.
+  verifies exact command semantics, raw command sidecars, source/artifact
+  digests, measured Alembic graph, Runtime gates, internal-only workload
+  network, local-only pull policy, image/venv/package identity and cleanup
+  `0/0/0`. The sealed runtime remains explicitly ambient-dependent; it is not
+  production evidence.
+- Credential attestation, live P5.4B validation and Gateway Core checks are
+  separate fail-closed transactions. Do not claim atomic revocation closure,
+  and do not hold locks across arbitrary RAG/provider work. The residual TOCTOU
+  risk keeps production admission blocked/not_proven.
 - SHA-256 source manifests and evidence are sealed raw-byte chains. Never edit
   historical evidence to repair a mismatch. Stop admission, retain the old
   chain and forward-fix from a clean checkout with a new explicit seal.
@@ -1312,6 +1323,7 @@ Focused commands:
 
 ```text
 python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4b_gate_v2.py -q
 python -m pytest backend/tests/test_p34_7_production_composition.py -q
 python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q
 python -m compileall -q backend/src/omnibase/agent_executor
