@@ -46,6 +46,15 @@ class AlphaStatusResponse(AlphaApiModel):
     production_activation_allowed: bool
     tools_enabled: bool
     multi_agent_enabled: bool
+    # P5.4C review-fix: honest builder-chain and capability disclosure.
+    knowledge_search_read_only_enabled: bool = False
+    formal_builder: str = "build_engineering_single_agent_executor"
+    alpha_builder: str = "build_engineering_agent_alpha"
+    supported_invocation_modes: list[str] = Field(
+        default_factory=lambda: ["no_tool", "knowledge_search_read_only"]
+    )
+    formal_builder_flag_enabled: bool = False
+    expected_migration_head: str = "0012"
 
 
 __all__ = [

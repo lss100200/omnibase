@@ -2793,7 +2793,71 @@ canonical digest 与 migration baseline 也同步到当前 `0012`；没有删除
 生成的新 run-scoped P5.4B Gate v2 evidence、独立 `--verify-evidence`、raw-byte
 SHA-256 复算和 cleanup `0/0/0` 全部通过后，才能继续声明 engineering Gate
 passed；即使通过，production Runtime、三个 Feature Gate、migration `0013` 和
-P5.4C 仍保持关闭。
+生产 P5.4C 仍保持关闭。
+
+---
+
+### P5.4C Lite Agent product loop review-fix（2026-08-07）
+
+外部 review 把首次 P5.4C 提交（`feat(p5.4c): add gated lite agent product
+entry`）判定为 `REVIEW_FIX_REQUIRED`：该提交只加了
+`AGENT_LITE_ENGINEERING_ENABLED` 双 gate、关闭旧 Agent Alpha 路由和静态
+`ROADMAP`/`LOCKED` UI，并未实现请求的产品循环，且 `test_lite_flag_defaults_off`
+存在环境依赖缺陷、缺乏正式 P5.4B builder 路由、缺乏 canonical 前端证据、
+缺乏 P5.4C disposable Gate/evidence seal 与维护者文档更新。
+
+本轮 review-fix 在同一分支 `external/p5-4c-lite-agent-product-loop` 上以一个
+普通 follow-up commit 实现以下修复，**未** amend/rebase/reset、**未**
+push/PR/merge、**未** 读取根 `.env`、**未** 访问/迁移业务数据库、**未** 创建
+migration `0013`、**未** 开启任何 Phase 5 生产 Feature Gate、**未** 激活生产
+Runtime：
+
+1. **环境隔离（缺陷 3）**：重写 `backend/tests/test_p5_4c_lite_gate.py`，使用
+   `monkeypatch.delenv` 清除全部 Lite/Phase-5 变量，再用显式 `raw` 与显式 `env`
+   证明 absent→default-off、显式 `false`/`true`、闭集非法 token fail-closed，并
+   证明解析器与 ambient host 变量独立（即便 stray 设置了
+   `AGENT_LITE_ENGINEERING_ENABLED=true`，`raw=None` 仍返回 `False`）。
+2. **正式 builder 路由（缺陷 1）**：重写 `agent_alpha/lite.py`，新增
+   `lite_agent_posture()` 显式披露正式 P5.4B builder
+   `build_engineering_single_agent_executor`（含
+   `LiveRuntimeAuthorityValidator` + `CapabilityGatewayKnowledgeSearchPort`）与
+   P5.2C Alpha builder `build_engineering_agent_alpha` 的关系、支持的调用模式
+   `no_tool`/`knowledge_search_read_only`、正式 builder flag、Phase 5 gate 状态、
+   migration head `0012`。`knowledge_search_read_only_enabled` 仅在 Lite gate、
+   正式 builder flag 与全部 Phase 5 gate false 同时成立时为真；posture 仍为只读、
+   非授权。router 与 schema 同步暴露这些字段。
+3. **真实产品循环与前端质量（缺陷 2+4）**：保留既有 Workspace 选择、Agent
+   Builder、profile resolver、invoke、ledger、citation 真实循环；将静态
+   `ROADMAP`/`LOCKED` chip 替换为 posture-backed honest 状态（Workspace/AgentVersion
+   `LIVE`/`SELECT`、knowledge search `GATED`/`LOCKED`、其余
+   `ROADMAP`/`LOCKED`）；新增 loading、empty（无 Workspace/无 installed
+   AgentVersion）、disabled、gate-closed 与 unavailable-provider 状态文本。前端
+   `pnpm typecheck`、`pnpm lint`、`pnpm test`（47 passed）与
+   `NODE_ENV=production pnpm build`（16 routes，`/agents` 11.5 kB）全部 exit 0。
+4. **P5.4C disposable Gate（缺陷 5）**：新增
+   `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py`
+   `--validate-only`/`--run`/`--verify-evidence` 三模式 run-scoped Gate，以及
+   `backend/tests/test_p5_4c_lite_agent_product_gate.py`（18 passed，含 synthetic
+   sealed run + 多种 tamper fail-closed）。Gate 在 backend container 内执行 focused
+   Lite 单测，封存 source manifest、command receipts 与 measurements 的 raw-byte
+   SHA-256；成功 `--run` 移除 run 目录，仓库保持零 disposable residue；永不读取根
+   `.env`、永不访问业务数据库、永不创建 `0013`、永不开启生产 Feature Gate。该
+   Gate 不替代更重的 P5.4B disposable PostgreSQL Gate（后者仍为正式组合 + 真实
+   persisted runtime/lease 事实的权威）。
+5. **维护者文档（缺陷 5）**：在 `maintenance-map.json` 新增 `INV-051` 与
+   `lite-agent-product-loop` 模块；在 `security-invariants.md` 新增
+   `INV-051 p54c-lite-agent-product-loop`；在 `ai-maintainer-map.md` 新增
+   `6.15 P5.4C Lite Agent product loop`（原 6.15 顺延为 6.16）；新增
+   `docs/phase-5-lite-agent-product-loop.md` 合同与
+   `docs/quick-start-p5-4c-lite-agent.md` Quick Start/Demo（明确标注
+   engineering-only 与 production-blocked）。
+
+本轮 review-fix 的状态：`P5.4C Lite product loop review-fix engineering Gate
+passed`、`production Runtime disabled`、`Phase 5 Feature Gates all false`、
+`migration head 0012`、`migration 0013 absent`、`root .env not accessed`、
+`business database not accessed/migrated`、`no push/PR/merge`。Production 状态
+继续为 `blocked/not_proven`；P5.4C disposable Lite Gate 仅是工程证据，不是生产
+admission，也不自动开启任何后续阶段。
 
 ---
 

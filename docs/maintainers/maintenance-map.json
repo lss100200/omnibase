@@ -611,6 +611,29 @@
       ]
     },
     {
+      "id": "INV-051",
+      "title": "P5.4C Lite Agent product loop is fail-closed, formal-builder-bound and non-production",
+      "document": "docs/maintainers/security-invariants.md#inv-051-p54c-lite-agent-product-loop",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/lite.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/engineering.py",
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py",
+        "docs/phase-5-lite-agent-product-loop.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "backend/tests/test_agent_alpha_engineering.py"
+      ]
+    },
+    {
       "id": "INV-049",
       "title": "First-party native Skill manifests are compile-only, exact-version, non-escalating and evidence-bound",
       "document": "docs/maintainers/security-invariants.md#inv-049-first-party-native-skill-contract",
@@ -2210,6 +2233,61 @@
         "Keep production Runtime activation false and migration 0013 absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
         "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
         "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
+      ]
+    },
+    {
+      "id": "lite-agent-product-loop",
+      "name": "P5.4C Lite Agent product loop (engineering-only, formal-builder-bound)",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/lite.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/engineering.py",
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py",
+        "docs/phase-5-lite-agent-product-loop.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_alpha/lite.py:resolve_lite_agent_flag",
+        "backend/src/omnibase/agent_alpha/lite.py:lite_agent_posture",
+        "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
+        "backend/src/omnibase/agent_alpha/router.py:alpha_status",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "Browser HTTP GET /api/v1/workspaces/{workspace_id}/agent-alpha/status (read-only posture)",
+        "Internal engineering-only product surface over the existing tool-free Alpha loop and the formal P5.4B knowledge-search builder; never a production Runtime, Planner, multi-Agent, arbitrary-tool or migration-0013 path"
+      ],
+      "depends_on": [
+        "agent-alpha-engineering-runtime",
+        "engineering-composition",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-045",
+        "INV-046",
+        "INV-050",
+        "INV-051"
+      ],
+      "verification": [
+        "python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q",
+        "cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep AGENT_LITE_ENGINEERING_ENABLED default off and independent of the three production Phase 5 Feature Gates; any non-exact token must fail closed.",
+        "The knowledge-search-capable path must run through the formal P5.4B builder build_engineering_single_agent_executor (LiveRuntimeAuthorityValidator + CapabilityGatewayKnowledgeSearchPort); the P5.2C Alpha seam only carries the tool-free RAG-retrieval loop.",
+        "On gate, posture, source-manifest or evidence SHA drift, close the Lite product surface and re-run the disposable Gate from a clean checkout; never claim production admission from a disposable Lite Gate.",
+        "Never read root .env, touch the business database, create migration 0013, open a Phase 5 production Feature Gate, or expose provider secrets in browser state, logs, diagnostics, errors or DTOs."
       ]
     },
     {

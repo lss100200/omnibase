@@ -1331,7 +1331,67 @@ python scripts/maintenance/validate_maintainer_map.py --repo-root .
 python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 ```
 
-## 6.15 P5.6A first-party native Skill contract
+## 6.15 P5.4C Lite Agent product loop (engineering-only, formal-builder-bound)
+
+- `backend/src/omnibase/agent_alpha/lite.py` is the **engineering-only product
+  entry guard** for the single-Agent loop. `AGENT_LITE_ENGINEERING_ENABLED` is
+  an independent closed-set gate that defaults off; any token other than
+  exactly `true`/`false` (including missing, empty, `TRUE`, `1`, `yes`, `on`,
+  `enabled`) must fail closed via `LiteAgentConfigurationError`.
+- The gate is a *product* entry guard, never an authorization fact. Passing it
+  only opens the Lite Browser surface in a development/engineering deployment.
+  It never authorizes production Agent Runtime, Planner, multi-Agent execution,
+  arbitrary tools, migration `0013`, or any Phase 5 production Feature Gate.
+- The knowledge-search-capable path must run through the formal reviewed P5.4B
+  builder `build_engineering_single_agent_executor` (which installs
+  `LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`).
+  The older P5.2C `build_engineering_agent_alpha` seam only carries the
+  tool-free RAG-retrieval product loop and must never be presented as the
+  knowledge-search authority path.
+- `lite_agent_posture()` is read-only and non-authorizing: it discloses the
+  formal builder name, the Alpha builder name, the supported invocation modes,
+  whether the formal builder flag is on, whether all Phase 5 gates are false,
+  and whether the knowledge-search-capable path is admissible. Assembly
+  decisions stay in the fail-closed builders; the posture never authorizes
+  anything.
+- The parser must be independent of the ambient host environment.
+  `resolve_lite_agent_flag(None)` means "the variable is absent" and resolves to
+  `False` even when a stray `AGENT_LITE_ENGINEERING_ENABLED` is set. Tests must
+  isolate environment state with an explicit `raw` argument and an explicit
+  `env` mapping so a host with the gate enabled cannot make the default-off
+  assertion fail.
+- The Browser status DTO (`AlphaStatusResponse`) and the Next.js workbench
+  consume the new posture fields (`knowledge_search_read_only_enabled`,
+  `formal_builder`, `alpha_builder`, `supported_invocation_modes`,
+  `formal_builder_flag_enabled`, `expected_migration_head`) to label state
+  honestly. Static `ROADMAP`/`LOCKED` chips must be reserved for surfaces not
+  backed by current product state; the knowledge-search surface must reflect
+  the live posture, and provider secrets must never leak into browser state,
+  logs, diagnostics, errors or DTOs.
+- The disposable runner
+  `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py` is
+  run-scoped and engineering-only. It exercises the Lite gate parser, the
+  formal-builder posture disclosure and the focused Lite unit suite inside the
+  backend container, then seals the tested source bytes, command receipts and
+  measurements under unique raw-byte SHA-256 sidecars. A successful `--run`
+  removes its run directory so the repository keeps zero disposable residues;
+  the canonical evidence is the sealed source manifest. It never reads the root
+  `.env`, never touches a business database, never creates migration `0013`,
+  never opens a Phase 5 production Feature Gate, and does not replace the
+  heavier P5.4B disposable PostgreSQL Gate.
+
+Focused commands:
+
+```text
+python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
+cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
+python scripts/maintenance/validate_maintainer_map.py --repo-root .
+python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+```
+
+## 6.16 P5.6A first-party native Skill contract
 
 - The product Skill contract is
   `backend/src/omnibase/production/phase5_skill_contract.py`. P5.6A is strictly

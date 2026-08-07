@@ -1817,6 +1817,92 @@ new reviewed commit or isolated sentinel run. Do not downgrade the business
 database, create `0013`, retry an unknown provider outcome, or activate a
 production component while evidence is incomplete.
 
+## INV-051 p54c-lite-agent-product-loop
+
+P5.4C is the **engineering-only product surface** for the single-Agent loop.
+`AGENT_LITE_ENGINEERING_ENABLED` is an independent closed-set gate that defaults
+off; any token other than exactly `true` or `false` (including missing, empty,
+`TRUE`, `1`, `yes`, `on`, `enabled`) must fail closed. The gate is a *product*
+entry guard, never an authorization fact: passing it only opens the Lite
+Browser surface in a development/engineering deployment. It never authorizes
+production Agent Runtime, Planner, multi-Agent execution, arbitrary tools,
+migration `0013`, or any of the three Phase 5 production Feature Gates, which
+must remain exactly `false`.
+
+The knowledge-search-capable path must run through the formal reviewed P5.4B
+composition builder `build_engineering_single_agent_executor` (which installs
+`LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`).
+The older P5.2C `build_engineering_agent_alpha` seam only carries the tool-free
+RAG-retrieval product loop and must never be presented as the knowledge-search
+authority path. `lite_agent_posture()` is read-only and non-authorizing: it
+only describes which builder the UI should label and whether the
+knowledge-search-capable path is admissible; assembly decisions stay in the
+fail-closed builders. The status DTO must not leak provider secrets, physical
+locators, credentials, migration internals or runtime handles.
+
+The parser must be independent of the ambient host environment:
+`resolve_lite_agent_flag(None)` is documented to mean "the variable is absent"
+and must resolve to `False` even when a stray `AGENT_LITE_ENGINEERING_ENABLED`
+is set in the process environment. Tests must isolate environment state with an
+explicit `raw` argument and an explicit `env` mapping, so a host with the gate
+enabled cannot make the default-off assertion fail.
+
+The P5.4C disposable Gate is run-scoped and engineering-only. It exercises the
+Lite gate parser, the formal-builder posture disclosure and the focused Lite
+unit suite inside the backend container, then seals the tested source bytes,
+command receipts and measurements under unique raw-byte SHA-256 sidecars. A
+successful `--run` removes its run directory so the repository keeps zero
+disposable residues; a failed run preserves the directory for inspection. The
+Gate never reads the root `.env`, never touches a business database, never
+creates migration `0013` and never opens a Phase 5 production Feature Gate. It
+does not replace the heavier P5.4B disposable PostgreSQL Gate, which remains
+the authority for the formal composition with real persisted runtime/lease
+facts.
+
+**Allowed changes**
+
+- Tighten the Lite gate's closed-set parser, fail-closed defaults, posture
+  disclosure or UI state labels without adding Browser authorization, SDK,
+  persistence or production Runtime authority.
+- Add focused negative tests, maintainer/evidence documentation and the
+  disposable Gate's source seal without enabling production admission.
+- Re-route the knowledge-search-capable path closer to the formal P5.4B
+  builder, but only by tightening identity, lease/fencing, DTO or fail-closed
+  checks.
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating the disposable Lite Gate as production admission.
+- Presenting the P5.2C Alpha seam as the knowledge-search authority path, or
+  recreating a weaker builder instead of `build_engineering_single_agent_executor`.
+- Letting the gate parser depend on the ambient host environment, or accepting
+  a non-exact token through loose bool coercion.
+- Leaking provider secrets, physical locators, credentials, migration internals
+  or runtime handles into browser state, logs, diagnostics, errors or DTOs.
+- Mutating historical sealed evidence, bypassing clean-checkout/source digest
+  checks, reading the root `.env`, or touching the business database.
+
+**Required verification**
+
+- `backend/tests/test_p5_4c_lite_gate.py`
+- `backend/tests/test_p5_4c_lite_agent_product_gate.py`
+- `backend/tests/test_agent_alpha_engineering.py`
+- `python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only`
+- Frontend `pnpm typecheck`, `pnpm lint`, `pnpm test`, `NODE_ENV=production pnpm build`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On gate, posture, source-manifest or evidence drift, close the Lite product
+surface (return `UnavailableAgentAlpha` from `get_agent_alpha`) and keep
+production disabled. Preserve the old sealed chain, capture the failing report,
+and forward-fix in a new reviewed commit or isolated run. Do not enable a Phase
+5 production Feature Gate, create `0013`, retry an unknown provider outcome, or
+present a disposable Lite Gate as production admission while evidence is
+incomplete.
+
 ## INV-049 p54a-typed-single-agent-executor
 
 P5.4A 是 engineering-only 的第一个 typed Executor 切片。它只能接收一份

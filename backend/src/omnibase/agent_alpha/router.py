@@ -12,7 +12,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from omnibase.agent_alpha.engineering import build_engineering_agent_alpha, engineering_alpha_status
-from omnibase.agent_alpha.lite import lite_agent_posture, resolve_lite_agent_flag
+from omnibase.agent_alpha.lite import (
+    ALPHA_BUILDER_NAME,
+    FORMAL_BUILDER_NAME,
+    SUPPORTED_INVOCATION_MODES,
+    lite_agent_posture,
+    resolve_lite_agent_flag,
+)
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
     AlphaInvokeRequest,
@@ -33,7 +39,24 @@ _SAFE_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
-    """Keep the Lite product entry point independently fail-closed."""
+    """Keep the Lite product entry point independently fail-closed.
+
+    The Lite gate is a *product* entry guard, never an authorization fact. The
+    knowledge-search-capable path is served by the formal P5.4B composition
+    builder ``build_engineering_single_agent_executor`` (installed with
+    ``LiveRuntimeAuthorityValidator`` and ``CapabilityGatewayKnowledgeSearchPort``
+    by ``agent_executor.engineering``); the older P5.2C
+    ``build_engineering_agent_alpha`` seam only carries the tool-free
+    RAG-retrieval product loop and never authorizes knowledge search on its own.
+
+    This factory returns ``UnavailableAgentAlpha`` whenever the Lite gate is
+    closed. When the gate is open it delegates to the Alpha engineering seam,
+    which itself remains fail-closed until every P5.2C dependency
+    (environment, Phase 5 gates, provider gateway, migration head 0012) holds;
+    the formal P5.4B builder is assembled separately by its own disposable
+    Gate and is not constructed here. ``lite_agent_posture`` exposes the
+    honest builder chain to the status endpoint without authorizing anything.
+    """
     if not resolve_lite_agent_flag():
         return UnavailableAgentAlpha()
     return build_engineering_agent_alpha()
@@ -72,7 +95,7 @@ def alpha_status(
     lite = lite_agent_posture()
     return AlphaStatusResponse(
         engineering_implemented=True,
-        lite_gate_enabled=lite["lite_gate_enabled"],
+        lite_gate_enabled=bool(lite["lite_gate_enabled"]),
         engineering_assembled=posture["assembled"],
         engineering_flag_enabled=posture["engineering_flag_enabled"],
         environment_allowed=posture["environment_allowed"],
@@ -80,6 +103,12 @@ def alpha_status(
         production_activation_allowed=False,
         tools_enabled=False,
         multi_agent_enabled=False,
+        knowledge_search_read_only_enabled=bool(lite["knowledge_search_read_only_enabled"]),
+        formal_builder=FORMAL_BUILDER_NAME,
+        alpha_builder=ALPHA_BUILDER_NAME,
+        supported_invocation_modes=list(SUPPORTED_INVOCATION_MODES),
+        formal_builder_flag_enabled=bool(lite["formal_builder_flag_enabled"]),
+        expected_migration_head=str(lite["expected_migration_head"]),
     )
 
 
