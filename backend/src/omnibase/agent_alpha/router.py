@@ -17,7 +17,7 @@ from omnibase.agent_alpha.lite import (
     FORMAL_BUILDER_NAME,
     SUPPORTED_INVOCATION_MODES,
     lite_agent_posture,
-    resolve_lite_agent_flag,
+    runtime_lite_agent_enabled,
 )
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
@@ -42,22 +42,23 @@ def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
     """Keep the Lite product entry point independently fail-closed.
 
     The Lite gate is a *product* entry guard, never an authorization fact. The
-    knowledge-search-capable path is served by the formal P5.4B composition
-    builder ``build_engineering_single_agent_executor`` (installed with
-    ``LiveRuntimeAuthorityValidator`` and ``CapabilityGatewayKnowledgeSearchPort``
-    by ``agent_executor.engineering``); the older P5.2C
-    ``build_engineering_agent_alpha`` seam only carries the tool-free
-    RAG-retrieval product loop and never authorizes knowledge search on its own.
+    only supported invocation mode is ``no_tool``, carried by the older P5.2C
+    ``build_engineering_agent_alpha`` seam; the formal P5.4B builder
+    ``build_engineering_single_agent_executor`` is disclosed by name but is
+    **not integrated** into this product loop and is never constructed here
+    (the P5.4B disposable Gate assembles it separately with real persisted
+    authority).
 
-    This factory returns ``UnavailableAgentAlpha`` whenever the Lite gate is
-    closed. When the gate is open it delegates to the Alpha engineering seam,
-    which itself remains fail-closed until every P5.2C dependency
-    (environment, Phase 5 gates, provider gateway, migration head 0012) holds;
-    the formal P5.4B builder is assembled separately by its own disposable
-    Gate and is not constructed here. ``lite_agent_posture`` exposes the
-    honest builder chain to the status endpoint without authorizing anything.
+    The gate is resolved through ``runtime_lite_agent_enabled()``, which
+    explicitly reads ``AGENT_LITE_ENGINEERING_ENABLED`` from the process
+    environment, so setting the flag genuinely enables the route. When the
+    gate is open this factory delegates to the Alpha engineering seam, which
+    itself remains fail-closed until every P5.2C dependency (environment,
+    Phase 5 gates, provider gateway, migration head 0012) holds.
+    ``lite_agent_posture`` exposes the honest single-mode posture to the
+    status endpoint without authorizing anything.
     """
-    if not resolve_lite_agent_flag():
+    if not runtime_lite_agent_enabled():
         return UnavailableAgentAlpha()
     return build_engineering_agent_alpha()
 
@@ -103,11 +104,10 @@ def alpha_status(
         production_activation_allowed=False,
         tools_enabled=False,
         multi_agent_enabled=False,
-        knowledge_search_read_only_enabled=bool(lite["knowledge_search_read_only_enabled"]),
         formal_builder=FORMAL_BUILDER_NAME,
         alpha_builder=ALPHA_BUILDER_NAME,
         supported_invocation_modes=list(SUPPORTED_INVOCATION_MODES),
-        formal_builder_flag_enabled=bool(lite["formal_builder_flag_enabled"]),
+        formal_builder_integration=str(lite["formal_builder_integration"]),
         expected_migration_head=str(lite["expected_migration_head"]),
     )
 

@@ -9,14 +9,17 @@
 ## What you get
 
 - One installed AgentVersion per Workspace.
-- A tool-free RAG-retrieval product loop (P5.2C Alpha seam).
-- The formal P5.4B knowledge-search composition path
-  (`build_engineering_single_agent_executor`) for the read-only
-  `knowledge_search` capability — gated behind the formal builder flag.
+- A tool-free RAG-retrieval product loop (P5.2C Alpha seam) — the **only**
+  supported invocation mode is `no_tool`.
+- The formal P5.4B knowledge-search composition
+  (`build_engineering_single_agent_executor`) is disclosed by name but is
+  **not integrated** into the Lite product loop (status reads
+  `formal_builder_integration: not_integrated`); it stays a separate P5.4B
+  engineering seam.
 - A durable Task/Run/Attempt/Effect ledger and SSE invocation stream.
-- Honest status: the UI labels the live builder chain, the supported invocation
-  modes and the gate posture; it never fabricates success with frontend-only
-  mock data.
+- Honest status: the UI labels the live gate posture, the single supported
+  invocation mode and the formal-builder integration state; it never fabricates
+  success with frontend-only mock data.
 
 ## Prerequisites
 
@@ -29,20 +32,24 @@
 
 The Lite gate is independent of the three production Phase 5 Feature Gates and
 defaults off. Set exactly `true` or `false` in your local engineering
-environment; any other token fails closed.
+environment; any other token fails closed. The gate is resolved at runtime
+through `runtime_lite_agent_enabled()`, which reads
+`AGENT_LITE_ENGINEERING_ENABLED` from the process environment — setting it to
+`true` genuinely opens the route and the live posture.
 
 ```text
 AGENT_LITE_ENGINEERING_ENABLED=true
 AGENT_ALPHA_ENGINEERING_ENABLED=true        # tool-free Alpha loop (P5.2C)
-P5_4B_ENGINEERING_ENABLED=true              # formal knowledge-search builder (P5.4B)
 AGENT_RUNTIME_ENABLED=false
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 ENV=development
 ```
 
-All three Phase 5 production Feature Gates must remain `false`. Migration head
-must remain `0012` (migration `0013` is not created).
+`P5_4B_ENGINEERING_ENABLED` is not needed for the Lite loop: the formal P5.4B
+builder is not integrated here. All three Phase 5 production Feature Gates must
+remain `false`. Migration head must remain `0012` (migration `0013` is not
+created).
 
 ## Exact UI steps
 
@@ -56,13 +63,15 @@ must remain `0012` (migration `0013` is not created).
 4. Select a sealed, installed AgentVersion. If none is installed, use
    **New employee** to seal and install one, or ask your operator.
 5. The **Workspace surfaces** panel labels each surface honestly:
-   `LIVE`/`SELECT` for Workspace/AgentVersion selection, `GATED`/`LOCKED` for
-   read-only knowledge search, and `ROADMAP`/`LOCKED` for Projects/Skills/MCP/
-   Marketplace (not backed by current product state).
+   `LIVE`/`SELECT` for Workspace/AgentVersion selection,
+   `NOT INTEGRATED`/`LOCKED` for the formal P5.4B knowledge-search surface, and
+   `ROADMAP`/`LOCKED` for Projects/Skills/MCP/Marketplace (not backed by
+   current product state).
 6. The **Runtime posture** panel discloses the formal knowledge-search builder
-   (`build_engineering_single_agent_executor`, flag on/off, knowledge_search
-   gated/locked) and the tool-free loop builder
-   (`build_engineering_agent_alpha`).
+   (`build_engineering_single_agent_executor`, `not_integrated` — not
+   selectable in this loop) and the tool-free loop builder
+   (`build_engineering_agent_alpha`), plus the single supported invocation mode
+   `no_tool`.
 7. Type a prompt and press Enter or the send button. The invoke button is
    disabled until the Lite gate is open and a Workspace + AgentVersion are
    selected.

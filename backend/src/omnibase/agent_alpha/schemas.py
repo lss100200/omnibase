@@ -46,14 +46,15 @@ class AlphaStatusResponse(AlphaApiModel):
     production_activation_allowed: bool
     tools_enabled: bool
     multi_agent_enabled: bool
-    # P5.4C review-fix: honest builder-chain and capability disclosure.
-    knowledge_search_read_only_enabled: bool = False
+    # P5.4C review-fix round 2: honest single-mode disclosure. The Lite product
+    # loop supports exactly `no_tool`; the formal P5.4B builder is disclosed by
+    # name but is NOT integrated here (formal_builder_integration is
+    # "not_integrated"), so no mode is ever claimed merely because a builder
+    # name is displayed.
     formal_builder: str = "build_engineering_single_agent_executor"
     alpha_builder: str = "build_engineering_agent_alpha"
-    supported_invocation_modes: list[str] = Field(
-        default_factory=lambda: ["no_tool", "knowledge_search_read_only"]
-    )
-    formal_builder_flag_enabled: bool = False
+    supported_invocation_modes: list[str] = Field(default_factory=lambda: ["no_tool"])
+    formal_builder_integration: str = "not_integrated"
     expected_migration_head: str = "0012"
 
 

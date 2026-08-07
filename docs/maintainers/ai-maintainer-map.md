@@ -1331,54 +1331,63 @@ python scripts/maintenance/validate_maintainer_map.py --repo-root .
 python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 ```
 
-## 6.15 P5.4C Lite Agent product loop (engineering-only, formal-builder-bound)
+## 6.15 P5.4C Lite Agent product loop (engineering-only, no_tool-only)
 
 - `backend/src/omnibase/agent_alpha/lite.py` is the **engineering-only product
   entry guard** for the single-Agent loop. `AGENT_LITE_ENGINEERING_ENABLED` is
   an independent closed-set gate that defaults off; any token other than
   exactly `true`/`false` (including missing, empty, `TRUE`, `1`, `yes`, `on`,
   `enabled`) must fail closed via `LiteAgentConfigurationError`.
+- The pure parser `resolve_lite_agent_flag(raw)` is host-independent and never
+  reads `os.environ`; `None` means "the variable is absent" and resolves to
+  `False`. The runtime resolver `runtime_lite_agent_enabled()` is the only
+  place the gate reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and
+  passes the value into the parser; the Browser dependency
+  `router.get_agent_alpha()` and the live posture must use it so the flag
+  genuinely enables the route. API-level tests prove the flag reaches the
+  assembled/unavailable Alpha dependency as appropriate instead of always
+  returning the Lite-gate-disabled path.
 - The gate is a *product* entry guard, never an authorization fact. Passing it
   only opens the Lite Browser surface in a development/engineering deployment.
   It never authorizes production Agent Runtime, Planner, multi-Agent execution,
   arbitrary tools, migration `0013`, or any Phase 5 production Feature Gate.
-- The knowledge-search-capable path must run through the formal reviewed P5.4B
+- The Lite product loop supports exactly one invocation mode: `no_tool`,
+  carried by the P5.2C `build_engineering_agent_alpha` seam. The formal P5.4B
   builder `build_engineering_single_agent_executor` (which installs
-  `LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`).
-  The older P5.2C `build_engineering_agent_alpha` seam only carries the
-  tool-free RAG-retrieval product loop and must never be presented as the
-  knowledge-search authority path.
+  `LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`)
+  is disclosed by name but is **not integrated**
+  (`formal_builder_integration = not_integrated`): it is never assembled,
+  routed or selectable in this loop, and remains a separate P5.4B engineering
+  seam whose only authority is the P5.4B disposable PostgreSQL Gate.
 - `lite_agent_posture()` is read-only and non-authorizing: it discloses the
-  formal builder name, the Alpha builder name, the supported invocation modes,
-  whether the formal builder flag is on, whether all Phase 5 gates are false,
-  and whether the knowledge-search-capable path is admissible. Assembly
-  decisions stay in the fail-closed builders; the posture never authorizes
-  anything.
-- The parser must be independent of the ambient host environment.
-  `resolve_lite_agent_flag(None)` means "the variable is absent" and resolves to
-  `False` even when a stray `AGENT_LITE_ENGINEERING_ENABLED` is set. Tests must
-  isolate environment state with an explicit `raw` argument and an explicit
-  `env` mapping so a host with the gate enabled cannot make the default-off
-  assertion fail.
+  formal builder name, the Alpha builder name, the single supported invocation
+  mode `no_tool`, the formal-builder integration state, whether all Phase 5
+  gates are false, and the expected migration head. Assembly decisions stay in
+  the fail-closed builders; the posture never authorizes anything.
 - The Browser status DTO (`AlphaStatusResponse`) and the Next.js workbench
-  consume the new posture fields (`knowledge_search_read_only_enabled`,
-  `formal_builder`, `alpha_builder`, `supported_invocation_modes`,
-  `formal_builder_flag_enabled`, `expected_migration_head`) to label state
-  honestly. Static `ROADMAP`/`LOCKED` chips must be reserved for surfaces not
-  backed by current product state; the knowledge-search surface must reflect
-  the live posture, and provider secrets must never leak into browser state,
-  logs, diagnostics, errors or DTOs.
+  consume the posture fields (`formal_builder`, `alpha_builder`,
+  `supported_invocation_modes`, `formal_builder_integration`,
+  `expected_migration_head`) to label state honestly. Static `ROADMAP`/`LOCKED`
+  chips must be reserved for surfaces not backed by current product state; the
+  formal knowledge-search surface must read `NOT INTEGRATED`, and provider
+  secrets must never leak into browser state, logs, diagnostics, errors or
+  DTOs.
 - The disposable runner
   `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py` is
-  run-scoped and engineering-only. It exercises the Lite gate parser, the
-  formal-builder posture disclosure and the focused Lite unit suite inside the
+  run-scoped and engineering-only. It executes the focused Lite unit suite and
+  a live gate probe (which patches the process environment and measures the
+  runtime resolver, the live posture and the single supported mode) inside the
   backend container, then seals the tested source bytes, command receipts and
-  measurements under unique raw-byte SHA-256 sidecars. A successful `--run`
-  removes its run directory so the repository keeps zero disposable residues;
-  the canonical evidence is the sealed source manifest. It never reads the root
-  `.env`, never touches a business database, never creates migration `0013`,
-  never opens a Phase 5 production Feature Gate, and does not replace the
-  heavier P5.4B disposable PostgreSQL Gate.
+  measurements under unique raw-byte SHA-256 sidecars. Every claim is derived
+  from an executed receipt or a sealed file measurement, or reported
+  `not_proven`; the root-env/business-database negatives are re-derived from
+  the recorded command vectors and the migration head is re-discovered from the
+  repository files. The run directory is preserved on success and on failure
+  and can be re-verified with `--verify-evidence`. The Gate never reads the
+  root `.env`, never touches a business database, never creates migration
+  `0013`, never opens a Phase 5 production Feature Gate, never claims formal
+  P5.4B integration, and does not replace the heavier P5.4B disposable
+  PostgreSQL Gate.
 
 Focused commands:
 

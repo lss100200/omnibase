@@ -25,14 +25,14 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "b29132e8f94c76ed4404790f7b4044edb0ee95787dcebee14e83b7f749a5ed93"
+      "sha256": "4f28ed8bc98a499cc18648494cc7cb988ef3e0fbf8ce179863b0263077ae1326"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "6441cf858de054bb1f4bf25654eb46fcf458632abadc479df220057c02e09c6e"
+      "sha256": "bbf11ad10899ca22f6eb3703b3748740e0354d8a4bba26756d241d3b514a5340"
     }
   },
   "source": {
@@ -347,12 +347,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "153e24f4fcb77f276615d707225d23ed07554a06bb590bb7055822ff46a1d261"
+      "sha256": "21cee9def6686ef4c1aba74b255468d5f36f454a91ae34913ad478b2c75cd6d4"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "4336bad6e60af9bef1c6dbb318ffb8e7c6eef8fca38bcfca47795ff43f618edd"
+      "sha256": "7944c5ec5deb43cb2fd73f5070b6f79e1faa6e9904c967e7d09ca8a16934bd8b"
     }
   ],
   "openapi_snapshot": {

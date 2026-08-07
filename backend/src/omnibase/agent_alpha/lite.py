@@ -7,16 +7,18 @@ surface in a development/engineering deployment; it never authorizes production
 Agent Runtime, Planner, multi-Agent execution, arbitrary tools, or a new
 migration.
 
-When the gate is open the knowledge-search-capable path must run through the
-formal reviewed P5.4B composition builder
-``build_engineering_single_agent_executor`` (which installs
-``LiveRuntimeAuthorityValidator`` and ``CapabilityGatewayKnowledgeSearchPort``);
-the older P5.2C ``build_engineering_agent_alpha`` seam only carries the
-tool-free RAG-retrieval flow.  This module never assembles either builder: it
-only resolves the closed-set gate and reports a read-only, non-authorizing
-posture so the Browser API and the UI can label state honestly.  Actual
-assembly happens in ``agent_alpha.engineering``/``agent_executor.engineering``
-and remains fail-closed whenever any dependency is missing.
+The only supported invocation mode of the Lite product loop is ``no_tool``,
+carried by the P5.2C seam ``build_engineering_agent_alpha``.  The formal
+P5.4B builder ``build_engineering_single_agent_executor`` (which installs
+``LiveRuntimeAuthorityValidator`` and ``CapabilityGatewayKnowledgeSearchPort``)
+is disclosed by name but is **not integrated** into this product loop: it is a
+separate engineering composition assembled only by the P5.4B disposable Gate
+with real persisted authority, and the Lite surface must never present it as a
+selectable mode.  This module never assembles either builder: it only resolves
+the closed-set gate and reports a read-only, non-authorizing posture so the
+Browser API and the UI can label state honestly.  Actual assembly happens in
+``agent_alpha.engineering``/``agent_executor.engineering`` and remains
+fail-closed whenever any dependency is missing.
 """
 
 from __future__ import annotations
@@ -24,21 +26,17 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-from omnibase.agent_executor.engineering import (
-    ENGINEERING_FLAG as P5_4B_ENGINEERING_FLAG,
-)
-from omnibase.agent_executor.engineering import (
-    EXPECTED_MIGRATION_HEAD,
-)
+from omnibase.agent_executor.engineering import EXPECTED_MIGRATION_HEAD
 
 LITE_AGENT_ENGINEERING_FLAG = "AGENT_LITE_ENGINEERING_ENABLED"
 
-# The formal P5.4B builder is the only knowledge-search-capable composition.
-# The P5.2C Agent Alpha seam carries the tool-free RAG-retrieval product loop;
-# it must not be presented as the knowledge-search authority path.
+# The formal P5.4B builder is disclosed for honest labeling but is NOT
+# integrated into the P5.4C Lite product loop; the P5.2C Agent Alpha seam
+# carries the only supported tool-free RAG-retrieval product loop.
 FORMAL_BUILDER_NAME = "build_engineering_single_agent_executor"
 ALPHA_BUILDER_NAME = "build_engineering_agent_alpha"
-SUPPORTED_INVOCATION_MODES = ("no_tool", "knowledge_search_read_only")
+SUPPORTED_INVOCATION_MODES = ("no_tool",)
+FORMAL_BUILDER_INTEGRATION = "not_integrated"
 
 _PHASE5_GATE_ENV_NAMES = (
     "AGENT_RUNTIME_ENABLED",
@@ -52,13 +50,13 @@ class LiteAgentConfigurationError(RuntimeError):
 
 
 def resolve_lite_agent_flag(raw: str | None = None) -> bool:
-    """Resolve the exact ``true``/``false`` Lite gate.
+    """Resolve the exact ``true``/``false`` Lite gate from an explicit input.
 
-    ``raw`` is required for tests so the closed-set parser never depends on an
-    ambient host variable.  Callers that want the process environment must
-    pass ``os.environ.get(LITE_AGENT_ENGINEERING_FLAG)`` explicitly; passing
-    ``None`` is treated as "the variable is absent" and resolves to ``False``,
-    which keeps the parser independent of the host environment.
+    This is the pure closed-set parser: it never reads ``os.environ`` itself.
+    ``None`` and ``""`` mean "the variable is absent" and resolve to ``False``;
+    any token other than exactly ``true`` or ``false`` raises
+    :class:`LiteAgentConfigurationError`.  Callers that want the process
+    environment must use :func:`runtime_lite_agent_enabled`.
     """
     value = raw
     if value is None or value == "" or value == "false":
@@ -68,6 +66,17 @@ def resolve_lite_agent_flag(raw: str | None = None) -> bool:
     raise LiteAgentConfigurationError(
         "lite_agent_engineering_flag_invalid: expected exactly true or false"
     )
+
+
+def runtime_lite_agent_enabled() -> bool:
+    """Runtime resolver: read ``AGENT_LITE_ENGINEERING_ENABLED`` from the live
+    process environment and pass the result into the closed-set parser.
+
+    This is the only place the Lite gate reads ``os.environ``; the Browser
+    dependency and the live posture must go through it so that setting the flag
+    actually enables the route, while the pure parser stays host-independent.
+    """
+    return resolve_lite_agent_flag(os.environ.get(LITE_AGENT_ENGINEERING_FLAG))
 
 
 def _exact_phase5_gate(raw: str | None) -> bool:
@@ -94,37 +103,40 @@ def lite_agent_posture(
 
     ``env`` defaults to the live process environment for the status endpoint,
     but tests pass an explicit mapping so the posture is reproducible and
-    independent of the ambient host.  The posture never authorizes anything:
-    it only describes what a UI should label.  Assembly decisions stay in the
-    fail-closed builders.
+    independent of the ambient host.  When ``raw`` is omitted the Lite flag is
+    resolved through the runtime resolver (an explicit ``env`` mapping, when
+    given, substitutes for ``os.environ``).  The posture never authorizes
+    anything: it only describes what a UI should label.  Assembly decisions
+    stay in the fail-closed builders.
     """
-    enabled = resolve_lite_agent_flag(raw)
     environment = env if env is not None else os.environ
+    if raw is None:
+        raw = environment.get(LITE_AGENT_ENGINEERING_FLAG)
+    enabled = resolve_lite_agent_flag(raw)
     _, gates_false = _phase5_gates_false(environment)
-    formal_flag = _exact_phase5_gate(environment.get(P5_4B_ENGINEERING_FLAG))
     return {
         "lite_gate_enabled": enabled,
         "production_runtime_enabled": False,
         "planner_enabled": False,
         "multi_agent_enabled": False,
         "tools_enabled": False,
-        "knowledge_search_read_only_enabled": enabled and formal_flag and gates_false,
         "formal_builder": FORMAL_BUILDER_NAME,
         "alpha_builder": ALPHA_BUILDER_NAME,
         "supported_invocation_modes": SUPPORTED_INVOCATION_MODES,
-        "formal_builder_flag_enabled": formal_flag,
+        "formal_builder_integration": FORMAL_BUILDER_INTEGRATION,
         "phase5_gates_all_false": gates_false,
         "expected_migration_head": EXPECTED_MIGRATION_HEAD,
-        "formal_builder_migration_head": EXPECTED_MIGRATION_HEAD,
     }
 
 
 __all__ = [
     "ALPHA_BUILDER_NAME",
+    "FORMAL_BUILDER_INTEGRATION",
     "FORMAL_BUILDER_NAME",
     "LITE_AGENT_ENGINEERING_FLAG",
     "SUPPORTED_INVOCATION_MODES",
     "LiteAgentConfigurationError",
     "lite_agent_posture",
     "resolve_lite_agent_flag",
+    "runtime_lite_agent_enabled",
 ]

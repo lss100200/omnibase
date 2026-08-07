@@ -114,11 +114,10 @@ export default function AgentAlphaPage() {
     production_activation_allowed: boolean
     tools_enabled: boolean
     multi_agent_enabled: boolean
-    knowledge_search_read_only_enabled: boolean
     formal_builder: string
     alpha_builder: string
     supported_invocation_modes: string[]
-    formal_builder_flag_enabled: boolean
+    formal_builder_integration: string
     expected_migration_head: string
   } | null>(null)
   const [postureLoading, setPostureLoading] = useState(false)
@@ -565,9 +564,11 @@ export default function AgentAlphaPage() {
               </Badge>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Knowledge search (read-only)</span>
-              <Badge variant={posture?.knowledge_search_read_only_enabled ? 'secondary' : 'outline'}>
-                {posture?.knowledge_search_read_only_enabled ? 'GATED' : 'LOCKED'}
+              <span className="text-muted-foreground">Formal P5.4B knowledge search</span>
+              <Badge variant="outline">
+                {posture?.formal_builder_integration === 'not_integrated'
+                  ? 'NOT INTEGRATED'
+                  : 'LOCKED'}
               </Badge>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -611,14 +612,17 @@ export default function AgentAlphaPage() {
             <div className="flex items-start gap-3">
               <Database className="mt-0.5 h-4 w-4 text-foreground" />
               <div>
-                <p className="font-medium">Knowledge-search builder</p>
+                <p className="font-medium">Formal knowledge-search builder</p>
                 <p className="text-xs text-muted-foreground">
                   {posture
-                    ? `${posture.formal_builder} (flag ${posture.formal_builder_flag_enabled ? 'on' : 'off'}, knowledge_search ${posture.knowledge_search_read_only_enabled ? 'gated' : 'locked'})`
+                    ? `${posture.formal_builder} (${posture.formal_builder_integration}) — not selectable in this loop`
                     : 'Posture unavailable until a Workspace is selected.'}
                 </p>
                 <p className="mt-1 break-all text-xs text-muted-foreground">
                   Tool-free loop: {posture?.alpha_builder ?? 'build_engineering_agent_alpha'}.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Supported invocation modes: {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
                 </p>
               </div>
             </div>
