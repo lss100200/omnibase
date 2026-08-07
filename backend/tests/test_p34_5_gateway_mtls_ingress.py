@@ -31,6 +31,7 @@ ACTOR = "80000000-0000-0000-0000-000000000001"
 NOW = datetime(2026, 8, 2, 2, 0, tzinfo=UTC)
 CERTIFICATE_DER = b"synthetic-client-certificate-der"
 THUMBPRINT = hashlib.sha256(CERTIFICATE_DER).hexdigest()
+WORKLOAD_DIGEST = hashlib.sha256(b"synthetic-runtime-workload").hexdigest()
 
 
 def _registry(path: Path, *, state: str = "active", thumbprint: str = THUMBPRINT) -> Path:
@@ -52,6 +53,7 @@ def _registry(path: Path, *, state: str = "active", thumbprint: str = THUMBPRINT
                         "run_fencing_token": 11,
                         "node_fencing_token": 7,
                         "certificate_thumbprint": thumbprint,
+                        "workload_identity_digest": WORKLOAD_DIGEST,
                         "expires_at": (NOW + timedelta(minutes=2)).isoformat(),
                         "grant_id": GRANT,
                         "expected_profile": "read",
@@ -77,6 +79,7 @@ def test_registry_promotes_only_matching_active_certificate(tmp_path: Path) -> N
     evidence = registry.resolve(CERTIFICATE_DER)
 
     assert evidence.certificate_thumbprint == THUMBPRINT
+    assert evidence.workload_identity_digest == WORKLOAD_DIGEST
     assert evidence.opaque_identity == f"spiffe://omnibase/runtime/{RUNTIME}"
     assert evidence.evidence_digest != THUMBPRINT
     with pytest.raises(MtlsIngressRejected):

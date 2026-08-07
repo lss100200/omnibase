@@ -65,6 +65,9 @@ def _context() -> ExecutorInvocationContext:
         agent_version_id=AGENT_VERSION,
         agent_version_digest=DIGEST,
         proposal_digest=DIGEST,
+        proposal_version=1,
+        resource_scope_digest=DIGEST,
+        budget_policy_digest=DIGEST,
         node_id=NODE,
     )
 

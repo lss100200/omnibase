@@ -286,6 +286,7 @@ def test_core_gateway_first_write_creates_operation_reservation_budget_and_audit
             workspace_id=workspace_id,
             runtime_instance_id=runtime_instance_id,
             certificate_thumbprint=workload_digest,
+            workload_identity_digest=workload_digest,
         ),
     )
     descriptor = ResourceDescriptor(

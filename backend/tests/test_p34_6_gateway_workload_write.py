@@ -219,6 +219,7 @@ class StaticAttestor:
             workspace_id=WORKSPACE,
             runtime_instance_id=RUNTIME,
             certificate_thumbprint=THUMBPRINT,
+            workload_identity_digest=THUMBPRINT,
         )
 
 
@@ -475,6 +476,7 @@ def test_artifact_read_adapter_failure_writes_code_only_audit_in_independent_tra
             workspace_id=WORKSPACE,
             runtime_instance_id=RUNTIME,
             certificate_thumbprint=THUMBPRINT,
+            workload_identity_digest=THUMBPRINT,
         ),
     )
 

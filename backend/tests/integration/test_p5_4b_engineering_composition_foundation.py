@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import os
 import uuid
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -19,16 +21,21 @@ from omnibase.agent_executor import (
     KnowledgeSearchRequest,
     build_engineering_single_agent_executor,
 )
+from omnibase.agent_executor.gateway_adapter import GatewayAdapterError
+from omnibase.agent_executor.service import TypedExecutorError, TypedExecutorPolicyDenied
 from omnibase.capabilities.token import encode_capability_token
 from omnibase.capability_gateway.audit import ControlPlaneGatewayAuditSink
 from omnibase.capability_gateway.contracts import (
     RagSearchResult,
-    TrustedWorkloadContext,
     WorkloadCredential,
 )
 from omnibase.capability_gateway.resolver import RegistryResourceResolver
 from omnibase.capability_gateway.security import CoreCapabilityVerifier
 from omnibase.capability_gateway.service import GatewayComponents, GatewayService
+from omnibase.capability_gateway.workload import (
+    SqlAlchemyRunLeaseWorkloadAttestor,
+    TrustedGatewayPeerEvidence,
+)
 from tests.test_p5_4a_typed_executor import _context, _plan
 
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
@@ -47,7 +54,7 @@ DEFINITION = "00000000-0000-0000-0000-000000000001"
 VERSION = "11111111-1111-1111-1111-111111111111"
 BINDING = "22222222-2222-2222-2222-222222222222"
 TEMPLATE = "33333333-3333-3333-3333-333333333333"
-NODE = "bb000000-bb00-bb00-bb00-bb0000000001"
+RUNTIME_NODE = "bb000000-bb00-bb00-bb00-bb0000000002"
 LEASE = "cc000000-cc00-cc00-cc00-cc0000000001"
 GRANT = "88888888-8888-8888-8888-888888888888"
 RUNTIME = "99999999-9999-9999-9999-999999999999"
@@ -55,9 +62,34 @@ RUNTIME = "99999999-9999-9999-9999-999999999999"
 DIGEST = "ab" * 32
 VERSION_DIGEST = "ae" * 32
 CERTIFICATE_THUMBPRINT = "3" * 64
+WORKLOAD_DIGEST = "5" * 64
 REQUEST_HASH = "cc" * 32
 PLAN_ID = "aa000000-aa00-aa00-aa00-aa0000000001"
 MODEL_POLICY = "44444444-4444-4444-4444-444444444444"
+
+
+class _BoundDatabase:
+    """Function-scoped transaction shared by every Session in one test."""
+
+    def __init__(self, connection) -> None:  # type: ignore[no-untyped-def]
+        self.connection = connection
+
+    @contextmanager
+    def begin(self):  # type: ignore[no-untyped-def]
+        yield self.connection
+
+
+@pytest.fixture
+def p54b_db(db_engine):  # type: ignore[no-untyped-def]
+    _upgrade_head()
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    try:
+        yield _BoundDatabase(connection)
+    finally:
+        if transaction.is_active:
+            transaction.rollback()
+        connection.close()
 
 
 def _upgrade_head() -> None:
@@ -72,8 +104,12 @@ def _upgrade_head() -> None:
 
 
 class _RagAdapter:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def search(self, session: Session, **kwargs) -> RagSearchResult:
         del session, kwargs
+        self.calls += 1
         from omnibase.capability_gateway.contracts import SearchHitRead
 
         return RagSearchResult(
@@ -95,8 +131,16 @@ class _RagAdapter:
 
 
 class _CredentialSeam:
-    def __init__(self, credential: WorkloadCredential) -> None:
-        self.credential = credential
+    def __init__(
+        self,
+        *,
+        db_engine,  # type: ignore[no-untyped-def]
+        authorization: str,
+        evidence_overrides: dict[str, object] | None = None,
+    ) -> None:
+        self._db_engine = db_engine
+        self._authorization = authorization
+        self._evidence_overrides = evidence_overrides or {}
         self.calls = 0
 
     def issue(self, *, context: ExecutorInvocationContext) -> WorkloadCredential:
@@ -104,7 +148,53 @@ class _CredentialSeam:
         assert context.tenant_id == TENANT
         assert context.workspace_id == WORKSPACE
         assert context.run_id == RUN
-        return self.credential
+        now = datetime.now(UTC)
+        opaque_identity = f"spiffe://omnibase/runtime/{RUNTIME}"
+        evidence_values: dict[str, object] = {
+            "peer_kind": "runner",
+            "opaque_identity": opaque_identity,
+            "tenant_id": TENANT,
+            "workspace_id": WORKSPACE,
+            "run_id": WORKSPACE_RUN,
+            "runtime_instance_id": RUNTIME,
+            "node_id": RUNTIME_NODE,
+            "lease_id": LEASE,
+            "workspace_generation": 1,
+            "run_fencing_token": 1,
+            "node_fencing_token": 7,
+            "certificate_thumbprint": CERTIFICATE_THUMBPRINT,
+            "workload_identity_digest": WORKLOAD_DIGEST,
+            "evidence_digest": "04" * 32,
+            "expires_at": now + timedelta(minutes=2),
+        }
+        evidence_values.update(self._evidence_overrides)
+        evidence = TrustedGatewayPeerEvidence(**evidence_values)  # type: ignore[arg-type]
+        trusted = SqlAlchemyRunLeaseWorkloadAttestor(
+            lambda: Session(self._db_engine.connection), clock=lambda: now
+        ).attest(
+            {
+                "type": "http",
+                "omnibase.mtls_verified": True,
+                "omnibase.trusted_gateway_peer": evidence,
+            },
+            opaque_identity,
+        )
+        return WorkloadCredential(
+            authorization=self._authorization,
+            identity=opaque_identity,
+            trusted_context=trusted,
+        )
+
+
+class _CountingGateway:
+    def __init__(self, inner, *, rag_adapter: _RagAdapter | None = None) -> None:  # type: ignore[no-untyped-def]
+        self._inner = inner
+        self.rag_adapter = rag_adapter
+        self.calls = 0
+
+    def rag_search(self, session, credential, payload, request_id):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        return self._inner.rag_search(session, credential, payload, request_id)
 
 
 def _resource(
@@ -130,7 +220,7 @@ def _resource(
     )
 
 
-def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no-untyped-def]
+def _seed(db_engine, *, plan_digest: str, task_deadline_expired: bool = False) -> tuple[str, str]:  # type: ignore[no-untyped-def]
     schema = "tenant_p54b0001"
     _upgrade_head()
     from omnibase.tenants.service import _initialize_tenant_schema
@@ -211,7 +301,8 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "INSERT INTO omnibase_meta.workspaces "
                 "(id,tenant_id,template_id,owner_user_id,display_name,desired_state,observed_state,generation,version,quota) "
                 "VALUES (:id,:tenant,:template,:actor,'P5.4B','running','running',1,1,'{}'::jsonb) "
-                "ON CONFLICT (id) DO NOTHING"
+                "ON CONFLICT (id) DO UPDATE SET desired_state='running', observed_state='running', "
+                "generation=1, version=omnibase_meta.workspaces.version+1, archived_at=NULL"
             ),
             {
                 "id": WORKSPACE,
@@ -283,7 +374,9 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "INSERT INTO omnibase_meta.workspace_runs "
                 "(id,tenant_id,workspace_id,kind,generation,desired_state,observed_state,next_fencing_token,version,request_digest,runtime_instance_id,workload_identity_digest,created_by_user_id) "
                 "VALUES (:id,:tenant,:workspace,'batch',1,'running','running',2,1,:request,:runtime,:workload,:actor) "
-                "ON CONFLICT (id) DO NOTHING"
+                "ON CONFLICT (id) DO UPDATE SET desired_state='running', observed_state='running', "
+                "generation=1, next_fencing_token=2, runtime_instance_id=EXCLUDED.runtime_instance_id, "
+                "workload_identity_digest=EXCLUDED.workload_identity_digest"
             ),
             {
                 "id": WORKSPACE_RUN,
@@ -291,7 +384,7 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "workspace": WORKSPACE,
                 "request": REQUEST_HASH,
                 "runtime": RUNTIME,
-                "workload": DIGEST,
+                "workload": WORKLOAD_DIGEST,
                 "actor": "00000000-0000-0000-0000-0000000000aa",
             },
         )
@@ -300,10 +393,11 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "INSERT INTO omnibase_meta.workspace_nodes "
                 "(id,tenant_id,workspace_id,owner_user_id,display_name,identity_digest,state,attestation_state,fencing_token,version,last_seen_at) "
                 "VALUES (:id,:tenant,:workspace,:actor,'P5.4B node',:digest,'active','verified',7,1,now()) "
-                "ON CONFLICT (id) DO NOTHING"
+                "ON CONFLICT (id) DO UPDATE SET state='active', attestation_state='verified', "
+                "fencing_token=7, revoked_at=NULL, last_seen_at=now()"
             ),
             {
-                "id": NODE,
+                "id": RUNTIME_NODE,
                 "tenant": TENANT,
                 "workspace": WORKSPACE,
                 "actor": "00000000-0000-0000-0000-0000000000aa",
@@ -318,7 +412,12 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "ON CONFLICT (tenant_id,nonce_digest) DO UPDATE SET "
                 "node_id=EXCLUDED.node_id, evidence_digest=EXCLUDED.evidence_digest, verifier=EXCLUDED.verifier, state=EXCLUDED.state, verified_at=EXCLUDED.verified_at, expires_at=EXCLUDED.expires_at"
             ),
-            {"tenant": TENANT, "node": NODE, "nonce": "01" * 32, "evidence": "02" * 32},
+            {
+                "tenant": TENANT,
+                "node": RUNTIME_NODE,
+                "nonce": "01" * 32,
+                "evidence": "02" * 32,
+            },
         )
         connection.execute(
             text("DELETE FROM omnibase_meta.agent_runs WHERE id=:run"),
@@ -345,7 +444,7 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "tenant": TENANT,
                 "run": WORKSPACE_RUN,
                 "workspace": WORKSPACE,
-                "node": NODE,
+                "node": RUNTIME_NODE,
             },
         )
         connection.execute(
@@ -359,8 +458,8 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
         connection.execute(
             text(
                 "INSERT INTO omnibase_meta.agent_tasks "
-                "(id,tenant_id,workspace_id,workspace_generation,actor_user_id,agent_definition_id,agent_version_id,agent_version_digest,workspace_agent_binding_id,task_generation,plan_id,plan_version,plan_digest,deadline,state,resource_scope_digest,budget_policy_digest,request_hash) "
-                "VALUES (:id,:tenant,:workspace,1,:actor,:definition,:version,:digest,:binding,1,:plan,1,:plan_digest,now()+interval '10 minutes','scheduled',:scope,:budget,:request) "
+                "(id,tenant_id,workspace_id,workspace_generation,actor_user_id,agent_definition_id,agent_version_id,agent_version_digest,workspace_agent_binding_id,task_generation,plan_id,plan_version,plan_digest,deadline,state,resource_scope_digest,budget_policy_digest,request_hash,created_at) "
+                "VALUES (:id,:tenant,:workspace,1,:actor,:definition,:version,:digest,:binding,1,:plan,1,:plan_digest,CASE WHEN :expired THEN clock_timestamp()-interval '1 second' ELSE clock_timestamp()+interval '10 minutes' END,'scheduled',:scope,:budget,:request,CASE WHEN :expired THEN clock_timestamp()-interval '10 minutes' ELSE clock_timestamp() END) "
                 "ON CONFLICT (id) DO UPDATE SET "
                 "tenant_id=EXCLUDED.tenant_id, workspace_id=EXCLUDED.workspace_id, workspace_generation=EXCLUDED.workspace_generation, actor_user_id=EXCLUDED.actor_user_id, agent_definition_id=EXCLUDED.agent_definition_id, agent_version_id=EXCLUDED.agent_version_id, agent_version_digest=EXCLUDED.agent_version_digest, workspace_agent_binding_id=EXCLUDED.workspace_agent_binding_id, task_generation=EXCLUDED.task_generation, plan_id=EXCLUDED.plan_id, plan_version=EXCLUDED.plan_version, plan_digest=EXCLUDED.plan_digest, deadline=EXCLUDED.deadline, state=EXCLUDED.state, resource_scope_digest=EXCLUDED.resource_scope_digest, budget_policy_digest=EXCLUDED.budget_policy_digest, request_hash=EXCLUDED.request_hash"
             ),
@@ -378,6 +477,7 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "scope": "c1" * 32,
                 "budget": "c2" * 32,
                 "request": REQUEST_HASH,
+                "expired": task_deadline_expired,
             },
         )
         connection.execute(
@@ -395,8 +495,8 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
                 "workspace": WORKSPACE,
                 "workspace_run": WORKSPACE_RUN,
                 "runtime": RUNTIME,
-                "workload": DIGEST,
-                "node": NODE,
+                "workload": WORKLOAD_DIGEST,
+                "node": RUNTIME_NODE,
                 "lease": LEASE,
             },
         )
@@ -465,55 +565,56 @@ def _seed(db_engine, *, plan_digest: str) -> tuple[str, str]:  # type: ignore[no
     return private_pem, CERTIFICATE_THUMBPRINT
 
 
-def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_engine) -> None:  # type: ignore[no-untyped-def]
-    plan = _plan()
+def _prepare_executor(
+    db_engine,  # type: ignore[no-untyped-def]
+    *,
+    plan=None,
+    evidence_overrides: dict[str, object] | None = None,
+    gateway_override=None,
+    task_deadline_expired: bool = False,
+):
+    plan = plan or _plan()
     private_key, certificate_thumbprint = _seed(
-        db_engine, plan_digest=plan.proposal.proposal_digest
+        db_engine,
+        plan_digest=plan.proposal.proposal_digest,
+        task_deadline_expired=task_deadline_expired,
     )
-    context = _context(plan)
     now = datetime.now(UTC)
-    with db_engine.begin() as connection:
-        token = encode_capability_token(
-            private_key_pem=private_key,
-            kid="p54b-key",
-            jti=uuid.uuid4().hex,
-            subject=RUNTIME,
-            tenant_id=TENANT,
-            workspace_id=WORKSPACE,
-            actor_user_id="00000000-0000-0000-0000-0000000000aa",
-            grant_id=GRANT,
-            grant_version=1,
-            delegation_depth=0,
-            workload_thumbprint=__import__(
-                "omnibase.capability_gateway.thumbprints",
-                fromlist=["certificate_thumbprint_to_x5t_s256"],
-            ).certificate_thumbprint_to_x5t_s256(certificate_thumbprint),
-            issued_at=now,
-            expires_at=now + timedelta(minutes=2),
-            approval_id=None,
-        )
-    credential = WorkloadCredential(
-        authorization=f"Capability {token}",
-        identity="runtime",
-        trusted_context=TrustedWorkloadContext(
-            opaque_identity="runtime",
-            tenant_id=TENANT,
-            workspace_id=WORKSPACE,
-            runtime_instance_id=RUNTIME,
-            certificate_thumbprint=certificate_thumbprint,
-            workload_identity_digest=DIGEST,
-        ),
+    token = encode_capability_token(
+        private_key_pem=private_key,
+        kid="p54b-key",
+        jti=uuid.uuid4().hex,
+        subject=RUNTIME,
+        tenant_id=TENANT,
+        workspace_id=WORKSPACE,
+        actor_user_id="00000000-0000-0000-0000-0000000000aa",
+        grant_id=GRANT,
+        grant_version=1,
+        delegation_depth=0,
+        workload_thumbprint=__import__(
+            "omnibase.capability_gateway.thumbprints",
+            fromlist=["certificate_thumbprint_to_x5t_s256"],
+        ).certificate_thumbprint_to_x5t_s256(certificate_thumbprint),
+        issued_at=now,
+        expires_at=now + timedelta(minutes=2),
+        approval_id=None,
     )
-    seam = _CredentialSeam(credential)
-    gateway = GatewayService(
+    seam = _CredentialSeam(
+        db_engine=db_engine,
+        authorization=f"Capability {token}",
+        evidence_overrides=evidence_overrides,
+    )
+    rag_adapter = _RagAdapter()
+    gateway_service = gateway_override or GatewayService(
         GatewayComponents(
             verifier=CoreCapabilityVerifier(),
             resolver=RegistryResourceResolver(),
             data_adapter=None,  # type: ignore[arg-type]
-            rag_adapter=_RagAdapter(),
+            rag_adapter=rag_adapter,
             audit_sink=ControlPlaneGatewayAuditSink(),
         )
     )
+    gateway = _CountingGateway(gateway_service, rag_adapter=rag_adapter)
     executor = build_engineering_single_agent_executor(
         enabled=True,
         migration_head="0012",
@@ -523,9 +624,14 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
             "multi_agent_enabled": False,
         },
         gateway=gateway,
-        session_factory=lambda: Session(db_engine),
+        session_factory=lambda: Session(db_engine.connection),
         workload_credential_seam=seam,
     )
+    return plan, _context(plan), seam, gateway, executor
+
+
+def test_engineering_composition_seeds_and_executes_gateway_backed_search(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db)
     result = executor.execute(
         context=context,
         plan=plan,
@@ -536,11 +642,13 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
     assert result.output.resource_id == RESOURCE
     assert result.receipt.status == "succeeded"
     assert seam.calls == 1
-    with db_engine.connect() as connection:
+    assert gateway.calls == 1
+    with p54b_db.begin() as connection:
         assert connection.execute(
             text("SELECT id <> workspace_run_id FROM omnibase_meta.agent_runs WHERE id=:id"),
             {"id": RUN},
         ).scalar_one()
+        assert context.node_id != RUNTIME_NODE
         assert connection.execute(
             text("SELECT run_id = :workspace_run FROM omnibase_meta.run_leases WHERE id=:id"),
             {"id": LEASE, "workspace_run": WORKSPACE_RUN},
@@ -563,6 +671,224 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(db_eng
             ).scalar_one()
             >= 1
         )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE omnibase_meta.workspaces SET desired_state='paused' WHERE id=:id",
+        "UPDATE omnibase_meta.agent_tasks SET state='paused' WHERE id=:id",
+        "UPDATE omnibase_meta.agent_runs SET state='paused' WHERE id=:id",
+        "UPDATE omnibase_meta.workspace_runs SET desired_state='paused', observed_state='paused' WHERE id=:id",
+        "UPDATE omnibase_meta.run_leases SET expires_at=clock_timestamp() WHERE id=:id",
+        "UPDATE omnibase_meta.run_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE id=:id",
+        "UPDATE omnibase_meta.run_leases SET state='revoked' WHERE id=:id",
+        "UPDATE omnibase_meta.run_leases SET state='completed' WHERE id=:id",
+        "UPDATE omnibase_meta.run_leases SET state='expired' WHERE id=:id",
+        "UPDATE omnibase_meta.workspace_nodes SET state='suspended' WHERE id=:id",
+        "UPDATE omnibase_meta.workspace_nodes SET state='revoked', revoked_at=clock_timestamp() WHERE id=:id",
+        "UPDATE omnibase_meta.node_attestations SET state='rejected' WHERE node_id=:id",
+        "UPDATE omnibase_meta.node_attestations SET state='revoked' WHERE node_id=:id",
+        "UPDATE omnibase_meta.node_attestations SET expires_at=clock_timestamp() WHERE node_id=:id",
+        "DELETE FROM omnibase_meta.node_attestations WHERE node_id=:id",
+        "UPDATE omnibase_meta.workspaces SET generation=2 WHERE id=:id",
+    ],
+)
+def test_live_database_authority_mutations_fail_before_gateway(p54b_db, statement: str) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db)
+    target = (
+        TASK
+        if "agent_tasks" in statement
+        else RUN
+        if "agent_runs" in statement
+        else WORKSPACE_RUN
+        if "workspace_runs" in statement
+        else LEASE
+        if "run_leases" in statement
+        else RUNTIME_NODE
+        if "workspace_nodes" in statement or "node_attestations" in statement
+        else WORKSPACE
+    )
+    with p54b_db.begin() as connection:
+        connection.execute(text(statement), {"id": target})
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed") as exc_info:
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="denied"),
+        )
+    assert isinstance(exc_info.value.__cause__, GatewayAdapterError)
+    assert seam.calls == 1
+    assert gateway.calls == 0
+
+
+def test_expired_task_deadline_seed_fails_before_gateway(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db, task_deadline_expired=True)
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed"):
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="expired"),
+        )
+    assert seam.calls == 1
+    assert gateway.calls == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"tenant_id": "00000000-0000-0000-0000-00000000000b"},
+        {"workspace_id": "66666666-6666-6666-6666-666666666667"},
+        {"run_id": RUN},
+        {"run_fencing_token": 2},
+        {"node_fencing_token": 8},
+        {"workload_identity_digest": "4" * 64},
+        {
+            "runtime_instance_id": "99999999-9999-9999-9999-999999999998",
+            "opaque_identity": "spiffe://omnibase/runtime/99999999-9999-9999-9999-999999999998",
+        },
+    ],
+)
+def test_server_owned_workload_evidence_mismatch_fails_before_gateway(
+    p54b_db, overrides: dict[str, object]
+) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(
+        p54b_db, evidence_overrides=overrides
+    )
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed") as exc_info:
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="denied"),
+        )
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, GatewayAdapterError)
+    assert cause.code == "workload_credential_unavailable"
+    assert seam.calls == 1
+    assert gateway.calls == 0
+
+
+def test_certificate_thumbprint_drift_is_rejected_by_core_before_rag(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(
+        p54b_db, evidence_overrides={"certificate_thumbprint": "4" * 64}
+    )
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed"):
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="wrong certificate"),
+        )
+    assert seam.calls == 1
+    assert gateway.calls == 1
+    assert gateway.rag_adapter is not None
+    assert gateway.rag_adapter.calls == 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"tenant_id": "00000000-0000-0000-0000-00000000000b"},
+        {"workspace_id": "66666666-6666-6666-6666-666666666667"},
+        {"workspace_generation": 2},
+        {"actor_user_id": "00000000-0000-0000-0000-0000000000ab"},
+        {"task_generation": 2},
+        {"agent_version_id": "11111111-1111-1111-1111-111111111112"},
+        {"agent_version_digest": "ff" * 32},
+        {"proposal_digest": "ff" * 32},
+        {"proposal_version": 2},
+        {"resource_scope_digest": "ff" * 32},
+        {"budget_policy_digest": "ff" * 32},
+    ],
+)
+def test_context_authority_drift_is_rejected_without_credential_or_gateway(
+    p54b_db, changes: dict[str, object]
+) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db)
+    with pytest.raises(TypedExecutorPolicyDenied):
+        executor.execute(
+            context=replace(context, **changes),
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="denied"),
+        )
+    assert seam.calls == 0
+    assert gateway.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("mutation", "resource_id"),
+    [
+        (
+            "UPDATE omnibase_meta.capability_grants SET actions=ARRAY['data.schema.read']::varchar[] WHERE id=:grant",
+            RESOURCE,
+        ),
+        (
+            "UPDATE omnibase_meta.capability_usage SET calls=100 WHERE grant_id=:grant",
+            RESOURCE,
+        ),
+        (None, "77777777-7777-7777-7777-777777777778"),
+    ],
+)
+def test_gateway_scope_and_budget_denials_do_not_produce_receipts(
+    p54b_db, mutation: str | None, resource_id: str
+) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db)
+    if mutation is not None:
+        with p54b_db.begin() as connection:
+            connection.execute(text(mutation), {"grant": GRANT})
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed") as exc_info:
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=resource_id, query="denied"),
+        )
+    assert isinstance(exc_info.value.__cause__, GatewayAdapterError)
+    assert seam.calls == 1
+    assert gateway.calls == 1
+
+
+class _UnknownGateway:
+    def rag_search(self, session, credential, payload, request_id):  # type: ignore[no-untyped-def]
+        del session, credential, payload, request_id
+        raise RuntimeError("unknown provider outcome")
+
+
+def test_unknown_gateway_outcome_is_not_replayed_and_has_no_success_receipt(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(
+        p54b_db, gateway_override=_UnknownGateway()
+    )
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed") as exc_info:
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="unknown"),
+        )
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, GatewayAdapterError)
+    assert cause.code == "gateway_invocation_failed"
+    assert seam.calls == 1
+    assert gateway.calls == 1
+
+
+def test_terminal_agent_run_and_physical_locator_are_rejected(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db)
+    with p54b_db.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.agent_runs SET state='failed', runtime_instance_id=NULL, "
+                "workload_identity_digest=NULL, node_id=NULL, node_fencing_token=NULL, "
+                "run_lease_id=NULL, run_fencing_token=NULL WHERE id=:run"
+            ),
+            {"run": RUN},
+        )
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed"):
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="terminal"),
+        )
+    assert gateway.calls == 0
+    with pytest.raises(ValueError, match="logical UUID"):
+        KnowledgeSearchRequest(resource_id="public.schema.table", query="forbidden")
 
 
 def test_engineering_composition_remains_disabled_by_default() -> None:

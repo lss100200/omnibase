@@ -207,7 +207,7 @@ def test_core_constraint_mapping_fails_closed(monkeypatch, constraints) -> None:
     )
     monkeypatch.setattr("omnibase.capabilities.service.verify_capability", lambda *a, **k: core)
     credential = WorkloadCredential(
-        authorization="token",
+        authorization="Capability token",
         identity="runtime-one",
         trusted_context=TrustedWorkloadContext(
             opaque_identity="runtime-one",
@@ -215,6 +215,7 @@ def test_core_constraint_mapping_fails_closed(monkeypatch, constraints) -> None:
             workspace_id=core.workspace_id,
             runtime_instance_id=core.runtime_instance_id,
             certificate_thumbprint="a" * 64,
+            workload_identity_digest="a" * 64,
         ),
     )
     with pytest.raises(CapabilityVerificationError):
@@ -237,7 +238,7 @@ def test_core_timeout_constraint_maps_without_gateway_default(monkeypatch) -> No
     )
     monkeypatch.setattr("omnibase.capabilities.service.verify_capability", lambda *a, **k: core)
     credential = WorkloadCredential(
-        authorization="token",
+        authorization="Capability token",
         identity="runtime-one",
         trusted_context=TrustedWorkloadContext(
             opaque_identity="runtime-one",
@@ -245,6 +246,7 @@ def test_core_timeout_constraint_maps_without_gateway_default(monkeypatch) -> No
             workspace_id=core.workspace_id,
             runtime_instance_id=core.runtime_instance_id,
             certificate_thumbprint="a" * 64,
+            workload_identity_digest="a" * 64,
         ),
     )
     verified = CoreCapabilityVerifier().verify(

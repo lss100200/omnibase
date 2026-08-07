@@ -265,6 +265,9 @@ def _context(plan: ValidatedPlan) -> ExecutorInvocationContext:
         agent_version_id=p.root_agent_version_id,
         agent_version_digest=p.root_agent_version_digest,
         proposal_digest=p.proposal_digest,
+        proposal_version=p.proposal_version,
+        resource_scope_digest=p.resource_scope_digest,
+        budget_policy_digest=p.budget_policy_digest,
         node_id=NODE,
     )
 

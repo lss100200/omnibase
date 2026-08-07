@@ -61,6 +61,7 @@ DOCUMENT = "c0000000-0000-0000-0000-000000000001"
 OTHER_TENANT = "d0000000-0000-0000-0000-000000000001"
 THUMBPRINT = "a" * 64
 EVIDENCE_DIGEST = "b" * 64
+WORKLOAD_DIGEST = "c" * 64
 NOW = datetime(2026, 8, 2, 1, 0, tzinfo=UTC)
 
 
@@ -78,6 +79,7 @@ def _evidence(**changes: object) -> TrustedGatewayPeerEvidence:
         "run_fencing_token": 11,
         "node_fencing_token": 7,
         "certificate_thumbprint": THUMBPRINT,
+        "workload_identity_digest": WORKLOAD_DIGEST,
         "evidence_digest": EVIDENCE_DIGEST,
         "expires_at": NOW + timedelta(minutes=2),
     }
@@ -96,7 +98,7 @@ def _facts(**changes: object) -> SimpleNamespace:
         "workspace_generation": 3,
         "run_fencing_token": 11,
         "node_fencing_token": 7,
-        "workload_identity_digest": THUMBPRINT,
+        "workload_identity_digest": WORKLOAD_DIGEST,
         "expires_at": NOW + timedelta(minutes=4),
     }
     values.update(changes)
@@ -119,6 +121,7 @@ def _issue_request(**changes: object) -> GatewayCredentialIssueRequest:
         "run_fencing_token": 11,
         "node_fencing_token": 7,
         "certificate_thumbprint": THUMBPRINT,
+        "workload_identity_digest": WORKLOAD_DIGEST,
     }
     values.update(changes)
     return GatewayCredentialIssueRequest(**values)  # type: ignore[arg-type]
@@ -297,6 +300,7 @@ def test_attestor_revalidates_complete_live_lease_binding(
     assert trusted.workspace_id == WORKSPACE
     assert trusted.runtime_instance_id == RUNTIME
     assert trusted.certificate_thumbprint == THUMBPRINT
+    assert trusted.workload_identity_digest == WORKLOAD_DIGEST
     verifier.assert_called_once_with(
         session,
         tenant_id=TENANT,
@@ -306,7 +310,7 @@ def test_attestor_revalidates_complete_live_lease_binding(
         node_id=NODE,
         generation=3,
         fencing_token=11,
-        workload_identity_digest=THUMBPRINT,
+        workload_identity_digest=WORKLOAD_DIGEST,
     )
     session.close.assert_called_once()
 
@@ -377,6 +381,7 @@ def test_credential_vending_paths_require_exact_server_owned_profile(
         workspace_id=WORKSPACE,
         runtime_instance_id=RUNTIME,
         certificate_thumbprint=THUMBPRINT,
+        workload_identity_digest=WORKLOAD_DIGEST,
     )
     vending = GatewayCredentialVendingApp(FastAPI(), attestor=attestor, issuer=issuer)
 
@@ -393,6 +398,7 @@ def test_credential_vending_paths_require_exact_server_owned_profile(
     assert response.status_code == expected_status
     if expected_status == 200:
         request = issuer.issue.call_args.args[0]
+        assert request.workload_identity_digest == WORKLOAD_DIGEST
         assert request.expected_profile == profile
     else:
         issuer.issue.assert_not_called()

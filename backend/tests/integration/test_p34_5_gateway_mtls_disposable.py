@@ -191,6 +191,7 @@ def _peer_document(
                 "run_fencing_token": 1,
                 "node_fencing_token": 1,
                 "certificate_thumbprint": facts["certificate_thumbprint"],
+                "workload_identity_digest": facts["workload_identity_digest"],
                 "expires_at": (datetime.now(UTC) + timedelta(minutes=4)).isoformat(),
                 "grant_id": facts["grant_id"],
                 "expected_profile": "read",
@@ -227,6 +228,7 @@ class _PrivateKeyProvider:
 
 def _seed(db_engine, certificate_thumbprint: str) -> tuple[dict[str, object], bytes, str]:
     now = datetime.now(UTC)
+    workload_identity_digest = hashlib.sha256(b"p34.5d-runtime-workload").hexdigest()
     capability_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pem = capability_key.private_bytes(
         serialization.Encoding.PEM,
@@ -343,7 +345,7 @@ def _seed(db_engine, certificate_thumbprint: str) -> tuple[dict[str, object], by
                 "workspace": ids["workspace"],
                 "digest": hashlib.sha256(b"p345d-run").hexdigest(),
                 "runtime": ids["runtime"],
-                "thumbprint": certificate_thumbprint,
+                "thumbprint": workload_identity_digest,
                 "actor": ids["actor"],
             },
         )
@@ -461,7 +463,14 @@ def _seed(db_engine, certificate_thumbprint: str) -> tuple[dict[str, object], by
             },
         )
         session.flush()
-        ids.update({"tenant_id": tenant.id, "schema": schema, "grant_id": grant.id})
+        ids.update(
+            {
+                "tenant_id": tenant.id,
+                "schema": schema,
+                "grant_id": grant.id,
+                "workload_identity_digest": workload_identity_digest,
+            }
+        )
     return ids, private_pem, public_pem
 
 
@@ -513,6 +522,7 @@ def test_real_mtls_gateway_four_read_actions_and_rejection_matrix(
             run_fencing_token=1,
             node_fencing_token=1,
             certificate_thumbprint=str(facts["certificate_thumbprint"]),
+            workload_identity_digest=str(facts["workload_identity_digest"]),
         ),
         issuer_context=TrustedIssuerContext(
             tenant_id=str(facts["tenant_id"]),
