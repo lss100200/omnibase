@@ -2733,13 +2733,14 @@ raw token 双重表示。
 focused 正向已通过 formal builder、真实 `LiveRuntimeAuthorityValidator`、server-owned
 credential seam、Gateway adapter 和 mocked Gateway；无 `_Authority`/no-op validator。
 截至本文本更新，P34.2/P34.5/P34.6/P5.4A/P5.4B 受影响 focused 回归为
-`175 passed`，Gate v2 专用 synthetic seal/command/cleanup 单测为 `16 passed`。
+`175 passed`；P5.4A/P5.4B typed/composition focused 在 logical UUID forward-fix
+后为 `65 passed`；Gate v2 专用 synthetic seal/command/cleanup 单测为
+`16 passed`。
 P5.4B disposable integration 已改为每个用例使用同一数据库连接上的 function-scoped
 outer transaction，并在用例后整体 rollback，避免通过 generation 倒退、revoked
 Node 原地复活或 terminal Attestation 改回 verified 来重置夹具。过期 Task 也改为
 初始 INSERT 时构造合法 `created_at < deadline <= db_now`，不再 UPDATE migration
-`0011` 明确 immutable 的 deadline。正式 disposable integration/Gate v2 仍需在
-clean commit 上执行，本文不得提前记录 passed。
+`0011` 明确 immutable 的 deadline。
 
 Gate v2 使用唯一、non-overwriting 的 run-scoped evidence 目录
 `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`，旧
@@ -2759,10 +2760,23 @@ TOCTOU residual risk。不得通过跨任意 RAG/provider 调用长期持锁制�
 必须保留在合同中，因此即使 engineering Gate 最终通过，production admission 仍为
 blocked/not_proven。
 
-当前状态（正式 v2 Gate 运行前）继续为：`P5.4B implementation present`、
-`P5.4B engineering composition admission not proven`、`old P5.4B evidence
-superseded/incomplete`、`production Runtime disabled`、`migration 0013 absent`、
-`production blocked/not_proven`。
+clean commit `d533e0c` 上的 run
+`20260807T040121201064Z-b2e9737e32e5` 已完成正式 v2 Gate：disposable
+PostgreSQL integration `43 passed`，sentinel Alembic head `0012`、revision graph
+无 `0013+`、Runtime/Feature Gates 全 false、internal workload network、local-only
+image acquisition、legacy preservation 与 cleanup `0/0/0` 均由独立 measurement
+记录。随后同一 `evidence.json` 的 `--verify-evidence` 通过；raw-byte SHA-256
+独立复算为 source manifest
+`db24bc8b96f358d4f3d18e609269429affb43fbdb3ea8444d0fc3bd553835fd9`、artifact
+manifest `c2e2ff0670474fc24415437dc69af647f88d979d1683b68a13a9b75c4017cb8d`、
+evidence `29496e4d7bccceddf12765921ddd2f86b9ef35e8f14af2c05eddb866cdd4def6`。
+此前被宿主短超时中止的 partial run 与两次失败 run 均保留为 incomplete/failed，
+没有覆盖；失败 run 也分别完成当前 project cleanup `0/0/0`。
+
+因此 Review-Fix Round 1 的工程状态现在是：`P5.4B engineering composition Gate
+passed`、`old P5.4B evidence superseded/incomplete`、`production Runtime disabled`、
+`migration 0013 absent`、`production admission blocked/not_proven`。不得写成
+production PASS，也不得由本 Gate 自动开始 P5.4C。
 
 ---
 
