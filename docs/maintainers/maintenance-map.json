@@ -597,6 +597,7 @@
         "backend/src/omnibase/capability_gateway/**",
         "backend/src/omnibase/task_ledger/**",
         "backend/src/omnibase/workspaces/**",
+        "backend/tests/test_p5_4b_gate_v2.py",
         "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
         "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
         "docs/phase-5-engineering-composition-contract.md"
@@ -605,6 +606,7 @@
         "backend/tests/test_p34_7_production_composition.py",
         "backend/tests/test_p5_4a_typed_executor.py",
         "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/test_p5_4b_gate_v2.py",
         "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py"
       ]
     },
@@ -2165,6 +2167,7 @@
         "backend/tests/test_p34_7_production_composition.py",
         "backend/tests/test_p5_4a_typed_executor.py",
         "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/test_p5_4b_gate_v2.py",
         "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
         "deployment/production/composition.example.json",
         "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
@@ -2195,6 +2198,7 @@
       ],
       "verification": [
         "python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4b_gate_v2.py -q",
         "python -m pytest backend/tests/test_p34_7_production_composition.py -q",
         "python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q",
         "python -m compileall -q backend/src/omnibase/agent_executor",
