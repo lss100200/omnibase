@@ -634,10 +634,12 @@
         "backend/src/omnibase/runtime/capabilities.py",
         "backend/src/omnibase/runtime/lifecycle.py",
         "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
         "backend/tests/test_runtime_capabilities.py"
       ],
       "test_paths": [
         "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
         "backend/tests/test_runtime_capabilities.py"
       ]
     }
@@ -2447,6 +2449,7 @@
         "backend/src/omnibase/rag/performance.py",
         "backend/tests/test_runtime_capabilities.py",
         "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
         "backend/tests/test_rag_performance.py",
         "scripts/runtime/omnibase_desktop.py",
         "docs/desktop-runtime.md"
@@ -2475,7 +2478,7 @@
         "INV-052"
       ],
       "verification": [
-        "python -m pytest backend/tests/test_runtime_capabilities.py backend/tests/test_runtime_redaction_attacks.py backend/tests/test_rag_performance.py -q",
+        "python -m pytest backend/tests/test_runtime_capabilities.py backend/tests/test_runtime_redaction_attacks.py backend/tests/test_runtime_lifecycle.py backend/tests/test_rag_performance.py -q",
         "python -m ruff check backend/src/omnibase/runtime backend/src/omnibase/rag/performance.py",
         "python -m ruff format --check backend/src/omnibase/runtime backend/src/omnibase/rag/performance.py",
         "python -m mypy backend/src/omnibase/runtime backend/src/omnibase/rag/performance.py",

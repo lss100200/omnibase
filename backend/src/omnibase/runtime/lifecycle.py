@@ -190,7 +190,7 @@ def capabilities(
 ) -> dict[str, object]:
     """Probe observable host facts and report them with provenance."""
     report = probe_capabilities(ports, root=repo_root)
-    return report.to_dict()
+    return redact_mapping(report.to_dict())
 
 
 def ports_status(
@@ -285,19 +285,22 @@ def health(
     """Report advisory health: capability readiness + port availability.
 
     This is advisory only. A green health report does not reserve ports or
-    prove production readiness.
+    prove production readiness. The whole payload passes through the bounded
+    diagnostic redactor so status/health text can never carry credentials.
     """
     report = probe_capabilities(ports, root=repo_root)
     port_states = ports_status(ports=ports)
     service_statuses = _service_status_from_ps(repo_root=repo_root, timeout=20.0)
-    return {
-        "capabilities": report.to_dict(),
-        "ports": port_states,
-        "services": [
-            {"name": s.name, "state": s.state, "detail": s.detail} for s in service_statuses
-        ],
-        "advisory": True,
-    }
+    return redact_mapping(
+        {
+            "capabilities": report.to_dict(),
+            "ports": port_states,
+            "services": [
+                {"name": s.name, "state": s.state, "detail": s.detail} for s in service_statuses
+            ],
+            "advisory": True,
+        }
+    )
 
 
 def logs(

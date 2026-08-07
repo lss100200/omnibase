@@ -670,8 +670,17 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
   并验证。桌面 wrapper 永不声称 Hardened start 支持。
 - 脱敏边界：sensitive key 大小写不敏感匹配；嵌套 sequence 内的 secret
   必须替换；异常文本/命令行/env/URL/DSN 中的凭据不得泄漏；超出深度/宽度/
-  长度用确定性 marker 而非递归或泄漏。攻击测试矩阵见
-  `backend/tests/test_runtime_redaction_attacks.py`。
+  长度用确定性 marker 而非递归或泄漏。字符串值经过有界、确定性的行级
+  parser（URI/DSN userinfo、敏感 query key/fragment、`NAME=value`、
+  CLI `--name=value`、`Name: value` header、JSON-ish log line），
+  opaque secret（不含 token/secret/password 关键字）也按结构化位置脱敏，
+  不依赖关键字或 secret 前缀猜测；解析全部线性有界，禁止灾难性回溯。
+  攻击测试矩阵见 `backend/tests/test_runtime_redaction_attacks.py`；
+  生命周期 wrapper 的 focused 测试（精确参数数组与 `--env-file
+  .env.example`、无 shell、allowlist、Hardened 拒绝、timeout/可执行文件
+  缺失、有界脱敏输出、bind failure 传播、`logs --tail` 上限、
+  status/health 失败行为、Windows 路径无注入、根 `.env` 永不选中）见
+  `backend/tests/test_runtime_lifecycle.py`。
 - 平台证据矩阵：只有当前实测 host 标记 detected；Windows/macOS/Linux、
   x86_64/ARM64、NVIDIA/MPS 与容器变体未在本机运行的一律 `not_proven`。
 - 维护者 map 模块 `desktop-runtime`（INV-052）与验证命令见

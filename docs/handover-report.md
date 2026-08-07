@@ -2984,3 +2984,71 @@ Apple Silicon/MPS、NVIDIA、WSL/Hyper-V 与独立 Runner 全部 `not_proven`，
 disposable PostgreSQL integration/destructive 测试；无生产 Runtime 激活、
 migration `0013`、Phase 5 Feature Gate 开启、业务数据库访问或根 `.env`
 读取。未 push、未创建 PR、未 merge。
+
+### Cross-Platform Desktop Runtime Review-Fix Round 2（2026-08-07）
+
+针对分支 `external/cross-platform-desktop-runtime` 的 Review-Fix Round 2，
+继续 forward-fix 于普通 review-fix commit（无 amend/rebase/reset，无
+push/PR/merge）。
+
+修复内容：
+
+1. **P0 脱敏边界（opaque secret）**：`diagnostics._redact_string` 从
+   “只按 bearer/basic/token/secret/password 关键字整串打标”升级为
+   有界、确定性的行级 parser，先做结构化脱敏，再保留关键字 fail-closed
+   兜底。新增：任意 scheme 的 URI/DSN userinfo 密码脱敏（含 `%3A` 编码、
+   user-only userinfo 不动、密码不回显）；敏感 query key/fragment
+   （`key`/`api_key`/`token`/`access_token`/`signature`/`sig`/
+   `credential`/`password` 及 provider 变体）逐个替换；`NAME=value`、
+   CLI `--name=value`、`Name: value` header、带引号 JSON-ish log line 统一
+   走同一 normalized sensitive-name policy；provider-key 形态通过敏感名
+   的 value 覆盖，绝不靠 secret 前缀猜测。解析全部线性有界（字符串先截
+   2048、最多 512 行、名字/值长度封顶、无嵌套/无界量词，无灾难性回溯）。
+   `LifecycleResult` stdout/stderr、status/health/logs、异常文本与序列化
+   diagnostics 均过同一保护；`diagnostics_payload` 的 service.detail 与
+   `lifecycle.health/capabilities/doctor` 输出也补挂 redactor。
+2. **P0 攻击样本**：`test_runtime_redaction_attacks.py` 新增 11 个 opaque
+   secret 用例（全部不含 token/secret/password 关键字），包含 review 的
+   四个精确 payload 原样：
+   `argv=["--header","X-Api-Key: abc123xyz"]`、
+   `endpoint="https://user:abc123@example.com/path?key=abc123"`、
+   `exception="connection failed postgres://user:abc123@host/db"`、
+   `log_line="OPENAI_API_KEY=sk-proj-abc123xyz"`，断言 secret 在结构化
+   结果与序列化 JSON 中均缺席；同时覆盖 query/fragment、DSN userinfo、
+   CLI/header、JSON-ish、provider 变体、`%3A`、普通文本不被乱改与
+   user-only userinfo 保持。两条 round-1 测试（URL 与 bearer/basic）断言
+   升级为解析后形态（`scheme: [REDACTED]` 可见、secret 缺席）。
+3. **P1 lifecycle focused 测试**：新增 `backend/tests/test_runtime_lifecycle.py`
+   共 25 用例，全部 mock subprocess 边界、不启动任何生产服务：每个动词的
+   精确参数数组与显式 `--env-file .env.example`、无 shell 调用、
+   profile/service/verb 闭集 allowlist、Hardened 构造期拒绝、timeout
+   （124）与可执行文件缺失（127）、有界且脱敏的 stdout/stderr、start
+   bind failure 退出码传播、`logs --tail` 边界与命令、status/health 失败
+   行为、Windows 路径/空格目录不产生注入、根 `.env` 永不选中
+   （`.env.example` 缺失即 fail-closed）。
+4. **P1 canonical 验证**：本机 Docker daemon 不可用（
+   `docker version` 连接 npipe 失败），容器内 canonical Mypy 与
+   非 integration 全量 pytest 无法执行，如实报告 blocked/not_proven，
+   未伪造通过；宿主 Python 的 focused Mypy、Ruff、pytest 全部通过（见下）。
+5. **治理同步**：maintenance-map `desktop-runtime` 模块与 INV-052 加入
+   `test_runtime_lifecycle.py`；security-invariants INV-052 补充 opaque
+   secret 结构化解析、生命周期测试矩阵与线性有界约束；ai-maintainer-map
+   6.12 与 `docs/desktop-runtime.md` 同步；handover 追加本节。
+
+本机验证（全部 exit 0）：focused pytest `76 passed`（capabilities 10 +
+redaction attacks 36 + lifecycle 25 + rag performance 5）；Ruff check 与
+format --check 通过；Mypy `src/omnibase/runtime` +
+`rag/performance.py` `Success: no issues found in 5 source files`；
+compileall 通过；维护者 map 与 benchmark validator 通过；CLI `doctor`
+通过、`start --profile hardened` 被拒绝（exit 2）；P5.1/P5.2A/P5.3A
+example contract 的 `--verify` 在 commit 后 clean checkout 下无 veto
+（registry/task-ledger/planner 的 maintainer_map 与 security_invariants
+sealed digest 及链引用 digest 已随本轮 map/invariants 变更重算并 reseal）；
+`git diff --check` 干净。
+
+未执行/未证明：容器 canonical Mypy/full pytest、Compose config 与
+map/benchmark 的容器路径（Docker daemon 不可用）；真实 macOS/Linux/
+Apple Silicon/NVIDIA/独立 Runner 平台；disposable PostgreSQL
+integration/destructive 测试；生产 Runtime 激活、migration `0013`、
+Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。Hardened
+保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。

@@ -72,20 +72,24 @@ def test_mixed_case_sensitive_keys_are_redacted() -> None:
 def test_bearer_and_basic_credentials_in_string_values_are_redacted() -> None:
     # The key is not sensitive, but the value carries a bearer/basic marker.
     payload = {"header_line": "authorization: Bearer " + SECRET}
-    payload2 = {"proxy_auth": "basic dXNlcjpwYXNzd29yZA=="}
+    payload2 = {"proxy_header_line": "basic dXNlcjpwYXNzd29yZA=="}
     redacted = redact_mapping(payload)
     redacted2 = redact_mapping(payload2)
-    assert redacted["header_line"] == "[REDACTED]"
-    assert redacted2["proxy_auth"] == "[REDACTED]"
+    assert SECRET not in json.dumps(redacted)
+    # Sensitive header name -> value replaced structurally, scheme stays visible.
+    assert redacted["header_line"] == "authorization: [REDACTED]"
+    # Non-sensitive name with a basic- marker -> fail-closed whole-line marker.
+    assert redacted2["proxy_header_line"] == "[REDACTED]"
 
 
-def test_urls_with_embedded_secret_are_bounded_not_parsed() -> None:
+def test_urls_with_embedded_secret_are_structurally_redacted() -> None:
     payload = {"endpoint": f"https://user:{SECRET}@example.com/path"}
     redacted = redact_mapping(payload)
     serialized = json.dumps(redacted)
     assert SECRET not in serialized
-    # The value is not key-sensitive; it gets the inline-secret marker.
-    assert redacted["endpoint"] == "[REDACTED]"
+    # The URI userinfo password is parsed and replaced without echoing it; the
+    # scheme and host stay visible so operators can still diagnose the target.
+    assert redacted["endpoint"] == "https://user:[REDACTED]@example.com/path"
 
 
 def test_dsn_connection_strings_are_redacted() -> None:
@@ -232,3 +236,169 @@ def test_sensitive_key_variants_are_redacted(key: str) -> None:
     payload = {key: SECRET}
     redacted = redact_mapping(payload)
     assert redacted[key] == "[REDACTED]"
+
+
+# --- Opaque secrets without any token/secret/password keyword --------------
+#
+# The round-1 redactor only recognized generic words (bearer/basic/token/
+# secret/password) inside string values, so URL/DSN/log samples whose values
+# carried no such keyword leaked verbatim. Every secret below is opaque on
+# purpose; redaction must come from structural parsing (URI userinfo, query
+# keys, NAME=value assignments, headers, DSN forms), never from keyword
+# guessing or secret prefixes.
+
+OPAQUE_SECRETS = (
+    "abc123xyz",  # X-Api-Key header value
+    "abc123",  # URI userinfo password and query value
+    "sk-proj-abc123xyz",  # provider-key shape under a sensitive name
+    "zq7x2m9k4v",  # DSN userinfo password
+    "8f3a9b1c",  # access_token query value
+    "wX9fQ2",  # CLI --auth value
+    "Lk3mN9",  # JSON-ish api_key value
+    "Qq7xR5t2",  # fragment api_key value
+    "frag99",  # fragment key value
+    "opaque77",  # api_key query value
+)
+
+REVIEW_PAYLOAD = {
+    "argv": ["--header", "X-Api-Key: abc123xyz"],
+    "endpoint": "https://user:abc123@example.com/path?key=abc123",
+    "exception": "connection failed postgres://user:abc123@host/db",
+    "log_line": "OPENAI_API_KEY=sk-proj-abc123xyz",
+}
+
+
+def _assert_opaque_secrets_absent(payload: object) -> None:
+    serialized = json.dumps(payload, sort_keys=True, default=str)
+    for secret in OPAQUE_SECRETS:
+        assert secret not in serialized
+
+
+def test_review_payload_opaque_secrets_are_redacted() -> None:
+    # The exact review payload from round 2: no sample contains a
+    # token/secret/password keyword, so only structural parsing can save it.
+    redacted = redact_mapping(REVIEW_PAYLOAD)
+    _assert_opaque_secrets_absent(redacted)
+    _assert_opaque_secrets_absent(
+        json.loads(diagnostics_json(probe_capabilities(ports=()), config_shape=REVIEW_PAYLOAD))
+    )
+    # The sensitive structure stays visible for diagnosis; only values are gone.
+    assert redacted["argv"] == ["--header", "X-Api-Key: [REDACTED]"]
+    assert "[REDACTED]" in redacted["endpoint"]
+    assert "[REDACTED]" in redacted["exception"]
+    assert redacted["log_line"] == "OPENAI_API_KEY=[REDACTED]"
+
+
+def test_uri_query_sensitive_keys_and_fragments_are_redacted() -> None:
+    payload = {
+        "endpoint": (
+            "https://api.example.com/v1?access_token=8f3a9b1c&api_key=opaque77"
+            "&sig=9b1c2d3e&credential=zz99"
+        ),
+        "fragment_url": "https://host.example/page#api_key=frag99",
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert "access_token=[REDACTED]" in redacted["endpoint"]
+    assert "api_key=[REDACTED]" in redacted["endpoint"]
+    assert "sig=[REDACTED]" in redacted["endpoint"]
+    assert "credential=[REDACTED]" in redacted["endpoint"]
+    assert redacted["fragment_url"] == "https://host.example/page#api_key=[REDACTED]"
+
+
+def test_dsn_userinfo_opaque_password_is_redacted() -> None:
+    payload = {
+        "exception": "connection failed postgres://app:zq7x2m9k4v@db.internal:5432/omnibase",
+        "redis_endpoint": "redis://:zq7x2m9k4v@cache.internal:6379/0",
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["exception"] == (
+        "connection failed postgres://app:[REDACTED]@db.internal:5432/omnibase"
+    )
+    assert redacted["redis_endpoint"] == "redis://:[REDACTED]@cache.internal:6379/0"
+
+
+def test_cli_equals_and_header_forms_are_redacted() -> None:
+    payload = {
+        "argv": ["run", "--auth=wX9fQ2", "--api-key=wX9fQ2", "server"],
+        "header_line": "X-Api-Key: abc123xyz",
+        "header_upper": "AUTHORIZATION: Bearer abc123xyz",
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["argv"] == ["run", "--auth=[REDACTED]", "--api-key=[REDACTED]", "server"]
+    assert redacted["header_line"] == "X-Api-Key: [REDACTED]"
+    assert redacted["header_upper"] == "AUTHORIZATION: [REDACTED]"
+
+
+def test_jsonish_log_line_assignments_are_redacted() -> None:
+    payload = {
+        "log_line": '{"provider": "openai", "api_key": "Lk3mN9", "status": 200}',
+        "json_record": '{"dsn": "postgres://app:zq7x2m9k4v@db/internal"}',
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert '"api_key": [REDACTED]' in redacted["log_line"]
+    assert '"provider": "openai"' in redacted["log_line"]
+    # The dsn name policy redacts the whole value; the userinfo inside it was
+    # already removed by the URI pass before the name match replaced the rest.
+    assert redacted["json_record"] == '{"dsn": [REDACTED]}'
+
+
+def test_provider_key_shapes_redacted_by_name_not_prefix() -> None:
+    # Arbitrary providers can use opaque values; coverage comes from the
+    # sensitive name policy, never from guessing sk-/ghp-/hf_ prefixes.
+    payload = {
+        "env": {
+            "STRIPE_API_KEY": "sk_live_opaque77",
+            "GITHUB_TOKEN": "ghp_8f3a9b1c",
+            "X_CORP_CREDENTIAL": "Qq7xR5t2",
+        },
+        "log_line": "OPENAI_API_KEY=sk-proj-abc123xyz status=200",
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["env"]["STRIPE_API_KEY"] == "[REDACTED]"
+    assert redacted["env"]["GITHUB_TOKEN"] == "[REDACTED]"
+    assert redacted["env"]["X_CORP_CREDENTIAL"] == "[REDACTED]"
+    assert redacted["log_line"] == "OPENAI_API_KEY=[REDACTED] status=200"
+
+
+def test_user_only_userinfo_is_not_mangled() -> None:
+    # A URI userinfo without a password carries no credential and stays intact.
+    payload = {"endpoint": "https://user@example.com/path"}
+    redacted = redact_mapping(payload)
+    assert redacted["endpoint"] == "https://user@example.com/path"
+
+
+def test_encoded_colon_userinfo_password_is_redacted() -> None:
+    payload = {"endpoint": "postgres://app%3Azq7x2m9k4v@db.internal/db"}
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["endpoint"] == "postgres://app%3A[REDACTED]@db.internal/db"
+
+
+def test_ordinary_text_is_not_rewritten_unpredictably() -> None:
+    payload = {
+        "note": "the quick brown fox jumps over the lazy dog",
+        "time_note": "we shipped the release at 12:30 and it passed",
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["note"] == "the quick brown fox jumps over the lazy dog"
+    assert redacted["time_note"] == "we shipped the release at 12:30 and it passed"
+
+
+def test_lifecycle_style_output_lines_are_redacted() -> None:
+    # stdout/stderr bundles produced by the lifecycle wrapper carry exactly
+    # this shape: {"lines": "<compose output>"}.
+    stdout = (
+        "backend  Running 0.0.0.0:8000->8000/tcp\n"
+        "postgres  Running  postgres://app:zq7x2m9k4v@db.internal:5432/omnibase\n"
+        "warning: OPENAI_API_KEY=sk-proj-abc123xyz will be ignored\n"
+    )
+    redacted = redact_mapping({"lines": stdout})
+    _assert_opaque_secrets_absent(redacted)
+    rendered = redacted["lines"]
+    assert "postgres://app:[REDACTED]@db.internal:5432/omnibase" in rendered
+    assert "OPENAI_API_KEY=[REDACTED]" in rendered

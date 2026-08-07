@@ -57,8 +57,36 @@ provider credential names). Redaction bounds: maximum depth 8, maximum
 collection size 256, maximum rendered string length 2048; cycles are replaced
 with a deterministic `[CYCLE]` marker. The bundle must not include `.env`,
 credentials, tokens, Authorization headers, cookies, provider responses, or
-user documents. The attack matrix is in
-`backend/tests/test_runtime_redaction_attacks.py`.
+user documents.
+
+Scalar strings additionally pass through a bounded, deterministic line
+tokenizer that removes credentials without relying on keyword-bearing samples:
+
+- URI/DSN userinfo passwords for any scheme (`scheme://user:password@host` and
+  `%3A`-encoded variants);
+- sensitive query keys and fragments (`key`, `api_key`, `token`,
+  `access_token`, `signature`, `sig`, `credential`, `password` and provider
+  variants) such as `?key=abc` / `#token=abc`;
+- `NAME=value` assignments, CLI `--name=value` forms, `Name: value` headers
+  and quoted JSON-ish log lines, all with the same normalized sensitive-name
+  policy;
+- provider-key shapes are covered through the value of a sensitive name, never
+  through guessing secret prefixes.
+
+All parsing is linear and bounded (string capped at 2048 characters, at most
+512 lines, names/values length-capped); a keyword-marker check remains as a
+deterministic fail-closed fallback. `LifecycleResult` stdout/stderr,
+status/health/log text, exception text and serialized diagnostics all pass
+through this protection.
+
+The attack matrix (including opaque secrets with no token/secret/password
+keyword) is in `backend/tests/test_runtime_redaction_attacks.py`; focused
+lifecycle wrapper tests (exact argument arrays with explicit
+`--env-file .env.example`, no shell, allowlists, Hardened rejection, timeout
+and executable-not-found behavior, bounded/redacted output, bind-failure
+propagation, `logs --tail` bounds, status/health failure behavior, Windows
+paths without command injection, root `.env` never selected) are in
+`backend/tests/test_runtime_lifecycle.py`.
 
 ## Capability schema and provenance
 

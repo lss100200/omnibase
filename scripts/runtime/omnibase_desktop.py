@@ -46,14 +46,21 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = sub.add_parser("doctor", help="probe host capabilities")
-    doctor_parser.add_argument("--port", type=int, action="append", default=[8000, 3000])
+    doctor_parser.add_argument(
+        "--port", type=int, action="append", default=[8000, 3000]
+    )
 
-    sub.add_parser("capabilities", help="alias of doctor")
+    capabilities_parser = sub.add_parser("capabilities", help="alias of doctor")
+    capabilities_parser.add_argument(
+        "--port", type=int, action="append", default=[8000, 3000]
+    )
 
     ports_parser = sub.add_parser("ports", help="report advisory port availability")
     ports_parser.add_argument("--port", type=int, action="append", default=[8000, 3000])
 
-    suggest_parser = sub.add_parser("ports-suggest", help="suggest an advisory free port")
+    suggest_parser = sub.add_parser(
+        "ports-suggest", help="suggest an advisory free port"
+    )
     suggest_parser.add_argument("preferred", type=int)
 
     start_parser = sub.add_parser("start", help="start allowlisted services")
@@ -133,7 +140,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         services = _services_or_default(args.service, args.profile)
         try:
             request = lifecycle.validate_request(
-                args.profile, services, timeout_seconds=lifecycle.DEFAULT_LIFECYCLE_TIMEOUT
+                args.profile,
+                services,
+                timeout_seconds=lifecycle.DEFAULT_LIFECYCLE_TIMEOUT,
             )
         except ValueError as exc:
             _dump({"error": str(exc)})

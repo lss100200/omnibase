@@ -2073,6 +2073,7 @@ rollback or runtime fallback: P5.6A has no database and executes no Skill.
 - `backend/src/omnibase/runtime/lifecycle.py`
 - `backend/tests/test_runtime_redaction_attacks.py`
 - `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_lifecycle.py`
 
 **Why it exists**
 
@@ -2085,6 +2086,20 @@ depth/collection size/rendered string length, and handle cycles deterministicall
 without recursion crashes or leaking cycle contents. The public payload must stay
 JSON-serializable and deterministic, and the typed signature must never forward
 untyped `*args/**kwargs` into the payload builder.
+
+Scalar strings must additionally pass through a bounded, deterministic line
+tokenizer that removes credentials from common structures **without relying on
+keyword-bearing samples**: URI/DSN userinfo passwords for any scheme
+(`scheme://user:password@host`), sensitive query keys and fragments (`key`,
+`api_key`, `token`, `access_token`, `signature`, `sig`, `credential`,
+`password` and provider variants), `NAME=value` assignments, CLI
+`--name=value` forms, `Name: value` headers and quoted JSON-ish log lines, all
+with the same normalized sensitive-name policy. Provider-key shapes are
+covered through the value of a sensitive name, never through guessing secret
+prefixes. All parsing is bounded and linear (no nested or unbounded
+quantifiers, no catastrophic backtracking), and `LifecycleResult`
+stdout/stderr, status/health/log text, exception text and serialized
+diagnostics all pass through this protection.
 
 Capability facts must carry provenance and an evidence state. A hostname is not
 network evidence; Docker/Podman/WSL/Hyper-V executable presence is not
@@ -2100,7 +2115,18 @@ platform.
 - Add attack tests for nested sequences, mixed case, bearer/basic credentials,
   URLs, DSNs, multiline exceptions, cycles, excessive depth/width and oversized
   strings, asserting forbidden markers are absent from structured output and
+  serialized JSON. Attack samples must include opaque secrets that contain no
+  token/secret/password keyword (URI userinfo, DSN userinfo, sensitive query
+  keys/fragments, `NAME=value`, CLI `--name=value`, `Name: value` headers and
+  JSON-ish log lines) and must assert absence from both structured results and
   serialized JSON.
+- Add focused lifecycle tests that mock the subprocess boundary and prove exact
+  argument arrays with explicit `--env-file .env.example` for every verb, no
+  shell invocation, profile/service/verb allowlists, Hardened rejection,
+  timeout and executable-not-found behavior, bounded/redacted stdout and
+  stderr, start bind-failure propagation, `logs --tail` bounds, status/health
+  failure behavior, Windows path handling without command injection, and that
+  the root `.env` is never selected.
 - Extend lifecycle verbs only through the allowlisted Compose argument-array
   wrapper with explicit `--env-file .env.example`.
 
@@ -2120,6 +2146,7 @@ platform.
 
 - `backend/tests/test_runtime_capabilities.py`
 - `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_lifecycle.py`
 - `backend/tests/test_rag_performance.py`
 - Focused Ruff check/format and Mypy for `backend/src/omnibase/runtime/**` and
   `backend/src/omnibase/rag/performance.py`
