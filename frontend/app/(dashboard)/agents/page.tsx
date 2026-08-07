@@ -21,6 +21,7 @@ import {
   type AgentAlphaProfile,
   type AgentAlphaProfileList,
 } from '@/lib/api'
+import { canInvokeLiteAgent, liteInvokeConditionsMet } from '@/lib/lite-gate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -224,7 +225,8 @@ export default function AgentAlphaPage() {
 
   const invoke = async () => {
     const userMessage = input.trim()
-    if (!userMessage || !workspaceId || !bindingId || running) return
+    if (!canInvokeLiteAgent(posture, userMessage, workspaceId, bindingId)) return
+    if (running) return
     setMessages((current) => [
       ...current,
       { id: crypto.randomUUID(), role: 'user', content: userMessage },
@@ -403,8 +405,8 @@ export default function AgentAlphaPage() {
               <h2 className="text-lg font-medium">
                 {!workspaceId
                   ? 'Select a Workspace to begin'
-                  : !posture?.lite_gate_enabled
-                    ? 'Lite product gate is closed'
+                  : !liteInvokeConditionsMet(posture)
+                    ? 'Invocation is locked until every condition holds'
                     : installations.length === 0
                       ? 'No sealed AgentVersion installed'
                       : 'Your first AI employee starts here'}
@@ -412,8 +414,8 @@ export default function AgentAlphaPage() {
               <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
                 {!workspaceId
                   ? 'Choose an existing Workspace from the right panel. Creating a Workspace uses the Workspace governance API; this engineering surface never bypasses membership or scope.'
-                  : !posture?.lite_gate_enabled
-                    ? 'Enable the engineering-only AGENT_LITE_ENGINEERING_ENABLED flag before invoking. Production Runtime, Planner, multi-Agent and arbitrary tools remain locked.'
+                  : !liteInvokeConditionsMet(posture)
+                    ? 'Invoke requires the Lite gate enabled, the tool-free Alpha assembled in this environment, an allowed engineering environment and all Phase 5 production gates false — simultaneously. Production Runtime, Planner, multi-Agent and arbitrary tools remain locked.'
                     : installations.length === 0
                       ? 'Create an Agent with "New employee", or ask your operator to seal and install an AgentVersion. Alpha can reason over read-only workspace knowledge only.'
                       : 'Select a sealed, installed AgentVersion. Alpha can reason over read-only workspace knowledge, but cannot execute tools, MCP, shell, SQL or arbitrary HTTP.'}
@@ -475,7 +477,9 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={!posture?.lite_gate_enabled || !input.trim() || !workspaceId || !bindingId}
+                disabled={
+                  !canInvokeLiteAgent(posture, input, workspaceId, bindingId)
+                }
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -601,8 +605,8 @@ export default function AgentAlphaPage() {
                   {postureLoading
                     ? 'Reading live posture…'
                     : statusError ??
-                      (!posture?.lite_gate_enabled
-                        ? 'Lite product gate is closed. Enable the engineering-only AGENT_LITE_ENGINEERING_ENABLED flag before invoking.'
+                      (!liteInvokeConditionsMet(posture)
+                        ? 'Invoke is locked: the Lite gate, the assembled engineering Alpha, the allowed environment and all-Phase-5-gates-false must hold simultaneously. Production Runtime remains locked.'
                         : posture?.engineering_assembled
                           ? 'Tool-free Alpha assembled in this environment.'
                           : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.')}

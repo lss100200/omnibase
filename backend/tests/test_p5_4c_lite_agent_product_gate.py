@@ -12,6 +12,7 @@ claim integration of the formal P5.4B composition.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -54,7 +55,11 @@ _PROBE_JSON = (
 )
 
 
-def _synthetic_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict]:
+def _synthetic_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_json: str = _PROBE_JSON,
+) -> tuple[Path, dict]:
     evidence_root = tmp_path / "gate-p5-4c"
     monkeypatch.setattr(gate, "EVIDENCE_ROOT", evidence_root)
     run_id = "20260807T010203000000Z-abcdef123456"
@@ -67,7 +72,7 @@ def _synthetic_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
     unit_result = subprocess.CompletedProcess(command, 0, "20 passed in 1.23s\n")
     unit_record = gate._record_command(run_dir, "lite-unit-suite", command, unit_result)
     probe_command = gate._container_command("python", "-c", gate._PROBE_SOURCE)
-    probe_result = subprocess.CompletedProcess(probe_command, 0, _PROBE_JSON + "\n")
+    probe_result = subprocess.CompletedProcess(probe_command, 0, probe_json + "\n")
     probe_record = gate._record_command(run_dir, "lite-gate-probes", probe_command, probe_result)
     commands = [unit_record, probe_record]
     probe = gate._parse_probe(probe_result.stdout)
@@ -182,6 +187,157 @@ def test_receipt_derivations_are_computed_not_hardcoded() -> None:
 
 def test_synthetic_sealed_run_verifies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     evidence, _ = _synthetic_run(tmp_path, monkeypatch)
+    gate._verify(evidence)
+
+
+def _probe_variant(**changes: object) -> str:
+    """Build a probe receipt JSON with one or more fields changed."""
+    probe = json.loads(_PROBE_JSON)
+    probe.update(changes)
+    return json.dumps(probe, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        {"absent_off": False},
+        {"false_off": False},
+        {"true_on": False},
+        {"invalid_fail_closed": False},
+        {"live_posture_reflects_env": False},
+        {"modes": ["knowledge_search_read_only"]},
+        {"modes": ["no_tool", "knowledge_search_read_only"]},
+        {"formal_builder": "some_other_builder"},
+    ],
+)
+def test_verify_reexecutes_admission_decision_rejects_drifted_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variant: dict[str, object],
+) -> None:
+    """Fix-3: --verify-evidence must re-execute the admission closed-set
+    decision.  A probe that honestly reports true_on=false,
+    invalid_fail_closed=false, live_posture=false, mode drift or builder-name
+    drift still exits 0; the evidence must be REJECTED, never verified."""
+    evidence, _ = _synthetic_run(tmp_path, monkeypatch, probe_json=_probe_variant(**variant))
+    with pytest.raises(RuntimeError, match="admission expectation mismatch"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_mode_drift_in_claim_even_if_report_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report that self-consistently records no_tool-only=false must fail the
+    admission decision, not merely the report-vs-receipt equality check."""
+    evidence, _ = _synthetic_run(
+        tmp_path,
+        monkeypatch,
+        probe_json=_probe_variant(modes=["no_tool", "knowledge_search_read_only"]),
+    )
+    report = json.loads(evidence.read_bytes())
+    assert report["knowledge_search_read_only_not_supported"] is False
+    with pytest.raises(RuntimeError, match="admission expectation mismatch"):
+        gate._verify(evidence)
+
+
+def test_gate_never_claims_formal_builder_integration_from_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even a probe that reports the formal posture as 'integrated' must not
+    make the Gate claim formal P5.4B integration: the Gate claim stays
+    not_proven because this Gate never executes the formal composition."""
+    evidence, report = _synthetic_run(
+        tmp_path,
+        monkeypatch,
+        probe_json=_probe_variant(formal_builder_integration="integrated"),
+    )
+    assert report["formal_builder_integration"] == "not_proven"
+    gate._verify(evidence)
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        ("different test target", "tests/test_some_other_test.py"),
+        ("dropped closed flag", None),
+        ("different env file", "other.env.example"),
+        ("extra argument", None),
+    ],
+)
+def test_verify_rejects_command_vector_drift_even_with_exit_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift: tuple[str, str | None],
+) -> None:
+    """Fix-4: the verifier validates the EXACT argv template of each command —
+    explicit .env.example, closed production flags and exact test target — not
+    just the command key and return code.  A drifted vector that still exited
+    0 must be rejected."""
+    label, replacement = drift
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    vector = list(report["commands"][0]["command"])
+    if label == "different test target":
+        vector[vector.index(gate.LITE_UNIT_TEST)] = replacement  # type: ignore[arg-type]
+    elif label == "dropped closed flag":
+        vector.remove("AGENT_RUNTIME_ENABLED=false")
+    elif label == "different env file":
+        vector[vector.index(str(gate.ENV_FILE))] = replacement  # type: ignore[arg-type]
+    elif label == "extra argument":
+        vector.append("--no-header")
+    report["commands"][0]["command"] = vector
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="does not match the exact closed template"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_root_env_in_command_vector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    vector = list(report["commands"][0]["command"])
+    vector.append(".env")
+    report["commands"][0]["command"] = vector
+    _rewrite_evidence(evidence, report)
+    # The root .env part both breaks the exact template and flips the
+    # receipt-derived root_env_accessed claim; either rejection is correct.
+    with pytest.raises(RuntimeError, match="does not match the exact closed template|root \\.env"):
+        gate._verify(evidence)
+
+
+def test_admission_decision_is_shared_between_run_and_verify() -> None:
+    """The admission closed-set decision is a single function; the happy probe
+    passes it and every drifted probe fails it."""
+    happy = gate._parse_probe(_PROBE_JSON)
+    commands = [
+        {"command": ["docker", "compose", "--env-file", "x.env.example", "run"]},
+        {"command": ["python", "-m", "pytest", "tests/test_p5_4c_lite_gate.py", "-q"]},
+    ]
+    happy_claims = gate._derive_claims(happy, commands)
+    assert gate._admission_mismatch(happy_claims, production_runtime_activated=False) is None
+    assert (
+        gate._admission_mismatch(happy_claims, production_runtime_activated=True)
+        == "production_runtime_activated=True (expected False)"
+    )
+    drifted = gate._parse_probe(_probe_variant(true_on=False))
+    drifted_claims = gate._derive_claims(drifted, commands)
+    mismatch = gate._admission_mismatch(drifted_claims, production_runtime_activated=False)
+    assert mismatch is not None
+    assert "runtime_env_resolver_true_on" in mismatch
+
+
+def test_integrity_receipt_is_self_contained(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix-5: the evidence is a self-contained run-scoped integrity receipt.
+    It must never claim external authenticity and must not name an independent
+    trust anchor; production stays not_proven."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    receipt = report["integrity_receipt"]
+    assert receipt["scope"] == "run-scoped byte integrity only"
+    assert receipt["external_authenticity"] is False
+    assert receipt["trust_anchor"] is None
+    assert "no external" in receipt["wording"]
+    assert report["production_runtime_activated"] is False
     gate._verify(evidence)
 
 

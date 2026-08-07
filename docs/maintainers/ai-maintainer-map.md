@@ -1344,9 +1344,17 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   place the gate reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and
   passes the value into the parser; the Browser dependency
   `router.get_agent_alpha()` and the live posture must use it so the flag
-  genuinely enables the route. API-level tests prove the flag reaches the
-  assembled/unavailable Alpha dependency as appropriate instead of always
-  returning the Lite-gate-disabled path.
+  genuinely enables the route. `lite_agent_posture()` with `env=None` resolves
+  the Lite flag through the runtime resolver and never reads it from
+  `os.environ` itself; only an explicit `env` mapping or explicit `raw`
+  argument feeds the pure parser directly. API-level tests prove the flag
+  reaches the assembled/unavailable Alpha dependency as appropriate instead of
+  always returning the Lite-gate-disabled path.
+- `docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+  `P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+  fail-closed defaults of `false`; `.env.example` documents both. Verify with
+  `docker compose --env-file .env.example config` — `"false"` by default,
+  `"true"` only under an explicit engineering override.
 - The gate is a *product* entry guard, never an authorization fact. Passing it
   only opens the Lite Browser surface in a development/engineering deployment.
   It never authorizes production Agent Runtime, Planner, multi-Agent execution,
@@ -1383,11 +1391,16 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   `not_proven`; the root-env/business-database negatives are re-derived from
   the recorded command vectors and the migration head is re-discovered from the
   repository files. The run directory is preserved on success and on failure
-  and can be re-verified with `--verify-evidence`. The Gate never reads the
-  root `.env`, never touches a business database, never creates migration
-  `0013`, never opens a Phase 5 production Feature Gate, never claims formal
-  P5.4B integration, and does not replace the heavier P5.4B disposable
-  PostgreSQL Gate.
+  and can be re-verified with `--verify-evidence`, which re-executes the same
+  closed-set admission decision and validates the exact argv template of every
+  recorded command (explicit `.env.example`, closed production flags, exact
+  test target). The sealed evidence is a **self-contained integrity receipt**
+  only: run-scoped byte integrity, never external authenticity, no independent
+  trust anchor, never production admission. The Gate never reads the root
+  `.env`, never touches a business database, never creates migration `0013`,
+  never opens a Phase 5 production Feature Gate, never claims formal P5.4B
+  integration, and does not replace the heavier P5.4B disposable PostgreSQL
+  Gate.
 
 Focused commands:
 
@@ -1395,9 +1408,11 @@ Focused commands:
 python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
 docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
+docker compose --env-file .env.example config --quiet
 cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
 python scripts/maintenance/validate_maintainer_map.py --repo-root .
 python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --verify-evidence .tmp/p5-4c-lite-agent-product-loop-gate/<run-id>/evidence.json
 ```
 
 ## 6.16 P5.6A first-party native Skill contract

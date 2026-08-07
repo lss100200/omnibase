@@ -27,6 +27,16 @@ independently re-verified later with ``--verify-evidence``; the Gate never
 deletes its own evidence.  It never activates production Runtime, never reads
 the root ``.env``, never touches a business database, never creates migration
 ``0013`` and never opens any Phase 5 production Feature Gate.
+
+**Integrity scope.**  The sealed evidence is a **self-contained integrity
+receipt**: it proves run-scoped byte integrity of the recorded source
+manifest, command receipts and measurements (raw-byte SHA-256 sidecars, exact
+command-vector templates and the re-executed admission closed-set decision).
+Without an independent trust anchor it proves **no external authenticity**: it
+cannot authenticate who produced the bytes or that they came from any
+particular host, and it is never production admission.  ``--verify-evidence``
+re-executes the same admission decision that ``--run`` computed, and rejects
+any evidence whose receipts or vectors fail it.
 """
 
 from __future__ import annotations
@@ -38,6 +48,7 @@ import re
 import secrets
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -170,9 +181,7 @@ def _write_bytes(path: Path, raw: bytes) -> str:
 
 
 def _write_json(path: Path, value: object) -> str:
-    return _write_bytes(
-        path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
-    )
+    return _write_bytes(path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode())
 
 
 def _manifest() -> dict[str, object]:
@@ -187,9 +196,7 @@ def _manifest() -> dict[str, object]:
 
 
 def _manifest_digest(manifest: dict[str, object]) -> str:
-    return _sha256_bytes(
-        json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
-    )
+    return _sha256_bytes(json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode())
 
 
 def _tree_manifest(root: Path) -> dict[str, dict[str, object]]:
@@ -245,9 +252,9 @@ def _discover_migration_head() -> str:
 
 def _validate_config() -> None:
     config = json.loads(
-        (
-            REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
-        ).read_text(encoding="utf-8")
+        (REPO_ROOT / "deployment/production/phase5-typed-executor.example.json").read_text(
+            encoding="utf-8"
+        )
     )
     if config.get("migration_baseline") != EXPECTED_MIGRATION_HEAD:
         raise RuntimeError("P5.4C Gate requires migration baseline 0012")
@@ -335,6 +342,17 @@ def _container_command(*arguments: str) -> list[str]:
     ]
 
 
+# The exact argv templates of the only two commands the Gate may execute.  The
+# verifier requires each recorded receipt to match its template byte-for-byte:
+# the explicit ``.env.example`` path, the closed production engineering flags,
+# the image service name and the exact test target / probe source are all part
+# of the closed set and cannot drift while still verifying.
+_EXPECTED_COMMAND_TEMPLATES: dict[str, list[str]] = {
+    "lite-unit-suite": _container_command("python", "-m", "pytest", LITE_UNIT_TEST, "-q"),
+    "lite-gate-probes": _container_command("python", "-c", _PROBE_SOURCE),
+}
+
+
 # ---------------------------------------------------------------------------
 # Receipt-derived claim derivations: every negative claim below is computed
 # from the actual recorded command vectors, never hardcoded.
@@ -347,9 +365,7 @@ def _command_arguments(
     vectors: list[tuple[str, ...]] = []
     for item in commands:
         command = item.get("command")
-        if not isinstance(command, list) or not all(
-            isinstance(part, str) for part in command
-        ):
+        if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
             raise RuntimeError("command receipt has an invalid command vector")
         vectors.append(tuple(command))
     return tuple(vectors)
@@ -357,10 +373,7 @@ def _command_arguments(
 
 def _receipt_root_env_accessed(commands: list[dict[str, object]]) -> bool:
     """The Gate never passes the root ``.env`` as an exact command argument."""
-    for vector in _command_arguments(commands):
-        if any(part == ".env" for part in vector):
-            return True
-    return False
+    return any(any(part == ".env" for part in vector) for vector in _command_arguments(commands))
 
 
 def _receipt_business_database_accessed(commands: list[dict[str, object]]) -> bool:
@@ -397,9 +410,7 @@ def _parse_probe(stdout: str) -> dict[str, object]:
     ):
         if not isinstance(probe.get(key), bool):
             raise RuntimeError(f"P5.4C gate probe receipt field {key} is invalid")
-    if not isinstance(probe.get("modes"), list) or not isinstance(
-        probe.get("formal_builder"), str
-    ):
+    if not isinstance(probe.get("modes"), list) or not isinstance(probe.get("formal_builder"), str):
         raise RuntimeError("P5.4C gate probe receipt disclosure fields are invalid")
     return probe
 
@@ -408,14 +419,16 @@ def _derive_claims(
     probe: dict[str, object], commands: list[dict[str, object]]
 ) -> dict[str, object]:
     """Derive every claim from the executed probe receipt and command vectors."""
-    modes = tuple(str(item) for item in probe.get("modes", []))
+    raw_modes = probe.get("modes")
+    if not isinstance(raw_modes, list):
+        raise RuntimeError("P5.4C gate probe receipt modes field is invalid")
+    modes = tuple(str(item) for item in raw_modes)
     return {
         "lite_gate_default_off": probe["absent_off"] is True,
         "runtime_env_resolver_absent_off": probe["absent_off"] is True,
         "runtime_env_resolver_false_off": probe["false_off"] is True,
         "runtime_env_resolver_true_on": probe["true_on"] is True,
-        "runtime_env_resolver_invalid_fail_closed": probe["invalid_fail_closed"]
-        is True,
+        "runtime_env_resolver_invalid_fail_closed": probe["invalid_fail_closed"] is True,
         "live_posture_reflects_env": probe["live_posture_reflects_env"] is True,
         "knowledge_search_read_only_not_supported": (
             modes == ("no_tool",) and "knowledge_search_read_only" not in modes
@@ -426,6 +439,49 @@ def _derive_claims(
         "business_database_accessed": _receipt_business_database_accessed(commands),
         "business_database_migrated": _receipt_business_database_migrated(commands),
     }
+
+
+# The admission closed-set: every claim must meet its expectation or the run
+# (and any evidence re-verification of it) is rejected.  The Gate may only
+# PASS when all of the following hold; a single mismatch makes ``passed``
+# false, and ``--verify-evidence`` re-executes the same decision.
+ADMISSION_EXPECTATIONS: dict[str, object] = {
+    "lite_gate_default_off": True,
+    "runtime_env_resolver_absent_off": True,
+    "runtime_env_resolver_false_off": True,
+    "runtime_env_resolver_true_on": True,
+    "runtime_env_resolver_invalid_fail_closed": True,
+    "live_posture_reflects_env": True,
+    "knowledge_search_read_only_not_supported": True,
+    "formal_builder_named": True,
+    "formal_builder_integration": "not_proven",
+    "root_env_accessed": False,
+    "business_database_accessed": False,
+    "business_database_migrated": False,
+    "production_runtime_activated": False,
+}
+
+
+def _admission_mismatch(
+    claims: Mapping[str, object],
+    *,
+    production_runtime_activated: object,
+) -> str | None:
+    """Re-execute the closed-set admission decision; return the first mismatch.
+
+    ``claims`` carries the receipt-derived claim values; the report-level
+    ``production_runtime_activated`` is passed separately because it is not
+    part of ``_derive_claims``.  ``None`` means every expectation is met.
+    """
+    for key, expected in ADMISSION_EXPECTATIONS.items():
+        actual = (
+            claims.get(key)
+            if key != "production_runtime_activated"
+            else production_runtime_activated
+        )
+        if actual != expected:
+            return f"{key}={actual!r} (expected {expected!r})"
+    return None
 
 
 def _verify(path: Path) -> None:  # noqa: C901
@@ -467,9 +523,7 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("evidence artifact raw-byte digest field mismatch")
     source_manifest = json.loads(source_path.read_bytes())
     artifact_manifest = json.loads(artifact_path.read_bytes())
-    if _manifest_digest(source_manifest) != report.get(
-        "source_manifest_canonical_sha256"
-    ):
+    if _manifest_digest(source_manifest) != report.get("source_manifest_canonical_sha256"):
         raise RuntimeError("source manifest canonical digest mismatch")
     if _manifest() != source_manifest:
         raise RuntimeError("current source bytes differ from sealed source manifest")
@@ -503,12 +557,30 @@ def _verify(path: Path) -> None:  # noqa: C901
         "lite-unit-suite",
         "lite-gate-probes",
     ):
-        raise RuntimeError(
-            "command receipt set does not match the closed P5.4C step set"
-        )
+        raise RuntimeError("command receipt set does not match the closed P5.4C step set")
     for item in commands:
         if not isinstance(item, dict) or item.get("returncode") != 0:
             raise RuntimeError("command did not prove success")
+        # Fix-3/Fix-4: the verifier validates the EXACT argv template of every
+        # recorded command — the explicit .env.example path, the closed
+        # production engineering flags and the exact test target / probe
+        # source are part of the closed set.  A command that merely "ran and
+        # exited 0" with drifted arguments must be rejected.
+        key = item.get("key")
+        if not isinstance(key, str):
+            raise RuntimeError("command receipt key is invalid")
+        template = _EXPECTED_COMMAND_TEMPLATES.get(key)
+        if template is None:
+            raise RuntimeError(f"command receipt key is not in the closed step set: {key!r}")
+        command_vector = item.get("command")
+        if not isinstance(command_vector, list) or not all(
+            isinstance(part, str) for part in command_vector
+        ):
+            raise RuntimeError("command vector is invalid")
+        if tuple(command_vector) != tuple(template):
+            raise RuntimeError(f"command vector for {key} does not match the exact closed template")
+        if any(Path(part).name == ".env" for part in command_vector):
+            raise RuntimeError("recorded command must not reference the root .env")
         stdout_relative = item.get("stdout")
         if not isinstance(stdout_relative, str):
             raise RuntimeError("command stdout path is invalid")
@@ -531,6 +603,28 @@ def _verify(path: Path) -> None:  # noqa: C901
     for key, expected in expected_claims.items():
         if report.get(key) != expected:
             raise RuntimeError(f"claim {key} does not match the sealed receipts")
+    # Fix-3: --verify-evidence re-executes the SAME closed-set admission
+    # decision as --run.  It is not enough that the report equals the derived
+    # values: derived values that miss an admission expectation (e.g.
+    # true_on=false, invalid_fail_closed=false, live_posture=false, mode
+    # drift, command-vector drift, a touched database marker) must reject the
+    # evidence instead of verifying it.
+    admission_mismatch = _admission_mismatch(
+        expected_claims, production_runtime_activated=report.get("production_runtime_activated")
+    )
+    if admission_mismatch is not None:
+        raise RuntimeError(f"admission expectation mismatch: {admission_mismatch}")
+    # The sealed evidence is a self-contained integrity receipt only; it never
+    # claims external authenticity and never claims production admission.
+    integrity = report.get("integrity_receipt")
+    if not isinstance(integrity, dict):
+        raise RuntimeError("integrity receipt is missing")
+    if integrity.get("scope") != "run-scoped byte integrity only":
+        raise RuntimeError("integrity receipt scope wording mismatch")
+    if integrity.get("external_authenticity") is not False:
+        raise RuntimeError("integrity receipt must not claim external authenticity")
+    if integrity.get("trust_anchor") is not None:
+        raise RuntimeError("integrity receipt must not name an independent trust anchor")
     # The migration head is re-measured from the repository files.
     if _discover_migration_head() != EXPECTED_MIGRATION_HEAD:
         raise RuntimeError("migration head re-measurement mismatch")
@@ -590,6 +684,19 @@ def _write_report(
         ],
         "formal_builder_named": claims["formal_builder_named"],
         "formal_builder_integration": claims["formal_builder_integration"],
+        "integrity_receipt": {
+            "scope": "run-scoped byte integrity only",
+            "external_authenticity": False,
+            "trust_anchor": None,
+            "wording": (
+                "This sealed evidence proves run-scoped byte integrity of the "
+                "recorded source manifest, command receipts and measurements. "
+                "Without an independent trust anchor it proves no external "
+                "authenticity: it cannot authenticate who produced the bytes, "
+                "and it is never production admission."
+            ),
+        },
+        "admission_expectations_checked": True,
         "claim_sources": {
             "lite_gate_default_off": "probe receipt (absent -> off)",
             "runtime_env_resolver_absent_off": "probe receipt",
@@ -607,6 +714,8 @@ def _write_report(
             "lite_unit_summary": "parsed from pytest receipt",
             "production_runtime_activated": "derived from recorded command vectors",
             "evidence_preserved": "run directory is retained for --verify-evidence",
+            "integrity_receipt": "self-contained run-scoped byte-integrity receipt; no external authenticity and no trust anchor",
+            "admission_expectations_checked": "closed-set admission decision re-executed by --verify-evidence",
         },
         "cleanup": cleanup,
         "commands": commands,
@@ -644,6 +753,11 @@ def _write_report(
             ),
             f"- Lite unit summary: `{json.dumps(report.get('lite_unit_summary'), sort_keys=True)}`",
             f"- Cleanup: `{json.dumps(cleanup, sort_keys=True)}`",
+            (
+                "- Integrity scope: self-contained run-scoped byte-integrity "
+                "receipt only; no external authenticity, no independent trust "
+                "anchor, never production admission."
+            ),
             f"- Error: `{error or 'none'}`",
             "",
         ]
@@ -656,9 +770,7 @@ def _write_report(
         "artifact-manifest.sha256",
     }
     artifact_manifest = _artifacts(run_dir, exclude=excluded)
-    artifact_raw_sha = _write_json(
-        run_dir / "artifact-manifest.json", artifact_manifest
-    )
+    artifact_raw_sha = _write_json(run_dir / "artifact-manifest.json", artifact_manifest)
     _write_bytes(run_dir / "artifact-manifest.sha256", f"{artifact_raw_sha}\n".encode())
     report["artifact_manifest_raw_sha256"] = artifact_raw_sha
     report["artifacts"] = artifact_manifest
@@ -725,17 +837,28 @@ def main() -> int:
     except Exception as exc:
         errors.append(str(exc))
     cleanup = {"files_removed": 0, "evidence_preserved": True}
+    measured_probe: dict[str, object] | None = None
     if steps_passed:
-        probe = measurements.get("probe_measurements")
-        if not isinstance(probe, dict):
-            errors.append(
-                "probe measurements are missing after a successful probe step"
-            )
+        probe_value = measurements.get("probe_measurements")
+        if isinstance(probe_value, dict):
+            measured_probe = probe_value
+        else:
+            errors.append("probe measurements are missing after a successful probe step")
             steps_passed = False
     claims: dict[str, object] = {}
     if steps_passed:
-        assert isinstance(probe, dict)
-        claims = _derive_claims(probe, commands)
+        assert isinstance(measured_probe, dict)
+        claims = _derive_claims(measured_probe, commands)
+        # Fix-2: the Gate only PASSES when every admission boolean meets its
+        # expectation (default_off/absent_off/false_off/true_on/
+        # invalid_fail_closed/live_posture_reflects_env/no_tool-only/
+        # formal_builder_named all true; root_env/business-database/
+        # production_runtime negatives all false; formal_builder_integration
+        # stays not_proven).  A single mismatch -> passed=false.
+        admission_mismatch = _admission_mismatch(claims, production_runtime_activated=False)
+        if admission_mismatch is not None:
+            errors.append(f"admission expectation mismatch: {admission_mismatch}")
+            steps_passed = False
     else:
         claims = {
             "lite_gate_default_off": False,
@@ -754,8 +877,7 @@ def main() -> int:
     passed = (
         steps_passed
         and not errors
-        and tuple(item.get("key") for item in commands)
-        == ("lite-unit-suite", "lite-gate-probes")
+        and tuple(item.get("key") for item in commands) == ("lite-unit-suite", "lite-gate-probes")
     )
     report = _write_report(
         run_dir,

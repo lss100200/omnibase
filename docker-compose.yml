@@ -175,6 +175,12 @@ services:
       # Controlled, tool-free single-Agent Alpha. These values never enable
       # Planner, multi-Agent, MCP, Skills, shell, SQL or arbitrary HTTP tools.
       AGENT_ALPHA_ENGINEERING_ENABLED: ${AGENT_ALPHA_ENGINEERING_ENABLED:-false}
+      # P5.4C Lite product gate (engineering-only): explicitly wired with a
+      # fail-closed default of false. Compose receives exactly the .env.example
+      # value; any non-exact token is rejected by the closed-set parser.
+      AGENT_LITE_ENGINEERING_ENABLED: ${AGENT_LITE_ENGINEERING_ENABLED:-false}
+      # P5.4B formal engineering composition flag: stays false in this loop.
+      P5_4B_ENGINEERING_ENABLED: ${P5_4B_ENGINEERING_ENABLED:-false}
       AGENT_RUNTIME_ENABLED: ${AGENT_RUNTIME_ENABLED:-false}
       AGENT_PLANNER_ENABLED: ${AGENT_PLANNER_ENABLED:-false}
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}

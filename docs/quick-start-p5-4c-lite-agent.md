@@ -31,11 +31,13 @@
 ## Opening the Lite gate (engineering only)
 
 The Lite gate is independent of the three production Phase 5 Feature Gates and
-defaults off. Set exactly `true` or `false` in your local engineering
-environment; any other token fails closed. The gate is resolved at runtime
-through `runtime_lite_agent_enabled()`, which reads
-`AGENT_LITE_ENGINEERING_ENABLED` from the process environment — setting it to
-`true` genuinely opens the route and the live posture.
+defaults off. `docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` to
+the backend environment explicitly with a fail-closed default of
+`${AGENT_LITE_ENGINEERING_ENABLED:-false}`; `.env.example` documents the
+variable. Set exactly `true` or `false`; any other token fails closed. The
+gate is resolved at runtime through `runtime_lite_agent_enabled()`, which
+reads `AGENT_LITE_ENGINEERING_ENABLED` from the process environment — setting
+it to `true` genuinely opens the route and the live posture.
 
 ```text
 AGENT_LITE_ENGINEERING_ENABLED=true
@@ -45,6 +47,11 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 ENV=development
 ```
+
+Verify the Compose wiring with `docker compose --env-file .env.example config`
+(grep `AGENT_LITE_ENGINEERING_ENABLED`): the backend environment receives
+`"false"` by default, and `"true"` under an explicit engineering override.
+Never read or stage the repository root `.env`.
 
 `P5_4B_ENGINEERING_ENABLED` is not needed for the Lite loop: the formal P5.4B
 builder is not integrated here. All three Phase 5 production Feature Gates must
@@ -73,8 +80,11 @@ created).
    (`build_engineering_agent_alpha`), plus the single supported invocation mode
    `no_tool`.
 7. Type a prompt and press Enter or the send button. The invoke button is
-   disabled until the Lite gate is open and a Workspace + AgentVersion are
-   selected.
+   enabled only when **all** of these hold simultaneously: the Lite gate is
+   enabled, the tool-free Alpha is assembled in this environment, the
+   environment is allowed (development), and all Phase 5 production gates are
+   false. A single missing condition keeps the button disabled (fail closed),
+   and the same decision guards the Enter-key path.
 8. The agent streams `meta → citations → chunk* → usage → done`. If the
    environment is not assembled (gate closed, wrong environment, provider
    unavailable, migration head not 0012) the stream returns a stable
@@ -82,8 +92,10 @@ created).
 
 ## Negative states
 
-- **Gate closed**: the empty state reads "Lite product gate is closed" and the
-  send button stays disabled.
+- **Any invocation condition missing**: the empty state reads "Invocation is
+  locked until every condition holds" and the send button stays disabled —
+  Lite gate off, Alpha not assembled, environment not allowed, or any Phase 5
+  production gate non-false all have the same fail-closed effect.
 - **No Workspace**: the empty state reads "Select a Workspace to begin".
 - **No installed AgentVersion**: the empty state reads "No sealed AgentVersion
   installed".
@@ -98,6 +110,7 @@ created).
 python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
 docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
+docker compose --env-file .env.example config --quiet
 cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
 ```
 
@@ -106,3 +119,8 @@ cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production p
 Production status remains `blocked/not_proven`. The disposable Lite Gate is
 engineering evidence only; it is not production admission and does not open any
 Phase 5 production Feature Gate, migration `0013`, or a production Runtime.
+Its sealed evidence is a self-contained integrity receipt: it proves
+run-scoped byte integrity of the recorded source manifest, command receipts
+and measurements, but — without an independent trust anchor — it proves **no
+external authenticity** (it cannot authenticate who produced the bytes) and
+must never be presented as an externally certified result.

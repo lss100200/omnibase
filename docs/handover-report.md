@@ -2942,6 +2942,84 @@ Production 状态继续为 `blocked/not_proven`；P5.4C disposable Lite Gate 仅
 
 ---
 
+### P5.4C Lite Agent product loop review-fix Round 3（2026-08-07）
+
+外部 review 对 Round 2 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **Compose 显式接线（fix 1）**：`docker-compose.yml` 现在显式向 backend
+   环境传递 `AGENT_LITE_ENGINEERING_ENABLED`（及关闭的
+   `P5_4B_ENGINEERING_ENABLED`），fail-closed 默认 `${VAR:-false}`；
+   `.env.example` 增加两个变量并注释；Quick Start 更新。已用
+   `docker compose --env-file .env.example config` 实测：默认 backend 环境
+   收到 `AGENT_LITE_ENGINEERING_ENABLED: "false"`，在显式工程 override
+   （`--env-file .tmp/engineering-lite.env`）下收到 `"true"`，且三个生产
+   Feature Gate 保持 `"false"`。
+2. **Gate 准入闭集（fix 2/3/4）**：Gate 只在**闭集准入决策**全部满足时
+   `passed=true`：`lite_gate_default_off`/`absent_off`/`false_off`/`true_on`/
+   `invalid_fail_closed`/`live_posture_reflects_env`/`no_tool`-only/
+   `formal_builder_named` 全为 true；`root_env_accessed`/
+   `business_database_accessed`/`business_database_migrated`/
+   `production_runtime_activated` 全为 false；`formal_builder_integration`
+   保持 `not_proven`。任一不满足即 `passed=false` 且 run 目录仍保留失败
+   claims。`--verify-evidence` 现在**重执行同一准入决策**（不仅仅是
+   "report 等于推导值"），并校验两条命令的**精确 argv 模板**（显式
+   `.env.example`、关闭的生产工程 flags、精确测试目标/探针源码）——drift
+   的向量即使 exit 0 也拒绝。新增负例测试：true_on=false、
+   invalid_fail_closed=false、live_posture=false、mode drift、
+   command-vector drift 全部被拒（`backend/tests/test_p5_4c_lite_agent_product_gate.py`
+   47 passed）。
+3. **integrity receipt 措辞（fix 5）**：证据被明确定义为**自包含完整性
+   收据**（run-scoped byte integrity only），无独立 trust anchor 时**不证明
+   外部真实性**（`integrity_receipt.external_authenticity=false`、
+   `trust_anchor=null`），`--verify-evidence` 强制该措辞；文档（合同、
+   Quick Start、maintainer map、security-invariants、ai-maintainer-map）全部
+   使用该措辞并保持 production `blocked/not_proven`。
+4. **前端 Invoke 四条件（fix 6）**：Invoke 按钮与 Enter 路径现在要求
+   `lite_gate_enabled` **且** `engineering_assembled` **且**
+   `environment_allowed` **且** `phase5_gates_all_false` 同时成立
+   （`frontend/lib/lite-gate.ts` 纯函数 + 页面接线）；新增
+   `frontend/lib/lite-gate.test.ts`（frontend 测试 51 passed）。
+5. **posture 运行时解析（fix 7）**：`lite_agent_posture(env=None)` 现在把
+   Lite flag 委托给 `runtime_lite_agent_enabled()`，自身不再直接
+   `os.environ.get` 该 flag；显式 `env` 映射/`raw` 测试入口保留。新增
+   os.environ 代理测试证明 env=None 路径不直接读该 flag。
+6. **证据重跑（fix 8）**：从最终 clean commit 重跑官方 `--run`，生成新的
+   immutable run 目录；旧 Round-2 run
+   （`20260807T152113671923Z-949b66abff57`）**保留**并在
+   `.tmp/p5-4c-lite-agent-product-loop-gate/superseded.json` 标记
+   superseded/incomplete（其密封字节不被修改）；随后 `--verify-evidence`
+   复核新证据（PASS）并诚实记录旧证据无法再按当前源码复核。
+7. **共享 seal 链（fix 9）**：maintenance-map/security-invariants 变更后按
+   依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链：maintainer_map
+   `fd1dffe8ee1b…`、security_invariants `d53b6822f897…`、P5.1A 配置
+   `536649d93c02…`（同步进 P5.2A/P5.3A 的 `p5_1.registry_contract`）、P5.2A
+   配置 `f4fc10abe9a9…`（同步进 P5.3A 的 `p5_2a.task_ledger_contract`）；
+   链一致性检查 22/22 PASS。从最终 clean commit 复测三个 verifier：P5.1A/
+   P5.2A/P5.3A 均 exit 2 `blocked/not_proven`、`contract_valid=true`、
+   `vetoes=[]`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）全量 non-integration
+suite `1934 passed / 19 skipped / 15 deselected`（P5.1A/P5.2A 两个 seal 测试
+在链重算后复测 PASS）；`test_p5_4c_lite_gate.py` 31 passed +
+`test_p5_4c_lite_agent_product_gate.py` 47 passed +
+`test_agent_alpha_engineering.py` 等 focused 回归 PASS；frontend
+typecheck/lint PASS、`pnpm test` 51 passed、`NODE_ENV=production pnpm build`
+exit 0；maintainer map/benchmark validators exit 0；Mypy/Ruff 对修改路径
+PASS；`docker compose --env-file .env.example config` 默认 false / 工程
+override true 实测确认；P5.4C disposable Gate `--run` + `--verify-evidence`
+在 clean commit 上执行（见下方 Gate 证据状态）。production Runtime 继续
+disabled，Phase 5 Feature Gates 保持 false，migration head `0012`，migration
+`0013` absent，root `.env` 未读取，业务数据库未访问/迁移，未
+push/PR/merge。Production 状态继续为 `blocked/not_proven`；P5.4C disposable
+Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实性），
+`formal_builder_integration=not_proven`，不声称正式组合集成。
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、

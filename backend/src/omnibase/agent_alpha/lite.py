@@ -101,18 +101,25 @@ def lite_agent_posture(
 ) -> dict[str, object]:
     """Return a read-only, non-authorizing product posture.
 
-    ``env`` defaults to the live process environment for the status endpoint,
-    but tests pass an explicit mapping so the posture is reproducible and
-    independent of the ambient host.  When ``raw`` is omitted the Lite flag is
-    resolved through the runtime resolver (an explicit ``env`` mapping, when
-    given, substitutes for ``os.environ``).  The posture never authorizes
-    anything: it only describes what a UI should label.  Assembly decisions
-    stay in the fail-closed builders.
+    With an explicit ``env`` mapping the posture is reproducible and
+    independent of the ambient host: the Lite flag is read from that mapping
+    and the Phase 5 gates are parsed from it too.  With ``env=None`` the live
+    process environment is used: the Lite flag goes through
+    :func:`runtime_lite_agent_enabled` (the only place the gate reads
+    ``os.environ``) and the Phase 5 gates are parsed from ``os.environ``.
+    An explicit ``raw`` always wins over the environment.  The posture never
+    authorizes anything: it only describes what a UI should label.  Assembly
+    decisions stay in the fail-closed builders.
     """
-    environment = env if env is not None else os.environ
-    if raw is None:
-        raw = environment.get(LITE_AGENT_ENGINEERING_FLAG)
-    enabled = resolve_lite_agent_flag(raw)
+    if raw is not None:
+        environment = env if env is not None else os.environ
+        enabled = resolve_lite_agent_flag(raw)
+    elif env is not None:
+        environment = env
+        enabled = resolve_lite_agent_flag(environment.get(LITE_AGENT_ENGINEERING_FLAG))
+    else:
+        environment = os.environ
+        enabled = runtime_lite_agent_enabled()
     _, gates_false = _phase5_gates_false(environment)
     return {
         "lite_gate_enabled": enabled,

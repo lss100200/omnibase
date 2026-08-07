@@ -47,13 +47,24 @@ product loop (P5.2C). P5.4C is intentionally narrow:
   the gate reads the process environment (`os.environ.get(...)`), which it
   passes into the pure parser. The Browser dependency
   (`router.get_agent_alpha`) and the live posture use it, so setting
-  `AGENT_LITE_ENGINEERING_ENABLED=true` genuinely enables the route.
+  `AGENT_LITE_ENGINEERING_ENABLED=true` genuinely enables the route. The live
+  posture (`lite_agent_posture()` with `env=None`) delegates the Lite flag to
+  the runtime resolver and never reads it from `os.environ` itself; only an
+  explicit `env` mapping or explicit `raw` argument feeds the pure parser
+  directly.
 
 | Input (pure parser)            | Result                        |
 |--------------------------------|-------------------------------|
 | `None`, `""`, `"false"`        | `False` (default-off)         |
 | `"true"`                       | `True`                        |
 | any other token                | `LiteAgentConfigurationError` |
+
+`docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+`P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+fail-closed defaults of `false`; `.env.example` documents both. Verify with
+`docker compose --env-file .env.example config`: the backend environment
+receives `"false"` by default and `"true"` only under an explicit engineering
+override. Never read or stage the repository root `.env`.
 
 The gate is a **product entry guard**, never an authorization fact. Enabling it
 only authorizes the Lite Browser surface in a development/engineering
@@ -101,10 +112,26 @@ run-scoped, engineering-only disposable Gate with three modes:
 - `--run`: requires a clean checkout, executes the focused Lite unit suite and
   a live gate probe inside the backend container, and seals the source
   manifest, command receipts and measurements under unique raw-byte SHA-256
-  sidecars.
-- `--verify-evidence <path>`: independently re-verifies the sealed source,
-  artifact and evidence bytes, re-parses the probe receipt and re-derives every
-  claim from the recorded command vectors.
+  sidecars. The Gate only PASSES when every admission boolean meets its
+  expectation: `lite_gate_default_off`, `absent_off`, `false_off`, `true_on`,
+  `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only and
+  `formal_builder_named` must all be `true`; `root_env_accessed`,
+  `business_database_accessed`, `business_database_migrated` and
+  `production_runtime_activated` must all be `false`; and
+  `formal_builder_integration` must stay `not_proven`. A single mismatch makes
+  `passed=false` — the run directory is still preserved with the failing
+  claims.
+- `--verify-evidence <path>`: re-verifies the sealed source, artifact and
+  evidence bytes, re-parses the probe receipt, validates the **exact argv
+  template** of every recorded command (the explicit `.env.example` path, the
+  closed production engineering flags and the exact test target / probe source
+  are part of the closed set — a drifted vector that exited 0 is rejected),
+  re-derives every claim from the recorded command vectors, and then
+  **re-executes the same closed-set admission decision** that `--run`
+  computed. Verifying is not just "report equals derived values": derived
+  values that miss an admission expectation (e.g. `true_on=false`,
+  `invalid_fail_closed=false`, `live_posture=false`, mode drift or
+  command-vector drift) reject the evidence instead of verifying it.
 
 Every claim in the report is **derived from an executed receipt or a sealed
 file measurement** — nothing is hardcoded as a measurement:
@@ -123,6 +150,16 @@ The run directory is **preserved** on success and on failure and can be
 re-verified later; the Gate never deletes its own evidence. The Gate never
 reads the root `.env`, never touches a business database, never creates
 migration `0013`, and never opens a Phase 5 production Feature Gate.
+
+**Integrity scope.** The sealed evidence is a **self-contained integrity
+receipt**: it proves run-scoped byte integrity of the recorded source
+manifest, command receipts and measurements. Without an independent trust
+anchor it proves **no external authenticity** — it cannot authenticate who
+produced the bytes or that they came from any particular host — and it is
+never production admission. The report records this scope explicitly
+(`integrity_receipt.external_authenticity=false`,
+`integrity_receipt.trust_anchor=null`) and `--verify-evidence` enforces the
+wording.
 
 ## Verification
 

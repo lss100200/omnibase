@@ -1853,11 +1853,20 @@ The runtime resolver `runtime_lite_agent_enabled()` is the only place the gate
 reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and passes the value
 into the parser; the Browser dependency `router.get_agent_alpha()` and the live
 posture must use it, so setting the flag to `true` genuinely enables the route.
-Tests must isolate environment state with `monkeypatch`, proving absent -> off,
-false -> off, true -> on, invalid -> fail closed, ambient-variable independence
-of the pure parser, and that the runtime resolver reads the patched
-environment. API-level tests must prove that the flag reaches the assembled or
-unavailable Alpha dependency as appropriate instead of always returning the
+`lite_agent_posture()` with `env=None` resolves the Lite flag through the
+runtime resolver and must never read the flag from `os.environ` directly; only
+an explicit `env` mapping or an explicit `raw` argument feeds the pure parser.
+`docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+`P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+fail-closed defaults of `false`; `.env.example` documents both, and
+`docker compose --env-file .env.example config` must show `"false"` by default
+and `"true"` only under an explicit engineering override. Tests must isolate
+environment state with `monkeypatch`, proving absent -> off, false -> off,
+true -> on, invalid -> fail closed, ambient-variable independence of the pure
+parser, that the runtime resolver reads the patched environment, and that the
+`env=None` posture never reads the Lite flag from `os.environ` itself.
+API-level tests must prove that the flag reaches the assembled or unavailable
+Alpha dependency as appropriate instead of always returning the
 Lite-gate-disabled path.
 
 The P5.4C disposable Gate is run-scoped and engineering-only. It exercises the
@@ -1869,11 +1878,32 @@ sidecars. Every claim in the report is derived from an executed receipt or a
 sealed file measurement, or is reported `not_proven`; the
 root-env/business-database negatives are re-derived from the recorded command
 vectors and the migration head is re-discovered from the repository files, so
-nothing is a hardcoded measurement. `formal_builder_integration` is reported
-`not_proven` because this Gate never executes the formal persisted composition.
-The run directory is **preserved** on success and on failure and can be
-re-verified with `--verify-evidence` after the process exits; the Gate never
-deletes its own evidence and never claims production admission.
+nothing is a hardcoded measurement. The Gate only PASSES when the closed-set
+admission decision holds: `lite_gate_default_off`, `absent_off`, `false_off`,
+`true_on`, `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only
+and `formal_builder_named` all `true`; `root_env_accessed`,
+`business_database_accessed`, `business_database_migrated` and
+`production_runtime_activated` all `false`; `formal_builder_integration` stays
+`not_proven`. A single mismatch makes `passed=false`.
+`formal_builder_integration` is reported `not_proven` because this Gate never
+executes the formal persisted composition. The run directory is **preserved**
+on success and on failure and can be re-verified with `--verify-evidence`
+after the process exits; the Gate never deletes its own evidence and never
+claims production admission. `--verify-evidence` validates the **exact argv
+template** of every recorded command (the explicit `.env.example` path, the
+closed production engineering flags and the exact test target / probe source —
+a drifted vector that exited 0 is rejected) and **re-executes the same
+closed-set admission decision** that `--run` computed: verifying is not just
+"report equals derived values", because derived values that miss an admission
+expectation (e.g. `true_on=false`, `invalid_fail_closed=false`,
+`live_posture=false`, mode drift, command-vector drift) must reject the
+evidence. The sealed evidence is a **self-contained integrity receipt**: it
+proves run-scoped byte integrity of the recorded source manifest, command
+receipts and measurements, but without an independent trust anchor it proves
+**no external authenticity** (it cannot authenticate who produced the bytes)
+and is never production admission; the report records this scope
+(`integrity_receipt.external_authenticity=false`,
+`integrity_receipt.trust_anchor=null`) and the verifier enforces the wording.
 
 **Allowed changes**
 
@@ -1885,6 +1915,10 @@ deletes its own evidence and never claims production admission.
   production admission.
 - Tighten the formal-builder disclosure (identity, DTO or fail-closed checks)
   without integrating the formal composition into this loop.
+- Require the closed-set admission decision and the exact command-vector
+  templates in both `--run` and `--verify-evidence`, and describe the evidence
+  with self-contained integrity-receipt wording (run-scoped byte integrity,
+  no external authenticity, no trust anchor).
 
 **Forbidden changes**
 

@@ -11,6 +11,7 @@ dependency instead of always returning the Lite-gate-disabled path.
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -148,7 +149,9 @@ def test_lite_posture_defaults_off_and_never_authorizes(
     assert posture["tools_enabled"] is False
     assert posture["formal_builder"] == FORMAL_BUILDER_NAME
     assert posture["alpha_builder"] == ALPHA_BUILDER_NAME
-    assert tuple(posture["supported_invocation_modes"]) == ("no_tool",)
+    modes = posture["supported_invocation_modes"]
+    assert isinstance(modes, (list, tuple))
+    assert tuple(modes) == ("no_tool",)
     assert posture["formal_builder_integration"] == FORMAL_BUILDER_INTEGRATION
     assert posture["phase5_gates_all_false"] is True
 
@@ -174,9 +177,11 @@ def test_lite_posture_never_claims_formal_builder_integration(
     # name is displayed.
     for raw in (None, "true", "false"):
         posture = lite_agent_posture(raw=raw, env={"P5_4B_ENGINEERING_ENABLED": "true"})
-        assert tuple(posture["supported_invocation_modes"]) == ("no_tool",)
+        modes = posture["supported_invocation_modes"]
+        assert isinstance(modes, (list, tuple))
+        assert tuple(modes) == ("no_tool",)
         assert posture["formal_builder_integration"] == "not_integrated"
-        assert "knowledge_search_read_only" not in posture["supported_invocation_modes"]
+        assert "knowledge_search_read_only" not in modes
 
 
 def test_lite_posture_rejects_invalid_phase5_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,6 +201,49 @@ def test_lite_posture_live_path_uses_runtime_resolver(monkeypatch: pytest.Monkey
     monkeypatch.setenv(LITE_AGENT_ENGINEERING_FLAG, "1")
     with pytest.raises(LiteAgentConfigurationError, match="flag_invalid"):
         lite_agent_posture()
+
+
+def test_lite_posture_env_none_never_reads_os_environ_for_lite_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``env=None`` must resolve the Lite flag through the runtime resolver
+    only; the posture itself must not call ``os.environ.get`` on the flag.
+
+    ``runtime_lite_agent_enabled()`` is the single place the gate reads the
+    process environment, so the live posture delegates to it.  A hostile
+    ``os.environ.get(LITE_AGENT_ENGINEERING_FLAG)`` call is detected here by
+    wrapping the mapping and raising on that exact key; Phase 5 gate reads are
+    unaffected because they use different keys.
+    """
+
+    class _FailingLiteFlagEnv:
+        """Runtime stand-in for ``os.environ`` that raises if the Lite flag is
+        read directly (no dict subclass, so no Mapping override typing)."""
+
+        def __init__(self) -> None:
+            self._store: dict[str, str] = dict(os.environ)
+
+        def __setitem__(self, key: str, value: str) -> None:
+            # pytest itself writes PYTEST_CURRENT_TEST into os.environ during
+            # teardown; keep those writes functional.
+            self._store[key] = value
+
+        def get(self, key: str, default: str | None = None) -> str | None:
+            if key == LITE_AGENT_ENGINEERING_FLAG:
+                raise AssertionError(
+                    "lite_agent_posture(env=None) must not read the Lite flag "
+                    "from os.environ directly"
+                )
+            return self._store.get(key, default)
+
+    _clear_env(monkeypatch)
+    monkeypatch.setattr("omnibase.agent_alpha.lite.os.environ", _FailingLiteFlagEnv())
+    # The runtime resolver is the allowed reader; force its result so the
+    # posture is deterministic instead of depending on the wrapped mapping.
+    monkeypatch.setattr("omnibase.agent_alpha.lite.runtime_lite_agent_enabled", lambda: True)
+    posture = lite_agent_posture()
+    assert posture["lite_gate_enabled"] is True
+    assert posture["phase5_gates_all_false"] is True
 
 
 def test_lite_posture_independent_of_ambient_host(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -330,9 +378,14 @@ def test_api_flag_invalid_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(LITE_AGENT_ENGINEERING_FLAG, "1")
     app = _make_app()
     called: list[bool] = []
+
+    def _never_run(**_: object) -> SimpleNamespace:
+        called.append(True)
+        return SimpleNamespace()
+
     monkeypatch.setattr(
         "omnibase.agent_alpha.router.build_engineering_agent_alpha",
-        lambda **_: called.append(True) or SimpleNamespace(),
+        _never_run,
     )
     client = TestClient(app)
     with pytest.raises(LiteAgentConfigurationError, match="flag_invalid"):
