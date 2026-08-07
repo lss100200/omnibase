@@ -220,7 +220,13 @@ def _resource(
     )
 
 
-def _seed(db_engine, *, plan_digest: str, task_deadline_expired: bool = False) -> tuple[str, str]:  # type: ignore[no-untyped-def]
+def _seed(
+    db_engine,
+    *,
+    plan_digest: str,
+    task_deadline_expired: bool = False,
+    run_lease_expired: bool = False,
+) -> tuple[str, str]:  # type: ignore[no-untyped-def]
     schema = "tenant_p54b0001"
     _upgrade_head()
     from omnibase.tenants.service import _initialize_tenant_schema
@@ -435,7 +441,7 @@ def _seed(db_engine, *, plan_digest: str, task_deadline_expired: bool = False) -
             text(
                 "INSERT INTO omnibase_meta.run_leases "
                 "(id,tenant_id,run_id,workspace_id,node_id,node_fencing_token,generation,fencing_token,state,heartbeat_at,expires_at) "
-                "VALUES (:id,:tenant,:run,:workspace,:node,7,1,1,'active',now(),now()+interval '10 minutes') "
+                "VALUES (:id,:tenant,:run,:workspace,:node,7,1,1,'active',CASE WHEN :expired THEN clock_timestamp()-interval '10 minutes' ELSE clock_timestamp() END,CASE WHEN :expired THEN clock_timestamp()-interval '1 second' ELSE clock_timestamp()+interval '10 minutes' END) "
                 "ON CONFLICT (id) DO UPDATE SET "
                 "tenant_id=EXCLUDED.tenant_id, run_id=EXCLUDED.run_id, workspace_id=EXCLUDED.workspace_id, node_id=EXCLUDED.node_id, node_fencing_token=EXCLUDED.node_fencing_token, generation=EXCLUDED.generation, fencing_token=EXCLUDED.fencing_token, state=EXCLUDED.state, heartbeat_at=EXCLUDED.heartbeat_at, expires_at=EXCLUDED.expires_at"
             ),
@@ -445,6 +451,7 @@ def _seed(db_engine, *, plan_digest: str, task_deadline_expired: bool = False) -
                 "run": WORKSPACE_RUN,
                 "workspace": WORKSPACE,
                 "node": RUNTIME_NODE,
+                "expired": run_lease_expired,
             },
         )
         connection.execute(
@@ -572,12 +579,14 @@ def _prepare_executor(
     evidence_overrides: dict[str, object] | None = None,
     gateway_override=None,
     task_deadline_expired: bool = False,
+    run_lease_expired: bool = False,
 ):
     plan = plan or _plan()
     private_key, certificate_thumbprint = _seed(
         db_engine,
         plan_digest=plan.proposal.proposal_digest,
         task_deadline_expired=task_deadline_expired,
+        run_lease_expired=run_lease_expired,
     )
     now = datetime.now(UTC)
     token = encode_capability_token(
@@ -681,7 +690,6 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(p54b_d
         "UPDATE omnibase_meta.agent_runs SET state='paused' WHERE id=:id",
         "UPDATE omnibase_meta.workspace_runs SET desired_state='paused', observed_state='paused' WHERE id=:id",
         "UPDATE omnibase_meta.run_leases SET expires_at=clock_timestamp() WHERE id=:id",
-        "UPDATE omnibase_meta.run_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE id=:id",
         "UPDATE omnibase_meta.run_leases SET state='revoked' WHERE id=:id",
         "UPDATE omnibase_meta.run_leases SET state='completed' WHERE id=:id",
         "UPDATE omnibase_meta.run_leases SET state='expired' WHERE id=:id",
@@ -689,7 +697,7 @@ def test_engineering_composition_seeds_and_executes_gateway_backed_search(p54b_d
         "UPDATE omnibase_meta.workspace_nodes SET state='revoked', revoked_at=clock_timestamp() WHERE id=:id",
         "UPDATE omnibase_meta.node_attestations SET state='rejected' WHERE node_id=:id",
         "UPDATE omnibase_meta.node_attestations SET state='revoked' WHERE node_id=:id",
-        "UPDATE omnibase_meta.node_attestations SET expires_at=clock_timestamp() WHERE node_id=:id",
+        "UPDATE omnibase_meta.node_attestations SET verified_at=clock_timestamp()-interval '10 minutes', expires_at=clock_timestamp()-interval '1 second' WHERE node_id=:id",
         "DELETE FROM omnibase_meta.node_attestations WHERE node_id=:id",
         "UPDATE omnibase_meta.workspaces SET generation=2 WHERE id=:id",
     ],
@@ -729,6 +737,18 @@ def test_expired_task_deadline_seed_fails_before_gateway(p54b_db) -> None:  # ty
             context=context,
             plan=plan,
             request=KnowledgeSearchRequest(resource_id=RESOURCE, query="expired"),
+        )
+    assert seam.calls == 1
+    assert gateway.calls == 0
+
+
+def test_expired_active_run_lease_seed_fails_before_gateway(p54b_db) -> None:  # type: ignore[no-untyped-def]
+    plan, context, seam, gateway, executor = _prepare_executor(p54b_db, run_lease_expired=True)
+    with pytest.raises(TypedExecutorError, match="knowledge_search_failed"):
+        executor.execute(
+            context=context,
+            plan=plan,
+            request=KnowledgeSearchRequest(resource_id=RESOURCE, query="expired lease"),
         )
     assert seam.calls == 1
     assert gateway.calls == 0

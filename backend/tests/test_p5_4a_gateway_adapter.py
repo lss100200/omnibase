@@ -7,6 +7,7 @@ import pytest
 
 from omnibase.agent_executor import (
     CapabilityGatewayKnowledgeSearchPort,
+    ExecutorContractError,
     ExecutorInvocationContext,
     GatewayAdapterDenied,
     GatewayAdapterError,
@@ -206,11 +207,8 @@ def test_gateway_adapter_rejects_physical_locator_without_leaking_it() -> None:
     port, gateway, _, _ = _port()
     locator = "postgresql://db/internal/schema/table"
 
-    with pytest.raises(GatewayAdapterDenied) as raised:
-        port.search(
-            context=_context(),
-            request=KnowledgeSearchRequest(resource_id=locator, query="hello"),
-        )
+    with pytest.raises(ExecutorContractError) as raised:
+        KnowledgeSearchRequest(resource_id=locator, query="hello")
 
     assert "postgresql" not in str(raised.value)
     gateway.rag_search.assert_not_called()

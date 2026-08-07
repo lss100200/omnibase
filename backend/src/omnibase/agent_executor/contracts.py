@@ -12,6 +12,7 @@ import json
 import math
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import UUID
 
 # ``knowledge_search`` is the immutable P5.3A tool binding.  The capability
 # gateway-facing name is kept separate so the planner contract does not need
@@ -36,10 +37,12 @@ def _required_string(value: object, *, name: str, max_length: int = 256) -> str:
 
 def _logical_uuid(value: object, *, name: str) -> str:
     result = _required_string(value, name=name, max_length=64)
-    # Public contracts carry opaque logical identifiers.  Reject separators,
-    # whitespace and control characters without exposing a physical locator.
-    if any(ch.isspace() or ord(ch) < 32 for ch in result):
-        raise ExecutorContractError(f"{name} must be a logical identifier")
+    try:
+        canonical = str(UUID(result))
+    except (ValueError, AttributeError) as exc:
+        raise ExecutorContractError(f"{name} must be a logical UUID") from exc
+    if canonical != result:
+        raise ExecutorContractError(f"{name} must be a canonical logical UUID")
     return result
 
 
