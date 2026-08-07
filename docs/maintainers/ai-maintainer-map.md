@@ -650,6 +650,35 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   Model Gateway 与无工具 Alpha 是另行授权的 engineering modules。生产
   Runtime、Planner/Executor/scheduler/worker、工具与多 Agent 仍 frozen。
 
+### 6.12 桌面运行时、诊断与 RAG 性能 profile（INV-052）
+
+`backend/src/omnibase/runtime/**` 提供 provider-neutral 的本地宿主能力
+contract（`capabilities.py`：OS/arch/memory/disk/GPU/container engine/
+network/ports，全部携带 `EvidenceState` provenance）、递归有界脱敏诊断
+（`diagnostics.py`：mapping/list/tuple 递归 redact、大小写不敏感敏感键、
+depth/width/string 上限、cycle 确定性标记、JSON 确定性与类型化签名）与
+allowlisted Compose 生命周期包装（`lifecycle.py`：
+`doctor/ports/start/status/health/logs/stop`，只传参数数组并显式
+`--env-file .env.example`，绝不拼接 shell 字符串）。
+`backend/src/omnibase/rag/performance.py` 提供有界 CPU/CUDA/MPS profile，
+embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
+`fallback_rrf`。`scripts/runtime/omnibase_desktop.py` 是对应 CLI。
+
+- 硬性边界：hostname 不是网络证据；Docker/Podman/WSL/Hyper-V 可执行文件
+  存在不是 hostile-code isolation 证明；Hardened 模式始终
+  `blocked/not_proven`，除非独立 sealed Runner/Broker/Gateway 证据链被注入
+  并验证。桌面 wrapper 永不声称 Hardened start 支持。
+- 脱敏边界：sensitive key 大小写不敏感匹配；嵌套 sequence 内的 secret
+  必须替换；异常文本/命令行/env/URL/DSN 中的凭据不得泄漏；超出深度/宽度/
+  长度用确定性 marker 而非递归或泄漏。攻击测试矩阵见
+  `backend/tests/test_runtime_redaction_attacks.py`。
+- 平台证据矩阵：只有当前实测 host 标记 detected；Windows/macOS/Linux、
+  x86_64/ARM64、NVIDIA/MPS 与容器变体未在本机运行的一律 `not_proven`。
+- 维护者 map 模块 `desktop-runtime`（INV-052）与验证命令见
+  `docs/maintainers/maintenance-map.json`；本机 CLI 验证用
+  `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
+  及 `start --profile hardened` 负向测试。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界

@@ -2919,3 +2919,68 @@ P34.7=blocked/not_proven
 P5.4B production admission=blocked/not_proven
 production Runtime=disabled
 ```
+
+### Cross-Platform Desktop Runtime and Performance Review-Fix（2026-08-07）
+
+针对分支 `external/cross-platform-desktop-runtime` 的 Review-Fix Round 1，
+修复 review 提出的 6 个 blocking defects，全部 forward-fix 于普通
+review-fix commit（无 amend/rebase/reset，无 push/PR/merge）。
+
+修复内容：
+
+1. **脱敏安全**：`diagnostics.redact_mapping` 从 mapping-only 改为对 bounded
+   JSON-like 值（mapping/list/tuple/scalar）的递归脱敏，敏感键大小写不敏感
+   匹配（authorization、cookie/set-cookie、api key/token/secret/password/
+   private-key/credential 变体与仓库 provider 凭据名），嵌套 sequence 中的
+   secret 一律替换为 `[REDACTED]`；显式最大深度 8、最大集合 256、最大字符串
+   2048；cycle 用 `id()` 跟踪并输出确定性 `[CYCLE]` 标记；新增攻击矩阵
+   `backend/tests/test_runtime_redaction_attacks.py`（nested sequences、mixed
+   case、bearer/basic、URL/DSN、multiline exception、cycles、depth/width/
+   string 上限），断言 forbidden markers 在结构化输出与序列化 JSON 中均缺席。
+2. **类型正确性**：移除 `*args/**kwargs` 非类型化转发，`diagnostics_json`
+   改为显式类型化签名；Mypy 对 `src/omnibase/runtime` 与
+   `src/omnibase/rag/performance.py` exit 0，无 `type: ignore`。
+3. **诚实网络检测**：`probe_network_state` 不再用 hostname 推断网络可用性，
+   默认 `unknown`；仅显式 caller 提供的 closed-set 值（available/
+   unavailable/unknown）才接受为 `configured`。修复过程中还修正了返回 tuple
+   尾逗号问题（返回类型与测试期望一致）。
+4. **GPU 探测**：新增 bounded NVIDIA/CUDA probe（`nvidia-smi` 存在时才运行，
+   timeout 3s，只读 name/driver_version/memory.total，不捕获 secret）与
+   Apple Silicon/MPS 平台探测（arm64 + darwin → detected，不打开 Metal
+   device）；无 NVIDIA 且非 macOS 时整体 GPU 保持 `unknown` 而非
+   `not_applicable`，CPU-only fallback 有效。
+5. **桌面生命周期**：`scripts/runtime/omnibase_desktop.py` 从纯诊断打印机
+   扩展为 allowlisted 生命周期 wrapper（`doctor/capabilities/ports/
+   ports-suggest/start/status/health/logs/stop`），基于
+   `backend/src/omnibase/runtime/lifecycle.py`：只允许 lite|local profile
+   （hardened 在构造期拒绝，CLI 负向测试 `start --profile hardened` 被
+   argparse 拒绝）；服务与 Compose 动词均为闭集 allowlist；命令总是参数数组
+   直接传给 `subprocess`（绝不拼接 shell 字符串），并显式
+   `--env-file .env.example`；日志/状态/健康输出全部经过脱敏 redactor；
+   端口检测明示 advisory（startup 必须自行处理 bind failure）。
+6. **RAG performance profile**：CPU/CUDA/MPS 保守 profile，embedding
+   readiness 与 reranker readiness 分离，reranker 缺失/超时显式
+   `fallback_rrf`，batch/warmup/keep-alive/query timeout 有界，测试覆盖
+   low-memory fallback、unknown GPU、unavailable reranker、timeout、非法
+   设置与确定性选择。
+7. **治理**：维护者 map 新增 `desktop-runtime` 模块与 INV-052（脱敏递归
+   性与 capability provenance）；`security-invariants.md` 新增 INV-052 段落；
+   `ai-maintainer-map.md` 新增 6.12 章节；`docs/desktop-runtime.md` 更新为
+   生命周期命令、schema 字段语义与平台证据矩阵。
+
+本机验证（全部 exit 0）：focused pytest 40 passed（capabilities +
+redaction attacks + RAG performance）；Ruff check 与 format --check 通过；
+Mypy `src/omnibase/runtime` + `rag/performance.py` 通过；compileall 通过；
+CLI `doctor` 通过、`start --profile hardened` 被拒绝；`git diff --check`
+干净。Compose canonical backend/frontend 全量测试、mypy src 全量、维护者
+map/benchmark validators 与 `docker compose config --quiet` 未在本机执行
+（需容器环境，已按 unverified 报告，未伪造通过）。
+
+平台证据矩阵：仅当前 Windows x64 实测 host 标记 detected；macOS/Linux、
+Apple Silicon/MPS、NVIDIA、WSL/Hyper-V 与独立 Runner 全部 `not_proven`，
+不做任何跨平台推广声明。Hardened 保持 `blocked/not_proven`。
+
+未执行项：无真实 macOS/Apple Silicon/Linux Runner/GPU 平台测试；无
+disposable PostgreSQL integration/destructive 测试；无生产 Runtime 激活、
+migration `0013`、Phase 5 Feature Gate 开启、业务数据库访问或根 `.env`
+读取。未 push、未创建 PR、未 merge。

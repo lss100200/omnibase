@@ -2063,3 +2063,74 @@ If the contract, Git source, migration head or example manifest drifts, stop
 admission and restore the last reviewed compile-only contract or forward-fix it
 in a new commit. Keep every Phase 5 Feature Gate false. Do not create a database
 rollback or runtime fallback: P5.6A has no database and executes no Skill.
+
+## INV-052 desktop-diagnostics-redaction
+
+**Authoritative source**
+
+- `backend/src/omnibase/runtime/diagnostics.py`
+- `backend/src/omnibase/runtime/capabilities.py`
+- `backend/src/omnibase/runtime/lifecycle.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_capabilities.py`
+
+**Why it exists**
+
+The desktop diagnostics redactor is the privacy boundary between operator
+support bundles and secrets. It must redact secrets recursively through
+mappings, lists and tuples, match sensitive keys case-insensitively
+(authorization, cookie/set-cookie, api key/token/secret/password/private-key/
+credential variants and repository-specific provider credential names), bound
+depth/collection size/rendered string length, and handle cycles deterministically
+without recursion crashes or leaking cycle contents. The public payload must stay
+JSON-serializable and deterministic, and the typed signature must never forward
+untyped `*args/**kwargs` into the payload builder.
+
+Capability facts must carry provenance and an evidence state. A hostname is not
+network evidence; Docker/Podman/WSL/Hyper-V executable presence is not
+hostile-code isolation proof; and Hardened mode stays fail-closed and
+`blocked/not_proven` unless independently sealed Runner/Broker/Gateway evidence
+is injected and verified. Evidence from one host is never generalized to another
+platform.
+
+**Allowed changes**
+
+- Tighten redaction key fragments, bounds, deterministic markers or the
+  evidence/provenance vocabulary.
+- Add attack tests for nested sequences, mixed case, bearer/basic credentials,
+  URLs, DSNs, multiline exceptions, cycles, excessive depth/width and oversized
+  strings, asserting forbidden markers are absent from structured output and
+  serialized JSON.
+- Extend lifecycle verbs only through the allowlisted Compose argument-array
+  wrapper with explicit `--env-file .env.example`.
+
+**Forbidden changes**
+
+- Returning secrets embedded in nested sequences, exception representations,
+  command arguments, environment values, URLs/query strings, headers or
+  connection strings.
+- Inferring network availability from hostname, or claiming Hardened/Local
+  capability from executable presence alone.
+- Building shell command strings from user input, exposing arbitrary command
+  execution, or running Compose without `--env-file .env.example`.
+- Creating migration `0013`, activating production Runtime, or opening any
+  Phase 5 Feature Gate from desktop diagnostics or lifecycle behavior.
+
+**Required verification**
+
+- `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_rag_performance.py`
+- Focused Ruff check/format and Mypy for `backend/src/omnibase/runtime/**` and
+  `backend/src/omnibase/rag/performance.py`
+- `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
+- CLI negative test: `start --profile hardened` must be rejected
+- Maintainer map and benchmark validators
+- Compose config with explicit `.env.example`
+
+**Recovery**
+
+If redaction leaks a secret or a capability fact over-claims from executable
+presence, stop use of the diagnostics bundle, fix the redactor/detector in a
+new commit, and re-run the attack matrix. Keep Hardened `blocked/not_proven`
+and every Phase 5 Feature Gate false.
