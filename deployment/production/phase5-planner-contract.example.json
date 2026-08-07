@@ -18,21 +18,21 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "4cc7b08f554e60261178ab93d576c2b105294edc1790f241b86de873e9f189fc"
+      "sha256": "3490c42a9314443e6ca19e6c8a8a5b938bf7df8dd6ddd130e870a36895f68619"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "7ff46aaf10e9a58a4ceea59c5b24cb239bf5b8ee8cd9dd45fab0ac07649ccb8e"
+      "sha256": "b29132e8f94c76ed4404790f7b4044edb0ee95787dcebee14e83b7f749a5ed93"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "083ff6a3473b49fd559fd8911b1ff3eb5879784fed4cbc2d374093bcd45a446e"
+      "sha256": "944c067ab1ce0451b60a5b8e440010e4e07e22a27fd11ddf6f6abf5bce709b31"
     }
   },
   "source": {
@@ -269,7 +269,7 @@
           "approval_requirement": null,
           "effect_class": "read_only",
           "execution_requirement": null,
-          "node_digest": "17c895687f87a9662b869e78c766fee4380ae326ee265a2b7a5e71e70acd7817"
+          "node_digest": "92c957b5f74fdd74758bcaf1d49bbcf4c24038f62e68a8a218db2608eece55a6"
         }
       ],
       "plan_budget": {
@@ -292,7 +292,7 @@
         "low": 1,
         "medium": 0
       },
-      "proposal_digest": "2b68b997c14066c1b200a45b783fd4cf96bd034ec2db720fa0f694405de30313",
+      "proposal_digest": "1ba478efa5b9640172d4ef009ed15d9fb3f2d9c8ad6c1bbef14ec3f705a45632",
       "parent_proposal_id": null,
       "parent_proposal_version": null
     }
@@ -320,7 +320,8 @@
     "0008",
     "0009",
     "0010",
-    "0011"
+    "0011",
+    "0012"
   ],
   "sealed_contracts": [
     {
@@ -331,7 +332,7 @@
     {
       "name": "registry_contract_module",
       "path": "backend/src/omnibase/production/phase5_registry_contract.py",
-      "sha256": "c43d40e73a99f2efc38013034cbe16cc56cd38f0a71541a45f772adbae37e6ec"
+      "sha256": "ba25c7f356574a00658db6c2f86ec047c468cc069db9e6400ab809e37406aa6e"
     },
     {
       "name": "admission_module",
@@ -341,17 +342,17 @@
     {
       "name": "threat_model",
       "path": "docs/phase-5-threat-model.md",
-      "sha256": "bbb1f5a87e66f64792c435fa0def65e4cd5c57aaf84cb522fd55b6d27ea13b2d"
+      "sha256": "4493047c9e2b057326f6fb5dcf122602d47b4f6eed68c85657acb2180bfe60ea"
     },
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "22dd8114204de51c7fa9cf05efb2246abc3396e201641a36579cf919cc077eb9"
+      "sha256": "4edf7abb13e569a93b1df36f7aa1c08b4eb707a4d34482049740fc2bc4d690cd"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "5e69fd9b5b6ad25a73687d9dfb38e22db5fca2a50ab96e438f46221df49c5fe4"
+      "sha256": "9adfa6e004956c83ac0d78e830fe766d23128bab68581594e3a3512b71ea92e1"
     }
   ],
   "openapi_snapshot": {

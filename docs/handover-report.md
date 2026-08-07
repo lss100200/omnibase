@@ -2778,6 +2778,23 @@ passed`、`old P5.4B evidence superseded/incomplete`、`production Runtime disab
 `migration 0013 absent`、`production admission blocked/not_proven`。不得写成
 production PASS，也不得由本 Gate 自动开始 P5.4C。
 
+后续完整挂载的 P34.7/P5 与全 Backend non-integration 回归发现了一个独立于
+P5.4B runtime 实现的共享封存漂移：P5.4B 更新维护者地图和安全不变量后，P5.1A、
+P5.2A 以及 P5.3A 示例合同仍引用旧 SHA-256。该分支已按 forward-fix 同步
+`phase5-registry-contract.example.json`、`phase5-task-ledger-contract.example.json`
+和 `phase5-planner-contract.example.json` 的真实 raw-byte digest，并处理 P5.1A
+合同变更引起的 P5.2A、P5.3A 二级引用更新。P5.3A 的示例 PlanProposal/node
+canonical digest 与 migration baseline 也同步到当前 `0012`；没有删除、放宽或
+绕过 sealed-digest 校验。原始失败稳定表现为 P5.1A/P5.2A 从预期
+`blocked/not_proven` 退化为 `invalid/veto`，veto 为
+`sealed contract drifted: maintainer_map`；修复后的精准复测恢复为通过。
+
+本 forward-fix 提交不预先声称它自己的未来证据。只有从该 exact clean commit
+生成的新 run-scoped P5.4B Gate v2 evidence、独立 `--verify-evidence`、raw-byte
+SHA-256 复算和 cleanup `0/0/0` 全部通过后，才能继续声明 engineering Gate
+passed；即使通过，production Runtime、三个 Feature Gate、migration `0013` 和
+P5.4C 仍保持关闭。
+
 ---
 
 ### P5.6A first-party native Skill contract admission（2026-08-05）
@@ -2880,12 +2897,13 @@ Gateway、lease/fencing、workload identity、预算、审计和 fail-closed 边
 `locked` 与 `blocked/not_proven`。Quick Start 和宣传材料不得把 Roadmap、
 Disposable Gate 或 engineering seam 写成 production availability。
 
-当前 P5.4B 外部实现仍处于 Review-Fix：独立审查确认其首次 disposable integration
-绕过新增 composition/`LiveRuntimeAuthorityValidator`，并发现 AgentRun ID 与
-WorkspaceRun/RunLease ID 混用、负向矩阵不足以及 source/evidence seal 不完整。
-因此旧 P5.4B evidence 只能标记为 superseded/incomplete，不能声明
-`engineering_composition_ready=true`。外部模型正在同一独立工作树执行修复；
-在其完成并经独立复验前，不开始本节其余实现工作。
+P5.4B 首次 disposable integration 绕过 formal composition、AgentRun ID 与
+WorkspaceRun/RunLease ID 混用、负向矩阵不足以及 source/evidence seal 不完整的
+问题已经由 Review-Fix Round 1 forward-fix；旧 P5.4B evidence 继续标记为
+superseded/incomplete。完整回归随后发现共享 Phase 5 示例合同仍封存旧的维护者
+地图/安全不变量摘要，因此该分支又执行了不放宽 Gate 的 sealed-contract refresh。
+P5.4B 是否达到 engineering Gate passed 必须以该 refresh 的 exact clean commit
+生成并独立验证的最新 Gate v2 evidence 为准；任何旧 run 都不能替代当前源码封存。
 
 本次批准仅更新路线和交接文档，不授权 migration `0013`、production Runtime
 激活、三个 Phase 5 Feature Gate 开启、Browser execution API、高风险插件、
@@ -2898,6 +2916,6 @@ MULTI_AGENT_ENABLED=false
 migration head=0012
 migration 0013=absent
 P34.7=blocked/not_proven
-P5.4B engineering composition admission=not proven
+P5.4B production admission=blocked/not_proven
 production Runtime=disabled
 ```
