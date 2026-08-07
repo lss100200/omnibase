@@ -80,12 +80,10 @@ def main(argv: list[str] | None = None) -> int:
             report = validate_joint_evidence_contract(payload)
             code = 2
         else:
-            assert args.verify_evidence is not None  # noqa: S101
+            assert args.verify_evidence is not None
             run_dir: Path = args.verify_evidence
             payload = _load_evidence(args.evidence)
-            report = verify_joint_evidence(
-                run_dir, payload, trust_policy_path=args.trust_policy
-            )
+            report = verify_joint_evidence(run_dir, payload, trust_policy_path=args.trust_policy)
             code = 0 if report.passed else 2
     except (ConfigurationError, OSError, UnicodeError, json.JSONDecodeError) as exc:
         result = {

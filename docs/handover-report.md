@@ -1667,6 +1667,54 @@ git diff --check：passed
    P34.7 总判定维持 `BLOCKED / NOT_PROVEN`，Phase 5 继续 `PLANNED / FROZEN`，未读取根 `.env`，未访问或
    迁移业务数据库，未激活 production Runtime/Planner/multi-Agent，未创建 migration 0013。
 
+### P34.7 joint gate 生产级加固（Round 3 review-fix，2026-08-07）
+
+> Round 3 是安全关键加固轮：全部十项要求已实现并有测试覆盖，其中唯一的 TRUE positive control 证明
+> pass 路径真实存在（测试内 monkeypatch 临时批准 policy digest，不落入 production approved set），
+> 9 个 post-approval 攻击测试证明任何单一漂移都会 `passed=false` 或 `invalid/veto`。由于不存在独立
+> approved trust policy，P34.7 总判定保持 `BLOCKED / NOT_PROVEN`。
+
+1. **executable 实际字节三重绑定**：`_verify_receipt_executable` 读取 run 目录下 executable 的真实文件
+   字节并计算 SHA-256，要求 actual digest == receipt 声明 digest == policy pin digest；component
+   evidence 的 executables 列表同样对照 manifest。替换实际字节而不改 receipt 的攻击被
+   `artifact_provenance=not_proven` 阻塞。
+2. **每个 executable 必须出现在 approved artifact manifest**：manifest 的 path/size/sha256 条目逐项
+   对照真实字节（`_verify_manifest` 返回 path→(size, sha256) 映射），receipt 与 component 均强制
+   manifest membership；只在 receipt/policy 声明中存在的 executable 不能通过。forge 工具与测试
+   fixture 的 artifact manifest 现已包含全部 `bin/*` 执行体。
+3. **evidence seal 绑定完整姿态**：canonical binding 覆盖 schema/schema_version、environment、
+   disposable、完整 provenance（repository/source_commit/source_tree/dirty）与验证链派生的全部当前
+   顶层安全姿态（signature_authenticity、artifact_provenance、command_semantics、certificate_posture、
+   replay_posture、runtime_posture、production_runtime_inactive、hostile_code_not_executed、
+   root_env_not_accessed、business_database_not_accessed、business_database_not_migrated、
+   attack_results、cleanup_complete）；`joint_gate.compute_seal_binding()` 是 verifier/forger/tests
+   共用的唯一 canonical builder，任何外层字段改写都会使重算 binding 与 recorded digest/签名不符。
+4. **七个 producer 公钥唯一**：policy 解析强制六组件 + sealer 七把 Ed25519 公钥全部不同，sealer 必须
+   区别于所有 producer；重复 key fail-closed（`invalid/veto`）。`p34-7-trust-policy.example.json`
+   占位 key 已改为七个互不相同的值。
+5. **gateway 证书时间窗**：必须满足 `valid_from <= now < valid_until`；未来证书（valid_from 在未来）
+   与过期证书同样被 `certificate_posture=not_proven` 拒绝，issuer/SAN/最大有效期/吊销/replay 检查
+   全部保留。
+6. **TRUE positive control（政策批准后）**：`test_positive_control_signed_chain_passes_after_policy_approval`
+   用 pytest monkeypatch 临时把测试 policy digest 放入 `_APPROVED_TRUST_POLICY_SHA256`（in-process
+   仅此测试），完整签名、manifest 绑定、seal 一致的链达到 `passed`、零 blocker；teardown 恢复空集，
+   production approved set 仍为空，测试 digest 永不提交。
+7. **9 个 post-approval 攻击测试**全部 `passed=false` 或 `ConfigurationError`：替换实际
+   bin/core_runner 字节不改 receipt（artifact_provenance 阻塞）；executable 缺席 artifact manifest
+   （阻塞）；environment staging→production、disposable true→false、dirty true→false 无重签改写
+   （envelope veto 与 seal-binding veto 双路径）；七角色共用一把 Ed25519 key（policy 解析 veto）；
+   sealer 与 producer 共用 key（policy 解析 veto）；valid_from 在未来（certificate_posture 阻塞）；
+   executable/manifest/receipt 三方 digest 漂移（receipt 侧阻塞 + manifest 侧 veto）。
+8. **`_APPROVED_TRUST_POLICY_SHA256` 保持空集**：本轮未批准任何真实 trust policy；所有 fixture 恒
+   `blocked/not_proven`（除上述 in-process positive control）。
+9. **验证**：`test_p34_7_joint_gate.py` 65 passed / 1 skipped（Windows symlink 由 reparse 守卫覆盖，
+   如实报告）；P34.7 focused + P5.0/P5.1A/P5.2A/P5.3A 联合 562 passed / 1 skipped（host）；
+   容器 canonical 矩阵、production mypy、changed-scope ruff check/format、maintainer map/benchmark
+   结果见 commit 报告；P34.7+Phase 5 sealed digest 链在最终字节上重算。
+10. P34.7 总判定不变：`BLOCKED / NOT_PROVEN`，production activation DISABLED，Phase 5
+    `PLANNED / FROZEN`，未读取根 `.env`，未访问或迁移业务数据库，未激活 production
+    Runtime/Planner/multi-Agent，未创建 migration 0013，未 push。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不

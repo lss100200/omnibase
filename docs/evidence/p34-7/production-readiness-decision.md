@@ -146,3 +146,48 @@ one - remains `blocked/not_proven`. `scripts/production/forge_p34_7_evidence_bun
 forges complete bundles to prove they can never pass. The overall P34.7
 decision is unchanged: `BLOCKED / NOT_PROVEN`, production activation DISABLED,
 Phase 5 PLANNED / FROZEN.
+
+## Round 3 review-fix: hardened production joint gates (2026-08-07)
+
+The external review required hardening before the joint gate can be considered
+a pass-capable authenticity boundary. All ten items are implemented and
+covered by tests:
+
+1. `_verify_receipt_executable` now reads the ACTUAL executable file bytes and
+   computes SHA-256; a pass requires actual digest == receipt digest ==
+   approved policy digest.
+2. Every executable must appear in the approved artifact manifest, whose
+   path/size/sha256 entries are verified against the real bytes; executables
+   may no longer exist only in receipt/policy declarations.
+3. The evidence seal's canonical binding (`joint_gate.compute_seal_binding()`)
+   covers schema/schema_version, environment, disposable, full provenance
+   (repository/source_commit/source_tree/dirty) and all current top-level
+   security posture; any outer-field rewrite fails the recorded binding
+   digest / detached signature.
+4. The trust policy's seven producer roles (six components + sealer) must have
+   seven unique Ed25519 public keys; duplicates fail closed at policy parse.
+5. Gateway certificates must satisfy `valid_from <= now < valid_until`;
+   future certificates are rejected while issuer/SAN/max-lifetime/revocation/
+   replay checks remain.
+6. A TRUE positive control test proves the signed, manifest-bound,
+   seal-consistent chain reaches `passed` when the policy digest is approved
+   in-process via monkeypatch; the test digest is never committed into
+   `_APPROVED_TRUST_POLICY_SHA256`, which remains empty.
+7. Nine post-approval attack tests (swapped executable bytes, executable
+   absent from the artifact manifest, environment/disposable/dirty outer-field
+   rewrites without key rewrite, all seven roles sharing one key, sealer
+   sharing a key with a producer, future `valid_from`, and
+   executable/manifest/receipt three-way digest drift) all yield `passed=false`
+   or `ConfigurationError`.
+8. `_APPROVED_TRUST_POLICY_SHA256` remains an empty set; no real trust policy
+   was approved by this round.
+9. P34.7 focused tests: `65 passed, 1 skipped` (Windows symlink covered by
+   reparse guards); the full maintainer-map matrix, mypy, Ruff check/format
+   and map/benchmark validators pass (details in the handover report).
+10. The P34.7 / Phase 5 sealed digest chain was recomputed from the final
+    bytes and the ordinary forward-fix commit appended.
+
+The overall P34.7 decision is UNCHANGED: `BLOCKED / NOT_PROVEN`, production
+activation DISABLED, Phase 5 PLANNED / FROZEN. No fixture received production
+`passed`; no trust policy was approved; the root `.env` was not read and no
+business database was accessed or migrated.

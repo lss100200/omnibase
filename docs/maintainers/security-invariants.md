@@ -1047,6 +1047,12 @@ P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑�
 
 哈希只证明 operator 写入的字节未被改写，不证明证据真实性。自伪造的完整 bundle（所有文件与哈希都由同一 operator 生成）绝不能得到 `passed`：component/attack/cleanup/posture evidence 必须是解析过的 canonical JSON 并绑定 run id、producer、source/artifact identity、command receipt、peer identities、measurements 与 results；每条 evidence 与 command receipt 都需要能对照**证据目录之外的独立 trust policy**（allowlisted producer Ed25519 公钥、approved source seal、approved artifact manifest、精确 argv 模板、env allowlist、gateway certificate pins）验证的 detached signature。policy 的原始字节必须命中代码内 pin 的 approved digest（当前为空集，因此任何 bundle 都保持 `blocked/not_proven`）；bundle 内携带的公钥不是信任锚。攻击与清理结果必须从已签名 evidence 解析并与 inventory 交叉核对，不得用内联 status/count 字段替代。
 
+执行体必须三重绑定：receipt 声明的 executable digest、policy pin 的 digest 与**实际文件字节**的 SHA-256 必须一致，且每个 executable 必须出现在 approved artifact manifest 中（manifest 的 path/size/sha256 条目逐项对照真实字节）。任何只在 receipt/policy 声明中存在、或磁盘字节与签名 receipt 声明漂移的 executable 都是 `artifact_provenance=not_proven` 阻塞项。
+
+evidence seal 的 canonical binding 必须覆盖 schema/schema_version、environment、disposable、完整 provenance（repository/source_commit/source_tree/dirty）以及验证链派生的全部当前顶层安全姿态（signature_authenticity、artifact_provenance、command_semantics、certificate_posture、replay_posture、runtime_posture、production_runtime_inactive、hostile_code_not_executed、root_env_not_accessed、business_database_not_accessed、business_database_not_migrated、attack_results、cleanup_complete）；外层字段的任何改写（environment `staging`→`production`、`disposable` `true`→`false`、`dirty` `true`→`false` 等）都会使重算 binding 与 recorded digest/签名不符而失败。
+
+policy 的七个 producer 角色（六个组件 + sealer）公钥必须全部唯一，至少 sealer 必须与所有 producer 不同；重复公钥在 policy 解析时 fail-closed。gateway 证书必须满足 `valid_from <= now < valid_until`；未来证书与过期证书同样被拒绝，issuer/SAN/最大有效期/吊销/replay 检查保持强制。
+
 **允许的改法**
 
 - 扩展显式 source scope、evidence schema 或验证断言，同时保留根 `.env`、symlink/reparse、非 regular file 和仓库外路径拒绝。
@@ -1064,7 +1070,7 @@ P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑�
 **必须运行的测试**
 
 - `backend/tests/test_p34_7_production_composition.py`
-- `backend/tests/test_p34_7_joint_gate.py`（含 `scripts/production/forge_p34_7_evidence_bundle.py` 生成的自伪造完整 bundle：unsigned/forged signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/stale certificate/modified raw bytes/safety evidence absence 均必须 `blocked/not_proven`，永不 `passed`）
+- `backend/tests/test_p34_7_joint_gate.py`（含 `scripts/production/forge_p34_7_evidence_bundle.py` 生成的自伪造完整 bundle：unsigned/forged signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/stale certificate/modified raw bytes/safety evidence absence 均必须 `blocked/not_proven`，永不 `passed`；并含唯一的 TRUE positive control —— 测试内 monkeypatch 临时批准 policy digest 后完整签名、manifest 绑定、seal 一致的链可达到 `passed`，monkeypatch 不落入 production approved set —— 以及 post-approval 攻击矩阵：替换实际 executable 字节、executable 缺席 artifact manifest、environment/disposable/dirty 外层改写不重签、七角色共用一把 key、sealer 与 producer 共用 key、valid_from 在未来、executable/manifest/receipt 三方 digest 漂移，全部必须 `passed=false` 或 `ConfigurationError`）
 - `python scripts/production/validate_p34_7_composition.py --validate-only`
 - 提交后必须从 clean checkout 运行 `--verify`；外部证据未齐时预期为 `blocked/not_proven`，不是失败伪装。
 

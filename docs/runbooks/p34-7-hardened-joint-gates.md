@@ -30,6 +30,11 @@ no trust policy has been independently approved, so every bundle — including a
 fully self-signed one — remains `blocked/not_proven`.  Approving a policy is an
 audited code change, the same way a CA root is pinned.
 
+The seven producer roles (`core`, `runner`, `broker`, `gateway`, `overlay`,
+`recovery_sla`, `sealer`) must have **seven distinct** Ed25519 public keys; at
+least the sealer must differ from every producer.  Any duplicate key fails
+closed at policy parse time (`invalid/veto`).
+
 ## Two operating modes
 
 1. `--validate-only` parses the static contract and an operator-supplied bundle
@@ -54,17 +59,60 @@ The verifier fails closed on every forgery vector:
   mismatch, non-UTC timestamps, chronology/order inconsistency, secret env
   names, nonzero exit codes, stale seal bindings) are `invalid/veto`;
 - authenticity and safety gaps (missing/unverifiable detached signatures,
-  bundle-supplied trust roots, swapped producer keys, cross-run or
-  cross-component replay, stale/revoked/replayed gateway credentials,
-  unapproved trust policy, source commit/tree outside the approved seal,
-  unapproved executables, argv outside the command templates, unmeasured
-  posture, attack or cleanup evidence that is unsigned or does not cross-check
-  the inventory, root-env/business-DB posture not measured) are
+  bundle-supplied trust roots, swapped producer keys, duplicate producer keys,
+  cross-run or cross-component replay, stale/revoked/replayed/future gateway
+  credentials, unapproved trust policy, source commit/tree outside the
+  approved seal, unapproved executables, argv outside the command templates,
+  unmeasured posture, attack or cleanup evidence that is unsigned or does not
+  cross-check the inventory, root-env/business-DB posture not measured) are
   `blocked/not_proven` blockers.
 
 Every safety item reported as `not_proven` is added to `blockers`; a pass
 requires zero blockers.  In particular `runtime_posture.measured=false` (or an
 unsigned posture measurement) can never pass.
+
+### Executables are bound three ways
+
+Every command receipt's `executable` must satisfy a three-way digest equality:
+
+1. the **actual file bytes** under the run directory are read and SHA-256'd by
+   the verifier — a receipt may not declare a digest that differs from the
+   file on disk;
+2. the receipt-declared digest must equal the digest pinned in the approved
+   trust policy for that executable path and boundary;
+3. every executable must appear in the **approved artifact manifest**, whose
+   `path`/`size`/`sha256` entries are themselves checked against the real
+   bytes (`_verify_manifest`).
+
+An executable that exists only in a receipt or policy declaration (but not in
+the artifact manifest), or whose on-disk bytes drift from the signed receipt
+digest, is `artifact_provenance = not_proven` and blocks.
+
+### Evidence seal binds the full posture
+
+The `evidence_seal` canonical binding covers `schema`/`schema_version`,
+`environment`, `disposable`, the full provenance (`repository`,
+`source_commit`, `source_tree`, `dirty`), the source/artifact manifest digests,
+the command/component/posture/attack/cleanup digest chain, migration head,
+feature gates and **every current top-level security posture** derived from the
+verified chain (`signature_authenticity`, `artifact_provenance`,
+`command_semantics`, `certificate_posture`, `replay_posture`,
+`runtime_posture`, `production_runtime_inactive`, `hostile_code_not_executed`,
+`root_env_not_accessed`, `business_database_not_accessed`,
+`business_database_not_migrated`, `attack_results`, `cleanup_complete`).
+Because the verifier recomputes this binding from the verified data, ANY
+outer-field rewrite (environment `staging`->`production`, `disposable`
+`true`->`false`, `dirty` `true`->`false`, or any posture-relevant drift)
+changes the recomputed bytes and fails the recorded binding digest / detached
+signature.  `joint_gate.compute_seal_binding()` is the single canonical
+builder shared by the verifier, the adversarial forger and the tests.
+
+### Gateway certificate window
+
+The gateway certificate must satisfy `valid_from <= now < valid_until`; a
+future certificate (`valid_from` in the future) is rejected exactly like an
+expired one, while the issuer, SAN suffix, maximum lifetime, revocation and
+replay checks remain mandatory.
 
 ## Evidence chain (schema v2 only)
 
@@ -91,10 +139,15 @@ Each run is an immutable directory containing:
 - `cleanup/cleanup-inventory.json` — signed cleanup inventory (schema
   `omnibase.p34-7.cleanup-inventory.v1`) produced by `sealer`, counts
   cross-checked against the inventory and all zero;
-- `evidence_seal` — a binding digest over the whole verified chain signed by
-  the `sealer` key (schema `omnibase.p34-7.evidence-seal.v1`);
+- `evidence_seal` — a binding digest over the whole verified chain (including
+  schema_version/environment/disposable/full provenance and the complete
+  current security posture) signed by the `sealer` key (schema
+  `omnibase.p34-7.evidence-seal.v1`);
 - `signatures/**` — 64-byte raw Ed25519 signatures over the canonical raw bytes
-  of each evidence file.
+  of each evidence file;
+- `bin/<boundary>` — the actual executable files, bound by every receipt's
+  executable digest AND by the artifact manifest (path/size/sha256); the
+  verifier hashes the real bytes on disk.
 
 Inline attack status/counts, inline `secret_free` flags, inline exit
 codes/argv/timestamps or inline `evidence_seal.status` are not part of the
@@ -120,6 +173,27 @@ gate must report `blocked/not_proven` for the unsigned bundle, for forged
 signature bytes, for bundle-supplied trust roots, for swapped producer keys,
 for cross-run/cross-component replay, for stale certificates, for modified raw
 bytes and for missing safety evidence.  It never receives `passed`.
+
+## Post-approval positive control and attack matrix
+
+The test suite contains exactly one TRUE positive control
+(`test_positive_control_signed_chain_passes_after_policy_approval`): with the
+trust policy approved **in-process only** (the test monkeypatches
+`_APPROVED_TRUST_POLICY_SHA256` with the test policy digest and restores it at
+teardown — the production approved set stays empty), a fully signed,
+artifact-manifest-bound, seal-consistent chain reaches `passed`.  Around it,
+post-approval attack tests prove that every single drift flips the result to
+`passed=false` or `invalid/veto`:
+
+- replacing the actual `bin/core_runner` bytes without changing the receipt;
+- an executable absent from the artifact manifest;
+- environment `staging`->`production`, `disposable` `true`->`false` and
+  `dirty` `true`->`false` rewrites without any key rewrite (both the envelope
+  veto and the seal-binding veto are asserted);
+- all seven roles sharing one Ed25519 key, and the sealer sharing a key with a
+  producer (both fail closed at policy parse);
+- a gateway certificate whose `valid_from` is in the future;
+- any drift among the executable/manifest/receipt three-way digests.
 
 ## Status
 

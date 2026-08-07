@@ -7,9 +7,14 @@ bundles from scratch (files, manifests, cross-bindings and hashes) and then
 assert that every authenticity gap keeps the report ``blocked/not_proven``.
 
 A production PASS additionally requires an independently approved trust policy
-(pinned in ``joint_gate._APPROVED_TRUST_POLICY_SHA256``, currently empty), so
-no fixture in this suite may ever receive ``passed``; the strongest fixture
-outcome is ``blocked/not_proven`` with only the approval blocker remaining.
+(pinned in ``joint_gate._APPROVED_TRUST_POLICY_SHA256``, currently empty).  The
+suite therefore contains exactly one TRUE positive control
+(:func:`test_positive_control_signed_chain_passes_after_policy_approval`) that
+temporarily monkeypatches the approved-digest set in-process (never committed)
+so the fully signed, manifest-bound, seal-consistent chain can be proven
+pass-capable; every post-approval attack test around it proves that any single
+drift flips the result to ``passed=false`` or a ``ConfigurationError`` veto.
+No other fixture may ever receive ``passed``.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from omnibase.production import joint_gate as jg
 from omnibase.production.composition import ConfigurationError
 from omnibase.production.joint_gate import (
     validate_joint_evidence,
@@ -134,35 +140,83 @@ def _sign_raw(keys: dict[str, dict[str, str]], role: str, raw: bytes) -> bytes:
     return private.sign(raw)
 
 
-def _resign_seal(run: Path, payload: dict[str, object], keys: dict[str, dict[str, str]]) -> None:
-    """Recompute the evidence-seal binding from the current bundle refs and
-    re-sign it with the sealer key (mirrors the verifier's binding)."""
-    binding = {
-        "schema": "omnibase.p34-7.evidence-seal.v1",
-        "producer": "sealer",
-        "run_id": payload["run_id"],
-        "source_commit": payload["provenance"]["source_commit"],
-        "source_tree": payload["provenance"]["source_tree"],
-        "source_manifest_sha256": payload["source_manifest"]["raw_sha256"],
-        "artifact_manifest_sha256": payload["artifact_manifest"]["raw_sha256"],
-        "commands": {name: refs["receipt"]["sha256"] for name, refs in payload["commands"].items()},
-        "components": {
-            name: refs["evidence"]["sha256"] for name, refs in payload["components"].items()
+def _self_policy_dict(
+    run: Path, payload: dict[str, object], keys: dict[str, dict[str, str]]
+) -> dict[str, object]:
+    """A trust-policy object that is fully consistent with the current bundle
+    (producer keys, receipt executables/argv and the gateway certificate),
+    mirroring what a self-consistent producer would have used at seal time."""
+    executables: dict[str, object] = {}
+    commands: dict[str, object] = {}
+    for name, refs in payload["commands"].items():  # type: ignore[union-attr]
+        receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
+        exe = receipt["executable"]
+        executables[exe["path"]] = {"sha256": exe["sha256"], "commands": [name]}
+        commands[name] = receipt["argv"]
+    gateway = json.loads((run / "components/gateway.json").read_text())
+    certificate = gateway["gateway"]["certificate"]
+    return {
+        "schema": "omnibase.p34-7.trust-policy.v1",
+        "schema_version": "2",
+        "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in forge.ROLES},
+        "source_seal": {
+            "repository": REPOSITORY,
+            "approved_commits": [payload["provenance"]["source_commit"]],  # type: ignore[index]
+            "approved_trees": [payload["provenance"]["source_tree"]],  # type: ignore[index]
         },
-        "posture_measurement": payload["measurements"]["posture"]["evidence"]["sha256"],
-        "attack_matrix": payload["attack_matrix"]["evidence"]["sha256"],
-        "cleanup": payload["cleanup"]["evidence"]["sha256"],
+        "executables": executables,
+        "commands": commands,
+        "allowed_env_names": ["PATH", "OMNIBASE_RUN_ID"],
+        "gateway": {
+            "issuer": certificate["issuer"],
+            "san_suffix": ".omnibase",
+            "validity_seconds": 100 * 365 * 86400,
+        },
         "migration_head": "0012",
-        "feature_gates": dict(payload["feature_gates"]),
     }
+
+
+def _resign_seal(run: Path, payload: dict[str, object], keys: dict[str, dict[str, str]]) -> None:
+    """Recompute the evidence-seal binding exactly as the verifier derives it
+    for the CURRENT bundle (including any mutation), using a policy that is
+    consistent with the bundle, and re-sign it with the sealer key."""
+    try:
+        binding = jg.compute_seal_binding(run, payload, _self_policy_dict(run, payload, keys))
+    except ConfigurationError:
+        # The mutated bundle is structurally invalid; verification will veto it
+        # before the seal, so there is nothing to re-seal.
+        return
     raw = _canonical(binding)
-    seal = payload["evidence_seal"]
+    seal = payload["evidence_seal"]  # type: ignore[index]
     seal["binding_sha256"] = _digest(raw)
     if seal.get("signature") is not None:
         sig_path = run / str(seal["signature"]["path"])
         sig_path.write_bytes(_sign_raw(keys, "sealer", raw))
-        seal["signature"]["size"] = sig_path.stat().st_size
-        seal["signature"]["sha256"] = _digest(sig_path.read_bytes())
+        seal["signature"]["size"] = sig_path.stat().st_size  # type: ignore[index]
+        seal["signature"]["sha256"] = _digest(sig_path.read_bytes())  # type: ignore[index]
+
+
+def _resign_seal_with_policy(
+    run: Path,
+    payload: dict[str, object],
+    keys: dict[str, dict[str, str]],
+    policy_path: Path,
+) -> None:
+    """Recompute the seal binding with the ACTUAL external policy the verifier
+    will use (producer keys, argv templates, executable pins and env allowlist
+    all influence the derived safety posture) and re-sign with the sealer key.
+    Keeps the bundle seal-consistent for tests whose policy deviates from the
+    bundle's self-consistent defaults."""
+    policy = json.loads(policy_path.read_text())
+    binding = jg.compute_seal_binding(run, payload, policy)
+    raw = _canonical(binding)
+    seal = payload["evidence_seal"]  # type: ignore[index]
+    seal["binding_sha256"] = _digest(raw)
+    if seal.get("signature") is not None:
+        sig_path = run / str(seal["signature"]["path"])
+        sig_path.write_bytes(_sign_raw(keys, "sealer", raw))
+        seal["signature"]["size"] = sig_path.stat().st_size  # type: ignore[index]
+        seal["signature"]["sha256"] = _digest(sig_path.read_bytes())  # type: ignore[index]
 
 
 def _rewrite_signed_file(
@@ -225,6 +279,38 @@ def _rewrite_shared(
     for name, refs in payload["components"].items():
         component = json.loads((run / str(refs["evidence"]["path"])).read_text())
         component[field[0]][field[1]] = digest
+        component_raw = _canonical(component)
+        refs["evidence"]["size"] = len(component_raw)
+        refs["evidence"]["sha256"] = _digest(component_raw)
+        (run / str(refs["evidence"]["path"])).write_bytes(component_raw)
+        component_sig = refs.get("signature")
+        if component_sig is not None:
+            sig_path = run / str(component_sig["path"])
+            sig_path.write_bytes(_sign_raw(keys, name, component_raw))
+            component_sig["size"] = sig_path.stat().st_size
+            component_sig["sha256"] = _digest(sig_path.read_bytes())
+    _resign_seal(run, payload, keys)
+
+
+def _rewrite_artifact_manifest(
+    run: Path,
+    payload: dict[str, object],
+    keys: dict[str, dict[str, str]],
+    files: list[dict[str, object]],
+) -> None:
+    """Rewrite the artifact manifest (files plus recomputed ``raw_sha256``),
+    re-attest every component evidence's ``artifact_manifest_sha256`` binding
+    (re-signing each component) and re-seal the chain.  Simulates an attacker
+    who updates the manifest consistently but leaves the signed receipts
+    untouched."""
+    payload["artifact_manifest"] = {  # type: ignore[index]
+        "raw_sha256": _digest(_canonical(files)),
+        "files": files,
+    }
+    digest = payload["artifact_manifest"]["raw_sha256"]  # type: ignore[index]
+    for name, refs in payload["components"].items():  # type: ignore[union-attr]
+        component = json.loads((run / str(refs["evidence"]["path"])).read_text())
+        component["artifact_manifest_sha256"] = digest
         component_raw = _canonical(component)
         refs["evidence"]["size"] = len(component_raw)
         refs["evidence"]["sha256"] = _digest(component_raw)
@@ -344,6 +430,9 @@ def test_swapped_producer_keys_are_blocked(tmp_path: Path) -> None:
     policy = _policy_file(
         tmp_path, run, payload, other, approved_commits=(COMMIT,), approved_trees=(TREE,)
     )
+    # Re-seal against the swapped policy so the ONLY defect under test is the
+    # producer-key mismatch (the seal must bind the derived safety posture).
+    _resign_seal_with_policy(run, payload, other, policy)
     report = _blocked_report(run, payload, policy)
     assert report.status == "blocked/not_proven"
     assert report.passed is False
@@ -438,10 +527,12 @@ def test_modified_raw_bytes_resigned_with_attacker_key_still_blocked(
     refs["evidence"]["sha256"] = _digest(raw)
     refs["signature"]["size"] = sig_path.stat().st_size
     refs["signature"]["sha256"] = _digest(sig_path.read_bytes())
-    _resign_seal(run, payload, attacker)
     policy = _policy_file(
         tmp_path, run, payload, keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
     )
+    # Re-seal against the real policy so the only defect under test is the
+    # attacker-signed component (the seal must bind the derived safety).
+    _resign_seal_with_policy(run, payload, keys, policy)
     report = _blocked_report(run, payload, policy)
     assert report.passed is False
     assert report.safety["signature_authenticity"] == "not_proven"
@@ -506,6 +597,7 @@ def test_safety_evidence_absence_is_blocked(tmp_path: Path) -> None:
     run, payload, keys = _signed(tmp_path)
     posture_entry = payload["measurements"]["posture"]  # type: ignore[index]
     posture_entry["signature"] = None
+    _resign_seal(run, payload, keys)
     policy = _policy_file(
         tmp_path, run, payload, keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
     )
@@ -625,7 +717,8 @@ def test_forged_seal_signature_is_blocked(tmp_path: Path) -> None:
     policy = _policy_file(
         tmp_path, run, payload, keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
     )
-    report = _blocked_report(run, payload, policy)
+    # The seal is the attack vector here, so it must NOT be re-sealed.
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
     assert report.passed is False
     assert "signature:seal" in report.blockers
 
@@ -677,6 +770,7 @@ def test_argv_template_mismatch_is_blocked(tmp_path: Path) -> None:
         approved_trees=(TREE,),
         argv_overrides=overrides,
     )
+    _resign_seal_with_policy(run, payload, keys, policy)
     report = _blocked_report(run, payload, policy)
     assert report.passed is False
     assert report.safety["command_semantics"] == "not_proven"
@@ -695,6 +789,7 @@ def test_executable_not_in_approved_manifest_is_blocked(tmp_path: Path) -> None:
         approved_trees=(TREE,),
         executable_overrides=overrides,
     )
+    _resign_seal_with_policy(run, payload, keys, policy)
     report = _blocked_report(run, payload, policy)
     assert report.passed is False
     assert report.safety["artifact_provenance"] == "not_proven"
@@ -712,6 +807,7 @@ def test_unknown_env_names_are_blocked(tmp_path: Path) -> None:
         approved_trees=(TREE,),
         allowed_env_names=("PATH",),
     )
+    _resign_seal_with_policy(run, payload, keys, policy)
     report = _blocked_report(run, payload, policy)
     assert report.passed is False
     assert "command_semantics" in report.blockers
@@ -1047,3 +1143,316 @@ def test_cli_validate_only_never_passes(tmp_path: Path) -> None:
     assert report["status"] == "blocked/not_proven"
     assert report["passed"] is False
     assert "contract_mode_no_direct_evidence" in report["blockers"]
+
+
+# ---------------------------------------------------------------------------
+# Round 3: TRUE positive control (in-process approval only) and the
+# post-approval attack matrix.  The approved-digest set is monkeypatched
+# in-process and never committed; the production pin stays empty.
+# ---------------------------------------------------------------------------
+
+
+def _approve_in_process(monkeypatch: pytest.MonkeyPatch, policy: Path) -> None:
+    """Temporarily approve exactly one test policy digest IN PROCESS ONLY.
+    ``monkeypatch`` restores the production empty set at teardown; nothing is
+    committed into ``_APPROVED_TRUST_POLICY_SHA256``."""
+    monkeypatch.setattr(
+        jg, "_APPROVED_TRUST_POLICY_SHA256", frozenset({_digest(policy.read_bytes())})
+    )
+
+
+def _approved_policy(
+    tmp_path: Path,
+    run: Path,
+    payload: dict[str, object],
+    keys: dict[str, dict[str, str]],
+) -> Path:
+    return _policy_file(
+        tmp_path,
+        run,
+        payload,
+        keys,
+        approved_commits=(COMMIT,),
+        approved_trees=(TREE,),
+    )
+
+
+def _bind_seal_over(
+    run: Path,
+    payload: dict[str, object],
+    keys: dict[str, dict[str, str]],
+    policy_path: Path,
+    overrides: dict[str, object],
+) -> None:
+    """Simulate a sealer that signed the binding over DIFFERENT
+    envelope/provenance values than the outer bundle now claims: record a
+    binding (and a valid sealer signature) over ``overrides`` without touching
+    the outer fields.  The verifier recomputes the canonical binding from the
+    outer values, so any rewrite must fail."""
+    policy = json.loads(policy_path.read_text())
+    binding = jg.compute_seal_binding(run, payload, policy)
+    if "provenance" in overrides and isinstance(overrides["provenance"], dict):
+        binding["provenance"] = {**binding["provenance"], **overrides["provenance"]}
+        overrides = {k: v for k, v in overrides.items() if k != "provenance"}
+    binding.update(overrides)
+    raw = _canonical(binding)
+    seal = payload["evidence_seal"]  # type: ignore[index]
+    seal["binding_sha256"] = _digest(raw)
+    sig_path = run / str(seal["signature"]["path"])
+    sig_path.write_bytes(_sign_raw(keys, "sealer", raw))
+    seal["signature"]["size"] = sig_path.stat().st_size  # type: ignore[index]
+    seal["signature"]["sha256"] = _digest(sig_path.read_bytes())  # type: ignore[index]
+
+
+def test_positive_control_signed_chain_passes_after_policy_approval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """TRUE positive control: with the trust policy approved in-process and a
+    fully signed, artifact-manifest-bound, seal-consistent chain, the verifier
+    CAN reach ``passed``.  This proves the pass path is real and that every
+    attack test around it flips a genuinely pass-capable bundle to
+    ``passed=false``.  The approved digest is never committed: the production
+    set stays empty after teardown."""
+    assert frozenset() == jg._APPROVED_TRUST_POLICY_SHA256
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.status == "passed"
+    assert report.passed is True
+    assert report.blockers == ()
+    assert report.safety["trust_policy"] == "verified"
+    assert report.safety["source_provenance"] == "verified"
+    assert report.safety["signature_authenticity"] == "verified"
+    assert report.safety["artifact_provenance"] == "verified"
+    assert report.safety["command_semantics"] == "verified"
+    assert report.safety["runtime_posture"] == "measured:process_config"
+    assert report.safety["production_runtime_inactive"] == "verified"
+    assert report.safety["hostile_code_not_executed"] == "verified"
+    assert report.safety["root_env_not_accessed"] == "verified"
+    assert report.safety["business_database_not_accessed"] == "verified"
+    assert report.safety["business_database_not_migrated"] == "verified"
+    assert report.safety["attack_results"] == "verified"
+    assert report.safety["cleanup_complete"] == "verified"
+    assert report.safety["certificate_posture"] == "verified"
+    assert report.safety["replay_posture"] == "verified"
+    assert report.safety["evidence_seal"] == "verified"
+    assert all(value != "not_proven" for value in report.safety.values())
+    assert frozenset({_digest(policy.read_bytes())}) == jg._APPROVED_TRUST_POLICY_SHA256
+    # Teardown restores the production pin; assert it right after the test
+    # scope so the committed set is demonstrably untouched.
+
+
+def test_positive_control_teardown_restores_empty_production_pin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The in-process monkeypatch is scoped to its test: after approval of a
+    test digest, the module-level production pin is the empty set again."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert frozenset({_digest(policy.read_bytes())}) == jg._APPROVED_TRUST_POLICY_SHA256
+    # monkeypatch teardown happens here at the end of the test body scope.
+
+
+def test_post_approval_swapped_executable_bytes_are_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: replace the actual bin/core_runner bytes WITHOUT changing the
+    receipt (the manifest is updated consistently, as a byte-swapping attacker
+    would).  The verifier reads the real file bytes, so the three-way digest
+    equality (actual == receipt == policy) breaks and the bundle is blocked."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    evil = b"evil-replacement-bytes"
+    (run / "bin/core_runner").write_bytes(evil)
+    files = payload["artifact_manifest"]["files"]  # type: ignore[index]
+    for entry in files:
+        if entry["path"] == "bin/core_runner":
+            entry["size"] = len(evil)
+            entry["sha256"] = _digest(evil)
+    _rewrite_artifact_manifest(run, payload, keys, files)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.passed is False
+    assert report.status == "blocked/not_proven"
+    assert "artifact_provenance" in report.blockers
+    assert report.safety["artifact_provenance"] == "not_proven"
+
+
+def test_post_approval_executable_absent_from_artifact_manifest_is_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: an executable exists in the receipt/policy declarations but is
+    absent from the approved artifact manifest (the manifest is otherwise
+    rewritten consistently).  Every executable must be manifest-bound;
+    declaration-only executables are blocked."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    files = [
+        entry
+        for entry in payload["artifact_manifest"]["files"]  # type: ignore[index]
+        if entry["path"] != "bin/core_runner"
+    ]
+    _rewrite_artifact_manifest(run, payload, keys, files)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.passed is False
+    assert report.status == "blocked/not_proven"
+    assert "artifact_provenance" in report.blockers
+
+
+def test_post_approval_environment_rewrite_without_resigning_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: staging evidence is relabelled production without a key
+    rewrite.  (a) the envelope rejects a non-production declaration; (b) the
+    canonical seal binding covers ``environment``, so even a seal that was
+    signed over ``staging`` can never match a ``production`` outer bundle."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    payload["environment"] = "staging"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="environment=production"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+    payload["environment"] = "production"  # type: ignore[index]
+    _bind_seal_over(run, payload, keys, policy, {"environment": "staging"})
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_post_approval_disposable_rewrite_without_resigning_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: disposable evidence is relabelled non-disposable without a key
+    rewrite.  (a) the envelope rejects a disposable declaration; (b) the seal
+    binding covers ``disposable``, so a seal signed over ``true`` can never
+    match an outer bundle claiming ``false``."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    payload["disposable"] = True  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="disposable"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+    payload["disposable"] = False  # type: ignore[index]
+    _bind_seal_over(run, payload, keys, policy, {"disposable": True})
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_post_approval_dirty_rewrite_without_resigning_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: evidence from a dirty checkout is relabelled clean without a
+    key rewrite.  (a) the envelope rejects a dirty declaration; (b) the seal
+    binding covers the full provenance (repository/source_commit/source_tree/
+    dirty), so a seal signed over ``dirty=true`` can never match a clean outer
+    bundle."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    payload["provenance"]["dirty"] = True  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="clean checkout"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+    payload["provenance"]["dirty"] = False  # type: ignore[index]
+    _bind_seal_over(run, payload, keys, policy, {"provenance": {"dirty": True}})
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_duplicate_producer_keys_all_roles_share_one_key_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """Attack: all seven roles (six components + sealer) share ONE Ed25519
+    key.  Duplicate keys must fail closed at policy parse time."""
+    run, payload, keys = _signed(tmp_path)
+    shared = keys["core"]["public"]
+    dup_keys = {role: {"public": shared, "private": keys[role]["private"]} for role in forge.ROLES}
+    policy = _policy_file(
+        tmp_path, run, payload, dup_keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
+    )
+    with pytest.raises(ConfigurationError, match="unique"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_duplicate_sealer_key_shared_with_producer_fails_closed(tmp_path: Path) -> None:
+    """Attack: the sealer shares a key with a producer.  The seven producer
+    keys must all be unique; at least the sealer must differ from every
+    producer, so sharing fails closed at policy parse time."""
+    run, payload, keys = _signed(tmp_path)
+    dup_keys = dict(keys)
+    dup_keys["sealer"] = {
+        "public": keys["core"]["public"],
+        "private": keys["core"]["private"],
+    }
+    policy = _policy_file(
+        tmp_path, run, payload, dup_keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
+    )
+    with pytest.raises(ConfigurationError, match="unique"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_post_approval_future_gateway_certificate_is_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: a gateway certificate whose valid_from is in the future must be
+    rejected (valid_from <= now < valid_until)."""
+    future = {
+        "public_fingerprint": _digest(b"cert"),
+        "issuer": _digest(b"issuer"),
+        "san": "workload.gateway.omnibase",
+        "valid_from": "2999-01-01T00:00:00Z",
+        "valid_until": "2999-06-01T00:00:00Z",
+        "revoked": False,
+    }
+    run, payload, keys = _signed(tmp_path, gateway_certificate=future)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.passed is False
+    assert report.status == "blocked/not_proven"
+    assert "certificate_posture" in report.blockers
+    assert report.safety["certificate_posture"] == "not_proven"
+
+
+def test_post_approval_executable_manifest_receipt_digest_drift_is_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attack: any drift among the executable/manifest/receipt three-way
+    digests must fail.  (a) the receipt declares a different executable digest
+    (receipt and owning component re-signed, chain re-sealed): blocker.
+    (b) the artifact manifest records a different digest for the executable:
+    hard veto."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    refs = payload["commands"]["core_runner"]  # type: ignore[index]
+    receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
+    receipt["executable"]["sha256"] = "e" * 64
+    _rewrite_signed_file(run, payload, refs, "receipt", receipt, keys, "core")
+    # Re-attest the owning component's receipt binding to the new digest.
+    component = json.loads((run / "components/core.json").read_text())
+    component["receipts"]["core_runner"] = refs["receipt"]["sha256"]  # type: ignore[index]
+    _rewrite_signed_file(
+        run, payload, payload["components"]["core"], "evidence", component, keys, "core"
+    )
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.passed is False
+    assert report.status == "blocked/not_proven"
+    assert "artifact_provenance" in report.blockers
+    # (b) manifest-side drift is a hard veto.
+    run_b, payload_b, keys_b = _signed(tmp_path / "run-b")
+    policy_b = _approved_policy(tmp_path, run_b, payload_b, keys_b)
+    _approve_in_process(monkeypatch, policy_b)
+    assert verify_joint_evidence(run_b, payload_b, trust_policy_path=policy_b).passed is True
+    for entry in payload_b["artifact_manifest"]["files"]:  # type: ignore[index]
+        if entry["path"] == "bin/core_runner":
+            entry["sha256"] = "e" * 64
+    with pytest.raises(ConfigurationError, match="drifted|bind"):
+        verify_joint_evidence(run_b, payload_b, trust_policy_path=policy_b)

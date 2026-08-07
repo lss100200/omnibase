@@ -1609,6 +1609,7 @@
         "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence_contract",
         "backend/src/omnibase/production/joint_gate.py:verify_joint_evidence",
         "backend/src/omnibase/production/joint_gate.py:load_trust_policy",
+        "backend/src/omnibase/production/joint_gate.py:compute_seal_binding",
         "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
         "scripts/production/validate_p34_7_composition.py:main",
         "scripts/production/validate_p34_7_joint_gate.py:main",

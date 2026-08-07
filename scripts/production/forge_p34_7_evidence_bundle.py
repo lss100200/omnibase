@@ -28,13 +28,15 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from cryptography.hazmat.primitives.asymmetric import ed25519  # noqa: E402
+
+from omnibase.production.joint_gate import compute_seal_binding  # noqa: E402
 
 SCHEMA = "omnibase.p34-7.hardened-joint-evidence.v2"
 COMPONENT_SCHEMA = "omnibase.p34-7.component-evidence.v1"
@@ -132,7 +134,7 @@ def generate_keypair() -> tuple[str, str]:
 
 def generate_keyfile() -> dict[str, dict[str, str]]:
     return {
-        role: dict(zip(("private", "public"), generate_keypair())) for role in ROLES
+        role: dict(zip(("private", "public"), generate_keypair(), strict=False)) for role in ROLES
     }
 
 
@@ -159,12 +161,107 @@ def _signature_ref(
     if forged:
         signature = os.urandom(64)
     else:
-        private = ed25519.Ed25519PrivateKey.from_private_bytes(
-            bytes.fromhex(private_hex)
-        )
+        private = ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(private_hex))
         signature = private.sign(raw)
     relative = f"signatures/{evidence_path.relative_to(run).as_posix()}"
     return _write_raw(run, run / relative, signature)
+
+
+def _materialize_executables(
+    run: Path, executable_content: dict[str, bytes] | None
+) -> dict[str, dict[str, object]]:
+    """Write the per-boundary executable files (real bytes on disk) and return
+    their sidecar refs so the artifact manifest can bind path/size/sha256."""
+    refs: dict[str, dict[str, object]] = {}
+    for name in REQUIRED_COMMANDS:
+        content = (executable_content or {}).get(name, name.encode())
+        refs[name] = _write_raw(run, run / f"bin/{name}", content)
+    return refs
+
+
+def _materialize_artifact_manifest(
+    run: Path, executable_refs: dict[str, dict[str, object]]
+) -> dict[str, object]:
+    """Build the artifact manifest that binds artifact.txt AND every
+    executable file (path/size/sha256) to the real on-disk bytes."""
+    files: list[dict[str, object]] = [
+        _write_raw(run, run / "artifact.txt", b"forged-artifact-bytes")
+    ]
+    files.extend(executable_refs[name] for name in REQUIRED_COMMANDS)
+    return {"raw_sha256": _digest(_canonical(files)), "files": files}
+
+
+def _sign_seal(
+    run: Path,
+    payload: dict[str, object],
+    repository: str,
+    commit: str,
+    tree: str,
+    keys: dict[str, dict[str, str]] | None,
+    forged_signatures: bool,
+) -> None:
+    """Sign a seal-consistent binding over the current bundle using the
+    verifier's own canonical builder."""
+    self_policy = _self_policy(run, payload, repository, commit, tree, keys)
+    binding = compute_seal_binding(run, payload, self_policy)
+    binding_bytes = _canonical(binding)
+    seal_sig = None
+    if keys is not None:
+        if forged_signatures:
+            seal_sig = _write_raw(run, run / "signatures/seal.sig", os.urandom(64))
+        else:
+            private = ed25519.Ed25519PrivateKey.from_private_bytes(
+                bytes.fromhex(keys["sealer"]["private"])
+            )
+            seal_sig = _write_raw(run, run / "signatures/seal.sig", private.sign(binding_bytes))
+    payload["evidence_seal"] = {
+        "producer": "sealer",
+        "binding_sha256": _digest(binding_bytes),
+        "signature": seal_sig,
+    }
+
+
+def _self_policy(
+    run: Path,
+    payload: dict[str, object],
+    repository: str,
+    commit: str,
+    tree: str,
+    keys: dict[str, dict[str, str]] | None,
+) -> dict[str, object]:
+    """Build the trust-policy object that is fully consistent with the bundle
+    (receipt executables/argv and the gateway certificate), so the fabricated
+    seal binding matches the binding the verifier derives."""
+    if keys is None:
+        keys = generate_keyfile()
+    executables: dict[str, object] = {}
+    commands: dict[str, object] = {}
+    for name, refs in payload["commands"].items():  # type: ignore[union-attr]
+        receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
+        exe = receipt["executable"]
+        executables[exe["path"]] = {"sha256": exe["sha256"], "commands": [name]}
+        commands[name] = receipt["argv"]
+    gateway = json.loads((run / "components/gateway.json").read_text())
+    certificate = gateway["gateway"]["certificate"]
+    return {
+        "schema": "omnibase.p34-7.trust-policy.v1",
+        "schema_version": "2",
+        "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in ROLES},
+        "source_seal": {
+            "repository": repository,
+            "approved_commits": [commit],
+            "approved_trees": [tree],
+        },
+        "executables": executables,
+        "commands": commands,
+        "allowed_env_names": ["PATH", "OMNIBASE_RUN_ID"],
+        "gateway": {
+            "issuer": certificate["issuer"],
+            "san_suffix": ".omnibase",
+            "validity_seconds": 100 * 365 * 86400,
+        },
+        "migration_head": "0012",
+    }
 
 
 def forge_bundle(
@@ -186,12 +283,7 @@ def forge_bundle(
     tree = source_tree or ("b" * 64)
 
     def now_iso() -> str:
-        return (
-            datetime.now(timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     started_at = "2026-08-07T00:00:00Z"
 
@@ -202,14 +294,17 @@ def forge_bundle(
         return {"raw_sha256": raw, "files": files}
 
     source_manifest = manifest("source", b"forged-source-bytes")
-    artifact_manifest = manifest("artifact", b"forged-artifact-bytes")
+
+    # Executable files are materialized FIRST so the approved artifact
+    # manifest can bind every executable path/size/sha256 to real bytes.
+    executable_refs = _materialize_executables(run, executable_content)
+    artifact_manifest = _materialize_artifact_manifest(run, executable_refs)
 
     receipts: dict[str, dict[str, object]] = {}
     receipt_digests: dict[str, str] = {}
     receipt_executables: dict[str, tuple[str, str]] = {}
     for index, name in enumerate(REQUIRED_COMMANDS):
-        content = (executable_content or {}).get(name, name.encode())
-        exe_ref = _write_raw(run, run / f"bin/{name}", content)
+        exe_ref = executable_refs[name]
         stdout_ref = _write_raw(run, run / f"out/{name}.out", f"stdout-{name}".encode())
         stderr_ref = _write_raw(run, run / f"out/{name}.err", b"")
         receipt = {
@@ -323,9 +418,7 @@ def forge_bundle(
     components: dict[str, dict[str, object]] = {}
     component_digests: dict[str, str] = {}
     for name in REQUIRED_COMPONENTS:
-        owned = [
-            command for command, owner in COMMAND_PRODUCER.items() if owner == name
-        ]
+        owned = [command for command, owner in COMMAND_PRODUCER.items() if owner == name]
         gateway_field: dict[str, object] = {}
         if name == "gateway":
             certificate = gateway_certificate or {
@@ -349,9 +442,7 @@ def forge_bundle(
             "source_manifest_sha256": source_manifest["raw_sha256"],
             "artifact_manifest_sha256": artifact_manifest["raw_sha256"],
             "component_identity": {"kind": "sha256", "value": _digest(name.encode())},
-            "peer_identities": {
-                peer: _digest(peer.encode()) for peer in REQUIRED_PEERS[name]
-            },
+            "peer_identities": {peer: _digest(peer.encode()) for peer in REQUIRED_PEERS[name]},
             "receipts": {command: receipt_digests[command] for command in owned},
             "executables": [
                 {
@@ -385,34 +476,6 @@ def forge_bundle(
         "agent_planner_enabled": False,
         "multi_agent_enabled": False,
     }
-    binding = {
-        "schema": SEAL_SCHEMA,
-        "producer": "sealer",
-        "run_id": run_id,
-        "source_commit": commit,
-        "source_tree": tree,
-        "source_manifest_sha256": source_manifest["raw_sha256"],
-        "artifact_manifest_sha256": artifact_manifest["raw_sha256"],
-        "commands": dict(sorted(receipt_digests.items())),
-        "components": dict(sorted(component_digests.items())),
-        "posture_measurement": posture_digest,
-        "attack_matrix": attack_digest,
-        "cleanup": cleanup_digest,
-        "migration_head": "0012",
-        "feature_gates": dict(sorted(gates.items())),
-    }
-    binding_bytes = _canonical(binding)
-    seal_sig = None
-    if keys is not None:
-        if forged_signatures:
-            seal_sig = _write_raw(run, run / "signatures/seal.sig", os.urandom(64))
-        else:
-            private = ed25519.Ed25519PrivateKey.from_private_bytes(
-                bytes.fromhex(keys["sealer"]["private"])
-            )
-            seal_sig = _write_raw(
-                run, run / "signatures/seal.sig", private.sign(binding_bytes)
-            )
 
     payload: dict[str, object] = {
         "schema": SCHEMA,
@@ -437,10 +500,15 @@ def forge_bundle(
         "cleanup": cleanup_entry,
         "evidence_seal": {
             "producer": "sealer",
-            "binding_sha256": _digest(binding_bytes),
-            "signature": seal_sig,
+            "binding_sha256": _digest(b"placeholder"),
+            "signature": None,
         },
     }
+    # The seal binding is recomputed by the verifier from the verified chain;
+    # fabricate a seal-consistent binding with the verifier's own builder so
+    # the bundle is internally coherent (and still never passes without an
+    # approved external trust policy).
+    _sign_seal(run, payload, repository, commit, tree, keys, forged_signatures)
     _write_canonical(run, run / "evidence.json", payload)
     return payload
 
@@ -448,9 +516,7 @@ def forge_bundle(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True, help="bundle directory")
-    parser.add_argument(
-        "--keyfile", type=Path, help="per-role Ed25519 keyfile (signs the bundle)"
-    )
+    parser.add_argument("--keyfile", type=Path, help="per-role Ed25519 keyfile (signs the bundle)")
     parser.add_argument(
         "--forged-signatures",
         action="store_true",
@@ -465,11 +531,7 @@ def main() -> int:
         keys=keys,
         forged_signatures=args.forged_signatures,
     )
-    print(
-        json.dumps(
-            {"forged": True, "unsigned": keys is None, "payload": payload}, indent=2
-        )
-    )
+    print(json.dumps({"forged": True, "unsigned": keys is None, "payload": payload}, indent=2))
     return 0
 
 

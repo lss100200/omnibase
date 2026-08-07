@@ -415,6 +415,11 @@ def _parse_policy_producers(data: dict[str, Any]) -> dict[str, str]:
                 f"trust policy.producers.{role}.ed25519_public_key must be a 64-hex key"
             )
         producers[role] = key
+    if len(set(producers.values())) != len(producers):
+        raise ConfigurationError(
+            "trust policy.producers public keys must all be unique; "
+            "duplicate producer keys fail closed (the sealer must differ from every producer)"
+        )
     return producers
 
 
@@ -611,7 +616,13 @@ class _ChainOutcome:
 # ---------------------------------------------------------------------------
 
 
-def _verify_manifest(root: Path, value: object, *, name: str) -> str:
+def _verify_manifest(
+    root: Path, value: object, *, name: str
+) -> tuple[str, dict[str, tuple[int, str]]]:
+    """Verify a source/artifact manifest and return ``(raw_sha256, files)``
+    where ``files`` maps each relative path to its ``(size, sha256)`` as
+    recorded in the manifest.  Every entry is checked against the real file
+    bytes, so the map is a trusted binding of path/size/digest."""
     manifest = _object(value, name)
     _keys(manifest, {"raw_sha256", "files"}, name)
     raw = _sha256(manifest.get("raw_sha256"), f"{name}.raw_sha256")
@@ -619,6 +630,7 @@ def _verify_manifest(root: Path, value: object, *, name: str) -> str:
     if not files:
         raise ConfigurationError(f"{name}.files must be non-empty")
     seen: set[str] = set()
+    file_map: dict[str, tuple[int, str]] = {}
     for index, item in enumerate(files):
         entry = _object(item, f"{name}.files[{index}]")
         _keys(entry, {"path", "size", "sha256"}, f"{name}.files[{index}]")
@@ -627,10 +639,14 @@ def _verify_manifest(root: Path, value: object, *, name: str) -> str:
             raise ConfigurationError(f"{name} contains duplicate file paths")
         seen.add(relative)
         _file_ref(root, entry, f"{name}.files[{index}]")
+        file_map[relative] = (
+            _int(entry.get("size"), f"{name}.files[{index}].size"),
+            _sha256(entry.get("sha256"), f"{name}.files[{index}].sha256"),
+        )
     canonical = _canonical(files)
     if hashlib.sha256(canonical).hexdigest() != raw:
         raise ConfigurationError(f"{name}.raw_sha256 does not bind its files")
-    return raw
+    return raw, file_map
 
 
 # ---------------------------------------------------------------------------
@@ -680,6 +696,7 @@ def _verify_receipt(
     run_id: str,
     producer: str,
     previous_end: datetime | None,
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[datetime, str, tuple[str, str]]:
     order = _int(refs.get("order"), f"commands.{name}.order")
@@ -717,7 +734,9 @@ def _verify_receipt(
         f"commands.{name}.receipt",
     )
     _verify_receipt_envelope(parsed, name, order, run_id, producer)
-    exe_path, exe_digest = _verify_receipt_executable(root, parsed, name, policy, issues)
+    exe_path, exe_digest = _verify_receipt_executable(
+        root, parsed, name, policy, artifact_files, issues
+    )
     _verify_receipt_semantics(parsed, name, policy, issues)
     ended = _verify_receipt_timing(root, parsed, name, previous_end)
     return ended, receipt_ref["sha256"], (exe_path, exe_digest)
@@ -743,15 +762,34 @@ def _verify_receipt_executable(
     parsed: dict[str, Any],
     name: str,
     policy: TrustPolicy,
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[str, str]:
+    """Bind the executable that a receipt claims to have run.
+
+    The ACTUAL file bytes are read and hashed: the verifier requires
+    actual-digest == receipt-declared digest == approved-policy digest, and
+    additionally requires the executable to appear in the approved artifact
+    manifest whose path/size/sha256 entries are themselves checked against the
+    real bytes.  An executable that exists only in a receipt/policy declaration
+    (or only on disk with a drifted digest) is never acceptable.
+    """
     executable = _object(parsed.get("executable"), f"commands.{name}.receipt.executable")
     _keys(executable, {"path", "sha256"}, f"commands.{name}.receipt.executable")
     exe_path = _relative_path(executable.get("path"), f"commands.{name}.receipt.executable.path")
     exe_digest = _sha256(executable.get("sha256"), f"commands.{name}.receipt.executable.sha256")
-    _real_file(root, exe_path, f"commands.{name}.receipt.executable.path")
+    exe_file = _real_file(root, exe_path, f"commands.{name}.receipt.executable.path")
+    actual_digest = _hash_file(exe_file)
+    actual_size = exe_file.stat().st_size
     approved = policy.executables.get(exe_path)
     if approved is None or approved[0] != exe_digest or name not in approved[1]:
+        issues.append("artifact_provenance")
+    if actual_digest != exe_digest:
+        # The file on disk does not match the digest the signed receipt claims.
+        issues.append("artifact_provenance")
+    manifest_entry = artifact_files.get(exe_path)
+    if manifest_entry is None or manifest_entry != (actual_size, actual_digest):
+        # The executable is not bound by the approved artifact manifest.
         issues.append("artifact_provenance")
     return exe_path, exe_digest
 
@@ -799,6 +837,7 @@ def _verify_commands(
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
     commands = _object(value, "commands")
@@ -822,6 +861,7 @@ def _verify_commands(
             run_id,
             _COMMAND_PRODUCER[name],
             previous_end,
+            artifact_files,
             issues,
         )
         receipt_digests[name] = digest
@@ -865,6 +905,10 @@ def _verify_gateway_posture(
         issues.append("certificate_posture")
     if (valid_until - valid_from).total_seconds() > policy.gateway_validity_seconds:
         issues.append("certificate_posture")
+    if valid_from > now:
+        # A certificate that is not yet valid cannot prove current posture;
+        # future certificates are rejected (valid_from <= now is required).
+        issues.append("certificate_posture")
     if valid_until < now:
         issues.append("certificate_posture")
     if (
@@ -899,6 +943,7 @@ def _verify_component(
     cleanup_digest: str,
     receipt_digests: dict[str, str],
     receipt_executables: dict[str, tuple[str, str]],
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[str, str]:
     evidence_ref = _object(refs.get("evidence"), f"components.{name}.evidence")
@@ -935,7 +980,7 @@ def _verify_component(
     _verify_component_envelope(parsed, name, run_id, commit, tree, source_hash, artifact_hash)
     identity_digest = _verify_component_identity_peers(parsed, name)
     _verify_component_receipts(parsed, name, receipt_digests)
-    _verify_component_executables(parsed, name, policy, receipt_executables, issues)
+    _verify_component_executables(parsed, name, policy, receipt_executables, artifact_files, issues)
     _verify_component_bindings(parsed, name, posture_digest, attack_digest, cleanup_digest)
     _verify_component_host(parsed, name)
     if name == "gateway":
@@ -1013,6 +1058,7 @@ def _verify_component_executables(
     name: str,
     policy: TrustPolicy,
     receipt_executables: dict[str, tuple[str, str]],
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> None:
     owned = [command for command, owner in _COMMAND_PRODUCER.items() if owner == name]
@@ -1030,6 +1076,11 @@ def _verify_component_executables(
         )
         approved = policy.executables.get(exe_path)
         if approved is None or approved[0] != exe_digest:
+            issues.append("artifact_provenance")
+        manifest_entry = artifact_files.get(exe_path)
+        if manifest_entry is None or manifest_entry[1] != exe_digest:
+            # The component declares an executable that the approved artifact
+            # manifest does not bind to this digest.
             issues.append("artifact_provenance")
         found_executables.add((exe_path, exe_digest))
     if found_executables != expected_executables:
@@ -1096,6 +1147,7 @@ def _verify_components(
     cleanup_digest: str,
     receipt_digests: dict[str, str],
     receipt_executables: dict[str, tuple[str, str]],
+    artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> dict[str, str]:
     components = _object(value, "components")
@@ -1123,6 +1175,7 @@ def _verify_components(
             cleanup_digest,
             receipt_digests,
             receipt_executables,
+            artifact_files,
             issues,
         )
         identities[name] = identity_digest
@@ -1399,7 +1452,7 @@ def _verify_cleanup(
 
 def _verify_seal(
     root: Path,
-    value: object,
+    data: dict[str, Any],
     policy: TrustPolicy,
     run_id: str,
     commit: str,
@@ -1412,28 +1465,28 @@ def _verify_seal(
     attack_digest: str,
     cleanup_digest: str,
     gates: dict[str, bool],
+    pre_seal_safety: dict[str, str],
     issues: list[str],
 ) -> dict[str, str]:
-    seal = _object(value, "evidence_seal")
+    seal = _object(data.get("evidence_seal"), "evidence_seal")
     _keys(seal, {"producer", "binding_sha256", "signature"}, "evidence_seal")
     if _string(seal.get("producer"), "evidence_seal.producer") != "sealer":
         raise ConfigurationError("evidence_seal.producer must be sealer")
-    binding = {
-        "schema": SEAL_SCHEMA,
-        "producer": "sealer",
-        "run_id": run_id,
-        "source_commit": commit,
-        "source_tree": tree,
-        "source_manifest_sha256": source_hash,
-        "artifact_manifest_sha256": artifact_hash,
-        "commands": dict(sorted(receipt_digests.items())),
-        "components": dict(sorted(component_digests.items())),
-        "posture_measurement": posture_digest,
-        "attack_matrix": attack_digest,
-        "cleanup": cleanup_digest,
-        "migration_head": "0012",
-        "feature_gates": dict(sorted(gates.items())),
-    }
+    binding = _seal_binding(
+        data,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        gates,
+        pre_seal_safety,
+    )
     binding_bytes = _canonical(binding)
     recorded = _sha256(seal.get("binding_sha256"), "evidence_seal.binding_sha256")
     if hashlib.sha256(binding_bytes).hexdigest() != recorded:
@@ -1447,6 +1500,58 @@ def _verify_seal(
     if sig_status != "verified":
         issues.append("signature:seal")
     return {"evidence_seal": "verified" if sig_status == "verified" else "not_proven"}
+
+
+def _seal_binding(
+    data: dict[str, Any],
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    receipt_digests: dict[str, str],
+    component_digests: dict[str, str],
+    posture_digest: str,
+    attack_digest: str,
+    cleanup_digest: str,
+    gates: dict[str, bool],
+    safety: dict[str, str],
+) -> dict[str, Any]:
+    """The canonical evidence-seal binding.
+
+    It covers schema/schema_version, environment, disposable, the full
+    provenance (repository, source_commit, source_tree, dirty) and every
+    current top-level security posture derived from the verified chain, in
+    addition to the digest chain.  Because the verifier recomputes this binding
+    from the verified data, any outer-field rewrite (environment,
+    disposable, provenance, safety-relevant evidence) changes the recomputed
+    bytes and fails the recorded binding digest / detached signature.
+    """
+    provenance = _object(data.get("provenance"), "provenance")
+    return {
+        "schema": SEAL_SCHEMA,
+        "schema_version": _string(data.get("schema_version"), "schema_version"),
+        "producer": "sealer",
+        "run_id": run_id,
+        "environment": _string(data.get("environment"), "environment"),
+        "disposable": _bool(data.get("disposable"), "disposable"),
+        "provenance": {
+            "repository": _string(provenance.get("repository"), "provenance.repository"),
+            "source_commit": commit,
+            "source_tree": tree,
+            "dirty": _bool(provenance.get("dirty"), "provenance.dirty"),
+        },
+        "source_manifest_sha256": source_hash,
+        "artifact_manifest_sha256": artifact_hash,
+        "commands": dict(sorted(receipt_digests.items())),
+        "components": dict(sorted(component_digests.items())),
+        "posture_measurement": posture_digest,
+        "attack_matrix": attack_digest,
+        "cleanup": cleanup_digest,
+        "migration_head": "0012",
+        "feature_gates": dict(sorted(gates.items())),
+        "safety": dict(sorted(safety.items())),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1531,7 +1636,7 @@ def _chain_outcome_from_issues(issues: list[str]) -> _ChainOutcome:
     return _ChainOutcome(safety=safety, blockers=blockers)
 
 
-def _verify_bundle(
+def _derive_chain(
     root: Path,
     data: dict[str, Any],
     policy: TrustPolicy,
@@ -1540,8 +1645,29 @@ def _verify_bundle(
     tree: str,
     source_hash: str,
     artifact_hash: str,
+    artifact_files: dict[str, tuple[int, str]],
     gates: dict[str, bool],
-) -> _ChainOutcome:
+) -> tuple[
+    list[str],
+    dict[str, str],
+    dict[str, str],
+    str,
+    str,
+    str,
+    dict[str, str],
+    dict[str, str],
+    dict[str, str],
+    dict[str, str],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    """Run every non-seal verification step of the evidence chain.
+
+    Returns ``(issues, receipt_digests, component_digests, posture_digest,
+    attack_digest, cleanup_digest, posture_safety, attack_safety,
+    cleanup_safety, pre_seal_safety, attack_blockers, cleanup_blockers)``.
+    The pre-seal safety is the full current top-level security posture the
+    evidence seal must bind."""
     issues: list[str] = []
     posture_digest, posture_safety = _verify_posture(
         root, data.get("measurements"), policy, run_id, issues
@@ -1553,7 +1679,7 @@ def _verify_bundle(
         root, data.get("cleanup"), policy, run_id, issues
     )
     receipt_digests, receipt_executables = _verify_commands(
-        root, data.get("commands"), policy, run_id, issues
+        root, data.get("commands"), policy, run_id, artifact_files, issues
     )
     component_digests = _verify_components(
         root,
@@ -1569,11 +1695,69 @@ def _verify_bundle(
         cleanup_digest,
         receipt_digests,
         receipt_executables,
+        artifact_files,
         issues,
+    )
+    pre_seal_safety = dict(_chain_outcome_from_issues(issues).safety)
+    pre_seal_safety.update(posture_safety)
+    pre_seal_safety.update(attack_safety)
+    pre_seal_safety.update(cleanup_safety)
+    return (
+        issues,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        posture_safety,
+        attack_safety,
+        cleanup_safety,
+        pre_seal_safety,
+        attack_blockers,
+        cleanup_blockers,
+    )
+
+
+def _verify_bundle(
+    root: Path,
+    data: dict[str, Any],
+    policy: TrustPolicy,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    artifact_files: dict[str, tuple[int, str]],
+    gates: dict[str, bool],
+) -> _ChainOutcome:
+    (
+        issues,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        posture_safety,
+        attack_safety,
+        cleanup_safety,
+        pre_seal_safety,
+        attack_blockers,
+        cleanup_blockers,
+    ) = _derive_chain(
+        root,
+        data,
+        policy,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        artifact_files,
+        gates,
     )
     seal_safety = _verify_seal(
         root,
-        data.get("evidence_seal"),
+        data,
         policy,
         run_id,
         commit,
@@ -1586,6 +1770,7 @@ def _verify_bundle(
         attack_digest,
         cleanup_digest,
         gates,
+        pre_seal_safety,
         issues,
     )
     outcome = _chain_outcome_from_issues(issues)
@@ -1676,8 +1861,12 @@ def verify_joint_evidence(
     data = _object(payload, "joint evidence")
     _keys(data, _TOP_LEVEL_KEYS, "joint evidence")
     run_id, commit, tree = _verify_run_envelope(data)
-    source_hash = _verify_manifest(root, data.get("source_manifest"), name="source_manifest")
-    artifact_hash = _verify_manifest(root, data.get("artifact_manifest"), name="artifact_manifest")
+    source_hash, _source_files = _verify_manifest(
+        root, data.get("source_manifest"), name="source_manifest"
+    )
+    artifact_hash, artifact_files = _verify_manifest(
+        root, data.get("artifact_manifest"), name="artifact_manifest"
+    )
     safety, gates = _verify_repository_invariants(data)
     provenance = _object(data.get("provenance"), "provenance")
     repository = _string(provenance.get("repository"), "provenance.repository")
@@ -1687,7 +1876,16 @@ def verify_joint_evidence(
     extra_blockers: list[str] = [policy_blocker] if policy_blocker else []
     if policy is not None:
         outcome = _verify_bundle(
-            root, data, policy, run_id, commit, tree, source_hash, artifact_hash, gates
+            root,
+            data,
+            policy,
+            run_id,
+            commit,
+            tree,
+            source_hash,
+            artifact_hash,
+            artifact_files,
+            gates,
         )
         safety.update(outcome.safety)
         extra_blockers.extend(outcome.blockers)
@@ -1706,6 +1904,76 @@ def verify_joint_evidence(
     )
 
 
+def compute_seal_binding(
+    run_dir: Path, payload: object, trust_policy_value: object
+) -> dict[str, Any]:
+    """Recompute the canonical evidence-seal binding the verifier derives for
+    ``payload`` against the given trust-policy JSON object.
+
+    This is review/test support: the adversarial forger and the test suite use
+    it to produce seal-consistent bundles so that every other authenticity
+    vector can be tested in isolation.  It never approves a policy, never
+    verifies a signature and never returns an admission decision; the approval
+    pin in :data:`_APPROVED_TRUST_POLICY_SHA256` still gates
+    :func:`verify_joint_evidence`.  Structural violations raise
+    :class:`ConfigurationError` exactly as the verifier would.
+    """
+    root = run_dir.resolve(strict=True)
+    if not root.is_dir() or root.is_symlink():
+        raise ConfigurationError("run directory must be a regular directory")
+    data = _object(payload, "joint evidence")
+    _keys(data, _TOP_LEVEL_KEYS, "joint evidence")
+    run_id, commit, tree = _verify_run_envelope(data)
+    source_hash, _source_files = _verify_manifest(
+        root, data.get("source_manifest"), name="source_manifest"
+    )
+    artifact_hash, artifact_files = _verify_manifest(
+        root, data.get("artifact_manifest"), name="artifact_manifest"
+    )
+    safety, gates = _verify_repository_invariants(data)
+    policy = _parse_trust_policy(trust_policy_value)
+    (
+        _issues,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        _posture_safety,
+        _attack_safety,
+        _cleanup_safety,
+        pre_seal_safety,
+        _attack_blockers,
+        _cleanup_blockers,
+    ) = _derive_chain(
+        root,
+        data,
+        policy,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        artifact_files,
+        gates,
+    )
+    return _seal_binding(
+        data,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        gates,
+        pre_seal_safety,
+    )
+
+
 def validate_joint_evidence(
     run_dir: Path, payload: object, trust_policy_path: Path | None = None
 ) -> JointGateReport:
@@ -1721,6 +1989,7 @@ def validate_joint_evidence(
 __all__ = [
     "JointGateReport",
     "TrustPolicy",
+    "compute_seal_binding",
     "load_trust_policy",
     "validate_joint_evidence",
     "validate_joint_evidence_contract",

@@ -11,7 +11,7 @@
     "formal_state": "blocked/not_proven",
     "decision": {
       "path": "docs/evidence/p34-7/production-readiness-decision.md",
-      "sha256": "c660f5a0072ef7c0fa3d0c4f4dbb303d462a7142cb652f0e2b38959b024bdc49"
+      "sha256": "869a818f9ff958163d85fea79825374710d0b29fed92ec472a243c7a2cce8587"
     }
   },
   "source": {
