@@ -402,3 +402,163 @@ def test_lifecycle_style_output_lines_are_redacted() -> None:
     rendered = redacted["lines"]
     assert "postgres://app:[REDACTED]@db.internal:5432/omnibase" in rendered
     assert "OPENAI_API_KEY=[REDACTED]" in rendered
+
+
+# --- Round 3: cross-element CLI pairs, whitespace forms, whole-item
+# --- fail-closed limits and the closed-set sensitive-name policy -------------
+
+CLI_PAIR_SECRET = "9f7vK2pQ"  # opaque: no token/secret/password keyword
+
+
+def test_cross_element_cli_argument_pairs_are_redacted() -> None:
+    payload = {
+        "argv": ["--api-key", CLI_PAIR_SECRET, "--profile", "lite", "server"],
+        "nested": [["--token", CLI_PAIR_SECRET], ["--password", CLI_PAIR_SECRET]],
+        "tuple_args": ("--token", CLI_PAIR_SECRET),
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    # Sensitive flag + following element -> the value is redacted whole; the
+    # non-sensitive "--profile" pair is preserved.
+    assert redacted["argv"] == ["--api-key", "[REDACTED]", "--profile", "lite", "server"]
+    assert redacted["nested"] == [
+        ["--token", "[REDACTED]"],
+        ["--password", "[REDACTED]"],
+    ]
+    assert redacted["tuple_args"] == ("--token", "[REDACTED]")
+
+
+def test_cross_element_cli_non_sensitive_args_are_preserved() -> None:
+    payload = {
+        "argv": ["--profile", "lite", "--verbose", "--service", "backend", "run"],
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["argv"] == ["--profile", "lite", "--verbose", "--service", "backend", "run"]
+
+
+def test_cross_element_cli_sensitive_flag_without_value_fails_closed() -> None:
+    payload = {"argv": ["--password"], "tail": ["--api-key", "--profile", "lite"]}
+    redacted = redact_mapping(payload)
+    # A sensitive flag with no following value is redacted itself; a following
+    # element that is itself a flag is never swallowed as a value.
+    assert redacted["argv"] == ["[REDACTED]"]
+    assert redacted["tail"] == ["[REDACTED]", "--profile", "lite"]
+
+
+def test_cross_element_cli_secret_in_serialized_diagnostics_absent() -> None:
+    payload = {"argv": ["--token", CLI_PAIR_SECRET], "endpoint": f"key={CLI_PAIR_SECRET}"}
+    serialized = diagnostics_json(probe_capabilities(ports=()), config_shape=payload)
+    assert CLI_PAIR_SECRET not in serialized
+    assert "[REDACTED]" in serialized
+
+
+def test_bounded_whitespace_assignment_forms_are_redacted() -> None:
+    payload = {
+        "env_line": "API_KEY = abc123xyz",
+        "cli_line": "--token  =  abc123xyz",
+        "header_line": "X-Api-Key : abc123xyz",
+        "json_line": '"access_token"  :  "abc123xyz"',
+        "fragment": "#api_key = frag99",
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["env_line"] == "API_KEY=[REDACTED]"
+    assert redacted["cli_line"] == "--token=[REDACTED]"
+    assert redacted["header_line"] == "X-Api-Key: [REDACTED]"
+    assert redacted["json_line"] == '"access_token": [REDACTED]'
+    assert redacted["fragment"] == "#api_key=[REDACTED]"
+
+
+def test_bounded_whitespace_forms_do_not_rewrite_ordinary_text() -> None:
+    payload = {
+        "note": "the mode = standard and profile = lite",
+        "time_note": "released at 12 : 30 and passed",
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["note"] == "the mode = standard and profile = lite"
+    assert redacted["time_note"] == "released at 12 : 30 and passed"
+
+
+def test_oversized_sensitive_header_fails_closed_whole_item() -> None:
+    secret = "x" * (512 + 300)
+    payload = {"header_line": f"X-Api-Key: {secret}"}
+    redacted = redact_mapping(payload)
+    assert secret not in json.dumps(redacted)
+    # The whole item is replaced; no 512-char prefix with a leaked tail.
+    assert redacted["header_line"] == "[REDACTED]"
+
+
+def test_oversized_sensitive_assignment_fails_closed_whole_item() -> None:
+    secret = "y" * (512 + 300)
+    payload = {"log_line": f"API_KEY={secret}"}
+    redacted = redact_mapping(payload)
+    assert secret not in json.dumps(redacted)
+    assert redacted["log_line"] == "[REDACTED]"
+
+
+def test_oversized_sensitive_cli_item_fails_closed_whole_item() -> None:
+    secret = "z" * (512 + 300)
+    payload = {"argv": ["--token", secret]}
+    redacted = redact_mapping(payload)
+    assert secret not in json.dumps(redacted)
+    # Cross-element pair: the following element is redacted whole regardless of
+    # size (the flag is kept for diagnosis).
+    assert redacted["argv"] == ["--token", "[REDACTED]"]
+    payload2 = {"argv": [f"--token={secret}"]}
+    redacted2 = redact_mapping(payload2)
+    assert secret not in json.dumps(redacted2)
+    assert redacted2["argv"] == ["[REDACTED]"]
+
+
+def test_oversized_non_sensitive_item_is_not_whole_item_redacted() -> None:
+    value = "n" * 700
+    payload = {"note": f"NOTE={value}"}
+    redacted = redact_mapping(payload)
+    # The bounded policy only fail-closes sensitive names; an oversized
+    # non-sensitive assignment stays structurally visible.
+    assert redacted["note"] == f"NOTE={value}"
+
+
+def test_sensitive_key_policy_is_closed_set_not_arbitrary_substring() -> None:
+    payload = {
+        "monkey": "banana",
+        "keyboard_layout": "qwerty",
+        "design": "modern",
+        "session_count": 42,
+        "api_key": "abc123",
+        "access_token": "xyz789",
+        "signature": "sig123",
+        "session_token": "tok456",
+    }
+    redacted = redact_mapping(payload)
+    # Preserved: keys that merely CONTAIN sensitive fragments must survive.
+    assert redacted["monkey"] == "banana"
+    assert redacted["keyboard_layout"] == "qwerty"
+    assert redacted["design"] == "modern"
+    assert redacted["session_count"] == 42
+    # Redacted: exact closed-set tokens and bounded-suffix variants.
+    assert redacted["api_key"] == "[REDACTED]"
+    assert redacted["access_token"] == "[REDACTED]"
+    assert redacted["signature"] == "[REDACTED]"
+    assert redacted["session_token"] == "[REDACTED]"
+
+
+def test_closed_set_policy_applies_to_parsed_names_too() -> None:
+    payload = {
+        "log_line": "monkey=banana keyboard_layout=qwerty design=modern session_count=42 "
+        "api_key=abc123 access_token=xyz789",
+        "header_line": "monkey: banana",
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["log_line"] == (
+        "monkey=banana keyboard_layout=qwerty design=modern session_count=42 "
+        "api_key=[REDACTED] access_token=[REDACTED]"
+    )
+    assert redacted["header_line"] == "monkey: banana"
+
+
+def test_whitespace_cli_pair_across_elements_with_bounded_spacing() -> None:
+    payload = {"argv": ["--api-key = " + CLI_PAIR_SECRET]}
+    redacted = redact_mapping(payload)
+    assert CLI_PAIR_SECRET not in json.dumps(redacted)
+    assert redacted["argv"] == ["--api-key=[REDACTED]"]

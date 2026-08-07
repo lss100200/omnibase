@@ -17,7 +17,7 @@ import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -174,11 +174,33 @@ def suggest_port(preferred: int, *, attempts: int = 20) -> int | None:
     return None
 
 
-def _container_engine() -> str:
-    for executable in ("docker", "podman"):
+# Shared container-engine resolution contract. The capability probe and the
+# lifecycle wrapper use the SAME candidates and preference order: Docker
+# first, then Podman, then ``"none"``. When only Podman is observable the
+# probe claims Local only because the lifecycle actually executes a controlled
+# ``podman compose --env-file .env.example`` path; when neither is present
+# Local is never claimed. Executable presence is evidence of local Compose
+# orchestration availability only, never of hostile-code isolation.
+CONTAINER_ENGINE_CANDIDATES: Final[tuple[str, ...]] = ("docker", "podman")
+
+
+def resolve_container_engine() -> str:
+    """Resolve the container engine shared by probe and lifecycle.
+
+    Returns ``"docker"``, ``"podman"`` or ``"none"``. Both consumers must
+    derive every claim and every Compose invocation from this single
+    resolution so a Podman-only host either gets a real Podman Compose path or
+    never claims Local available.
+    """
+    for executable in CONTAINER_ENGINE_CANDIDATES:
         if shutil.which(executable):
             return executable
     return "none"
+
+
+def _container_engine() -> str:
+    """Backward-compatible alias used by the probe (same shared contract)."""
+    return resolve_container_engine()
 
 
 def _probe_nvidia_gpu() -> tuple[str, EvidenceState, tuple[str, ...]]:
@@ -335,7 +357,7 @@ def probe_capabilities(
         (
             "container_engine",
             EvidenceState.DETECTED if engine != "none" else EvidenceState.UNKNOWN,
-            "shutil.which probe",
+            "shared resolve_container_engine shutil.which probe (docker then podman)",
         ),
     ]
     evidence: list[str] = [
@@ -384,6 +406,7 @@ def probe_capabilities(
 
 
 __all__ = [
+    "CONTAINER_ENGINE_CANDIDATES",
     "CapabilityReport",
     "EvidenceState",
     "ExecutionBackend",
@@ -392,5 +415,6 @@ __all__ = [
     "check_port",
     "probe_capabilities",
     "probe_network_state",
+    "resolve_container_engine",
     "suggest_port",
 ]

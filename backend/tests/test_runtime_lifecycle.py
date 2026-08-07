@@ -61,7 +61,17 @@ def _patch_subprocess(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> list
 
     monkeypatch.setattr(lifecycle.subprocess, "run", _run)
     monkeypatch.setattr(lifecycle.shutil, "which", lambda _name: "docker")
+    # The shared container-engine resolution contract drives the probe claim
+    # AND the Compose command; the default fake host is Docker-only.
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "docker")
     return calls
+
+
+def _patch_engine(
+    monkeypatch: pytest.MonkeyPatch, engine: str | None
+) -> None:
+    """Pin the shared container-engine resolution (None -> no engine)."""
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: engine or "none")
 
 
 @pytest.mark.parametrize(
@@ -79,6 +89,7 @@ def test_compose_command_exact_array_with_env_file_for_every_verb(
     monkeypatch, tmp_path, verb: str, extra: list[str], services: tuple[str, ...]
 ) -> None:
     monkeypatch.setattr(lifecycle.shutil, "which", lambda _name: "docker")
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "docker")
     repo = _make_repo(tmp_path)
     command = lifecycle._compose_command(verb, repo_root=repo, services=services, extra_args=extra)
     assert command == [
@@ -193,11 +204,100 @@ def test_executable_not_found_returns_127(monkeypatch, tmp_path) -> None:
     assert calls
 
 
-def test_missing_docker_executable_raises_before_subprocess(monkeypatch, tmp_path) -> None:
+def test_missing_container_engine_raises_before_subprocess(monkeypatch, tmp_path) -> None:
+    # Neither Docker nor Podman is observable: the shared resolution reports
+    # "none" and the lifecycle fails closed BEFORE any subprocess call.
     repo = _make_repo(tmp_path)
-    monkeypatch.setattr(lifecycle.shutil, "which", lambda _name: None)
-    with pytest.raises(FileNotFoundError, match="docker_executable_not_found"):
+    calls: list[object] = []
+
+    def _run(command: object, **kwargs: object) -> object:
+        calls.append(command)
+        return FakeCompleted()
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", _run)
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "none")
+    with pytest.raises(FileNotFoundError, match="container_engine_not_found"):
         lifecycle._compose_command("ps", repo_root=repo)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("engine", "expected_executable"),
+    [
+        ("docker", "docker"),
+        ("podman", "podman"),
+    ],
+)
+def test_compose_command_uses_shared_engine_resolution(
+    monkeypatch, tmp_path, engine: str, expected_executable: str
+) -> None:
+    # Docker-only and Podman-only hosts: the lifecycle executes the controlled
+    # Compose path of the SAME engine the capability probe resolved.
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: engine)
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda name: f"/usr/bin/{name}")
+    command = lifecycle._compose_command("ps", repo_root=repo, services=("backend",))
+    assert command[0] == f"/usr/bin/{expected_executable}"
+    assert command[1] == "compose"
+    assert "--env-file" in command
+    assert command[command.index("--env-file") + 1] == str(repo / ".env.example")
+    assert str(repo / ".env") not in command
+
+
+def test_podman_only_executes_controlled_podman_compose_path(monkeypatch, tmp_path) -> None:
+    # The podman Compose path is a real, controlled argument array: the
+    # explicit .env.example is passed, no shell string is built, and the
+    # subprocess boundary receives exactly the array.
+    repo = _make_repo(tmp_path)
+    calls = _patch_subprocess(monkeypatch, FakeCompleted())
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "podman")
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda _name: "C:/Program Files/RedHat/Podman/podman.exe")
+    request = lifecycle.validate_request("local", ["backend", "redis"])
+    result = lifecycle.start(request, repo_root=repo)
+    assert result.exit_code == 0
+    assert calls[0]["command"] == [
+        "C:/Program Files/RedHat/Podman/podman.exe",
+        "compose",
+        "--env-file",
+        str(repo / ".env.example"),
+        "-f",
+        str(repo / "docker-compose.yml"),
+        "up",
+        "-d",
+        "backend",
+        "redis",
+    ]
+    assert calls[0]["shell"] is False
+    for call in calls:
+        for element in call["command"]:
+            assert isinstance(element, str)
+
+
+def test_both_engines_prefer_docker(monkeypatch, tmp_path) -> None:
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "docker")
+    monkeypatch.setattr(lifecycle.shutil, "which", lambda name: f"/usr/bin/{name}")
+    command = lifecycle._compose_command("ps", repo_root=repo)
+    assert command[0] == "/usr/bin/docker"
+
+
+def test_neither_engine_never_claims_local_and_fails_closed(
+    monkeypatch, tmp_path
+) -> None:
+    # Probe side: no LOCAL mode when the shared resolution reports "none".
+    from omnibase.runtime import capabilities as caps
+
+    monkeypatch.setattr(caps.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(caps, "_probe_nvidia_gpu", lambda: ("unknown", caps.EvidenceState.UNKNOWN, ()))
+    report = caps.probe_capabilities(ports=(), root=tmp_path)
+    assert report.container_engine == "none"
+    assert report.supports(caps.ProductMode.LITE)
+    assert not report.supports(caps.ProductMode.LOCAL)
+    assert report.backends == (caps.ExecutionBackend.NO_TOOL,)
+    # Lifecycle side: no Compose command can be built.
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "none")
+    with pytest.raises(FileNotFoundError, match="container_engine_not_found"):
+        lifecycle._compose_command("ps", repo_root=_make_repo(tmp_path))
 
 
 def test_stdout_and_stderr_are_bounded_and_redacted(monkeypatch, tmp_path) -> None:

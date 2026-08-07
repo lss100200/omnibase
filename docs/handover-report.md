@@ -3052,3 +3052,90 @@ Apple Silicon/NVIDIA/独立 Runner 平台；disposable PostgreSQL
 integration/destructive 测试；生产 Runtime 激活、migration `0013`、
 Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。Hardened
 保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。
+
+### Cross-Platform Desktop Runtime Review-Fix Round 3（2026-08-07）
+
+针对分支 `external/cross-platform-desktop-runtime` 的 Review-Fix Round 3，
+继续 forward-fix 于普通 review-fix commit（无 amend/rebase/reset，无
+push/PR/merge）。本轮 Docker daemon 已可用（server 29.6.2 / Compose
+v5.3.1），因此补跑了 maintenance-map 的容器 canonical 验证（含完整仓库
+mount 的 `-v .:/workspace -w /workspace` 路径），并重算了三个 Phase 5
+example contract 的 sealed digest 链。
+
+修复内容：
+
+1. **跨元素 CLI 参数对**：`_redact_value` 的 sequence 分支识别独立敏感 flag
+   元素（`--api-key`/`--token`/`--password` 等），把紧跟的数组元素整体
+   脱敏为 `[REDACTED]`（opaque 值同样覆盖）；非敏感参数
+   （`["--profile", "lite"]`、`--verbose`）原样保留；敏感 flag 无后继值时
+   flag 自身 fail-closed 脱敏；后继元素本身是另一个 flag 时不被吞作值。
+2. **有界空白形式**：`NAME = value`、`--name = value`、`Name : value`、
+   `"name" : "value"` 分隔符两侧允许最多 8 个水平空白（`[ \t]{0,8}`，
+   不跨行），与既有结构共用同一 normalized sensitive-name policy。
+3. **整项 fail-closed**：敏感 Header/JSON/assignment/CLI value 超过单项解析
+   上限（512）时，整个 item（整段 match 至行分隔符）替换为 `[REDACTED]`，
+   不再只替换前 512 字符而泄漏尾部；值上限放宽到整串上限 2048 后再按
+   item 长度 fail-closed，解析仍线性有界。
+4. **敏感名 policy 改为闭集 + 有界后缀**：`_is_sensitive_key` 不再做任意
+   substring 匹配，改为 normalized（sep/flat）token/full-field 闭集加
+   `_` 分隔有界后缀策略；`monkey`、`keyboard_layout`、`design`、
+   `session_count` 保留，`api_key`、`access_token`、`signature`、
+   `session_token` 及 provider 变体（`STRIPE_API_KEY`、`GITHUB_TOKEN`、
+   `redis_connection_string` 等）脱敏；`key`/`sig`/`session` 等闭集全字段
+   仍脱敏（覆盖 query key/fragment 需求）。
+5. **共享容器引擎契约**：新增 `capabilities.resolve_container_engine()`
+   （Docker 优先、其次 Podman、都没有为 `none`），probe 与 lifecycle
+   共用同一分辨率；lifecycle `_compose_command` 在 Podman-only 时实际执行
+   受控 `podman compose --env-file .env.example -f docker-compose.yml`
+   参数数组路径，两者皆无时 fail-closed `container_engine_not_found`
+   （subprocess 前拒绝，Local 永不 claim）。四种分辨率（Docker-only /
+   Podman-only / 两者都有 / 都没有）在 probe 与 lifecycle 两侧都有负向
+   测试；`test_runtime_capabilities.py` 10→13、`test_runtime_lifecycle.py`
+   25→33、`test_runtime_redaction_attacks.py` 36→48。
+6. **治理同步**：maintenance-map `desktop-runtime` 验证命令改为容器
+   canonical 命令（pytest/mypy/ruff 用 `-w /workspace/backend`，仓库级
+   scripts/CLI/validators 用完整仓库 mount `-v .:/workspace -w
+   /workspace` + `-e PYTHONPATH=/workspace/backend/src`），并新增共享引擎
+   契约 recovery 条目；security-invariants INV-052 与 ai-maintainer-map
+   6.12 同步闭集/suffix policy、跨元素 CLI、有界空白、整项 fail-closed 与
+   共享引擎契约；`docs/desktop-runtime.md` 同步；handover 追加本节。
+
+验证（exit code 均为 0，除非标注）：
+
+- 宿主 focused pytest `101 passed`（capabilities 13 + redaction attacks 48 +
+  lifecycle 33 + rag performance 5 + 2 容器契约用例）；Ruff check /
+  format --check / Mypy `src/omnibase/runtime` + `rag/performance.py`
+  通过；compileall 通过；`git diff --check` 干净。
+- 容器 canonical（`docker compose --env-file .env.example`）：
+  `run --rm --no-deps -v .:/workspace -w /workspace/backend backend
+  pytest tests/test_runtime_capabilities.py tests/test_runtime_redaction_attacks.py
+  tests/test_runtime_lifecycle.py tests/test_rag_performance.py -q` →
+  `101 passed`；同前缀 Mypy `src/omnibase/runtime src/omnibase/rag/performance.py`
+  `Success: no issues found in 5 source files`；Ruff check / format --check
+  通过；`-v .:/workspace -w /workspace` 完整仓库 mount 下
+  `scripts/runtime/omnibase_desktop.py doctor` 正常（exit 0）、
+  `start --profile hardened` 被拒绝（exit 2，argparse invalid choice）；
+  `scripts/maintenance/validate_maintainer_map.py --repo-root .` 与
+  `validate_maintainer_benchmark.py --repo-root .` 通过；
+  `docker compose --env-file .env.example config --quiet` 通过。
+- P5.1/P5.2A/P5.3A example contract `--verify`（validate_p5_1_registry_contract.py
+  / validate_p5_2a_task_ledger_contract.py / validate_p5_3a_planner_contract.py）
+  在提交后 clean checkout 下无 veto：registry/task-ledger/planner 的
+  maintainer_map 与 security_invariants sealed digest 及链引用 digest
+  （task-ledger→registry、planner→registry/task-ledger）已按最终提交字节
+  重算并 reseal，三个 Phase 5 Feature Gate 保持 false，formal state 保持
+  `blocked/not_proven`。
+- 独立泄漏探针（脚本直跑）：`["--api-key","SECRET"]` /
+  `["--token","SECRET"]` / `["--password","SECRET"]` → value 整体
+  `[REDACTED]`；`--profile`/`--verbose` 保留；`API_KEY = x`、
+  `--token = x`、`X-Api-Key : x`、`"access_token" : "x"` → 脱敏；
+  700 字符敏感 Header/assignment → 整项 `[REDACTED]`；`monkey`/
+  `keyboard_layout`/`design`/`session_count` 保留。
+
+未执行/未证明：真实 macOS/Linux/Apple-Silicon/NVIDIA/独立 Runner 平台
+（mocked 测试不构成跨平台就绪证据，platform_matrix 保持 not_proven）；
+真实 Podman daemon 上的端到端 `podman compose up`（只验证了受控参数数组
+构造与 mock subprocess 边界，未运行真实 Podman 服务）；disposable
+PostgreSQL integration/destructive 测试；生产 Runtime 激活、migration
+`0013`、Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。
+Hardened 保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。

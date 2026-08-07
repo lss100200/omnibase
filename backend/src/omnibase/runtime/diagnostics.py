@@ -14,16 +14,28 @@ keyword-bearing samples**:
 * sensitive query keys and fragments (``key``, ``api_key``, ``token``,
   ``access_token``, ``signature``, ``sig``, ``credential``, ``password`` and
   provider variants) such as ``?key=abc`` / ``#token=abc``;
-* ``NAME=value`` assignments, CLI ``--name=value`` forms, ``Name: value``
-  headers and quoted JSON-ish log lines, all with the same normalized
+* ``NAME=value`` assignments (with bounded horizontal whitespace,
+  ``NAME = value``), CLI ``--name=value`` / ``--name = value`` forms, ``Name:
+  value`` headers and quoted JSON-ish log lines, all with the same normalized
   sensitive-name policy;
+* cross-element CLI argument pairs in sequences: a sensitive flag such as
+  ``--api-key`` redacts the *following* array element as one whole item
+  (``["--api-key", "SECRET"]``), while non-sensitive arguments are preserved;
 * provider-key shapes are covered through the value of a sensitive name, never
   through guessing secret prefixes.
+
+The sensitive-name policy is a normalized token/full-field closed set plus a
+bounded ``_``-delimited suffix policy -- deliberately **no arbitrary substring
+matching**: ``monkey``, ``keyboard_layout``, ``design`` and ``session_count``
+are preserved while ``api_key``, ``access_token``, ``signature``,
+``session_token`` and provider variants are redacted.
 
 All parsing is bounded and linear (no unbounded quantifiers, no nested
 quantifiers, no catastrophic backtracking): strings are capped before parsing,
 lines are capped in count, names and values are capped in length and every
-replacement is deterministic.
+replacement is deterministic. Sensitive item values that exceed the
+single-item parse limit fail closed: the **whole item** is replaced with
+``[REDACTED]``, never a truncated prefix that would leak the tail.
 """
 
 from __future__ import annotations
@@ -36,81 +48,105 @@ from typing import Final
 
 from omnibase.runtime.capabilities import CapabilityReport, ProductMode
 
-# Sensitive key fragments, matched case-insensitively against any mapping key
-# and against parsed assignment/query/header names. Covers authorization,
-# cookie/set-cookie, api key/token/secret/password/private-key/credential
-# variants plus common provider credential names. A fragment match redacts the
-# whole value without inspecting its contents.
-_SENSITIVE_KEY_FRAGMENTS: Final[tuple[str, ...]] = (
-    "secret",
-    "password",
-    "passwd",
-    "pwd",
-    "passphrase",
-    "token",
-    "apikey",
-    "api_key",
-    "api-key",
-    "apisecret",
-    "api_secret",
-    "api-secret",
-    "key",
-    "accesskey",
-    "access_key",
-    "access-key",
-    "secretkey",
-    "secret_key",
-    "secret-key",
-    "authorization",
-    "authorisation",
-    "auth",
-    "cookie",
-    "set-cookie",
-    "setcookie",
-    "credential",
-    "credentials",
-    "privatekey",
-    "private_key",
-    "private-key",
-    "private-key-path",
-    "clientsecret",
-    "client_secret",
-    "client-secret",
-    "accesstoken",
-    "access_token",
-    "access-token",
-    "refreshtoken",
-    "refresh_token",
-    "refresh-token",
-    "connectionstring",
-    "connection_string",
-    "connection-string",
-    "dsn",
-    "databaseurl",
-    "database_url",
-    "database-url",
-    "postgres_password",
-    "minio_root_password",
-    "redis_password",
-    "jwt_secret",
-    "jwt",
-    "signingkey",
-    "signing_key",
-    "signing-key",
-    "signature",
-    "sig",
-    "session",
-    "sessionkey",
-    "session_key",
-    "session-key",
-    "llm_api_key",
-    "openai_api_key",
-    "anthropic_api_key",
-    "azure_api_key",
-    "google_api_key",
-    "serviceaccountjson",
-    "huggingface_token",
-    "hf_token",
+# Sensitive-name policy. Keys are normalized into a separator form (runs of
+# non-alphanumerics become ``_``) and a flat form (non-alphanumerics removed),
+# then matched against a closed set of full-field tokens and a bounded set of
+# ``_``-delimited suffixes. There is deliberately NO arbitrary substring
+# matching: ``monkey``, ``keyboard_layout``, ``design`` and ``session_count``
+# are preserved while ``api_key``, ``access_token``, ``signature`` and
+# ``session_token`` are redacted. The same policy drives mapping keys, parsed
+# assignment/query/header names and cross-element CLI flags. A match redacts
+# the whole value without inspecting its contents.
+_SENSITIVE_KEY_TOKENS: Final[frozenset[str]] = frozenset(
+    {
+        # Full-field names in normalized separator form.
+        "authorization",
+        "authorisation",
+        "auth",
+        "cookie",
+        "set_cookie",
+        "key",
+        "secret",
+        "password",
+        "passwd",
+        "pwd",
+        "passphrase",
+        "token",
+        "api_key",
+        "api_secret",
+        "access_key",
+        "access_token",
+        "secret_key",
+        "refresh_token",
+        "session",
+        "session_key",
+        "session_token",
+        "signing_key",
+        "signature",
+        "sig",
+        "credential",
+        "credentials",
+        "private_key",
+        "client_secret",
+        "connection_string",
+        "dsn",
+        "database_url",
+        "jwt",
+        "jwt_secret",
+        "service_account_json",
+        "llm_api_key",
+        "openai_api_key",
+        "anthropic_api_key",
+        "azure_api_key",
+        "google_api_key",
+        "huggingface_token",
+        "hf_token",
+        "postgres_password",
+        "minio_root_password",
+        "redis_password",
+        # Flat (no-separator) variants used by mixed-case/env-style keys.
+        "apikey",
+        "apisecret",
+        "accesskey",
+        "accesstoken",
+        "secretkey",
+        "refreshtoken",
+        "signingkey",
+        "privatekey",
+        "clientsecret",
+        "connectionstring",
+        "databaseurl",
+        "setcookie",
+        "sessionkey",
+        "sessiontoken",
+        "serviceaccountjson",
+        "jwtsecret",
+    }
+)
+
+# Bounded ``_``-delimited suffix policy for provider variants: any normalized
+# separator-form key ending with one of these is sensitive. ``monkey`` never
+# matches (no ``_`` boundary) and ``session_count``/``keyboard_layout`` do not
+# end with a sensitive suffix.
+_SENSITIVE_KEY_SUFFIXES: Final[tuple[str, ...]] = (
+    "_key",
+    "_token",
+    "_secret",
+    "_password",
+    "_passwd",
+    "_passphrase",
+    "_credential",
+    "_signature",
+    "_auth",
+    "_authorization",
+    "_cookie",
+    "_dsn",
+    "_jwt",
+    "_pwd",
+    "_connection_string",
+    "_database_url",
+    "_connectionstring",
+    "_databaseurl",
 )
 
 _SECRET_VALUE_MARKERS: Final[tuple[str, ...]] = (
@@ -129,6 +165,11 @@ MAX_STRING_LENGTH: Final[int] = 2048
 # Bounded line tokenizer limits: at most this many lines per string are parsed
 # and each parsed name/value is length-capped by the regexes below.
 MAX_REDACTION_LINES: Final[int] = 512
+# Single-item value parse limit for headers/assignments/CLI values. A sensitive
+# item whose value exceeds this limit is fail-closed as a WHOLE item (the full
+# match is consumed and replaced with the marker), never truncated to a prefix
+# that would leak the tail.
+MAX_ITEM_VALUE_LENGTH: Final[int] = 512
 
 _REDACTED: Final[str] = "[REDACTED]"
 
@@ -139,24 +180,34 @@ _URI_USERINFO_RE: Final[re.Pattern[str]] = re.compile(
     r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)(?P<userinfo>[^/\s@#?]+)@"
 )
 
-# ``NAME=value`` assignments (env/log/query/fragment style). The name is a
+# ``NAME=value`` assignments (env/log/query/fragment style) with bounded
+# horizontal whitespace around the separator (``NAME = value``). The name is a
 # bounded identifier; the value is a bounded run that stops at whitespace,
 # ``&`` and ``#`` so consecutive query keys are redacted one by one. The
 # lookbehind stops mid-identifier matches such as ``key`` inside ``--api-key``.
 _EQUALS_ASSIGNMENT_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9_.\-])([A-Za-z_][A-Za-z0-9_.\-]{0,127})=([^\s&#]*)"
+    r"(?<![A-Za-z0-9_.\-])([A-Za-z_][A-Za-z0-9_.\-]{0,127})"
+    r"[ \t]{0,8}=[ \t]{0,8}([^\s&#]{0,2048})"
 )
 
-# CLI ``--name=value`` form.
+# CLI ``--name=value`` / ``--name = value`` form.
 _CLI_ASSIGNMENT_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9_.\-])--([A-Za-z][A-Za-z0-9_.\-]{0,127})=([^\s&#]*)"
+    r"(?<![A-Za-z0-9_.\-])--([A-Za-z][A-Za-z0-9_.\-]{0,127})"
+    r"[ \t]{0,8}=[ \t]{0,8}([^\s&#]{0,2048})"
 )
 
-# ``Name: value`` headers and quoted JSON-ish ``"name": "value"`` lines. The
+# A standalone CLI flag element (no ``=``): used for cross-element argument
+# pairs such as ``["--api-key", "SECRET"]``.
+_CLI_FLAG_ONLY_RE: Final[re.Pattern[str]] = re.compile(r"--[A-Za-z][A-Za-z0-9_.\-]{0,127}")
+
+# ``Name: value`` headers and quoted JSON-ish ``"name": "value"`` lines, with
+# bounded horizontal whitespace around the colon (``Name : value``). The
 # optional surrounding quotes must match; the value may contain whitespace and
-# is length-capped at 512 characters, stopping at quotes/semicolons/braces.
+# is capped at the whole-string limit so an oversized sensitive item is
+# consumed entirely and fail-closed as one item, never leaving a leaked tail.
 _COLON_ASSIGNMENT_RE: Final[re.Pattern[str]] = re.compile(
-    r'(["\']?)([A-Za-z_][A-Za-z0-9_.\-]{0,127})\1\s*:\s*(["\']?[^"\'\r\n;{}]{0,512}["\']?)'
+    r'(["\']?)([A-Za-z_][A-Za-z0-9_.\-]{0,127})\1'
+    r'[ \t]{0,8}:[ \t]{0,8}(["\']?[^"\'\r\n;{}]{0,2048}["\']?)'
 )
 
 
@@ -178,17 +229,22 @@ def select_mode(report: CapabilityReport, requested: ProductMode | None = None) 
 
 
 def _is_sensitive_key(key: object) -> bool:
-    """Return True when ``key`` matches a sensitive fragment case-insensitively."""
+    """Return True when ``key`` matches the normalized sensitive-name policy.
+
+    The key is normalized into a separator form (``API-Key`` -> ``api_key``)
+    and a flat form (``APIKey`` -> ``apikey``) and matched against a closed
+    set of full-field tokens or a bounded ``_``-delimited suffix set. There is
+    deliberately no arbitrary substring matching.
+    """
     if not isinstance(key, str):
         return False
-    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
-    if not normalized:
-        return False
-    for fragment in _SENSITIVE_KEY_FRAGMENTS:
-        needle = re.sub(r"[^a-z0-9]", "", fragment.lower())
-        if needle and needle in normalized:
-            return True
-    return False
+    lower = key.lower()
+    sep = re.sub(r"[^a-z0-9]+", "_", lower).strip("_")
+    if sep in _SENSITIVE_KEY_TOKENS:
+        return True
+    if re.sub(r"[^a-z0-9]", "", lower) in _SENSITIVE_KEY_TOKENS:
+        return True
+    return any(sep.endswith(suffix) for suffix in _SENSITIVE_KEY_SUFFIXES)
 
 
 def _redact_uri_userinfo(text: str) -> str:
@@ -216,17 +272,26 @@ def _redact_uri_userinfo(text: str) -> str:
 
 
 def _redact_assignments(text: str) -> str:
-    """Redact ``NAME=value`` and ``--name=value`` forms by sensitive name."""
+    """Redact ``NAME=value`` / ``--name=value`` forms by sensitive name.
+
+    A sensitive assignment whose value exceeds the single-item parse limit is
+    fail-closed as a whole item (the entire match is consumed and replaced
+    with the marker), never a truncated prefix that could leak the tail.
+    """
 
     def _replace_equals(match: re.Match[str]) -> str:
-        name, _value = match.group(1), match.group(2)
+        name, value = match.group(1), match.group(2)
         if _is_sensitive_key(name):
+            if len(value) > MAX_ITEM_VALUE_LENGTH:
+                return _REDACTED
             return f"{name}={_REDACTED}"
         return match.group(0)
 
     def _replace_cli(match: re.Match[str]) -> str:
-        name, _value = match.group(1), match.group(2)
+        name, value = match.group(1), match.group(2)
         if _is_sensitive_key(name):
+            if len(value) > MAX_ITEM_VALUE_LENGTH:
+                return _REDACTED
             return f"--{name}={_REDACTED}"
         return match.group(0)
 
@@ -235,11 +300,19 @@ def _redact_assignments(text: str) -> str:
 
 
 def _redact_colon_assignments(text: str) -> str:
-    """Redact ``Name: value`` headers and quoted ``"name": "value"`` lines."""
+    """Redact ``Name: value`` headers and quoted ``"name": "value"`` lines.
+
+    A sensitive header/JSON item whose value exceeds the single-item parse
+    limit is fail-closed as a whole item (the full match up to the line
+    delimiter is consumed), so the tail can never leak after a truncated
+    prefix replacement.
+    """
 
     def _replace(match: re.Match[str]) -> str:
-        quote, name, _value = match.group(1), match.group(2), match.group(3)
+        quote, name, value = match.group(1), match.group(2), match.group(3)
         if _is_sensitive_key(name):
+            if len(value) > MAX_ITEM_VALUE_LENGTH:
+                return _REDACTED
             if quote:
                 return f"{quote}{name}{quote}: {_REDACTED}"
             return f"{name}: {_REDACTED}"
@@ -285,6 +358,48 @@ def _redact_string(value: str) -> str:
     if original_length > MAX_STRING_LENGTH:
         return f"[TRUNCATED:{original_length}]"
     return redacted
+
+
+def _is_standalone_cli_flag(item: object) -> bool:
+    """Return True when ``item`` is a standalone ``--name`` flag element."""
+    return isinstance(item, str) and _CLI_FLAG_ONLY_RE.fullmatch(item) is not None
+
+
+def _redact_sequence(
+    items: Sequence[object],
+    *,
+    depth: int,
+    seen_ids: set[int],
+) -> list[object]:
+    """Redact a bounded sequence element-by-element.
+
+    Cross-element CLI argument pairs are handled first: a standalone sensitive
+    flag (``--api-key``) redacts the FOLLOWING element as one whole item
+    (covering opaque values with no keyword), while non-sensitive flags and
+    their values are preserved. A sensitive flag with no following value is
+    fail-closed redacted itself, and a following element that is itself a flag
+    is never swallowed as a value.
+    """
+    redacted_items: list[object] = []
+    index = 0
+    while index < len(items):
+        item = items[index]
+        if (
+            isinstance(item, str)
+            and _CLI_FLAG_ONLY_RE.fullmatch(item)
+            and _is_sensitive_key(item[2:])
+        ):
+            if index + 1 < len(items) and not _is_standalone_cli_flag(items[index + 1]):
+                redacted_items.append(item)
+                redacted_items.append("[REDACTED]")
+                index += 2
+                continue
+            redacted_items.append("[REDACTED]")
+            index += 1
+            continue
+        redacted_items.append(_redact_value(item, depth=depth + 1, seen_ids=seen_ids))
+        index += 1
+    return redacted_items
 
 
 def _redact_value(
@@ -333,9 +448,7 @@ def _redact_value(
         try:
             if len(value) > MAX_COLLECTION_SIZE:
                 return f"[OVERSIZED_SEQUENCE:{len(value)}]"
-            redacted_items: list[object] = [
-                _redact_value(item, depth=depth + 1, seen_ids=seen_ids) for item in value
-            ]
+            redacted_items = _redact_sequence(value, depth=depth, seen_ids=seen_ids)
         finally:
             seen_ids.discard(object_id)
         # Preserve tuple-ness so callers that rely on type shape do not break.
@@ -408,6 +521,7 @@ def diagnostics_json(
 
 __all__ = [
     "MAX_COLLECTION_SIZE",
+    "MAX_ITEM_VALUE_LENGTH",
     "MAX_REDACTION_DEPTH",
     "MAX_STRING_LENGTH",
     "ServiceStatus",

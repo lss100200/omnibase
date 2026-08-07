@@ -57,6 +57,51 @@ def test_capability_probe_keeps_hardened_unproven(monkeypatch, tmp_path) -> None
     assert "hardened_isolation" in fact_names
 
 
+@pytest.mark.parametrize(
+    ("case_name", "paths", "expected"),
+    [
+        ("docker-only", {"docker": "/usr/bin/docker", "podman": None}, "docker"),
+        ("podman-only", {"docker": None, "podman": "/usr/bin/podman"}, "podman"),
+        ("both-present", {"docker": "/usr/bin/docker", "podman": "/usr/bin/podman"}, "docker"),
+        ("neither-present", {"docker": None, "podman": None}, "none"),
+    ],
+)
+def test_shared_container_engine_resolution_four_cases(
+    monkeypatch, case_name: str, paths: dict[str, str | None], expected: str
+) -> None:
+    # The probe and the lifecycle MUST share one resolution contract. Docker
+    # wins over Podman when both exist; absence yields "none" so Local is
+    # never claimed without an executable Compose path.
+    from omnibase.runtime import capabilities as caps
+
+    monkeypatch.setattr(caps.shutil, "which", lambda name, paths=paths: paths.get(name))
+    assert caps.resolve_container_engine() == expected
+
+
+def test_local_mode_claim_matches_shared_engine_resolution(monkeypatch, tmp_path) -> None:
+    # Podman-only: Local IS claimed because the lifecycle has a real controlled
+    # Podman Compose path (verified in test_runtime_lifecycle).
+    from omnibase.runtime import capabilities as caps
+
+    monkeypatch.setattr(
+        caps.shutil, "which", lambda name: "/usr/bin/podman" if name == "podman" else None
+    )
+    monkeypatch.setattr(
+        caps, "_probe_nvidia_gpu", lambda: ("unknown", EvidenceState.UNKNOWN, ())
+    )
+    report = caps.probe_capabilities(ports=(), root=tmp_path)
+    assert report.container_engine == "podman"
+    assert report.supports(ProductMode.LOCAL)
+    assert caps.ExecutionBackend.LOCAL_CONTAINER in report.backends
+
+    # Neither present: Local is NOT claimed; only the no-tool backend remains.
+    monkeypatch.setattr(caps.shutil, "which", lambda _name: None)
+    report2 = caps.probe_capabilities(ports=(), root=tmp_path)
+    assert report2.container_engine == "none"
+    assert not report2.supports(ProductMode.LOCAL)
+    assert report2.backends == (caps.ExecutionBackend.NO_TOOL,)
+
+
 def test_mode_selection_rejects_unproven_local() -> None:
     report = probe_capabilities(ports=(), network="unknown", virtualization="unknown")
     with pytest.raises(ValueError, match="mode_not_available:hardened"):

@@ -1,10 +1,14 @@
 """Safe local lifecycle wrapper for approved non-hostile-code profiles.
 
 The desktop lifecycle is a thin, allowlisted wrapper over repository Compose
-configuration. It only ever invokes ``docker compose`` with an explicit
-``--env-file .env.example`` and an argument array (never a shell command string
-built from user input). Hardened mode stays blocked: the desktop wrapper cannot
-enable hostile-code isolation on its own and reports it as ``not_proven``.
+configuration. It shares the container-engine resolution contract
+(:func:`omnibase.runtime.capabilities.resolve_container_engine`) with the
+capability probe: Docker first, then Podman, and a controlled
+``podman compose`` path when Podman is the only engine. It only ever invokes
+Compose with an explicit ``--env-file .env.example`` and an argument array
+(never a shell command string built from user input). Hardened mode stays
+blocked: the desktop wrapper cannot enable hostile-code isolation on its own
+and reports it as ``not_proven``.
 
 Windows, Linux and macOS behave differently (service availability, port probe
 semantics, GPU probes). Evidence from one host is never generalized to another;
@@ -24,6 +28,7 @@ from omnibase.runtime.capabilities import (
     ProductMode,
     check_port,
     probe_capabilities,
+    resolve_container_engine,
     suggest_port,
 )
 from omnibase.runtime.diagnostics import ServiceStatus, redact_mapping
@@ -107,20 +112,29 @@ def _compose_command(
 ) -> list[str]:
     """Build a Compose argument array with an explicit safe env file.
 
-    ``docker compose`` is invoked with ``--env-file .env.example`` so the
-    repository root ``.env`` is never implicitly read or expanded. The verb and
-    service names are validated against closed allowlists. The result is always
-    an argument array passed directly to ``subprocess``: it is never joined
-    into a shell string.
+    The container engine comes from the SAME ``resolve_container_engine``
+    contract the capability probe uses (Docker first, then Podman). When only
+    Podman is observable the command executes a controlled
+    ``podman compose --env-file .env.example -f docker-compose.yml`` path, so
+    a Podman-only host either really runs the lifecycle or never claims Local
+    available. ``docker compose``/``podman compose`` are invoked with an
+    explicit ``--env-file .env.example`` so the repository root ``.env`` is
+    never implicitly read or expanded. The verb and service names are
+    validated against closed allowlists. The result is always an argument
+    array passed directly to ``subprocess``: it is never joined into a shell
+    string.
     """
     if verb not in ALLOWED_VERBS:
         raise ValueError(f"verb_not_allowed:{verb}")
     for service in services:
         if service not in ALLOWED_SERVICES:
             raise ValueError(f"service_not_allowed:{service}")
-    compose_executable = shutil.which("docker")
+    engine = resolve_container_engine()
+    if engine == "none":
+        raise FileNotFoundError("container_engine_not_found")
+    compose_executable = shutil.which(engine)
     if compose_executable is None:
-        raise FileNotFoundError("docker_executable_not_found")
+        raise FileNotFoundError(f"{engine}_executable_not_found")
     env_file = _resolve_compose_env_file(repo_root)
     command: list[str] = [
         compose_executable,

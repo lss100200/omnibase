@@ -2087,6 +2087,12 @@ without recursion crashes or leaking cycle contents. The public payload must sta
 JSON-serializable and deterministic, and the typed signature must never forward
 untyped `*args/**kwargs` into the payload builder.
 
+The sensitive-name policy is a **normalized token/full-field closed set plus a
+bounded `_`-delimited suffix/prefix policy with no arbitrary substring
+matching**: `monkey`, `keyboard_layout`, `design` and `session_count` are
+preserved while `api_key`, `access_token`, `signature`, `session_token` and
+provider variants are redacted.
+
 Scalar strings must additionally pass through a bounded, deterministic line
 tokenizer that removes credentials from common structures **without relying on
 keyword-bearing samples**: URI/DSN userinfo passwords for any scheme
@@ -2094,49 +2100,72 @@ keyword-bearing samples**: URI/DSN userinfo passwords for any scheme
 `api_key`, `token`, `access_token`, `signature`, `sig`, `credential`,
 `password` and provider variants), `NAME=value` assignments, CLI
 `--name=value` forms, `Name: value` headers and quoted JSON-ish log lines, all
-with the same normalized sensitive-name policy. Provider-key shapes are
-covered through the value of a sensitive name, never through guessing secret
-prefixes. All parsing is bounded and linear (no nested or unbounded
-quantifiers, no catastrophic backtracking), and `LifecycleResult`
-stdout/stderr, status/health/log text, exception text and serialized
-diagnostics all pass through this protection.
+with the same normalized sensitive-name policy. Bounded horizontal whitespace
+around separators is supported (`NAME = value`, `--name = value`,
+`Name : value`). Sequences additionally redact **cross-element CLI argument
+pairs**: a sensitive flag element such as `--api-key` redacts the following
+array element as one whole item (`["--api-key", "SECRET"]`) while non-sensitive
+arguments are preserved. Provider-key shapes are covered through the value of
+a sensitive name, never through guessing secret prefixes. All parsing is
+bounded and linear (no nested or unbounded quantifiers, no catastrophic
+backtracking). Sensitive Header/JSON/assignment values that exceed the
+single-item parse limit **fail closed as a whole item**: the entire item is
+replaced with `[REDACTED]`, never a truncated prefix that would leak the tail.
+`LifecycleResult` stdout/stderr, status/health/log text, exception text and
+serialized diagnostics all pass through this protection.
 
 Capability facts must carry provenance and an evidence state. A hostname is not
 network evidence; Docker/Podman/WSL/Hyper-V executable presence is not
 hostile-code isolation proof; and Hardened mode stays fail-closed and
 `blocked/not_proven` unless independently sealed Runner/Broker/Gateway evidence
-is injected and verified. Evidence from one host is never generalized to another
-platform.
+is injected and verified. The capability probe and the lifecycle wrapper share
+**one container-engine resolution contract**
+(`resolve_container_engine`: Docker first, then Podman, then `none`): when only
+Podman is observable, Local is claimed only because the lifecycle actually
+executes a controlled `podman compose --env-file .env.example` path; when
+neither engine exists, Local is never claimed. The four resolution cases
+(Docker-only, Podman-only, both present, neither present) carry negative tests
+on both the probe and the lifecycle sides. Evidence from one host is never
+generalized to another platform.
 
 **Allowed changes**
 
-- Tighten redaction key fragments, bounds, deterministic markers or the
+- Tighten redaction key tokens/suffixes, bounds, deterministic markers or the
   evidence/provenance vocabulary.
 - Add attack tests for nested sequences, mixed case, bearer/basic credentials,
   URLs, DSNs, multiline exceptions, cycles, excessive depth/width and oversized
-  strings, asserting forbidden markers are absent from structured output and
-  serialized JSON. Attack samples must include opaque secrets that contain no
-  token/secret/password keyword (URI userinfo, DSN userinfo, sensitive query
-  keys/fragments, `NAME=value`, CLI `--name=value`, `Name: value` headers and
-  JSON-ish log lines) and must assert absence from both structured results and
-  serialized JSON.
+  strings, cross-element CLI argument pairs, bounded-whitespace assignment
+  forms and whole-item fail-closed oversized items, asserting forbidden markers
+  are absent from structured output and serialized JSON. Attack samples must
+  include opaque secrets that contain no token/secret/password keyword (URI
+  userinfo, DSN userinfo, sensitive query keys/fragments, `NAME=value`, CLI
+  `--name=value` / `--name value`, `Name: value` headers and JSON-ish log
+  lines) and must assert absence from both structured results and serialized
+  JSON.
 - Add focused lifecycle tests that mock the subprocess boundary and prove exact
   argument arrays with explicit `--env-file .env.example` for every verb, no
   shell invocation, profile/service/verb allowlists, Hardened rejection,
   timeout and executable-not-found behavior, bounded/redacted stdout and
   stderr, start bind-failure propagation, `logs --tail` bounds, status/health
-  failure behavior, Windows path handling without command injection, and that
-  the root `.env` is never selected.
+  failure behavior, Windows path handling without command injection, that the
+  root `.env` is never selected, and the four container-engine resolution cases
+  (Docker-only, Podman-only, both present, neither present) on both the probe
+  and lifecycle sides.
 - Extend lifecycle verbs only through the allowlisted Compose argument-array
-  wrapper with explicit `--env-file .env.example`.
+  wrapper with explicit `--env-file .env.example` and the shared
+  `resolve_container_engine` contract.
 
 **Forbidden changes**
 
 - Returning secrets embedded in nested sequences, exception representations,
   command arguments, environment values, URLs/query strings, headers or
-  connection strings.
+  connection strings, or leaking a truncated prefix of an oversized sensitive
+  item while leaving its tail visible.
+- Matching sensitive names by arbitrary substring (which would redact `monkey`,
+  `keyboard_layout`, `design` or `session_count`).
 - Inferring network availability from hostname, or claiming Hardened/Local
-  capability from executable presence alone.
+  capability from executable presence alone, or letting the probe and lifecycle
+  resolve container engines from different contracts.
 - Building shell command strings from user input, exposing arbitrary command
   execution, or running Compose without `--env-file .env.example`.
 - Creating migration `0013`, activating production Runtime, or opening any
