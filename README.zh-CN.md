@@ -1,0 +1,251 @@
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/brand/omnibase-mark-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="frontend/public/brand/omnibase-mark.svg">
+    <img alt="OmniBase" src="frontend/public/brand/omnibase-mark.svg" width="92" height="92">
+  </picture>
+
+# OmniBase
+
+**面向知识、模型和用户自建 Agent 的自托管 AI 工作台。**
+
+把文档、结构化数据、OpenAI-compatible Provider 和用户创建的 AI 员工放进同一个受控 Workspace，同时避免把一次浏览器登录变成无限制的基础设施权限。
+
+[English](README.md) · [简体中文](README.zh-CN.md)
+
+[![Public Preview](https://img.shields.io/badge/status-Public%20Preview-111111)](docs/handover-report.md)
+[![Infrastructure Gates](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml/badge.svg)](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml)
+[![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
+[![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
+
+[公网预览](https://omnibase.chat/public-preview) · [快速开始](#快速开始) · [创建第一个-agent](#创建第一个-agent) · [架构](#架构) · [安全边界](#安全边界)
+
+</div>
+
+> [!IMPORTANT]
+> OmniBase 当前是开源 **Public Preview**，不是 production Agent Runtime 的正式准入。公开源码已经包含可用的自托管产品切片和多个 engineering-sealed 控制面组件，但三个 Phase 5 生产 Feature Gate 仍然关闭。生产多 Agent 编排、敌对代码执行和完整 P34.7 生产组合仍为 `blocked/not_proven`。
+
+## 首先是 AI 工作台，而不是基础设施看板
+
+OmniBase 围绕三个连续任务设计：
+
+1. **AI 工作台**：提问、查看流式回答、引用、实际模型身份、Token 用量和延迟。
+2. **知识与数据工作区**：以 PostgreSQL + pgvector 组织文档、RAG 索引、Workspace 成员、受控资源和持久元数据。
+3. **Agent Builder**：创建带有角色、指令、回答风格、Provider 策略和 Workspace 只读知识范围的封存 AI 员工。
+
+系统默认 fail-closed：浏览器身份不等于 Runtime 权限，逻辑资源 ID 不等于物理数据库定位符，普通 Docker/WSL 容器也不等于可以安全运行敌对代码的沙箱。
+
+## 当前可以使用什么
+
+| 范围 | 当前状态 | 含义 |
+|---|---|---|
+| 核心工作区 | **Public Preview 可用** | 认证、实时租户/用户校验、Workspace、成员和生命周期元数据、文档、混合 RAG、引用和黑白工作台已经进入公开源码。 |
+| 用户设置 | **Public Preview 可用** | 真实用户资料/偏好、用户自有 OpenAI-compatible Provider 凭据和有界连接测试。Browser DTO 不返回 Provider 密钥。 |
+| Agent Builder | **Engineering Preview** | 用户可以创建自有 AgentDefinition、封存 `1.0.0` Version、选择性安装到 Workspace，并进入现有 tool-free Agent Alpha 工作台。 |
+| Agent Alpha | **Engineering-only，默认关闭** | 单 Agent 可使用内部 Model Gateway 和 Workspace 范围的只读 derived RAG；支持持久 Task/Run 记录、SSE、取消、引用、模型身份、用量和延迟。 |
+| Capability 平台 | **工程封板，生产默认拒绝** | Capability Gateway、Workspace/Run/Node 元数据、fencing、独立 Linux Runner、PrivateNetwork Broker、Headscale Adapter 和 split-process mTLS Gateway 已有工程 Gate，但不代表完整生产组合已经通过。 |
+| Skill | **仅编译期合同** | P5.6A 可验证第一方、精确版本 Skill manifest；Skill 持久化、安装、执行、MCP 和 Marketplace 仍未开放。 |
+| Planner / 多 Agent / 敌对代码 | **阻断 / 路线图** | Planner 执行、多 Agent 调度、任意 shell/SQL/HTTP、MCP Runtime 和敌对代码 Sandbox 尚未授权。 |
+
+准确源码与证据边界见 [交接报告](docs/handover-report.md) 和 [安全不变量](docs/maintainers/security-invariants.md)。
+
+## 创建第一个 Agent
+
+本地服务启动后：
+
+1. 打开 `http://localhost:3000`，注册或登录。
+2. 打开 **Spaces**，创建或选择 Workspace。
+3. 打开 **Settings → Model Providers**，添加 OpenAI-compatible 地址和 API Key，完成连接测试并设为默认 Provider。
+4. 打开 **Agents → New employee**，设置名称、角色、职责、系统指令、回答风格、Token 预算和 deadline。
+5. 在 Workspace 中安装/选择新 Agent 并开始提问。工作台会显示流式回答、引用、实际模型身份、用量、延迟和持久任务状态。
+
+当前 Builder 只创建低风险、无工具 Agent：
+
+```text
+Workspace 只读知识
+无 shell
+无 SQL
+无任意 HTTP
+无 MCP/Skill 执行
+无 Planner/多 Agent 委派
+无敌对代码 Sandbox
+```
+
+## 快速开始
+
+### 前置条件
+
+- Git
+- Docker Desktop，或支持 Compose v2 的 Docker Engine
+- 核心服务建议至少 8 GB RAM；本地 Embedding/Reranker 建议更多内存
+- `make` 可选，下面同时提供 PowerShell 和跨平台 Compose 命令
+
+### 1. 克隆仓库
+
+```bash
+git clone https://github.com/lss100200/omnibase.git
+cd omnibase
+```
+
+### 2. 创建本地配置
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS / Linux / Git Bash：
+
+```bash
+cp .env.example .env
+```
+
+`.env` 只能保留在本地。不要提交 API Key、JWT Secret、Cookie、私钥或 Provider 凭据。
+
+如需启用 engineering Agent 工作台，在本地 `.env` 中只打开专用工程开关：
+
+```env
+ENV=development
+AGENT_ALPHA_ENGINEERING_ENABLED=true
+
+# 三个生产 Feature Gate 必须保持关闭
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+```
+
+随后可在 **Settings → Model Providers** 中添加个人 Provider API Key。服务端 `LLM_API_KEY` 是可选项，也只能写入本地 `.env`，不能进入 Git。
+
+### 3. 启动并迁移
+
+跨平台 Docker Compose：
+
+```bash
+docker compose --env-file .env up -d --build
+docker compose --env-file .env exec -T backend alembic upgrade head
+docker compose --env-file .env ps
+```
+
+已安装 `make` 时也可使用：
+
+```bash
+make up COMPOSE_ENV_FILE=.env
+make migrate COMPOSE_ENV_FILE=.env
+make ps COMPOSE_ENV_FILE=.env
+```
+
+### 4. 打开 OmniBase
+
+| 页面 | 地址 |
+|---|---|
+| Web 工作台 | <http://localhost:3000> |
+| Backend API 文档 | <http://localhost:8000/docs> |
+| Backend 健康探针 | <http://localhost:8000/health> |
+| MinIO 控制台 | <http://localhost:9001> |
+
+公网展示页为 [omnibase.chat/public-preview](https://omnibase.chat/public-preview)。它依赖当前预览主机和 Cloudflare Tunnel，不是高可用托管 SaaS。
+
+### 5. 排查问题
+
+```bash
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail 200 backend
+docker compose --env-file .env logs --tail 200 frontend
+```
+
+常见首次启动问题：
+
+- `backend` 或 `frontend` 仍为 starting：等待镜像构建和依赖健康检查。
+- 登录/API 返回 500：确认 migration `0012` 已应用，并查看 backend 日志。
+- Agent 页面不可用：确认 `ENV=development`、`AGENT_ALPHA_ENGINEERING_ENABLED=true`、三个生产 Gate 均为 false，并存在测试通过的默认 Provider。
+- 第一次 RAG 查询很慢：CPU reranker 冷启动可能需要数分钟，后续查询通常更快。
+
+## 架构
+
+```mermaid
+flowchart TD
+    Browser["Next.js Web 工作台"] -->|"/api/v1"| Main["Main FastAPI\n认证 · 租户 · Workspace · RAG · Agent API"]
+    Main --> PG["PostgreSQL + pgvector"]
+    Main --> MinIO["MinIO 文档"]
+    Main --> Redis["Redis + Workers"]
+    Main --> Alpha["Engineering Agent Alpha"]
+    Alpha --> GatewayModel["内部 Model Gateway"]
+    GatewayModel --> Provider["用户或服务端持有的\nOpenAI-compatible Provider"]
+    Alpha --> RAG["Workspace 范围只读 RAG"]
+
+    Workload["受信 Workload SDK"] -->|"短期 Capability"| Capability["独立 Capability Gateway\n默认拒绝"]
+    Capability --> Logical["逻辑资源解析\n有界 Adapter · Audit"]
+```
+
+Browser API 和 Capability Gateway 是两个独立 ASGI 应用。Gateway 不会被静默挂载到 Browser 应用，未注入受信验证器和 Adapter 时拒绝所有 Workload。
+
+## 安全边界
+
+OmniBase 把以下边界视为产品行为，而不是可选加固：
+
+- 受保护 Browser 请求必须重新验证实时 Tenant、User、Role 和 tenant schema。
+- 公共 DTO 只使用逻辑 ID，物理 PostgreSQL schema/table/column 定位符保持 server-owned。
+- 高风险审批、幂等、审计、Capability 和数据 mutation 生命周期保持事务绑定。
+- Audit append-only，migration `0006` 提供数据库约束。
+- 普通 Docker/WSL 主机不得运行敌对代码。
+- Sandbox/Runner 不得直接连接 PostgreSQL、Redis 或 MinIO。
+- P34.5 工程 Gate 不等于完整生产 Core→Runner/Broker/Gateway/Overlay 组合通过。
+- 三个 Phase 5 生产 Feature Gate 保持 `false`，production Runtime 激活必须单独审批。
+- 当前 migration head 为 `0012`；migration `0013` 不属于当前公开产品。
+
+安全问题请通过 [SECURITY.md](SECURITY.md) 报告，不要公开创建 Issue。
+
+## 路线图
+
+| 阶段 | 状态 |
+|---|---|
+| 地基、认证、租户隔离、文档、RAG | **可用** |
+| 受控数据与 Capability Gateway | **按边界可用 / 工程封板** |
+| Workspace 治理、生命周期、Lease/Fencing、Node 元数据 | **可用** |
+| Hardened Runner/Broker/Gateway/Overlay 组件 | **工程封板；生产组合阻断** |
+| 用户资料、个人 Provider、第一个 Workspace 和 Agent Builder | **工程产品预览** |
+| Tool-free 单 Agent Alpha | **Engineering-only；默认关闭** |
+| Planner 执行与多 Agent 编排 | **阻断 / 路线图** |
+| 第一方 Skill 合同 | **仅编译期工程准入** |
+| Skill Runtime、MCP、第三方 Marketplace | **路线图** |
+| 生产敌对代码 Sandbox 与 P34.7 准入 | **blocked/not_proven** |
+
+## 开发与验证
+
+仓库根目录的每条 Compose 命令都必须显式指定环境文件。安全的配置形状文件是 `.env.example`；只有确实需要本地凭据时才使用 `.env`。
+
+```bash
+# 安全配置和健康诊断
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example ps
+
+# 使用本地配置启动产品
+docker compose --env-file .env up -d --build
+docker compose --env-file .env exec -T backend alembic upgrade head
+
+# 测试和静态检查
+docker compose --env-file .env.example exec -T backend pytest -m "not integration" -q
+docker compose --env-file .env.example exec -T backend mypy src
+docker compose --env-file .env.example exec -T frontend pnpm test
+docker compose --env-file .env.example exec -T frontend pnpm typecheck
+docker compose --env-file .env.example exec -T frontend pnpm lint
+```
+
+修改认证、租户、迁移、P34、Agent 合同、SDK 或恢复工具前，请按以下顺序阅读：
+
+1. [AGENTS.md](AGENTS.md)
+2. [机器可读维护者地图](docs/maintainers/maintenance-map.json)
+3. [安全不变量](docs/maintainers/security-invariants.md)
+4. [AI 维护者地图](docs/maintainers/ai-maintainer-map.md)
+5. [当前交接和证据](docs/handover-report.md)
+
+## 贡献
+
+欢迎文档、入门体验、focused tests 和边界清晰的小型修复。涉及认证、租户、迁移、Capability Gateway、Sandbox、Agent 执行、Provider 凭据或恢复的改动，必须执行维护者地图中规定的验证命令并同步不变量。
+
+创建 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 协议
+
+[Apache License 2.0](LICENSE) © 2026 OmniBase Contributors。
