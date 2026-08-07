@@ -1105,6 +1105,8 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 
 `--validate-only` 只证明配置合同能被严格解析，不验证外部生产证据，也不启动服务。P34.7 总 Gate 必须在提交后的 public clean checkout 使用 `scripts/production/validate_p34_7_composition.py --verify`，并同时提供 current-source Runner 12/12、两轮 Broker 26/26、四条 production component roundtrip、真实 provider/non-disposable tenant/RAG、两成员 Overlay/DERP/node-compromise、双签名与 SLA 样本。缺少任一项时正确结果是 `blocked/not_proven`，Phase 5 继续冻结。
 
+joint gate（`scripts/production/validate_p34_7_joint_gate.py`）是证据真实性边界：component/attack/cleanup/posture evidence 必须解析为 canonical JSON 并验证 detached Ed25519 signature，签名对照**证据目录之外**的独立 trust policy（allowlisted producer 公钥、source seal、approved artifact manifest、argv 模板、env allowlist、gateway certificate pins）；policy 原始字节必须命中 `joint_gate._APPROVED_TRUST_POLICY_SHA256`（当前为空，因此任何 bundle 恒为 `blocked/not_proven`）。`scripts/production/forge_p34_7_evidence_bundle.py` 从零伪造完整 bundle（文件、sidecar、全部匹配哈希），证明 unsigned/forged signature/bundle-supplied trust root/swapped key/replay/stale cert/modified bytes/safety absence 都永不 `passed`。每个 safety `not_proven` 项都会成为 blocker。
+
 ### 11.11 P5.0 Phase 5 admission gate
 
 ```powershell

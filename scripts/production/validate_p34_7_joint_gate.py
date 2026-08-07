@@ -5,10 +5,13 @@ Two mutually exclusive operating modes are supported and never blurred:
 * ``--validate-only`` parses the static contract without verifying any real
   evidence and therefore always reports ``blocked/not_proven`` because direct
   evidence was not executed.
-* ``--verify-evidence <run-dir>`` may report ``passed`` only when every
-  mandatory real, sealed, component-specific artifact exists under ``run-dir``
-  and all cross-component identities, hashes, chronology, semantics, attack
-  results and cleanup checks verify against the actual file bytes.
+* ``--verify-evidence <run-dir>`` may report ``passed`` only when the external
+  trust policy (``--trust-policy``) is an approved anchor, every mandatory
+  real, sealed, component-specific artifact exists under ``run-dir``, every
+  detached Ed25519 signature verifies against a policy producer key, every
+  canonical component schema parses and cross-binds, and every safety item is
+  proven.  Unsigned evidence, forged signatures, an unapproved policy or any
+  unproven safety item keeps the report ``blocked/not_proven``.
 
 The validator is offline: it never starts a service, opens a network
 connection, reads the root ``.env``, accesses a database, executes code or
@@ -41,6 +44,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     modes.add_argument("--validate-only", action="store_true")
     modes.add_argument("--verify-evidence", type=Path, metavar="RUN_DIR")
     parser.add_argument("--evidence", type=Path, help="evidence JSON bundle path")
+    parser.add_argument(
+        "--trust-policy",
+        type=Path,
+        help="externally configured trust policy path (outside the evidence run dir)",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -75,7 +83,9 @@ def main(argv: list[str] | None = None) -> int:
             assert args.verify_evidence is not None  # noqa: S101
             run_dir: Path = args.verify_evidence
             payload = _load_evidence(args.evidence)
-            report = verify_joint_evidence(run_dir, payload)
+            report = verify_joint_evidence(
+                run_dir, payload, trust_policy_path=args.trust_policy
+            )
             code = 0 if report.passed else 2
     except (ConfigurationError, OSError, UnicodeError, json.JSONDecodeError) as exc:
         result = {

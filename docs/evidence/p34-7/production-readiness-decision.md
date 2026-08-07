@@ -131,3 +131,18 @@ business database accessed/migrated: false/false
 This is the required reproducible safe-refusal result for the current evidence
 set. It does not unlock production or Phase 5. Re-run the validator whenever a
 tracked production source byte changes or new production evidence is admitted.
+
+## Round 2 review-fix: joint gate is trust-anchored (2026-08-07)
+
+The external review rejected the Round 1 hash-sidecar design because the same
+operator can forge files and matching hashes. The joint gate now verifies
+detached Ed25519 signatures over canonical JSON evidence bytes against an
+independently installed trust policy (allowlisted producer keys, source seal,
+approved artifact manifest, argv templates, env allowlist, gateway certificate
+pins) located outside the evidence directory. The policy bytes must match a
+digest pinned in `joint_gate._APPROVED_TRUST_POLICY_SHA256`, which is empty:
+no trust policy is approved, so every bundle - including a fully self-signed
+one - remains `blocked/not_proven`. `scripts/production/forge_p34_7_evidence_bundle.py`
+forges complete bundles to prove they can never pass. The overall P34.7
+decision is unchanged: `BLOCKED / NOT_PROVEN`, production activation DISABLED,
+Phase 5 PLANNED / FROZEN.

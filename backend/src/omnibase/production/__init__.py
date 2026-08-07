@@ -17,6 +17,8 @@ from omnibase.production.composition import (
 )
 from omnibase.production.joint_gate import (
     JointGateReport,
+    TrustPolicy,
+    load_trust_policy,
     validate_joint_evidence,
     validate_joint_evidence_contract,
     verify_joint_evidence,
@@ -30,8 +32,10 @@ __all__ = [
     "JointGateReport",
     "ProductionCompositionConfig",
     "ProductionCompositionGate",
+    "TrustPolicy",
     "build_git_source_provenance",
     "load_production_composition_config",
+    "load_trust_policy",
     "validate_joint_evidence",
     "validate_joint_evidence_contract",
     "verify_joint_evidence",

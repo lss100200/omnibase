@@ -1039,32 +1039,38 @@ Snapshot 只有在服务端生成并核验完整 resource/version/digest/size in
 - `deployment/production/**`
 - `scripts/production/**`
 - `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p34_7_joint_gate.py`
 
 **为何存在**
 
 P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑定 Git commit/tree、受控 tracked-source manifest、部署配置和每份 evidence 的 SHA-256 与 JSON assertions。工作树 dirty、证据漂移、缺少当前源码证明或只存在历史报告时，状态只能是 `blocked/not_proven` 或 `invalid/veto`，不能靠人工文字改成 PASS。
+
+哈希只证明 operator 写入的字节未被改写，不证明证据真实性。自伪造的完整 bundle（所有文件与哈希都由同一 operator 生成）绝不能得到 `passed`：component/attack/cleanup/posture evidence 必须是解析过的 canonical JSON 并绑定 run id、producer、source/artifact identity、command receipt、peer identities、measurements 与 results；每条 evidence 与 command receipt 都需要能对照**证据目录之外的独立 trust policy**（allowlisted producer Ed25519 公钥、approved source seal、approved artifact manifest、精确 argv 模板、env allowlist、gateway certificate pins）验证的 detached signature。policy 的原始字节必须命中代码内 pin 的 approved digest（当前为空集，因此任何 bundle 都保持 `blocked/not_proven`）；bundle 内携带的公钥不是信任锚。攻击与清理结果必须从已签名 evidence 解析并与 inventory 交叉核对，不得用内联 status/count 字段替代。
 
 **允许的改法**
 
 - 扩展显式 source scope、evidence schema 或验证断言，同时保留根 `.env`、symlink/reparse、非 regular file 和仓库外路径拒绝。
 - 为新的独立生产组件增加当前源码绑定的 evidence 项；缺失项保持 `not_proven`。
 - 将验证与激活分离；Gate 通过只产生 admission decision，不自动启动服务或授予 authority。
+- 增加更强制的证据真实性要求（签名、canonical JSON schema、外部 trust policy、inventory 交叉核对、UTC instant 时间比较、每个路径组件的 junction/reparse 检查）；`_APPROVED_TRUST_POLICY_SHA256` 只有在真实独立 producer 链建立并审计后才允许追加 digest。
 
 **禁止的改法**
 
 - 在 dirty checkout、未跟踪生产源码、证据哈希不匹配或 source manifest 不完整时发出 production PASS。
+- 从同一 untrusted bundle 内同时信任字段与其 sidecar 哈希；接受 bundle 内自带的公钥/trust root；把未签名或验签失败的 evidence 当作真实性证明；把 `runtime_posture.measured=false` 或其他 `not_proven` safety 项当作非阻塞信息。
 - 将 Docker Desktop、WSL、mock、test double、disposable Gate、旧 commit evidence 或端口可达性冒充当前生产证据。
 - 读取、打印、散列或纳入根 `.env`，或让 evidence path 逃逸仓库/受控 operator 目录。
 
 **必须运行的测试**
 
 - `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p34_7_joint_gate.py`（含 `scripts/production/forge_p34_7_evidence_bundle.py` 生成的自伪造完整 bundle：unsigned/forged signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/stale certificate/modified raw bytes/safety evidence absence 均必须 `blocked/not_proven`，永不 `passed`）
 - `python scripts/production/validate_p34_7_composition.py --validate-only`
 - 提交后必须从 clean checkout 运行 `--verify`；外部证据未齐时预期为 `blocked/not_proven`，不是失败伪装。
 
 **失败恢复**
 
-把 `activation_requested` 恢复为 false，撤销受影响组件的 admission，保留原 evidence 和 manifest 取证。修复源码或重新采集证据后从新的 clean checkout 验证；不得删除 Veto、忽略 dirty scope 或复用旧哈希。
+把 `activation_requested` 恢复为 false，撤销受影响组件的 admission，保留原 evidence 和 manifest 取证。修复源码或重新采集证据后从新的 clean checkout 验证；不得删除 Veto、忽略 dirty scope 或复用旧哈希。签名/trust policy 相关失败必须保持 `blocked/not_proven`，不得降级为 warning 或改为 passed。
 
 ## INV-036 production-composition-separation
 

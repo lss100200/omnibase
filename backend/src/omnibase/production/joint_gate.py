@@ -1,35 +1,37 @@
-"""Fail-closed immutable run-scoped evidence contract for P34.7 hardened joint gates.
+"""Fail-closed, trust-anchored P34.7 hardened joint evidence contract.
 
 This module implements the *evidence authenticity* boundary for the P34.7
-production joint gate.  It deliberately never derives a production ``passed``
-result from operator-authored inline assertions.  Instead every proof must be a
-real, regular, non-link file inside an immutable run directory whose raw bytes
-are hashed and cross-bound by sidecar manifests.
+production joint gate.  It never derives a production ``passed`` result from
+operator-authored inline assertions, from hash-consistent sidecars, or from a
+public key shipped inside the evidence bundle.  Every proof must be a real,
+regular, non-link file whose raw bytes are canonical JSON, are cross-bound by
+sidecar manifests, and are covered by a detached Ed25519 signature that
+verifies against a producer public key taken from an **externally configured
+trust policy** (never from the bundle itself).
+
+The trust policy is the only trust anchor.  It is a JSON file installed
+outside the evidence run directory by the gate operator, and its raw bytes
+must hash to a digest pinned in this module
+(:data:`_APPROVED_TRUST_POLICY_SHA256`).  No trust policy has been
+independently approved yet, so the set is empty and **every** bundle,
+including a fully self-signed one, currently remains ``blocked/not_proven``.
 
 Two operating modes are exposed and must never be blurred:
 
-* :func:`validate_joint_evidence_contract` parses the static schema and an
-  operator-supplied bundle layout but never accepts inline evidence as direct
-  execution proof.  It always returns ``blocked/not_proven`` because direct
-  evidence was not executed.
-* :func:`verify_joint_evidence` may return ``passed`` only when every mandatory
-  real, sealed, component-specific artifact exists under ``run_dir`` and every
-  cross-component identity, hash, chronology, semantics, attack result and
-  cleanup check verifies against the actual file bytes.
+* :func:`validate_joint_evidence_contract` parses the static schema only and
+  always returns ``blocked/not_proven``.
+* :func:`verify_joint_evidence` may return ``passed`` only when a policy is
+  approved, every mandatory evidence file exists under ``run_dir``, every
+  detached signature verifies against the policy, every canonical component
+  schema parses and cross-binds run id / producer / source and artifact
+  identity / command receipts / peer identities / measurements / results, and
+  every safety item is proven.  Unsigned or unverifiable evidence, an
+  unapproved policy, an unmeasured posture or any other ``not_proven`` safety
+  item becomes a blocker; a pass requires zero blockers.
 
-The verifier is offline: it never starts a service, opens a network connection,
-reads the root ``.env``, accesses a database, executes code or activates the
-production Runtime.  It fails closed on unknown fields, missing files,
-symlinks/reparse points, duplicate IDs, path traversal, absolute escape,
-mutable references, hash/size mismatch, schema/version mismatch, temporal
-inconsistency, command-order inconsistency, identity mismatch, certificate
-stale/revoked/replayed posture or cleanup uncertainty.
-
-Safety claims (root ``.env`` not accessed, business database not accessed,
-business database not migrated, production Runtime inactive, hostile code not
-executed, cleanup residue) are never hardcoded into a ``passed`` result: they
-are only reported as ``not_proven`` unless an approved sealed measurement proves
-them, in which case ``not_proven`` blocks ``passed``.
+The verifier is offline: it never starts a service, opens a network
+connection, reads the root ``.env``, accesses a database, executes code or
+activates the production Runtime.
 """
 
 from __future__ import annotations
@@ -39,13 +41,17 @@ import json
 import os
 import stat
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from omnibase.production.composition import ConfigurationError
 
 _SCHEMA = "omnibase.p34-7.hardened-joint-evidence.v2"
-_SCHEMA_VERSIONS = frozenset({"1", "2"})
+_SCHEMA_VERSIONS = frozenset({"2"})
 _HEX = set("0123456789abcdef")
 _REQUIRED_COMMANDS = (
     "core_runner",
@@ -55,6 +61,14 @@ _REQUIRED_COMMANDS = (
     "overlay_data_plane",
     "recovery_sla",
 )
+_COMMAND_PRODUCER = {
+    "core_runner": "core",
+    "runner_broker": "runner",
+    "runner_gateway": "runner",
+    "broker_gateway": "broker",
+    "overlay_data_plane": "overlay",
+    "recovery_sla": "recovery_sla",
+}
 _REQUIRED_COMPONENTS = (
     "core",
     "runner",
@@ -63,13 +77,61 @@ _REQUIRED_COMPONENTS = (
     "overlay",
     "recovery_sla",
 )
+# Fixed P34.7 topology: Core<->Runner, Runner<->Broker, Runner<->Gateway,
+# Broker<->Gateway; the Overlay data plane is published through the Runner and
+# recovery/SLA evidence is bound to Core.
+_REQUIRED_PEERS: dict[str, tuple[str, ...]] = {
+    "core": ("runner",),
+    "runner": ("core", "broker", "gateway"),
+    "broker": ("runner", "gateway"),
+    "gateway": ("runner", "broker"),
+    "overlay": ("runner",),
+    "recovery_sla": ("core",),
+}
 _REQUIRED_FEATURE_GATES = (
     "agent_runtime_enabled",
     "agent_planner_enabled",
     "multi_agent_enabled",
 )
-_REQUIRED_CLEANUP_KEYS = ("containers", "networks", "processes", "volumes")
+_REQUIRED_ATTACKS = (
+    "node_compromise",
+    "credential_theft",
+    "revocation_replay",
+    "derp_failover",
+    "cross_component_replay",
+)
+_ALLOWED_ATTACK_OUTCOMES = frozenset({"rejected", "contained", "failed_attack"})
+_REQUIRED_CLEANUP_KEYS = (
+    "containers",
+    "networks",
+    "processes",
+    "volumes",
+    "databases",
+    "test_identities",
+)
+_FORBIDDEN_ENV_NAMES = frozenset(
+    {".env", "JWT_SECRET", "LLM_API_KEY", "POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD"}
+)
 _ROOT_ENV_NAMES = frozenset({".env", "./.env"})
+
+COMPONENT_SCHEMA = "omnibase.p34-7.component-evidence.v1"
+RECEIPT_SCHEMA = "omnibase.p34-7.command-receipt.v1"
+POSTURE_SCHEMA = "omnibase.p34-7.posture-measurement.v1"
+ATTACK_SCHEMA = "omnibase.p34-7.attack-matrix.v1"
+CLEANUP_SCHEMA = "omnibase.p34-7.cleanup-inventory.v1"
+SEAL_SCHEMA = "omnibase.p34-7.evidence-seal.v1"
+TRUST_POLICY_SCHEMA = "omnibase.p34-7.trust-policy.v1"
+
+# ---------------------------------------------------------------------------
+# Trust anchor
+# ---------------------------------------------------------------------------
+
+# No trust policy has been independently approved yet.  Adding a digest here is
+# an audited, reviewed change that establishes the production trust anchor (the
+# same way a CA root is pinned); until then every bundle remains
+# blocked/not_proven because the bundle producer can always self-author its own
+# evidence and keys.
+_APPROVED_TRUST_POLICY_SHA256: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +187,10 @@ def _sha256(value: object, name: str) -> str:
     return value
 
 
+def _canonical(value: object) -> bytes:
+    return json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
 def _relative_path(value: object, name: str) -> str:
     text = _string(value, name=name).replace("\\", "/")
     path = PurePosixPath(text)
@@ -140,7 +206,10 @@ def _relative_path(value: object, name: str) -> str:
 
 
 def _real_file(root: Path, relative: str, name: str) -> Path:
-    """Resolve ``relative`` under ``root`` refusing links, reparse points, escape."""
+    """Resolve ``relative`` under ``root`` refusing links, reparse points and
+    escape; every path component is individually lstat-checked, not only the
+    final file, so Windows junctions/reparse points anywhere in the chain are
+    rejected."""
     candidate = root
     for part in PurePosixPath(relative).parts:
         candidate = candidate / part
@@ -170,18 +239,308 @@ def _hash_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _canonical(value: object) -> bytes:
-    return json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
-
-
-def _iso_timestamp(value: object, name: str) -> str:
+def _utc_instant(value: object, name: str) -> datetime:
+    """Parse an ISO-8601 timestamp as a real UTC instant (Z or +00:00 only);
+    comparisons happen on parsed instants, never on raw strings."""
     text = _string(value, name)
-    if not text.endswith(("Z", "+00:00")) and "+" not in text[10:] and "-" not in text[10:]:
-        # require an explicit UTC marker or offset; bare local time is ambiguous
-        raise ConfigurationError(f"{name} must carry an explicit UTC offset")
-    if "T" not in text:
-        raise ConfigurationError(f"{name} must be an ISO-8601 UTC timestamp")
-    return text
+    if not (text.endswith("Z") or text.endswith("+00:00")):
+        raise ConfigurationError(f"{name} must be an explicit UTC instant (Z or +00:00)")
+    body = text[:-1] if text.endswith("Z") else text[:-6]
+    try:
+        parsed = datetime.fromisoformat(body)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be an ISO-8601 UTC instant") from exc
+    if (
+        parsed.tzinfo is not None
+        and parsed.utcoffset() is not None
+        and parsed.utcoffset() != timezone.utc  # noqa: UP017
+    ):
+        raise ConfigurationError(f"{name} must be UTC (non-zero offsets are ambiguous)")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)  # noqa: UP017
+    return parsed
+
+
+def _read_canonical_json(path: Path, name: str) -> tuple[dict[str, Any], bytes]:
+    """Read a JSON file and require its raw bytes to BE canonical JSON so a
+    detached signature over the raw bytes covers the exact parsed content."""
+    raw = path.read_bytes()
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ConfigurationError(f"{name} must be valid JSON") from exc
+    if not isinstance(parsed, dict) or any(not isinstance(k, str) for k in parsed):
+        raise ConfigurationError(f"{name} must be a JSON object")
+    if _canonical(parsed) != raw:
+        raise ConfigurationError(f"{name} must be canonical JSON bytes")
+    return parsed, raw
+
+
+def _file_ref(root: Path, value: object, name: str) -> Path:
+    ref = _object(value, name)
+    _keys(ref, {"path", "size", "sha256"}, name)
+    relative = _relative_path(ref.get("path"), f"{name}.path")
+    size = _int(ref.get("size"), f"{name}.size")
+    if size < 0:
+        raise ConfigurationError(f"{name}.size is invalid")
+    digest = _sha256(ref.get("sha256"), f"{name}.sha256")
+    path = _real_file(root, relative, name)
+    if path.stat().st_size != size:
+        raise ConfigurationError(f"{name} size drifted")
+    if _hash_file(path) != digest:
+        raise ConfigurationError(f"{name} raw hash drifted")
+    return path
+
+
+def _verify_ed25519(public_key_hex: str, raw: bytes, signature: bytes) -> bool:
+    try:
+        key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        key.verify(signature, raw)
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
+def _signed_file(
+    root: Path,
+    ref: dict[str, Any],
+    sig_ref: object,
+    public_key_hex: str,
+    name: str,
+) -> tuple[dict[str, Any], str]:
+    """Read one canonical JSON evidence file and verify its detached Ed25519
+    signature over the raw bytes.  ``sig_ref`` may be ``None`` (unsigned).
+    Returns ``(parsed, status)`` with ``status`` in
+    ``verified``/``absent``/``invalid``; structural problems still veto."""
+    path = _file_ref(root, ref, name)
+    parsed, raw = _read_canonical_json(path, name)
+    if sig_ref is None:
+        return parsed, "absent"
+    sig_path = _file_ref(root, sig_ref, f"{name}.signature")
+    ok = _verify_ed25519(public_key_hex, raw, sig_path.read_bytes())
+    return parsed, "verified" if ok else "invalid"
+
+
+# ---------------------------------------------------------------------------
+# Trust policy
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TrustPolicy:
+    """Externally installed trust anchor: allowlisted producer keys, pinned
+    source seal, approved artifact manifest, exact command templates and the
+    gateway certificate posture pins."""
+
+    producers: dict[str, str]
+    repository: str
+    approved_commits: frozenset[str]
+    approved_trees: frozenset[str]
+    executables: dict[str, tuple[str, frozenset[str]]]
+    command_argv: dict[str, tuple[str, ...]]
+    allowed_env_names: frozenset[str]
+    gateway_issuer: str
+    gateway_san_suffix: str
+    gateway_validity_seconds: int
+    migration_head: str
+    schema_version: str
+
+    def producer_key(self, role: str) -> str:
+        return self.producers[role]
+
+
+def _parse_trust_policy(value: object) -> TrustPolicy:
+    data = _object(value, "trust policy")
+    _keys(
+        data,
+        {
+            "schema",
+            "schema_version",
+            "producers",
+            "source_seal",
+            "executables",
+            "commands",
+            "allowed_env_names",
+            "gateway",
+            "migration_head",
+        },
+        "trust policy",
+    )
+    if _string(data.get("schema"), "trust policy.schema") != TRUST_POLICY_SCHEMA:
+        raise ConfigurationError("trust policy must use the frozen trust-policy schema")
+    if _string(data.get("schema_version"), "trust policy.schema_version") not in _SCHEMA_VERSIONS:
+        raise ConfigurationError("trust policy must target the hardened joint schema v2")
+    producers = _parse_policy_producers(data)
+    repository, commits, trees = _parse_policy_source_seal(data)
+    executables = _parse_policy_executables(data)
+    command_argv = _parse_policy_commands(data)
+    env_names = _parse_policy_env_names(data)
+    issuer, san_suffix, validity_seconds = _parse_policy_gateway(data)
+    migration_head = _string(data.get("migration_head"), "trust policy.migration_head")
+    if migration_head != "0012":
+        raise ConfigurationError("trust policy.migration_head must remain 0012")
+    return TrustPolicy(
+        producers=producers,
+        repository=repository,
+        approved_commits=commits,
+        approved_trees=trees,
+        executables=executables,
+        command_argv=command_argv,
+        allowed_env_names=frozenset(env_names),
+        gateway_issuer=issuer,
+        gateway_san_suffix=san_suffix,
+        gateway_validity_seconds=validity_seconds,
+        migration_head=migration_head,
+        schema_version="2",
+    )
+
+
+def _parse_policy_producers(data: dict[str, Any]) -> dict[str, str]:
+    producers_raw = _object(data.get("producers"), "trust policy.producers")
+    required_roles = frozenset((*_REQUIRED_COMPONENTS, "sealer"))
+    if set(producers_raw) != required_roles:
+        raise ConfigurationError(
+            "trust policy.producers must contain exactly the six components plus sealer"
+        )
+    producers: dict[str, str] = {}
+    for role in sorted(required_roles):
+        entry = _object(producers_raw.get(role), f"trust policy.producers.{role}")
+        _keys(entry, {"ed25519_public_key"}, f"trust policy.producers.{role}")
+        key = _string(
+            entry.get("ed25519_public_key"),
+            f"trust policy.producers.{role}.ed25519_public_key",
+        )
+        if len(key) != 64 or any(c not in _HEX for c in key):
+            raise ConfigurationError(
+                f"trust policy.producers.{role}.ed25519_public_key must be a 64-hex key"
+            )
+        producers[role] = key
+    return producers
+
+
+def _parse_policy_source_seal(data: dict[str, Any]) -> tuple[str, frozenset[str], frozenset[str]]:
+    source = _object(data.get("source_seal"), "trust policy.source_seal")
+    _keys(
+        source,
+        {"repository", "approved_commits", "approved_trees"},
+        "trust policy.source_seal",
+    )
+    repository = _string(source.get("repository"), "trust policy.source_seal.repository")
+    if not repository.startswith(("https://github.com/", "git@github.com:")):
+        raise ConfigurationError("trust policy.source_seal.repository must be a GitHub remote")
+    commits = _list(source.get("approved_commits"), "trust policy.source_seal.approved_commits")
+    trees = _list(source.get("approved_trees"), "trust policy.source_seal.approved_trees")
+    for item in commits:
+        _sha256(item, "trust policy.source_seal.approved_commits[]")
+    for item in trees:
+        _sha256(item, "trust policy.source_seal.approved_trees[]")
+    return (
+        repository,
+        frozenset(c for c in commits if isinstance(c, str)),
+        frozenset(t for t in trees if isinstance(t, str)),
+    )
+
+
+def _parse_policy_executables(data: dict[str, Any]) -> dict[str, tuple[str, frozenset[str]]]:
+    executables_raw = _object(data.get("executables"), "trust policy.executables")
+    executables: dict[str, tuple[str, frozenset[str]]] = {}
+    for exe_path in sorted(executables_raw):
+        relative = _relative_path(exe_path, "trust policy.executables key")
+        entry = _object(executables_raw.get(exe_path), f"trust policy.executables.{exe_path}")
+        _keys(entry, {"sha256", "commands"}, f"trust policy.executables.{exe_path}")
+        digest = _sha256(entry.get("sha256"), f"trust policy.executables.{exe_path}.sha256")
+        command_names = _list(
+            entry.get("commands"), f"trust policy.executables.{exe_path}.commands"
+        )
+        if not command_names or not all(
+            isinstance(c, str) and c in _REQUIRED_COMMANDS for c in command_names
+        ):
+            raise ConfigurationError(
+                f"trust policy.executables.{exe_path}.commands must reference required boundaries"
+            )
+        executables[relative] = (digest, frozenset(c for c in command_names if isinstance(c, str)))
+    return executables
+
+
+def _parse_policy_commands(data: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    commands_raw = _object(data.get("commands"), "trust policy.commands")
+    if set(commands_raw) != set(_REQUIRED_COMMANDS):
+        raise ConfigurationError(
+            "trust policy.commands must contain exactly the six required boundaries"
+        )
+    command_argv: dict[str, tuple[str, ...]] = {}
+    for command in _REQUIRED_COMMANDS:
+        argv = _list(commands_raw.get(command), f"trust policy.commands.{command}")
+        if not argv or not all(isinstance(a, str) and a for a in argv):
+            raise ConfigurationError(f"trust policy.commands.{command} must be an argv template")
+        command_argv[command] = tuple(a for a in argv if isinstance(a, str))
+    return command_argv
+
+
+def _parse_policy_env_names(data: dict[str, Any]) -> list[str]:
+    env_names = _list(data.get("allowed_env_names"), "trust policy.allowed_env_names")
+    if not all(isinstance(n, str) and n for n in env_names):
+        raise ConfigurationError("trust policy.allowed_env_names must be non-empty strings")
+    return [n for n in env_names if isinstance(n, str)]
+
+
+def _parse_policy_gateway(data: dict[str, Any]) -> tuple[str, str, int]:
+    gateway = _object(data.get("gateway"), "trust policy.gateway")
+    _keys(
+        gateway,
+        {"issuer", "san_suffix", "validity_seconds"},
+        "trust policy.gateway",
+    )
+    issuer = _sha256(gateway.get("issuer"), "trust policy.gateway.issuer")
+    san_suffix = _string(gateway.get("san_suffix"), "trust policy.gateway.san_suffix")
+    if not san_suffix.startswith("."):
+        raise ConfigurationError("trust policy.gateway.san_suffix must start with a dot")
+    validity_seconds = _int(
+        gateway.get("validity_seconds"), "trust policy.gateway.validity_seconds"
+    )
+    if validity_seconds <= 0 or validity_seconds > 200 * 365 * 86400:
+        raise ConfigurationError(
+            "trust policy.gateway.validity_seconds must be a positive bounded window"
+        )
+    return issuer, san_suffix, validity_seconds
+
+
+def load_trust_policy(path: Path) -> tuple[TrustPolicy, str]:
+    """Load and strictly parse the external trust policy file.
+
+    The policy must be a regular, non-link, non-reparse file; its raw-byte
+    SHA-256 is returned so the caller can check it against the pinned approved
+    digests.  A policy shipped inside an evidence bundle is never a trust
+    anchor: :func:`verify_joint_evidence` refuses any policy located under the
+    evidence run directory.
+    """
+    unresolved = path if path.is_absolute() else Path.cwd() / path
+    if ".." in unresolved.parts:
+        raise ConfigurationError("trust policy path must not contain parent traversal")
+    try:
+        candidate = unresolved.resolve(strict=True)
+    except OSError as exc:
+        raise ConfigurationError("trust policy is unavailable") from exc
+    check = Path(candidate.anchor)
+    for part in candidate.parts[1:]:
+        check = check / part
+        try:
+            metadata = os.lstat(check)
+        except OSError as exc:
+            raise ConfigurationError("trust policy contains an unavailable component") from exc
+        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise ConfigurationError("trust policy contains a link or reparse point")
+    metadata = os.lstat(candidate)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ConfigurationError("trust policy must be a regular non-link file")
+    raw = candidate.read_bytes()
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("trust policy must be valid JSON") from exc
+    policy = _parse_trust_policy(parsed)
+    return policy, hashlib.sha256(raw).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +552,11 @@ def _iso_timestamp(value: object, name: str) -> str:
 class JointGateReport:
     """Outcome of a P34.7 joint-evidence check.
 
-    ``status`` is one of ``passed`` (only from :func:`verify_joint_evidence` with
-    a fully verified real evidence chain), ``blocked/not_proven`` (the only
-    correct state when direct evidence is absent or incomplete) or
-    ``invalid/veto`` (raised as :class:`ConfigurationError` by the validators).
+    ``status`` is one of ``passed`` (only from :func:`verify_joint_evidence`
+    with an approved trust policy, fully verified signatures and every safety
+    item proven), ``blocked/not_proven`` (the only correct state while the
+    trust chain or any safety proof is missing) or ``invalid/veto`` (raised as
+    :class:`ConfigurationError`).
     """
 
     status: str
@@ -229,6 +589,23 @@ class JointGateReport:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _ChainOutcome:
+    """Collected authenticity results of one evidence chain check.
+
+    Signature and posture failures are never structural vetoes: they make
+    safety items ``not_proven`` and add blockers, keeping the bundle in
+    ``blocked/not_proven`` instead of ``passed``."""
+
+    safety: dict[str, str] = field(default_factory=dict)
+    blockers: tuple[str, ...] = ()
+    receipt_digests: dict[str, str] = field(default_factory=dict)
+    component_digests: dict[str, str] = field(default_factory=dict)
+    posture_digest: str = ""
+    attack_digest: str = ""
+    cleanup_digest: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Manifest verification (source/artifact raw-byte SHA-256 binding)
 # ---------------------------------------------------------------------------
@@ -249,15 +626,7 @@ def _verify_manifest(root: Path, value: object, *, name: str) -> str:
         if relative in seen:
             raise ConfigurationError(f"{name} contains duplicate file paths")
         seen.add(relative)
-        size = _int(entry.get("size"), f"{name}.files[{index}].size")
-        if size < 0:
-            raise ConfigurationError(f"{name}.files[{index}].size is invalid")
-        digest = _sha256(entry.get("sha256"), f"{name}.files[{index}].sha256")
-        path = _real_file(root, relative, f"{name}.files[{index}]")
-        if path.stat().st_size != size:
-            raise ConfigurationError(f"{name}.files[{index}] size drifted")
-        if _hash_file(path) != digest:
-            raise ConfigurationError(f"{name}.files[{index}] raw hash drifted")
+        _file_ref(root, entry, f"{name}.files[{index}]")
     canonical = _canonical(files)
     if hashlib.sha256(canonical).hexdigest() != raw:
         raise ConfigurationError(f"{name}.raw_sha256 does not bind its files")
@@ -299,23 +668,45 @@ def _verify_run_envelope(data: dict[str, Any]) -> tuple[str, str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Command-record verification (executable digest, argv, ordering, exit code)
+# Command-receipt verification (signed receipt, policy-bound semantics)
 # ---------------------------------------------------------------------------
 
 
-def _verify_command_record(
-    root: Path, name: str, value: object, *, previous_end: str | None
-) -> tuple[str, str]:
-    record = _object(value, f"commands.{name}")
+def _verify_receipt(
+    root: Path,
+    name: str,
+    refs: dict[str, Any],
+    policy: TrustPolicy,
+    run_id: str,
+    producer: str,
+    previous_end: datetime | None,
+    issues: list[str],
+) -> tuple[datetime, str, tuple[str, str]]:
+    order = _int(refs.get("order"), f"commands.{name}.order")
+    if order != _REQUIRED_COMMANDS.index(name):
+        raise ConfigurationError("command order must match the required sequence exactly")
+    receipt_ref = _object(refs.get("receipt"), f"commands.{name}.receipt")
+    parsed, sig_status = _signed_file(
+        root,
+        receipt_ref,
+        refs.get("signature"),
+        policy.producer_key(producer),
+        f"commands.{name}.receipt",
+    )
+    if sig_status != "verified":
+        issues.append(f"signature:command:{name}")
     _keys(
-        record,
+        parsed,
         {
+            "schema",
+            "command",
             "order",
-            "executable_digest",
-            "executable_path",
+            "run_id",
+            "producer",
+            "executable",
             "argv",
             "working_directory",
-            "env_manifest",
+            "env_names",
             "started_at",
             "ended_at",
             "timeout_seconds",
@@ -323,327 +714,773 @@ def _verify_command_record(
             "stdout",
             "stderr",
         },
-        f"commands.{name}",
+        f"commands.{name}.receipt",
     )
-    executable = _relative_path(record.get("executable_path"), f"commands.{name}.executable_path")
-    exec_digest = _sha256(record.get("executable_digest"), f"commands.{name}.executable_digest")
-    exec_path = _real_file(root, executable, f"commands.{name}.executable_path")
-    if _hash_file(exec_path) != exec_digest:
-        raise ConfigurationError(f"commands.{name}.executable digest drifted")
-    argv = _list(record.get("argv"), f"commands.{name}.argv")
-    if not argv or not all(isinstance(a, str) and a for a in argv):
-        raise ConfigurationError(f"commands.{name}.argv must be non-empty strings")
-    cwd = _string(record.get("working_directory"), f"commands.{name}.working_directory")
+    _verify_receipt_envelope(parsed, name, order, run_id, producer)
+    exe_path, exe_digest = _verify_receipt_executable(root, parsed, name, policy, issues)
+    _verify_receipt_semantics(parsed, name, policy, issues)
+    ended = _verify_receipt_timing(root, parsed, name, previous_end)
+    return ended, receipt_ref["sha256"], (exe_path, exe_digest)
+
+
+def _verify_receipt_envelope(
+    parsed: dict[str, Any], name: str, order: int, run_id: str, producer: str
+) -> None:
+    if _string(parsed.get("schema"), f"commands.{name}.receipt.schema") != RECEIPT_SCHEMA:
+        raise ConfigurationError(f"commands.{name}.receipt must use the frozen receipt schema")
+    if _string(parsed.get("command"), f"commands.{name}.receipt.command") != name:
+        raise ConfigurationError(f"commands.{name}.receipt is bound to a different boundary")
+    if _int(parsed.get("order"), f"commands.{name}.receipt.order") != order:
+        raise ConfigurationError(f"commands.{name}.receipt order drifted")
+    if _string(parsed.get("run_id"), f"commands.{name}.receipt.run_id") != run_id:
+        raise ConfigurationError(f"commands.{name}.receipt is bound to a different run_id")
+    if _string(parsed.get("producer"), f"commands.{name}.receipt.producer") != producer:
+        raise ConfigurationError(f"commands.{name}.receipt producer must equal the boundary owner")
+
+
+def _verify_receipt_executable(
+    root: Path,
+    parsed: dict[str, Any],
+    name: str,
+    policy: TrustPolicy,
+    issues: list[str],
+) -> tuple[str, str]:
+    executable = _object(parsed.get("executable"), f"commands.{name}.receipt.executable")
+    _keys(executable, {"path", "sha256"}, f"commands.{name}.receipt.executable")
+    exe_path = _relative_path(executable.get("path"), f"commands.{name}.receipt.executable.path")
+    exe_digest = _sha256(executable.get("sha256"), f"commands.{name}.receipt.executable.sha256")
+    _real_file(root, exe_path, f"commands.{name}.receipt.executable.path")
+    approved = policy.executables.get(exe_path)
+    if approved is None or approved[0] != exe_digest or name not in approved[1]:
+        issues.append("artifact_provenance")
+    return exe_path, exe_digest
+
+
+def _verify_receipt_semantics(
+    parsed: dict[str, Any], name: str, policy: TrustPolicy, issues: list[str]
+) -> None:
+    argv = _list(parsed.get("argv"), f"commands.{name}.receipt.argv")
+    if tuple(argv) != policy.command_argv[name]:
+        issues.append("command_semantics")
+    cwd = _string(parsed.get("working_directory"), f"commands.{name}.receipt.working_directory")
     if cwd not in {"/workspace", "/run/omnibase"} and not cwd.startswith("/run/omnibase/"):
-        raise ConfigurationError(f"commands.{name}.working_directory must be the approved run root")
-    env_manifest = _object(record.get("env_manifest"), f"commands.{name}.env_manifest")
-    _keys(env_manifest, {"names", "secret_free"}, f"commands.{name}.env_manifest")
-    names = _list(env_manifest.get("names"), f"commands.{name}.env_manifest.names")
-    if not all(isinstance(n, str) and n for n in names):
-        raise ConfigurationError(f"commands.{name}.env_manifest.names must be strings")
-    forbidden_env = {
-        ".env",
-        "JWT_SECRET",
-        "LLM_API_KEY",
-        "POSTGRES_PASSWORD",
-        "MINIO_ROOT_PASSWORD",
-    }
-    if any(n in forbidden_env for n in names):
-        raise ConfigurationError(f"commands.{name}.env_manifest must not include secret names")
-    if (
-        _bool(env_manifest.get("secret_free"), f"commands.{name}.env_manifest.secret_free")
-        is not True
-    ):
-        raise ConfigurationError(f"commands.{name}.env_manifest must assert secret_free")
-    started = _iso_timestamp(record.get("started_at"), f"commands.{name}.started_at")
-    ended = _iso_timestamp(record.get("ended_at"), f"commands.{name}.ended_at")
+        raise ConfigurationError(f"commands.{name}.receipt must use the approved run root")
+    env_names = _list(parsed.get("env_names"), f"commands.{name}.receipt.env_names")
+    if not all(isinstance(n, str) and n for n in env_names):
+        raise ConfigurationError(f"commands.{name}.receipt.env_names must be strings")
+    if any(n in _FORBIDDEN_ENV_NAMES for n in env_names):
+        raise ConfigurationError(f"commands.{name}.receipt must not include secret env names")
+    if any(n not in policy.allowed_env_names for n in env_names):
+        issues.append("command_semantics")
+
+
+def _verify_receipt_timing(
+    root: Path, parsed: dict[str, Any], name: str, previous_end: datetime | None
+) -> datetime:
+    started = _utc_instant(parsed.get("started_at"), f"commands.{name}.receipt.started_at")
+    ended = _utc_instant(parsed.get("ended_at"), f"commands.{name}.receipt.ended_at")
     if ended < started:
-        raise ConfigurationError(f"commands.{name} ended before it started")
+        raise ConfigurationError(f"commands.{name}.receipt ended before it started")
     if previous_end is not None and started < previous_end:
         raise ConfigurationError("command chronology is inconsistent with the required order")
-    timeout = _int(record.get("timeout_seconds"), f"commands.{name}.timeout_seconds")
+    timeout = _int(parsed.get("timeout_seconds"), f"commands.{name}.receipt.timeout_seconds")
     if timeout <= 0 or timeout > 3600:
-        raise ConfigurationError(f"commands.{name}.timeout_seconds must be bounded")
-    exit_code = _int(record.get("exit_code"), f"commands.{name}.exit_code")
-    stdout = _object(record.get("stdout"), f"commands.{name}.stdout")
-    stderr = _object(record.get("stderr"), f"commands.{name}.stderr")
-    exit_ok, stdout_size, stderr_size = _verify_command_output(
-        root, name, stdout, stderr, exit_code
-    )
-    if not exit_ok:
-        raise ConfigurationError(f"commands.{name}.exit_code must be 0 for passed evidence")
-    return ended, f"{name}:{exec_digest}:{stdout_size}:{stderr_size}"
+        raise ConfigurationError(f"commands.{name}.receipt.timeout_seconds must be bounded")
+    exit_code = _int(parsed.get("exit_code"), f"commands.{name}.receipt.exit_code")
+    if exit_code != 0:
+        raise ConfigurationError(f"commands.{name}.receipt.exit_code must be 0 for passed evidence")
+    for stream_name in ("stdout", "stderr"):
+        _file_ref(root, parsed.get(stream_name), f"commands.{name}.receipt.{stream_name}")
+    return ended
 
 
-def _verify_command_output(
-    root: Path, name: str, stdout: dict[str, Any], stderr: dict[str, Any], exit_code: int
-) -> tuple[bool, int, int]:
-    for stream_name, stream in (("stdout", stdout), ("stderr", stderr)):
-        _keys(stream, {"path", "size", "sha256"}, f"commands.{name}.{stream_name}")
-        relative = _relative_path(stream.get("path"), f"commands.{name}.{stream_name}.path")
-        size = _int(stream.get("size"), f"commands.{name}.{stream_name}.size")
-        digest = _sha256(stream.get("sha256"), f"commands.{name}.{stream_name}.sha256")
-        path = _real_file(root, relative, f"commands.{name}.{stream_name}.path")
-        if path.stat().st_size != size or _hash_file(path) != digest:
-            raise ConfigurationError(f"commands.{name}.{stream_name} raw bytes drifted")
-    return exit_code == 0, stdout["size"], stderr["size"]
-
-
-def _verify_commands(root: Path, value: object) -> list[str]:
+def _verify_commands(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    issues: list[str],
+) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
     commands = _object(value, "commands")
     if set(commands) != set(_REQUIRED_COMMANDS):
         raise ConfigurationError("commands must contain every required joint boundary exactly once")
-    ordered: list[str] = []
-    previous_end: str | None = None
+    receipt_digests: dict[str, str] = {}
+    receipt_executables: dict[str, tuple[str, str]] = {}
+    previous_end: datetime | None = None
     for index, name in enumerate(_REQUIRED_COMMANDS):
-        record = commands.get(name)
-        if not isinstance(record, dict):
+        refs = commands.get(name)
+        if not isinstance(refs, dict):
             raise ConfigurationError(f"commands.{name} must be an object")
-        order = _int(record.get("order"), f"commands.{name}.order") if "order" in record else index
-        if order != index:
-            raise ConfigurationError("command order must match the required sequence exactly")
-        previous_end, marker = _verify_command_record(root, name, record, previous_end=previous_end)
-        ordered.append(marker)
-    return ordered
-
-
-# ---------------------------------------------------------------------------
-# Component-evidence verification (frozen per-component schema, identity binding)
-# ---------------------------------------------------------------------------
-
-
-def _verify_component(root: Path, name: str, value: object, run_id: str) -> str:
-    record = _object(value, f"components.{name}")
-    allowed = {
-        "schema",
-        "producer",
-        "component_run_id",
-        "identity",
-        "trust_roots",
-        "fingerprint",
-        "evidence",
-        "host",
-    }
-    if name == "gateway":
-        allowed |= {"certificate", "replay"}
-    _keys(record, allowed, f"components.{name}")
-    if _string(record.get("schema"), f"components.{name}.schema") != f"omnibase.p34-7.{name}.v1":
-        raise ConfigurationError(
-            f"components.{name}.schema must be the frozen per-component schema"
+        _keys(refs, {"order", "receipt", "signature"}, f"commands.{name}")
+        if index == 0 and refs.get("signature") is not None:
+            _file_ref(root, refs["signature"], f"commands.{name}.signature")
+        previous_end, digest, executable = _verify_receipt(
+            root,
+            name,
+            refs,
+            policy,
+            run_id,
+            _COMMAND_PRODUCER[name],
+            previous_end,
+            issues,
         )
-    if _string(record.get("producer"), f"components.{name}.producer") != name:
-        raise ConfigurationError(f"components.{name}.producer must equal the component name")
-    if _string(record.get("component_run_id"), f"components.{name}.component_run_id") != run_id:
-        raise ConfigurationError(f"components.{name} bound to a different run_id")
-    identity = _object(record.get("identity"), f"components.{name}.identity")
-    _keys(identity, {"kind", "value"}, f"components.{name}.identity")
-    if _string(identity.get("kind"), f"components.{name}.identity.kind") != "sha256":
-        raise ConfigurationError(f"components.{name}.identity must be a sha256 digest")
-    _sha256(identity.get("value"), f"components.{name}.identity.value")
-    trust_roots = _list(record.get("trust_roots"), f"components.{name}.trust_roots")
-    for index, root_ref in enumerate(trust_roots):
-        _sha256(root_ref, f"components.{name}.trust_roots[{index}]")
-    if name == "gateway":
-        _verify_certificate_posture(record, name)
-    fingerprint = _opt_string(record.get("fingerprint"), f"components.{name}.fingerprint")
-    if fingerprint is not None:
-        _sha256(fingerprint, f"components.{name}.fingerprint")
-    evidence = _verify_component_evidence(root, name, record.get("evidence"))
-    host = _object(record.get("host"), f"components.{name}.host")
-    _keys(host, {"os", "kernel", "arch"}, f"components.{name}.host")
-    _string(host.get("os"), f"components.{name}.host.os")
-    _string(host.get("kernel"), f"components.{name}.host.kernel")
-    _string(host.get("arch"), f"components.{name}.host.arch")
-    return evidence
+        receipt_digests[name] = digest
+        receipt_executables[name] = executable
+    return receipt_digests, receipt_executables
 
 
-def _verify_certificate_posture(record: dict[str, Any], name: str) -> None:
-    cert = _object(record.get("certificate"), f"components.{name}.certificate")
+# ---------------------------------------------------------------------------
+# Component-evidence verification (frozen canonical schema, cross-binds)
+# ---------------------------------------------------------------------------
+
+
+def _verify_gateway_posture(
+    parsed: dict[str, Any], policy: TrustPolicy, now: datetime, issues: list[str]
+) -> None:
+    gateway = _object(parsed.get("gateway"), "components.gateway.evidence.gateway")
+    _keys(gateway, {"certificate", "replay"}, "components.gateway.evidence.gateway")
+    cert = _object(gateway.get("certificate"), "components.gateway.evidence.gateway.certificate")
     _keys(
         cert,
         {"public_fingerprint", "issuer", "san", "valid_from", "valid_until", "revoked"},
-        f"components.{name}.certificate",
+        "components.gateway.evidence.gateway.certificate",
     )
-    _sha256(cert.get("public_fingerprint"), f"components.{name}.certificate.public_fingerprint")
-    _sha256(cert.get("issuer"), f"components.{name}.certificate.issuer")
-    _string(cert.get("san"), f"components.{name}.certificate.san")
-    valid_from = _iso_timestamp(cert.get("valid_from"), f"components.{name}.certificate.valid_from")
-    valid_until = _iso_timestamp(
-        cert.get("valid_until"), f"components.{name}.certificate.valid_until"
+    _sha256(
+        cert.get("public_fingerprint"),
+        "components.gateway.evidence.gateway.certificate.public_fingerprint",
+    )
+    issuer = _sha256(cert.get("issuer"), "components.gateway.evidence.gateway.certificate.issuer")
+    if issuer != policy.gateway_issuer:
+        issues.append("certificate_posture")
+    san = _string(cert.get("san"), "components.gateway.evidence.gateway.certificate.san")
+    if not san.endswith(policy.gateway_san_suffix):
+        issues.append("certificate_posture")
+    valid_from = _utc_instant(
+        cert.get("valid_from"), "components.gateway.evidence.gateway.certificate.valid_from"
+    )
+    valid_until = _utc_instant(
+        cert.get("valid_until"), "components.gateway.evidence.gateway.certificate.valid_until"
     )
     if valid_until <= valid_from:
-        raise ConfigurationError(f"components.{name}.certificate validity window is empty")
-    if _bool(cert.get("revoked"), f"components.{name}.certificate.revoked") is not False:
-        raise ConfigurationError(f"components.{name}.certificate must not be revoked")
-    replay = _object(record.get("replay"), f"components.{name}.replay")
-    _keys(replay, {"replayed", "sequence"}, f"components.{name}.replay")
-    if _bool(replay.get("replayed"), f"components.{name}.replay.replayed") is not False:
-        raise ConfigurationError(f"components.{name}.replay must not be replayed")
+        issues.append("certificate_posture")
+    if (valid_until - valid_from).total_seconds() > policy.gateway_validity_seconds:
+        issues.append("certificate_posture")
+    if valid_until < now:
+        issues.append("certificate_posture")
+    if (
+        _bool(cert.get("revoked"), "components.gateway.evidence.gateway.certificate.revoked")
+        is not False
+    ):
+        issues.append("certificate_posture")
+    replay = _object(gateway.get("replay"), "components.gateway.evidence.gateway.replay")
+    _keys(replay, {"replayed", "sequence"}, "components.gateway.evidence.gateway.replay")
+    if (
+        _bool(replay.get("replayed"), "components.gateway.evidence.gateway.replay.replayed")
+        is not False
+    ):
+        issues.append("replay_posture")
+    sequence = _int(replay.get("sequence"), "components.gateway.evidence.gateway.replay.sequence")
+    if sequence <= 0:
+        issues.append("replay_posture")
 
 
-def _verify_component_evidence(root: Path, name: str, value: object) -> str:
-    evidence = _object(value, f"components.{name}.evidence")
-    _keys(evidence, {"path", "size", "sha256"}, f"components.{name}.evidence")
-    relative = _relative_path(evidence.get("path"), f"components.{name}.evidence.path")
-    size = _int(evidence.get("size"), f"components.{name}.evidence.size")
-    digest = _sha256(evidence.get("sha256"), f"components.{name}.evidence.sha256")
-    path = _real_file(root, relative, f"components.{name}.evidence.path")
-    if path.stat().st_size != size or _hash_file(path) != digest:
-        raise ConfigurationError(f"components.{name}.evidence raw bytes drifted")
-    return digest
+def _verify_component(
+    root: Path,
+    name: str,
+    refs: dict[str, Any],
+    policy: TrustPolicy,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    posture_digest: str,
+    attack_digest: str,
+    cleanup_digest: str,
+    receipt_digests: dict[str, str],
+    receipt_executables: dict[str, tuple[str, str]],
+    issues: list[str],
+) -> tuple[str, str]:
+    evidence_ref = _object(refs.get("evidence"), f"components.{name}.evidence")
+    parsed, sig_status = _signed_file(
+        root,
+        evidence_ref,
+        refs.get("signature"),
+        policy.producer_key(name),
+        f"components.{name}.evidence",
+    )
+    if sig_status != "verified":
+        issues.append(f"signature:component:{name}")
+    _keys(
+        parsed,
+        {
+            "schema",
+            "producer",
+            "run_id",
+            "source_commit",
+            "source_tree",
+            "source_manifest_sha256",
+            "artifact_manifest_sha256",
+            "component_identity",
+            "peer_identities",
+            "receipts",
+            "executables",
+            "measurements",
+            "results",
+            "host",
+            "gateway",
+        },
+        f"components.{name}.evidence",
+    )
+    _verify_component_envelope(parsed, name, run_id, commit, tree, source_hash, artifact_hash)
+    identity_digest = _verify_component_identity_peers(parsed, name)
+    _verify_component_receipts(parsed, name, receipt_digests)
+    _verify_component_executables(parsed, name, policy, receipt_executables, issues)
+    _verify_component_bindings(parsed, name, posture_digest, attack_digest, cleanup_digest)
+    _verify_component_host(parsed, name)
+    if name == "gateway":
+        _verify_gateway_posture(parsed, policy, datetime.now(timezone.utc), issues)  # noqa: UP017
+    return str(evidence_ref["sha256"]), identity_digest
 
 
-def _verify_components(root: Path, value: object, run_id: str) -> list[str]:
+def _verify_component_envelope(
+    parsed: dict[str, Any],
+    name: str,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+) -> None:
+    if _string(parsed.get("schema"), f"components.{name}.evidence.schema") != COMPONENT_SCHEMA:
+        raise ConfigurationError(f"components.{name}.evidence must use the frozen component schema")
+    if _string(parsed.get("producer"), f"components.{name}.evidence.producer") != name:
+        raise ConfigurationError(f"components.{name}.evidence producer must equal the component")
+    if _string(parsed.get("run_id"), f"components.{name}.evidence.run_id") != run_id:
+        raise ConfigurationError(f"components.{name}.evidence bound to a different run_id")
+    if _sha256(parsed.get("source_commit"), f"components.{name}.evidence.source_commit") != commit:
+        raise ConfigurationError(f"components.{name}.evidence source_commit drifted")
+    if _sha256(parsed.get("source_tree"), f"components.{name}.evidence.source_tree") != tree:
+        raise ConfigurationError(f"components.{name}.evidence source_tree drifted")
+    if (
+        _sha256(
+            parsed.get("source_manifest_sha256"),
+            f"components.{name}.evidence.source_manifest_sha256",
+        )
+        != source_hash
+    ):
+        raise ConfigurationError(f"components.{name}.evidence source manifest binding drifted")
+    if (
+        _sha256(
+            parsed.get("artifact_manifest_sha256"),
+            f"components.{name}.evidence.artifact_manifest_sha256",
+        )
+        != artifact_hash
+    ):
+        raise ConfigurationError(f"components.{name}.evidence artifact manifest binding drifted")
+
+
+def _verify_component_identity_peers(parsed: dict[str, Any], name: str) -> str:
+    identity = _object(parsed.get("component_identity"), f"components.{name}.evidence.identity")
+    _keys(identity, {"kind", "value"}, f"components.{name}.evidence.identity")
+    if _string(identity.get("kind"), f"components.{name}.evidence.identity.kind") != "sha256":
+        raise ConfigurationError(f"components.{name}.evidence identity must be a sha256 digest")
+    identity_digest = _sha256(identity.get("value"), f"components.{name}.evidence.identity.value")
+    peers = _object(parsed.get("peer_identities"), f"components.{name}.evidence.peer_identities")
+    if set(peers) != set(_REQUIRED_PEERS[name]):
+        raise ConfigurationError(f"components.{name}.evidence peer set must match the topology")
+    for peer in sorted(peers):
+        _sha256(peers.get(peer), f"components.{name}.evidence.peer_identities.{peer}")
+    return identity_digest
+
+
+def _verify_component_receipts(
+    parsed: dict[str, Any], name: str, receipt_digests: dict[str, str]
+) -> None:
+    receipts = _object(parsed.get("receipts"), f"components.{name}.evidence.receipts")
+    owned = [command for command, owner in _COMMAND_PRODUCER.items() if owner == name]
+    if set(receipts) != set(owned):
+        raise ConfigurationError(f"components.{name}.evidence must bind its owned command receipts")
+    for command in sorted(owned):
+        if _sha256(
+            receipts.get(command), f"components.{name}.evidence.receipts.{command}"
+        ) != receipt_digests.get(command):
+            raise ConfigurationError(f"components.{name}.evidence receipt binding drifted")
+
+
+def _verify_component_executables(
+    parsed: dict[str, Any],
+    name: str,
+    policy: TrustPolicy,
+    receipt_executables: dict[str, tuple[str, str]],
+    issues: list[str],
+) -> None:
+    owned = [command for command, owner in _COMMAND_PRODUCER.items() if owner == name]
+    executables = _list(parsed.get("executables"), f"components.{name}.evidence.executables")
+    expected_executables = {receipt_executables[command] for command in owned}
+    found_executables: set[tuple[str, str]] = set()
+    for index, item in enumerate(executables):
+        entry = _object(item, f"components.{name}.evidence.executables[{index}]")
+        _keys(entry, {"path", "sha256"}, f"components.{name}.evidence.executables[{index}]")
+        exe_path = _relative_path(
+            entry.get("path"), f"components.{name}.evidence.executables[{index}].path"
+        )
+        exe_digest = _sha256(
+            entry.get("sha256"), f"components.{name}.evidence.executables[{index}].sha256"
+        )
+        approved = policy.executables.get(exe_path)
+        if approved is None or approved[0] != exe_digest:
+            issues.append("artifact_provenance")
+        found_executables.add((exe_path, exe_digest))
+    if found_executables != expected_executables:
+        issues.append("artifact_provenance")
+
+
+def _verify_component_bindings(
+    parsed: dict[str, Any],
+    name: str,
+    posture_digest: str,
+    attack_digest: str,
+    cleanup_digest: str,
+) -> None:
+    measurements = _object(parsed.get("measurements"), f"components.{name}.evidence.measurements")
+    _keys(measurements, {"posture_sha256"}, f"components.{name}.evidence.measurements")
+    if (
+        _sha256(
+            measurements.get("posture_sha256"),
+            f"components.{name}.evidence.measurements.posture_sha256",
+        )
+        != posture_digest
+    ):
+        raise ConfigurationError(
+            f"components.{name}.evidence does not bind the posture measurement"
+        )
+    results = _object(parsed.get("results"), f"components.{name}.evidence.results")
+    _keys(
+        results, {"attack_matrix_sha256", "cleanup_sha256"}, f"components.{name}.evidence.results"
+    )
+    if (
+        _sha256(
+            results.get("attack_matrix_sha256"),
+            f"components.{name}.evidence.results.attack_matrix_sha256",
+        )
+        != attack_digest
+    ):
+        raise ConfigurationError(f"components.{name}.evidence does not bind the attack matrix")
+    if (
+        _sha256(results.get("cleanup_sha256"), f"components.{name}.evidence.results.cleanup_sha256")
+        != cleanup_digest
+    ):
+        raise ConfigurationError(f"components.{name}.evidence does not bind the cleanup inventory")
+
+
+def _verify_component_host(parsed: dict[str, Any], name: str) -> None:
+    host = _object(parsed.get("host"), f"components.{name}.evidence.host")
+    _keys(host, {"os", "kernel", "arch"}, f"components.{name}.evidence.host")
+    _string(host.get("os"), f"components.{name}.evidence.host.os")
+    _string(host.get("kernel"), f"components.{name}.evidence.host.kernel")
+    _string(host.get("arch"), f"components.{name}.evidence.host.arch")
+
+
+def _verify_components(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    posture_digest: str,
+    attack_digest: str,
+    cleanup_digest: str,
+    receipt_digests: dict[str, str],
+    receipt_executables: dict[str, tuple[str, str]],
+    issues: list[str],
+) -> dict[str, str]:
     components = _object(value, "components")
     if set(components) != set(_REQUIRED_COMPONENTS):
         raise ConfigurationError("components must contain all six joint gates exactly once")
-    return [
-        _verify_component(root, name, components.get(name), run_id) for name in _REQUIRED_COMPONENTS
-    ]
+    identities: dict[str, str] = {}
+    evidence_digests: dict[str, str] = {}
+    for name in _REQUIRED_COMPONENTS:
+        refs = components.get(name)
+        if not isinstance(refs, dict):
+            raise ConfigurationError(f"components.{name} must be an object")
+        _keys(refs, {"evidence", "signature"}, f"components.{name}")
+        evidence_digest, identity_digest = _verify_component(
+            root,
+            name,
+            refs,
+            policy,
+            run_id,
+            commit,
+            tree,
+            source_hash,
+            artifact_hash,
+            posture_digest,
+            attack_digest,
+            cleanup_digest,
+            receipt_digests,
+            receipt_executables,
+            issues,
+        )
+        identities[name] = identity_digest
+        evidence_digests[name] = evidence_digest
+    for name in _REQUIRED_COMPONENTS:
+        refs = components.get(name)
+        if not isinstance(refs, dict):
+            raise ConfigurationError(f"components.{name} must be an object")
+        evidence_ref = _object(refs.get("evidence"), f"components.{name}.evidence")
+        evidence_path = _file_ref(root, evidence_ref, f"components.{name}.evidence")
+        parsed, _raw = _read_canonical_json(evidence_path, f"components.{name}.evidence")
+        peers = _object(
+            parsed.get("peer_identities"), f"components.{name}.evidence.peer_identities"
+        )
+        for peer in _REQUIRED_PEERS[name]:
+            if peers.get(peer) != identities[peer]:
+                raise ConfigurationError(
+                    f"components.{name}.evidence peer identity does not match the peer"
+                )
+    return evidence_digests
 
 
 # ---------------------------------------------------------------------------
-# Repository-invariant verification (migration head, feature gates, posture)
+# Repository invariants, measurements, attack matrix and cleanup
 # ---------------------------------------------------------------------------
 
 
-def _verify_repository_invariants(data: dict[str, Any]) -> dict[str, str]:
+def _verify_repository_invariants(data: dict[str, Any]) -> tuple[dict[str, str], dict[str, bool]]:
     safety: dict[str, str] = {}
+    gates: dict[str, bool] = {}
     migration_head = _string(data.get("migration_head"), "migration_head")
     if migration_head != "0012":
         raise ConfigurationError("migration head must remain 0012")
     safety["migration_head"] = migration_head
-    gates = _object(data.get("feature_gates"), "feature_gates")
-    if set(gates) != set(_REQUIRED_FEATURE_GATES):
+    feature_gates = _object(data.get("feature_gates"), "feature_gates")
+    if set(feature_gates) != set(_REQUIRED_FEATURE_GATES):
         raise ConfigurationError("feature_gates must contain exactly the three Phase 5 gates")
     for gate_name in _REQUIRED_FEATURE_GATES:
-        if _bool(gates.get(gate_name), f"feature_gates.{gate_name}") is not False:
+        if _bool(feature_gates.get(gate_name), f"feature_gates.{gate_name}") is not False:
             raise ConfigurationError("Phase 5 feature gates must remain false")
+        gates[gate_name] = False
         safety[gate_name] = "false"
-    posture = _object(data.get("runtime_posture"), "runtime_posture")
+    return safety, gates
+
+
+def _verify_posture(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    issues: list[str],
+) -> tuple[str, dict[str, str]]:
+    measurements = _object(value, "measurements")
+    _keys(measurements, {"posture"}, "measurements")
+    posture = _object(measurements.get("posture"), "measurements.posture")
+    _keys(posture, {"evidence", "signature"}, "measurements.posture")
+    evidence_ref = _object(posture.get("evidence"), "measurements.posture.evidence")
+    parsed, sig_status = _signed_file(
+        root,
+        evidence_ref,
+        posture.get("signature"),
+        policy.producer_key("core"),
+        "measurements.posture.evidence",
+    )
+    if sig_status != "verified":
+        issues.append("signature:posture")
     _keys(
-        posture,
+        parsed,
         {
+            "schema",
+            "producer",
+            "run_id",
+            "measured",
+            "measured_at",
+            "measurement_source",
             "production_runtime_activated",
             "hostile_code_executed",
-            "measured",
-            "measurement_source",
+            "root_env_accessed",
+            "business_database_accessed",
+            "business_database_migrated",
+            "host",
         },
-        "runtime_posture",
+        "measurements.posture.evidence",
     )
-    for key in ("production_runtime_activated", "hostile_code_executed"):
-        if _bool(posture.get(key), f"runtime_posture.{key}") is not False:
-            raise ConfigurationError("production Runtime and hostile code must remain inactive")
-        safety[key] = "false"
-    if _bool(posture.get("measured"), "runtime_posture.measured") is not True:
-        safety["runtime_posture"] = "not_proven"
-    else:
-        source = _string(posture.get("measurement_source"), "runtime_posture.measurement_source")
-        if source not in {"process_config", "service_config"}:
-            raise ConfigurationError("runtime_posture.measurement_source must be an approved kind")
-        safety["runtime_posture"] = f"measured:{source}"
-    return safety
+    if _string(parsed.get("schema"), "measurements.posture.evidence.schema") != POSTURE_SCHEMA:
+        raise ConfigurationError("measurements.posture must use the frozen posture schema")
+    if _string(parsed.get("producer"), "measurements.posture.evidence.producer") != "core":
+        raise ConfigurationError("measurements.posture producer must be core")
+    if _string(parsed.get("run_id"), "measurements.posture.evidence.run_id") != run_id:
+        raise ConfigurationError("measurements.posture is bound to a different run_id")
+    measured = _bool(parsed.get("measured"), "measurements.posture.evidence.measured")
+    measured_at = _utc_instant(
+        parsed.get("measured_at"), "measurements.posture.evidence.measured_at"
+    )
+    source = _string(
+        parsed.get("measurement_source"), "measurements.posture.evidence.measurement_source"
+    )
+    if source not in {"process_config", "service_config", "host_probe"}:
+        raise ConfigurationError(
+            "measurements.posture.evidence.measurement_source must be an approved kind"
+        )
+    host = _object(parsed.get("host"), "measurements.posture.evidence.host")
+    _keys(host, {"os", "kernel", "arch"}, "measurements.posture.evidence.host")
+    activated = _bool(
+        parsed.get("production_runtime_activated"),
+        "measurements.posture.evidence.production_runtime_activated",
+    )
+    hostile = _bool(
+        parsed.get("hostile_code_executed"), "measurements.posture.evidence.hostile_code_executed"
+    )
+    root_env = _bool(
+        parsed.get("root_env_accessed"), "measurements.posture.evidence.root_env_accessed"
+    )
+    db_accessed = _bool(
+        parsed.get("business_database_accessed"),
+        "measurements.posture.evidence.business_database_accessed",
+    )
+    db_migrated = _bool(
+        parsed.get("business_database_migrated"),
+        "measurements.posture.evidence.business_database_migrated",
+    )
+    trusted = measured and sig_status == "verified" and measured_at <= datetime.now(timezone.utc)  # noqa: UP017
+    safety: dict[str, str] = {}
+    safety["runtime_posture"] = f"measured:{source}" if trusted else "not_proven"
+    safety["production_runtime_inactive"] = (
+        "verified" if trusted and not activated else "not_proven"
+    )
+    safety["hostile_code_not_executed"] = "verified" if trusted and not hostile else "not_proven"
+    safety["root_env_not_accessed"] = "verified" if trusted and not root_env else "not_proven"
+    safety["business_database_not_accessed"] = (
+        "verified" if trusted and not db_accessed else "not_proven"
+    )
+    safety["business_database_not_migrated"] = (
+        "verified" if trusted and not db_migrated else "not_proven"
+    )
+    return posture["evidence"]["sha256"], safety
 
 
-# ---------------------------------------------------------------------------
-# Attack matrix and cleanup verification
-# ---------------------------------------------------------------------------
-
-
-def _verify_attack_matrix(root: Path, value: object) -> tuple[bool, list[str]]:
+def _verify_attack_matrix(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    issues: list[str],
+) -> tuple[str, dict[str, str], tuple[str, ...]]:
     attack = _object(value, "attack_matrix")
-    _keys(attack, {"status", "results", "evidence"}, "attack_matrix")
-    status = _string(attack.get("status"), "attack_matrix.status")
-    results = _object(attack.get("results"), "attack_matrix.results")
-    required_attacks = (
-        "node_compromise",
-        "credential_theft",
-        "revocation_replay",
-        "derp_failover",
-        "cross_component_replay",
+    _keys(attack, {"evidence", "signature"}, "attack_matrix")
+    evidence_ref = _object(attack.get("evidence"), "attack_matrix.evidence")
+    parsed, sig_status = _signed_file(
+        root,
+        evidence_ref,
+        attack.get("signature"),
+        policy.producer_key("runner"),
+        "attack_matrix.evidence",
     )
-    for attack_name in required_attacks:
-        outcome = _string(results.get(attack_name), f"attack_matrix.results.{attack_name}")
-        if outcome not in {"rejected", "contained", "failed_attack"}:
-            return False, [f"attack:{attack_name}"]
-    evidence = _object(attack.get("evidence"), "attack_matrix.evidence")
-    _keys(evidence, {"path", "size", "sha256"}, "attack_matrix.evidence")
-    relative = _relative_path(evidence.get("path"), "attack_matrix.evidence.path")
-    size = _int(evidence.get("size"), "attack_matrix.evidence.size")
-    digest = _sha256(evidence.get("sha256"), "attack_matrix.evidence.sha256")
-    path = _real_file(root, relative, "attack_matrix.evidence.path")
-    if path.stat().st_size != size or _hash_file(path) != digest:
-        raise ConfigurationError("attack_matrix.evidence raw bytes drifted")
-    if status != "passed":
-        return False, ["attack_matrix.status"]
-    return True, []
-
-
-def _verify_cleanup(root: Path, value: object) -> tuple[bool, list[str]]:
-    cleanup = _object(value, "cleanup")
+    if sig_status != "verified":
+        issues.append("signature:attack")
     _keys(
-        cleanup,
-        {
-            "containers",
-            "networks",
-            "processes",
-            "volumes",
-            "databases",
-            "test_identities",
-            "evidence",
-        },
-        "cleanup",
+        parsed,
+        {"schema", "producer", "run_id", "executed_at", "results", "inventory"},
+        "attack_matrix.evidence",
     )
-    for key in (*_REQUIRED_CLEANUP_KEYS, "databases", "test_identities"):
-        count = _int(cleanup.get(key), f"cleanup.{key}")
-        if count != 0:
-            return False, [f"cleanup:{key}"]
-    evidence = _object(cleanup.get("evidence"), "cleanup.evidence")
-    _keys(evidence, {"path", "size", "sha256"}, "cleanup.evidence")
-    relative = _relative_path(evidence.get("path"), "cleanup.evidence.path")
-    size = _int(evidence.get("size"), "cleanup.evidence.size")
-    digest = _sha256(evidence.get("sha256"), "cleanup.evidence.sha256")
-    path = _real_file(root, relative, "cleanup.evidence.path")
-    if path.stat().st_size != size or _hash_file(path) != digest:
-        raise ConfigurationError("cleanup.evidence raw bytes drifted")
-    return True, []
+    if _string(parsed.get("schema"), "attack_matrix.evidence.schema") != ATTACK_SCHEMA:
+        raise ConfigurationError("attack_matrix must use the frozen attack-matrix schema")
+    if _string(parsed.get("producer"), "attack_matrix.evidence.producer") != "runner":
+        raise ConfigurationError("attack_matrix producer must be runner")
+    if _string(parsed.get("run_id"), "attack_matrix.evidence.run_id") != run_id:
+        raise ConfigurationError("attack_matrix is bound to a different run_id")
+    _utc_instant(parsed.get("executed_at"), "attack_matrix.evidence.executed_at")
+    results = _object(parsed.get("results"), "attack_matrix.evidence.results")
+    if set(results) != set(_REQUIRED_ATTACKS):
+        raise ConfigurationError(
+            "attack_matrix.evidence.results must contain every required attack"
+        )
+    inventory = _list(parsed.get("inventory"), "attack_matrix.evidence.inventory")
+    seen: set[str] = set()
+    inventory_map: dict[str, str] = {}
+    for index, item in enumerate(inventory):
+        entry = _object(item, f"attack_matrix.evidence.inventory[{index}]")
+        _keys(
+            entry,
+            {"attack_id", "outcome", "attempted_at", "evidence_digest"},
+            f"attack_matrix.evidence.inventory[{index}]",
+        )
+        attack_id = _string(
+            entry.get("attack_id"), f"attack_matrix.evidence.inventory[{index}].attack_id"
+        )
+        if attack_id in seen:
+            raise ConfigurationError("attack_matrix.evidence.inventory contains duplicates")
+        seen.add(attack_id)
+        outcome = _string(
+            entry.get("outcome"), f"attack_matrix.evidence.inventory[{index}].outcome"
+        )
+        _utc_instant(
+            entry.get("attempted_at"), f"attack_matrix.evidence.inventory[{index}].attempted_at"
+        )
+        _sha256(
+            entry.get("evidence_digest"),
+            f"attack_matrix.evidence.inventory[{index}].evidence_digest",
+        )
+        inventory_map[attack_id] = outcome
+    blockers: list[str] = []
+    for attack_name in _REQUIRED_ATTACKS:
+        outcome = _string(results.get(attack_name), f"attack_matrix.evidence.results.{attack_name}")
+        if outcome not in _ALLOWED_ATTACK_OUTCOMES or inventory_map.get(attack_name) != outcome:
+            blockers.append(f"attack:{attack_name}")
+    if set(inventory_map) != set(_REQUIRED_ATTACKS) or len(inventory_map) != len(inventory):
+        blockers.append("attack:inventory")
+    safety: dict[str, str] = {}
+    if blockers or sig_status != "verified":
+        safety["attack_results"] = "not_proven"
+    else:
+        safety["attack_results"] = "verified"
+    return attack["evidence"]["sha256"], safety, tuple(blockers)
+
+
+def _verify_cleanup(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    issues: list[str],
+) -> tuple[str, dict[str, str], tuple[str, ...]]:
+    cleanup = _object(value, "cleanup")
+    _keys(cleanup, {"evidence", "signature"}, "cleanup")
+    evidence_ref = _object(cleanup.get("evidence"), "cleanup.evidence")
+    parsed, sig_status = _signed_file(
+        root,
+        evidence_ref,
+        cleanup.get("signature"),
+        policy.producer_key("sealer"),
+        "cleanup.evidence",
+    )
+    if sig_status != "verified":
+        issues.append("signature:cleanup")
+    _keys(
+        parsed,
+        {"schema", "producer", "run_id", "completed_at", "counts", "inventory"},
+        "cleanup.evidence",
+    )
+    if _string(parsed.get("schema"), "cleanup.evidence.schema") != CLEANUP_SCHEMA:
+        raise ConfigurationError("cleanup must use the frozen cleanup-inventory schema")
+    if _string(parsed.get("producer"), "cleanup.evidence.producer") != "sealer":
+        raise ConfigurationError("cleanup producer must be sealer")
+    if _string(parsed.get("run_id"), "cleanup.evidence.run_id") != run_id:
+        raise ConfigurationError("cleanup is bound to a different run_id")
+    _utc_instant(parsed.get("completed_at"), "cleanup.evidence.completed_at")
+    counts = _object(parsed.get("counts"), "cleanup.evidence.counts")
+    if set(counts) != set(_REQUIRED_CLEANUP_KEYS):
+        raise ConfigurationError("cleanup.evidence.counts must contain every required class")
+    tally: dict[str, int] = {key: 0 for key in _REQUIRED_CLEANUP_KEYS}
+    inventory = _list(parsed.get("inventory"), "cleanup.evidence.inventory")
+    for index, item in enumerate(inventory):
+        entry = _object(item, f"cleanup.evidence.inventory[{index}]")
+        _keys(entry, {"class", "item_id", "removed_at"}, f"cleanup.evidence.inventory[{index}]")
+        class_name = _string(entry.get("class"), f"cleanup.evidence.inventory[{index}].class")
+        if class_name not in _REQUIRED_CLEANUP_KEYS:
+            raise ConfigurationError(f"cleanup.evidence.inventory[{index}].class is unknown")
+        _string(entry.get("item_id"), f"cleanup.evidence.inventory[{index}].item_id")
+        _utc_instant(entry.get("removed_at"), f"cleanup.evidence.inventory[{index}].removed_at")
+        tally[class_name] += 1
+    blockers: list[str] = []
+    for key in _REQUIRED_CLEANUP_KEYS:
+        recorded = _int(counts.get(key), f"cleanup.evidence.counts.{key}")
+        if recorded < 0 or recorded != tally[key] or recorded != 0:
+            blockers.append(f"cleanup:{key}")
+    safety: dict[str, str] = {}
+    if blockers or sig_status != "verified":
+        safety["cleanup_complete"] = "not_proven"
+    else:
+        safety["cleanup_complete"] = "verified"
+    return cleanup["evidence"]["sha256"], safety, tuple(blockers)
+
+
+def _verify_seal(
+    root: Path,
+    value: object,
+    policy: TrustPolicy,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    receipt_digests: dict[str, str],
+    component_digests: dict[str, str],
+    posture_digest: str,
+    attack_digest: str,
+    cleanup_digest: str,
+    gates: dict[str, bool],
+    issues: list[str],
+) -> dict[str, str]:
+    seal = _object(value, "evidence_seal")
+    _keys(seal, {"producer", "binding_sha256", "signature"}, "evidence_seal")
+    if _string(seal.get("producer"), "evidence_seal.producer") != "sealer":
+        raise ConfigurationError("evidence_seal.producer must be sealer")
+    binding = {
+        "schema": SEAL_SCHEMA,
+        "producer": "sealer",
+        "run_id": run_id,
+        "source_commit": commit,
+        "source_tree": tree,
+        "source_manifest_sha256": source_hash,
+        "artifact_manifest_sha256": artifact_hash,
+        "commands": dict(sorted(receipt_digests.items())),
+        "components": dict(sorted(component_digests.items())),
+        "posture_measurement": posture_digest,
+        "attack_matrix": attack_digest,
+        "cleanup": cleanup_digest,
+        "migration_head": "0012",
+        "feature_gates": dict(sorted(gates.items())),
+    }
+    binding_bytes = _canonical(binding)
+    recorded = _sha256(seal.get("binding_sha256"), "evidence_seal.binding_sha256")
+    if hashlib.sha256(binding_bytes).hexdigest() != recorded:
+        raise ConfigurationError("evidence_seal.binding_sha256 does not bind the verified chain")
+    sig_status = "absent"
+    signature_ref = seal.get("signature")
+    if signature_ref is not None:
+        sig_path = _file_ref(root, signature_ref, "evidence_seal.signature")
+        ok = _verify_ed25519(policy.producer_key("sealer"), binding_bytes, sig_path.read_bytes())
+        sig_status = "verified" if ok else "invalid"
+    if sig_status != "verified":
+        issues.append("signature:seal")
+    return {"evidence_seal": "verified" if sig_status == "verified" else "not_proven"}
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
+_TOP_LEVEL_KEYS = {
+    "schema",
+    "schema_version",
+    "run_id",
+    "environment",
+    "disposable",
+    "provenance",
+    "source_manifest",
+    "artifact_manifest",
+    "commands",
+    "components",
+    "measurements",
+    "migration_head",
+    "feature_gates",
+    "attack_matrix",
+    "cleanup",
+    "evidence_seal",
+}
+
 
 def validate_joint_evidence_contract(payload: object) -> JointGateReport:
     """Validate the static P34.7 joint-evidence schema and contract only.
 
     This mode never accepts inline evidence as direct execution proof and
-    therefore always returns ``blocked/not_proven``.  It is the safe operating
-    mode when no real run directory exists.
+    therefore always returns ``blocked/not_proven``.
     """
     data = _object(payload, "joint evidence contract")
-    _keys(
-        data,
-        {
-            "schema",
-            "schema_version",
-            "run_id",
-            "environment",
-            "disposable",
-            "provenance",
-            "source_manifest",
-            "artifact_manifest",
-            "commands",
-            "components",
-            "migration_head",
-            "feature_gates",
-            "runtime_posture",
-            "attack_matrix",
-            "cleanup",
-            "evidence_seal",
-        },
-        "joint evidence contract",
-    )
+    _keys(data, _TOP_LEVEL_KEYS, "joint evidence contract")
     run_id, _commit, _tree = _verify_run_envelope(data)
     return JointGateReport(
         status="blocked/not_proven",
@@ -656,62 +1493,154 @@ def validate_joint_evidence_contract(payload: object) -> JointGateReport:
     )
 
 
-def verify_joint_evidence(run_dir: Path, payload: object) -> JointGateReport:
-    """Verify one immutable, run-scoped P34.7 evidence bundle.
-
-    May return ``passed`` only when every mandatory real, sealed,
-    component-specific artifact exists under ``run_dir`` and all cross-component
-    identities, hashes, chronology, semantics, attack results and cleanup
-    checks verify against the actual file bytes.  Any forgery vector raises
-    :class:`ConfigurationError` (treated as ``invalid/veto`` by callers).
-    """
-    root = run_dir.resolve(strict=True)
-    if not root.is_dir() or root.is_symlink():
-        raise ConfigurationError("run directory must be a regular directory")
-    data = _object(payload, "joint evidence")
-    _keys(
-        data,
-        {
-            "schema",
-            "schema_version",
-            "run_id",
-            "environment",
-            "disposable",
-            "provenance",
-            "source_manifest",
-            "artifact_manifest",
-            "commands",
-            "components",
-            "migration_head",
-            "feature_gates",
-            "runtime_posture",
-            "attack_matrix",
-            "cleanup",
-            "evidence_seal",
-        },
-        "joint evidence",
+def _verify_trust_policy(
+    trust_policy_path: Path | None,
+    root: Path,
+    repository: str,
+) -> tuple[TrustPolicy | None, str, str]:
+    if trust_policy_path is None:
+        return None, "not_proven", "trust_policy_unavailable"
+    policy_path = (
+        trust_policy_path if trust_policy_path.is_absolute() else Path.cwd() / trust_policy_path
     )
-    run_id, commit, tree = _verify_run_envelope(data)
-    source_hash = _verify_manifest(root, data.get("source_manifest"), name="source_manifest")
-    artifact_hash = _verify_manifest(root, data.get("artifact_manifest"), name="artifact_manifest")
-    _verify_commands(root, data.get("commands"))
-    _verify_components(root, data.get("components"), run_id)
-    safety = _verify_repository_invariants(data)
-    attack_ok, attack_blockers = _verify_attack_matrix(root, data.get("attack_matrix"))
-    cleanup_ok, cleanup_blockers = _verify_cleanup(root, data.get("cleanup"))
-    seal = _object(data.get("evidence_seal"), "evidence_seal")
-    _keys(seal, {"status", "run_id", "source_commit", "source_tree"}, "evidence_seal")
-    if _string(seal.get("status"), "evidence_seal.status") != "passed":
-        raise ConfigurationError("evidence_seal.status must be passed for a verified bundle")
-    if seal.get("run_id") != run_id:
-        raise ConfigurationError("evidence_seal.run_id must match the envelope run_id")
-    if seal.get("source_commit") != commit or seal.get("source_tree") != tree:
-        raise ConfigurationError("evidence_seal provenance must match the envelope provenance")
-    blockers: list[str] = []
-    if not attack_ok:
-        blockers.extend(attack_blockers)
-    if not cleanup_ok:
-        blockers.extend(cleanup_blockers)
+    policy, raw_sha256 = load_trust_policy(policy_path)
+    try:
+        policy_path.resolve(strict=True).relative_to(root)
+    except (OSError, ValueError):
+        pass
+    else:
+        raise ConfigurationError("trust policy must be located outside the evidence run directory")
+    if repository != policy.repository:
+        raise ConfigurationError("provenance.repository does not match the trust policy")
+    if raw_sha256 not in _APPROVED_TRUST_POLICY_SHA256:
+        return policy, "not_proven", "trust_policy_not_approved"
+    return policy, "verified", ""
+
+
+def _chain_outcome_from_issues(issues: list[str]) -> _ChainOutcome:
+    """Derive the aggregated safety/blockers from a full evidence chain."""
+    safety: dict[str, str] = {}
+    safety["signature_authenticity"] = (
+        "not_proven" if any(i.startswith("signature:") for i in issues) else "verified"
+    )
+    safety["artifact_provenance"] = "not_proven" if "artifact_provenance" in issues else "verified"
+    safety["command_semantics"] = "not_proven" if "command_semantics" in issues else "verified"
+    safety["certificate_posture"] = "not_proven" if "certificate_posture" in issues else "verified"
+    safety["replay_posture"] = "not_proven" if "replay_posture" in issues else "verified"
+    blockers = tuple(sorted(issues))
+    return _ChainOutcome(safety=safety, blockers=blockers)
+
+
+def _verify_bundle(
+    root: Path,
+    data: dict[str, Any],
+    policy: TrustPolicy,
+    run_id: str,
+    commit: str,
+    tree: str,
+    source_hash: str,
+    artifact_hash: str,
+    gates: dict[str, bool],
+) -> _ChainOutcome:
+    issues: list[str] = []
+    posture_digest, posture_safety = _verify_posture(
+        root, data.get("measurements"), policy, run_id, issues
+    )
+    attack_digest, attack_safety, attack_blockers = _verify_attack_matrix(
+        root, data.get("attack_matrix"), policy, run_id, issues
+    )
+    cleanup_digest, cleanup_safety, cleanup_blockers = _verify_cleanup(
+        root, data.get("cleanup"), policy, run_id, issues
+    )
+    receipt_digests, receipt_executables = _verify_commands(
+        root, data.get("commands"), policy, run_id, issues
+    )
+    component_digests = _verify_components(
+        root,
+        data.get("components"),
+        policy,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        receipt_digests,
+        receipt_executables,
+        issues,
+    )
+    seal_safety = _verify_seal(
+        root,
+        data.get("evidence_seal"),
+        policy,
+        run_id,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        receipt_digests,
+        component_digests,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        gates,
+        issues,
+    )
+    outcome = _chain_outcome_from_issues(issues)
+    merged_safety = dict(outcome.safety)
+    for partial in (posture_safety, attack_safety, cleanup_safety, seal_safety):
+        merged_safety.update(partial)
+    merged_blockers = tuple(
+        sorted(set(outcome.blockers) | set(attack_blockers) | set(cleanup_blockers))
+    )
+    return _ChainOutcome(
+        safety=merged_safety,
+        blockers=merged_blockers,
+        receipt_digests=receipt_digests,
+        component_digests=component_digests,
+        posture_digest=posture_digest,
+        attack_digest=attack_digest,
+        cleanup_digest=cleanup_digest,
+    )
+
+
+def _blocked_safety(base: dict[str, str]) -> dict[str, str]:
+    safety = dict(base)
+    for key in (
+        "trust_policy",
+        "source_provenance",
+        "signature_authenticity",
+        "artifact_provenance",
+        "command_semantics",
+        "runtime_posture",
+        "production_runtime_inactive",
+        "hostile_code_not_executed",
+        "root_env_not_accessed",
+        "business_database_not_accessed",
+        "business_database_not_migrated",
+        "attack_results",
+        "cleanup_complete",
+        "certificate_posture",
+        "replay_posture",
+        "evidence_seal",
+    ):
+        safety.setdefault(key, "not_proven")
+    return safety
+
+
+def _finalize_report(
+    run_id: str,
+    source_hash: str,
+    artifact_hash: str,
+    safety: dict[str, str],
+    extra_blockers: list[str],
+    mode: str,
+) -> JointGateReport:
+    blockers = sorted(
+        {key for key, value in safety.items() if value == "not_proven"} | set(extra_blockers)
+    )
     status = "blocked/not_proven" if blockers else "passed"
     return JointGateReport(
         status=status,
@@ -719,24 +1648,80 @@ def verify_joint_evidence(run_dir: Path, payload: object) -> JointGateReport:
         schema=_SCHEMA,
         source_manifest_sha256=source_hash,
         artifact_manifest_sha256=artifact_hash,
-        blockers=tuple(sorted(blockers)),
-        mode="verify-evidence",
+        blockers=tuple(blockers),
+        mode=mode,
         safety=safety,
     )
 
 
-def validate_joint_evidence(run_dir: Path, payload: object) -> JointGateReport:
+def verify_joint_evidence(
+    run_dir: Path,
+    payload: object,
+    trust_policy_path: Path | None = None,
+) -> JointGateReport:
+    """Verify one immutable, run-scoped P34.7 evidence bundle against the
+    external trust policy.
+
+    May return ``passed`` only when the trust policy is approved (its raw
+    bytes hash to a digest pinned in this module), every detached signature
+    verifies against a policy producer key, every canonical component schema
+    parses and cross-binds, and every safety item is proven.  Any structural
+    violation raises :class:`ConfigurationError` (``invalid/veto``); any
+    authenticity or safety gap is reported as ``blocked/not_proven`` with a
+    blocker.  Unsigned evidence can never pass.
+    """
+    root = run_dir.resolve(strict=True)
+    if not root.is_dir() or root.is_symlink():
+        raise ConfigurationError("run directory must be a regular directory")
+    data = _object(payload, "joint evidence")
+    _keys(data, _TOP_LEVEL_KEYS, "joint evidence")
+    run_id, commit, tree = _verify_run_envelope(data)
+    source_hash = _verify_manifest(root, data.get("source_manifest"), name="source_manifest")
+    artifact_hash = _verify_manifest(root, data.get("artifact_manifest"), name="artifact_manifest")
+    safety, gates = _verify_repository_invariants(data)
+    provenance = _object(data.get("provenance"), "provenance")
+    repository = _string(provenance.get("repository"), "provenance.repository")
+    policy, policy_status, policy_blocker = _verify_trust_policy(
+        trust_policy_path, root, repository
+    )
+    extra_blockers: list[str] = [policy_blocker] if policy_blocker else []
+    if policy is not None:
+        outcome = _verify_bundle(
+            root, data, policy, run_id, commit, tree, source_hash, artifact_hash, gates
+        )
+        safety.update(outcome.safety)
+        extra_blockers.extend(outcome.blockers)
+        if not (commit in policy.approved_commits and tree in policy.approved_trees):
+            safety["source_provenance"] = "not_proven"
+        else:
+            safety["source_provenance"] = "verified"
+    safety["trust_policy"] = policy_status
+    return _finalize_report(
+        run_id,
+        source_hash,
+        artifact_hash,
+        _blocked_safety(safety),
+        extra_blockers,
+        "verify-evidence",
+    )
+
+
+def validate_joint_evidence(
+    run_dir: Path, payload: object, trust_policy_path: Path | None = None
+) -> JointGateReport:
     """Backwards-compatible entry point.
 
     Behaves like :func:`verify_joint_evidence` when a real run directory and
-    bundle are supplied.  It never returns ``passed`` from inline assertions:
-    every proof must be a real hashed file under ``run_dir``.
+    bundle are supplied.  It never returns ``passed`` from inline assertions
+    or unsigned evidence.
     """
-    return verify_joint_evidence(run_dir, payload)
+    return verify_joint_evidence(run_dir, payload, trust_policy_path)
 
 
 __all__ = [
     "JointGateReport",
+    "TrustPolicy",
+    "load_trust_policy",
     "validate_joint_evidence",
     "validate_joint_evidence_contract",
     "verify_joint_evidence",

@@ -1627,6 +1627,46 @@ git diff --check：passed
    - 实现提交 `63790b49a73927dcd0c3c67d2093edb5dec8d8e6` 的 clean-checkout formal `--verify` 已实际执行：source tree `be394f19ce5ac741d752fb3e67dd86572b6f3907`、123 files、manifest `8dd165724700d7c139a8ca5044128ffd59f58b9880870d0447ca52fe77650132`、exit 2、`blocked/not_proven`、10 blockers、0 Veto、evaluator-key scope 0、activation=false。该结果证明当前源码可复现地安全拒绝，不是 production PASS。
    - 本轮未读取根 `.env`，未迁移或访问普通业务数据库，未访问 non-disposable tenant/RAG，未启动 hostile code、真实 production component、真实 Overlay revoke 或 canonical cutover，未启动 Agent Runtime。
 
+### P34.7 joint gate 证据真实性加固（Round 2 review-fix，2026-08-07）
+
+> Round 1 的 inline-string+hash 方案被外部评审拒绝：同一 operator 可以同时伪造文件与匹配哈希，
+> `evidence_seal.status=passed` 与 `env_manifest.secret_free=true` 等仍是自断言字段。Round 2 把 joint gate
+> 改为 trust-anchored 证据真实性边界；由于不存在独立 approved trust policy，P34.7 总判定保持
+> `BLOCKED / NOT_PROVEN`，任何 fixture 都不能获得 production `passed`。
+
+1. **外部 trust policy 成为唯一信任锚**：`backend/src/omnibase/production/joint_gate.py` 新增
+   `load_trust_policy`/`TrustPolicy`，policy 必须位于证据目录之外，包含 allowlisted producer Ed25519
+   公钥（core/runner/broker/gateway/overlay/recovery_sla/sealer）、source seal（repository + approved
+   commit/tree）、approved artifact manifest（executable path→SHA-256→boundary）、六个 boundary 的精确
+   argv 模板、env 名 allowlist 与 gateway certificate pins。policy 原始字节必须命中代码内 pin 的
+   `_APPROVED_TRUST_POLICY_SHA256`（当前空集 → 所有 bundle 恒为 `blocked/not_proven`）；bundle 内携带
+   的公钥/trust root 不是信任锚（未知字段直接 veto）。
+2. **全部证据解析为 canonical JSON 并做 detached Ed25519 签名**：command receipt
+   （`omnibase.p34-7.command-receipt.v1`）、component evidence（`omnibase.p34-7.component-evidence.v1`，
+   交叉绑定 run id/producer/source commit+tree/source+artifact manifest digest/component identity/peer
+   identities/owned receipts/executables/posture digest/attack+cleanup digest）、posture measurement、
+   attack matrix（结果与 inventory 交叉核对）、cleanup inventory（counts 与 inventory 交叉核对）以及
+   sealer 对整个验证链的 seal signature。exit code/argv/timestamps/secret-free/attack 结果/cleanup
+   counts/evidence_seal.status 不再作为内联自断言字段存在。
+3. **每个 safety `not_proven` 都是 blocker**：trust_policy、source_provenance、artifact_provenance、
+   command_semantics、signature_authenticity、runtime_posture、production_runtime_inactive、
+   hostile_code_not_executed、root_env_not_accessed、business_database_not_accessed、
+   business_database_not_migrated、attack_results、cleanup_complete、certificate_posture、replay_posture、
+   evidence_seal；`runtime_posture.measured=false` 现在明确 `passed=false`（旧测试被改写为回归断言）。
+4. **对抗性负证明工具**：新增 `scripts/production/forge_p34_7_evidence_bundle.py` 从零伪造完整 bundle
+   （全部文件与匹配哈希），`backend/tests/test_p34_7_joint_gate.py` 断言 unsigned/forged
+   signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/
+   stale certificate/modified raw bytes/safety evidence absence 全部 `blocked/not_proven` 永不 `passed`；
+   CLI 端到端 `--verify-evidence` 对伪造 bundle 恒 exit 2。Windows junction 位于路径中间组件的场景也
+   被拒绝（每级 lstat）。
+5. **schema v2 only、UTC instant 比较**：schema_version `1` 被拒绝；时间戳解析为 UTC instant 后比较，
+   不再按字符串字典序；P5 合同链 sealed digest 已在最终字节上重算（含 planner contract 中 stale 的
+   `maintainer_map` digest）。
+6. **验证结果**：`test_p34_7_joint_gate.py` 54 passed / 1 skipped（Windows symlink 由 reparse 守卫覆盖）；
+   production 模块 mypy 0 issues；changed scope ruff check/format check 通过；`--validate-only` exit 2。
+   P34.7 总判定维持 `BLOCKED / NOT_PROVEN`，Phase 5 继续 `PLANNED / FROZEN`，未读取根 `.env`，未访问或
+   迁移业务数据库，未激活 production Runtime/Planner/multi-Agent，未创建 migration 0013。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不
