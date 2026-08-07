@@ -382,7 +382,10 @@ def get_workload_credential(
             },
         ) from exc
     return WorkloadCredential(
-        authorization=token,
+        # Preserve the authenticated scheme inside the server-owned envelope.
+        # CoreCapabilityVerifier is the single boundary that removes it before
+        # handing the raw token to the capability service.
+        authorization=f"Capability {token}",
         identity=x_omnibase_workload_identity,
         trusted_context=context,
     )

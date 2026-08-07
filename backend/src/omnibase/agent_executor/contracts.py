@@ -78,6 +78,9 @@ class ExecutorInvocationContext:
     agent_version_id: str
     agent_version_digest: str
     proposal_digest: str
+    proposal_version: int
+    resource_scope_digest: str
+    budget_policy_digest: str
     node_id: str
 
     def __post_init__(self) -> None:
@@ -91,10 +94,17 @@ class ExecutorInvocationContext:
             "node_id",
         ):
             _logical_uuid(getattr(self, name), name=name)
-        for name in ("workspace_generation", "task_generation", "run_fencing_token"):
+        for name in (
+            "workspace_generation",
+            "task_generation",
+            "run_fencing_token",
+            "proposal_version",
+        ):
             _bounded_int(getattr(self, name), name=name, minimum=1, maximum=2**63 - 1)
         _digest(self.agent_version_digest, name="agent_version_digest")
         _digest(self.proposal_digest, name="proposal_digest")
+        _digest(self.resource_scope_digest, name="resource_scope_digest")
+        _digest(self.budget_policy_digest, name="budget_policy_digest")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -109,6 +119,9 @@ class ExecutorInvocationContext:
             "agent_version_id": self.agent_version_id,
             "agent_version_digest": self.agent_version_digest,
             "proposal_digest": self.proposal_digest,
+            "proposal_version": self.proposal_version,
+            "resource_scope_digest": self.resource_scope_digest,
+            "budget_policy_digest": self.budget_policy_digest,
             "node_id": self.node_id,
         }
 

@@ -105,7 +105,9 @@ class TypedSingleAgentExecutor:
         return node
 
     @staticmethod
-    def _validate_context(*, context: ExecutorInvocationContext, plan: ValidatedPlan) -> None:
+    def _validate_context(  # noqa: C901
+        *, context: ExecutorInvocationContext, plan: ValidatedPlan
+    ) -> None:
         proposal = plan.proposal
         if context.proposal_digest != proposal.proposal_digest:
             raise TypedExecutorPolicyDenied("context_plan_digest_mismatch")
@@ -125,6 +127,12 @@ class TypedSingleAgentExecutor:
             raise TypedExecutorPolicyDenied("context_agent_version_mismatch")
         if context.agent_version_digest != proposal.root_agent_version_digest:
             raise TypedExecutorPolicyDenied("context_agent_version_digest_mismatch")
+        if context.proposal_version != proposal.proposal_version:
+            raise TypedExecutorPolicyDenied("context_plan_version_mismatch")
+        if context.resource_scope_digest != proposal.resource_scope_digest:
+            raise TypedExecutorPolicyDenied("context_resource_scope_digest_mismatch")
+        if context.budget_policy_digest != proposal.budget_policy_digest:
+            raise TypedExecutorPolicyDenied("context_budget_policy_digest_mismatch")
 
     @staticmethod
     def _validate_node(*, node: PlanNodeProposal, request: KnowledgeSearchRequest) -> None:

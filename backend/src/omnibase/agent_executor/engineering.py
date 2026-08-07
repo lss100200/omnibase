@@ -35,7 +35,7 @@ from omnibase.agent_executor.service import (
 from omnibase.agent_registry.models import AgentVersionModel, WorkspaceAgentBindingModel
 from omnibase.capability_gateway.contracts import WorkloadCredential
 from omnibase.task_ledger.models import AgentRunModel, AgentTaskModel
-from omnibase.workspaces.models import RunLease, WorkspaceRun
+from omnibase.workspaces.models import RunLease, Workspace, WorkspaceRun
 from omnibase.workspaces.service import (
     LeaseRejected,
     WorkspaceNotFound,
@@ -95,6 +95,14 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
             raise EngineeringCompositionError("workload_identity_digest_missing")
         session = self._session_factory()
         try:
+            workspace = session.execute(
+                select(Workspace)
+                .where(
+                    Workspace.id == context.workspace_id,
+                    Workspace.tenant_id == context.tenant_id,
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
             task = session.execute(
                 select(AgentTaskModel)
                 .where(
@@ -112,7 +120,7 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
                 )
                 .with_for_update()
             ).scalar_one_or_none()
-            if task is None or run is None:
+            if workspace is None or task is None or run is None:
                 raise EngineeringCompositionError("runtime_binding_not_found")
             version = session.execute(
                 select(AgentVersionModel)
@@ -137,15 +145,24 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
                 version.version_state != "sealed"
                 or version.id != task.agent_version_id
                 or version.manifest_digest != task.agent_version_digest
+                or version.definition_id != task.agent_definition_id
                 or binding.binding_state != "installed"
+                or binding.id != task.workspace_agent_binding_id
                 or binding.workspace_generation != context.workspace_generation
+                or binding.agent_definition_id != task.agent_definition_id
                 or binding.agent_version_id != version.id
                 or binding.agent_version_digest != version.manifest_digest
             ):
                 raise EngineeringCompositionError("agent_version_authority_stale")
-            now = session.execute(select(func.now())).scalar_one()
+            now = session.execute(select(func.clock_timestamp())).scalar_one()
             if (
-                task.state not in {"scheduled", "running", "paused"}
+                workspace.generation != context.workspace_generation
+                or workspace.desired_state != "running"
+                or workspace.observed_state != "running"
+            ):
+                raise EngineeringCompositionError("workspace_authority_stale")
+            if (
+                task.state not in {"scheduled", "running"}
                 or task.deadline <= now
                 or task.workspace_id != context.workspace_id
                 or task.workspace_generation != context.workspace_generation
@@ -154,26 +171,20 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
                 or task.agent_version_id != context.agent_version_id
                 or task.agent_version_digest != context.agent_version_digest
                 or task.plan_digest != context.proposal_digest
-                or (
-                    getattr(task, "resource_scope_digest", None) is not None
-                    and task.resource_scope_digest != "c1" * 32
-                )
-                or (
-                    getattr(task, "budget_policy_digest", None) is not None
-                    and task.budget_policy_digest != "c2" * 32
-                )
-                or (getattr(task, "plan_version", None) is not None and task.plan_version != 1)
+                or task.plan_version != context.proposal_version
+                or task.resource_scope_digest != context.resource_scope_digest
+                or task.budget_policy_digest != context.budget_policy_digest
             ):
                 raise EngineeringCompositionError("task_authority_stale")
             if (
-                run.state not in {"leased", "running", "paused"}
+                run.state not in {"leased", "running"}
                 or run.task_id != task.id
                 or run.workspace_id != context.workspace_id
                 or run.workspace_generation != context.workspace_generation
                 or run.runtime_instance_id != runtime_instance_id
                 or run.workload_identity_digest != workload_digest
                 or run.run_fencing_token != context.run_fencing_token
-                or run.node_id != context.node_id
+                or run.node_id is None
                 or run.run_lease_id is None
                 or run.node_fencing_token is None
                 or run.workspace_run_id == run.id
@@ -190,9 +201,10 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
             ).scalar_one_or_none()
             if (
                 workspace_run is None
-                or workspace_run.observed_state
-                not in {"leased", "starting", "running", "pausing", "stopping"}
+                or workspace_run.desired_state != "running"
+                or workspace_run.observed_state != "running"
                 or workspace_run.generation != context.workspace_generation
+                or workspace_run.next_fencing_token - 1 != context.run_fencing_token
                 or workspace_run.runtime_instance_id != runtime_instance_id
                 or workspace_run.workload_identity_digest != workload_digest
             ):
@@ -213,7 +225,7 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
                 or lease.expires_at <= now
                 or lease.generation != context.workspace_generation
                 or lease.fencing_token != context.run_fencing_token
-                or lease.node_id != context.node_id
+                or lease.node_id != run.node_id
                 or lease.node_fencing_token != run.node_fencing_token
                 or run.run_lease_id != lease.id
             ):
@@ -223,7 +235,7 @@ class LiveRuntimeAuthorityValidator(RuntimeAuthorityValidator):
                     session,
                     tenant_id=context.tenant_id,
                     workspace_id=context.workspace_id,
-                    node_id=context.node_id,
+                    node_id=run.node_id,
                     lock=True,
                 )
             except (WorkspaceNotFound, LeaseRejected) as exc:

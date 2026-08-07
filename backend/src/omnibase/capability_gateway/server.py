@@ -189,6 +189,7 @@ class GatewayCredentialVendingApp:
                 or trusted.workspace_id != evidence.workspace_id
                 or trusted.runtime_instance_id != evidence.runtime_instance_id
                 or trusted.certificate_thumbprint != evidence.certificate_thumbprint
+                or trusted.workload_identity_digest != evidence.workload_identity_digest
             ):
                 raise CapabilityVerificationError
             peer_ttl = evidence.expires_at - datetime.now(UTC)
@@ -210,6 +211,7 @@ class GatewayCredentialVendingApp:
                     run_fencing_token=evidence.run_fencing_token,
                     node_fencing_token=evidence.node_fencing_token,
                     certificate_thumbprint=evidence.certificate_thumbprint,
+                    workload_identity_digest=evidence.workload_identity_digest,
                 ),
                 issuer_context=TrustedIssuerContext(
                     tenant_id=evidence.tenant_id,

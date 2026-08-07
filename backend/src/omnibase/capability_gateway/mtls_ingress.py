@@ -29,6 +29,7 @@ from omnibase.capability_gateway.workload import TrustedGatewayPeerEvidence
 AsgiApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 _TRANSPORT_CERTIFICATE_KEY = "omnibase.transport_peer_certificate_der"
 _KEY_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RESERVED_HEADERS = frozenset(
     {
         b"x-omnibase-mtls-verified",
@@ -112,6 +113,7 @@ class ServerOwnedGatewayPeer:
     run_fencing_token: int
     node_fencing_token: int
     certificate_thumbprint: str
+    workload_identity_digest: str
     expires_at: datetime
     grant_id: str
     expected_profile: Literal["read", "workspace_data"]
@@ -137,6 +139,7 @@ class ServerOwnedGatewayPeer:
             "run_fencing_token",
             "node_fencing_token",
             "certificate_thumbprint",
+            "workload_identity_digest",
             "expires_at",
             "grant_id",
             "expected_profile",
@@ -150,6 +153,8 @@ class ServerOwnedGatewayPeer:
         state = value["state"]
         if state not in {"active", "revoked"}:
             raise ValueError("peer state must be active or revoked")
+        if _SHA256.fullmatch(str(value["workload_identity_digest"])) is None:
+            raise ValueError("workload_identity_digest must be a lowercase SHA-256 digest")
         return cls(
             peer_kind=str(value["peer_kind"]),
             opaque_identity=str(value["opaque_identity"]),
@@ -163,6 +168,7 @@ class ServerOwnedGatewayPeer:
             run_fencing_token=int(value["run_fencing_token"]),
             node_fencing_token=int(value["node_fencing_token"]),
             certificate_thumbprint=str(value["certificate_thumbprint"]),
+            workload_identity_digest=str(value["workload_identity_digest"]),
             expires_at=_parse_expiry(value["expires_at"]),
             grant_id=str(value["grant_id"]),
             expected_profile=str(value["expected_profile"]),  # type: ignore[arg-type]
@@ -187,6 +193,7 @@ class ServerOwnedGatewayPeer:
             raise MtlsIngressRejected("gateway_mtls_peer_rejected")
         payload: dict[str, object] = {
             "certificate_thumbprint": self.certificate_thumbprint,
+            "workload_identity_digest": self.workload_identity_digest,
             "expires_at": self.expires_at.isoformat(),
             "lease_id": self.lease_id,
             "node_fencing_token": self.node_fencing_token,
@@ -213,6 +220,7 @@ class ServerOwnedGatewayPeer:
             run_fencing_token=self.run_fencing_token,
             node_fencing_token=self.node_fencing_token,
             certificate_thumbprint=self.certificate_thumbprint,
+            workload_identity_digest=self.workload_identity_digest,
             evidence_digest=_canonical_digest(payload),
             expires_at=self.expires_at,
         )
