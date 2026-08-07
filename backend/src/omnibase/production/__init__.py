@@ -15,17 +15,24 @@ from omnibase.production.composition import (
     build_git_source_provenance,
     load_production_composition_config,
 )
-from omnibase.production.joint_gate import JointGateReport, validate_joint_evidence
+from omnibase.production.joint_gate import (
+    JointGateReport,
+    validate_joint_evidence,
+    validate_joint_evidence_contract,
+    verify_joint_evidence,
+)
 
 __all__ = [
     "AdmissionReport",
     "AdmissionState",
     "ConfigurationError",
     "GitSourceProvenance",
+    "JointGateReport",
     "ProductionCompositionConfig",
     "ProductionCompositionGate",
     "build_git_source_provenance",
     "load_production_composition_config",
-    "JointGateReport",
     "validate_joint_evidence",
+    "validate_joint_evidence_contract",
+    "verify_joint_evidence",
 ]
