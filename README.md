@@ -1,153 +1,251 @@
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/brand/omnibase-mark-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="frontend/public/brand/omnibase-mark.svg">
+    <img alt="OmniBase" src="frontend/public/brand/omnibase-mark.svg" width="92" height="92">
+  </picture>
+
 # OmniBase
 
-> 自托管、AI 原生的个人知识工作台。以数据库为底座，内置生产级 RAG、多智能体编排与 Skill/MCP 扩展生态。
+**Your self-hosted AI workspace for knowledge, models, and user-built agents.**
 
-[![Status](https://img.shields.io/badge/status-Public%20Preview-orange)](docs/handover-report.md)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+Bring documents, structured data, OpenAI-compatible providers, and purpose-built AI employees into one controlled workspace—without turning a browser session into unrestricted infrastructure access.
+
+[English](README.md) · [简体中文](README.zh-CN.md)
+
+[![Public Preview](https://img.shields.io/badge/status-Public%20Preview-111111)](docs/handover-report.md)
+[![Infrastructure Gates](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml/badge.svg)](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml)
+[![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
+[![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
+
+[Public website](https://omnibase.chat/public-preview) · [Quick start](#quick-start) · [Build your first agent](#build-your-first-agent) · [Architecture](#architecture) · [Safety boundaries](#safety-boundaries)
+
+</div>
 
 > [!IMPORTANT]
-> OmniBase 当前以 **Public Preview** 形式开放源码：认证、租户边界、受控数据、
-> Capability Gateway、SDK、RAG、维护者地图，以及 P34.4 Workspace/Run/Node
-> 元数据控制面已形成可验证基础设施；任意代码 Sandbox、真实 Overlay Network、
-> 真实数据通道和 Agent Runtime 尚未交付。请勿把普通 Docker 容器或 P34.4 fake harness
-> 当作可以安全运行敌对代码的生产沙箱。当前真实状态与已验证证据见
-> [交接报告](docs/handover-report.md)；首次公开发布条件见
-> [Public Preview Release Checklist](docs/public-preview-release-checklist.md)。
+> OmniBase is an open-source **Public Preview**, not a production Agent Runtime admission. The repository includes a usable self-hosted product slice and multiple engineering-sealed control-plane components, but the three Phase 5 production Feature Gates remain off. Production multi-Agent orchestration, hostile-code execution, and the complete P34.7 production composition are still `blocked/not_proven`.
 
-## ✨ 项目特色
+## Start with an AI workspace—not an infrastructure dashboard
 
-- **🗄 数据库为底座**：PostgreSQL + pgvector 单库承载关系数据与向量数据，事务一致、运维单一。
-- **🔍 生产级 RAG**：多格式解析 → 语义分块 → 混合检索（向量 + BM25 + 精确）→ 重排 → 引用回链。
-- **🤖 多智能体编排**：Planner + Specialist（Librarian / Curator / Archivist / Engineer）协同，可视化任务面板。
-- **🧩 Skill & MCP**：Skill 系统与 MCP 客户端作为一等公民，扩展协议稳定可开源。
-- **📊 数据底座与受控管理方向**：当前提供安全的只读元数据浏览；Phase 3-4 将增加受控表设计、行级 CRUD、迁移预览和逻辑资源授权，始终不开放任意原始 SQL。
+OmniBase is designed around three connected jobs:
 
-## 🚀 快速开始（5 步）
+1. **AI workbench** — ask questions, stream answers, inspect citations, and keep model identity and usage visible.
+2. **Knowledge and data workspace** — organize documents, RAG indexes, Workspace membership, controlled resources, and durable metadata on PostgreSQL + pgvector.
+3. **Agent builder** — create a sealed, low-risk AI employee with a role, instructions, response style, model-provider policy, and read-only Workspace knowledge scope.
 
-> 前置条件：[Docker Desktop](https://www.docker.com/products/docker-desktop/) 已安装并运行。
+The product is deliberately fail-closed: browser identity is not runtime authority, logical resource IDs are not physical database locators, and a normal Docker or WSL container is not treated as a secure hostile-code sandbox.
 
-```bash
-# 1. 克隆仓库
-git clone https://github.com/lss100200/omnibase.git
-cd omnibase
+## What is available today
 
-# 2. 复制环境变量模板
-cp .env.example .env
+| Area | Current state | What it means |
+|---|---|---|
+| Core workspace | **Available in Public Preview** | Authentication, live tenant/user checks, Workspaces, membership and lifecycle metadata, documents, hybrid RAG, citations, and the monochrome web workbench are in the public source tree. |
+| User settings | **Available in Public Preview** | Real user profile/preferences plus encrypted, user-owned OpenAI-compatible provider credentials and bounded connection tests. Provider secrets are never returned by browser DTOs. |
+| Agent Builder | **Engineering preview** | Users can create an owned AgentDefinition, seal version `1.0.0`, optionally install it into a Workspace, and use the existing tool-free Agent Alpha workbench. |
+| Agent Alpha | **Engineering-only, default off** | A single Agent can use the internal Model Gateway and read-only Workspace-derived RAG. It has durable task/run bookkeeping, SSE streaming, cancellation, citations, model identity, usage, and latency. |
+| Capability platform | **Engineering-sealed, production default reject** | Capability Gateway, Workspace/Run/Node control records, fencing, independent Linux Runner evidence, PrivateNetwork Broker, Headscale adapter, and split-process mTLS Gateway have engineering Gates. They are not a complete production composition. |
+| Skills | **Compile-only contract** | P5.6A validates first-party, exact-version Skill manifests. Skill persistence, installation, execution, MCP, and Marketplace remain disabled. |
+| Planner / multi-Agent / hostile code | **Blocked / roadmap** | Planner execution, multi-Agent scheduling, arbitrary shell/SQL/HTTP tools, MCP Runtime, and hostile-code Sandbox activation are not authorized. |
 
-# 3. 启动所有服务（首次会拉镜像，约 3-5 分钟）
-make up
+For the exact source/evidence boundary, read [the handover report](docs/handover-report.md) and [security invariants](docs/maintainers/security-invariants.md).
 
-# 4. 执行数据库迁移
-make migrate
+## Build your first agent
 
-# 5. 打开浏览器
-#    前端：http://localhost:3000
-#    后端 API 文档：http://localhost:8000/docs
-```
+Once the local stack is running:
 
-首次访问前端，注册任意邮箱 + 密码即可登录（无需邮箱验证）。
+1. Open `http://localhost:3000` and register or sign in.
+2. Open **Spaces** and create or select a Workspace.
+3. Open **Settings → Model Providers**, add an OpenAI-compatible endpoint and API key, test it, then make it the default provider.
+4. Open **Agents → New employee** and define the name, role, responsibilities, instructions, response style, token budget, and deadline.
+5. Install/select the new Agent in the Workspace and ask a question. The workbench streams the response and shows citations, actual model identity, usage, latency, and durable task state.
 
-### 可选：配置生成模型
-
-知识检索和引用在未配置 LLM 时仍可运行，但 AI 问答会通过 SSE 返回明确的配置错误，不会伪造模型回答。如需完整流式问答，请在本地 `.env` 中配置 OpenAI-compatible Provider：
-
-```env
-LLM_API_KEY=<仅保存在本地，不要提交>
-LLM_API_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
-```
-
-配置后重启 backend。CPU 冷缓存下的首次问答可能因加载 `bge-reranker-v2-m3` 耗时数分钟；本机实测约 350 秒，模型预热后的 provider-backed 流式验收约 4.1 秒。真实密钥、JWT 和授权请求不得写入 Git、日志或验收证据。
-
-## 🛠 常用命令
-
-```bash
-make help          # 查看所有命令
-make up            # 启动所有服务（后台）
-make down          # 停止所有服务
-make logs          # 查看实时日志
-make ps            # 查看服务状态
-make migrate       # 执行数据库迁移
-make migrate-new m="add users table"  # 创建新迁移
-make test          # 运行后端测试
-make lint          # 运行所有 lint 检查
-make backend-shell # 进入后端容器
-make frontend-shell # 进入前端容器
-```
-
-## 📐 架构概览
+The current builder intentionally creates a low-risk, tool-free Agent:
 
 ```text
-Next.js Web UI
-    │  same-origin /api/v1
-    ▼
-Main FastAPI ── Auth / Tenant / Documents / Browser RAG
-    │          Control Plane / Controlled Data / Workspace governance
-    ├── PostgreSQL + pgvector
-    ├── MinIO
-    └── Redis + Celery
-
-Trusted workload SDK
-    │  /gateway/v1 + short-lived capability
-    ▼
-Independent Capability Gateway (rejecting by default)
-    └── logical Resource resolution + bounded read adapters + audit
+Workspace read-only knowledge
+No shell
+No SQL
+No arbitrary HTTP
+No MCP or Skill execution
+No Planner or multi-Agent delegation
+No hostile-code Sandbox
 ```
 
-Main API 与 Capability Gateway 是两个独立 ASGI 边界。P34.4 已解冻 Browser
-Workspace 治理 API，以及内部 lease/fencing、Node/Overlay 逻辑控制记录和无真实数据
-协作 harness；这些组件不运行代码、不打开真实成员网络，也不连接真实 Workspace/RAG
-数据。Agent Runtime、任意代码 Sandbox、真实 Overlay adapter/成员网络和公共任意 SQL
-仍被冻结在 P34.5 及后续阶段。详见
-[AI 维护者地图](docs/maintainers/ai-maintainer-map.md)。
+## Quick start
 
-P34.4 当前的 Network Lease 只是由 `network_lease_cursors` 单调分配 fencing token 的
-逻辑授权，签发时不会调用任何真实或 fake provider。Run Lease 还绑定当前 Node fencing
-token，并在使用时重新验证未过期的 attestation；Run 一旦进入 stopped/succeeded/failed/
-cancelled 终态便不能被旧 holder 复活。上述控制面安全事实不等于已经交付 VPN、Overlay
-数据面、Sandbox 或代码执行环境。
+### Requirements
 
-## 🗺 路线图
+- Git
+- Docker Desktop or Docker Engine with Compose v2
+- About 8 GB RAM minimum for the core stack; more memory is recommended for local embedding/reranking workloads
+- `make` is optional; native PowerShell and shell commands are documented below
 
-| Phase | 目标 | 状态 |
-|---|---|---|
-| **Phase 0** | 地基（认证、上传、元数据解析） | ✅ 完成 |
-| Phase 1 | RAG 内核（分块、Embedding、混合检索、重排） | ✅ 完成 |
-| **Phase 1.5** | RAG 硬化（异步 worker、可靠重试、生命周期保护、SSE 韧性、评估接缝） | ✅ 完成：确定性测试、异步摄取及 provider-backed SSE/citation 运行时验收通过 |
-| **Phase 1.6** | Embedding/Index 双通道工程（BGE-M3/1024d 评估） | ✅ 工程与 CPU benchmark 完成；V1 仍为权威主通道，生产 V2 回填/cutover 冻结 |
-| **Phase 2** | API 基础设施硬化（`/api/v1`、Request ID、请求边界、限流、实时主体/RBAC） | ✅ 已完成并本地封板 |
-| **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform**（受控数据、API/SDK 解耦、模板、沙箱、能力网关、审批与审计） | 🚧 P34.1–P34.3 已完成并封板；P34.4A–D 的 17 表 metadata control plane、Browser governance、lease/fencing 与 synthetic collaboration harness 已完成工程 Gate；P34.5 Sandbox/真实 Overlay/数据通道与 Agent Runtime 继续冻结 |
-| Phase 5 | Agent 编排（作为工作空间内的受约束负载运行） | ⏳ 必须等待 Phase 3-4 总 Gate |
-| Phase 6 | Skill + MCP 扩展生态 | ⏳ 待 Phase 3-4/5 |
-| Phase 7 | 开源与发布工程（文档、Demo、部署脚本、版本治理） | 🚧 Public Preview 已启动，持续完善 |
+### 1. Clone the repository
 
-详见 [Phase 1.6 及后续实施计划](docs/phase-1-6-and-beyond-implementation-plan.md)、[Phase 3-4 统一实施计划](docs/phase-3-4-secure-ai-workspace-implementation-plan.md)与 [Phase 3-4 威胁模型](docs/phase-3-4-threat-model.md)。
+```bash
+git clone https://github.com/lss100200/omnibase.git
+cd omnibase
+```
 
-Phase 3-4 的固定顺序是：安全契约 → Resource Registry/Audit/Operation/Approval/Idempotency → 只读能力网关与 SDK → 结构化 CRUD/DDL → 模板与空沙箱 → 隔离 Gate 后接只读数据 → 私有写入与 promotion → 生产总验收。workspace 是长期逻辑资源，run/session 是可销毁执行实例；普通 Docker 仅作为开发基线，不声明可安全运行任意敌对代码。
+### 2. Create a local configuration
 
-## 🧭 AI 维护与故障恢复入口
+Windows PowerShell:
 
-OmniBase 将“换模型后仍能修复、下载源码后仍能恢复”视为源码完整性的一部分。
-本地 AI 或新维护者应按以下顺序建立上下文：
+```powershell
+Copy-Item .env.example .env
+```
 
-1. [`AGENTS.md`](AGENTS.md)：仓库级维护契约、冻结边界和安全工作流。
-2. [`maintenance-map.json`](docs/maintainers/maintenance-map.json)：13 个模块、入口、依赖、验证命令和恢复路径的机器可读地图。
-3. [`security-invariants.md`](docs/maintainers/security-invariants.md)：16 条不可破坏的安全不变量。
-4. [`ai-maintainer-map.md`](docs/maintainers/ai-maintainer-map.md)：调用链、API/鉴权/解耦入口、影响矩阵和故障恢复说明。
-5. [`handover-report.md`](docs/handover-report.md)：当前阶段状态与实际验证证据。
+macOS / Linux / Git Bash:
 
-维护者地图由 `scripts/maintenance/validate_maintainer_map.py` 验证并纳入 CI，避免
-文件移动、模块新增或依赖变化后留下失效入口。任何改变公共接口、模块依赖、
-安全不变量或恢复路径的提交，都应同步更新地图。
+```bash
+cp .env.example .env
+```
 
-## 🤝 贡献
+Keep `.env` local. Never commit API keys, JWT secrets, cookies, private keys, or provider credentials.
 
-项目处于 Public Preview。Issue、文档改进、测试补强和边界清晰的小型修复均欢迎；
-涉及鉴权、租户、数据库 lifecycle、Capability Gateway、迁移、恢复或 P34 冻结范围的
-变更，请先阅读 [贡献指南](CONTRIBUTING.md)、[`AGENTS.md`](AGENTS.md) 和
-[安全不变量](docs/maintainers/security-invariants.md)。安全问题请勿公开披露，按
-[安全策略](SECURITY.md) 提交。
+For the engineering Agent workbench, edit the local `.env` and set only the dedicated engineering flag:
 
-## 📄 协议
+```env
+ENV=development
+AGENT_ALPHA_ENGINEERING_ENABLED=true
 
-[Apache License 2.0](LICENSE) © 2026 OmniBase Contributors
+# These production Feature Gates must remain off.
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+```
+
+Provider API keys can then be added through **Settings → Model Providers**. A server-level `LLM_API_KEY` is optional and should only be stored in the local `.env`, never in Git.
+
+### 3. Start and migrate
+
+Cross-platform Docker Compose:
+
+```bash
+docker compose --env-file .env up -d --build
+docker compose --env-file .env exec -T backend alembic upgrade head
+docker compose --env-file .env ps
+```
+
+Or, if `make` is available:
+
+```bash
+make up COMPOSE_ENV_FILE=.env
+make migrate COMPOSE_ENV_FILE=.env
+make ps COMPOSE_ENV_FILE=.env
+```
+
+### 4. Open OmniBase
+
+| Surface | URL |
+|---|---|
+| Web workbench | <http://localhost:3000> |
+| Backend API docs | <http://localhost:8000/docs> |
+| Backend health probe | <http://localhost:8000/health> |
+| MinIO console | <http://localhost:9001> |
+
+The operator-hosted public website is [omnibase.chat/public-preview](https://omnibase.chat/public-preview). Its availability depends on the current preview host and Cloudflare tunnel; it is not a high-availability hosted service.
+
+### 5. Troubleshoot
+
+```bash
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail 200 backend
+docker compose --env-file .env logs --tail 200 frontend
+```
+
+Common first-run checks:
+
+- `backend` or `frontend` still starting: wait for image build and dependency health checks.
+- Login/API returns 500: confirm migration `0012` is applied and inspect backend logs.
+- Agent surface is unavailable: confirm `ENV=development`, `AGENT_ALPHA_ENGINEERING_ENABLED=true`, all three production gates are false, and a tested default provider exists.
+- First RAG query is slow: CPU reranker cold start can take minutes; subsequent queries are normally faster.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Browser["Next.js web workbench"] -->|"/api/v1"| Main["Main FastAPI\nAuth · Tenant · Workspace · RAG · Agent APIs"]
+    Main --> PG["PostgreSQL + pgvector"]
+    Main --> MinIO["MinIO documents"]
+    Main --> Redis["Redis + workers"]
+    Main --> Alpha["Engineering Agent Alpha"]
+    Alpha --> GatewayModel["Internal Model Gateway"]
+    GatewayModel --> Provider["User or server-owned\nOpenAI-compatible provider"]
+    Alpha --> RAG["Workspace-scoped read-only RAG"]
+
+    Workload["Trusted workload SDK"] -->|"short-lived capability"| Capability["Independent Capability Gateway\ndefault reject"]
+    Capability --> Logical["Logical resource resolution\nbounded adapters · audit"]
+```
+
+The browser API and Capability Gateway are separate ASGI applications. The Gateway is not silently mounted into the browser application and rejects workloads until trusted verification and adapter wiring are injected.
+
+## Safety boundaries
+
+OmniBase treats these boundaries as product behavior, not optional hardening:
+
+- Protected browser requests revalidate the live tenant, live user, role, and tenant schema.
+- Public DTOs use logical identifiers; physical PostgreSQL schema/table/column locators remain server-owned.
+- High-risk approval, idempotency, audit, capability, and mutation lifecycles remain transactionally bound.
+- Audit records are append-only, with database enforcement introduced by migration `0006`.
+- A normal Docker/WSL host is not authorized to run hostile code.
+- A Sandbox or Runner must never connect directly to PostgreSQL, Redis, or MinIO.
+- P34.5 engineering Gates do not prove the complete production Core→Runner/Broker/Gateway/Overlay composition.
+- The three Phase 5 production Feature Gates remain `false`; production Runtime activation requires a separate explicit admission.
+- Migration head is `0012`; migration `0013` is not part of the current public product.
+
+Security issues should be reported through [SECURITY.md](SECURITY.md), not a public issue.
+
+## Roadmap
+
+| Stage | Status |
+|---|---|
+| Foundation, authentication, tenant isolation, documents, RAG | **Available** |
+| Controlled data and Capability Gateway | **Available / engineering-sealed by boundary** |
+| Workspace governance, lifecycle, lease/fencing, Node metadata | **Available** |
+| Hardened Runner/Broker/Gateway/Overlay components | **Engineering-sealed; production composition blocked** |
+| User profile, personal provider, first Workspace and Agent Builder | **Engineering product preview** |
+| Tool-free single-Agent Alpha | **Engineering-only; default off** |
+| Planner execution and multi-Agent orchestration | **Blocked / roadmap** |
+| First-party Skill contract | **Compile-only engineering admission** |
+| Skill Runtime, MCP and third-party Marketplace | **Roadmap** |
+| Production hostile-code Sandbox and P34.7 admission | **Blocked/not_proven** |
+
+## Development
+
+Every repository-root Compose command must use an explicit environment file. The safe configuration-shape default is `.env.example`; use `.env` only when local credentials are intentionally required.
+
+```bash
+# Safe configuration/health diagnostics
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example ps
+
+# Local product stack with intentional local configuration
+docker compose --env-file .env up -d --build
+docker compose --env-file .env exec -T backend alembic upgrade head
+
+# Tests and static checks
+docker compose --env-file .env.example exec -T backend pytest -m "not integration" -q
+docker compose --env-file .env.example exec -T backend mypy src
+docker compose --env-file .env.example exec -T frontend pnpm test
+docker compose --env-file .env.example exec -T frontend pnpm typecheck
+docker compose --env-file .env.example exec -T frontend pnpm lint
+```
+
+Before changing authentication, tenancy, migrations, P34, Agent contracts, SDKs, or recovery tooling, follow the repository maintenance order:
+
+1. [AGENTS.md](AGENTS.md)
+2. [Machine-readable maintenance map](docs/maintainers/maintenance-map.json)
+3. [Security invariants](docs/maintainers/security-invariants.md)
+4. [AI maintainer map](docs/maintainers/ai-maintainer-map.md)
+5. [Current handover and evidence](docs/handover-report.md)
+
+## Contributing
+
+Documentation, onboarding improvements, focused tests, and small boundary-preserving fixes are welcome. Changes involving authentication, tenancy, migrations, Capability Gateway, Sandbox, Agent execution, provider credentials, or recovery require the verification commands and invariant updates listed in the maintenance map.
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## License
+
+[Apache License 2.0](LICENSE) © 2026 OmniBase Contributors.
