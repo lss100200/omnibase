@@ -71,7 +71,7 @@ def _synthetic_run(
     manifest = gate._manifest()
     manifest_sha = gate._write_json(run_dir / "source-manifest.json", manifest)
     gate._write_bytes(run_dir / "source-manifest.sha256", f"{manifest_sha}\n".encode())
-    command = gate._container_command("python", "-m", "pytest", gate.LITE_UNIT_TEST, "-q")
+    command = gate._container_command("python", "-m", "pytest", *gate.LITE_UNIT_TESTS, "-q")
     unit_result = subprocess.CompletedProcess(command, 0, "20 passed in 1.23s\n")
     unit_record = gate._record_command(run_dir, "lite-unit-suite", command, unit_result)
     probe_command = gate._container_command("python", "-c", gate._PROBE_SOURCE)
@@ -111,6 +111,7 @@ def test_source_closure_excludes_secrets_and_env() -> None:
     assert ".env" not in paths
     assert "backend/src/omnibase/agent_alpha/lite.py" in paths
     assert "backend/src/omnibase/agent_executor/engineering.py" in paths
+    assert "backend/tests/test_p5_4b_engineering_composition.py" in paths
     assert "backend/tests/test_p5_4c_lite_agent_product_gate.py" in paths
     assert "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py" in paths
 
@@ -382,14 +383,14 @@ def test_verify_rejects_command_vector_drift_even_with_exit_zero(
     drift: tuple[str, str | None],
 ) -> None:
     """Fix-4: the verifier validates the EXACT argv template of each command —
-    explicit .env.example, closed production flags and exact test target — not
+    explicit .env.example, closed production flags and exact test targets — not
     just the command key and return code.  A drifted vector that still exited
     0 must be rejected."""
     label, replacement = drift
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     vector = list(report["commands"][0]["command"])
     if label == "different test target":
-        vector[vector.index(gate.LITE_UNIT_TEST)] = replacement  # type: ignore[arg-type]
+        vector[vector.index(gate.LITE_UNIT_TESTS[-1])] = replacement  # type: ignore[arg-type]
     elif label == "dropped closed flag":
         vector.remove("AGENT_RUNTIME_ENABLED=false")
     elif label == "different env file":

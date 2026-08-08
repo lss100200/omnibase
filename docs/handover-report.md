@@ -3622,3 +3622,37 @@ migration head `0012`、migration `0013` absent；三个 Phase 5 production Feat
 Gate 全部 `false`；production Runtime/Planner/Multi-Agent disabled；Skill
 Runtime 与 Self-Development Alpha 未实现。未 push、未创建 PR、未 merge 到
 main、未部署。
+
+### P5 Consolidation R1 admission review forward-fix (2026-08-08)
+
+Independent admission review found that the implementation and focused
+regression matrix exercised the formal P5.4B builder, but the sealed P5.4C
+`lite-unit-suite` receipt still executed only
+`tests/test_p5_4c_lite_gate.py`. The subsequent probe read the static posture
+token `formal_builder_integration=proven_engineering_only`, so the sealed Gate
+receipt did not itself execute the formal-builder positive and drift-negative
+tests that justified that token. The same review also found stale recovery text
+in `maintenance-map.json` and stale Gate semantics in `ai-maintainer-map.md`
+that still described `not_integrated` / `not_proven`.
+
+The forward-fix closes the receipt-to-claim gap without widening runtime
+authority:
+
+- `lite-unit-suite` now executes both `tests/test_p5_4c_lite_gate.py` and
+  `tests/test_p5_4b_engineering_composition.py` inside the same sealed command
+  receipt before `proven_engineering_only` can satisfy admission.
+- The exact command template binds both test targets; replacing, dropping or
+  reordering either target invalidates evidence verification.
+- The formal suite exercises `build_engineering_single_agent_executor`,
+  `LiveRuntimeAuthorityValidator`, AgentRun-to-WorkspaceRun resolution and
+  workload-identity-digest drift rejection. The separate P5.4B disposable
+  PostgreSQL Gate remains the authority for real persisted runtime/lease
+  evidence; the P5.4C receipt does not replace it.
+- `maintenance-map.json`, `security-invariants.md`, `ai-maintainer-map.md` and
+  `phase-5-lite-agent-product-loop.md` now state the same engineering-only
+  boundary and verification command.
+
+Production posture is unchanged: `activation_allowed=false`, production
+Runtime/Planner/Multi-Agent disabled, all three Phase 5 production Feature
+Gates false, migration head `0012`, migration `0013` absent, and P34.7 remains
+`blocked/not_proven`.

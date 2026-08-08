@@ -1875,10 +1875,14 @@ API-level tests must prove that the flag reaches the assembled or unavailable
 Alpha dependency as appropriate instead of always returning the
 Lite-gate-disabled path.
 
-The P5.4C disposable Gate is run-scoped and engineering-only. It exercises the
-focused Lite unit suite and an executed gate probe (which patches the process
-environment and measures the runtime resolver, the live posture and the single
-supported mode) inside the backend container, then seals the tested source
+The P5.4C disposable Gate is run-scoped and engineering-only. It executes the
+focused Lite posture suite **and** the P5.4B formal engineering-composition
+suite before an executed gate probe patches the process environment and
+measures the runtime resolver, the live posture and the single supported mode
+inside the backend container. The formal suite exercises
+`build_engineering_single_agent_executor`, `LiveRuntimeAuthorityValidator`, the
+AgentRun-to-WorkspaceRun distinction and workload-identity-digest drift
+negatives. The Gate then seals the tested source
 bytes, command receipts and measurements under unique raw-byte SHA-256
 sidecars. Every claim in the report is derived from an executed receipt or a
 sealed file measurement, or is reported `not_proven`; the
@@ -1897,7 +1901,10 @@ admission decision holds: `lite_gate_default_off`, `absent_off`, `false_off`,
 `root_env_accessed`, `business_database_accessed`, `business_database_migrated`,
 `production_runtime_activated`, `formal_builder_posture_not_integrated` and
 `activation_allowed` all `false`; `formal_builder_integration` stays
-`proven_engineering_only`. A single mismatch makes `passed=false`. The two
+`proven_engineering_only`. The integration claim is admissible only because the
+same sealed `lite-unit-suite` receipt includes the formal composition suite; a
+posture constant without that executed target is not proof. A single mismatch
+makes `passed=false`. The two
 formal-builder claims are **independent**: `formal_builder_integration =
 proven_engineering_only` means the formal P5.4B builder is formally connected
 to this product loop through a proven integration fixture, while
@@ -1913,7 +1920,8 @@ on success and on failure and can be re-verified with `--verify-evidence`
 after the process exits; the Gate never deletes its own evidence and never
 claims production admission. `--verify-evidence` validates the **exact argv
 template** of every recorded command (the explicit `.env.example` path, the
-closed production engineering flags and the exact test target / probe source —
+closed production engineering flags and the exact Lite/formal-composition test
+targets / probe source —
 a drifted vector that exited 0 is rejected), strictly parses every
 `commands/*.exitcode` sidecar (exactly one decimal exit code that must equal
 the receipt `returncode`; non-integer, multi-line, missing and 0/1-drifted

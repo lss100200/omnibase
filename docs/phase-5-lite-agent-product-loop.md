@@ -34,6 +34,7 @@ product loop (P5.2C). P5.4C is intentionally narrow:
 - `backend/src/omnibase/agent_alpha/schemas.py`
 - `backend/src/omnibase/agent_alpha/engineering.py`
 - `backend/src/omnibase/agent_executor/engineering.py`
+- `backend/tests/test_p5_4b_engineering_composition.py`
 - `docker-compose.yml` (Compose Lite-flag wiring)
 - `frontend/app/(dashboard)/agents/page.tsx`
 - `frontend/lib/api.ts`
@@ -130,8 +131,9 @@ run-scoped, engineering-only disposable Gate with three modes:
 
 - `--validate-only`: parses the offline contract without Git hashing or command
   execution and never returns `ready`.
-- `--run`: requires a clean checkout, executes the focused Lite unit suite and
-  a live gate probe inside the backend container, and seals the source
+- `--run`: requires a clean checkout, executes the focused Lite posture suite,
+  the P5.4B formal engineering-composition suite and a live gate probe inside
+  the backend container, and seals the source
   manifest, command receipts and measurements under unique raw-byte SHA-256
   sidecars. The Gate only PASSES when every admission boolean meets its
   expectation: `lite_gate_default_off`, `absent_off`, `false_off`, `true_on`,
@@ -141,7 +143,10 @@ run-scoped, engineering-only disposable Gate with three modes:
   `business_database_migrated`, `production_runtime_activated`,
   `formal_builder_posture_not_integrated` and `activation_allowed` must all
   be `false`; `formal_builder_integration` must stay
-  `proven_engineering_only`. The probe's `formal_builder_integration` token
+  `proven_engineering_only`. This claim is allowed only because the same sealed
+  unit receipt executes the formal builder, live authority validator and the
+  AgentRun/WorkspaceRun and workload-digest drift negatives; the probe posture
+  alone is not proof. The probe's `formal_builder_integration` token
   is recorded **honestly**: the posture reports `proven_engineering_only`
   (the formal builder is formally connected), and this is recorded verbatim.
   A tampered probe reporting `not_integrated` is rewritten to `not_proven`
@@ -153,8 +158,9 @@ run-scoped, engineering-only disposable Gate with three modes:
 - `--verify-evidence <path>`: re-verifies the sealed source, artifact and
   evidence bytes, re-parses the probe receipt, validates the **exact argv
   template** of every recorded command (the explicit `.env.example` path, the
-  closed production engineering flags and the exact test target / probe source
-  are part of the closed set — a drifted vector that exited 0 is rejected),
+  closed production engineering flags and the exact Lite/formal-composition
+  test targets / probe source are part of the closed set — a drifted vector
+  that exited 0 is rejected),
   strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
   exit code, equal to the receipt `returncode`; non-integer, multi-line,
   missing or 0/1-drifted sidecars are rejected), re-derives every claim from
@@ -243,7 +249,7 @@ wording.
 
 ```text
 python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
-docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
+docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4b_engineering_composition.py tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
 cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
 python scripts/maintenance/validate_maintainer_map.py --repo-root .

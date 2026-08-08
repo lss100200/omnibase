@@ -1484,8 +1484,9 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   logs, diagnostics, errors or DTOs.
 - The disposable runner
   `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py` is
-  run-scoped and engineering-only. It executes the focused Lite unit suite and
-  a live gate probe (which patches the process environment and measures the
+  run-scoped and engineering-only. It executes the focused Lite posture suite,
+  the P5.4B formal engineering-composition suite, and a live gate probe (which
+  patches the process environment and measures the
   runtime resolver, the live posture and the single supported mode) inside the
   backend container, then seals the tested source bytes, command receipts and
   measurements under unique raw-byte SHA-256 sidecars. The sealed source
@@ -1497,16 +1498,19 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   from an executed receipt or a sealed file measurement, or reported
   `not_proven`; the root-env/business-database negatives are re-derived from
   the recorded command vectors and the migration head is re-discovered from
-  the repository files. The formal-builder disclosure is recorded **honestly**
-  as two independent claims: `formal_builder_integration = not_proven` (this
-  Gate never executes the formal P5.4B composition) and
-  `formal_builder_posture_not_integrated = true` (the probe genuinely reports
-  `not_integrated`); any other probe token is recorded verbatim and fails the
-  admission decision (`passed=false` and `--verify-evidence` rejects). The run
+  the repository files. The formal-builder result is recorded **honestly** as
+  two independent claims: `formal_builder_integration = proven_engineering_only`
+  is allowed only when the sealed unit receipt executed the formal P5.4B
+  composition suite, and `formal_builder_posture_not_integrated = false`
+  requires the probe to report the same closed token. A tampered
+  `not_integrated` token is rewritten to `not_proven` as defence-in-depth; any
+  other token is recorded verbatim and fails the admission decision
+  (`passed=false` and `--verify-evidence` rejects). The run
   directory is preserved on success and on failure and can be re-verified with
   `--verify-evidence`, which re-executes the same closed-set admission
   decision, validates the exact argv template of every recorded command
-  (explicit `.env.example`, closed production flags, exact test target) and
+  (explicit `.env.example`, closed production flags, exact Lite and formal-
+  composition test targets) and
   strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
   exit code equal to the receipt `returncode`; non-integer, multi-line,
   missing and 0/1-drifted sidecars are rejected). Round-5 additionally
@@ -1533,15 +1537,16 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   **self-contained integrity receipt** only: run-scoped byte integrity, never
   external authenticity, no independent trust anchor, never production
   admission. The Gate never reads the root `.env`, never touches a business
-  database, never creates migration `0013`, never opens a Phase 5 production
-  Feature Gate, never claims formal P5.4B integration, and does not replace
-  the heavier P5.4B disposable PostgreSQL Gate.
+  database, never creates migration `0013`, and never opens a Phase 5
+  production Feature Gate. Its formal-builder claim is engineering-only and
+  does not replace the heavier P5.4B disposable PostgreSQL Gate or authorize
+  Browser routing or production activation.
 
 Focused commands:
 
 ```text
 python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
-docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
+docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4b_engineering_composition.py tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
 docker compose --env-file .env.example config --quiet
 cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
