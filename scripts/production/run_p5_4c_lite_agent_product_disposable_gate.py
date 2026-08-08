@@ -347,6 +347,7 @@ _EXITCODE_SIDECAR_RE = re.compile(r"[0-9]+\n")
 # closed set: no missing key, no duplicate, no extra/unknown key, no re-order.
 COMMAND_KEYS: tuple[str, ...] = ("lite-unit-suite", "lite-gate-probes")
 
+
 # The exact POSIX path literal every command key must bind its stdout and
 # exitcode sidecar to.  The verifier compares the receipt's path LITERAL against
 # this string BEFORE resolving (``_is_exact_sidecar_literal``): absolute paths,
@@ -683,7 +684,7 @@ def _verify(path: Path) -> None:  # noqa: C901
         # would wrongly accept because ``False == 0``), floats like ``0.0``,
         # strings like ``"0"``, ``null`` and any non-zero integer.
         returncode = item.get("returncode")
-        if type(returncode) is not int:  # noqa: E721
+        if type(returncode) is not int:
             raise RuntimeError("command receipt returncode is not a strict integer")
         if returncode != 0:
             raise RuntimeError("command did not prove success")
@@ -714,7 +715,9 @@ def _verify(path: Path) -> None:  # noqa: C901
         # receipt cannot point at the probe's stdout (or vice versa).
         stdout_relative = item.get("stdout")
         if not _is_exact_sidecar_literal(stdout_relative, key=key, suffix="stdout"):
-            raise RuntimeError(f"command stdout sidecar literal is not exactly commands/{key}.stdout")
+            raise RuntimeError(
+                f"command stdout sidecar literal is not exactly commands/{key}.stdout"
+            )
         stdout_literals.append(str(stdout_relative))
         stdout_unresolved = run_dir / str(stdout_relative)
         if stdout_unresolved.is_symlink():
@@ -813,7 +816,9 @@ def _verify(path: Path) -> None:  # noqa: C901
     if not isinstance(measurements, dict):
         raise RuntimeError("measurements are missing")
     _assert_unit_summary_matches(
-        derived_unit_summary, measurements.get("lite_unit_summary"), where="measurements.lite_unit_summary"
+        derived_unit_summary,
+        measurements.get("lite_unit_summary"),
+        where="measurements.lite_unit_summary",
     )
     # Re-derive every claim from the sealed receipts; a tampered or fabricated
     # report cannot match the executed probe bytes and command vectors.
@@ -882,9 +887,7 @@ def _parse_test_summary(stdout: str) -> dict[str, object]:
     return summary
 
 
-def _assert_unit_summary_matches(
-    derived: dict[str, object], stored: object, *, where: str
-) -> None:
+def _assert_unit_summary_matches(derived: dict[str, object], stored: object, *, where: str) -> None:
     """Field-by-field strict comparison of a re-derived unit summary.
 
     ``derived`` is re-parsed from the precisely-bound
@@ -907,9 +910,9 @@ def _assert_unit_summary_matches(
     for field in ("passed", "failed", "skipped", "deselected"):
         stored_value = stored.get(field)
         derived_value = derived.get(field)
-        if type(stored_value) is not int:  # noqa: E721
+        if type(stored_value) is not int:
             raise RuntimeError(f"{where}.{field} is not a strict integer")
-        if type(derived_value) is not int:  # noqa: E721
+        if type(derived_value) is not int:
             raise RuntimeError(f"re-derived {where}.{field} is not a strict integer")
         if stored_value != derived_value:
             raise RuntimeError(

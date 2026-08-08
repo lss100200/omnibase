@@ -467,7 +467,9 @@ def test_verify_rejects_receipt_returncode_not_an_integer(
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     report["commands"][0]["returncode"] = "0"
     _rewrite_evidence(evidence, report)
-    with pytest.raises(RuntimeError, match="returncode is not a strict integer|did not prove success"):
+    with pytest.raises(
+        RuntimeError, match="returncode is not a strict integer|did not prove success"
+    ):
         gate._verify(evidence)
 
 
@@ -697,7 +699,9 @@ def test_verify_rejects_non_strict_returncode_type(
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     report["commands"][0]["returncode"] = returncode
     _rewrite_evidence(evidence, report)
-    with pytest.raises(RuntimeError, match="returncode is not a strict integer|did not prove success"):
+    with pytest.raises(
+        RuntimeError, match="returncode is not a strict integer|did not prove success"
+    ):
         gate._verify(evidence)
 
 
@@ -974,9 +978,7 @@ def test_verify_rejects_extra_field_in_unit_summary(
         gate._verify(evidence)
 
 
-def test_verify_rejects_symlink_sidecar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_verify_rejects_symlink_sidecar(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Round-5 Fix-3: a symlink sidecar must be rejected.  On platforms that
     support symlinks (POSIX), replacing the unit stdout with a symlink is
     rejected.  On platforms without symlink support the test is skipped with a
