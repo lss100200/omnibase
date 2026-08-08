@@ -17,12 +17,15 @@ operator **outside** the evidence run directory and must contain:
 
 - the allowlisted Ed25519 public key of every producer (`core`, `runner`,
   `broker`, `gateway`, `overlay`, `recovery_sla`, `sealer`);
-- a source seal (repository plus approved commit/tree digests);
+- a source seal (repository, Git object format, plus approved commit/tree
+  OIDs);
 - an approved artifact manifest binding each executable path to its SHA-256 and
   the joint boundaries it may serve;
 - exact argv templates for the six required boundaries;
 - an environment-name allowlist (secret names are always rejected);
-- gateway certificate pins (issuer, SAN suffix, bounded lifetime).
+- gateway certificate pins (issuer, SAN suffix, bounded lifetime);
+- a bounded `max_evidence_age_seconds` that caps how old signed evidence may
+  be.
 
 A policy is only a trust anchor when its raw bytes hash to a digest pinned in
 `joint_gate._APPROVED_TRUST_POLICY_SHA256`.  That set is currently **empty**:
@@ -92,27 +95,74 @@ digest, is `artifact_provenance = not_proven` and blocks.
 
 The `evidence_seal` canonical binding covers `schema`/`schema_version`,
 `environment`, `disposable`, the full provenance (`repository`,
-`source_commit`, `source_tree`, `dirty`), the source/artifact manifest digests,
-the command/component/posture/attack/cleanup digest chain, migration head,
-feature gates and **every current top-level security posture** derived from the
-verified chain (`signature_authenticity`, `artifact_provenance`,
+`git_object_format`, `source_commit`, `source_tree`, `dirty`), the complete
+evidence validity window (`run_started_at`, `run_completed_at`,
+`evidence_issued_at`, `evidence_valid_until`), the source/artifact manifest
+digests, the command/component/posture/attack/cleanup digest chain, migration
+head, feature gates and **every current top-level security posture** derived
+from the verified chain (`signature_authenticity`, `artifact_provenance`,
 `command_semantics`, `certificate_posture`, `replay_posture`,
 `runtime_posture`, `production_runtime_inactive`, `hostile_code_not_executed`,
 `root_env_not_accessed`, `business_database_not_accessed`,
 `business_database_not_migrated`, `attack_results`, `cleanup_complete`).
+The posture sealed by the binding is derived at the **issue-time clock**
+(`window.issued_at`), never at the verification `now`: the recorded binding is
+a pure function of the evidence, so re-verifying the same bundle later (or
+with an expired/future clock) can never invalidate the seal itself — an
+expired bundle keeps its valid seal and fails on `evidence_freshness` instead.
 Because the verifier recomputes this binding from the verified data, ANY
 outer-field rewrite (environment `staging`->`production`, `disposable`
-`true`->`false`, `dirty` `true`->`false`, or any posture-relevant drift)
-changes the recomputed bytes and fails the recorded binding digest / detached
-signature.  `joint_gate.compute_seal_binding()` is the single canonical
-builder shared by the verifier, the adversarial forger and the tests.
+`true`->`false`, `dirty` `true`->`false`, a validity-window field, the Git
+object format, or any posture-relevant drift) changes the recomputed bytes and
+fails the recorded binding digest / detached signature.
+`joint_gate.compute_seal_binding()` is the single canonical builder shared by
+the verifier, the adversarial forger and the tests.
 
 ### Gateway certificate window
 
 The gateway certificate must satisfy `valid_from <= now < valid_until`; a
 future certificate (`valid_from` in the future) is rejected exactly like an
-expired one, while the issuer, SAN suffix, maximum lifetime, revocation and
-replay checks remain mandatory.
+expired one.  The expiry boundary is strict: `valid_until == now` is **already
+expired** and fails closed (`valid_until <= now` is rejected); `valid_from ==
+now` is an allowed first-valid instant.  The issuer, SAN suffix, maximum
+lifetime, revocation and replay checks remain mandatory.
+
+### Git object format
+
+`provenance.git_object_format`, the trust-policy `source_seal.git_object_format`
+and every component evidence `git_object_format` must all declare the same
+member of the closed set `sha1 | sha256`:
+
+- `sha1` accepts exactly **40 lowercase hex** characters (the current
+  repository's real format — `git rev-parse --show-object-format` reports
+  `sha1`), `sha256` exactly **64 lowercase hex**;
+- commit/tree values are preserved as the original Git OIDs — never re-hashed
+  or transformed;
+- source/artifact manifests keep using raw-byte SHA-256 (not weakened);
+- unknown formats, wrong lengths, uppercase/non-hex characters and any
+  policy/evidence/component/seal format drift all fail closed
+  (`invalid/veto`).
+
+### Evidence freshness window
+
+Every bundle carries a frozen validity window: `run_started_at`,
+`run_completed_at`, `evidence_issued_at` and `evidence_valid_until`, with the
+structural invariant `run_started_at <= run_completed_at <= evidence_issued_at
+< evidence_valid_until`:
+
+- every command receipt and every posture/attack/cleanup timestamp must lie
+  inside `[run_started_at, run_completed_at]` (cross-window receipts veto);
+- `now` must satisfy `evidence_issued_at <= now < evidence_valid_until`;
+- the evidence age (`now - evidence_issued_at`) and the window length
+  (`evidence_valid_until - evidence_issued_at`) must not exceed the trust
+  policy's bounded `max_evidence_age_seconds`;
+- stale/expired bundles, bundles with a future `issued_at`, and window-length
+  overruns are rejected; a bundle whose outer time fields are rewritten
+  without re-signing fails the seal binding;
+- the wall clock is read exactly **once** per verification through the
+  `now` clock seam of `verify_joint_evidence`; the same unexpired bundle can be
+  idempotently re-verified offline, but an expired bundle can never be
+  re-PASSed (`evidence_freshness` becomes a blocker).
 
 ## Evidence chain (schema v2 only)
 
@@ -120,15 +170,17 @@ Each run is an immutable directory containing:
 
 - `source.txt` / `artifact.txt` plus `source_manifest`/`artifact_manifest`
   with raw-byte SHA-256, size and a canonical `raw_sha256` binding;
+- a frozen validity window in the envelope: `run_started_at`,
+  `run_completed_at`, `evidence_issued_at`, `evidence_valid_until`;
 - `receipts/<boundary>.json` — canonical command receipts (schema
   `omnibase.p34-7.command-receipt.v1`) signed by the boundary owner's key and
-  cross-bound to the policy executable/argv templates;
+  cross-bound to the policy executable/argv templates and the run window;
 - `components/<component>.json` — canonical component evidence (schema
   `omnibase.p34-7.component-evidence.v1`) signed by the component key and
-  cross-binding run id, producer, source commit/tree, source/artifact manifest
-  digests, component identity, peer identities, owned receipt digests,
-  executables, the posture measurement digest and the attack/cleanup result
-  digests;
+  cross-binding run id, producer, Git object format, source commit/tree,
+  source/artifact manifest digests, component identity, peer identities, owned
+  receipt digests, executables, the posture measurement digest and the
+  attack/cleanup result digests;
 - `measurements/posture.json` — the signed posture measurement (schema
   `omnibase.p34-7.posture-measurement.v1`) produced by `core`, proving
   production Runtime inactive, no hostile code, root `.env` and business
@@ -192,8 +244,24 @@ post-approval attack tests prove that every single drift flips the result to
   veto and the seal-binding veto are asserted);
 - all seven roles sharing one Ed25519 key, and the sealer sharing a key with a
   producer (both fail closed at policy parse);
-- a gateway certificate whose `valid_from` is in the future;
+- a gateway certificate whose `valid_from` is in the future, and the exact
+  expiry boundary (`valid_until == now` fails closed, `valid_from == now` is
+  allowed);
 - any drift among the executable/manifest/receipt three-way digests.
+
+The Review-Fix Round 2 matrix additionally proves:
+
+- the current repository is SHA-1 (`git rev-parse --show-object-format`) and
+  REAL 40-hex `HEAD` / `HEAD^{tree}` OIDs enter the envelope, the policy source
+  seal and the signed chain (still `blocked/not_proven` while the approved set
+  is empty);
+- `sha1`+64-hex, `sha256`+40-hex, unknown formats, uppercase OIDs and
+  policy/component/seal object-format drift all fail closed;
+- expired bundles, future `issued_at`, age over the policy maximum,
+  cross-window receipts, over-long validity windows, outer time-field rewrites
+  without re-signing and policy max-age drift are all rejected;
+- idempotent offline re-verification of the same unexpired bundle, and the
+  guarantee that an expired bundle is never re-PASSed.
 
 ## Status
 

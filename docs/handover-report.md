@@ -1741,6 +1741,37 @@ git diff --check：passed
 `AGENT_RUNTIME_ENABLED` / `AGENT_PLANNER_ENABLED` / `MULTI_AGENT_ENABLED` 保持 false/false/false；
 production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merge、未建 PR。
 
+### P34.7 Integration Review-Fix Round 2：object format / freshness / 过期边界（2026-08-08）
+
+> 在 Integration R1 基础上普通 forward-fix 关闭三个评审发现，未改变正式状态：
+> `ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED` 不变，P34.7 仍 `blocked/not_proven`。
+
+1. **P1-A Git object format**：`provenance.git_object_format`、policy
+   `source_seal.git_object_format`、component evidence `git_object_format` 绑定同一闭集
+   `sha1 | sha256`；sha1=40 位小写 hex、sha256=64 位小写 hex；commit/tree 保留原始 Git OID 不二次
+   哈希；manifest 仍为原始字节 SHA-256；未知 format/长度/大小写/跨层 drift 全部 fail-closed。
+   当前仓库 `git rev-parse --show-object-format` = sha1；真实 40 位 `HEAD`/`HEAD^{tree}` OID 已由
+   `test_current_repo_object_format_is_sha1` 与 `test_real_repo_sha1_oids_enter_the_chain_without_production_pass`
+   证明可进入解析与签名链（无 policy 批准时 blocked/not_proven，不 veto；monkeypatch 批准后 passed），
+   容器内 worktree `.git` 不可达时测试回退到新建真实 SHA-1 仓库，同一断言不降级。
+2. **P1-B evidence freshness**：冻结合同新增 `run_started_at`/`run_completed_at`/
+   `evidence_issued_at`/`evidence_valid_until`（`run_started_at <= run_completed_at <=
+   evidence_issued_at < evidence_valid_until`）；receipt/posture/attack/cleanup 时间戳必须在 run
+   window 内；`now` 必须满足 `evidence_issued_at <= now < evidence_valid_until`；age 与窗口长度均
+   受 policy bounded `max_evidence_age_seconds` 约束；单次验证只读一次时钟（`verify_joint_evidence`
+   的 `now` clock seam，`_utc_now()` 为唯一墙钟读取点）；四个时间字段与 object format 进入 seal
+   canonical binding；seal 绑定的 posture 以签发时刻时钟（`window.issued_at`）推导，复验不使有效
+   seal 失效——过期 bundle 保持有效 seal 并以 `evidence_freshness` blocker 拒绝；同一未过期 bundle
+   幂等离线复验允许，过期 bundle 永不重判 PASS。
+3. **P2 证书精确过期边界**：实现改为 `valid_until <= now` 拒绝（文档语义
+   `valid_from <= now < valid_until`），`valid_from == now` 允许；新增
+   `test_certificate_expires_exactly_at_now_is_blocked`（valid_until == now fail-closed，前一秒
+   verified）与 `test_certificate_valid_from_exactly_now_is_allowed`。
+4. **保留项**：`_APPROVED_TRUST_POLICY_SHA256` 仍为 `frozenset()`；唯一 TRUE positive control 仍
+   只经测试内 monkeypatch；migration head 0012、0013 absent；三个 Phase 5 Feature Gates 保持
+   false；production Runtime/Planner/Multi-Agent disabled；未生成/伪造真实 production evidence；
+   未读根 `.env`；未访问/迁移业务数据库；未修改冻结输入 worktree；未 push/PR/merge。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不

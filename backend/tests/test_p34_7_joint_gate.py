@@ -24,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -48,8 +49,10 @@ _spec.loader.exec_module(forge)
 _canonical = forge._canonical
 _digest = forge._digest
 REPOSITORY = "https://github.com/lss100200/omnibase.git"
-COMMIT = "a" * 64
-TREE = "b" * 64
+COMMIT = "a" * 40
+TREE = "b" * 40
+OBJECT_FORMAT = "sha1"
+MAX_EVIDENCE_AGE_SECONDS = 7 * 86400
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +65,16 @@ def _write_canonical(path: Path, value: object) -> None:
     path.write_bytes(_canonical(value))
 
 
+def _iso_utc(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _run_window(payload: dict[str, object]) -> tuple[datetime, datetime]:
+    started = datetime.fromisoformat(str(payload["run_started_at"]).replace("Z", "+00:00"))
+    completed = datetime.fromisoformat(str(payload["run_completed_at"]).replace("Z", "+00:00"))
+    return started, completed
+
+
 def _policy_dict(
     run: Path,
     payload: dict[str, object],
@@ -72,6 +85,8 @@ def _policy_dict(
     argv_overrides: dict[str, object] | None = None,
     executable_overrides: dict[str, object] | None = None,
     allowed_env_names: tuple[str, ...] = ("PATH", "OMNIBASE_RUN_ID"),
+    git_object_format: str = OBJECT_FORMAT,
+    max_evidence_age_seconds: int = MAX_EVIDENCE_AGE_SECONDS,
 ) -> dict[str, object]:
     executables: dict[str, object] = {}
     commands: dict[str, object] = {}
@@ -92,6 +107,7 @@ def _policy_dict(
         "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in keys},
         "source_seal": {
             "repository": REPOSITORY,
+            "git_object_format": git_object_format,
             "approved_commits": list(approved_commits),
             "approved_trees": list(approved_trees),
         },
@@ -103,6 +119,7 @@ def _policy_dict(
             "san_suffix": ".omnibase",
             "validity_seconds": 100 * 365 * 86400,
         },
+        "max_evidence_age_seconds": max_evidence_age_seconds,
         "migration_head": "0012",
     }
 
@@ -112,24 +129,36 @@ def _policy_file(
     run: Path,
     payload: dict[str, object],
     keys: dict[str, dict[str, str]],
+    *,
+    name: str = "trust-policy.json",
     **kwargs: object,
 ) -> Path:
     policy = _policy_dict(run, payload, keys, **kwargs)  # type: ignore[arg-type]
-    path = tmp_path / "trust-policy.json"
+    path = tmp_path / name
     _write_canonical(path, policy)
     return path
 
 
 def _forge(tmp_path: Path, **kwargs: object) -> tuple[Path, dict[str, object]]:
     run = tmp_path / "run"
-    payload = forge.forge_bundle(run, source_commit=COMMIT, source_tree=TREE, **kwargs)
+    fmt = str(kwargs.get("git_object_format", OBJECT_FORMAT))
+    if "source_commit" not in kwargs:
+        kwargs["source_commit"] = "a" * 64 if fmt == "sha256" else COMMIT
+    if "source_tree" not in kwargs:
+        kwargs["source_tree"] = "b" * 64 if fmt == "sha256" else TREE
+    payload = forge.forge_bundle(run, **kwargs)
     return run, payload
 
 
 def _signed(tmp_path: Path, **kwargs: object) -> tuple[Path, dict[str, object], dict[str, object]]:
     keys = forge.generate_keyfile()
     run = tmp_path / "run"
-    payload = forge.forge_bundle(run, source_commit=COMMIT, source_tree=TREE, keys=keys, **kwargs)
+    fmt = str(kwargs.get("git_object_format", OBJECT_FORMAT))
+    if "source_commit" not in kwargs:
+        kwargs["source_commit"] = "a" * 64 if fmt == "sha256" else COMMIT
+    if "source_tree" not in kwargs:
+        kwargs["source_tree"] = "b" * 64 if fmt == "sha256" else TREE
+    payload = forge.forge_bundle(run, keys=keys, **kwargs)
     return run, payload, keys
 
 
@@ -161,6 +190,7 @@ def _self_policy_dict(
         "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in forge.ROLES},
         "source_seal": {
             "repository": REPOSITORY,
+            "git_object_format": str(payload["provenance"]["git_object_format"]),  # type: ignore[index]
             "approved_commits": [payload["provenance"]["source_commit"]],  # type: ignore[index]
             "approved_trees": [payload["provenance"]["source_tree"]],  # type: ignore[index]
         },
@@ -172,6 +202,7 @@ def _self_policy_dict(
             "san_suffix": ".omnibase",
             "validity_seconds": 100 * 365 * 86400,
         },
+        "max_evidence_age_seconds": MAX_EVIDENCE_AGE_SECONDS,
         "migration_head": "0012",
     }
 
@@ -675,13 +706,14 @@ def test_cleanup_counts_must_come_from_signed_evidence(tmp_path: Path) -> None:
 
 def test_cleanup_residue_is_blocked(tmp_path: Path) -> None:
     run, payload, keys = _signed(tmp_path)
+    run_started, _run_completed = _run_window(payload)
     cleanup_refs = payload["cleanup"]  # type: ignore[index]
     cleanup = json.loads((run / str(cleanup_refs["evidence"]["path"])).read_text())
     cleanup["inventory"] = [
         {
             "class": "processes",
             "item_id": "pid-1234",
-            "removed_at": "2026-08-07T00:05:00Z",
+            "removed_at": _iso_utc(run_started + timedelta(minutes=50)),
         }
     ]
     cleanup["counts"] = {key: 0 for key in cleanup["counts"]}
@@ -820,10 +852,15 @@ def test_timestamps_compared_as_utc_instants(tmp_path: Path) -> None:
     run, payload, keys = _signed(tmp_path)
     refs = payload["commands"]["runner_broker"]  # type: ignore[index]
     receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
-    # Lexicographically '01:00:00+02:00' > '00:00:30Z' but as UTC instants
-    # 2026-08-06T23:00:00Z is before the previous command ended.
-    receipt["started_at"] = "2026-08-07T01:00:00+02:00"
-    receipt["ended_at"] = "2026-08-07T01:00:30+02:00"
+    run_started, _run_completed = _run_window(payload)
+    # The previous command (core_runner) ends 30s after run_started_at.  A
+    # lexicographically-later string ('...+02:00') that is really an earlier
+    # UTC instant (run_started+20s) must be rejected, while staying inside the
+    # run window so the chronology rule -- not the window rule -- fires.
+    rewritten_start = run_started + timedelta(seconds=20)
+    offset = timezone(timedelta(hours=2))
+    receipt["started_at"] = rewritten_start.astimezone(offset).isoformat()
+    receipt["ended_at"] = (rewritten_start + timedelta(seconds=30)).astimezone(offset).isoformat()
     _rewrite_signed_file(run, payload, refs, "receipt", receipt, keys, "runner")
     policy = _policy_file(
         tmp_path, run, payload, keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
@@ -939,8 +976,13 @@ def test_command_chronology_inconsistency_is_rejected(tmp_path: Path) -> None:
     run, payload, keys = _signed(tmp_path)
     refs = payload["commands"]["runner_gateway"]  # type: ignore[index]
     receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
-    receipt["started_at"] = "2026-08-07T00:00:00Z"
-    receipt["ended_at"] = "2026-08-07T00:00:10Z"
+    run_started, _run_completed = _run_window(payload)
+    # runner_gateway is the third command: its start must be after the second
+    # command (runner_broker) ended (run_started+10m30s).  A start at
+    # run_started+60s -- inside the run window but before the previous end --
+    # must be rejected for chronology.
+    receipt["started_at"] = _iso_utc(run_started + timedelta(seconds=60))
+    receipt["ended_at"] = _iso_utc(run_started + timedelta(seconds=70))
     _rewrite_signed_file(run, payload, refs, "receipt", receipt, keys, "runner")
     policy = _policy_file(
         tmp_path, run, payload, keys, approved_commits=(COMMIT,), approved_trees=(TREE,)
@@ -1456,3 +1498,400 @@ def test_post_approval_executable_manifest_receipt_digest_drift_is_blocked(
             entry["sha256"] = "e" * 64
     with pytest.raises(ConfigurationError, match="drifted|bind"):
         verify_joint_evidence(run_b, payload_b, trust_policy_path=policy_b)
+
+
+# ---------------------------------------------------------------------------
+# P34.7 Integration Review-Fix Round 2 (P1-A): Git object format
+# ---------------------------------------------------------------------------
+
+
+def _git(args: list[str], cwd: Path = REPO_ROOT) -> str:
+    result = subprocess.run(
+        ["git", "--no-pager", *args],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def _fresh_sha1_repo(tmp_path: Path) -> Path:
+    """Create a real, fresh Git repository (SHA-1 object format) with one
+    commit, so real 40-hex OIDs are always available even when the mounted
+    worktree's ``.git`` file (which embeds a host path) is unreachable from
+    inside the container."""
+    repo = tmp_path / "git-repo"
+    repo.mkdir(parents=True)
+    for args in (
+        ["init", "-q"],
+        ["config", "user.email", "dev@omnibase.local"],
+        ["config", "user.name", "OmniBase"],
+        ["commit", "--allow-empty", "-q", "-m", "seed"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    return repo
+
+
+def _current_or_fresh_oids(tmp_path: Path) -> tuple[str, str, Path]:
+    """Return ``(commit, tree, repo_root)`` from the current repository when
+    git can reach it (host/CI), otherwise from a fresh real SHA-1 repository."""
+    try:
+        return _git(["rev-parse", "HEAD"]), _git(["rev-parse", "HEAD^{tree}"]), REPO_ROOT
+    except RuntimeError:
+        repo = _fresh_sha1_repo(tmp_path)
+        return (
+            _git(["rev-parse", "HEAD"], cwd=repo),
+            _git(["rev-parse", "HEAD^{tree}"], cwd=repo),
+            repo,
+        )
+
+
+def test_current_repo_object_format_is_sha1(tmp_path: Path) -> None:
+    """The current Git repository is SHA-1: `git rev-parse
+    --show-object-format` reports ``sha1``, so the real 40-hex commit/tree
+    OIDs must be able to enter the joint-gate contract.  When the mounted
+    worktree is unreachable from inside the container, the same assertion is
+    proven against a fresh real SHA-1 repository."""
+    try:
+        fmt = _git(["rev-parse", "--show-object-format"])
+    except RuntimeError:
+        fmt = _git(["rev-parse", "--show-object-format"], cwd=_fresh_sha1_repo(tmp_path))
+    assert fmt == "sha1"
+
+
+def test_real_repo_sha1_oids_enter_the_chain_without_production_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """REAL 40-hex SHA-1 commit/tree OIDs (from the current repository, or a
+    fresh real Git repository when the worktree is container-unreachable)
+    parse into the envelope, the trust-policy source seal, the signed
+    component evidence and the evidence seal.  Without an approved policy the
+    report stays blocked/not_proven (no veto); with the in-process
+    monkeypatch approval the same real-OID chain reaches ``passed``, proving
+    the OIDs flow through the whole signature chain while the empty
+    production pin keeps the gate closed."""
+    commit, tree, _repo = _current_or_fresh_oids(tmp_path)
+    assert len(commit) == 40
+    assert len(tree) == 40
+    run, payload, keys = _signed(tmp_path, source_commit=commit, source_tree=tree)
+    policy = _policy_file(
+        tmp_path, run, payload, keys, approved_commits=(commit,), approved_trees=(tree,)
+    )
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.status == "blocked/not_proven"
+    assert "trust_policy_not_approved" in report.blockers
+    _approve_in_process(monkeypatch, policy)
+    passed = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert passed.passed is True
+    assert passed.safety["source_provenance"] == "verified"
+
+
+def test_sha1_declared_64_hex_oid_is_rejected(tmp_path: Path) -> None:
+    """sha1 object format accepts exactly 40-hex OIDs; a 64-hex SHA-256-style
+    identifier fails closed."""
+    run, payload = _forge(tmp_path)
+    payload["provenance"]["source_commit"] = "a" * 64  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="40-hex"):
+        verify_joint_evidence(run, payload)
+
+
+def test_sha256_declared_40_hex_oid_is_rejected(tmp_path: Path) -> None:
+    """sha256 object format accepts exactly 64-hex OIDs; a 40-hex SHA-1-style
+    identifier fails closed."""
+    run, payload = _forge(tmp_path, git_object_format="sha256")
+    payload["provenance"]["source_commit"] = "a" * 40  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="64-hex"):
+        verify_joint_evidence(run, payload)
+
+
+def test_unknown_git_object_format_is_rejected(tmp_path: Path) -> None:
+    run, payload = _forge(tmp_path)
+    payload["provenance"]["git_object_format"] = "md5"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="sha1' or 'sha256'"):
+        verify_joint_evidence(run, payload)
+
+
+def test_uppercase_git_oid_is_rejected(tmp_path: Path) -> None:
+    """OIDs must be lowercase hex; uppercase characters fail closed."""
+    run, payload = _forge(tmp_path)
+    payload["provenance"]["source_commit"] = "A" * 40  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="40-hex"):
+        verify_joint_evidence(run, payload)
+
+
+def test_policy_evidence_object_format_drift_is_rejected(tmp_path: Path) -> None:
+    """The trust-policy source seal declares sha256 while the evidence
+    provenance declares sha1: policy/evidence object-format drift fails
+    closed."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _policy_file(
+        tmp_path,
+        run,
+        payload,
+        keys,
+        approved_commits=("c" * 64,),
+        approved_trees=("d" * 64,),
+        git_object_format="sha256",
+    )
+    with pytest.raises(ConfigurationError, match="object format"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_component_object_format_drift_is_rejected(tmp_path: Path) -> None:
+    """Component evidence must bind the SAME object format as the
+    provenance; a component declaring sha256 in a sha1 run fails closed."""
+    run, payload, keys = _signed(tmp_path)
+    refs = payload["components"]["core"]  # type: ignore[index]
+    component = json.loads((run / str(refs["evidence"]["path"])).read_text())
+    component["git_object_format"] = "sha256"
+    _rewrite_signed_file(run, payload, refs, "evidence", component, keys, "core")
+    policy = _policy_file(tmp_path, run, payload, keys)
+    with pytest.raises(ConfigurationError, match="object format"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_seal_binds_git_object_format(tmp_path: Path) -> None:
+    """The evidence seal's canonical binding covers git_object_format: a seal
+    signed over a different format can never match the outer bundle."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _bind_seal_over(run, payload, keys, policy, {"provenance": {"git_object_format": "sha256"}})
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+# ---------------------------------------------------------------------------
+# P34.7 Integration Review-Fix Round 2 (P1-B): evidence freshness window
+# ---------------------------------------------------------------------------
+
+
+def test_expired_bundle_is_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A signed bundle whose evidence_valid_until has passed must never be
+    treated as current: `evidence_issued_at <= now < evidence_valid_until`
+    fails and evidence_freshness becomes a blocker."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    valid_until = datetime.fromisoformat(
+        str(payload["evidence_valid_until"]).replace("Z", "+00:00")
+    )
+    late = valid_until + timedelta(seconds=1)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy, now=late)
+    assert report.passed is False
+    assert report.status == "blocked/not_proven"
+    assert "evidence_freshness" in report.blockers
+    assert report.safety["evidence_freshness"] == "not_proven"
+
+
+def test_future_issued_at_is_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A bundle whose evidence_issued_at is in the future relative to ``now``
+    must never be treated as current."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    issued_at = datetime.fromisoformat(str(payload["evidence_issued_at"]).replace("Z", "+00:00"))
+    early = issued_at - timedelta(seconds=1)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy, now=early)
+    assert report.passed is False
+    assert "evidence_freshness" in report.blockers
+
+
+def test_evidence_age_over_policy_max_is_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Evidence older than the policy maximum is stale even inside the
+    validity window: `max_evidence_age_seconds` bounds the age."""
+    run, payload, keys = _signed(tmp_path)
+    issued_at = datetime.fromisoformat(str(payload["evidence_issued_at"]).replace("Z", "+00:00"))
+    payload["evidence_valid_until"] = _iso_utc(issued_at + timedelta(seconds=60))  # type: ignore[index]
+    _resign_seal(run, payload, keys)
+    policy = _policy_file(
+        tmp_path,
+        run,
+        payload,
+        keys,
+        approved_commits=(COMMIT,),
+        approved_trees=(TREE,),
+        max_evidence_age_seconds=60,
+    )
+    _approve_in_process(monkeypatch, policy)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy)
+    assert report.passed is False
+    assert "evidence_freshness" in report.blockers
+
+
+def test_receipt_outside_run_window_is_rejected(tmp_path: Path) -> None:
+    """Every command receipt must lie inside [run_started_at,
+    run_completed_at]; a receipt that starts before the run fails closed."""
+    run, payload, keys = _signed(tmp_path)
+    run_started, _run_completed = _run_window(payload)
+    refs = payload["commands"]["core_runner"]  # type: ignore[index]
+    receipt = json.loads((run / str(refs["receipt"]["path"])).read_text())
+    receipt["started_at"] = _iso_utc(run_started - timedelta(seconds=60))
+    receipt["ended_at"] = _iso_utc(run_started - timedelta(seconds=30))
+    _rewrite_signed_file(run, payload, refs, "receipt", receipt, keys, "core")
+    policy = _policy_file(tmp_path, run, payload, keys)
+    with pytest.raises(ConfigurationError, match="run window"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_validity_window_longer_than_policy_max_is_veto(tmp_path: Path) -> None:
+    """A validity window longer than the policy maximum is a structural
+    veto, never a pass."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _policy_file(
+        tmp_path,
+        run,
+        payload,
+        keys,
+        approved_commits=(COMMIT,),
+        approved_trees=(TREE,),
+        max_evidence_age_seconds=60,
+    )
+    with pytest.raises(ConfigurationError, match="validity window exceeds"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_outer_time_field_rewrite_without_resigning_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The evidence seal's canonical binding covers the full validity window:
+    rewriting evidence_issued_at without re-signing must fail (a) on the
+    recomputed binding and (b) via a seal signed over a different window."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy).passed is True
+    valid_until = datetime.fromisoformat(
+        str(payload["evidence_valid_until"]).replace("Z", "+00:00")
+    )
+    payload["evidence_issued_at"] = _iso_utc(valid_until - timedelta(hours=1))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+    run_completed = datetime.fromisoformat(str(payload["run_completed_at"]).replace("Z", "+00:00"))
+    payload["evidence_issued_at"] = _iso_utc(run_completed + timedelta(seconds=60))  # type: ignore[index]
+    _bind_seal_over(run, payload, keys, policy, {"evidence_issued_at": "2099-01-01T00:00:00Z"})
+    with pytest.raises(ConfigurationError, match="binding_sha256"):
+        verify_joint_evidence(run, payload, trust_policy_path=policy)
+
+
+def test_policy_max_age_drift_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A trust policy whose max_evidence_age_seconds differs from the approved
+    anchor is a different policy: its bytes are not in the approved set, and
+    its tighter maximum makes the bundle's validity window structurally
+    invalid, so the drift is vetoed -- never a pass."""
+    run, payload, keys = _signed(tmp_path)
+    policy_approved = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy_approved)
+    assert verify_joint_evidence(run, payload, trust_policy_path=policy_approved).passed is True
+    drifted = _policy_file(
+        tmp_path,
+        run,
+        payload,
+        keys,
+        name="trust-policy-drifted.json",
+        approved_commits=(COMMIT,),
+        approved_trees=(TREE,),
+        max_evidence_age_seconds=60,
+    )
+    assert _digest(drifted.read_bytes()) != _digest(policy_approved.read_bytes())
+    with pytest.raises(ConfigurationError, match="validity window exceeds"):
+        verify_joint_evidence(run, payload, trust_policy_path=drifted)
+
+
+def test_idempotent_offline_reverification_of_unexpired_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same unexpired bundle verified twice at the same instant is
+    idempotent; once its validity window has passed it must never be
+    re-PASSed."""
+    run, payload, keys = _signed(tmp_path)
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    clock = datetime.now(UTC)
+    first = verify_joint_evidence(run, payload, trust_policy_path=policy, now=clock)
+    second = verify_joint_evidence(run, payload, trust_policy_path=policy, now=clock)
+    assert first.passed is True
+    assert first.to_dict() == second.to_dict()
+    valid_until = datetime.fromisoformat(
+        str(payload["evidence_valid_until"]).replace("Z", "+00:00")
+    )
+    expired = verify_joint_evidence(
+        run,
+        payload,
+        trust_policy_path=policy,
+        now=valid_until + timedelta(seconds=1),
+    )
+    assert expired.passed is False
+    assert "evidence_freshness" in expired.blockers
+
+
+# ---------------------------------------------------------------------------
+# P34.7 Integration Review-Fix Round 2 (P2): certificate exact-expiry boundary
+# ---------------------------------------------------------------------------
+
+
+def test_certificate_expires_exactly_at_now_is_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Boundary: the documented window is valid_from <= now < valid_until, so
+    valid_until == now must fail closed (the certificate is already expired);
+    one second earlier the same certificate still proves current posture."""
+    exact = {
+        "public_fingerprint": _digest(b"cert"),
+        "issuer": _digest(b"issuer"),
+        "san": "workload.gateway.omnibase",
+        "valid_from": "2020-01-01T00:00:00Z",
+        "valid_until": "2030-01-01T01:01:00Z",
+        "revoked": False,
+    }
+    run, payload, keys = _signed(
+        tmp_path,
+        gateway_certificate=exact,
+        run_started_at="2030-01-01T00:00:00Z",
+        run_completed_at="2030-01-01T01:00:00Z",
+        evidence_issued_at="2030-01-01T01:01:00Z",
+        evidence_valid_until="2030-01-02T00:00:00Z",
+    )
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    boundary = datetime(2030, 1, 1, 1, 1, tzinfo=UTC)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy, now=boundary)
+    assert report.passed is False
+    assert "certificate_posture" in report.blockers
+    assert report.safety["certificate_posture"] == "not_proven"
+    before = boundary - timedelta(seconds=1)
+    ok = verify_joint_evidence(run, payload, trust_policy_path=policy, now=before)
+    assert ok.safety["certificate_posture"] == "verified"
+
+
+def test_certificate_valid_from_exactly_now_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Boundary: valid_from == now is an allowed state (valid_from <= now);
+    the certificate proves current posture at the exact first valid instant."""
+    exact = {
+        "public_fingerprint": _digest(b"cert"),
+        "issuer": _digest(b"issuer"),
+        "san": "workload.gateway.omnibase",
+        "valid_from": "2030-01-01T01:01:00Z",
+        "valid_until": "2099-01-01T00:00:00Z",
+        "revoked": False,
+    }
+    run, payload, keys = _signed(
+        tmp_path,
+        gateway_certificate=exact,
+        run_started_at="2030-01-01T00:00:00Z",
+        run_completed_at="2030-01-01T01:00:00Z",
+        evidence_issued_at="2030-01-01T01:01:00Z",
+        evidence_valid_until="2030-01-02T00:00:00Z",
+    )
+    policy = _approved_policy(tmp_path, run, payload, keys)
+    _approve_in_process(monkeypatch, policy)
+    boundary = datetime(2030, 1, 1, 1, 1, tzinfo=UTC)
+    report = verify_joint_evidence(run, payload, trust_policy_path=policy, now=boundary)
+    assert report.passed is True
+    assert report.safety["certificate_posture"] == "verified"

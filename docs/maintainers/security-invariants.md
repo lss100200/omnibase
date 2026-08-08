@@ -1051,9 +1051,13 @@ P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑�
 
 evidence seal 的 canonical binding 必须覆盖 schema/schema_version、environment、disposable、完整 provenance（repository/source_commit/source_tree/dirty）以及验证链派生的全部当前顶层安全姿态（signature_authenticity、artifact_provenance、command_semantics、certificate_posture、replay_posture、runtime_posture、production_runtime_inactive、hostile_code_not_executed、root_env_not_accessed、business_database_not_accessed、business_database_not_migrated、attack_results、cleanup_complete）；外层字段的任何改写（environment `staging`→`production`、`disposable` `true`→`false`、`dirty` `true`→`false` 等）都会使重算 binding 与 recorded digest/签名不符而失败。
 
-policy 的七个 producer 角色（六个组件 + sealer）公钥必须全部唯一，至少 sealer 必须与所有 producer 不同；重复公钥在 policy 解析时 fail-closed。gateway 证书必须满足 `valid_from <= now < valid_until`；未来证书与过期证书同样被拒绝，issuer/SAN/最大有效期/吊销/replay 检查保持强制。
+policy 的七个 producer 角色（六个组件 + sealer）公钥必须全部唯一，至少 sealer 必须与所有 producer 不同；重复公钥在 policy 解析时 fail-closed。gateway 证书必须满足 `valid_from <= now < valid_until`；`valid_until == now` 已过期（`valid_until <= now` 拒绝），`valid_from == now` 允许；issuer/SAN/最大有效期/吊销/replay 检查保持强制。
 
-Integration R1（2026-08-08）：本不变量随 P34.7 Integration R1 移植到最新 main-derived engineering branch（`codex/p34-7-joint-gate-integration-r1`，base = PR #18 merge commit `dfd4b20`）。这只是 Gate 代码进入统一主线：`joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集，P34.7 仍 `blocked/not_proven`，production activation 仍关闭，migration 0013 未创建，三个 Phase 5 Feature Gates 保持 false；本不变量的每一条强制执行要求不因移植而放宽。
+Git source provenance 必须绑定显式 object format（闭集 `sha1 | sha256`）：`provenance.git_object_format`、trust-policy `source_seal.git_object_format` 与每个 component evidence `git_object_format` 必须一致；`sha1` 只接受 40 位小写十六进制、`sha256` 只接受 64 位小写十六进制；commit/tree 保留原始 Git OID，不得自行二次 SHA-256；source/artifact manifest 继续使用原始字节 SHA-256，不得弱化。未知 format、长度不匹配、大小写错误、provenance/policy/component/seal format drift 全部 fail-closed。
+
+Evidence 必须绑定冻结的有效期窗口：`run_started_at <= run_completed_at <= evidence_issued_at < evidence_valid_until`；每条 command receipt 与 posture/attack/cleanup 时间戳必须位于 run window 内；`now` 必须满足 `evidence_issued_at <= now < evidence_valid_until`；evidence age 与窗口长度均不得超过 trust policy 的 bounded `max_evidence_age_seconds`。验证只允许在单次调用内读取一次时钟（`verify_joint_evidence` 的 `now` clock seam）；四个时间字段与 object format 必须进入 evidence seal canonical binding；外层时间字段改写不重签、跨窗口 receipt、过期/未来 issued/超长窗口 bundle、policy max-age drift 全部拒绝；同一未过期 bundle 可幂等离线复验，过期 bundle 永不重判 PASS（`evidence_freshness` 变 blocker）。seal 绑定的 posture 以签发时刻时钟推导，保证复验不使有效 seal 失效。
+
+Integration R1（2026-08-08）：本不变量随 P34.7 Integration R1 移植到最新 main-derived engineering branch（`codex/p34-7-joint-gate-integration-r1`，base = PR #18 merge commit `dfd4b20`）。这只是 Gate 代码进入统一主线：`joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集，P34.7 仍 `blocked/not_proven`，production activation 仍关闭，migration 0013 未创建，三个 Phase 5 Feature Gates 保持 false；本不变量的每一条强制执行要求不因移植而放宽。Review-Fix Round 2（2026-08-08）在此基础上关闭 object format、freshness window 与证书精确过期边界三个发现，本段前四段即为该轮新增的强制执行要求；`_APPROVED_TRUST_POLICY_SHA256` 仍为空，P34.7 仍 `blocked/not_proven`。
 
 **允许的改法**
 

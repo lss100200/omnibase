@@ -28,7 +28,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -197,12 +197,23 @@ def _sign_seal(
     repository: str,
     commit: str,
     tree: str,
+    git_object_format: str,
     keys: dict[str, dict[str, str]] | None,
     forged_signatures: bool,
+    max_evidence_age_seconds: int = 7 * 86400,
 ) -> None:
     """Sign a seal-consistent binding over the current bundle using the
     verifier's own canonical builder."""
-    self_policy = _self_policy(run, payload, repository, commit, tree, keys)
+    self_policy = _self_policy(
+        run,
+        payload,
+        repository,
+        commit,
+        tree,
+        git_object_format,
+        keys,
+        max_evidence_age_seconds,
+    )
     binding = compute_seal_binding(run, payload, self_policy)
     binding_bytes = _canonical(binding)
     seal_sig = None
@@ -227,7 +238,9 @@ def _self_policy(
     repository: str,
     commit: str,
     tree: str,
+    git_object_format: str,
     keys: dict[str, dict[str, str]] | None,
+    max_evidence_age_seconds: int = 7 * 86400,
 ) -> dict[str, object]:
     """Build the trust-policy object that is fully consistent with the bundle
     (receipt executables/argv and the gateway certificate), so the fabricated
@@ -249,6 +262,7 @@ def _self_policy(
         "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in ROLES},
         "source_seal": {
             "repository": repository,
+            "git_object_format": git_object_format,
             "approved_commits": [commit],
             "approved_trees": [tree],
         },
@@ -260,8 +274,41 @@ def _self_policy(
             "san_suffix": ".omnibase",
             "validity_seconds": 100 * 365 * 86400,
         },
+        "max_evidence_age_seconds": max_evidence_age_seconds,
         "migration_head": "0012",
     }
+
+
+def _iso_utc(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _default_run_window(
+    *,
+    run_started_at: str | None,
+    run_completed_at: str | None,
+    evidence_issued_at: str | None,
+    evidence_valid_until: str | None,
+) -> tuple[str, str, str, str]:
+    """Compute the frozen validity window.  By default the window is generated
+    relative to the forge-time wall clock so a freshly fabricated bundle is
+    always fresh (never expired) when verified and its length stays inside the
+    default policy maximum (7 days); callers may override any instant for
+    boundary tests."""
+    base = datetime.now(UTC).replace(microsecond=0)
+    run_started = _iso_utc(base - timedelta(hours=2))
+    run_completed = _iso_utc(base - timedelta(hours=1))
+    issued_at = _iso_utc(base - timedelta(minutes=59))
+    valid_until = _iso_utc(base + timedelta(days=2))
+    if run_started_at is not None:
+        run_started = run_started_at
+    if run_completed_at is not None:
+        run_completed = run_completed_at
+    if evidence_issued_at is not None:
+        issued_at = evidence_issued_at
+    if evidence_valid_until is not None:
+        valid_until = evidence_valid_until
+    return run_started, run_completed, issued_at, valid_until
 
 
 def forge_bundle(
@@ -270,22 +317,36 @@ def forge_bundle(
     run_id: str = "forge-run-0001",
     source_commit: str | None = None,
     source_tree: str | None = None,
+    git_object_format: str = "sha1",
     repository: str = "https://github.com/lss100200/omnibase.git",
     keys: dict[str, dict[str, str]] | None = None,
     forged_signatures: bool = False,
     executable_content: dict[str, bytes] | None = None,
     gateway_certificate: dict[str, object] | None = None,
+    run_started_at: str | None = None,
+    run_completed_at: str | None = None,
+    evidence_issued_at: str | None = None,
+    evidence_valid_until: str | None = None,
+    max_evidence_age_seconds: int = 7 * 86400,
 ) -> dict[str, object]:
-    """Fabricate a complete P34.7 bundle; returns the evidence payload."""
+    """Fabricate a complete P34.7 bundle; returns the evidence payload.
+
+    ``git_object_format`` defaults to ``sha1`` (40-hex OIDs) matching the
+    current Git repository; ``sha256`` selects 64-hex OIDs.
+    """
     run = output_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
-    commit = source_commit or ("a" * 64)
-    tree = source_tree or ("b" * 64)
+    if git_object_format not in {"sha1", "sha256"}:
+        raise SystemExit("forge: git_object_format must be 'sha1' or 'sha256'")
+    commit = source_commit or ("a" * 40 if git_object_format == "sha1" else "a" * 64)
+    tree = source_tree or ("b" * 40 if git_object_format == "sha1" else "b" * 64)
 
-    def now_iso() -> str:
-        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-    started_at = "2026-08-07T00:00:00Z"
+    run_started, run_completed, issued_at, valid_until = _default_run_window(
+        run_started_at=run_started_at,
+        run_completed_at=run_completed_at,
+        evidence_issued_at=evidence_issued_at,
+        evidence_valid_until=evidence_valid_until,
+    )
 
     def manifest(name: str, content: bytes) -> dict[str, object]:
         entry = _write_raw(run, run / f"{name}.txt", content)
@@ -294,6 +355,14 @@ def forge_bundle(
         return {"raw_sha256": raw, "files": files}
 
     source_manifest = manifest("source", b"forged-source-bytes")
+
+    # All evidence timestamps are derived from the run window so receipts,
+    # posture, attack and cleanup evidence lie inside [run_started_at,
+    # run_completed_at] and the bundle is fresh at forge time.
+    run_started_instant = datetime.fromisoformat(run_started.replace("Z", "+00:00"))
+    posture_measured_at = _iso_utc(run_started_instant + timedelta(minutes=1))
+    attack_executed_at = _iso_utc(run_started_instant + timedelta(minutes=10))
+    cleanup_completed_at = _iso_utc(run_started_instant + timedelta(minutes=59))
 
     # Executable files are materialized FIRST so the approved artifact
     # manifest can bind every executable path/size/sha256 to real bytes.
@@ -307,6 +376,8 @@ def forge_bundle(
         exe_ref = executable_refs[name]
         stdout_ref = _write_raw(run, run / f"out/{name}.out", f"stdout-{name}".encode())
         stderr_ref = _write_raw(run, run / f"out/{name}.err", b"")
+        started_at = _iso_utc(run_started_instant + timedelta(minutes=index * 10))
+        ended_at = _iso_utc(run_started_instant + timedelta(minutes=index * 10, seconds=30))
         receipt = {
             "schema": RECEIPT_SCHEMA,
             "command": name,
@@ -317,8 +388,8 @@ def forge_bundle(
             "argv": [f"/run/omnibase/bin/{name}", "--probe"],
             "working_directory": "/run/omnibase",
             "env_names": ["PATH", "OMNIBASE_RUN_ID"],
-            "started_at": f"2026-08-07T00:0{index}:00Z",
-            "ended_at": f"2026-08-07T00:0{index}:30Z",
+            "started_at": started_at,
+            "ended_at": ended_at,
             "timeout_seconds": 60,
             "exit_code": 0,
             "stdout": stdout_ref,
@@ -346,7 +417,7 @@ def forge_bundle(
         "producer": "core",
         "run_id": run_id,
         "measured": True,
-        "measured_at": started_at,
+        "measured_at": posture_measured_at,
         "measurement_source": "process_config",
         "production_runtime_activated": False,
         "hostile_code_executed": False,
@@ -371,13 +442,13 @@ def forge_bundle(
         "schema": ATTACK_SCHEMA,
         "producer": "runner",
         "run_id": run_id,
-        "executed_at": started_at,
+        "executed_at": attack_executed_at,
         "results": {attack_name: "rejected" for attack_name in REQUIRED_ATTACKS},
         "inventory": [
             {
                 "attack_id": attack_name,
                 "outcome": "rejected",
-                "attempted_at": started_at,
+                "attempted_at": attack_executed_at,
                 "evidence_digest": _digest(attack_name.encode()),
             }
             for attack_name in REQUIRED_ATTACKS
@@ -399,7 +470,7 @@ def forge_bundle(
         "schema": CLEANUP_SCHEMA,
         "producer": "sealer",
         "run_id": run_id,
-        "completed_at": "2026-08-07T00:06:00Z",
+        "completed_at": cleanup_completed_at,
         "counts": {key: 0 for key in REQUIRED_CLEANUP_KEYS},
         "inventory": [],
     }
@@ -437,6 +508,7 @@ def forge_bundle(
             "schema": COMPONENT_SCHEMA,
             "producer": name,
             "run_id": run_id,
+            "git_object_format": git_object_format,
             "source_commit": commit,
             "source_tree": tree,
             "source_manifest_sha256": source_manifest["raw_sha256"],
@@ -481,9 +553,14 @@ def forge_bundle(
         "schema": SCHEMA,
         "schema_version": "2",
         "run_id": run_id,
+        "run_started_at": run_started,
+        "run_completed_at": run_completed,
+        "evidence_issued_at": issued_at,
+        "evidence_valid_until": valid_until,
         "environment": "production",
         "disposable": False,
         "provenance": {
+            "git_object_format": git_object_format,
             "source_commit": commit,
             "source_tree": tree,
             "dirty": False,
@@ -508,7 +585,17 @@ def forge_bundle(
     # fabricate a seal-consistent binding with the verifier's own builder so
     # the bundle is internally coherent (and still never passes without an
     # approved external trust policy).
-    _sign_seal(run, payload, repository, commit, tree, keys, forged_signatures)
+    _sign_seal(
+        run,
+        payload,
+        repository,
+        commit,
+        tree,
+        git_object_format,
+        keys,
+        forged_signatures,
+        max_evidence_age_seconds,
+    )
     _write_canonical(run, run / "evidence.json", payload)
     return payload
 

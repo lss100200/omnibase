@@ -11,28 +11,28 @@
     "formal_state": "blocked/not_proven",
     "decision": {
       "path": "docs/evidence/p34-7/production-readiness-decision.md",
-      "sha256": "5bc73a3a749701aace813c33470fe91ea3a2ac3b1ac327c33e5c8d2d2ea3b862"
+      "sha256": "4a24967434a67604fcb787e34e26a3e74a1e8e7e78bafd32265e093675f23672"
     }
   },
   "p5_0": {
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "27fc43582e81beb56f409f39dabab89bcbd5753922360aa3a81d80fc2bc35da9"
+      "sha256": "bcdcbeb1a9fec370bd518df3cfd990e800b1d16f2889da1a5a99ac114822512f"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "2323cda6169caf587354c4ec62fc5b5c7c7f2ee8ebd6c3bf9cc822f41411bfc6"
+      "sha256": "ef3ad69c0a9a0ab87d8630c82106d62a44eafa9a1379e58f526f8ed937ea536f"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "b79dee87c6c5e2672614360eef2e4f437bd59e8911ecede0a86b1fd099252768"
+      "sha256": "2ae957832321cd24ab461c6efdcc2f15e61e13cacf27993061b8690182dca87a"
     }
   },
   "source": {
@@ -352,7 +352,7 @@
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "7a2949feb9744602cf819d20734523a607919cdab60d486585343accbafe93bf"
+      "sha256": "bb591baa6bfaf25fd49a1557e3048567192101f2be991264be3016b28f96f7be"
     }
   ],
   "openapi_snapshot": {

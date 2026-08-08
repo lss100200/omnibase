@@ -41,7 +41,7 @@ import json
 import os
 import stat
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -53,6 +53,7 @@ from omnibase.production.composition import ConfigurationError
 _SCHEMA = "omnibase.p34-7.hardened-joint-evidence.v2"
 _SCHEMA_VERSIONS = frozenset({"2"})
 _HEX = set("0123456789abcdef")
+_GIT_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
 _REQUIRED_COMMANDS = (
     "core_runner",
     "runner_broker",
@@ -187,6 +188,32 @@ def _sha256(value: object, name: str) -> str:
     return value
 
 
+def _git_oid(value: object, name: str, object_format: str) -> str:
+    """Strictly parse a Git object identifier in the declared object format.
+
+    ``sha1`` accepts exactly 40 lowercase hex characters, ``sha256`` exactly
+    64.  The OID is preserved as the original Git identifier -- it is never
+    re-hashed or transformed -- and any unknown format, wrong length, non-hex
+    or uppercase character fails closed.  The declared format must itself be a
+    member of the closed set :data:`_GIT_OBJECT_FORMATS`."""
+    if object_format not in _GIT_OBJECT_FORMATS:
+        raise ConfigurationError(f"{name} has an unknown git object format")
+    expected = 40 if object_format == "sha1" else 64
+    text = _string(value, name)
+    if len(text) != expected or any(c not in _HEX for c in text):
+        raise ConfigurationError(
+            f"{name} must be a {expected}-hex lowercase {object_format.upper()} OID"
+        )
+    return text
+
+
+def _utc_now() -> datetime:
+    """The single, testable UTC clock seam.  Every ``now`` comparison inside a
+    verification reads the same instant passed down from the entry point; no
+    verification may consult the wall clock more than once."""
+    return datetime.now(timezone.utc)  # noqa: UP017
+
+
 def _canonical(value: object) -> bytes:
     return json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
@@ -276,6 +303,23 @@ def _read_canonical_json(path: Path, name: str) -> tuple[dict[str, Any], bytes]:
     return parsed, raw
 
 
+@dataclass(frozen=True, slots=True)
+class _RunWindow:
+    """The frozen evidence validity window of one run.
+
+    ``started_at <= completed_at <= issued_at < valid_until`` is enforced
+    structurally; every command receipt and every posture/attack/cleanup
+    timestamp must lie inside ``[started_at, completed_at]``; ``now`` must lie
+    inside ``[issued_at, valid_until)`` and its age must not exceed the policy
+    maximum.  The fields enter the evidence-seal canonical binding so any outer
+    rewrite without re-signing fails."""
+
+    started_at: datetime
+    completed_at: datetime
+    issued_at: datetime
+    valid_until: datetime
+
+
 def _file_ref(root: Path, value: object, name: str) -> Path:
     ref = _object(value, name)
     _keys(ref, {"path", "size", "sha256"}, name)
@@ -329,11 +373,13 @@ def _signed_file(
 @dataclass(frozen=True, slots=True)
 class TrustPolicy:
     """Externally installed trust anchor: allowlisted producer keys, pinned
-    source seal, approved artifact manifest, exact command templates and the
+    source seal (including the Git object format), approved artifact manifest,
+    exact command templates, the bounded evidence freshness window and the
     gateway certificate posture pins."""
 
     producers: dict[str, str]
     repository: str
+    git_object_format: str
     approved_commits: frozenset[str]
     approved_trees: frozenset[str]
     executables: dict[str, tuple[str, frozenset[str]]]
@@ -342,6 +388,7 @@ class TrustPolicy:
     gateway_issuer: str
     gateway_san_suffix: str
     gateway_validity_seconds: int
+    max_evidence_age_seconds: int
     migration_head: str
     schema_version: str
 
@@ -362,6 +409,7 @@ def _parse_trust_policy(value: object) -> TrustPolicy:
             "commands",
             "allowed_env_names",
             "gateway",
+            "max_evidence_age_seconds",
             "migration_head",
         },
         "trust policy",
@@ -371,17 +419,23 @@ def _parse_trust_policy(value: object) -> TrustPolicy:
     if _string(data.get("schema_version"), "trust policy.schema_version") not in _SCHEMA_VERSIONS:
         raise ConfigurationError("trust policy must target the hardened joint schema v2")
     producers = _parse_policy_producers(data)
-    repository, commits, trees = _parse_policy_source_seal(data)
+    repository, object_format, commits, trees = _parse_policy_source_seal(data)
     executables = _parse_policy_executables(data)
     command_argv = _parse_policy_commands(data)
     env_names = _parse_policy_env_names(data)
     issuer, san_suffix, validity_seconds = _parse_policy_gateway(data)
+    max_age = _int(data.get("max_evidence_age_seconds"), "trust policy.max_evidence_age_seconds")
+    if max_age <= 0 or max_age > 365 * 86400:
+        raise ConfigurationError(
+            "trust policy.max_evidence_age_seconds must be a bounded positive window"
+        )
     migration_head = _string(data.get("migration_head"), "trust policy.migration_head")
     if migration_head != "0012":
         raise ConfigurationError("trust policy.migration_head must remain 0012")
     return TrustPolicy(
         producers=producers,
         repository=repository,
+        git_object_format=object_format,
         approved_commits=commits,
         approved_trees=trees,
         executables=executables,
@@ -390,6 +444,7 @@ def _parse_trust_policy(value: object) -> TrustPolicy:
         gateway_issuer=issuer,
         gateway_san_suffix=san_suffix,
         gateway_validity_seconds=validity_seconds,
+        max_evidence_age_seconds=max_age,
         migration_head=migration_head,
         schema_version="2",
     )
@@ -423,24 +478,34 @@ def _parse_policy_producers(data: dict[str, Any]) -> dict[str, str]:
     return producers
 
 
-def _parse_policy_source_seal(data: dict[str, Any]) -> tuple[str, frozenset[str], frozenset[str]]:
+def _parse_policy_source_seal(
+    data: dict[str, Any],
+) -> tuple[str, str, frozenset[str], frozenset[str]]:
     source = _object(data.get("source_seal"), "trust policy.source_seal")
     _keys(
         source,
-        {"repository", "approved_commits", "approved_trees"},
+        {"repository", "git_object_format", "approved_commits", "approved_trees"},
         "trust policy.source_seal",
     )
     repository = _string(source.get("repository"), "trust policy.source_seal.repository")
     if not repository.startswith(("https://github.com/", "git@github.com:")):
         raise ConfigurationError("trust policy.source_seal.repository must be a GitHub remote")
+    object_format = _string(
+        source.get("git_object_format"), "trust policy.source_seal.git_object_format"
+    )
+    if object_format not in _GIT_OBJECT_FORMATS:
+        raise ConfigurationError(
+            "trust policy.source_seal.git_object_format must be 'sha1' or 'sha256'"
+        )
     commits = _list(source.get("approved_commits"), "trust policy.source_seal.approved_commits")
     trees = _list(source.get("approved_trees"), "trust policy.source_seal.approved_trees")
     for item in commits:
-        _sha256(item, "trust policy.source_seal.approved_commits[]")
+        _git_oid(item, "trust policy.source_seal.approved_commits[]", object_format)
     for item in trees:
-        _sha256(item, "trust policy.source_seal.approved_trees[]")
+        _git_oid(item, "trust policy.source_seal.approved_trees[]", object_format)
     return (
         repository,
+        object_format,
         frozenset(c for c in commits if isinstance(c, str)),
         frozenset(t for t in trees if isinstance(t, str)),
     )
@@ -654,7 +719,9 @@ def _verify_manifest(
 # ---------------------------------------------------------------------------
 
 
-def _verify_run_envelope(data: dict[str, Any]) -> tuple[str, str, str]:
+def _verify_run_envelope(
+    data: dict[str, Any],
+) -> tuple[str, str, str, str, _RunWindow]:
     if data.get("schema") != _SCHEMA:
         raise ConfigurationError("joint evidence must use the hardened joint schema v2")
     schema_version = _string(data.get("schema_version"), "schema_version")
@@ -670,17 +737,35 @@ def _verify_run_envelope(data: dict[str, Any]) -> tuple[str, str, str]:
     provenance = _object(data.get("provenance"), "provenance")
     _keys(
         provenance,
-        {"source_commit", "source_tree", "dirty", "repository"},
+        {"git_object_format", "source_commit", "source_tree", "dirty", "repository"},
         "provenance",
     )
-    commit = _sha256(provenance.get("source_commit"), "provenance.source_commit")
-    tree = _sha256(provenance.get("source_tree"), "provenance.source_tree")
+    object_format = _string(provenance.get("git_object_format"), "provenance.git_object_format")
+    if object_format not in _GIT_OBJECT_FORMATS:
+        raise ConfigurationError("provenance.git_object_format must be 'sha1' or 'sha256'")
+    commit = _git_oid(provenance.get("source_commit"), "provenance.source_commit", object_format)
+    tree = _git_oid(provenance.get("source_tree"), "provenance.source_tree", object_format)
     if _bool(provenance.get("dirty"), "provenance.dirty") is not False:
         raise ConfigurationError("production evidence requires a clean checkout")
     repository = _string(provenance.get("repository"), "provenance.repository")
     if not repository.startswith(("https://github.com/", "git@github.com:")):
         raise ConfigurationError("provenance.repository must be an explicit GitHub remote")
-    return run_id, commit, tree
+    run_started_at = _utc_instant(data.get("run_started_at"), "run_started_at")
+    run_completed_at = _utc_instant(data.get("run_completed_at"), "run_completed_at")
+    evidence_issued_at = _utc_instant(data.get("evidence_issued_at"), "evidence_issued_at")
+    evidence_valid_until = _utc_instant(data.get("evidence_valid_until"), "evidence_valid_until")
+    if not (run_started_at <= run_completed_at <= evidence_issued_at < evidence_valid_until):
+        raise ConfigurationError(
+            "evidence window must satisfy run_started_at <= run_completed_at "
+            "<= evidence_issued_at < evidence_valid_until"
+        )
+    window = _RunWindow(
+        started_at=run_started_at,
+        completed_at=run_completed_at,
+        issued_at=evidence_issued_at,
+        valid_until=evidence_valid_until,
+    )
+    return run_id, object_format, commit, tree, window
 
 
 # ---------------------------------------------------------------------------
@@ -696,6 +781,7 @@ def _verify_receipt(
     run_id: str,
     producer: str,
     previous_end: datetime | None,
+    window: _RunWindow,
     artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[datetime, str, tuple[str, str]]:
@@ -738,7 +824,7 @@ def _verify_receipt(
         root, parsed, name, policy, artifact_files, issues
     )
     _verify_receipt_semantics(parsed, name, policy, issues)
-    ended = _verify_receipt_timing(root, parsed, name, previous_end)
+    ended = _verify_receipt_timing(root, parsed, name, previous_end, window)
     return ended, receipt_ref["sha256"], (exe_path, exe_digest)
 
 
@@ -813,7 +899,11 @@ def _verify_receipt_semantics(
 
 
 def _verify_receipt_timing(
-    root: Path, parsed: dict[str, Any], name: str, previous_end: datetime | None
+    root: Path,
+    parsed: dict[str, Any],
+    name: str,
+    previous_end: datetime | None,
+    window: _RunWindow,
 ) -> datetime:
     started = _utc_instant(parsed.get("started_at"), f"commands.{name}.receipt.started_at")
     ended = _utc_instant(parsed.get("ended_at"), f"commands.{name}.receipt.ended_at")
@@ -821,6 +911,11 @@ def _verify_receipt_timing(
         raise ConfigurationError(f"commands.{name}.receipt ended before it started")
     if previous_end is not None and started < previous_end:
         raise ConfigurationError("command chronology is inconsistent with the required order")
+    if started < window.started_at or ended > window.completed_at:
+        raise ConfigurationError(
+            f"commands.{name}.receipt must lie inside the run window "
+            "[run_started_at, run_completed_at]"
+        )
     timeout = _int(parsed.get("timeout_seconds"), f"commands.{name}.receipt.timeout_seconds")
     if timeout <= 0 or timeout > 3600:
         raise ConfigurationError(f"commands.{name}.receipt.timeout_seconds must be bounded")
@@ -837,6 +932,7 @@ def _verify_commands(
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    window: _RunWindow,
     artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
 ) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
@@ -861,6 +957,7 @@ def _verify_commands(
             run_id,
             _COMMAND_PRODUCER[name],
             previous_end,
+            window,
             artifact_files,
             issues,
         )
@@ -907,9 +1004,13 @@ def _verify_gateway_posture(
         issues.append("certificate_posture")
     if valid_from > now:
         # A certificate that is not yet valid cannot prove current posture;
-        # future certificates are rejected (valid_from <= now is required).
+        # future certificates are rejected (valid_from <= now is required and
+        # valid_from == now is an allowed boundary).
         issues.append("certificate_posture")
-    if valid_until < now:
+    if valid_until <= now:
+        # The documented boundary is valid_from <= now < valid_until: a
+        # certificate that expires exactly at ``now`` is already expired and
+        # cannot prove current posture (valid_until == now fails closed).
         issues.append("certificate_posture")
     if (
         _bool(cert.get("revoked"), "components.gateway.evidence.gateway.certificate.revoked")
@@ -934,6 +1035,7 @@ def _verify_component(
     refs: dict[str, Any],
     policy: TrustPolicy,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
     source_hash: str,
@@ -945,6 +1047,7 @@ def _verify_component(
     receipt_executables: dict[str, tuple[str, str]],
     artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
+    now: datetime,
 ) -> tuple[str, str]:
     evidence_ref = _object(refs.get("evidence"), f"components.{name}.evidence")
     parsed, sig_status = _signed_file(
@@ -962,6 +1065,7 @@ def _verify_component(
             "schema",
             "producer",
             "run_id",
+            "git_object_format",
             "source_commit",
             "source_tree",
             "source_manifest_sha256",
@@ -977,14 +1081,16 @@ def _verify_component(
         },
         f"components.{name}.evidence",
     )
-    _verify_component_envelope(parsed, name, run_id, commit, tree, source_hash, artifact_hash)
+    _verify_component_envelope(
+        parsed, name, run_id, object_format, commit, tree, source_hash, artifact_hash
+    )
     identity_digest = _verify_component_identity_peers(parsed, name)
     _verify_component_receipts(parsed, name, receipt_digests)
     _verify_component_executables(parsed, name, policy, receipt_executables, artifact_files, issues)
     _verify_component_bindings(parsed, name, posture_digest, attack_digest, cleanup_digest)
     _verify_component_host(parsed, name)
     if name == "gateway":
-        _verify_gateway_posture(parsed, policy, datetime.now(timezone.utc), issues)  # noqa: UP017
+        _verify_gateway_posture(parsed, policy, now, issues)
     return str(evidence_ref["sha256"]), identity_digest
 
 
@@ -992,6 +1098,7 @@ def _verify_component_envelope(
     parsed: dict[str, Any],
     name: str,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
     source_hash: str,
@@ -1003,9 +1110,34 @@ def _verify_component_envelope(
         raise ConfigurationError(f"components.{name}.evidence producer must equal the component")
     if _string(parsed.get("run_id"), f"components.{name}.evidence.run_id") != run_id:
         raise ConfigurationError(f"components.{name}.evidence bound to a different run_id")
-    if _sha256(parsed.get("source_commit"), f"components.{name}.evidence.source_commit") != commit:
+    component_format = _string(
+        parsed.get("git_object_format"), f"components.{name}.evidence.git_object_format"
+    )
+    if component_format not in _GIT_OBJECT_FORMATS:
+        raise ConfigurationError(
+            f"components.{name}.evidence.git_object_format must be 'sha1' or 'sha256'"
+        )
+    if component_format != object_format:
+        raise ConfigurationError(
+            f"components.{name}.evidence git object format must match the provenance"
+        )
+    if (
+        _git_oid(
+            parsed.get("source_commit"),
+            f"components.{name}.evidence.source_commit",
+            component_format,
+        )
+        != commit
+    ):
         raise ConfigurationError(f"components.{name}.evidence source_commit drifted")
-    if _sha256(parsed.get("source_tree"), f"components.{name}.evidence.source_tree") != tree:
+    if (
+        _git_oid(
+            parsed.get("source_tree"),
+            f"components.{name}.evidence.source_tree",
+            component_format,
+        )
+        != tree
+    ):
         raise ConfigurationError(f"components.{name}.evidence source_tree drifted")
     if (
         _sha256(
@@ -1138,6 +1270,7 @@ def _verify_components(
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
     source_hash: str,
@@ -1149,6 +1282,7 @@ def _verify_components(
     receipt_executables: dict[str, tuple[str, str]],
     artifact_files: dict[str, tuple[int, str]],
     issues: list[str],
+    now: datetime,
 ) -> dict[str, str]:
     components = _object(value, "components")
     if set(components) != set(_REQUIRED_COMPONENTS):
@@ -1166,6 +1300,7 @@ def _verify_components(
             refs,
             policy,
             run_id,
+            object_format,
             commit,
             tree,
             source_hash,
@@ -1177,6 +1312,7 @@ def _verify_components(
             receipt_executables,
             artifact_files,
             issues,
+            now,
         )
         identities[name] = identity_digest
         evidence_digests[name] = evidence_digest
@@ -1221,12 +1357,21 @@ def _verify_repository_invariants(data: dict[str, Any]) -> tuple[dict[str, str],
     return safety, gates
 
 
+def _require_inside_run_window(instant: datetime, name: str, window: _RunWindow) -> None:
+    """Structural guard: an evidence timestamp must lie inside the frozen run
+    window ``[run_started_at, run_completed_at]`` (inclusive)."""
+    if not (window.started_at <= instant <= window.completed_at):
+        raise ConfigurationError(f"{name} must lie inside the run window")
+
+
 def _verify_posture(
     root: Path,
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    window: _RunWindow,
     issues: list[str],
+    now: datetime,
 ) -> tuple[str, dict[str, str]]:
     measurements = _object(value, "measurements")
     _keys(measurements, {"posture"}, "measurements")
@@ -1270,6 +1415,7 @@ def _verify_posture(
     measured_at = _utc_instant(
         parsed.get("measured_at"), "measurements.posture.evidence.measured_at"
     )
+    _require_inside_run_window(measured_at, "measurements.posture.evidence.measured_at", window)
     source = _string(
         parsed.get("measurement_source"), "measurements.posture.evidence.measurement_source"
     )
@@ -1297,7 +1443,7 @@ def _verify_posture(
         parsed.get("business_database_migrated"),
         "measurements.posture.evidence.business_database_migrated",
     )
-    trusted = measured and sig_status == "verified" and measured_at <= datetime.now(timezone.utc)  # noqa: UP017
+    trusted = measured and sig_status == "verified" and measured_at <= now
     safety: dict[str, str] = {}
     safety["runtime_posture"] = f"measured:{source}" if trusted else "not_proven"
     safety["production_runtime_inactive"] = (
@@ -1319,6 +1465,7 @@ def _verify_attack_matrix(
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    window: _RunWindow,
     issues: list[str],
 ) -> tuple[str, dict[str, str], tuple[str, ...]]:
     attack = _object(value, "attack_matrix")
@@ -1344,7 +1491,8 @@ def _verify_attack_matrix(
         raise ConfigurationError("attack_matrix producer must be runner")
     if _string(parsed.get("run_id"), "attack_matrix.evidence.run_id") != run_id:
         raise ConfigurationError("attack_matrix is bound to a different run_id")
-    _utc_instant(parsed.get("executed_at"), "attack_matrix.evidence.executed_at")
+    executed_at = _utc_instant(parsed.get("executed_at"), "attack_matrix.evidence.executed_at")
+    _require_inside_run_window(executed_at, "attack_matrix.evidence.executed_at", window)
     results = _object(parsed.get("results"), "attack_matrix.evidence.results")
     if set(results) != set(_REQUIRED_ATTACKS):
         raise ConfigurationError(
@@ -1369,8 +1517,11 @@ def _verify_attack_matrix(
         outcome = _string(
             entry.get("outcome"), f"attack_matrix.evidence.inventory[{index}].outcome"
         )
-        _utc_instant(
+        attempted_at = _utc_instant(
             entry.get("attempted_at"), f"attack_matrix.evidence.inventory[{index}].attempted_at"
+        )
+        _require_inside_run_window(
+            attempted_at, f"attack_matrix.evidence.inventory[{index}].attempted_at", window
         )
         _sha256(
             entry.get("evidence_digest"),
@@ -1397,6 +1548,7 @@ def _verify_cleanup(
     value: object,
     policy: TrustPolicy,
     run_id: str,
+    window: _RunWindow,
     issues: list[str],
 ) -> tuple[str, dict[str, str], tuple[str, ...]]:
     cleanup = _object(value, "cleanup")
@@ -1422,7 +1574,8 @@ def _verify_cleanup(
         raise ConfigurationError("cleanup producer must be sealer")
     if _string(parsed.get("run_id"), "cleanup.evidence.run_id") != run_id:
         raise ConfigurationError("cleanup is bound to a different run_id")
-    _utc_instant(parsed.get("completed_at"), "cleanup.evidence.completed_at")
+    completed_at = _utc_instant(parsed.get("completed_at"), "cleanup.evidence.completed_at")
+    _require_inside_run_window(completed_at, "cleanup.evidence.completed_at", window)
     counts = _object(parsed.get("counts"), "cleanup.evidence.counts")
     if set(counts) != set(_REQUIRED_CLEANUP_KEYS):
         raise ConfigurationError("cleanup.evidence.counts must contain every required class")
@@ -1435,7 +1588,12 @@ def _verify_cleanup(
         if class_name not in _REQUIRED_CLEANUP_KEYS:
             raise ConfigurationError(f"cleanup.evidence.inventory[{index}].class is unknown")
         _string(entry.get("item_id"), f"cleanup.evidence.inventory[{index}].item_id")
-        _utc_instant(entry.get("removed_at"), f"cleanup.evidence.inventory[{index}].removed_at")
+        removed_at = _utc_instant(
+            entry.get("removed_at"), f"cleanup.evidence.inventory[{index}].removed_at"
+        )
+        _require_inside_run_window(
+            removed_at, f"cleanup.evidence.inventory[{index}].removed_at", window
+        )
         tally[class_name] += 1
     blockers: list[str] = []
     for key in _REQUIRED_CLEANUP_KEYS:
@@ -1455,8 +1613,10 @@ def _verify_seal(
     data: dict[str, Any],
     policy: TrustPolicy,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
+    window: _RunWindow,
     source_hash: str,
     artifact_hash: str,
     receipt_digests: dict[str, str],
@@ -1475,8 +1635,10 @@ def _verify_seal(
     binding = _seal_binding(
         data,
         run_id,
+        object_format,
         commit,
         tree,
+        window,
         source_hash,
         artifact_hash,
         receipt_digests,
@@ -1505,8 +1667,10 @@ def _verify_seal(
 def _seal_binding(
     data: dict[str, Any],
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
+    window: _RunWindow,
     source_hash: str,
     artifact_hash: str,
     receipt_digests: dict[str, str],
@@ -1520,12 +1684,15 @@ def _seal_binding(
     """The canonical evidence-seal binding.
 
     It covers schema/schema_version, environment, disposable, the full
-    provenance (repository, source_commit, source_tree, dirty) and every
+    provenance (repository, git object format, source_commit, source_tree,
+    dirty), the complete evidence validity window (run_started_at,
+    run_completed_at, evidence_issued_at, evidence_valid_until) and every
     current top-level security posture derived from the verified chain, in
     addition to the digest chain.  Because the verifier recomputes this binding
     from the verified data, any outer-field rewrite (environment,
-    disposable, provenance, safety-relevant evidence) changes the recomputed
-    bytes and fails the recorded binding digest / detached signature.
+    disposable, provenance, window, safety-relevant evidence) changes the
+    recomputed bytes and fails the recorded binding digest / detached
+    signature.
     """
     provenance = _object(data.get("provenance"), "provenance")
     return {
@@ -1535,8 +1702,23 @@ def _seal_binding(
         "run_id": run_id,
         "environment": _string(data.get("environment"), "environment"),
         "disposable": _bool(data.get("disposable"), "disposable"),
+        "run_started_at": _utc_instant(data.get("run_started_at"), "run_started_at")
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "run_completed_at": _utc_instant(data.get("run_completed_at"), "run_completed_at")
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "evidence_issued_at": _utc_instant(data.get("evidence_issued_at"), "evidence_issued_at")
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "evidence_valid_until": _utc_instant(
+            data.get("evidence_valid_until"), "evidence_valid_until"
+        )
+        .isoformat()
+        .replace("+00:00", "Z"),
         "provenance": {
             "repository": _string(provenance.get("repository"), "provenance.repository"),
+            "git_object_format": object_format,
             "source_commit": commit,
             "source_tree": tree,
             "dirty": _bool(provenance.get("dirty"), "provenance.dirty"),
@@ -1562,6 +1744,10 @@ _TOP_LEVEL_KEYS = {
     "schema",
     "schema_version",
     "run_id",
+    "run_started_at",
+    "run_completed_at",
+    "evidence_issued_at",
+    "evidence_valid_until",
     "environment",
     "disposable",
     "provenance",
@@ -1586,7 +1772,7 @@ def validate_joint_evidence_contract(payload: object) -> JointGateReport:
     """
     data = _object(payload, "joint evidence contract")
     _keys(data, _TOP_LEVEL_KEYS, "joint evidence contract")
-    run_id, _commit, _tree = _verify_run_envelope(data)
+    run_id, _object_format, _commit, _tree, _window = _verify_run_envelope(data)
     return JointGateReport(
         status="blocked/not_proven",
         run_id=run_id,
@@ -1602,6 +1788,7 @@ def _verify_trust_policy(
     trust_policy_path: Path | None,
     root: Path,
     repository: str,
+    object_format: str,
 ) -> tuple[TrustPolicy | None, str, str]:
     if trust_policy_path is None:
         return None, "not_proven", "trust_policy_unavailable"
@@ -1617,6 +1804,11 @@ def _verify_trust_policy(
         raise ConfigurationError("trust policy must be located outside the evidence run directory")
     if repository != policy.repository:
         raise ConfigurationError("provenance.repository does not match the trust policy")
+    if object_format != policy.git_object_format:
+        raise ConfigurationError(
+            "trust policy git object format must match the evidence provenance "
+            "(policy/evidence object-format drift fails closed)"
+        )
     if raw_sha256 not in _APPROVED_TRUST_POLICY_SHA256:
         return policy, "not_proven", "trust_policy_not_approved"
     return policy, "verified", ""
@@ -1632,8 +1824,30 @@ def _chain_outcome_from_issues(issues: list[str]) -> _ChainOutcome:
     safety["command_semantics"] = "not_proven" if "command_semantics" in issues else "verified"
     safety["certificate_posture"] = "not_proven" if "certificate_posture" in issues else "verified"
     safety["replay_posture"] = "not_proven" if "replay_posture" in issues else "verified"
+    safety["evidence_freshness"] = "not_proven" if "evidence_freshness" in issues else "verified"
     blockers = tuple(sorted(issues))
     return _ChainOutcome(safety=safety, blockers=blockers)
+
+
+def _verify_freshness(
+    window: _RunWindow, policy: TrustPolicy, now: datetime, issues: list[str]
+) -> None:
+    """Freshness of a signed but not-yet-expired bundle.
+
+    ``now`` must satisfy ``evidence_issued_at <= now < evidence_valid_until``
+    and the evidence age must not exceed the policy maximum; otherwise the
+    bundle is stale and ``evidence_freshness`` becomes a blocker.  The validity
+    window length itself is a structural property: a window longer than the
+    policy maximum is a veto (``ConfigurationError``), never a pass."""
+    if not (window.issued_at <= now < window.valid_until):
+        issues.append("evidence_freshness")
+    if (now - window.issued_at) > timedelta(seconds=policy.max_evidence_age_seconds):
+        issues.append("evidence_freshness")
+    if (window.valid_until - window.issued_at) > timedelta(seconds=policy.max_evidence_age_seconds):
+        raise ConfigurationError(
+            "evidence validity window exceeds the trust policy maximum "
+            "(max_evidence_age_seconds)"
+        )
 
 
 def _derive_chain(
@@ -1641,12 +1855,15 @@ def _derive_chain(
     data: dict[str, Any],
     policy: TrustPolicy,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
+    window: _RunWindow,
     source_hash: str,
     artifact_hash: str,
     artifact_files: dict[str, tuple[int, str]],
     gates: dict[str, bool],
+    now: datetime,
 ) -> tuple[
     list[str],
     dict[str, str],
@@ -1666,26 +1883,33 @@ def _derive_chain(
     Returns ``(issues, receipt_digests, component_digests, posture_digest,
     attack_digest, cleanup_digest, posture_safety, attack_safety,
     cleanup_safety, pre_seal_safety, attack_blockers, cleanup_blockers)``.
-    The pre-seal safety is the full current top-level security posture the
-    evidence seal must bind."""
+    The report safety is derived at the verification ``now`` (the UTC clock
+    seam); the pre-seal safety the evidence seal must bind is derived at the
+    ISSUE-TIME clock ``window.issued_at`` instead, so the recorded binding is
+    deterministic from the evidence alone and never drifts when the same
+    bundle is later re-verified at a different instant (an expired bundle
+    keeps its valid seal and fails on ``evidence_freshness``; a certificate
+    expiring exactly at ``now`` fails on ``certificate_posture``)."""
     issues: list[str] = []
+    _verify_freshness(window, policy, now, issues)
     posture_digest, posture_safety = _verify_posture(
-        root, data.get("measurements"), policy, run_id, issues
+        root, data.get("measurements"), policy, run_id, window, issues, now
     )
     attack_digest, attack_safety, attack_blockers = _verify_attack_matrix(
-        root, data.get("attack_matrix"), policy, run_id, issues
+        root, data.get("attack_matrix"), policy, run_id, window, issues
     )
     cleanup_digest, cleanup_safety, cleanup_blockers = _verify_cleanup(
-        root, data.get("cleanup"), policy, run_id, issues
+        root, data.get("cleanup"), policy, run_id, window, issues
     )
     receipt_digests, receipt_executables = _verify_commands(
-        root, data.get("commands"), policy, run_id, artifact_files, issues
+        root, data.get("commands"), policy, run_id, window, artifact_files, issues
     )
     component_digests = _verify_components(
         root,
         data.get("components"),
         policy,
         run_id,
+        object_format,
         commit,
         tree,
         source_hash,
@@ -1697,9 +1921,43 @@ def _derive_chain(
         receipt_executables,
         artifact_files,
         issues,
+        now,
     )
-    pre_seal_safety = dict(_chain_outcome_from_issues(issues).safety)
-    pre_seal_safety.update(posture_safety)
+    # Pre-seal safety: derive at the issue-time clock.  The window constraint
+    # guarantees measured_at <= issued_at, and freshness always holds at
+    # issued_at, so the binding posture is a pure function of the evidence.
+    binding_issues: list[str] = []
+    _verify_freshness(window, policy, window.issued_at, binding_issues)
+    _binding_posture_digest, binding_posture_safety = _verify_posture(
+        root,
+        data.get("measurements"),
+        policy,
+        run_id,
+        window,
+        binding_issues,
+        window.issued_at,
+    )
+    _verify_components(
+        root,
+        data.get("components"),
+        policy,
+        run_id,
+        object_format,
+        commit,
+        tree,
+        source_hash,
+        artifact_hash,
+        posture_digest,
+        attack_digest,
+        cleanup_digest,
+        receipt_digests,
+        receipt_executables,
+        artifact_files,
+        binding_issues,
+        window.issued_at,
+    )
+    pre_seal_safety = dict(_chain_outcome_from_issues(binding_issues).safety)
+    pre_seal_safety.update(binding_posture_safety)
     pre_seal_safety.update(attack_safety)
     pre_seal_safety.update(cleanup_safety)
     return (
@@ -1723,12 +1981,15 @@ def _verify_bundle(
     data: dict[str, Any],
     policy: TrustPolicy,
     run_id: str,
+    object_format: str,
     commit: str,
     tree: str,
+    window: _RunWindow,
     source_hash: str,
     artifact_hash: str,
     artifact_files: dict[str, tuple[int, str]],
     gates: dict[str, bool],
+    now: datetime,
 ) -> _ChainOutcome:
     (
         issues,
@@ -1748,20 +2009,25 @@ def _verify_bundle(
         data,
         policy,
         run_id,
+        object_format,
         commit,
         tree,
+        window,
         source_hash,
         artifact_hash,
         artifact_files,
         gates,
+        now,
     )
     seal_safety = _verify_seal(
         root,
         data,
         policy,
         run_id,
+        object_format,
         commit,
         tree,
+        window,
         source_hash,
         artifact_hash,
         receipt_digests,
@@ -1809,6 +2075,7 @@ def _blocked_safety(base: dict[str, str]) -> dict[str, str]:
         "cleanup_complete",
         "certificate_posture",
         "replay_posture",
+        "evidence_freshness",
         "evidence_seal",
     ):
         safety.setdefault(key, "not_proven")
@@ -1843,6 +2110,8 @@ def verify_joint_evidence(
     run_dir: Path,
     payload: object,
     trust_policy_path: Path | None = None,
+    *,
+    now: datetime | None = None,
 ) -> JointGateReport:
     """Verify one immutable, run-scoped P34.7 evidence bundle against the
     external trust policy.
@@ -1854,13 +2123,19 @@ def verify_joint_evidence(
     violation raises :class:`ConfigurationError` (``invalid/veto``); any
     authenticity or safety gap is reported as ``blocked/not_proven`` with a
     blocker.  Unsigned evidence can never pass.
+
+    ``now`` is the UTC clock seam: it is read exactly once per verification
+    and threaded through every time check (freshness, posture and certificate
+    validity).  Tests may inject a fixed instant for deterministic boundary
+    proofs; callers may omit it to use the wall clock.
     """
+    clock = now if now is not None else _utc_now()
     root = run_dir.resolve(strict=True)
     if not root.is_dir() or root.is_symlink():
         raise ConfigurationError("run directory must be a regular directory")
     data = _object(payload, "joint evidence")
     _keys(data, _TOP_LEVEL_KEYS, "joint evidence")
-    run_id, commit, tree = _verify_run_envelope(data)
+    run_id, object_format, commit, tree, window = _verify_run_envelope(data)
     source_hash, _source_files = _verify_manifest(
         root, data.get("source_manifest"), name="source_manifest"
     )
@@ -1871,7 +2146,7 @@ def verify_joint_evidence(
     provenance = _object(data.get("provenance"), "provenance")
     repository = _string(provenance.get("repository"), "provenance.repository")
     policy, policy_status, policy_blocker = _verify_trust_policy(
-        trust_policy_path, root, repository
+        trust_policy_path, root, repository, object_format
     )
     extra_blockers: list[str] = [policy_blocker] if policy_blocker else []
     if policy is not None:
@@ -1880,12 +2155,15 @@ def verify_joint_evidence(
             data,
             policy,
             run_id,
+            object_format,
             commit,
             tree,
+            window,
             source_hash,
             artifact_hash,
             artifact_files,
             gates,
+            clock,
         )
         safety.update(outcome.safety)
         extra_blockers.extend(outcome.blockers)
@@ -1923,7 +2201,7 @@ def compute_seal_binding(
         raise ConfigurationError("run directory must be a regular directory")
     data = _object(payload, "joint evidence")
     _keys(data, _TOP_LEVEL_KEYS, "joint evidence")
-    run_id, commit, tree = _verify_run_envelope(data)
+    run_id, object_format, commit, tree, window = _verify_run_envelope(data)
     source_hash, _source_files = _verify_manifest(
         root, data.get("source_manifest"), name="source_manifest"
     )
@@ -1932,6 +2210,11 @@ def compute_seal_binding(
     )
     safety, gates = _verify_repository_invariants(data)
     policy = _parse_trust_policy(trust_policy_value)
+    if object_format != policy.git_object_format:
+        raise ConfigurationError(
+            "trust policy git object format must match the evidence provenance "
+            "(policy/evidence object-format drift fails closed)"
+        )
     (
         _issues,
         receipt_digests,
@@ -1950,18 +2233,23 @@ def compute_seal_binding(
         data,
         policy,
         run_id,
+        object_format,
         commit,
         tree,
+        window,
         source_hash,
         artifact_hash,
         artifact_files,
         gates,
+        _utc_now(),
     )
     return _seal_binding(
         data,
         run_id,
+        object_format,
         commit,
         tree,
+        window,
         source_hash,
         artifact_hash,
         receipt_digests,

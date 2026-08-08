@@ -12,6 +12,7 @@
   },
   "source_seal": {
     "repository": "https://github.com/lss100200/omnibase.git",
+    "git_object_format": "sha1",
     "approved_commits": [],
     "approved_trees": []
   },
@@ -40,5 +41,6 @@
     "san_suffix": ".omnibase",
     "validity_seconds": 3153600000
   },
+  "max_evidence_age_seconds": 604800,
   "migration_head": "0012"
 }

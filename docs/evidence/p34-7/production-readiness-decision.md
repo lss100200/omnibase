@@ -233,3 +233,49 @@ All three Phase 5 production Feature Gates (`AGENT_RUNTIME_ENABLED`,
 `AGENT_PLANNER_ENABLED`, `MULTI_AGENT_ENABLED`) remain `false`; production
 Runtime, Planner and Multi-Agent remain disabled; the run was not pushed,
 merged or PR'd.
+
+## Integration Review-Fix Round 2: object format, freshness window, expiry boundary (2026-08-08)
+
+Three review findings were closed on the latest-main engineering branch
+`codex/p34-7-joint-gate-integration-r1` (forward-fix on top of the Integration
+R1 state) without changing the P34.7 decision:
+
+1. **P1-A Git object format** — `provenance.git_object_format`,
+   `trust-policy.source_seal.git_object_format` and every component evidence
+   `git_object_format` now bind the same closed-set format `sha1 | sha256`;
+   `sha1` accepts exactly 40 lowercase hex, `sha256` exactly 64; commit/tree
+   keep the original Git OID (never re-hashed), while source/artifact
+   manifests stay raw-byte SHA-256.  Unknown formats, wrong lengths,
+   uppercase OIDs and policy/evidence/component/seal format drift all fail
+   closed.  The current repository is SHA-1
+   (`git rev-parse --show-object-format` -> `sha1`), and REAL 40-hex
+   `HEAD`/`HEAD^{tree}` OIDs are proven to parse into the envelope, the
+   policy source seal and the signed component/seal chain — still
+   `blocked/not_proven` while `_APPROVED_TRUST_POLICY_SHA256` is empty.
+2. **P1-B evidence freshness** — every bundle now carries
+   `run_started_at`/`run_completed_at`/`evidence_issued_at`/
+   `evidence_valid_until` with the structural invariant
+   `run_started_at <= run_completed_at <= evidence_issued_at <
+   evidence_valid_until`; every receipt/posture/attack/cleanup timestamp must
+   lie inside the run window; `now` must satisfy
+   `evidence_issued_at <= now < evidence_valid_until`; both the evidence age
+   and the window length are capped by the trust policy's bounded
+   `max_evidence_age_seconds`.  The wall clock is read exactly once per
+   verification through the `now` clock seam of `verify_joint_evidence`; the
+   seal binding covers the four window fields and the Git object format, with
+   the sealed posture derived at the issue-time clock so re-verification never
+   invalidates a valid seal.  Expired/future/over-long/stale bundles,
+   cross-window receipts, un-signed outer time rewrites and policy max-age
+   drift are all rejected; the same unexpired bundle can be idempotently
+   re-verified offline but an expired bundle is never re-PASSed.
+3. **P2 certificate exact-expiry boundary** — the implementation now enforces
+   the documented `valid_from <= now < valid_until`: `valid_until == now` is
+   already expired and fails closed, `valid_from == now` is an allowed
+   first-valid instant (both boundaries have dedicated tests).
+
+Everything else is unchanged: `_APPROVED_TRUST_POLICY_SHA256` remains an empty
+set; migration head stays `0012`; migration `0013` is absent; all three Phase
+5 feature gates remain false; production Runtime/Planner/Multi-Agent remain
+disabled; no real production evidence was generated or forged; the root `.env`
+was not read and no business database was accessed or migrated; nothing was
+pushed, merged or PR'd.  P34.7 stays `blocked/not_proven`.
