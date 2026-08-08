@@ -32,7 +32,7 @@
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "5ea7fd055f807bba3b6acbdcf384a248b08574b736207545521915ef5da14ce9"
+      "sha256": "fbbb6ae495686cfc99e4dbae895ac47bc9c0dbfc4e76716a438bf8d5c53828bd"
     }
   },
   "source": {
