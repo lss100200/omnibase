@@ -1733,6 +1733,313 @@ server-owned runtime identity 与非占位 workload digest 绑定到 P34 Workspa
 和 P5 AgentRun；Provider/Agent deadline、TaskLease TTL、Workspace RunLease TTL
 必须严格留出终结余量。Server-created Model Gateway Node identity 绑定 deployment
 instance，attestation 为短期；revoked/rejected Node 不得被原地复活。
+
+## INV-050 p54b-engineering-composition
+
+P5.4B is an **engineering-only** composition seam over the P5.4A typed
+single-Agent Executor. `build_engineering_single_agent_executor()` must remain
+fail closed unless the explicit engineering flag is enabled, migration head is
+exactly `0012`, all three Phase 5 Feature Gates are false, and the Gateway,
+server-owned workload credential seam and session factory are explicitly
+injected. The builder never migrates or connects merely to inspect the head.
+Production Runtime activation remains disabled and migration `0013` is not
+created.
+
+The composition exposes only `knowledge_search -> workspace.knowledge.search`.
+The Gateway adapter accepts server-owned `WorkloadCredential` material and
+bounded logical DTOs only; Browser JWTs, physical PostgreSQL/object-store
+locators, provider secrets, host paths, process/socket handles and arbitrary
+tool expansion remain forbidden. `LiveRuntimeAuthorityValidator` must read
+live Workspace, Task, sealed AgentVersion, installed binding, Agent Run,
+Workspace RunLease and Workspace Node facts in a fresh session before each
+Gateway call. Task actor, plan/version/scope/budget digests, generation,
+runtime/workload identity, current WorkspaceRun fencing cursor, database-clock
+lease expiry, verified Node and exact Run/Node fencing must all agree. The mTLS
+certificate thumbprint and workload identity digest are distinct mandatory
+server-owned SHA-256 facts; the certificate binds transport/token `cnf`, while
+the workload digest binds persisted execution authority.
+
+The P5.4B disposable Gate may use only an isolated `omnibase_test_p54b_*`
+sentinel and must pin the sentinel migration head to `0012`. Gate v2 records
+production/runtime and feature gates disabled, migration `0013` absent, root
+`.env` and business database untouched, workload-container egress denied,
+local-only image acquisition enforced by pull-never, and cleanup `0/0/0` under
+a unique run-scoped directory. It preserves the legacy evidence
+chain as superseded/incomplete, captures raw command/exit-code sidecars, and
+independently seals source, artifact and evidence bytes. Image/venv/package
+measurements are sealed but explicitly ambient-runtime-dependent. Digest drift stops
+admission and requires a forward fix from a clean checkout; historical chains
+must not be rewritten or replaced.
+
+Credential attestation, the live P5.4B validator and Gateway Core verification
+are layered separate transactions, not an atomic authority closure. The
+residual revocation race must be documented; database locks must not be held
+across arbitrary RAG/provider work, and production admission remains
+blocked/not_proven.
+
+**Allowed changes**
+
+- Tighten the engineering composition's closed flag, migration, identity,
+  fencing, DTO or fail-closed checks.
+- Add focused negative tests and maintainer/evidence documentation without
+  adding Browser/API, SDK, persistence or production Runtime authority.
+- Add a new isolated disposable evidence run only with explicit sentinel
+  prefixes, explicit cleanup and a newly sealed manifest.
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating a disposable Gate as production admission.
+- Falling back to direct database/RAG access, Browser credentials, provider
+  clients, arbitrary tools, queue/worker scheduling or a second capability.
+- Mutating historical sealed evidence, bypassing clean-checkout/source digest
+  checks, reading the root `.env`, or touching the business database.
+- Changing production composition implementation or a sealed/disposable Gate
+  script as a documentation-only maintenance task.
+
+**Required verification**
+
+- `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p5_4a_typed_executor.py`
+- `backend/tests/test_p5_4a_gateway_adapter.py`
+- `backend/tests/test_p5_4b_gate_v2.py`
+- `backend/tests/integration/test_p5_4b_engineering_composition_foundation.py`
+- `python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On flag, migration-head, feature-gate, identity, lease/fencing, source-manifest
+or evidence drift, return the seam to unavailable and keep production disabled.
+Preserve the old sealed chain, capture the failing report, and forward-fix in a
+new reviewed commit or isolated sentinel run. Do not downgrade the business
+database, create `0013`, retry an unknown provider outcome, or activate a
+production component while evidence is incomplete.
+
+## INV-051 p54c-lite-agent-product-loop
+
+P5.4C is the **engineering-only product surface** for the single-Agent loop.
+`AGENT_LITE_ENGINEERING_ENABLED` is an independent closed-set gate that defaults
+off; any token other than exactly `true` or `false` (including missing, empty,
+`TRUE`, `1`, `yes`, `on`, `enabled`) must fail closed. The gate is a *product*
+entry guard, never an authorization fact: passing it only opens the Lite
+Browser surface in a development/engineering deployment. It never authorizes
+production Agent Runtime, Planner, multi-Agent execution, arbitrary tools,
+migration `0013`, or any of the three Phase 5 production Feature Gates, which
+must remain exactly `false`.
+
+The Lite product loop supports exactly one invocation mode: `no_tool`, carried
+by the P5.2C Alpha seam `build_engineering_agent_alpha` (the `/invoke` route
+always dispatches through that seam; `AlphaInvokeRequest` has no mode field).
+The formal P5.4B builder `build_engineering_single_agent_executor` (which
+installs `LiveRuntimeAuthorityValidator` and
+`CapabilityGatewayKnowledgeSearchPort`) is disclosed by name in the posture and
+status DTO but is **not integrated** (`formal_builder_integration =
+not_integrated`): it is never assembled, routed or selectable in this loop, and
+a builder name in a status DTO is never a supported mode. The formal
+composition remains a separate P5.4B engineering seam whose only authority is
+the P5.4B disposable PostgreSQL Gate with real persisted runtime/lease facts.
+`lite_agent_posture()` is read-only and non-authorizing: it only describes
+which builder the UI should label; assembly decisions stay in the fail-closed
+builders. The status DTO must not leak provider secrets, physical locators,
+credentials, migration internals or runtime handles.
+
+The pure parser `resolve_lite_agent_flag(raw)` is independent of the ambient
+host environment: `None` is documented to mean "the variable is absent" and
+resolves to `False` even when a stray `AGENT_LITE_ENGINEERING_ENABLED` is set
+in the process environment, and the parser never calls `os.environ` itself.
+The runtime resolver `runtime_lite_agent_enabled()` is the only place the gate
+reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and passes the value
+into the parser; the Browser dependency `router.get_agent_alpha()` and the live
+posture must use it, so setting the flag to `true` genuinely enables the route.
+`lite_agent_posture()` with `env=None` resolves the Lite flag through the
+runtime resolver and must never read the flag from `os.environ` directly; only
+an explicit `env` mapping or an explicit `raw` argument feeds the pure parser.
+`docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+`P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+fail-closed defaults of `false`; `.env.example` documents both, and
+`docker compose --env-file .env.example config` must show `"false"` by default
+and `"true"` only under an explicit engineering override. Tests must isolate
+environment state with `monkeypatch`, proving absent -> off, false -> off,
+true -> on, invalid -> fail closed, ambient-variable independence of the pure
+parser, that the runtime resolver reads the patched environment, and that the
+`env=None` posture never reads the Lite flag from `os.environ` itself.
+API-level tests must prove that the flag reaches the assembled or unavailable
+Alpha dependency as appropriate instead of always returning the
+Lite-gate-disabled path.
+
+The P5.4C disposable Gate is run-scoped and engineering-only. It exercises the
+focused Lite unit suite and an executed gate probe (which patches the process
+environment and measures the runtime resolver, the live posture and the single
+supported mode) inside the backend container, then seals the tested source
+bytes, command receipts and measurements under unique raw-byte SHA-256
+sidecars. Every claim in the report is derived from an executed receipt or a
+sealed file measurement, or is reported `not_proven`; the
+root-env/business-database negatives are re-derived from the recorded command
+vectors and the migration head is re-discovered from the repository files, so
+nothing is a hardcoded measurement. The sealed source manifest is a **closed
+set** covering every file that decides Compose Lite-flag wiring
+(`docker-compose.yml`, `.env.example`), frontend `canInvoke`
+(`frontend/lib/lite-gate.ts` and `frontend/lib/lite-gate.test.ts`) and Gate
+admission, and the Gate tests assert that the maintenance-map
+`lite-agent-product-loop` module / `INV-051` source paths stay a subset of the
+closure. The Gate only PASSES when the closed-set
+admission decision holds: `lite_gate_default_off`, `absent_off`, `false_off`,
+`true_on`, `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only,
+`formal_builder_named` and `formal_builder_posture_not_integrated` all `true`;
+`root_env_accessed`, `business_database_accessed`, `business_database_migrated`
+and `production_runtime_activated` all `false`; `formal_builder_integration`
+stays `not_proven`. A single mismatch makes `passed=false`. The two
+formal-builder claims are **independent**: `formal_builder_integration =
+not_proven` means this Gate did not execute the formal P5.4B composition,
+while `formal_builder_posture_not_integrated = true` requires the executed
+probe to genuinely report `not_integrated`. The probe's token is recorded
+**honestly** — it is rewritten to `not_proven` only when the probe genuinely
+reports `not_integrated`; a probe reporting
+`integrated`/`enabled`/`available`/`selectable`/empty/unknown is recorded
+verbatim and fails the admission decision (`--run` produces `passed=false`
+and `--verify-evidence` rejects). The run directory is **preserved**
+on success and on failure and can be re-verified with `--verify-evidence`
+after the process exits; the Gate never deletes its own evidence and never
+claims production admission. `--verify-evidence` validates the **exact argv
+template** of every recorded command (the explicit `.env.example` path, the
+closed production engineering flags and the exact test target / probe source —
+a drifted vector that exited 0 is rejected), strictly parses every
+`commands/*.exitcode` sidecar (exactly one decimal exit code that must equal
+the receipt `returncode`; non-integer, multi-line, missing and 0/1-drifted
+sidecars are all rejected) and **re-executes the same
+closed-set admission decision** that `--run` computed: verifying is not just
+"report equals derived values", because derived values that miss an admission
+expectation (e.g. `true_on=false`, `invalid_fail_closed=false`,
+`live_posture=false`, `formal_builder_posture_not_integrated=false`, mode
+drift, command-vector drift or exitcode-sidecar drift) must reject the
+evidence.
+
+Round-5 hardens the receipt and sidecar binding so a fabricated-but-
+self-consistent evidence tree cannot pass. The verifier requires each
+receipt's `returncode` to be a **strict `int`** (`type(value) is int`, not
+`isinstance(value, int)`) equal to `0`; this rejects JSON `false`/`true`
+(Python `bool`, which `isinstance(value, int)` would wrongly accept because
+`False == 0`), floats like `0.0`, strings like `"0"`, `null`, negative and
+non-zero integers. The command keys must form the **exact closed set**
+(`lite-unit-suite`, `lite-gate-probes`) with no missing, duplicate, extra or
+unknown key and no re-order. Each command key binds its **own** sidecar by
+**exact POSIX path literal**: the receipt's `stdout` path must be exactly
+`commands/{key}.stdout` and its `exitcode` path exactly
+`commands/{key}.exitcode`, compared **before** any filesystem resolution; this
+rejects absolute paths, backslash alternatives, `.`/`..` segments, repeated
+separators, case aliases, URL/drive paths and every lexical alias
+(`commands/../commands/{key}.stdout`, `commands/./{key}.stdout`) so two
+commands cannot share or swap stdout/exitcode artefacts and a unit receipt
+cannot point at the probe's stdout (or vice versa). Only after the literal
+matches does the verifier resolve and check run-dir containment, regular-file,
+non-symlink and digest; symlink sidecars are rejected outright
+(platform-dependent: on platforms without symlink support the test is
+documented as skipped). No two commands may share the same stdout or exitcode
+literal, and the resolved artefacts must have distinct inodes where the
+platform exposes them. Finally, the verifier **re-derives the unit summary**
+from the precisely-bound `commands/lite-unit-suite.stdout` bytes (not the
+receipt's recorded stdout string) by calling the formal
+`_parse_test_summary()`, and compares the re-derived `passed`/`failed`/
+`skipped`/`deselected` counts field-by-field with strict `type(value) is int`
+equality against **both** the top-level `lite_unit_summary` and
+`measurements["lite_unit_summary"]`; a missing/extra field, a boolean-as-int,
+a count that disagrees with the sealed stdout, or a top-level-vs-measurements
+drift rejects the evidence. The probe is re-parsed from the precisely-bound
+`commands/lite-gate-probes.stdout`; `formal_builder_integration =
+not_proven` and `formal_builder_posture_not_integrated = true` stay two
+independent claims, and `integrated`/`enabled`/`available`/`selectable`/
+empty/unknown tokens continue to be recorded verbatim and rejected.
+
+The sealed evidence is a **self-contained integrity receipt**: it
+proves run-scoped byte integrity of the recorded source manifest, command
+receipts and measurements, but without an independent trust anchor it proves
+**no external authenticity** (it cannot authenticate who produced the bytes)
+and is never production admission; the report records this scope
+(`integrity_receipt.external_authenticity=false`,
+`integrity_receipt.trust_anchor=null`) and the verifier enforces the wording.
+
+**Allowed changes**
+
+- Tighten the Lite gate's closed-set parser, runtime resolver, fail-closed
+  defaults, posture disclosure or UI state labels without adding Browser
+  authorization, SDK, persistence or production Runtime authority.
+- Add focused negative tests, API-level reachability tests, maintainer/evidence
+  documentation and the disposable Gate's source seal without enabling
+  production admission.
+- Tighten the formal-builder disclosure (identity, DTO or fail-closed checks)
+  without integrating the formal composition into this loop.
+- Require the closed-set admission decision and the exact command-vector
+  templates in both `--run` and `--verify-evidence`, and describe the evidence
+  with self-contained integrity-receipt wording (run-scoped byte integrity,
+  no external authenticity, no trust anchor).
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating the disposable Lite Gate as production admission.
+- Presenting the P5.2C Alpha seam as the knowledge-search authority path,
+  advertising `knowledge_search_read_only` as a supported mode, or integrating
+  a weaker/typed builder into the Browser loop instead of leaving the formal
+  composition to the P5.4B disposable Gate.
+- Letting the gate parser depend on the ambient host environment, accepting a
+  non-exact token through loose bool coercion, or wiring the Browser dependency
+  or live posture to anything other than `runtime_lite_agent_enabled()`.
+- Leaking provider secrets, physical locators, credentials, migration internals
+  or runtime handles into browser state, logs, diagnostics, errors or DTOs.
+- Mutating historical sealed evidence, deleting preserved Gate evidence,
+  bypassing clean-checkout/source digest checks, reading the root `.env`, or
+  touching the business database.
+
+**Required verification**
+
+- `backend/tests/test_p5_4c_lite_gate.py`
+- `backend/tests/test_p5_4c_lite_agent_product_gate.py`
+- `backend/tests/test_agent_alpha_engineering.py`
+- `python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only`
+- Frontend `pnpm typecheck`, `pnpm lint`, `pnpm test`, `NODE_ENV=production pnpm build`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On gate, posture, source-manifest or evidence drift, close the Lite product
+surface (return `UnavailableAgentAlpha` from `get_agent_alpha`) and keep
+production disabled. Preserve the old sealed chain and the Gate evidence,
+capture the failing report, and forward-fix in a new reviewed commit or
+isolated run. Do not enable a Phase 5 production Feature Gate, create `0013`,
+retry an unknown provider outcome, or present a disposable Lite Gate as
+production admission while evidence is incomplete.
+
+## INV-049 p54a-typed-single-agent-executor
+
+P5.4A 是 engineering-only 的第一个 typed Executor 切片。它只能接收一份
+通过 P5.3A Validator 的 immutable `ValidatedPlan`，并且只能执行一个节点、
+一个固定的只读逻辑能力：`knowledge_search` →
+`workspace.knowledge.search`。Planner 的“提案已通过”不是执行授权；Executor
+在边界上必须再次核对 proposal digest、Tenant、Workspace、generation、Actor、
+Task、Run fencing、AgentVersion digest 和 node identity。
+
+P5.4A 的 node 必须是 low risk、`read_only` effect、未扩大 tool allowlist，且
+tool budget 与 response bytes 不能超过 server-owned ceilings。结果只能通过
+注入的 Capability-Gateway-backed `KnowledgeSearchPort` 获得；当前唯一实现
+`CapabilityGatewayKnowledgeSearchPort` 必须使用 server-owned `WorkloadCredential`、
+独立 Gateway 的 `rag_search` 和每次调用前的 runtime/lease/fencing validator；默认 builder 必须
+返回 `UnavailableTypedSingleAgentExecutor`，不能因为缺少 adapter、attestor、
+verifier 或 Gateway wiring 而回退为直连数据库/RAG、允许执行或宽松鉴权。
+
+Executor DTO 只接受 bounded logical identifiers 和 bounded search data，禁止
+physical PostgreSQL/object-store locator、Browser JWT、Provider credential、
+process/socket/host path、model handle 以及任意 `tools`/`tool_choice` 扩展。适配器
+异常必须 fail closed，不能生成成功 receipt；未来的 timeout、断线和未知 effect
+必须进入 durable Task/Effect reconciliation，不能自动 replay。
+
+P5.4A 不创建 migration `0013`，不挂载 Browser route/SDK，不启用 Planner Runtime、
+queue、worker、scheduler、Skill/MCP、Shell、SQL、任意 HTTP、Sandbox 或 multi-Agent。
+三个 Phase 5 Feature Gates 继续为 false，production Runtime activation 仍需单独
+准入。
+
 ## INV-047 user-profile-and-personal-provider-credentials
 
 **Authoritative source**

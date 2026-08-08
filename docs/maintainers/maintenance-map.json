@@ -587,6 +587,56 @@
       ]
     },
     {
+      "id": "INV-050",
+      "title": "P5.4B engineering composition is fail-closed, migration-0012-bound and non-production",
+      "document": "docs/maintainers/security-invariants.md#inv-050-p54b-engineering-composition",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py",
+        "backend/src/omnibase/agent_executor/service.py",
+        "backend/src/omnibase/capability_gateway/**",
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/workspaces/**",
+        "backend/tests/test_p5_4b_gate_v2.py",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
+        "docs/phase-5-engineering-composition-contract.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/test_p5_4b_gate_v2.py",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py"
+      ]
+    },
+    {
+      "id": "INV-051",
+      "title": "P5.4C Lite Agent product loop is fail-closed, formal-builder-bound and non-production",
+      "document": "docs/maintainers/security-invariants.md#inv-051-p54c-lite-agent-product-loop",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/lite.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/engineering.py",
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "docker-compose.yml",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "frontend/lib/lite-gate.ts",
+        "frontend/lib/lite-gate.test.ts",
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py",
+        "docs/phase-5-lite-agent-product-loop.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "backend/tests/test_agent_alpha_engineering.py"
+      ]
+    },
+    {
       "id": "INV-049",
       "title": "First-party native Skill manifests are compile-only, exact-version, non-escalating and evidence-bound",
       "document": "docs/maintainers/security-invariants.md#inv-049-first-party-native-skill-contract",
@@ -2084,6 +2134,229 @@
         "Alpha rejects any AgentVersion with allowed_tool_ids. It has no shell, SQL, arbitrary HTTP, MCP, Skill, Planner or multi-Agent port.",
         "Provider ambiguity records an unknown outcome through the ledger port; cancellation is a new terminal outcome and retry is a new invocation identity.",
         "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider."
+      ]
+    },
+    {
+      "id": "planner-proposal-contract",
+      "name": "P5.3A compile-only Planner Proposal contract and deterministic DAG validator",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_planner_contract.py",
+        "backend/tests/test_p5_3a_planner_contract.py",
+        "deployment/production/phase5-planner-contract.example.json",
+        "scripts/production/validate_p5_3a_planner_contract.py",
+        "docs/phase-5-planner-contract.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlanProposal",
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlanProposalValidator",
+        "backend/src/omnibase/production/phase5_planner_contract.py:PlannerContractGate",
+        "scripts/production/validate_p5_3a_planner_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Strict immutable PlanProposal/PlanNode/ExecutionRequirement DTOs",
+        "Deterministic DAG, digest, scope, budget, risk, approval and portability validation",
+        "P5.3A compile-only admission; no Planner Runtime, persistence or execution"
+      ],
+      "depends_on": [
+        "phase5-admission",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-039",
+        "INV-043",
+        "INV-049"
+      ],
+      "verification": [
+        "python scripts/production/validate_p5_3a_planner_contract.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_3a_planner_contract.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_planner_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_planner_contract.py tests/test_p5_3a_planner_contract.py ../scripts/production/validate_p5_3a_planner_contract.py"
+      ],
+      "recovery": [
+        "Keep Planner Runtime, AGENT_PLANNER_ENABLED and all other Phase 5 gates false; a valid proposal never grants authority or starts execution.",
+        "If a digest, scope, budget or evidence reference drifts, freeze admission and rebuild from a clean checkout. Do not persist or execute the proposal."
+      ]
+    },
+    {
+      "id": "engineering-composition",
+      "name": "P5.4B engineering-only composition and recovery evidence",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "backend/src/omnibase/agent_executor/contracts.py",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py",
+        "backend/src/omnibase/agent_executor/service.py",
+        "backend/src/omnibase/capability_gateway/**",
+        "backend/src/omnibase/task_ledger/**",
+        "backend/src/omnibase/workspaces/**",
+        "backend/tests/test_p34_7_production_composition.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
+        "backend/tests/test_p5_4b_gate_v2.py",
+        "backend/tests/integration/test_p5_4b_engineering_composition_foundation.py",
+        "deployment/production/composition.example.json",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py",
+        "docs/phase-5-engineering-composition-contract.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_executor/engineering.py:build_engineering_single_agent_executor",
+        "backend/src/omnibase/agent_executor/engineering.py:LiveRuntimeAuthorityValidator",
+        "scripts/production/run_p5_4b_engineering_composition_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "Internal engineering composition of the existing typed knowledge_search executor",
+        "Server-owned workload credential seam and live runtime/lease/fencing revalidation",
+        "Disposable sentinel evidence only; no Browser route, SDK or production Runtime"
+      ],
+      "depends_on": [
+        "typed-single-agent-executor",
+        "p5-task-ledger-persistence",
+        "agent-alpha-engineering-runtime",
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-043",
+        "INV-044",
+        "INV-050"
+      ],
+      "verification": [
+        "python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4b_gate_v2.py -q",
+        "python -m pytest backend/tests/test_p34_7_production_composition.py -q",
+        "python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q",
+        "python -m compileall -q backend/src/omnibase/agent_executor",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep P5.4B unavailable unless the explicit engineering flag, migration head 0012, all-false Phase 5 gates and every injected dependency pass strict checks.",
+        "Keep production Runtime activation false and migration 0013 absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
+        "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
+      ]
+    },
+    {
+      "id": "lite-agent-product-loop",
+      "name": "P5.4C Lite Agent product loop (engineering-only, no_tool-only)",
+      "source_paths": [
+        "backend/src/omnibase/agent_alpha/lite.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/engineering.py",
+        "backend/src/omnibase/agent_executor/engineering.py",
+        "docker-compose.yml",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "frontend/lib/lite-gate.ts",
+        "frontend/lib/lite-gate.test.ts",
+        "backend/tests/test_p5_4c_lite_gate.py",
+        "backend/tests/test_p5_4c_lite_agent_product_gate.py",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py",
+        "docs/phase-5-lite-agent-product-loop.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_alpha/lite.py:resolve_lite_agent_flag",
+        "backend/src/omnibase/agent_alpha/lite.py:runtime_lite_agent_enabled",
+        "backend/src/omnibase/agent_alpha/lite.py:lite_agent_posture",
+        "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
+        "backend/src/omnibase/agent_alpha/router.py:alpha_status",
+        "frontend/lib/lite-gate.ts:canInvokeLiteAgent",
+        "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py:main"
+      ],
+      "public_interfaces": [
+        "Browser HTTP GET /api/v1/workspaces/{workspace_id}/agent-alpha/status (read-only posture)",
+        "Internal engineering-only product surface over the existing tool-free Alpha loop; exactly one supported invocation mode `no_tool`; the formal P5.4B knowledge-search builder is disclosed by name but reported formal_builder_integration=not_integrated and never assembled here; the UI Invoke path requires lite_gate_enabled AND engineering_assembled AND environment_allowed AND phase5_gates_all_false simultaneously; never a production Runtime, Planner, multi-Agent, arbitrary-tool or migration-0013 path"
+      ],
+      "depends_on": [
+        "agent-alpha-engineering-runtime",
+        "engineering-composition",
+        "agent-alpha-workbench"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-045",
+        "INV-046",
+        "INV-050",
+        "INV-051"
+      ],
+      "verification": [
+        "python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q",
+        "docker compose --env-file .env.example config --quiet",
+        "cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --verify-evidence .tmp/p5-4c-lite-agent-product-loop-gate/<run-id>/evidence.json"
+      ],
+      "recovery": [
+        "Keep AGENT_LITE_ENGINEERING_ENABLED default off (docker-compose.yml passes it with a fail-closed ${VAR:-false} default; .env.example documents it) and independent of the three production Phase 5 Feature Gates; any non-exact token must fail closed. The runtime resolver runtime_lite_agent_enabled() is the only place the gate reads os.environ; the Browser dependency and the live posture must use it so the flag genuinely enables the route, and lite_agent_posture(env=None) must never read the Lite flag from os.environ directly.",
+        "The Lite product loop supports only no_tool via the P5.2C Alpha seam build_engineering_agent_alpha. The formal P5.4B builder build_engineering_single_agent_executor is disclosed by name only (formal_builder_integration=not_integrated); it is a separate engineering composition assembled only by the P5.4B disposable Gate with real persisted authority and must never be presented as a selectable mode of this loop.",
+        "The UI Invoke path must fail closed: lite_gate_enabled AND engineering_assembled AND environment_allowed AND phase5_gates_all_false must hold simultaneously (frontend/lib/lite-gate.ts), and the same decision guards the Enter-key path.",
+        "On gate, posture, source-manifest or evidence SHA drift, close the Lite product surface and re-run the disposable Gate from a clean checkout; never claim production admission from a disposable Lite Gate, and never delete its preserved evidence. The Gate passes only when the closed-set admission decision holds; --verify-evidence re-executes the same decision, validates the exact argv templates (explicit .env.example, closed production flags, exact test target) and treats the evidence as a self-contained integrity receipt (run-scoped byte integrity, no external authenticity, no trust anchor).",
+        "Never read root .env, touch the business database, create migration 0013, open a Phase 5 production Feature Gate, or expose provider secrets in browser state, logs, diagnostics, errors or DTOs."
+      ]
+    },
+    {
+      "id": "typed-single-agent-executor",
+      "name": "P5.4A engineering-only typed single-Agent Executor (one read-only Workspace capability)",
+      "source_paths": [
+        "backend/src/omnibase/agent_executor/**",
+        "backend/src/omnibase/production/phase5_planner_contract.py",
+        "backend/tests/test_p5_4a_typed_executor.py",
+        "backend/tests/test_p5_4a_gateway_adapter.py",
+        "deployment/production/phase5-typed-executor.example.json",
+        "docs/phase-5-typed-executor-contract.md",
+        "scripts/production/run_p5_4a_gateway_adapter_gate.py",
+        "scripts/production/run_p5_4a_gateway_disposable_gate.py",
+        "docs/maintainers/security-invariants.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "Makefile"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_executor/service.py:TypedSingleAgentExecutor",
+        "backend/src/omnibase/agent_executor/service.py:UnavailableTypedSingleAgentExecutor",
+        "backend/src/omnibase/agent_executor/service.py:build_engineering_typed_executor",
+        "backend/src/omnibase/agent_executor/contracts.py:KnowledgeSearchPort",
+        "backend/src/omnibase/agent_executor/gateway_adapter.py:CapabilityGatewayKnowledgeSearchPort"
+      ],
+      "public_interfaces": [
+        "Internal typed executor DTOs carrying only bounded logical identifiers and data",
+        "Exactly one knowledge_search -> workspace.knowledge.search read-only capability",
+        "Explicit GatewayService.rag_search adapter with server-owned credential and lease/fencing revalidation",
+        "Default unavailable engineering seam; no Browser route, SDK, persistence or production Runtime activation"
+      ],
+      "depends_on": [
+        "planner-proposal-contract",
+        "p5-task-ledger-persistence",
+        "agent-alpha-engineering-runtime",
+        "capability-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-043",
+        "INV-044",
+        "INV-049"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_executor",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_executor tests/test_p5_4a_typed_executor.py tests/test_p5_4a_gateway_adapter.py",
+        "python scripts/production/run_p5_4a_gateway_adapter_gate.py --validate-only",
+        "python scripts/production/run_p5_4a_gateway_disposable_gate.py --validate-only",
+        "python scripts/production/run_p5_4a_gateway_disposable_gate.py --run"
+      ],
+      "recovery": [
+        "The default builder must remain UnavailableTypedSingleAgentExecutor. Never fall back to direct database/RAG access when a Gateway port is absent.",
+        "Keep migration 0013, Browser APIs, queue/worker/scheduler, tools, MCP, Skills, Shell, SQL, arbitrary HTTP, Sandbox and multi-Agent frozen until a separately admitted Gate exists.",
+        "The Gateway adapter must not accept Browser JWTs or physical locators, must revalidate runtime/lease/fencing before each call, and must not retry unknown outcomes.",
+        "A disposable Gate must record budget, authorization, audit, lease/fencing and unknown no-replay evidence before this seam can be considered executable."
       ]
     },
     {

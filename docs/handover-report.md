@@ -2648,6 +2648,517 @@ production Gate。根 `.env` 未读取、打印、stage 或提交。
 验证状态必须以本节所在提交的实际命令结果为准；在 disposable P5.1C Gate、前端
 production build 和 Browser E2E 完成前，不得把本节描述为 production Gate PASS。
 
+### P5.4A typed single-Agent Executor engineering slice（2026-08-06）
+
+在 PR #16 合并后的最新 `main` 上重建 P5.3A 后，本轮开始执行 P5.4A。P5.3A
+Planner Proposal 合同的宿主 focused 验证为 `78 passed`；P5.3A/P5.6A/P5.2A/
+P5.1/P5.0/P34.7 组合回归为 `524 passed`。Docker 版本因本机 Docker Desktop
+Linux Engine 未运行而未执行，不能把宿主结果扩大为 container Gate。
+
+本轮新增 `backend/src/omnibase/agent_executor/` typed seam 和 11 个 focused
+测试。Executor 只接受一份通过 P5.3A Validator 的单节点 `ValidatedPlan`，并且
+只允许 `knowledge_search` 映射到 `workspace.knowledge.search` 的 low-risk、
+`read_only` 能力。执行边界重新验证 tenant/workspace/task/run generation、
+AgentVersion/proposal/node digest、tool allowlist、effect class 与 node budget；
+结果只能来自注入的 Capability-Gateway-backed `KnowledgeSearchPort`。默认 builder
+为 `UnavailableTypedSingleAgentExecutor`，没有 Browser route、SDK、queue/worker/
+scheduler、migration `0013`、直连数据库/RAG fallback、Shell/SQL/HTTP/MCP/Skill/
+Sandbox 或 multi-Agent。
+
+P5.4A focused `11 passed`、compileall、Ruff check/format、Mypy（3 files）和维护者
+地图/benchmark validator 均通过。三个 Phase 5 Feature Gates 保持 false，
+production Runtime 仍不激活。随后加入了显式的
+`CapabilityGatewayKnowledgeSearchPort`：它只接受 server-owned
+`WorkloadCredential`，调用独立 `GatewayService.rag_search`，在调用前执行注入的
+runtime/lease/fencing validator，拒绝 Browser JWT、物理 locator 和未知重放，并在
+每次尝试后关闭 Session。typed executor + adapter focused 结果为 `19 passed`，
+Ruff、compileall、Mypy（4 files）均通过。
+
+本轮新增 `scripts/production/run_p5_4a_gateway_adapter_gate.py`。其 adapter contract
+Gate 已运行并封存证据到 git-ignored `.tmp/p5-4a-gateway-adapter-gate/`，证明
+scope、budget、Gateway audit 调用边界、lease/fencing revalidation 和 unknown
+no-replay；它明确记录 `database_sentinel_verified=false`，因此不被称为
+PostgreSQL/container Gate。
+
+Docker Desktop Linux Engine 恢复后，新增并运行了
+`scripts/production/run_p5_4a_gateway_disposable_gate.py`。该 runner 使用隔离的
+`omnibase_test_p54a_*` 数据库，从空库升级到 migration `0012`，执行真实的
+P34.2 capability foundation 与 P34.6 Gateway Core 集成，共 `7 passed`，并在
+结束时验证 `containers=0, networks=0, volumes=0`。当前-baseline Gate evidence
+写入 git-ignored `.tmp/p5-4a-gateway-disposable-gate/`；它仍保持
+`production_runtime_activated=false`、三个 Feature Gates 为 false、migration
+`0013` 未创建。
+
+### P5.4B engineering composition and evidence recovery（2026-08-07）
+
+本轮把 P5.4A typed Executor 的内部组合边界记录为独立的 P5.4B
+engineering-only contract。新增
+`docs/phase-5-engineering-composition-contract.md`，并同步维护者地图、
+安全不变量、AI 维护者地图和本交接报告；未把该 seam 扩大为 Browser/API、SDK、
+队列、Worker、Scheduler、Provider production wiring 或 Agent Runtime。
+生产激活明确保持 disabled，三个 Phase 5 Feature Gates 保持
+`false / false / false`，migration head 固定为 `0012`，未创建 migration
+`0013`。
+
+P5.4B 的显式 builder 只有在 engineering flag 精确开启、migration head
+为 `0012`、三个 Feature Gates 全 false 且 Gateway、session factory 和
+server-owned workload credential seam 都被显式注入时才组合真实 executor；
+否则返回 unavailable。每次 Gateway 调用前，live Task、Agent Run、Workspace
+RunLease 和 Workspace Node 的 tenant/workspace/generation、runtime identity、
+lease expiry、node/run fencing 与 verified attestation 必须重新匹配。唯一
+能力仍为 `knowledge_search -> workspace.knowledge.search`，不接受 Browser
+JWT、physical locator、provider secret、host path 或任意 tool 扩展。
+
+Review-Fix Round 1 已在同一工作树继续 forward-fix，未新建 migration 或生产
+wiring。formal builder 不再接受 authority-validator injection，并固定安装
+`LiveRuntimeAuthorityValidator`。validator 现在区分 Planner node 与 Runtime
+WorkspaceNode，沿 `AgentRun.workspace_run_id -> WorkspaceRun.id -> RunLease.run_id`
+解析真实权威链，锁定并核对 Workspace、Task、sealed AgentVersion、installed
+binding、AgentRun、WorkspaceRun、RunLease、Node 和 live Attestation；Task actor、
+proposal version/digest、resource-scope/budget-policy digest、generation、runtime/
+workload identity、当前 WorkspaceRun fencing cursor、数据库时钟 lease expiry 与
+Run/Node fencing 任一漂移都 fail closed。`scheduled|running` Task 与
+`leased|running` AgentRun 是本 engineering 合同明确覆盖的 pre-execution/execution
+闭集；created/planning/awaiting-approval/paused/terminal 状态全部拒绝。
+
+共享 Gateway workload 合同同时完成了关键身份域纠正：mTLS certificate
+thumbprint 与 runtime workload identity digest 不再合并。证书摘要只绑定 TLS
+transport 与 capability token `cnf`；独立的 server-owned workload digest 绑定
+WorkspaceRun、AgentRun、RunLease/Node/fencing 运行事实。两者都是必填 64 位小写
+SHA-256，P34.5 workload attestor、credential issuer、mTLS registry/vending、P5.4B
+credential seam 和相关测试 constructor 均已贯通。Gateway HTTP 入口也统一保留
+canonical `Capability <token>` envelope，由 Core verifier 唯一剥离 scheme；不接受
+raw token 双重表示。
+
+focused 正向已通过 formal builder、真实 `LiveRuntimeAuthorityValidator`、server-owned
+credential seam、Gateway adapter 和 mocked Gateway；无 `_Authority`/no-op validator。
+截至本文本更新，P34.2/P34.5/P34.6/P5.4A/P5.4B 受影响 focused 回归为
+`175 passed`；P5.4A/P5.4B typed/composition focused 在 logical UUID forward-fix
+后为 `65 passed`；Gate v2 专用 synthetic seal/command/cleanup 单测为
+`16 passed`。
+P5.4B disposable integration 已改为每个用例使用同一数据库连接上的 function-scoped
+outer transaction，并在用例后整体 rollback，避免通过 generation 倒退、revoked
+Node 原地复活或 terminal Attestation 改回 verified 来重置夹具。过期 Task 也改为
+初始 INSERT 时构造合法 `created_at < deadline <= db_now`，不再 UPDATE migration
+`0011` 明确 immutable 的 deadline。
+
+Gate v2 使用唯一、non-overwriting 的 run-scoped evidence 目录
+`.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`，旧
+`.tmp/p5-4b-engineering-composition-gate` 保留为 superseded/incomplete。v2 固定
+`.env.example`、本地镜像 preflight、Compose `pull_policy: never`、Docker
+`--pull never` 与 internal-only workload network；它逐条复验 command semantics、
+stdout/exitcode、sentinel `0012` Alembic graph、Feature Gates、backend/PostgreSQL
+image identity、共享 venv 名称、Python package inventory、source/artifact/evidence
+raw-byte SHA-256 与 cleanup `0/0/0`。该证据明确标记
+`ambient_runtime_dependent=true`，不能声称已哈希共享 venv 内每个依赖字节，也只能
+声称 workload container egress denied，不能把它扩大为宿主/daemon 网络审计。
+
+credential attestor、P5.4B live validator 与 Gateway Core 位于三个分离事务：前两者
+重验 Run/Lease/Node/Task/Run 权威，Core 再验证 capability/resource/budget/audit。
+这不是 atomic authority closure，validator 返回后到 Gateway 使用前仍有 revocation
+TOCTOU residual risk。不得通过跨任意 RAG/provider 调用长期持锁制造新死锁；该风险
+必须保留在合同中，因此即使 engineering Gate 最终通过，production admission 仍为
+blocked/not_proven。
+
+clean commit `d533e0c` 上的 run
+`20260807T040121201064Z-b2e9737e32e5` 已完成正式 v2 Gate：disposable
+PostgreSQL integration `43 passed`，sentinel Alembic head `0012`、revision graph
+无 `0013+`、Runtime/Feature Gates 全 false、internal workload network、local-only
+image acquisition、legacy preservation 与 cleanup `0/0/0` 均由独立 measurement
+记录。随后同一 `evidence.json` 的 `--verify-evidence` 通过；raw-byte SHA-256
+独立复算为 source manifest
+`db24bc8b96f358d4f3d18e609269429affb43fbdb3ea8444d0fc3bd553835fd9`、artifact
+manifest `c2e2ff0670474fc24415437dc69af647f88d979d1683b68a13a9b75c4017cb8d`、
+evidence `29496e4d7bccceddf12765921ddd2f86b9ef35e8f14af2c05eddb866cdd4def6`。
+此前被宿主短超时中止的 partial run 与两次失败 run 均保留为 incomplete/failed，
+没有覆盖；失败 run 也分别完成当前 project cleanup `0/0/0`。
+
+因此 Review-Fix Round 1 的工程状态现在是：`P5.4B engineering composition Gate
+passed`、`old P5.4B evidence superseded/incomplete`、`production Runtime disabled`、
+`migration 0013 absent`、`production admission blocked/not_proven`。不得写成
+production PASS，也不得由本 Gate 自动开始 P5.4C。
+
+后续完整挂载的 P34.7/P5 与全 Backend non-integration 回归发现了一个独立于
+P5.4B runtime 实现的共享封存漂移：P5.4B 更新维护者地图和安全不变量后，P5.1A、
+P5.2A 以及 P5.3A 示例合同仍引用旧 SHA-256。该分支已按 forward-fix 同步
+`phase5-registry-contract.example.json`、`phase5-task-ledger-contract.example.json`
+和 `phase5-planner-contract.example.json` 的真实 raw-byte digest，并处理 P5.1A
+合同变更引起的 P5.2A、P5.3A 二级引用更新。P5.3A 的示例 PlanProposal/node
+canonical digest 与 migration baseline 也同步到当前 `0012`；没有删除、放宽或
+绕过 sealed-digest 校验。原始失败稳定表现为 P5.1A/P5.2A 从预期
+`blocked/not_proven` 退化为 `invalid/veto`，veto 为
+`sealed contract drifted: maintainer_map`；修复后的精准复测恢复为通过。
+
+本 forward-fix 提交不预先声称它自己的未来证据。只有从该 exact clean commit
+生成的新 run-scoped P5.4B Gate v2 evidence、独立 `--verify-evidence`、raw-byte
+SHA-256 复算和 cleanup `0/0/0` 全部通过后，才能继续声明 engineering Gate
+passed；即使通过，production Runtime、三个 Feature Gate、migration `0013` 和
+生产 P5.4C 仍保持关闭。
+
+---
+
+### P5.4C Lite Agent product loop review-fix（2026-08-07）
+
+外部 review 把首次 P5.4C 提交（`feat(p5.4c): add gated lite agent product
+entry`）判定为 `REVIEW_FIX_REQUIRED`：该提交只加了
+`AGENT_LITE_ENGINEERING_ENABLED` 双 gate、关闭旧 Agent Alpha 路由和静态
+`ROADMAP`/`LOCKED` UI，并未实现请求的产品循环，且 `test_lite_flag_defaults_off`
+存在环境依赖缺陷、缺乏正式 P5.4B builder 路由、缺乏 canonical 前端证据、
+缺乏 P5.4C disposable Gate/evidence seal 与维护者文档更新。
+
+本轮 review-fix 在同一分支 `external/p5-4c-lite-agent-product-loop` 上以一个
+普通 follow-up commit 实现以下修复，**未** amend/rebase/reset、**未**
+push/PR/merge、**未** 读取根 `.env`、**未** 访问/迁移业务数据库、**未** 创建
+migration `0013`、**未** 开启任何 Phase 5 生产 Feature Gate、**未** 激活生产
+Runtime：
+
+1. **环境隔离（缺陷 3）**：重写 `backend/tests/test_p5_4c_lite_gate.py`，使用
+   `monkeypatch.delenv` 清除全部 Lite/Phase-5 变量，再用显式 `raw` 与显式 `env`
+   证明 absent→default-off、显式 `false`/`true`、闭集非法 token fail-closed，并
+   证明解析器与 ambient host 变量独立（即便 stray 设置了
+   `AGENT_LITE_ENGINEERING_ENABLED=true`，`raw=None` 仍返回 `False`）。
+2. **正式 builder 路由（缺陷 1）**：重写 `agent_alpha/lite.py`，新增
+   `lite_agent_posture()` 显式披露正式 P5.4B builder
+   `build_engineering_single_agent_executor`（含
+   `LiveRuntimeAuthorityValidator` + `CapabilityGatewayKnowledgeSearchPort`）与
+   P5.2C Alpha builder `build_engineering_agent_alpha` 的关系、支持的调用模式
+   `no_tool`、正式 builder flag、Phase 5 gate 状态、migration head `0012`；
+   （Round 2 已按外部 review 收窄为仅 `no_tool`，`knowledge_search_read_only`
+   模式与 `knowledge_search_read_only_enabled`/`formal_builder_flag_enabled`
+   字段已从 posture、DTO、UI 与文档移除，正式 builder 改为披露
+   `formal_builder_integration=not_integrated`，见下方 Round 2 节。）
+3. **真实产品循环与前端质量（缺陷 2+4）**：保留既有 Workspace 选择、Agent
+   Builder、profile resolver、invoke、ledger、citation 真实循环；将静态
+   `ROADMAP`/`LOCKED` chip 替换为 posture-backed honest 状态（Workspace/AgentVersion
+   `LIVE`/`SELECT`、knowledge search `GATED`/`LOCKED`、其余
+   `ROADMAP`/`LOCKED`）；新增 loading、empty（无 Workspace/无 installed
+   AgentVersion）、disabled、gate-closed 与 unavailable-provider 状态文本。前端
+   `pnpm typecheck`、`pnpm lint`、`pnpm test`（47 passed）与
+   `NODE_ENV=production pnpm build`（16 routes，`/agents` 11.5 kB）全部 exit 0。
+4. **P5.4C disposable Gate（缺陷 5）**：新增
+   `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py`
+   `--validate-only`/`--run`/`--verify-evidence` 三模式 run-scoped Gate，以及
+   `backend/tests/test_p5_4c_lite_agent_product_gate.py`（18 passed，含 synthetic
+   sealed run + 多种 tamper fail-closed）。Gate 在 backend container 内执行 focused
+   Lite 单测，封存 source manifest、command receipts 与 measurements 的 raw-byte
+   SHA-256；成功 `--run` 移除 run 目录，仓库保持零 disposable residue；永不读取根
+   `.env`、永不访问业务数据库、永不创建 `0013`、永不开启生产 Feature Gate。该
+   Gate 不替代更重的 P5.4B disposable PostgreSQL Gate（后者仍为正式组合 + 真实
+   persisted runtime/lease 事实的权威）。
+5. **维护者文档（缺陷 5）**：在 `maintenance-map.json` 新增 `INV-051` 与
+   `lite-agent-product-loop` 模块；在 `security-invariants.md` 新增
+   `INV-051 p54c-lite-agent-product-loop`；在 `ai-maintainer-map.md` 新增
+   `6.15 P5.4C Lite Agent product loop`（原 6.15 顺延为 6.16）；新增
+   `docs/phase-5-lite-agent-product-loop.md` 合同与
+   `docs/quick-start-p5-4c-lite-agent.md` Quick Start/Demo（明确标注
+   engineering-only 与 production-blocked）。
+
+本轮 review-fix 的状态：`P5.4C Lite product loop review-fix engineering Gate
+passed`、`production Runtime disabled`、`Phase 5 Feature Gates all false`、
+`migration head 0012`、`migration 0013 absent`、`root .env not accessed`、
+`business database not accessed/migrated`、`no push/PR/merge`。Production 状态
+继续为 `blocked/not_proven`；P5.4C disposable Lite Gate 仅是工程证据，不是生产
+admission，也不自动开启任何后续阶段。
+
+---
+
+### P5.4C Lite Agent product loop review-fix Round 2（2026-08-07）
+
+外部 review 判定 Round 1 的 `REVIEW_FIX_REQUIRED` 不成立（仍为
+`REVIEW_FIX_REQUIRED`）：Lite gate 在运行时永远无法打开
+（`get_agent_alpha()` 与 live posture 用无参 `resolve_lite_agent_flag()`，
+从不读取环境变量）、状态 DTO 宣称 `no_tool`/`knowledge_search_read_only`
+两个调用模式但请求与路由只走旧 Alpha seam、disposable Gate 把五个硬编码
+值当作测量并删除成功证据、以及 P5.3A 共享 seal 引用漂移
+（`phase5-registry-contract.example.json`）。
+
+本轮 Round 2 以普通 follow-up commit 在同一分支上完成以下修复，**未**
+amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime：
+
+1. **运行时 resolver（P0）**：`agent_alpha/lite.py` 保留纯闭集解析器
+   `resolve_lite_agent_flag(raw)`（显式输入、不读环境），新增唯一运行时
+   resolver `runtime_lite_agent_enabled()`，显式
+   `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` 后传入解析器；
+   `router.get_agent_alpha()` 与 live posture 全部改走该 resolver，因此
+   `AGENT_LITE_ENGINEERING_ENABLED=true` 真实打开路由与 posture。
+   新增 API 级测试（monkeypatch 环境 + TestClient）：flag 缺失/`false` →
+   `503 agent_alpha_unavailable` 且 builder 不被调用；flag `true` → invoke
+   （SSE `event: done`）与 profiles 都到达被装配的 Alpha 依赖；flag `1`
+   → `LiteAgentConfigurationError` fail-closed。
+2. **诚实调用模式（P0/P1，选择 review 的选项 2）**：P5.4C 收窄为唯一模式
+   `no_tool`（P5.2C Alpha seam）。`knowledge_search_read_only` 从
+   `supported_invocation_modes`、posture、`AlphaStatusResponse`、前端与文档
+   全部移除；正式 P5.4B builder
+   `build_engineering_single_agent_executor` 仅在 posture/DTO 中披露
+   （`formal_builder_integration=not_integrated`），不被装配、路由或选择。
+   选项 1（正式模式 + live persisted authority chain）未实现，原因是在本
+   工程环境无法诚实装配 server-owned credential seam 与真实
+   AgentVersion/AgentTask/AgentRun/WorkspaceRun/RunLease/WorkspaceNode/
+   NodeAttestation 持久链，且 review 明确禁止注入 fake authority；该能力
+   仍属于 P5.4B disposable PostgreSQL Gate 的范围，报告中标注
+   `not_proven`。
+3. **Disposable Gate 重建（P1）**：`run_p5_4c_lite_agent_product_disposable_gate.py`
+   现在执行 focused 单测 receipt 与一个 live gate probe（容器内 patch
+   环境并测量 absent→off、false→off、true→on、invalid→fail-closed、
+   live posture 读环境、唯一模式 `no_tool`、正式 builder 披露）。报告里的
+   每个 claim 都来自执行 receipt 或文件测量：probe JSON 从封存 stdout
+   解析；`migration_head` 每次运行/验证都重新发现；root-env/business-db
+   负例由记录的命令向量重推导；`formal_builder_integration` 显式报告
+   `not_proven`。成功与失败运行都**保留** run 目录
+   （`evidence_preserved=true`），`--verify-evidence` 可在进程退出后独立
+   复核；不再删除自身证据。Gate 配套测试重写为 30 passed（含 probe 解析、
+   receipt 推导、claim tamper、命令集合闭集、证据保留断言）。
+4. **共享 seal 链（P1）**：按依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链：
+   更新 `maintenance-map.json`/`security-invariants.md` 的新 sealed digest
+   （`21cee9de…`/`7944c5ec…`），P5.1A 配置文件新 digest
+   `4f28ed8b…` 同步到 P5.2A/P5.3A 的 `p5_1.registry_contract` 引用，P5.2A
+   配置新 digest `bbf11ad1…` 同步到 P5.3A 的 `p5_2a.task_ledger_contract`
+   引用。链一致性脚本 22/22 PASS；从最终 clean commit 复测三个 verifier：
+   P5.1A/P5.2A exit 2 `blocked/not_proven`、`contract_valid=true`、
+   `vetoes=[]`；P5.3A exit 2 `blocked/not_proven`、`contract_valid=true`、
+   `vetoes=[]`（修复前 P5.3A 为 `invalid/veto`，veto 为
+   `sealed reference drifted: deployment/production/phase5-registry-contract.example.json`）。
+5. **前端与文档（P0/P1 一致性）**：前端移除 knowledge-search 模式字段，
+   Workspace surfaces 面板显示 `NOT INTEGRATED`，Runtime posture 显示
+   `formal_builder_integration` 与唯一模式 `no_tool`；
+   `maintenance-map.json` 的 `lite-agent-product-loop` 模块、
+   `security-invariants.md` 的 INV-051、`ai-maintainer-map.md` 6.15 与
+   `docs/phase-5-lite-agent-product-loop.md`、Quick Start 全部改为
+   no_tool-only 与 formal-builder-not-integrated 表述。
+
+本轮执行证据：`test_p5_4c_lite_gate.py` + `test_p5_4c_lite_agent_product_gate.py`
+60 passed（宿主 Python 3.12，Docker daemon 本机未运行，容器内复跑 blocked/
+not_proven）；`test_agent_alpha_engineering.py`、`test_agent_alpha.py`、
+`test_p5_4b_gate_v2.py` 等 focused 回归见下方验证清单；Mypy/Ruff 对修改路径
+PASS；maintainer map/benchmark validators exit 0；P5.1/P5.2A/P5.3A 正式
+verifier 从最终 clean commit 复测 exit 2/2/2 且 `vetoes=[]`；Compose config
+因 Docker daemon 不可用而 blocked/not_proven。production Runtime 继续
+disabled，Phase 5 Feature Gates 保持 false，migration head `0012`，migration
+`0013` absent，root `.env` 未读取，业务数据库未访问/迁移，未 push/PR/merge。
+Production 状态继续为 `blocked/not_proven`；P5.4C disposable Lite Gate 仅
+是工程证据，`formal_builder_integration=not_proven`，不声称正式组合集成。
+
+---
+
+### P5.4C Lite Agent product loop review-fix Round 3（2026-08-07）
+
+外部 review 对 Round 2 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **Compose 显式接线（fix 1）**：`docker-compose.yml` 现在显式向 backend
+   环境传递 `AGENT_LITE_ENGINEERING_ENABLED`（及关闭的
+   `P5_4B_ENGINEERING_ENABLED`），fail-closed 默认 `${VAR:-false}`；
+   `.env.example` 增加两个变量并注释；Quick Start 更新。已用
+   `docker compose --env-file .env.example config` 实测：默认 backend 环境
+   收到 `AGENT_LITE_ENGINEERING_ENABLED: "false"`，在显式工程 override
+   （`--env-file .tmp/engineering-lite.env`）下收到 `"true"`，且三个生产
+   Feature Gate 保持 `"false"`。
+2. **Gate 准入闭集（fix 2/3/4）**：Gate 只在**闭集准入决策**全部满足时
+   `passed=true`：`lite_gate_default_off`/`absent_off`/`false_off`/`true_on`/
+   `invalid_fail_closed`/`live_posture_reflects_env`/`no_tool`-only/
+   `formal_builder_named` 全为 true；`root_env_accessed`/
+   `business_database_accessed`/`business_database_migrated`/
+   `production_runtime_activated` 全为 false；`formal_builder_integration`
+   保持 `not_proven`。任一不满足即 `passed=false` 且 run 目录仍保留失败
+   claims。`--verify-evidence` 现在**重执行同一准入决策**（不仅仅是
+   "report 等于推导值"），并校验两条命令的**精确 argv 模板**（显式
+   `.env.example`、关闭的生产工程 flags、精确测试目标/探针源码）——drift
+   的向量即使 exit 0 也拒绝。新增负例测试：true_on=false、
+   invalid_fail_closed=false、live_posture=false、mode drift、
+   command-vector drift 全部被拒（`backend/tests/test_p5_4c_lite_agent_product_gate.py`
+   47 passed）。
+3. **integrity receipt 措辞（fix 5）**：证据被明确定义为**自包含完整性
+   收据**（run-scoped byte integrity only），无独立 trust anchor 时**不证明
+   外部真实性**（`integrity_receipt.external_authenticity=false`、
+   `trust_anchor=null`），`--verify-evidence` 强制该措辞；文档（合同、
+   Quick Start、maintainer map、security-invariants、ai-maintainer-map）全部
+   使用该措辞并保持 production `blocked/not_proven`。
+4. **前端 Invoke 四条件（fix 6）**：Invoke 按钮与 Enter 路径现在要求
+   `lite_gate_enabled` **且** `engineering_assembled` **且**
+   `environment_allowed` **且** `phase5_gates_all_false` 同时成立
+   （`frontend/lib/lite-gate.ts` 纯函数 + 页面接线）；新增
+   `frontend/lib/lite-gate.test.ts`（frontend 测试 51 passed）。
+5. **posture 运行时解析（fix 7）**：`lite_agent_posture(env=None)` 现在把
+   Lite flag 委托给 `runtime_lite_agent_enabled()`，自身不再直接
+   `os.environ.get` 该 flag；显式 `env` 映射/`raw` 测试入口保留。新增
+   os.environ 代理测试证明 env=None 路径不直接读该 flag。
+6. **证据重跑（fix 8）**：从最终 clean commit 重跑官方 `--run`，生成新的
+   immutable run 目录；旧 Round-2 run
+   （`20260807T152113671923Z-949b66abff57`）**保留**并在
+   `.tmp/p5-4c-lite-agent-product-loop-gate/superseded.json` 标记
+   superseded/incomplete（其密封字节不被修改）；随后 `--verify-evidence`
+   复核新证据（PASS）并诚实记录旧证据无法再按当前源码复核。
+7. **共享 seal 链（fix 9）**：maintenance-map/security-invariants 变更后按
+   依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链：maintainer_map
+   `fd1dffe8ee1b…`、security_invariants `d53b6822f897…`、P5.1A 配置
+   `536649d93c02…`（同步进 P5.2A/P5.3A 的 `p5_1.registry_contract`）、P5.2A
+   配置 `f4fc10abe9a9…`（同步进 P5.3A 的 `p5_2a.task_ledger_contract`）；
+   链一致性检查 22/22 PASS。从最终 clean commit 复测三个 verifier：P5.1A/
+   P5.2A/P5.3A 均 exit 2 `blocked/not_proven`、`contract_valid=true`、
+   `vetoes=[]`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）全量 non-integration
+suite `1934 passed / 19 skipped / 15 deselected`（P5.1A/P5.2A 两个 seal 测试
+在链重算后复测 PASS）；`test_p5_4c_lite_gate.py` 31 passed +
+`test_p5_4c_lite_agent_product_gate.py` 47 passed +
+`test_agent_alpha_engineering.py` 等 focused 回归 PASS；frontend
+typecheck/lint PASS、`pnpm test` 51 passed、`NODE_ENV=production pnpm build`
+exit 0；maintainer map/benchmark validators exit 0；Mypy/Ruff 对修改路径
+PASS；`docker compose --env-file .env.example config` 默认 false / 工程
+override true 实测确认；P5.4C disposable Gate `--run` + `--verify-evidence`
+在 clean commit 上执行（见下方 Gate 证据状态）。production Runtime 继续
+disabled，Phase 5 Feature Gates 保持 false，migration head `0012`，migration
+`0013` absent，root `.env` 未读取，业务数据库未访问/迁移，未
+push/PR/merge。Production 状态继续为 `blocked/not_proven`；P5.4C disposable
+Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实性），
+`formal_builder_integration=not_proven`，不声称正式组合集成。
+
+### P5.4C Lite Agent product loop review-fix Round 4（2026-08-07）
+
+外部 review 对 Round 3 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **Gate source closure 补全（fix 1/2）**：
+   `run_p5_4c_lite_agent_product_disposable_gate.py` 的 `SOURCE_FILES`
+   闭集新增 `docker-compose.yml`、`frontend/lib/lite-gate.ts`、
+   `frontend/lib/lite-gate.test.ts`、`docs/phase-5-lite-agent-product-loop.md`
+   ——即所有直接决定 Compose Lite flag 接线、前端 `canInvoke` 与 Gate
+   准入的文件现在都被 source manifest 封存。新增 source-closure 测试：
+   断言上述文件被 sealed，并断言 maintenance-map 的
+   `lite-agent-product-loop` module / `INV-051` 权威 source_paths 是
+   `SOURCE_FILES` 的子集（map 同步加入 `docker-compose.yml` 与两个
+   frontend gate 文件）。
+2. **formal-builder 两个独立声明（fix 3/4/5）**：不再无条件丢弃 probe 的
+   `formal_builder_integration` 并改写为 `not_proven`。现在 probe token
+   **诚实记录**：`formal_builder_integration = not_proven`（本 Gate 未执行
+   正式 P5.4B 组合）仅当 probe 真实报告 `not_integrated` 时成立；
+   `formal_builder_posture_not_integrated = true` 独立要求 probe 确实报告
+   `not_integrated`。probe 返回 `integrated`/`enabled`/`available`/
+   `selectable`/空值/未知 token 时，report 原样记录该 token（不重写），
+   闭集准入决策失败 → `--run` 输出 `passed=false`、`--verify-evidence`
+   拒绝。新增 probe token matrix 负例测试（9 种 token 全部被拒）。
+3. **exitcode sidecar 严格解析（fix 6）**：`--verify-evidence` 现在读取每个
+   `commands/*.exitcode` sidecar，严格解析**恰好一个十进制退出码**并强制
+   其等于 receipt `returncode`；非整数、多行、缺失、`0/1` 漂移（含 receipt
+   returncode 非严格整数、sidecar 路径逃逸）全部被拒。新增
+   `_parse_exitcode_sidecar` 严格语法与 11 种 malformed 内容 + drift +
+   missing 负例测试。
+4. **Round 3 无回归（fix 7）**：精确 argv 模板、显式 `.env.example`、关闭的
+   生产工程 flags、准入闭集、run-scoped byte-integrity-only receipt 措辞均
+   保持不变并被既有测试继续覆盖。
+5. **证据重跑（fix 8）**：从新 clean commit 正式执行 `--run` 生成新的
+   immutable run 目录；Round-3 run
+   （`20260807T160511333576Z-8e04fa3dd555`）**保留**并在
+   `.tmp/p5-4c-lite-agent-product-loop-gate/superseded.json` 标记
+   superseded/incomplete（其密封字节不被修改）；随后 `--verify-evidence`
+   复核新证据（PASS）并诚实记录旧证据无法再按当前源码复核。
+6. **共享 seal 链重算（fix 9）**：maintenance-map/security-invariants 变更后
+   按依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链（maintainer_map、
+   security_invariants、P5.1A 配置、P5.2A 配置的 digest 全部更新并交叉
+   校验）；从最终 clean commit 复测三个 verifier：P5.1A/P5.2A/P5.3A 均
+   exit 2 `blocked/not_proven`、`contract_valid=true`、`vetoes=[]`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）`test_p5_4c_lite_gate.py`
++ `test_p5_4c_lite_agent_product_gate.py`（新增 source-closure / token
+matrix / exitcode sidecar 负例后全绿）+ `test_agent_alpha_engineering.py`
+focused PASS；全量 `pytest -m "not integration"` PASS；frontend
+typecheck/lint/test/build PASS；maintainer map/benchmark validators exit 0；
+P5.4C disposable Gate `--run`（clean commit）+ `--verify-evidence` PASS（新
+run 目录见 `.tmp/p5-4c-lite-agent-product-loop-gate/`，旧 run 在
+`superseded.json` 中标记 superseded/incomplete）。production Runtime 继续
+disabled，Phase 5 Feature Gates 保持 false，migration head `0012`，migration
+`0013` absent，root `.env` 未读取，业务数据库未访问/迁移，未
+push/PR/merge。Production 状态继续为 `blocked/not_proven`；P5.4C disposable
+Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实性），
+`formal_builder_integration=not_proven` +
+`formal_builder_posture_not_integrated=true`（probe 诚实记录），不声称正式
+组合集成。
+
+---
+
+### P5.4C Lite Agent product loop review-fix Round 5（2026-08-08）
+
+外部 review 对 Round 4 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **严格退出码类型（fix 1）**：receipt `returncode` 现在要求
+   `type(returncode) is int` 且严格等于 `0`，显式拒绝 JSON `false`/`true`
+   （Python `bool`，`isinstance(value, int)` 会因 `False == 0` 错误接受）、
+   `0.0`、`"0"`、`null`、负数和非零整数。
+2. **command 闭集（fix 2）**：验证器要求 command keys 恰好为
+   `("lite-unit-suite", "lite-gate-probes")`，不得缺失、重复、增加未知 key
+   或乱序。
+3. **sidecar 精确绑定（fix 3）**：每个 command key 的 receipt `stdout`/
+   `exitcode` 路径字面值必须在 resolve 之前精确等于
+   `commands/{key}.stdout` / `commands/{key}.exitcode`；拒绝绝对路径、反斜杠
+   替代、`.`/`..`、重复分隔符、大小写别名、URL/drive 路径和任何 lexical
+   alias（`commands/../commands/{key}.stdout`、`commands/./{key}.stdout`）。
+   resolve 后仍检查 run-dir containment、普通文件、非 symlink 并校验 digest；
+   symlink sidecar 直接拒绝（平台不支持时测试标记 skipped）。
+4. **禁止交叉绑定（fix 4）**：两个 command 不得交换 stdout/exitcode/digest；
+   `lite-unit-suite` 不得指向 probe artifact，probe 不得指向 unit artifact；
+   相同 stdout/exitcode 字面值或相同 inode 被多个 command 共用也必须拒绝。
+5. **重新推导 unit 摘要（fix 5）**：从精确绑定的 `commands/lite-unit-suite.stdout`
+   读取 UTF-8 文本，调用正式 `_parse_test_summary()`（现在捕获
+   passed/failed/skipped/deselected，各为严格 `int`）；将推导结果同时与顶层
+   `lite_unit_summary`、`measurements["lite_unit_summary"]` 逐字段严格比较
+   （`type(value) is int`）。缺失/额外字段、boolean-as-int、passed/failed/
+   skipped/deselected 数值漂移、顶层与 measurements 互相漂移全部拒绝。
+6. **probe 语义保持严格（fix 6）**：继续从精确绑定的 probe stdout 重新解析
+   posture；`formal_builder_integration=not_proven` 与
+   `formal_builder_posture_not_integrated=true` 继续作为独立 claim；
+   integrated/enabled/available/selectable/空值/未知 token 继续拒绝。
+7. **Round 4 边界不回退（fix 7）**：SOURCE_FILES/source-manifest closure、
+   Compose/front-end helper 封存、精确 command template、显式 `.env.example`、
+   production flags 关闭、admission closed set、run-scoped byte integrity、旧
+   evidence 保留、seal digest 链均未回退。
+8. **新不可变 evidence（fix 8）**：保留所有既有 runs 字节不变，把 Round 4
+   最新 run `20260808T013438760017Z-d93e5f01d4a4` 标记为
+   superseded/incomplete（replacement 指向 Round 5 新 run）；从新 clean committed
+   HEAD 正式执行 `--run` 生成全新 immutable run-scoped evidence，再执行官方
+   `--verify-evidence`（PASS）。
+9. **文档与 seal 链重算（fix 9）**：更新 security-invariants（INV-051）、
+   ai-maintainer-map（6.15）、phase-5-lite-agent-product-loop、handover；
+   按依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链（P5.0/P5.1A/P5.2A/P5.3A
+   verifiers 不引用 P5.4C 文档，digest 不受影响）；P5.4C source manifest digest
+   由 `--run` 从最终 clean commit 重算并封存。
+
+强制攻击反例（全部被拒绝，`backend/tests/test_p5_4c_lite_agent_product_gate.py`
+新增 114 passed，含 Round-5 attack matrix）：receipt `returncode=false/true/
+0.0/"0"/null/-1/1`；unit/probe stdout 交叉绑定；unit/probe exitcode 交叉绑定；
+`commands/../commands/{key}.stdout`；`commands/./{key}.stdout`；反斜杠/绝对
+路径 alias；unit receipt 指向 probe stdout 且伪造 digest；两个 command 绑定
+同一 stdout/exitcode；修改 unit stdout summary 后仅重新封装 evidence；
+只修改顶层 `lite_unit_summary`；只修改 `measurements.lite_unit_summary`；
+顶层与 measurements 一致但与 unit stdout 推导值不一致；symlink sidecar
+（平台支持时拒绝，不支持时 skipped）；command key 重复/未知；boolean-as-int
+summary；summary 缺失/额外字段。正向控制：合法 synthetic run 仍通过
+`--verify-evidence`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）
+`test_p5_4c_lite_agent_product_gate.py` 114 passed +
+`test_p5_4c_lite_gate.py` + `test_agent_alpha_engineering.py` 61 passed
+focused PASS。production Runtime 继续 disabled，Phase 5 Feature Gates 保持
+false，migration head `0012`，migration `0013` absent，root `.env` 未读取，
+业务数据库未访问/迁移，未 push/PR/merge。Production 状态继续为
+`blocked/not_proven`；P5.4C disposable Lite Gate 仅是工程证据与自包含完整性
+收据（不证明外部真实性），`formal_builder_integration=not_proven` +
+`formal_builder_posture_not_integrated=true`（probe 诚实记录），不声称正式
+组合集成。
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
@@ -2693,3 +3204,80 @@ Feature Gates 保持 false。
 → P5.6C catalog/install/rollback API+UI → P5.6D instruction Skill exact-version
 pin。workflow 等 P5.3/P5.4，script 等 production P34.5/P34.7，MCP/third-party
 Marketplace 等 Phase 6。
+
+---
+
+### 产品交付、Runtime 分级与跨平台路线批准（2026-08-07）
+
+用户批准调整 OmniBase 的后续产品化方向：不再把高安全 Sandbox 的最终生产
+准入作为所有 Agent 用户价值的唯一前置条件；同时也不降低 P34、Capability
+Gateway、lease/fencing、workload identity、预算、审计和 fail-closed 边界。
+项目采用“先交付低风险 Agent，按执行风险分级解锁后端”的双线策略。
+
+产品运行姿态冻结为三个等级：
+
+- **Lite**：面向 macOS、低配 PC、无 Hyper-V/KVM 或不希望安装本地容器运行时的
+  用户。允许 Workspace、云端 LLM、只读知识检索、无工具/低风险单 Agent 与
+  Agent Builder；禁止任意代码、Shell、SQL、任意 HTTP、高风险插件和敌对代码
+  Sandbox。设备能力不足时应降级功能，而不是让整个工作台不可用。
+- **Local**：面向具备 Docker/Podman 或受支持本地运行时的普通开发设备。允许
+  本地数据库、RAG、可选本地模型和后续经合同准入的低风险工具；普通容器不得
+  被描述为敌对代码的强安全边界。
+- **Hardened**：面向通过 Hyper-V/KVM、独立或远程 Runner、PrivateNetwork
+  Broker、mTLS Gateway、Run/Network lease 与 fencing 等正式准入的宿主。只有
+  此等级在 P34.7 生产 Gate 真实通过后，才可承载高风险插件、任意代码或敌对
+  workload。
+
+控制平面不得继续把 Hyper-V、WSL、Docker 或特定 Windows 内核实现当作所有
+功能的硬依赖。后续应建立 provider-neutral `ExecutionBackend` 边界，至少规划：
+
+- `NoToolBackend`：云模型、只读 RAG 和无工具 Agent；
+- `LocalContainerBackend`：用户信任的本地受控任务，不宣称 hostile-code
+  isolation；
+- `HardenedSandboxBackend`：P34.5/P34.7 强隔离链路；
+- `RemoteRunnerBackend`：让 macOS、低配 PC 和无本地虚拟化设备把高风险执行
+  委托给用户控制的 Linux/Runner 主机。
+
+近期优先级同步调整为：
+
+1. 完成 P5.4B Review-Fix，证明真实
+   `ValidatedPlan -> engineering composition -> TypedSingleAgentExecutor ->
+   CapabilityGatewayKnowledgeSearchPort -> GatewayService.rag_search -> receipt`
+   链路；
+2. 交付第一个可理解、可创建、可运行的 Lite 单 Agent 与 Workspace 闭环；
+3. 建立 Execution Backend 能力探测、分级拒绝和降级合同，再推进 Hardened
+   P34.7 production admission；
+4. 增加中英文图文 Quick Start、Demo Workspace、部署/首个 Agent 视频和明确的
+   能力状态矩阵；普通贡献入口与核心安全维护合同分层，降低首次贡献门槛；
+5. 规划轻量桌面启动器，优先承担安装、升级、端口检查、Runtime/GPU 探测、
+   服务启停、日志和脱敏诊断包，不以隐藏命令行为由隐藏失败原因；
+6. 增加 GPU/CPU/Apple Silicon/远程模型能力档位，优先治理 BGE embedding/
+   reranker 的常驻、异步预热、readiness、keep-alive、缓存、批处理和显式降级，
+   而不是只提供驱动安装脚本。
+
+社区交付必须如实区分 `available`、`alpha`、`engineering-only`、`contract-only`、
+`locked` 与 `blocked/not_proven`。Quick Start 和宣传材料不得把 Roadmap、
+Disposable Gate 或 engineering seam 写成 production availability。
+
+P5.4B 首次 disposable integration 绕过 formal composition、AgentRun ID 与
+WorkspaceRun/RunLease ID 混用、负向矩阵不足以及 source/evidence seal 不完整的
+问题已经由 Review-Fix Round 1 forward-fix；旧 P5.4B evidence 继续标记为
+superseded/incomplete。完整回归随后发现共享 Phase 5 示例合同仍封存旧的维护者
+地图/安全不变量摘要，因此该分支又执行了不放宽 Gate 的 sealed-contract refresh。
+P5.4B 是否达到 engineering Gate passed 必须以该 refresh 的 exact clean commit
+生成并独立验证的最新 Gate v2 evidence 为准；任何旧 run 都不能替代当前源码封存。
+
+本次批准仅更新路线和交接文档，不授权 migration `0013`、production Runtime
+激活、三个 Phase 5 Feature Gate 开启、Browser execution API、高风险插件、
+Sandbox production wiring、业务数据库迁移、push、PR 或 merge。当前状态继续为：
+
+```text
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+P34.7=blocked/not_proven
+P5.4B production admission=blocked/not_proven
+production Runtime=disabled
+```

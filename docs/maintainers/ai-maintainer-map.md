@@ -1257,7 +1257,198 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   Semantic state remains legible through text, icons, border weight, fill,
   spacing and labels.
 
-## 6.14 P5.6A first-party native Skill contract
+## 6.13 P5.4A typed single-Agent Executor
+
+- `backend/src/omnibase/agent_executor/` is an engineering-only typed seam. It
+  accepts one P5.3A `ValidatedPlan` node and one fixed read-only logical
+  capability: `knowledge_search` mapped to `workspace.knowledge.search`.
+- `TypedSingleAgentExecutor` rechecks the plan digest, tenant/workspace/task/run
+  identity, AgentVersion digest, node kind, low risk, read-only effect, tool
+  allowlist and node byte/tool budgets before calling the injected
+  `KnowledgeSearchPort`.
+- The default builder is `UnavailableTypedSingleAgentExecutor`. The explicit
+  `CapabilityGatewayKnowledgeSearchPort` uses a server-owned workload credential,
+  the independent `GatewayService.rag_search` boundary and an injected
+  runtime/lease/fencing validator; it rejects Browser JWTs, physical locators
+  and unknown-result retries, returning only logical, bounded DTOs. No Browser
+  route, SDK, queue, worker, scheduler, migration `0013`, production Gateway
+  wiring or direct database/RAG fallback may be added as a shortcut.
+- `scripts/production/run_p5_4a_gateway_adapter_gate.py` currently seals only
+  adapter-contract evidence. It must not be described as a PostgreSQL/container
+  or production Gate until the Docker-backed sentinel run records its own
+  evidence.
+- P5.4A deliberately does not implement tools, MCP, Skills, Shell, SQL, arbitrary
+  HTTP, Sandbox execution or multi-Agent orchestration. All three Phase 5 Feature
+  Gates remain false and P34.7 production admission remains blocked/not_proven.
+
+## 6.14 P5.4B engineering composition and evidence recovery
+
+- `backend/src/omnibase/agent_executor/engineering.py` is an internal,
+  **engineering-only** composition seam over P5.4A. The default is
+  `UnavailableEngineeringSingleAgentExecutor`; no Browser route, SDK, queue,
+  worker, scheduler or production Runtime is installed by this module.
+- `build_engineering_single_agent_executor()` admits only an explicit
+  engineering flag, migration head exactly `0012`, all three Phase 5 Feature
+  Gates false, and explicitly injected Gateway/session/server-owned workload
+  credential dependencies. It never migrates or connects merely to inspect the
+  head. Production activation is disabled and migration `0013` is not created.
+- The only composed capability remains `knowledge_search` →
+  `workspace.knowledge.search`. `LiveRuntimeAuthorityValidator` re-reads live
+  Workspace, Task, sealed AgentVersion, installed binding, Agent Run, Workspace
+  RunLease and Workspace Node facts before each call. Task actor,
+  plan/version/scope/budget digests, tenant/workspace/generation,
+  runtime/workload identity, the current WorkspaceRun fencing cursor,
+  database-clock lease expiry and Run/Node fencing must match exactly. The mTLS
+  certificate thumbprint remains distinct from the persisted workload digest.
+  Stale or revoked authority is rejected.
+- The disposable runner
+  `scripts/production/run_p5_4b_engineering_composition_disposable_gate.py`
+  uses only an `omnibase_test_p54b_*` sentinel. Gate v2 writes unique run-scoped
+  evidence under `.tmp/p5-4b-engineering-composition-gate-v2/<run_id>/`, preserves
+  the legacy evidence directory as superseded/incomplete, and independently
+  verifies exact command semantics, raw command sidecars, source/artifact
+  digests, measured Alembic graph, Runtime gates, internal-only workload
+  network, local-only pull policy, image/venv/package identity and cleanup
+  `0/0/0`. The sealed runtime remains explicitly ambient-dependent; it is not
+  production evidence.
+- Credential attestation, live P5.4B validation and Gateway Core checks are
+  separate fail-closed transactions. Do not claim atomic revocation closure,
+  and do not hold locks across arbitrary RAG/provider work. The residual TOCTOU
+  risk keeps production admission blocked/not_proven.
+- SHA-256 source manifests and evidence are sealed raw-byte chains. Never edit
+  historical evidence to repair a mismatch. Stop admission, retain the old
+  chain and forward-fix from a clean checkout with a new explicit seal.
+
+Focused commands:
+
+```text
+python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4b_gate_v2.py -q
+python -m pytest backend/tests/test_p34_7_production_composition.py -q
+python -m pytest backend/tests/test_p5_4a_typed_executor.py backend/tests/test_p5_4a_gateway_adapter.py -q
+python -m compileall -q backend/src/omnibase/agent_executor
+python scripts/maintenance/validate_maintainer_map.py --repo-root .
+python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+```
+
+## 6.15 P5.4C Lite Agent product loop (engineering-only, no_tool-only)
+
+- `backend/src/omnibase/agent_alpha/lite.py` is the **engineering-only product
+  entry guard** for the single-Agent loop. `AGENT_LITE_ENGINEERING_ENABLED` is
+  an independent closed-set gate that defaults off; any token other than
+  exactly `true`/`false` (including missing, empty, `TRUE`, `1`, `yes`, `on`,
+  `enabled`) must fail closed via `LiteAgentConfigurationError`.
+- The pure parser `resolve_lite_agent_flag(raw)` is host-independent and never
+  reads `os.environ`; `None` means "the variable is absent" and resolves to
+  `False`. The runtime resolver `runtime_lite_agent_enabled()` is the only
+  place the gate reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and
+  passes the value into the parser; the Browser dependency
+  `router.get_agent_alpha()` and the live posture must use it so the flag
+  genuinely enables the route. `lite_agent_posture()` with `env=None` resolves
+  the Lite flag through the runtime resolver and never reads it from
+  `os.environ` itself; only an explicit `env` mapping or explicit `raw`
+  argument feeds the pure parser directly. API-level tests prove the flag
+  reaches the assembled/unavailable Alpha dependency as appropriate instead of
+  always returning the Lite-gate-disabled path.
+- `docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+  `P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+  fail-closed defaults of `false`; `.env.example` documents both. Verify with
+  `docker compose --env-file .env.example config` — `"false"` by default,
+  `"true"` only under an explicit engineering override.
+- The gate is a *product* entry guard, never an authorization fact. Passing it
+  only opens the Lite Browser surface in a development/engineering deployment.
+  It never authorizes production Agent Runtime, Planner, multi-Agent execution,
+  arbitrary tools, migration `0013`, or any Phase 5 production Feature Gate.
+- The Lite product loop supports exactly one invocation mode: `no_tool`,
+  carried by the P5.2C `build_engineering_agent_alpha` seam. The formal P5.4B
+  builder `build_engineering_single_agent_executor` (which installs
+  `LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`)
+  is disclosed by name but is **not integrated**
+  (`formal_builder_integration = not_integrated`): it is never assembled,
+  routed or selectable in this loop, and remains a separate P5.4B engineering
+  seam whose only authority is the P5.4B disposable PostgreSQL Gate.
+- `lite_agent_posture()` is read-only and non-authorizing: it discloses the
+  formal builder name, the Alpha builder name, the single supported invocation
+  mode `no_tool`, the formal-builder integration state, whether all Phase 5
+  gates are false, and the expected migration head. Assembly decisions stay in
+  the fail-closed builders; the posture never authorizes anything.
+- The Browser status DTO (`AlphaStatusResponse`) and the Next.js workbench
+  consume the posture fields (`formal_builder`, `alpha_builder`,
+  `supported_invocation_modes`, `formal_builder_integration`,
+  `expected_migration_head`) to label state honestly. Static `ROADMAP`/`LOCKED`
+  chips must be reserved for surfaces not backed by current product state; the
+  formal knowledge-search surface must read `NOT INTEGRATED`, and provider
+  secrets must never leak into browser state, logs, diagnostics, errors or
+  DTOs.
+- The disposable runner
+  `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py` is
+  run-scoped and engineering-only. It executes the focused Lite unit suite and
+  a live gate probe (which patches the process environment and measures the
+  runtime resolver, the live posture and the single supported mode) inside the
+  backend container, then seals the tested source bytes, command receipts and
+  measurements under unique raw-byte SHA-256 sidecars. The sealed source
+  manifest is a **closed set** covering every file that decides Compose
+  Lite-flag wiring (`docker-compose.yml`, `.env.example`), frontend
+  `canInvoke` (`frontend/lib/lite-gate.ts` + its test) and Gate admission; the
+  gate tests assert the maintenance-map `lite-agent-product-loop` module /
+  `INV-051` source paths stay a subset of the closure. Every claim is derived
+  from an executed receipt or a sealed file measurement, or reported
+  `not_proven`; the root-env/business-database negatives are re-derived from
+  the recorded command vectors and the migration head is re-discovered from
+  the repository files. The formal-builder disclosure is recorded **honestly**
+  as two independent claims: `formal_builder_integration = not_proven` (this
+  Gate never executes the formal P5.4B composition) and
+  `formal_builder_posture_not_integrated = true` (the probe genuinely reports
+  `not_integrated`); any other probe token is recorded verbatim and fails the
+  admission decision (`passed=false` and `--verify-evidence` rejects). The run
+  directory is preserved on success and on failure and can be re-verified with
+  `--verify-evidence`, which re-executes the same closed-set admission
+  decision, validates the exact argv template of every recorded command
+  (explicit `.env.example`, closed production flags, exact test target) and
+  strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
+  exit code equal to the receipt `returncode`; non-integer, multi-line,
+  missing and 0/1-drifted sidecars are rejected). Round-5 additionally
+  requires each receipt's `returncode` to be a **strict `int`**
+  (`type(value) is int`, rejecting JSON `false`/`true`, `0.0`, `"0"`, `null`,
+  negative and non-zero integers, since `isinstance(value, int)` would wrongly
+  accept `bool` because `False == 0`); the command keys to form the **exact
+  closed set** with no missing/duplicate/extra/unknown key; each key to bind
+  its **own** sidecar by **exact POSIX path literal**
+  (`commands/{key}.stdout` / `commands/{key}.exitcode`, compared before any
+  resolve, rejecting absolute/backslash/`.`/`..`/repeated-separator/case/URL/
+  drive aliases and every lexical alias so two commands cannot share or swap
+  stdout/exitcode and a unit receipt cannot point at the probe stdout); symlink
+  sidecars to be rejected; no two commands to share a stdout/exitcode literal
+  or inode; and the **unit summary** to be **re-derived** from the
+  precisely-bound `commands/lite-unit-suite.stdout` bytes and compared
+  field-by-field (`passed`/`failed`/`skipped`/`deselected`, strict
+  `type(value) is int`) against both the top-level `lite_unit_summary` and
+  `measurements["lite_unit_summary"]`, so a missing/extra field, a
+  boolean-as-int, a count that disagrees with the sealed stdout, or a
+  top-level-vs-measurements drift rejects the evidence. The probe is
+  re-parsed from the precisely-bound `commands/lite-gate-probes.stdout` and
+  the two formal-builder claims stay independent. The sealed evidence is a
+  **self-contained integrity receipt** only: run-scoped byte integrity, never
+  external authenticity, no independent trust anchor, never production
+  admission. The Gate never reads the root `.env`, never touches a business
+  database, never creates migration `0013`, never opens a Phase 5 production
+  Feature Gate, never claims formal P5.4B integration, and does not replace
+  the heavier P5.4B disposable PostgreSQL Gate.
+
+Focused commands:
+
+```text
+python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_p5_4c_lite_gate.py tests/test_agent_alpha_engineering.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_4c_lite_agent_product_gate.py -q
+docker compose --env-file .env.example config --quiet
+cd frontend && pnpm typecheck && pnpm lint && pnpm test && NODE_ENV=production pnpm build
+python scripts/maintenance/validate_maintainer_map.py --repo-root .
+python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --verify-evidence .tmp/p5-4c-lite-agent-product-loop-gate/<run-id>/evidence.json
+```
+
+## 6.16 P5.6A first-party native Skill contract
 
 - The product Skill contract is
   `backend/src/omnibase/production/phase5_skill_contract.py`. P5.6A is strictly

@@ -111,6 +111,7 @@ class StaticAttestor:
             workspace_id=WORKSPACE,
             runtime_instance_id="50000000-0000-0000-0000-000000000001",
             certificate_thumbprint="a" * 64,
+            workload_identity_digest="a" * 64,
         )
 
 

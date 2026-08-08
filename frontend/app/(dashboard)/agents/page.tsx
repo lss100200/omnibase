@@ -21,6 +21,7 @@ import {
   type AgentAlphaProfile,
   type AgentAlphaProfileList,
 } from '@/lib/api'
+import { canInvokeLiteAgent, liteInvokeConditionsMet } from '@/lib/lite-gate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -107,13 +108,20 @@ export default function AgentAlphaPage() {
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [posture, setPosture] = useState<{
     engineering_assembled: boolean
+    lite_gate_enabled: boolean
     engineering_flag_enabled: boolean
     environment_allowed: boolean
     phase5_gates_all_false: boolean
     production_activation_allowed: boolean
     tools_enabled: boolean
     multi_agent_enabled: boolean
+    formal_builder: string
+    alpha_builder: string
+    supported_invocation_modes: string[]
+    formal_builder_integration: string
+    expected_migration_head: string
   } | null>(null)
+  const [postureLoading, setPostureLoading] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderSaving, setBuilderSaving] = useState(false)
@@ -146,6 +154,7 @@ export default function AgentAlphaPage() {
     setInstallations([])
     setBindingId('')
     if (!workspaceId) return
+    setPostureLoading(true)
     agentAlphaApi
       .profiles(workspaceId)
       .then((list: AgentAlphaProfileList | undefined) => {
@@ -157,8 +166,12 @@ export default function AgentAlphaPage() {
       .catch(() => setInstallations([]))
     agentAlphaApi
       .status(workspaceId)
-      .then((status) => setPosture(status))
+      .then((status) => {
+        setPosture(status)
+        setStatusError(null)
+      })
       .catch(() => setStatusError('agent_alpha_unavailable'))
+      .finally(() => setPostureLoading(false))
   }, [workspaceId])
 
   const selectedInstallation = installations.find((item) => item.agent_version_id === bindingId)
@@ -212,7 +225,8 @@ export default function AgentAlphaPage() {
 
   const invoke = async () => {
     const userMessage = input.trim()
-    if (!userMessage || !workspaceId || !bindingId || running) return
+    if (!canInvokeLiteAgent(posture, userMessage, workspaceId, bindingId)) return
+    if (running) return
     setMessages((current) => [
       ...current,
       { id: crypto.randomUUID(), role: 'user', content: userMessage },
@@ -340,9 +354,10 @@ export default function AgentAlphaPage() {
 
   const postureBadges = (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge className="shrink-0" variant="secondary">
-        ENGINEERING ALPHA
+      <Badge className="shrink-0" variant="outline">
+        LITE GATE {posture?.lite_gate_enabled ? 'ON' : 'OFF'}
       </Badge>
+
       <Badge className="shrink-0" variant="outline">
         <Wrench className="mr-1 h-3 w-3" />
         TOOLS DISABLED
@@ -387,11 +402,23 @@ export default function AgentAlphaPage() {
               <div className="mb-4 rounded-2xl bg-primary/10 p-4">
                 <BrainCircuit className="h-10 w-10 text-primary" />
               </div>
-              <h2 className="text-lg font-medium">Your first AI employee starts here</h2>
+              <h2 className="text-lg font-medium">
+                {!workspaceId
+                  ? 'Select a Workspace to begin'
+                  : !liteInvokeConditionsMet(posture)
+                    ? 'Invocation is locked until every condition holds'
+                    : installations.length === 0
+                      ? 'No sealed AgentVersion installed'
+                      : 'Your first AI employee starts here'}
+              </h2>
               <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-                Select a Workspace and a sealed, installed AgentVersion. Alpha can reason over
-                read-only workspace knowledge, but cannot execute tools, MCP, shell, SQL or
-                arbitrary HTTP.
+                {!workspaceId
+                  ? 'Choose an existing Workspace from the right panel. Creating a Workspace uses the Workspace governance API; this engineering surface never bypasses membership or scope.'
+                  : !liteInvokeConditionsMet(posture)
+                    ? 'Invoke requires the Lite gate enabled, the tool-free Alpha assembled in this environment, an allowed engineering environment and all Phase 5 production gates false — simultaneously. Production Runtime, Planner, multi-Agent and arbitrary tools remain locked.'
+                    : installations.length === 0
+                      ? 'Create an Agent with "New employee", or ask your operator to seal and install an AgentVersion. Alpha can reason over read-only workspace knowledge only.'
+                      : 'Select a sealed, installed AgentVersion. Alpha can reason over read-only workspace knowledge, but cannot execute tools, MCP, shell, SQL or arbitrary HTTP.'}
               </p>
             </div>
           )}
@@ -450,7 +477,9 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={!input.trim() || !workspaceId || !bindingId}
+                disabled={
+                  !canInvokeLiteAgent(posture, input, workspaceId, bindingId)
+                }
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -464,33 +493,48 @@ export default function AgentAlphaPage() {
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Invocation target</h2>
           <label className="mt-4 block text-xs font-medium text-muted-foreground">Workspace</label>
-          <Select value={workspaceId} onValueChange={setWorkspaceId}>
-            <SelectTrigger className="mt-2">
-              <SelectValue placeholder="Select a workspace" />
-            </SelectTrigger>
-            <SelectContent>
-              {workspaces.map((workspace) => (
-                <SelectItem key={workspace.id} value={workspace.id}>
-                  {workspace.display_name ?? workspace.id.slice(0, 8)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {workspaces.length === 0 ? (
+            <p className="mt-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              No Workspaces available. Create one via the Workspace governance API; this engineering
+              surface never bypasses membership or scope.
+            </p>
+          ) : (
+            <Select value={workspaceId} onValueChange={setWorkspaceId}>
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="Select a workspace" />
+              </SelectTrigger>
+              <SelectContent>
+                {workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {workspace.display_name ?? workspace.id.slice(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <label className="mt-4 block text-xs font-medium text-muted-foreground">
             Installed Agent
           </label>
-          <Select value={bindingId} onValueChange={setBindingId}>
-            <SelectTrigger className="mt-2">
-              <SelectValue placeholder="Select an installed AgentVersion" />
-            </SelectTrigger>
-            <SelectContent>
-              {installations.map((item) => (
-                <SelectItem key={item.workspace_agent_binding_id} value={item.agent_version_id}>
-                  {item.display_name} · sealed tool-free
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {installations.length === 0 ? (
+            <p className="mt-2 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {workspaceId
+                ? 'No sealed AgentVersion installed in this Workspace.'
+                : 'Select a Workspace first to list installed AgentVersions.'}
+            </p>
+          ) : (
+            <Select value={bindingId} onValueChange={setBindingId}>
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="Select an installed AgentVersion" />
+              </SelectTrigger>
+              <SelectContent>
+                {installations.map((item) => (
+                  <SelectItem key={item.workspace_agent_binding_id} value={item.agent_version_id}>
+                    {item.display_name} · sealed tool-free
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {selectedInstallation && (
             <div className="mt-4 space-y-1 text-xs text-muted-foreground">
               <p className="break-all">
@@ -511,6 +555,46 @@ export default function AgentAlphaPage() {
         </section>
 
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <h2 className="text-sm font-semibold">Workspace surfaces</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Engineering-only Alpha exposes one installed Agent and read-only workspace knowledge.
+            Surfaces not backed by current product state are labeled explicitly.
+          </p>
+          <div className="mt-4 space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Workspace / AgentVersion selection</span>
+              <Badge variant={workspaceId ? 'secondary' : 'outline'}>
+                {workspaceId ? 'LIVE' : 'SELECT'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Formal P5.4B knowledge search</span>
+              <Badge variant="outline">
+                {posture?.formal_builder_integration === 'not_integrated'
+                  ? 'NOT INTEGRATED'
+                  : 'LOCKED'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Projects / branches / files</span>
+              <Badge variant="outline">ROADMAP</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Skills</span>
+              <Badge variant="outline">ROADMAP</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">MCP</span>
+              <Badge variant="outline">LOCKED</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Marketplace</span>
+              <Badge variant="outline">ROADMAP</Badge>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Runtime posture</h2>
           <div className="mt-4 space-y-3 text-sm">
             <div className="flex items-start gap-3">
@@ -518,10 +602,31 @@ export default function AgentAlphaPage() {
               <div>
                 <p className="font-medium">Engineering-only</p>
                 <p className="text-xs text-muted-foreground">
-                  {statusError ??
-                    (posture?.engineering_assembled
-                      ? 'Assembled in this environment.'
-                      : 'Not assembled; production remains locked.')}
+                  {postureLoading
+                    ? 'Reading live posture…'
+                    : statusError ??
+                      (!liteInvokeConditionsMet(posture)
+                        ? 'Invoke is locked: the Lite gate, the assembled engineering Alpha, the allowed environment and all-Phase-5-gates-false must hold simultaneously. Production Runtime remains locked.'
+                        : posture?.engineering_assembled
+                          ? 'Tool-free Alpha assembled in this environment.'
+                          : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Database className="mt-0.5 h-4 w-4 text-foreground" />
+              <div>
+                <p className="font-medium">Formal knowledge-search builder</p>
+                <p className="text-xs text-muted-foreground">
+                  {posture
+                    ? `${posture.formal_builder} (${posture.formal_builder_integration}) — not selectable in this loop`
+                    : 'Posture unavailable until a Workspace is selected.'}
+                </p>
+                <p className="mt-1 break-all text-xs text-muted-foreground">
+                  Tool-free loop: {posture?.alpha_builder ?? 'build_engineering_agent_alpha'}.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Supported invocation modes: {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
                 </p>
               </div>
             </div>

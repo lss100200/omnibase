@@ -1,0 +1,365 @@
+{
+  "schema_version": 1,
+  "phase": "P5.3A",
+  "activation_requested": false,
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "p34_7": {
+    "formal_state": "blocked/not_proven",
+    "decision": {
+      "path": "docs/evidence/p34-7/production-readiness-decision.md",
+      "sha256": "0ef8a35e0a5836b9aefcbf7dd444f91add95216865b6502e3183f7814c744a8d"
+    }
+  },
+  "p5_0": {
+    "formal_state": "blocked/not_proven",
+    "admission_contract": {
+      "path": "deployment/production/phase5-admission.example.json",
+      "sha256": "3490c42a9314443e6ca19e6c8a8a5b938bf7df8dd6ddd130e870a36895f68619"
+    }
+  },
+  "p5_1": {
+    "formal_state": "blocked/not_proven",
+    "registry_contract": {
+      "path": "deployment/production/phase5-registry-contract.example.json",
+      "sha256": "5078bf5b77916b0e1925c3a00222242d1b003e98558b030ac937c304e767a366"
+    }
+  },
+  "p5_2a": {
+    "formal_state": "blocked/not_proven",
+    "task_ledger_contract": {
+      "path": "deployment/production/phase5-task-ledger-contract.example.json",
+      "sha256": "46ab90aab0f99daad834a4bb23c26b991b4c4af93093e7fe1fbe8f5bc5e04da0"
+    }
+  },
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      ".gitattributes",
+      "AGENTS.md",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/tests/test_p5_3a_planner_contract.py",
+      "deployment/production",
+      "scripts/production",
+      "docs/maintainers/maintenance-map.json",
+      "docs/maintainers/security-invariants.md",
+      "docs/maintainers/ai-maintainer-map.md",
+      "docs/phase-5-planner-contract.md",
+      "docs/phase-5-threat-model.md",
+      "docs/phase-5-agent-runtime-implementation-plan.md",
+      "docs/roadmap.md",
+      "docs/handover-report.md",
+      "docs/runbooks/p34-7-overlay-sla.md",
+      "sdk/contracts"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "phase5_planner_proposal_production_evidence",
+      "status": "not_proven",
+      "path": null,
+      "sha256": null,
+      "assertions": {},
+      "required_for_activation": true
+    }
+  ],
+  "budget_ceilings": {
+    "input_tokens": 10000000,
+    "output_tokens": 5000000,
+    "reasoning_tokens": 5000000,
+    "total_tokens": 20000000,
+    "cost_micros": 10000000,
+    "model_calls": 5000,
+    "tool_calls": 2000,
+    "wall_clock_ms": 3600000,
+    "artifact_bytes": 1073741824,
+    "sandbox_jobs": 500,
+    "max_attempts": 32,
+    "max_parallel_steps": 8
+  },
+  "planner_policy": {
+    "schema_version": 1,
+    "policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "allowed_node_kinds": [
+      "model_reasoning",
+      "knowledge_read",
+      "aggregate",
+      "review",
+      "human_approval",
+      "artifact_read_proposal",
+      "artifact_write_proposal",
+      "sandbox_job_proposal"
+    ],
+    "allowed_tool_ids": [
+      "knowledge_search"
+    ],
+    "max_replan": 2,
+    "approval_policy": {
+      "low": "optional",
+      "medium": "optional",
+      "high": "required",
+      "critical": "required"
+    },
+    "ceilings": {
+      "max_nodes": 32,
+      "max_depth": 8,
+      "max_fan_out": 8,
+      "max_concurrency": 4,
+      "max_replan": 2,
+      "max_attempts_per_node": 2
+    }
+  },
+  "agent_version_snapshots": [
+    {
+      "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+      "agent_version_id": "11111111-1111-1111-1111-111111111111",
+      "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+      "tenant_id": "00000000-0000-0000-0000-00000000000a",
+      "version_state": "sealed",
+      "risk_level": "low",
+      "allowed_tool_ids": [
+        "knowledge_search"
+      ],
+      "resource_scopes": [
+        "workspace-docs"
+      ],
+      "instructions_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "tool_version_snapshots": [
+    {
+      "tool_id": "knowledge_search",
+      "tool_version": "1.0.0",
+      "tool_digest": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "effect_class": "read_only",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ],
+  "workspace_scope": {
+    "workspace_id": "66666666-6666-6666-6666-666666666666",
+    "workspace_generation": 1,
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "resource_scopes": [
+      "workspace-docs"
+    ],
+    "tool_binding_ids": [
+      "knowledge_search"
+    ],
+    "scope_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+  },
+  "frozen_task": {
+    "task_id": "00000000-0000-0000-0000-0000000000e1",
+    "task_generation": 1,
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "workspace_id": "66666666-6666-6666-6666-666666666666",
+    "workspace_generation": 1,
+    "actor_user_id": "00000000-0000-0000-0000-0000000000aa",
+    "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+    "agent_version_id": "11111111-1111-1111-1111-111111111111",
+    "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+    "resource_scope_digest": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+    "budget_policy_digest": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "deadline": "2026-08-12T00:00:00Z",
+    "task_budget": {
+      "input_tokens": 1000000,
+      "output_tokens": 500000,
+      "reasoning_tokens": 500000,
+      "total_tokens": 2000000,
+      "cost_micros": 100000,
+      "model_calls": 10,
+      "tool_calls": 5,
+      "wall_clock_ms": 60000,
+      "artifact_bytes": 1048576,
+      "sandbox_jobs": 1,
+      "max_attempts": 4,
+      "max_parallel_steps": 2
+    }
+  },
+  "plan_proposals": [
+    {
+      "schema_version": 1,
+      "proposal_id": "aa000000-aa00-aa00-aa00-aa0000000001",
+      "tenant_id": "00000000-0000-0000-0000-00000000000a",
+      "workspace_id": "66666666-6666-6666-6666-666666666666",
+      "workspace_generation": 1,
+      "task_id": "00000000-0000-0000-0000-0000000000e1",
+      "task_generation": 1,
+      "actor_user_id": "00000000-0000-0000-0000-0000000000aa",
+      "root_agent_definition_id": "00000000-0000-0000-0000-000000000001",
+      "root_agent_version_id": "11111111-1111-1111-1111-111111111111",
+      "root_agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+      "request_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "goal_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planner_policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "resource_scope_digest": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+      "budget_policy_digest": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+      "deadline": "2026-08-12T00:00:00Z",
+      "proposal_version": 1,
+      "created_at": "2026-08-05T00:00:00Z",
+      "nodes": [
+        {
+          "node_id": "bb000000-bb00-bb00-bb00-bb0000000001",
+          "node_kind": "model_reasoning",
+          "agent_definition_id": "00000000-0000-0000-0000-000000000001",
+          "agent_version_id": "11111111-1111-1111-1111-111111111111",
+          "agent_version_digest": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+          "depends_on": [],
+          "input_bindings": [],
+          "output_contract": {
+            "output_schema": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "summary"
+              ]
+            },
+            "output_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "allowed_tool_ids": [
+            "knowledge_search"
+          ],
+          "resource_scopes": [
+            "workspace-docs"
+          ],
+          "risk_level": "low",
+          "budget": {
+            "input_tokens": 100000,
+            "output_tokens": 50000,
+            "reasoning_tokens": 50000,
+            "total_tokens": 200000,
+            "cost_micros": 10000,
+            "model_calls": 1,
+            "tool_calls": 1,
+            "wall_clock_ms": 10000,
+            "artifact_bytes": 102400,
+            "sandbox_jobs": 1,
+            "max_attempts": 1,
+            "max_parallel_steps": 1
+          },
+          "timeout_ms": 10000,
+          "retry_policy": {
+            "policy": "no_retry",
+            "max_retries": 0,
+            "backoff_base_ms": 0
+          },
+          "approval_requirement": null,
+          "effect_class": "read_only",
+          "execution_requirement": null,
+          "node_digest": "92c957b5f74fdd74758bcaf1d49bbcf4c24038f62e68a8a218db2608eece55a6"
+        }
+      ],
+      "plan_budget": {
+        "input_tokens": 1000000,
+        "output_tokens": 500000,
+        "reasoning_tokens": 500000,
+        "total_tokens": 2000000,
+        "cost_micros": 100000,
+        "model_calls": 10,
+        "tool_calls": 5,
+        "wall_clock_ms": 60000,
+        "artifact_bytes": 1048576,
+        "sandbox_jobs": 1,
+        "max_attempts": 4,
+        "max_parallel_steps": 2
+      },
+      "plan_risk_summary": {
+        "critical": 0,
+        "high": 0,
+        "low": 1,
+        "medium": 0
+      },
+      "proposal_digest": "1ba478efa5b9640172d4ef009ed15d9fb3f2d9c8ad6c1bbef14ec3f705a45632",
+      "parent_proposal_id": null,
+      "parent_proposal_version": null
+    }
+  ],
+  "forbidden_source_paths": [
+    "backend/src/omnibase/agent_runtime",
+    "backend/src/omnibase/agent_tasks",
+    "backend/src/omnibase/agent_task_ledger",
+    "backend/src/omnibase/agent_invocations",
+    "backend/src/omnibase/planner",
+    "backend/src/omnibase/executor",
+    "backend/src/omnibase/dispatcher",
+    "backend/src/omnibase/scheduler",
+    "backend/src/omnibase/multi_agent",
+    "backend/src/omnibase/tool_gateway"
+  ],
+  "baseline_migration_revisions": [
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+    "0011",
+    "0012"
+  ],
+  "sealed_contracts": [
+    {
+      "name": "task_ledger_contract_module",
+      "path": "backend/src/omnibase/production/phase5_task_ledger_contract.py",
+      "sha256": "1e8a15dc245eaf0cd2de4f4236851b14aad12f1b69d0eb300250124320224229"
+    },
+    {
+      "name": "registry_contract_module",
+      "path": "backend/src/omnibase/production/phase5_registry_contract.py",
+      "sha256": "ba25c7f356574a00658db6c2f86ec047c468cc069db9e6400ab809e37406aa6e"
+    },
+    {
+      "name": "admission_module",
+      "path": "backend/src/omnibase/production/phase5_admission.py",
+      "sha256": "d11c6037dd6ac30e30822906c357b86da59d76dcdcda9a87abc1d2ebdca376aa"
+    },
+    {
+      "name": "threat_model",
+      "path": "docs/phase-5-threat-model.md",
+      "sha256": "4493047c9e2b057326f6fb5dcf122602d47b4f6eed68c85657acb2180bfe60ea"
+    },
+    {
+      "name": "maintainer_map",
+      "path": "docs/maintainers/maintenance-map.json",
+      "sha256": "449b845026d67c2a53410a045350206e0646c663fcbe99035751eac619a33d60"
+    },
+    {
+      "name": "security_invariants",
+      "path": "docs/maintainers/security-invariants.md",
+      "sha256": "1b6eb76af5ca3975c18aa8eea0681733142a950561e23a117f4d9be957468c9e"
+    }
+  ],
+  "openapi_snapshot": {
+    "path": "sdk/contracts/p34-2-openapi.snapshot.json",
+    "sha256": "8506e273959b50c3030c5a8ea3b533181a89d5db2fa449dfe503076d163da373"
+  },
+  "critical_veto": {
+    "expected": 0
+  }
+}
