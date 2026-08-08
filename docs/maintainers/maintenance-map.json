@@ -2491,7 +2491,7 @@
         "Never treat Docker/Podman/WSL/Hyper-V presence or a hostname as hostile-code isolation or network evidence.",
         "Keep Hardened mode fail-closed and blocked/not_proven unless independently sealed Runner/Broker/Gateway evidence is injected and verified.",
         "Never expand root .env; always pass --env-file .env.example to Compose and route all status/health/log output through the diagnostic redactor.",
-        "Keep the capability probe and lifecycle on the single resolve_container_engine contract; a Podman-only host must either execute the controlled podman compose --env-file .env.example path or never claim Local available."
+        "Keep the capability probe and lifecycle on the single resolve_container_engine contract; never infer Compose Local from shutil.which alone — only an exit-0 bounded shell=False `docker compose version` / `podman compose version` probe declares the compose provider verified, and executable_detected / compose_provider_verified / local_mode_available stay distinct facts. A Podman-only host must either execute the controlled podman compose --env-file .env.example path or never claim Local available."
       ]
     }
   ]

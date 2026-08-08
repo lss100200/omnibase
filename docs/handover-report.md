@@ -3139,3 +3139,80 @@ example contract 的 sealed digest 链。
 PostgreSQL integration/destructive 测试；生产 Runtime 激活、migration
 `0013`、Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。
 Hardened 保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。
+
+### Cross-Platform Desktop Runtime Review-Fix Round 4（2026-08-07）
+
+针对分支 `external/cross-platform-desktop-runtime` 的 Review-Fix Round 4，
+继续 forward-fix 于普通 review-fix commit（无 amend/rebase/reset/stash/
+clean，无 push/PR/merge）。
+
+修复内容：
+
+1. **跨元素 CLI 值槽整体脱敏（含 `-`/`--` 前缀值）**：sequence 用显式
+   确定性 token-state parser 处理敏感 flag：`["--api-key", "--q7x9opaque"]`
+   → `["--api-key", "[REDACTED]"]`、`["--token", "-opaque"]` →
+   `["--token", "[REDACTED]"]`、`["--password", "--"]` →
+   `["--password", "[REDACTED]"]`——即使值以 `-`/`--` 开头也整体脱敏。
+2. **无值 fail-closed 且不吞并 allowlisted flag 结构**：敏感 flag 无后继值
+   时自身 `[REDACTED]`；后继元素确定性属于另一个 allowlisted flag
+   （`--profile`/`--service`/`--port`/`--tail`/`--help`/`-h` 或另一个敏感
+   flag）时绝不吞并——`["--api-key", "--profile", "lite"]` →
+   `["[REDACTED]", "--profile", "lite"]`，两个敏感 flag 相邻时各自
+   fail-closed（`["--api-key", "--token", "x"]` →
+   `["[REDACTED]", "--token", "[REDACTED]"]`）。
+3. **有界水平空白 + 超限整项 fail-closed**：`NAME = value` / `--name =
+   value` / `Name : value` 识别任意有界水平空白（上限 256，`MAX_HORIZONTAL_WS`），
+   “超过 8 个空格即放行”的逃逸被关闭；空白超过上限、value 超过单项上限
+   （512）或引号未闭合时整个 item 替换为 `[REDACTED]`。
+4. **带引号赋值值完整消费**：`OPENAI_API_KEY = "q7x9opaque rest8v"` →
+   `OPENAI_API_KEY=[REDACTED]`（不保留 `rest8v` 或尾引号）；未闭合引号整项
+   fail-closed。
+5. **确认敏感 Header 后整个 value 脱敏**：`Authorization: q7x9opaque;rest8v`
+   → `Authorization: [REDACTED]`（分号不再截断 value，保留 JSON-ish `{`/`}`
+   边界与闭合花括号）。
+6. **camelCase/PascalCase 分词**：`stripeApiKey`/`providerPassword`/
+   `myToken`/`azureAccessToken`/`openAiApiKey`（及 PascalCase 变体）在大小写
+   边界分词后命中同一闭集/有界后缀策略。
+7. **`_key` 后缀收窄**：`sort_key`/`cache_key`/`foreign_key`/
+   `keyboard_layout`/`monkey` 保留；`api_key`/`secret_key`/`access_key`/
+   `signing_key`/`private_key`/`encryption_key` 及 provider 变体
+   （`STRIPE_API_KEY` 等）脱敏；通用 `_key` 后缀从策略中移除。
+8. **容器引擎探针**：`resolve_container_engine` 不再凭 `shutil.which` 推断
+   Compose Local 能力；每个候选执行有界、`shell=False`、`capture_output`、
+   短超时（2s）的 `docker compose version` / `podman compose version` 探针，
+   **只有 exit 0 声明 compose provider 已验证**。
+9. **三态事实词汇**：报告区分 `executable_detected`（which 存在）/
+   `compose_provider_verified`（exit-0 探针）/ `local_mode_available`（仅
+   provider 验证后）；Podman 可执行文件存在但 compose provider 缺失 →
+   `detected`/`not_proven`，绝不 claim Local。
+10. **六类负向矩阵**：Docker-only、Podman-only、两者都存在但 compose 失败、
+    timeout、not-found、两者都不存在——probe 与 lifecycle 两侧均有测试，
+    探针必须 shell=False/capture_output/bounded（探针调用参数被断言）。
+11. **无回归**：既有参数数组、显式 `.env.example`、profile/service/verb
+    allowlist、有界输出、Hardened fail-closed、根 `.env` 永不选中等边界
+    全部保持（focused 测试从 101 增至 119）。
+12. **CLI fail-closed 输出**：`start/status/logs/stop` 在容器引擎缺失或
+    `.env.example` 缺失时输出 `{"error": ...}` JSON 并以 exit 2 结束，
+    不再裸抛 traceback；无任何 Compose subprocess 被尝试。
+
+验证（exit code 均为 0，除非标注）：宿主 focused pytest `119 passed`
+（capabilities 20 + redaction attacks 58 + lifecycle 36 + rag performance
+5）；Ruff check / format --check / Mypy 通过（详见下文容器 canonical
+复核）；`git diff --check` 干净。容器 canonical 复核（Docker server
+29.6.2 / Compose v5.3.1，`docker compose --env-file .env.example` + 完整
+仓库 mount `-v .:/workspace`）：focused pytest、`-m "not integration"`
+全量、mypy src、Ruff、map/benchmark validator、Compose config --quiet、
+CLI doctor/ports/status 与 `start --profile hardened` 拒绝、P5.1/P5.2A/
+P5.3A `--verify`（exit 2 `blocked/not_proven`，contract_valid=true，
+vetoes=[]）均在提交后 clean checkout 复核通过；sealed digest 链
+（registry/task-ledger/planner 的 maintainer_map 与 security_invariants
+及 task-ledger→registry、planner→registry/task-ledger 链引用）已按最终
+提交字节重算并 reseal，三个 Phase 5 Feature Gate 保持 false。
+
+未执行/未证明：真实 macOS/Linux/Apple-Silicon/NVIDIA/独立 Runner 平台
+（mocked 测试不构成跨平台就绪证据，platform_matrix 保持 not_proven）；
+真实 Podman daemon 上的端到端 `podman compose up`（只验证了受控探针与
+参数数组构造及 mock subprocess 边界）；disposable PostgreSQL
+integration/destructive 测试；生产 Runtime 激活、migration `0013`、
+Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。Hardened
+保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。

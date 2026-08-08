@@ -16,6 +16,7 @@ import pytest
 from omnibase.runtime.capabilities import probe_capabilities
 from omnibase.runtime.diagnostics import (
     MAX_COLLECTION_SIZE,
+    MAX_HORIZONTAL_WS,
     MAX_REDACTION_DEPTH,
     MAX_STRING_LENGTH,
     diagnostics_json,
@@ -562,3 +563,222 @@ def test_whitespace_cli_pair_across_elements_with_bounded_spacing() -> None:
     redacted = redact_mapping(payload)
     assert CLI_PAIR_SECRET not in json.dumps(redacted)
     assert redacted["argv"] == ["--api-key=[REDACTED]"]
+
+
+# --- Round 4: cross-element dash values, deterministic token-state parser,
+# --- bounded horizontal whitespace, quoted values, header tails,
+# --- camelCase/PascalCase tokenization and the narrowed _key suffix rule -----
+
+DASH_VALUE_SECRETS = ("--q7x9opaque", "-opaque", "rest8v")
+
+
+def _assert_dash_secrets_absent(payload: object) -> None:
+    serialized = json.dumps(payload, sort_keys=True, default=str)
+    for secret in DASH_VALUE_SECRETS:
+        assert secret not in serialized
+    # The exact "--" element consumed as a value slot must vanish (flag names
+    # like "--api-key" legitimately remain for diagnosis).
+    assert '"--"' not in serialized
+
+
+def test_cross_element_sensitive_flag_redacts_dash_prefixed_value_slot() -> None:
+    # Once a sequence element is a sensitive CLI flag, its next value slot is
+    # redacted ENTIRELY even when the value starts with "-" or "--".
+    payload = {
+        "argv": ["--api-key", "--q7x9opaque", "--token", "-opaque", "--password", "--"],
+        "nested": [["--api-key", "--q7x9opaque"], ["--token", "-opaque"]],
+        "tuple_args": ("--password", "--"),
+    }
+    redacted = redact_mapping(payload)
+    _assert_dash_secrets_absent(redacted)
+    _assert_dash_secrets_absent(
+        json.loads(diagnostics_json(probe_capabilities(ports=()), config_shape=payload))
+    )
+    assert redacted["argv"] == [
+        "--api-key",
+        "[REDACTED]",
+        "--token",
+        "[REDACTED]",
+        "--password",
+        "[REDACTED]",
+    ]
+    assert redacted["nested"] == [
+        ["--api-key", "[REDACTED]"],
+        ["--token", "[REDACTED]"],
+    ]
+    assert redacted["tuple_args"] == ("--password", "[REDACTED]")
+
+
+def test_sensitive_flag_never_swallows_allowlisted_flag_structure() -> None:
+    # A sensitive flag followed by an element that deterministically belongs
+    # to ANOTHER allowlisted flag has no value here: it fails closed on its
+    # own and never swallows that flag or its value.
+    payload = {
+        "argv": ["--api-key", "--profile", "lite"],
+        "service_args": ["--token", "--service", "backend"],
+        "tail_args": ["--password", "--tail", "200"],
+        "double_sensitive": ["--api-key", "--token", "x"],
+        "trailing_flag": ["--api-key", "--profile"],
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["argv"] == ["[REDACTED]", "--profile", "lite"]
+    assert redacted["service_args"] == ["[REDACTED]", "--service", "backend"]
+    assert redacted["tail_args"] == ["[REDACTED]", "--tail", "200"]
+    # Two sensitive flags in a row: neither swallows the other; both fail
+    # closed (the second still redacts its own following value).
+    assert redacted["double_sensitive"] == ["[REDACTED]", "--token", "[REDACTED]"]
+    assert redacted["trailing_flag"] == ["[REDACTED]", "--profile"]
+
+
+def test_wide_bounded_whitespace_forms_are_still_redacted() -> None:
+    # "More than 8 spaces means pass-through" must not hold: any bounded
+    # horizontal whitespace run around the separator is recognized.
+    payload = {
+        "env_line": "API_KEY" + " " * 20 + "=" + " " * 10 + "abc123xyz",
+        "cli_line": "--token" + " " * 40 + "=  abc123xyz",
+        "header_line": "X-Api-Key" + " " * 60 + ": abc123xyz",
+        "json_line": '"access_token"' + " " * 30 + ":  " + '"abc123xyz"',
+    }
+    redacted = redact_mapping(payload)
+    _assert_opaque_secrets_absent(redacted)
+    assert redacted["env_line"] == "API_KEY=[REDACTED]"
+    assert redacted["cli_line"] == "--token=[REDACTED]"
+    assert redacted["header_line"] == "X-Api-Key: [REDACTED]"
+    assert redacted["json_line"] == '"access_token": [REDACTED]'
+
+
+def test_over_limit_whitespace_fails_closed_whole_item() -> None:
+    # Parser state beyond the bounded horizontal-whitespace limit fails closed
+    # as a WHOLE item: neither the name nor any value tail survives.
+    secrets = ("opaque_ws_over", "opaque_colon_over", "opaque_cli_over")
+    payload = {
+        "env_line": "API_KEY" + " " * (MAX_HORIZONTAL_WS + 10) + "= opaque_ws_over",
+        "header_line": "X-Api-Key" + " " * (MAX_HORIZONTAL_WS + 10) + ": opaque_colon_over",
+        "cli_line": "--token" + " " * (MAX_HORIZONTAL_WS + 10) + "= opaque_cli_over",
+        "within_limit": "API_KEY" + " " * MAX_HORIZONTAL_WS + "= abc123xyz",
+    }
+    redacted = redact_mapping(payload)
+    serialized = json.dumps(redacted)
+    for secret in secrets:
+        assert secret not in serialized
+    assert redacted["env_line"] == "[REDACTED]"
+    assert redacted["header_line"] == "[REDACTED]"
+    assert redacted["cli_line"] == "[REDACTED]"
+    # Exactly at the bound the item is recognized and its value redacted.
+    assert redacted["within_limit"] == "API_KEY=[REDACTED]"
+
+
+def test_quoted_assignment_values_are_consumed_completely() -> None:
+    payload = {
+        "log_line": 'OPENAI_API_KEY = "q7x9opaque rest8v"',
+        "cli_line": '--token = "q7x9opaque rest8v"',
+        "header_line": 'X-Api-Key : "q7x9opaque rest8v"',
+    }
+    redacted = redact_mapping(payload)
+    _assert_dash_secrets_absent(redacted)
+    assert redacted["log_line"] == "OPENAI_API_KEY=[REDACTED]"
+    assert redacted["cli_line"] == "--token=[REDACTED]"
+    assert redacted["header_line"] == "X-Api-Key: [REDACTED]"
+
+
+def test_unterminated_quote_fails_closed_whole_item() -> None:
+    payload = {"log_line": 'OPENAI_API_KEY = "q7x9opaque rest8v'}
+    redacted = redact_mapping(payload)
+    _assert_dash_secrets_absent(redacted)
+    assert redacted["log_line"] == "[REDACTED]"
+
+
+def test_confirmed_sensitive_header_redacts_entire_value_including_tail() -> None:
+    payload = {
+        "auth_line": "Authorization: q7x9opaque;rest8v",
+        "key_line": "X-Api-Key: q7x9opaque;rest8v more-tail",
+        "json_line": '"api_key": "q7x9opaque;rest8v", "status": 200',
+    }
+    redacted = redact_mapping(payload)
+    _assert_dash_secrets_absent(redacted)
+    assert redacted["auth_line"] == "Authorization: [REDACTED]"
+    assert redacted["key_line"] == "X-Api-Key: [REDACTED]"
+    assert redacted["json_line"] == '"api_key": [REDACTED]'
+
+
+def test_camel_and_pascal_case_tokens_are_redacted() -> None:
+    payload = {
+        "mapping": {
+            "stripeApiKey": "sk_live_9f7vK2pQ",
+            "providerPassword": "pwd_9f7vK2pQ",
+            "myToken": "tok_9f7vK2pQ",
+            "azureAccessToken": "az_9f7vK2pQ",
+            "openAiApiKey": "sk_9f7vK2pQ",
+            "StripeApiKey": "sk_9f7vK2pQ",
+        },
+        "log_line": "stripeApiKey=9f7vK2pQ azureAccessToken : 9f7vK2pQ",
+        "cli_line": "--openAiApiKey=9f7vK2pQ",
+    }
+    redacted = redact_mapping(payload)
+    serialized = json.dumps(redacted)
+    assert "9f7vK2pQ" not in serialized
+    for key in (
+        "stripeApiKey",
+        "providerPassword",
+        "myToken",
+        "azureAccessToken",
+        "openAiApiKey",
+        "StripeApiKey",
+    ):
+        assert redacted["mapping"][key] == "[REDACTED]"
+    assert redacted["log_line"] == "stripeApiKey=[REDACTED] azureAccessToken: [REDACTED]"
+    assert redacted["cli_line"] == "--openAiApiKey=[REDACTED]"
+
+
+def test_narrowed_key_suffix_rule() -> None:
+    # The _key suffix is narrow: generic database/keyboard keys are preserved
+    # while the specific sensitive *_key family is redacted.
+    payload = {
+        "preserved": {
+            "sort_key": "created_at",
+            "cache_key": "user:42",
+            "foreign_key": "tenant_id",
+            "keyboard_layout": "qwerty",
+            "monkey": "banana",
+            "session_count": 42,
+        },
+        "redacted": {
+            "api_key": "abc123",
+            "secret_key": "def456",
+            "access_key": "ghi789",
+            "signing_key": "jkl012",
+            "private_key": "mno345",
+            "encryption_key": "pqr678",
+        },
+        "log_line": (
+            "sort_key=created_at cache_key=user:42 foreign_key=tenant_id "
+            "api_key=abc123 encryption_key=pqr678"
+        ),
+        "secret_line": "secret_key=def456",
+        "camel": {"sortKey": "created_at", "cacheKey": "user:42", "stripeApiKey": "sk_live_9"},
+    }
+    redacted = redact_mapping(payload)
+    for key in ("sort_key", "cache_key", "foreign_key", "keyboard_layout", "monkey"):
+        assert redacted["preserved"][key] == payload["preserved"][key]
+    for key in (
+        "api_key",
+        "secret_key",
+        "access_key",
+        "signing_key",
+        "private_key",
+        "encryption_key",
+    ):
+        assert redacted["redacted"][key] == "[REDACTED]"
+    assert redacted["log_line"] == (
+        "sort_key=created_at cache_key=user:42 foreign_key=tenant_id "
+        "api_key=[REDACTED] encryption_key=[REDACTED]"
+    )
+    # The preserved name itself stays, the sensitive value is gone.
+    assert "def456" not in json.dumps(redacted)
+    # "secret_key" as a name still contains the "secret" keyword after its
+    # value is redacted, so the keyword fail-closed fallback turns the whole
+    # line into one [REDACTED] item — no tail can survive either way.
+    assert redacted["secret_line"] == "[REDACTED]"
+    assert redacted["camel"]["sortKey"] == "created_at"
+    assert redacted["camel"]["cacheKey"] == "user:42"
+    assert redacted["camel"]["stripeApiKey"] == "[REDACTED]"

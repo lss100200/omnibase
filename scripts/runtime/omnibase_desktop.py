@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from omnibase.runtime import lifecycle
@@ -46,21 +46,15 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = sub.add_parser("doctor", help="probe host capabilities")
-    doctor_parser.add_argument(
-        "--port", type=int, action="append", default=[8000, 3000]
-    )
+    doctor_parser.add_argument("--port", type=int, action="append", default=[8000, 3000])
 
     capabilities_parser = sub.add_parser("capabilities", help="alias of doctor")
-    capabilities_parser.add_argument(
-        "--port", type=int, action="append", default=[8000, 3000]
-    )
+    capabilities_parser.add_argument("--port", type=int, action="append", default=[8000, 3000])
 
     ports_parser = sub.add_parser("ports", help="report advisory port availability")
     ports_parser.add_argument("--port", type=int, action="append", default=[8000, 3000])
 
-    suggest_parser = sub.add_parser(
-        "ports-suggest", help="suggest an advisory free port"
-    )
+    suggest_parser = sub.add_parser("ports-suggest", help="suggest an advisory free port")
     suggest_parser.add_argument("preferred", type=int)
 
     start_parser = sub.add_parser("start", help="start allowlisted services")
@@ -116,6 +110,48 @@ def _services_or_default(services: Sequence[str], profile: str) -> list[str]:
     return ["backend", "postgres", "minio", "redis"]
 
 
+def _lifecycle_result(run: Callable[[], lifecycle.LifecycleResult]) -> int:
+    """Run one allowlisted lifecycle verb and dump its safe result.
+
+    A missing container engine or missing ``.env.example`` is an environment
+    precondition: the wrapper fails closed with a JSON error and exit code 2
+    (never a raw traceback), and no Compose subprocess is ever attempted.
+    """
+    try:
+        result = run()
+    except FileNotFoundError as exc:
+        _dump({"error": str(exc)})
+        return 2
+    _dump(result.to_dict())
+    return 0 if result.exit_code == 0 else 1
+
+
+def _run_lifecycle_verb(args: argparse.Namespace, repo_root: Path, verb: str) -> int:
+    """Validate and dispatch one of the four Compose lifecycle verbs."""
+    services = _services_or_default(args.service, args.profile)
+    try:
+        if verb == "start":
+            request = lifecycle.validate_request(
+                args.profile,
+                services,
+                timeout_seconds=lifecycle.DEFAULT_LIFECYCLE_TIMEOUT,
+            )
+        elif verb == "logs":
+            request = lifecycle.validate_request(args.profile, services, tail_lines=args.tail)
+        else:
+            request = lifecycle.validate_request(args.profile, services)
+    except ValueError as exc:
+        _dump({"error": str(exc)})
+        return 2
+    if verb == "start":
+        return _lifecycle_result(lambda: lifecycle.start(request, repo_root=repo_root))
+    if verb == "status":
+        return _lifecycle_result(lambda: lifecycle.status(request, repo_root=repo_root))
+    if verb == "logs":
+        return _lifecycle_result(lambda: lifecycle.logs(request, repo_root=repo_root))
+    return _lifecycle_result(lambda: lifecycle.stop(request, repo_root=repo_root))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -136,60 +172,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         _dump(payload)
         return 0 if payload["suggested"] is not None else 2
 
-    if args.command == "start":
-        services = _services_or_default(args.service, args.profile)
-        try:
-            request = lifecycle.validate_request(
-                args.profile,
-                services,
-                timeout_seconds=lifecycle.DEFAULT_LIFECYCLE_TIMEOUT,
-            )
-        except ValueError as exc:
-            _dump({"error": str(exc)})
-            return 2
-        result = lifecycle.start(request, repo_root=repo_root)
-        _dump(result.to_dict())
-        return 0 if result.exit_code == 0 else 1
-
-    if args.command == "status":
-        services = _services_or_default(args.service, args.profile)
-        try:
-            request = lifecycle.validate_request(args.profile, services)
-        except ValueError as exc:
-            _dump({"error": str(exc)})
-            return 2
-        result = lifecycle.status(request, repo_root=repo_root)
-        _dump(result.to_dict())
-        return 0 if result.exit_code == 0 else 1
+    if args.command in {"start", "status", "logs", "stop"}:
+        return _run_lifecycle_verb(args, repo_root, args.command)
 
     if args.command == "health":
         payload = lifecycle.health(repo_root=repo_root)
         _dump(payload)
         return 0
-
-    if args.command == "logs":
-        services = _services_or_default(args.service, args.profile)
-        try:
-            request = lifecycle.validate_request(
-                args.profile, services, tail_lines=args.tail
-            )
-        except ValueError as exc:
-            _dump({"error": str(exc)})
-            return 2
-        result = lifecycle.logs(request, repo_root=repo_root)
-        _dump(result.to_dict())
-        return 0 if result.exit_code == 0 else 1
-
-    if args.command == "stop":
-        services = _services_or_default(args.service, args.profile)
-        try:
-            request = lifecycle.validate_request(args.profile, services)
-        except ValueError as exc:
-            _dump({"error": str(exc)})
-            return 2
-        result = lifecycle.stop(request, repo_root=repo_root)
-        _dump(result.to_dict())
-        return 0 if result.exit_code == 0 else 1
 
     parser.error(f"unknown_command:{args.command}")
     return 2

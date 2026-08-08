@@ -670,32 +670,56 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
   并验证。桌面 wrapper 永不声称 Hardened start 支持。
 - **容器引擎共享契约**：capability probe 与 lifecycle 使用同一个
   `resolve_container_engine()`（Docker 优先、其次 Podman、都没有则为
-  `none`）。只有 Podman 时 Local 之所以被 claim，是因为 lifecycle 确实执行
-  受控 `podman compose --env-file .env.example -f docker-compose.yml`
-  参数数组路径；两个引擎都没有时绝不 claim Local。四种分辨率
-  （Docker-only / Podman-only / 两者都有 / 都没有）在 probe 与 lifecycle
-  两侧都有负向测试。
+  `none`），并且 **绝不只凭 `shutil.which` 推断 Compose Local 能力**：每个
+  候选执行有界、`shell=False`、`capture_output`、短超时的
+  `docker compose version` / `podman compose version` 探针，**只有 exit 0
+  才声明 compose provider 已验证**。报告区分 `executable_detected`（仅有
+  可执行文件）、`compose_provider_verified`（exit-0 探针）与
+  `local_mode_available`（仅在 provider 验证后）；Podman 可执行文件存在但
+  compose provider 缺失时报告 `detected`/`not_proven` 且绝不 claim Local。
+  只有 Podman 时 Local 之所以被 claim，是因为 lifecycle 确实执行受控
+  `podman compose --env-file .env.example -f docker-compose.yml` 参数数组
+  路径；两个引擎都没有或探针失败时 fail-closed `container_engine_not_found`
+  （subprocess 前拒绝，Local 绝不 claim）。负向矩阵覆盖 Docker-only /
+  Podman-only / 两者都存在但 compose 失败 / timeout / not-found / 两者都
+  不存在，在 probe 与 lifecycle 两侧都有测试。
 - 脱敏边界：sensitive name policy 是 **normalized token/full-field 闭集 +
   有界 `_` 后缀策略，禁止任意 substring 匹配**——`monkey`、
   `keyboard_layout`、`design`、`session_count` 保留，`api_key`、
-  `access_token`、`signature`、`session_token` 及 provider 变体脱敏。
-  嵌套 sequence 内的 secret 必须替换；sequence 内 **跨元素 CLI 参数对**
-  （`["--api-key", "SECRET"]` 的敏感 flag 把紧跟的元素整体脱敏，非敏感参数
-  原样保留）；分隔符两侧的有界空白形式（`NAME = value`、`--name = value`、
-  `Name : value`）同样解析；异常文本/命令行/env/URL/DSN 中的凭据不得泄漏；
-  超出深度/宽度/长度用确定性 marker 而非递归或泄漏。**敏感 Header/JSON/
-  assignment 的 value 超过单项解析上限时整项 fail-closed 为
-  `[REDACTED]`，绝不只截断前 512 字符而泄漏尾部。** 字符串值经过有界、
-  确定性的行级 parser（URI/DSN userinfo、敏感 query key/fragment、
-  `NAME=value`、CLI `--name=value`、`Name: value` header、JSON-ish log
-  line），opaque secret（不含 token/secret/password 关键字）也按结构化位置
-  脱敏，不依赖关键字或 secret 前缀猜测；解析全部线性有界，禁止灾难性回溯。
-  攻击测试矩阵见 `backend/tests/test_runtime_redaction_attacks.py`；
-  生命周期 wrapper 的 focused 测试（精确参数数组与 `--env-file
-  .env.example`、无 shell、allowlist、Hardened 拒绝、timeout/可执行文件
-  缺失、有界脱敏输出、bind failure 传播、`logs --tail` 上限、
-  status/health 失败行为、Windows 路径无注入、根 `.env` 永不选中、四种
-  容器引擎分辨率）见 `backend/tests/test_runtime_lifecycle.py`。
+  `access_token`、`signature`、`session_token` 及 provider 变体脱敏；
+  camelCase/PascalCase 键在大小写边界分词（`stripeApiKey`→
+  `stripe_api_key`、`providerPassword`→`provider_password`、
+  `myToken`→`my_token`、`azureAccessToken`→`azure_access_token`、
+  `openAiApiKey`→`open_ai_api_key`）；`_key` 后缀**收窄**：
+  `sort_key`/`cache_key`/`foreign_key`/`keyboard_layout`/`monkey` 保留，
+  `api_key`/`secret_key`/`access_key`/`signing_key`/`private_key`/
+  `encryption_key` 脱敏。嵌套 sequence 内的 secret 必须替换；sequence 内
+  **跨元素 CLI 参数对**用显式确定性 token-state parser：敏感 flag 把紧跟
+  的元素整体脱敏（`["--api-key", "SECRET"]`），**即使该值以 `-` 或 `--`
+  开头**（`["--api-key", "--q7x9opaque"]`、`["--token", "-opaque"]`、
+  `["--password", "--"]`）；无值的敏感 flag 自身 fail-closed；紧跟元素
+  确定性属于另一个 allowlisted flag（`--profile`/`--service`/`--port`/
+  `--tail`/`--help`/`-h` 或另一个敏感 flag）时绝不吞并该结构。分隔符两侧
+  **任意有界水平空白**形式（`NAME = value`、`--name = value`、
+  `Name : value`）均解析（“超过 8 个空格即放行”必须不成立），超过有界
+  空白上限的 parser state 整项 fail-closed；**带引号的赋值值完整消费**
+  （`OPENAI_API_KEY = "q7x9opaque rest8v"` 不留 tail 也不留引号），未闭合
+  引号整项 fail-closed；**确认敏感 Header 后整个 value 脱敏**（`;` 不再
+  截断，`Authorization: q7x9opaque;rest8v` 不留分号后 tail）；异常文本/
+  命令行/env/URL/DSN 中的凭据不得泄漏；超出深度/宽度/长度用确定性 marker
+  而非递归或泄漏。**敏感 Header/JSON/assignment 的 value 超过单项解析上限
+  时整项 fail-closed 为 `[REDACTED]`，绝不只截断前 512 字符而泄漏尾部。**
+  字符串值经过有界、确定性的行级 parser（URI/DSN userinfo、敏感 query
+  key/fragment、`NAME=value`、CLI `--name=value`、`Name: value` header、
+  JSON-ish log line），opaque secret（不含 token/secret/password 关键字）
+  也按结构化位置脱敏，不依赖关键字或 secret 前缀猜测；解析全部线性有界，
+  禁止灾难性回溯。攻击测试矩阵见
+  `backend/tests/test_runtime_redaction_attacks.py`；生命周期 wrapper 的
+  focused 测试（精确参数数组与 `--env-file .env.example`、无 shell、
+  allowlist、Hardened 拒绝、timeout/可执行文件缺失、有界脱敏输出、bind
+  failure 传播、`logs --tail` 上限、status/health 失败行为、Windows 路径
+  无注入、根 `.env` 永不选中、容器引擎探针负向矩阵）见
+  `backend/tests/test_runtime_lifecycle.py`。
 - 平台证据矩阵：只有当前实测 host 标记 detected；Windows/macOS/Linux、
   x86_64/ARM64、NVIDIA/MPS 与容器变体未在本机运行的一律 `not_proven`。
 - 维护者 map 模块 `desktop-runtime`（INV-052）与验证命令见

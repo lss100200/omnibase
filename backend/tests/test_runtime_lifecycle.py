@@ -67,9 +67,7 @@ def _patch_subprocess(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> list
     return calls
 
 
-def _patch_engine(
-    monkeypatch: pytest.MonkeyPatch, engine: str | None
-) -> None:
+def _patch_engine(monkeypatch: pytest.MonkeyPatch, engine: str | None) -> None:
     """Pin the shared container-engine resolution (None -> no engine)."""
     monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: engine or "none")
 
@@ -251,7 +249,9 @@ def test_podman_only_executes_controlled_podman_compose_path(monkeypatch, tmp_pa
     repo = _make_repo(tmp_path)
     calls = _patch_subprocess(monkeypatch, FakeCompleted())
     monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "podman")
-    monkeypatch.setattr(lifecycle.shutil, "which", lambda _name: "C:/Program Files/RedHat/Podman/podman.exe")
+    monkeypatch.setattr(
+        lifecycle.shutil, "which", lambda _name: "C:/Program Files/RedHat/Podman/podman.exe"
+    )
     request = lifecycle.validate_request("local", ["backend", "redis"])
     result = lifecycle.start(request, repo_root=repo)
     assert result.exit_code == 0
@@ -281,14 +281,14 @@ def test_both_engines_prefer_docker(monkeypatch, tmp_path) -> None:
     assert command[0] == "/usr/bin/docker"
 
 
-def test_neither_engine_never_claims_local_and_fails_closed(
-    monkeypatch, tmp_path
-) -> None:
+def test_neither_engine_never_claims_local_and_fails_closed(monkeypatch, tmp_path) -> None:
     # Probe side: no LOCAL mode when the shared resolution reports "none".
     from omnibase.runtime import capabilities as caps
 
     monkeypatch.setattr(caps.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(caps, "_probe_nvidia_gpu", lambda: ("unknown", caps.EvidenceState.UNKNOWN, ()))
+    monkeypatch.setattr(
+        caps, "_probe_nvidia_gpu", lambda: ("unknown", caps.EvidenceState.UNKNOWN, ())
+    )
     report = caps.probe_capabilities(ports=(), root=tmp_path)
     assert report.container_engine == "none"
     assert report.supports(caps.ProductMode.LITE)
@@ -408,6 +408,68 @@ def test_root_env_is_never_selected(tmp_path) -> None:
         lifecycle._resolve_compose_env_file(repo2)
 
 
+def test_unverified_compose_provider_fails_closed_on_lifecycle_side(monkeypatch, tmp_path) -> None:
+    # Podman executable is present but its compose provider is not verified
+    # (bounded probe exit != 0): the shared resolution reports "none", Local
+    # is never claimed and the lifecycle refuses to build any Compose command
+    # BEFORE a subprocess is attempted.
+    from omnibase.runtime import capabilities as caps
+
+    repo = _make_repo(tmp_path)
+    calls: list[object] = []
+
+    def _run(command: object, **kwargs: object) -> object:
+        calls.append(command)
+        return FakeCompleted()
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", _run)
+    monkeypatch.setattr(
+        caps.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "podman" else None
+    )
+    monkeypatch.setattr(
+        caps,
+        "_probe_compose",
+        lambda name: caps.ComposeProbe(
+            executable=name,
+            executable_detected=name == "podman",
+            compose_provider_verified=False,
+            exit_code=1,
+            detail=f"{name} compose version exit 1",
+        ),
+    )
+    # The lifecycle shares the real resolver; the probe boundary is mocked.
+    assert lifecycle.resolve_container_engine() == "none"
+    with pytest.raises(FileNotFoundError, match="container_engine_not_found"):
+        lifecycle._compose_command("ps", repo_root=repo)
+    assert calls == []
+
+
+def test_verified_compose_provider_builds_command_via_real_resolver(monkeypatch, tmp_path) -> None:
+    # Docker compose provider verified (exit 0): the shared resolution reports
+    # docker and the controlled argument array is built with the explicit
+    # .env.example; the root .env is never selected.
+    from omnibase.runtime import capabilities as caps
+
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(caps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        caps,
+        "_probe_compose",
+        lambda name: caps.ComposeProbe(
+            executable=name,
+            executable_detected=True,
+            compose_provider_verified=True,
+            exit_code=0,
+            detail=f"{name} compose version exit 0",
+        ),
+    )
+    assert lifecycle.resolve_container_engine() == "docker"
+    command = lifecycle._compose_command("ps", repo_root=repo, services=("backend",))
+    assert command[:2] == ["/usr/bin/docker", "compose"]
+    assert command[command.index("--env-file") + 1] == str(repo / ".env.example")
+    assert str(repo / ".env") not in command
+
+
 def test_lifecycle_request_bounds() -> None:
     with pytest.raises(ValueError, match="timeout_out_of_range"):
         lifecycle.LifecycleRequest(ProductMode.LITE, (), timeout_seconds=0.5)
@@ -501,3 +563,22 @@ def test_cli_hardened_start_is_rejected(capsys) -> None:
     assert exc_info.value.code == 2
     stderr = capsys.readouterr().err
     assert "invalid choice" in stderr
+
+
+def test_cli_lifecycle_verbs_fail_closed_json_error_without_engine(
+    monkeypatch, capsys
+) -> None:
+    # With no verified container engine the shared resolution reports "none":
+    # start/status/logs/stop must fail closed with a JSON error and exit code
+    # 2 instead of a raw traceback, and no Compose subprocess is attempted.
+    cli = _load_cli()
+    monkeypatch.setattr(lifecycle, "resolve_container_engine", lambda: "none")
+    for verb, extra in (
+        ("start", ["--profile", "lite"]),
+        ("status", ["--profile", "lite"]),
+        ("logs", ["--profile", "lite"]),
+        ("stop", ["--profile", "lite"]),
+    ):
+        assert cli.main([verb, *extra]) == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload == {"error": "container_engine_not_found"}

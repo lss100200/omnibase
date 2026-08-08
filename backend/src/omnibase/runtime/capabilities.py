@@ -175,13 +175,144 @@ def suggest_port(preferred: int, *, attempts: int = 20) -> int | None:
 
 
 # Shared container-engine resolution contract. The capability probe and the
-# lifecycle wrapper use the SAME candidates and preference order: Docker
-# first, then Podman, then ``"none"``. When only Podman is observable the
-# probe claims Local only because the lifecycle actually executes a controlled
-# ``podman compose --env-file .env.example`` path; when neither is present
-# Local is never claimed. Executable presence is evidence of local Compose
-# orchestration availability only, never of hostile-code isolation.
+# lifecycle wrapper use the SAME candidates, preference order and bounded
+# probe: Docker first, then Podman, then ``"none"``. Compose Local capability
+# is NEVER inferred from ``shutil.which`` alone: a bounded, ``shell=False``,
+# ``capture_output``, short-timeout probe of ``<executable> compose version``
+# must exit 0 for the engine to resolve and for Local to be claimed. A
+# Podman-only host claims Local only because the lifecycle actually executes a
+# controlled ``podman compose --env-file .env.example`` path; when no compose
+# provider is verified Local is never claimed. Executable presence is evidence
+# of nothing more than an executable; it is never hostile-code isolation
+# evidence.
 CONTAINER_ENGINE_CANDIDATES: Final[tuple[str, ...]] = ("docker", "podman")
+
+# Short bounded probe timeout for ``<executable> compose version``.
+COMPOSE_PROBE_TIMEOUT: Final[float] = 2.0
+
+
+@dataclass(frozen=True)
+class ComposeProbe:
+    """Result of one bounded compose-provider probe for one engine.
+
+    ``executable_detected`` records ``shutil.which`` presence only;
+    ``compose_provider_verified`` records that the bounded
+    ``<executable> compose version`` probe actually exited 0. Only the latter
+    may declare Compose Local available; the former alone is
+    ``detected/not_proven``.
+    """
+
+    executable: str
+    executable_detected: bool
+    compose_provider_verified: bool
+    exit_code: int | None = None
+    timed_out: bool = False
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class EngineResolution:
+    """Deterministic resolution shared by the probe and the lifecycle.
+
+    ``container_engine`` is ``"docker"``, ``"podman"`` or ``"none"``;
+    ``compose_provider_verified`` and ``local_mode_available`` distinguish
+    executable detection from a verified compose provider from an actual
+    Local claim.
+    """
+
+    container_engine: str
+    probes: tuple[ComposeProbe, ...] = ()
+    compose_provider_verified: bool = False
+    local_mode_available: bool = False
+    notes: tuple[str, ...] = ()
+
+
+def _probe_compose(executable: str, *, timeout: float = COMPOSE_PROBE_TIMEOUT) -> ComposeProbe:
+    """Run one bounded ``<executable> compose version`` probe.
+
+    ``shell`` is always False, output is captured, the timeout is short and
+    only exit 0 declares the compose provider verified. Timeout, missing
+    executable and any failure exit keep the provider ``not_proven``.
+    """
+    executable_path = shutil.which(executable)
+    if executable_path is None:
+        return ComposeProbe(
+            executable=executable,
+            executable_detected=False,
+            compose_provider_verified=False,
+            detail=f"{executable} executable not found",
+        )
+    try:
+        completed = subprocess.run(
+            [executable_path, "compose", "version"],
+            shell=False,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return ComposeProbe(
+            executable=executable,
+            executable_detected=True,
+            compose_provider_verified=False,
+            timed_out=True,
+            detail=f"{executable} compose version probe timed out",
+        )
+    except OSError as exc:
+        return ComposeProbe(
+            executable=executable,
+            executable_detected=True,
+            compose_provider_verified=False,
+            detail=f"{executable} compose version probe failed: {type(exc).__name__}",
+        )
+    verified = completed.returncode == 0
+    return ComposeProbe(
+        executable=executable,
+        executable_detected=True,
+        compose_provider_verified=verified,
+        exit_code=completed.returncode,
+        detail=(
+            f"{executable} compose version exit 0"
+            if verified
+            else f"{executable} compose version exit {completed.returncode}"
+        ),
+    )
+
+
+def _probe_engine_resolution() -> EngineResolution:
+    """Resolve the container engine with the bounded compose-provider probes.
+
+    Both candidates are probed so the report can distinguish
+    ``executable_detected`` from ``compose_provider_verified`` for every
+    engine. Docker wins the tie; an engine is only resolved when its compose
+    provider probe exited 0.
+    """
+    docker_probe = _probe_compose("docker")
+    podman_probe = _probe_compose("podman")
+    probes = (docker_probe, podman_probe)
+    if docker_probe.compose_provider_verified:
+        return EngineResolution(
+            "docker",
+            probes,
+            True,
+            True,
+            ("docker compose provider verified (exit 0)",),
+        )
+    if podman_probe.compose_provider_verified:
+        return EngineResolution(
+            "podman",
+            probes,
+            True,
+            True,
+            ("docker not verified; podman compose provider verified (exit 0)",),
+        )
+    return EngineResolution(
+        "none",
+        probes,
+        False,
+        False,
+        ("no compose provider verified by bounded probe",),
+    )
 
 
 def resolve_container_engine() -> str:
@@ -190,17 +321,11 @@ def resolve_container_engine() -> str:
     Returns ``"docker"``, ``"podman"`` or ``"none"``. Both consumers must
     derive every claim and every Compose invocation from this single
     resolution so a Podman-only host either gets a real Podman Compose path or
-    never claims Local available.
+    never claims Local available. Only exit 0 of a bounded
+    ``<executable> compose version`` probe resolves an engine; executable
+    presence alone is ``detected/not_proven`` and yields ``"none"``.
     """
-    for executable in CONTAINER_ENGINE_CANDIDATES:
-        if shutil.which(executable):
-            return executable
-    return "none"
-
-
-def _container_engine() -> str:
-    """Backward-compatible alias used by the probe (same shared contract)."""
-    return resolve_container_engine()
+    return _probe_engine_resolution().container_engine
 
 
 def _probe_nvidia_gpu() -> tuple[str, EvidenceState, tuple[str, ...]]:
@@ -339,7 +464,8 @@ def probe_capabilities(
     virtualization: str | None = None,
 ) -> CapabilityReport:
     """Probe observable host facts and derive only provable capabilities."""
-    engine = _container_engine()
+    resolution = _probe_engine_resolution()
+    engine = resolution.container_engine
     port_status = tuple(check_port(port) for port in ports)
     os_name = platform.system().lower() or "unknown"
     architecture = platform.machine().lower() or "unknown"
@@ -354,12 +480,54 @@ def probe_capabilities(
         ("disk_free", disk_state, "shutil.disk_usage probe"),
         ("gpu", gpu_state, "; ".join(gpu_notes)),
         ("network", network_evidence, network_note),
-        (
-            "container_engine",
-            EvidenceState.DETECTED if engine != "none" else EvidenceState.UNKNOWN,
-            "shared resolve_container_engine shutil.which probe (docker then podman)",
-        ),
     ]
+    # Capability facts distinguish executable detection from a verified
+    # compose provider from an actual Local claim. ``shutil.which`` alone is
+    # never compose-provider evidence; only an exit-0 bounded
+    # ``<executable> compose version`` probe is.
+    for probe in resolution.probes:
+        facts.append(
+            (
+                f"{probe.executable}_executable",
+                EvidenceState.DETECTED if probe.executable_detected else EvidenceState.UNKNOWN,
+                f"shutil.which {probe.executable}",
+            )
+        )
+        if probe.executable_detected:
+            facts.append(
+                (
+                    f"{probe.executable}_compose_provider",
+                    (
+                        EvidenceState.AVAILABLE
+                        if probe.compose_provider_verified
+                        else EvidenceState.NOT_PROVEN
+                    ),
+                    probe.detail,
+                )
+            )
+    facts.append(
+        (
+            "compose_provider_verified",
+            (
+                EvidenceState.AVAILABLE
+                if resolution.compose_provider_verified
+                else EvidenceState.NOT_PROVEN
+            ),
+            "; ".join(resolution.notes),
+        )
+    )
+    facts.append(
+        (
+            "local_mode_available",
+            (
+                EvidenceState.AVAILABLE
+                if resolution.local_mode_available
+                else EvidenceState.NOT_PROVEN
+            ),
+            "; ".join(resolution.notes),
+        )
+    )
+
     evidence: list[str] = [
         "host probe only",
         "hardened isolation not proven",
@@ -369,15 +537,20 @@ def probe_capabilities(
 
     backends = [ExecutionBackend.NO_TOOL]
     modes = [ProductMode.LITE]
-    if engine != "none":
+    if resolution.local_mode_available:
         backends.append(ExecutionBackend.LOCAL_CONTAINER)
         modes.append(ProductMode.LOCAL)
-        evidence.append(f"{engine} executable found")
-        facts.append(
-            ("local_container_engine", EvidenceState.DETECTED, f"{engine} executable present")
-        )
+        evidence.append(f"local compose provider verified: {engine}")
+        evidence.append(f"{engine} compose version probe exit 0")
     else:
-        evidence.append("no Docker or Podman executable found")
+        detected = [probe.executable for probe in resolution.probes if probe.executable_detected]
+        if detected:
+            evidence.append(
+                f"executable(s) detected but compose provider not verified: "
+                f"{', '.join(detected)} (not_proven)"
+            )
+        else:
+            evidence.append("no Docker or Podman executable found")
 
     # Hardened stays blocked unless an independently sealed P34.5/P34.7 target
     # evidence chain is injected and verified. The desktop probe never enables
@@ -406,8 +579,11 @@ def probe_capabilities(
 
 
 __all__ = [
+    "COMPOSE_PROBE_TIMEOUT",
     "CONTAINER_ENGINE_CANDIDATES",
     "CapabilityReport",
+    "ComposeProbe",
+    "EngineResolution",
     "EvidenceState",
     "ExecutionBackend",
     "PortStatus",
