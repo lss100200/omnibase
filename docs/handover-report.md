@@ -1022,7 +1022,7 @@ TypeScript SDK 独立 lockfile 已完成：
 | **Phase 1.6** | BGE-M3 双索引评估 | ✅ 工程+CPU benchmark 完成 | V1 仍为权威主通道；真实语料质量 gate 未完成，生产 V2 回填/cutover 冻结 |
 | **Phase 2** | API 基础设施硬化 | ✅ 工程完成、待原子提交 | `/api/v1`、Request ID、请求边界、限流、数据库实时主体/RBAC、离线模型边界；独立生产 smoke 通过 |
 | **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform** | P34.0–P34.3 ✅；P34.4 元数据控制面 ✅；P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 `pending/not_proven`；P34.6 Foundation ✅ | A4 旧 11/11 已失效且新 12/12 未证明；Broker 两轮 26/26；fresh-clone Headscale control-plane 与 clean-checkout split-process mTLS 四读 Gate；P34.6 Workspace-data fail-closed primitives 已实现；production 联合激活进入 P34.7 |
-| **Phase 5** | Agent Runtime 与受控编排 | `PLANNED / FROZEN`，待 P34.7 PASS | P5.0–P5.9 已形成详细路线；Planner 只提交 Proposal，确定性 Validator 决定可调度 DAG，Executor/Memory/Skill/多 Agent 只能作为 Workspace 内受约束 workload 通过逻辑 capability 使用能力 |
+| **Phase 5** | Agent Runtime 与受控编排 | engineering/product Lite path 已实现并进入主线（P5.0–P5.6A，engineering-only）；production Runtime `disabled / blocked/not_proven`；Planner production activation `disabled`；Multi-Agent `disabled` | P5.0–P5.9 已形成详细路线；Planner 只提交 Proposal，确定性 Validator 决定可调度 DAG，Executor/Memory/Skill/多 Agent 只能作为 Workspace 内受约束 workload 通过逻辑 capability 使用能力；P34.7 Hardened/high-risk Runtime 仍 `blocked/not_proven` |
 | **Phase 6** | Skill + MCP 扩展生态 | 待 Phase 3-4/5 | 工作空间边界内的一等公民扩展生态 |
 | **Phase 7** | 开源准备 | 远期 | 文档、Demo、部署脚本、CI/CD、安全审计 |
 
@@ -1035,7 +1035,7 @@ TypeScript SDK 独立 lockfile 已完成：
 - `.omo/plans/phase-1-5-closeout-and-next-phase.md` — Phase 1.5 收口与下一阶段
 - `docs/phase-1-6-and-beyond-implementation-plan.md` — Phase 1.6 收口、AI 工作空间优先和 Phase 2–7 实施计划
 - `docs/phase-3-4-secure-ai-workspace-implementation-plan.md` — Phase 3-4 Resource Registry、Capability、Sandbox Runner、RuntimeDriver 与 P34.0–P34.7 正式实施契约
-- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 P5.0–P5.9 统一契约：P34.7 Evidence Admission Gate、Agent identity/Task Lease/fencing、compile-only Planner 与确定性 Validator、Executor/Model/Tool Gateway、Context Capsule/长期 Memory、第一方原生 Skill、有界多 Agent DAG、unknown no-replay、恢复/reconciliation、UI/SDK 和 production Gate；当前保持 `PLANNED / FROZEN`
+- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 P5.0–P5.9 统一契约：P34.7 Evidence Admission Gate、Agent identity/Task Lease/fencing、compile-only Planner 与确定性 Validator、Executor/Model/Tool Gateway、Context Capsule/长期 Memory、第一方原生 Skill、有界多 Agent DAG、unknown no-replay、恢复/reconciliation、UI/SDK 和 production Gate；P5 engineering/product Lite path（P5.0–P5.6A）已实现并进入主线（engineering-only），P5 production Runtime/Planner/Multi-Agent 保持 disabled / blocked/not_proven，P34.7 PASS 前不解冻
 - `docs/phase-3-4-threat-model.md` — Phase 3-4 资产、信任边界、安全不变量、攻击矩阵和运行时验收 Gate
 - `docs/deployment-guide.md` — 部署指南（9 节，含开发 vs 生产镜像）
 - `.zcode/plans/plan-sess_3caa018d-836b-4fda-aaf1-50e27f4281cf.md` — 前端性能/认证重构执行计划
@@ -1588,7 +1588,7 @@ git diff --check：passed
 
 ### P34.7 production readiness 工程实现与当前阻塞（2026-08-02）
 
-> 本节记录已落地的 P34.7A–G 工程合同与本地验证，不把缺失的目标环境证据写成生产通过。当前总判定：`P34.7 production total Gate = BLOCKED / NOT_PROVEN`；`Phase 5 = PLANNED / FROZEN`。
+> 本节记录已落地的 P34.7A–G 工程合同与本地验证，不把缺失的目标环境证据写成生产通过。当前总判定：`P34.7 production total Gate = BLOCKED / NOT_PROVEN`；P5 engineering/product Lite path 已进入主线（engineering-only），P5 production Runtime、Planner production activation、Multi-Agent 均 `disabled / blocked/not_proven`。
 
 1. **P34.7A/B：clean-checkout provenance 与四组件 production composition**
 
@@ -1664,7 +1664,8 @@ git diff --check：passed
    `maintainer_map` digest）。
 6. **验证结果**：`test_p34_7_joint_gate.py` 54 passed / 1 skipped（Windows symlink 由 reparse 守卫覆盖）；
    production 模块 mypy 0 issues；changed scope ruff check/format check 通过；`--validate-only` exit 2。
-   P34.7 总判定维持 `BLOCKED / NOT_PROVEN`，Phase 5 继续 `PLANNED / FROZEN`，未读取根 `.env`，未访问或
+   P34.7 总判定维持 `BLOCKED / NOT_PROVEN`，P5 production Runtime/Planner/multi-Agent 继续
+   `disabled / blocked/not_proven`，未读取根 `.env`，未访问或
    迁移业务数据库，未激活 production Runtime/Planner/multi-Agent，未创建 migration 0013。
 
 ### P34.7 joint gate 生产级加固（Round 3 review-fix，2026-08-07）
@@ -1711,9 +1712,34 @@ git diff --check：passed
    如实报告）；P34.7 focused + P5.0/P5.1A/P5.2A/P5.3A 联合 562 passed / 1 skipped（host）；
    容器 canonical 矩阵、production mypy、changed-scope ruff check/format、maintainer map/benchmark
    结果见 commit 报告；P34.7+Phase 5 sealed digest 链在最终字节上重算。
-10. P34.7 总判定不变：`BLOCKED / NOT_PROVEN`，production activation DISABLED，Phase 5
-    `PLANNED / FROZEN`，未读取根 `.env`，未访问或迁移业务数据库，未激活 production
+10. P34.7 总判定不变：`BLOCKED / NOT_PROVEN`，production activation DISABLED；P5 production
+    Runtime/Planner/Multi-Agent 保持 `disabled / blocked/not_proven`，未读取根 `.env`，未访问或迁移业务数据库，未激活 production
     Runtime/Planner/multi-Agent，未创建 migration 0013，未 push。
+
+### P34.7 Integration R1：hardened joint gates 进入统一主线（2026-08-08）
+
+> 工程 Gate 进入最新主线，不是 Production Runtime 激活。冻结输入分支
+> `external/p34-7-hardened-joint-gates`（HEAD `867a506661e4d958404387133370c3d566070a02`，提交链
+> 09cd09d → 6418a91 → a2c5a3b → 867a506）的四个提交按序以普通 cherry-pick 移植到验证过的最新
+> `origin/main`（PR #18 merge commit `dfd4b20bf7ffced7717b0adfbd88b19a9eaabbaa`），目标分支
+> `codex/p34-7-joint-gate-integration-r1`。joint-gate 模块、测试、forge/validate 脚本、合同与 runbook
+> 与冻结终态逐字节一致；冲突仅出现在 Phase 5 合同示例的 sealed-digest 行，统一以最新 main 文件字节
+> （及其 digest）为准。
+
+1. P34.7 hardened joint Gate 已整合到最新 main-derived engineering branch。
+2. 这只代表 Gate 代码进入统一主线，不是 production evidence。
+3. `joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集。
+4. P34.7 仍为 `blocked/not_proven`。
+5. Production activation 仍关闭（`activation_allowed = false`）。
+6. Migration 0013 未创建；migration head 保持 0012。
+7. P5 Lite/no-tool/只读 `knowledge_search` 产品化不等于 Hardened Sandbox 解冻。
+8. Shell、SQL、任意 HTTP、宿主文件写入、高风险 Skill/MCP、敌对代码执行仍必须等待 P34.7 PASS。
+9. 真实 Linux Runner 12/12、两成员 Overlay、DERP、node-compromise、non-disposable tenant/RAG 与 SLA
+   证据仍缺失/not_proven。
+10. 下一阶段是独立 trust-policy 设计/审批与真实生产证据采集，不是打开 Feature Gates。
+
+`AGENT_RUNTIME_ENABLED` / `AGENT_PLANNER_ENABLED` / `MULTI_AGENT_ENABLED` 保持 false/false/false；
+production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merge、未建 PR。
 
 ### P5.0 Phase 5 admission gate（2026-08-02）
 

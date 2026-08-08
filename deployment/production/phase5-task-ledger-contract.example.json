@@ -11,21 +11,21 @@
     "formal_state": "blocked/not_proven",
     "decision": {
       "path": "docs/evidence/p34-7/production-readiness-decision.md",
-      "sha256": "0ef8a35e0a5836b9aefcbf7dd444f91add95216865b6502e3183f7814c744a8d"
+      "sha256": "5bc73a3a749701aace813c33470fe91ea3a2ac3b1ac327c33e5c8d2d2ea3b862"
     }
   },
   "p5_0": {
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "3490c42a9314443e6ca19e6c8a8a5b938bf7df8dd6ddd130e870a36895f68619"
+      "sha256": "27fc43582e81beb56f409f39dabab89bcbd5753922360aa3a81d80fc2bc35da9"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "d33832ba8ad5fdb1ed1817ea64654c77534746dd354836a4d7d5e7fc920f2ae2"
+      "sha256": "2323cda6169caf587354c4ec62fc5b5c7c7f2ee8ebd6c3bf9cc822f41411bfc6"
     }
   },
   "source": {
@@ -641,12 +641,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "a2634235e97d3e790717b7f4f8d542020f4d2a3b60e6f13df6f922ef42ac2459"
+      "sha256": "82ac0b859a10d235470033869f0ec5aa31329257dcd2529b16ddec76266fed48"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "5750bb9c2688ba6e4031fec9e66c33bde9f072fe8a488cd341cb4c0514495373"
+      "sha256": "7a2949feb9744602cf819d20734523a607919cdab60d486585343accbafe93bf"
     }
   ],
   "openapi_snapshot": {

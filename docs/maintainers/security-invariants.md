@@ -1053,6 +1053,8 @@ evidence seal 的 canonical binding 必须覆盖 schema/schema_version、environ
 
 policy 的七个 producer 角色（六个组件 + sealer）公钥必须全部唯一，至少 sealer 必须与所有 producer 不同；重复公钥在 policy 解析时 fail-closed。gateway 证书必须满足 `valid_from <= now < valid_until`；未来证书与过期证书同样被拒绝，issuer/SAN/最大有效期/吊销/replay 检查保持强制。
 
+Integration R1（2026-08-08）：本不变量随 P34.7 Integration R1 移植到最新 main-derived engineering branch（`codex/p34-7-joint-gate-integration-r1`，base = PR #18 merge commit `dfd4b20`）。这只是 Gate 代码进入统一主线：`joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集，P34.7 仍 `blocked/not_proven`，production activation 仍关闭，migration 0013 未创建，三个 Phase 5 Feature Gates 保持 false；本不变量的每一条强制执行要求不因移植而放宽。
+
 **允许的改法**
 
 - 扩展显式 source scope、evidence schema 或验证断言，同时保留根 `.env`、symlink/reparse、非 regular file 和仓库外路径拒绝。

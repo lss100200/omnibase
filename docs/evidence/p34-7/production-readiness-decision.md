@@ -5,10 +5,14 @@ Date: 2026-08-02
 Decision:
 
 ```text
-P34.7 implementation/contracts/local gates: COMPLETE
+P34.7 implementation/contracts/local gates: COMPLETE (integrated on latest main)
 P34.7 production total Gate: BLOCKED / NOT_PROVEN
 production activation: DISABLED
-Phase 5 Agent Runtime: PLANNED / FROZEN
+P5 engineering/product Lite path: IMPLEMENTED / on main (engineering-only, no_tool-only)
+P5 production Runtime: DISABLED / blocked/not_proven
+P34.7 Hardened/high-risk Runtime: BLOCKED / NOT_PROVEN
+Planner production activation: DISABLED
+Multi-Agent: DISABLED
 ```
 
 This decision deliberately separates implemented, locally reproducible
@@ -144,8 +148,10 @@ digest pinned in `joint_gate._APPROVED_TRUST_POLICY_SHA256`, which is empty:
 no trust policy is approved, so every bundle - including a fully self-signed
 one - remains `blocked/not_proven`. `scripts/production/forge_p34_7_evidence_bundle.py`
 forges complete bundles to prove they can never pass. The overall P34.7
-decision is unchanged: `BLOCKED / NOT_PROVEN`, production activation DISABLED,
-Phase 5 PLANNED / FROZEN.
+decision is unchanged: `BLOCKED / NOT_PROVEN`, production activation DISABLED.
+The P5 engineering/product Lite path is implemented and on main, but it is
+engineering-only; P5 production Runtime, Planner production activation and
+Multi-Agent remain DISABLED / blocked/not_proven.
 
 ## Round 3 review-fix: hardened production joint gates (2026-08-07)
 
@@ -188,6 +194,42 @@ covered by tests:
     bytes and the ordinary forward-fix commit appended.
 
 The overall P34.7 decision is UNCHANGED: `BLOCKED / NOT_PROVEN`, production
-activation DISABLED, Phase 5 PLANNED / FROZEN. No fixture received production
-`passed`; no trust policy was approved; the root `.env` was not read and no
-business database was accessed or migrated.
+activation DISABLED. P5 production Runtime, Planner production activation and
+Multi-Agent remain DISABLED / blocked/not_proven; the P5 engineering/product
+Lite path is engineering-only and never a production activation. No fixture
+received production `passed`; no trust policy was approved; the root `.env`
+was not read and no business database was accessed or migrated.
+
+## Integration R1: hardened joint gates enter the unified main line (2026-08-08)
+
+The four frozen input commits (09cd09d, 6418a91, a2c5a3b, 867a506) of
+`external/p34-7-hardened-joint-gates` (HEAD 867a506661e4d958404387133370c3d566070a02)
+were ported, in order, onto the verified latest `origin/main` (PR #18 merge
+commit dfd4b20bf7ffced7717b0adfbd88b19a9eaabbaa) as ordinary cherry-picks on
+branch `codex/p34-7-joint-gate-integration-r1`. The joint-gate module, tests,
+forge/validate scripts, contracts and runbook are byte-identical to the frozen
+final state; conflicts were confined to sealed-digest lines in the Phase 5
+contract examples, resolved by keeping the latest-main file bytes (and thus the
+latest-main digests). This integration records:
+
+1. The P34.7 hardened joint Gate is integrated into the latest-main-derived
+   engineering branch.
+2. This means the Gate CODE entered the unified main line only; it is not
+   production evidence.
+3. `joint_gate._APPROVED_TRUST_POLICY_SHA256` remains an empty set.
+4. P34.7 remains `blocked/not_proven`.
+5. Production activation remains disabled (`activation_allowed = false`).
+6. Migration `0013` was not created; migration head stays `0012`.
+7. The P5 Lite/no-tool/read-only `knowledge_search` productization does NOT
+   unfreeze the Hardened Sandbox.
+8. Shell, SQL, arbitrary HTTP, host-file writes, high-risk Skill/MCP and
+   hostile-code execution must still wait for a real P34.7 PASS.
+9. Real Linux Runner 12/12, two-member Overlay, DERP, node-compromise,
+   non-disposable tenant/RAG and SLA evidence are still missing/not_proven.
+10. The next stage is independent trust-policy design/approval and real
+    production evidence collection, not opening Feature Gates.
+
+All three Phase 5 production Feature Gates (`AGENT_RUNTIME_ENABLED`,
+`AGENT_PLANNER_ENABLED`, `MULTI_AGENT_ENABLED`) remain `false`; production
+Runtime, Planner and Multi-Agent remain disabled; the run was not pushed,
+merged or PR'd.

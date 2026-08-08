@@ -1585,7 +1585,7 @@
     },
     {
       "id": "production-readiness",
-      "name": "P34.7 production evidence, composition, provider, Overlay and release admission",
+      "name": "P34.7 production evidence, composition, provider, Overlay, hardened joint gate and release admission (engineering-only, integrated on latest-main branch; approved trust policy absent)",
       "source_paths": [
         "backend/src/omnibase/production/**",
         "backend/src/omnibase/workspace_data/provider_adapters.py",
