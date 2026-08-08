@@ -1460,10 +1460,14 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   carried by the P5.2C `build_engineering_agent_alpha` seam. The formal P5.4B
   builder `build_engineering_single_agent_executor` (which installs
   `LiveRuntimeAuthorityValidator` and `CapabilityGatewayKnowledgeSearchPort`)
-  is disclosed by name but is **not integrated**
-  (`formal_builder_integration = not_integrated`): it is never assembled,
-  routed or selectable in this loop, and remains a separate P5.4B engineering
-  seam whose only authority is the P5.4B disposable PostgreSQL Gate.
+  is **formally connected** to this product loop through a proven engineering
+  integration fixture (`formal_builder_integration = proven_engineering_only`,
+  `engineering_composition_ready = true`, `activation_allowed = false`): the
+  fixture exercises the real persisted authority chain (AgentVersion, AgentTask,
+  AgentRun, WorkspaceRun resolved via `AgentRunModel.workspace_run_id`,
+  RunLease, WorkspaceNode, NodeAttestation, server-owned WorkloadCredential
+  bound to the persisted workload identity digest) and is engineering-only —
+  it never authorizes production activation.
 - `lite_agent_posture()` is read-only and non-authorizing: it discloses the
   formal builder name, the Alpha builder name, the single supported invocation
   mode `no_tool`, the formal-builder integration state, whether all Phase 5
@@ -1472,11 +1476,12 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 - The Browser status DTO (`AlphaStatusResponse`) and the Next.js workbench
   consume the posture fields (`formal_builder`, `alpha_builder`,
   `supported_invocation_modes`, `formal_builder_integration`,
+  `engineering_composition_ready`, `activation_allowed`,
   `expected_migration_head`) to label state honestly. Static `ROADMAP`/`LOCKED`
   chips must be reserved for surfaces not backed by current product state; the
-  formal knowledge-search surface must read `NOT INTEGRATED`, and provider
-  secrets must never leak into browser state, logs, diagnostics, errors or
-  DTOs.
+  formal knowledge-search surface must read `PROVEN ENGINEERING ONLY` (never a
+  production claim), and provider secrets must never leak into browser state,
+  logs, diagnostics, errors or DTOs.
 - The disposable runner
   `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py` is
   run-scoped and engineering-only. It executes the focused Lite unit suite and

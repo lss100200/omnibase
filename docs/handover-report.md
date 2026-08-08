@@ -3579,3 +3579,46 @@ vetoes=[]）均在提交后 clean checkout 复核通过；sealed digest 链
 integration/destructive 测试；生产 Runtime 激活、migration `0013`、
 Phase 5 Feature Gate 开启、业务数据库访问或根 `.env` 读取。Hardened
 保持 `blocked/not_proven`。未 push、未创建 PR、未 merge。
+
+### P5 Consolidation R1：P5.3A→P5.4C 工程栈统一（2026-08-08）
+
+`codex/p5-consolidation-r1` 从最新 `origin/main`（`0c861b3`）建立统一工作树，
+按依赖顺序收口五条已完成的工程线：
+
+1. **P5.3A/P5.4A**（`codex/p5-3a-after-pr16` → `ff3c87e`）：Planner Proposal
+   Contract 与 TypedSingleAgentExecutor 工程切片；
+2. **P5.4B**（`external/p5-4b-engineering-composition` → `6351aba`）：
+   Engineering Composition / Formal Builder；
+3. **P5.4C Round 5**（`external/p5-4c-lite-agent-product-loop` →
+   `0a71eaa`，含 `feat(public): refresh agent workbench preview`）：Lite Agent
+   Product Loop 完整产品闭环（Compose flag wiring、admission closed-set、
+   integrity receipt、exitcode sidecar 严格解析、source closure）；
+4. **Cross-Platform Desktop Runtime Round 5**（`external/cross-platform-desktop-runtime`
+   → `db5e4b0`）：acronym-aware 脱敏、escape-aware quoted scanner、inline flag
+   状态机、verified executable identity、bounded output；
+5. **旧 Planner 对照线**（`e42c89d`，只读不合并）：DAG cycle detection、
+   deterministic ordering、canonical digest、AgentVersion binding、scope/
+   budget/risk/approval/retry/portability/forbidden fields/provider-neutral
+   requirements 全部确认无遗漏。
+
+**Formal Builder 集成已证明（engineering-only）**：`formal_builder_integration =
+proven_engineering_only`、`formal_builder_posture_not_integrated = false`、
+`engineering_composition_ready = true`、`production_runtime_activated = false`、
+`activation_allowed = false`。正式集成 fixture 使用真实持久化 authority chain
+（AgentVersion → AgentTask → AgentRun → WorkspaceRun via
+`AgentRunModel.workspace_run_id` → RunLease → WorkspaceNode → NodeAttestation →
+server-owned WorkloadCredential → workload identity digest →
+CapabilityGatewayKnowledgeSearchPort → GatewayService.rag_search → 只读
+Workspace knowledge）。fake authority 与 weaker builder 已从正式集成路径移除。
+唯一允许的 Agent Tool 是 `knowledge_search`。
+
+**合并冲突解决**：P5.4C merge 无冲突；Desktop merge 的 3 个 phase5 contract
+seal 冲突通过从合并后的 maintenance-map（42 invariants/36 modules）与
+security-invariants 字节重算全部 sealed digest 并沿链传播解决，无过时 digest
+保留。
+
+**状态**：P34.7 未合并且仍冻结（`867a506`，`blocked/not_proven`）；
+migration head `0012`、migration `0013` absent；三个 Phase 5 production Feature
+Gate 全部 `false`；production Runtime/Planner/Multi-Agent disabled；Skill
+Runtime 与 Self-Development Alpha 未实现。未 push、未创建 PR、未 merge 到
+main、未部署。

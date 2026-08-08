@@ -2286,7 +2286,7 @@
       ],
       "public_interfaces": [
         "Browser HTTP GET /api/v1/workspaces/{workspace_id}/agent-alpha/status (read-only posture)",
-        "Internal engineering-only product surface over the existing tool-free Alpha loop; exactly one supported invocation mode `no_tool`; the formal P5.4B knowledge-search builder is disclosed by name but reported formal_builder_integration=not_integrated and never assembled here; the UI Invoke path requires lite_gate_enabled AND engineering_assembled AND environment_allowed AND phase5_gates_all_false simultaneously; never a production Runtime, Planner, multi-Agent, arbitrary-tool or migration-0013 path"
+        "Internal engineering-only product surface over the existing tool-free Alpha loop; exactly one supported invocation mode `no_tool`; the formal P5.4B knowledge-search builder is formally connected and reports formal_builder_integration=proven_engineering_only with engineering_composition_ready=true and activation_allowed=false; the UI Invoke path requires lite_gate_enabled AND engineering_assembled AND environment_allowed AND phase5_gates_all_false simultaneously; never a production Runtime, Planner, multi-Agent, arbitrary-tool or migration-0013 path"
       ],
       "depends_on": [
         "agent-alpha-engineering-runtime",
