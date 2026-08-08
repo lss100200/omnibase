@@ -2608,23 +2608,39 @@ lifecycle_state=="revoked" 时，被 revocation record 引用的历史 key 可�
 lifecycle_state=="revoked"、allowed_signing_scopes 为空（不再持有签名权，
 不得出现在 producer signing allowlist）、revocation_record_id 非空；当前
 key（generated/registered/candidate）仍必须精确持有自身角色的冻结 scope
-矩阵；record 与 revoked key 必须 1:1 闭合绑定（同 role、同 key_id、同
-revocation_record_id、record id 唯一、key 引用唯一、计数相等）；missing
-record、duplicate record id、重复 key 引用、record-id/role/key-id drift、
-revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record 指向
-candidate key 全部 fail-closed；revoked 仍需 packet.rollback_policy_sha256。
+矩阵，且非 revoked key 的 revocation_record_id 必须严格为 null（悬空
+token 一律 fail-closed）；record 与 revoked key 必须 1:1 闭合绑定（同 role、
+同 key_id、同 revocation_record_id、record id 唯一、key 引用唯一、计数相等）；
+missing record、duplicate record id、重复 key 引用、record-id/role/key-id
+drift、revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record
+指向 candidate key 全部 fail-closed；revoked 仍需 packet.rollback_policy_sha256。
+replacement/successor 三者精确一致：RevocationRecord.superseded_by_key_id
+（被取代的 revoked key 视角）、successor key 的 replaces_key_id（successor
+视角）、rotation entry 的 replaces_key_id（被替换 key 视角）——任一非空时
+其余声明必须一致；successor 必须真实存在、同 role、非 self、非 revoked/
+archived、公钥不同；unknown/self/cross-role/revoked/same-public-key/drift
+全部拒绝；revoked candidate 中每 role 至多 2 把 key（1 revoked + 1
+successor），approval packet 指纹集合允许 7–14 个。rotation plan 冻结为
+当前状态直接转换语义：entry.from_state 必须精确等于 key.lifecycle_state；
+每个 key_id 至多一条 entry（完全/部分/冲突重复全部拒绝）；planned_at 必须
+落在 key 有效窗口内（max(candidate.created_at, key.created_at,
+key.candidate_from) <= planned_at < planned_expiry，planned_expiry 非空时，
+下界 inclusive 上界 exclusive）；key-level 与 plan-level replaces_key_id 必须
+引用真实、同 role、不同 key 与公钥并双向精确一致。key registration 时间
+不变量：candidate_from >= created_at、planned_expiry > created_at（严格）；
+所有时间戳必须是显式 UTC instant（Z/+00:00，非零 offset 视为歧义拒绝）。
 生命周期时间顺序闭合：superseded_at / 每条 record 的 revoked_at 必须落在
 review window 内（review_started_at <= event <= review_completed_at）且不早于
-candidate.created_at；所有比较在归一化 UTC datetime 上进行（解析器只接受
-Z/+00:00，非零 offset 视为歧义拒绝），边界 inclusive（等价 UTC instant
-允许）。command 模板内部 command 必须精确等于其 map key（六个 map key 与
-六个内部 command 各自形成 _REQUIRED_COMMANDS 精确闭集，swap/内部重复/缺失/
-未知全部拒绝，重算全部 digest 也不能绕过）；同一 artifact 内 command 重复
-（["core_runner","core_runner"]）与跨 artifact 重复覆盖都拒绝；allowed_env_names
-在 frozenset 转换前拒绝重复值（section digest 绑定重复列表也不能接受）。
-custody_kind 只是计划性元数据（operator_offline/
-hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned），
-不得当作实际 HSM/KMS 证明；未真实证明的 custody posture 必须报告 not_proven。
+candidate.created_at；所有比较在归一化 UTC datetime 上进行，边界 inclusive
+（等价 UTC instant 允许）。command 模板内部 command 必须精确等于其 map key
+（六个 map key 与六个内部 command 各自形成 _REQUIRED_COMMANDS 精确闭集，
+swap/内部重复/缺失/未知全部拒绝，重算全部 digest 也不能绕过）；同一
+artifact 内 command 重复（["core_runner","core_runner"]）与跨 artifact 重复
+覆盖都拒绝；allowed_env_names 在 frozenset 转换前拒绝重复值（section
+digest 绑定重复列表也不能接受）。custody_kind 只是计划性元数据
+（operator_offline/hsm_planned/kms_planned/remote_runner_local/
+external_signing_service_planned），不得当作实际 HSM/KMS 证明；未真实证明
+的 custody posture 必须报告 not_proven。
 
 **允许的改法**
 
@@ -2649,13 +2665,16 @@ hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned）�
   角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
   drift、raw-digest/canonical-bytes bypass、lifecycle/decision binding、
   command map-key swap（含全 digest 重算文件级）、supersession/revocation
-  完整性（1:1 record-key 绑定、时间顺序闭合）、repo containment/packet
-  path binding、artifact coverage 闭合（含 artifact 内 command 重复）、
-  env allowlist 重复、backup owner approver、敏感 env name、路径/link
-  攻击、migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
+  完整性（1:1 record-key 绑定、successor 三者一致、时间顺序闭合、非 revoked
+  key 悬空 record id、rotation 语义：entry 唯一/from_state drift/planned_at
+  窗口/replaces 双向绑定、key 时间不变量）、repo containment/packet path
+  binding、artifact coverage 闭合（含 artifact 内 command 重复）、env
+  allowlist 重复、backup owner approver、敏感 env name、路径/link 攻击、
+  migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
   commit/tree 进入 source seal、文件级 raw-byte digest 验证、身份分离、
-  lifecycle candidate、revoked/not_approved 文件级正向控制、
-  `candidate/valid_not_approved`、production Gate 仍 blocked/not_proven）
+  lifecycle candidate、revoked/not_approved 文件级正向控制（含合法
+  same-role successor）、合法 rotation 正向控制、`candidate/valid_not_approved`、
+  production Gate 仍 blocked/not_proven）
 - `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
   deployment/production/p34-7-trust-policy-candidate.example.json
   --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json

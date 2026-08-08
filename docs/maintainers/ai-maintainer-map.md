@@ -1620,10 +1620,19 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
 - 密钥生命周期/轮换/撤销状态机为闭集 `LEGAL_TRANSITIONS`；R0 不构造 active，
   拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。revoked
   lifecycle 可达（历史 revoked key 模型）：仅 revoked candidate 内允许
-  lifecycle_state=="revoked" 的 key（scopes 空 + revocation_record_id 非空），
-  record 与 revoked key 1:1 闭合绑定（同 role/key_id/record_id、唯一 id、
-  计数相等）；时间顺序闭合：superseded_at/revoked_at 必须落在 review window
-  内且不早于 created_at（归一化 UTC 比较，Z/+00:00 only，边界 inclusive）。
+  lifecycle_state=="revoked" 的 key（scopes 空 + revocation_record_id 非空，
+  非 revoked key 的 record id 必须严格 null），record 与 revoked key 1:1 闭合
+  绑定（同 role/key_id/record_id、唯一 id、计数相等）；successor 三者精确
+  一致（record.superseded_by_key_id == successor key.replaces_key_id ==
+  rotation entry.replaces_key_id，successor 真实/同 role/非 self/非
+  revoked/archived/公钥不同，revoked role 至多 2 把 key，packet 指纹 7–14）；
+  rotation plan 为当前状态直接转换语义（from_state == key.lifecycle_state、
+  每 key 至多一条 entry、planned_at 落在
+  [max(candidate/key created_at, candidate_from), planned_expiry) 窗口内、
+  key-level 与 plan-level replaces 双向精确绑定）；时间顺序闭合：
+  superseded_at/revoked_at 落在 review window 内且不早于 created_at（归一化
+  UTC 比较，Z/+00:00 only，边界 inclusive）；key registration 时间不变量
+  candidate_from >= created_at、planned_expiry > created_at。
 - 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；env name
   归一化后拒绝敏感 token（openai_api_key/OpenAiApiKey/postgres_password 等）
   与 root `.env` locator（`/`、`\`、Windows drive、大小写变体），重复 env

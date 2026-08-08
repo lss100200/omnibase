@@ -110,3 +110,43 @@ verification, lifecycle/decision binding, repo containment and path binding,
 secret env normalization, Windows `.env` locator rejection, six-artifact
 coverage closure, backup-owner/reviewer separation, CLI exit 0 only for
 `candidate/valid_not_approved`) remain in force.
+
+## Review-fix Round 3 (2026-08-08)
+
+Status after the third independent review round:
+
+```text
+REVIEW_FIX_ROUND_3_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+```
+
+Four findings were closed in this round (no push / no PR / no merge; one
+forward-fix commit on the branch):
+
+- **P1-1** — `RevocationRecord.superseded_by_key_id` is now fully verified:
+  a successor must be a real, same-role, non-self, non-revoked/archived key
+  with a different public key, and the three declaration sites (record
+  successor, successor key `replaces_key_id`, rotation entry) must agree
+  exactly.  Unknown, self, cross-role, revoked, same-public-key and drifted
+  successors all veto; a legitimate same-role successor positive control
+  (`revoked/not_approved`) was added.  Revoked candidates may carry one
+  same-role successor key per revoked role (at most two keys per role), and
+  the approval packet accepts seven to fourteen fingerprints.
+- **P1-2** — a NON-revoked key (generated/registered/candidate) carrying any
+  `revocation_record_id` fails closed at parse time; revoked keys keep their
+  non-empty, exactly-one-record binding.  Structural and file-level resealed
+  negative tests were added for all three non-revoked states.
+- **P1-3** — the rotation plan is closed with frozen direct-transition
+  semantics: `from_state` must equal the key's current lifecycle state, one
+  entry per key (identical/conflicting duplicates veto), `planned_at` inside
+  `[max(candidate.created_at, key.created_at, key.candidate_from),
+  planned_expiry)` (inclusive lower, exclusive upper), and key-level /
+  plan-level replacements must reference real same-role distinct keys and
+  agree exactly with each other and with record successors.  Unknown,
+  cross-role and drifted replacements veto; a legal rotation positive
+  control was added.
+- **P2-1** — key registration time invariants: `candidate_from >=
+  created_at` and `planned_expiry > created_at` (strictly) when set;
+  non-UTC timestamps fail closed at the shared parser.
+
+All Round 1/2 boundaries remain in force, including the reachable
+`revoked/not_approved` state and the lifecycle timeline closure.

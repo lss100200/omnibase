@@ -579,6 +579,13 @@ def _parse_key_registration(
         if data.get("planned_expiry") is not None
         else None
     )
+    if candidate_from < created_at:
+        raise ConfigurationError(f"{name}.candidate_from must not precede created_at")
+    if planned_expiry is not None and planned_expiry <= created_at:
+        raise ConfigurationError(
+            f"{name}.planned_expiry must be strictly after created_at "
+            "(equal or earlier instants are rejected)"
+        )
     lifecycle_state = _string(data.get("lifecycle_state"), f"{name}.lifecycle_state")
     if lifecycle_state not in KEY_LIFECYCLE_STATES:
         raise ConfigurationError(f"{name}.lifecycle_state is unknown")
@@ -611,6 +618,10 @@ def _parse_key_registration(
         revocation_record_id = _opt_string(
             data.get("revocation_record_id"), f"{name}.revocation_record_id"
         )
+        if revocation_record_id is not None:
+            raise ConfigurationError(
+                f"{name}: a non-revoked key must not carry a revocation_record_id"
+            )
     custody_kind = _string(data.get("custody_kind"), f"{name}.custody_kind")
     if custody_kind not in CUSTODY_KINDS:
         raise ConfigurationError(f"{name}.custody_kind is unknown")
@@ -1100,14 +1111,17 @@ def _parse_packet_decision(data: dict[str, Any]) -> tuple[str, str]:
 
 
 def _parse_packet_fingerprints(data: dict[str, Any]) -> frozenset[str]:
-    """Exactly seven distinct producer-key fingerprints."""
+    """The distinct producer-key fingerprints: between seven (one per role)
+    and fourteen (a revoked role may carry one revoked key plus its
+    same-role successor)."""
     fingerprints = _list(
         data.get("producer_key_fingerprints"),
         "approval packet.producer_key_fingerprints",
     )
-    if len(fingerprints) != len(REQUIRED_ROLES):
+    if not (len(REQUIRED_ROLES) <= len(fingerprints) <= 2 * len(REQUIRED_ROLES)):
         raise ConfigurationError(
-            "approval packet.producer_key_fingerprints must contain exactly seven fingerprints"
+            "approval packet.producer_key_fingerprints must contain between "
+            "seven and fourteen distinct fingerprints"
         )
     for item in fingerprints:
         _sha256(item, "approval packet.producer_key_fingerprints[]")
@@ -1256,9 +1270,28 @@ def _collect_keys(
     return all_keys
 
 
+def _verify_revoked_role_key_counts(candidate: TrustPolicyCandidate) -> None:
+    """In a revoked candidate a role may carry at most two keys and, when it
+    carries two, exactly one of them must be revoked (the other is its
+    successor)."""
+    for producer in candidate.producers:
+        if len(producer.keys) > 2:
+            raise ConfigurationError(
+                "a revoked role may carry at most one revoked key plus one successor key"
+            )
+        if len(producer.keys) == 2:
+            revoked_count = sum(1 for key in producer.keys if key.lifecycle_state == "revoked")
+            if revoked_count != 1:
+                raise ConfigurationError(
+                    "a role carrying two keys must contain exactly one revoked key"
+                )
+
+
 def _verify_key_uniqueness(candidate: TrustPolicyCandidate) -> frozenset[str]:
-    """Seven roles, seven distinct non-zero Ed25519 public keys; the sealer
-    must differ from every producer."""
+    """Seven roles, distinct non-zero Ed25519 public keys; the sealer must
+    differ from every producer.  A revoked candidate may carry, in addition
+    to the seven role keys, ONE same-role successor key for a revoked key
+    (at most two keys per role, exactly one of them revoked)."""
     public_keys: dict[str, str] = {}
     fingerprints: set[str] = set()
     for producer in candidate.producers:
@@ -1271,7 +1304,9 @@ def _verify_key_uniqueness(candidate: TrustPolicyCandidate) -> frozenset[str]:
                 raise ConfigurationError("duplicate public key across registrations")
             public_keys[key.public_key] = key.key_id
             fingerprints.add(key.fingerprint_sha256)
-    if len(public_keys) != len(REQUIRED_ROLES):
+    if candidate.lifecycle_state == "revoked":
+        _verify_revoked_role_key_counts(candidate)
+    elif len(public_keys) != len(REQUIRED_ROLES):
         raise ConfigurationError("the candidate must register exactly seven distinct keys")
     sealer_key = next(
         key for producer in candidate.producers if producer.role == _SEALER for key in producer.keys
@@ -1340,36 +1375,95 @@ def _detect_replacement_cycles(replaced_by: dict[str, str]) -> None:
             cursor = replaced_by[cursor]
 
 
+def _require_planned_at_in_window(
+    entry: RotationEntry,
+    key: PublicKeyRegistration,
+    candidate: TrustPolicyCandidate,
+) -> None:
+    """``planned_at`` must sit inside the key's validity window:
+    ``max(candidate.created_at, key.created_at, key.candidate_from) <=
+    planned_at < planned_expiry`` when ``planned_expiry`` is set (inclusive
+    lower bound, EXCLUSIVE upper bound)."""
+    if entry.planned_at < candidate.created_at:
+        raise ConfigurationError(
+            "rotation planned_at must not precede the candidate creation timestamp"
+        )
+    if entry.planned_at < key.created_at:
+        raise ConfigurationError(
+            "rotation planned_at must not precede the key created_at timestamp"
+        )
+    if entry.planned_at < key.candidate_from:
+        raise ConfigurationError(
+            "rotation planned_at must not precede the key candidate_from timestamp"
+        )
+    if key.planned_expiry is not None and entry.planned_at >= key.planned_expiry:
+        raise ConfigurationError(
+            "rotation planned_at must fall strictly before the key planned_expiry "
+            "window (planned_at < planned_expiry)"
+        )
+
+
+def _verify_plan_replacement_reference(
+    entry: RotationEntry,
+    keys: dict[str, PublicKeyRegistration],
+    key_ids: frozenset[str],
+) -> str:
+    """A plan-level replacement must reference a real, same-role, distinct
+    key (distinct key id AND public key); returns the replacement key id."""
+    replacer = entry.replaces_key_id
+    assert replacer is not None
+    if replacer not in key_ids:
+        raise ConfigurationError(
+            f"rotation plan references an unknown replacement key: {replacer}"
+        )
+    if replacer == entry.key_id:
+        raise ConfigurationError("a key cannot replace itself")
+    if keys[replacer].role != keys[entry.key_id].role:
+        raise ConfigurationError("replacement must stay within the same role")
+    if keys[replacer].public_key == keys[entry.key_id].public_key:
+        raise ConfigurationError("a replacement key must not share the old key's public key")
+    return replacer
+
+
 def _verify_rotation_entries(
     candidate: TrustPolicyCandidate,
     keys: dict[str, PublicKeyRegistration],
     key_ids: frozenset[str],
 ) -> tuple[dict[str, str], set[str]]:
-    """Closed state-machine checks for the rotation plan: legal transitions
-    (already enforced at parse), known keys, same-role replacement, no
-    self-replacement, no same-public-key replacement, and no construction of
-    an active production key.  Returns ``(replaced_by, rotating)`` maps."""
+    """Closed state-machine checks for the rotation plan.
+
+    FROZEN SEMANTICS: every entry describes a DIRECT transition of the key's
+    CURRENT lifecycle state -- ``entry.from_state`` must equal the referenced
+    key's ``lifecycle_state`` exactly (R0 never fabricates a future chain
+    starting from a state the key is not in).  Each ``key_id`` appears at
+    most once (identical, partial or conflicting duplicates all fail), and
+    ``planned_at`` must sit inside the key's validity window (see
+    ``_require_planned_at_in_window``).  Returns ``(replaced_by, rotating)``
+    maps."""
     replaced_by: dict[str, str] = {}
     rotating: set[str] = set()
+    seen_keys: set[str] = set()
     for entry in candidate.rotation_plan.entries:
         if entry.key_id not in key_ids:
             raise ConfigurationError(f"rotation plan references an unknown key: {entry.key_id}")
-        if entry.role != keys[entry.key_id].role:
+        if entry.key_id in seen_keys:
+            raise ConfigurationError(
+                f"rotation plan must contain at most one entry per key: {entry.key_id}"
+            )
+        seen_keys.add(entry.key_id)
+        key = keys[entry.key_id]
+        if entry.role != key.role:
             raise ConfigurationError("rotation plan entry role must match the key role")
+        if entry.from_state != key.lifecycle_state:
+            raise ConfigurationError(
+                "rotation entry from_state must equal the key lifecycle state "
+                f"({entry.from_state} != {key.lifecycle_state})"
+            )
+        _require_planned_at_in_window(entry, key, candidate)
         if entry.replaces_key_id is not None:
-            if entry.replaces_key_id not in key_ids:
-                raise ConfigurationError(
-                    f"rotation plan references an unknown replacement key: {entry.replaces_key_id}"
-                )
-            if entry.replaces_key_id == entry.key_id:
-                raise ConfigurationError("a key cannot replace itself")
-            if keys[entry.replaces_key_id].role != keys[entry.key_id].role:
-                raise ConfigurationError("replacement must stay within the same role")
-            if keys[entry.replaces_key_id].public_key == keys[entry.key_id].public_key:
-                raise ConfigurationError(
-                    "a replacement key must not share the old key's public key"
-                )
-            replaced_by[entry.key_id] = entry.replaces_key_id
+            replaced_by[entry.key_id] = _verify_plan_replacement_reference(
+                entry, keys, key_ids
+            )
         if entry.to_state == "active":
             raise ConfigurationError(
                 "the R0 candidate validator cannot construct an active production key"
@@ -1377,6 +1471,124 @@ def _verify_rotation_entries(
         if entry.from_state == "active" or entry.to_state == "rotating":
             rotating.add(entry.key_id)
     return replaced_by, rotating
+
+
+def _verify_key_level_replacements(
+    keys: dict[str, PublicKeyRegistration],
+    key_ids: frozenset[str],
+    entries_by_key: dict[str, RotationEntry],
+) -> None:
+    """The SUCCESSOR side: ``Y.replaces_key_id == X`` must reference a real,
+    same-role, distinct key and the rotation entry of ``X`` must name ``Y``
+    back."""
+    for key_id, key in keys.items():
+        replaced = key.replaces_key_id
+        if replaced is None:
+            continue
+        if replaced not in key_ids:
+            raise ConfigurationError(f"key-level replacement references an unknown key: {replaced}")
+        old = keys[replaced]
+        if old.role != key.role:
+            raise ConfigurationError("key-level replacement must stay within the same role")
+        if old.public_key == key.public_key:
+            raise ConfigurationError("a replacement key must not share the old key's public key")
+        plan_entry = entries_by_key.get(replaced)
+        if plan_entry is None or plan_entry.replaces_key_id != key_id:
+            raise ConfigurationError("key-level replacement must match the rotation plan entry")
+
+
+def _verify_plan_level_replacements(
+    keys: dict[str, PublicKeyRegistration],
+    key_ids: frozenset[str],
+    entries_by_key: dict[str, RotationEntry],
+) -> None:
+    """The REPLACED side: ``entry(X).replaces_key_id == Y`` must reference a
+    real, same-role, distinct key whose own registration points back at
+    ``X``."""
+    for replaced, plan_entry in entries_by_key.items():
+        replacer = plan_entry.replaces_key_id
+        if replacer is None:
+            continue
+        if replacer not in key_ids:
+            raise ConfigurationError(
+                f"rotation plan references an unknown replacement key: {replacer}"
+            )
+        replacer_key = keys[replacer]
+        if replacer_key.role != keys[replaced].role:
+            raise ConfigurationError("rotation plan replacement must stay within the same role")
+        if replacer_key.public_key == keys[replaced].public_key:
+            raise ConfigurationError("a replacement key must not share the old key's public key")
+        if replacer_key.replaces_key_id != replaced:
+            raise ConfigurationError(
+                "rotation plan replacement must match the key-level registration"
+            )
+
+
+def _verify_record_successors(
+    candidate: TrustPolicyCandidate,
+    keys: dict[str, PublicKeyRegistration],
+    key_ids: frozenset[str],
+    entries_by_key: dict[str, RotationEntry],
+) -> None:
+    """The REVOKED side: ``record(X).superseded_by_key_id == Y`` must be a
+    real, same-role, non-self, non-revoked/archived successor with a
+    different public key, whose registration and rotation entry both name
+    ``X`` back."""
+    for record in candidate.revocation_records:
+        successor = record.superseded_by_key_id
+        if successor is None:
+            continue
+        if successor not in key_ids:
+            raise ConfigurationError(f"superseded_by_key_id references an unknown key: {successor}")
+        revoked_key = keys[record.key_id]
+        successor_key = keys[successor]
+        if successor_key.key_id == revoked_key.key_id:
+            raise ConfigurationError("a revoked key cannot be its own successor")
+        if successor_key.lifecycle_state in ("revoked", "archived"):
+            raise ConfigurationError(
+                "a successor must not be revoked or archived "
+                f"(got {successor_key.lifecycle_state})"
+            )
+        if successor_key.role != revoked_key.role:
+            raise ConfigurationError("successor must stay within the same role")
+        if successor_key.public_key == revoked_key.public_key:
+            raise ConfigurationError("a successor must not share the revoked key's public key")
+        if successor_key.replaces_key_id != record.key_id:
+            raise ConfigurationError(
+                "record superseded_by_key_id must match the successor key's " "replaces_key_id"
+            )
+        plan_entry = entries_by_key.get(record.key_id)
+        if plan_entry is None or plan_entry.replaces_key_id != successor:
+            raise ConfigurationError(
+                "record superseded_by_key_id must match the rotation plan entry"
+            )
+
+
+def _verify_replacement_bindings(
+    candidate: TrustPolicyCandidate,
+    keys: dict[str, PublicKeyRegistration],
+    key_ids: frozenset[str],
+) -> None:
+    """Close the replacement semantics across every declaration site.
+
+    A replacement fact can be declared in THREE places and, whenever more
+    than one is present, they must agree exactly:
+
+    * ``RevocationRecord.superseded_by_key_id`` -- the revoked key is
+      succeeded by ``Y``;
+    * ``PublicKeyRegistration.replaces_key_id`` on the SUCCESSOR key --
+      ``Y.replaces_key_id == X``;
+    * ``RotationEntry.replaces_key_id`` on the REPLACED key --
+      ``entry(X).replaces_key_id == Y``.
+
+    Any dangling, cross-role, self-referencing, revoked, same-public-key or
+    drifted declaration fails closed."""
+    entries_by_key: dict[str, RotationEntry] = {}
+    for plan_entry in candidate.rotation_plan.entries:
+        entries_by_key[plan_entry.key_id] = plan_entry
+    _verify_key_level_replacements(keys, key_ids, entries_by_key)
+    _verify_plan_level_replacements(keys, key_ids, entries_by_key)
+    _verify_record_successors(candidate, keys, key_ids, entries_by_key)
 
 
 def _verify_revocation_records(
@@ -1505,15 +1717,19 @@ def _require_event_inside_review_window(
 
 def _verify_rotation_revocation(candidate: TrustPolicyCandidate) -> None:
     """Validate the rotation plan and revocation records as a closed state
-    machine: legal transitions only, no self-replacement, no cycles, no
-    cross-role replacement, no same-public-key replacement, no signing scope
-    for revoked keys, and immutable historical records."""
+    machine: legal transitions only, one entry per key, current-state
+    from_state, planned_at inside the key validity window, no
+    self-replacement, no cycles, no cross-role replacement, no
+    same-public-key replacement, no signing scope for revoked keys, 1:1
+    record/key binding, and exact three-way replacement consistency (record
+    successor / key-level replaces / plan-level replaces)."""
     keys = _collect_keys(candidate)
     key_ids = frozenset(keys)
     replaced_by, _rotating = _verify_rotation_entries(candidate, keys, key_ids)
     # cycle detection over replaces links
     _detect_replacement_cycles(replaced_by)
     _verify_revocation_records(candidate, keys, key_ids)
+    _verify_replacement_bindings(candidate, keys, key_ids)
 
 
 # ---------------------------------------------------------------------------

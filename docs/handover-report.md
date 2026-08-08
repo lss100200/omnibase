@@ -1903,6 +1903,37 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    backup owner 分离、CLI exit 语义）；正式 gates 从 clean HEAD 全部 exit 2；
    sealed digest 链重算后重新提交。
 
+### P34.7 Trust Policy R0 Review-Fix Round 3（2026-08-08）
+
+> 独立 review 的 4 项 findings（P1-1…P2-1）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_3_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 superseded_by_key_id 验证**：`_verify_replacement_bindings` 闭合 successor
+   语义——successor 必须真实存在、同 role、非 self、非 revoked/archived、公钥不同；
+   record.superseded_by_key_id 与 successor key 的 replaces_key_id 及 rotation
+   entry 的 replaces_key_id 三者精确一致（unknown/self/cross-role/revoked/
+   same-public-key/drift 全部 veto）；合法 same-role successor 文件级正向控制
+   （revoked/not_approved）；revoked role 至多 2 把 key（1 revoked + 1 successor），
+   packet 指纹集合放宽为 7–14。
+2. **P1-2 非 revoked key 悬空 record id**：generated/registered/candidate 三种 key
+   携带任意 revocation_record_id 一律 parse 层 fail-closed；revoked key 保持非空 +
+   恰好一条 record 绑定；含 file-level resealed 负例。
+3. **P1-3 rotation plan 语义闭合**：冻结为当前状态直接转换语义——
+   entry.from_state 必须精确等于 key.lifecycle_state；每个 key_id 至多一条 entry
+   （完全/部分/冲突重复全部拒绝）；planned_at 落在
+   [max(candidate.created_at, key.created_at, key.candidate_from),
+   planned_expiry)（下界 inclusive、上界 exclusive）；key-level replaces_key_id
+   必须引用真实、同 role、不同 key/公钥并与 plan-level 双向精确一致；
+   合法 rotation 正向控制。
+4. **P2-1 key registration 时间不变量**：candidate_from >= created_at、
+   planned_expiry > created_at（严格）；非 UTC timestamp 由共享解析器 fail-closed。
+5. **验证**：candidate focused 144 passed；P34.7 regression（joint/composition/
+   provider/overlay/SLA）与 P5 合同回归全绿；全量 non-integration 从 clean HEAD
+   重跑；mypy、ruff、maintainer map/benchmark、CLI 双向、7 个正式 gates exit 2；
+   sealed digest 链重算后重新提交。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不

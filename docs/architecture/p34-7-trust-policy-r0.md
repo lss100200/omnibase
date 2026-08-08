@@ -218,6 +218,28 @@ rotation cycles, cross-role replacement, same-public-key replacement, revoked
 keys keeping signing scopes, deleting historical revocations, and rewriting
 historical policy bytes to fake a new candidate.
 
+### 9.3 Rotation plan — frozen direct-transition semantics
+
+`rotation_plan` describes a DIRECT transition of a key's CURRENT lifecycle
+state (never a hypothetical future chain):
+
+- `entry.from_state` must EQUAL the referenced key's `lifecycle_state`
+  exactly; a plan starting from a state the key is not in fails closed;
+- each `key_id` appears in AT MOST ONE entry — identical, partial or
+  conflicting duplicates all fail;
+- `entry.to_state` must be a legal transition from that state (closed set);
+- `planned_at` must fall inside the key's validity window:
+  `max(candidate.created_at, key.created_at, key.candidate_from) <=
+  planned_at < planned_expiry` when `planned_expiry` is set (INCLUSIVE lower
+  bound, EXCLUSIVE upper bound — a plan exactly at the expiry instant is
+  rejected);
+- `replaces_key_id` (key-level or plan-level) must reference a real,
+  same-role, distinct key (distinct key id AND public key), and the
+  key-level and plan-level declarations must match exactly;
+- key registrations additionally enforce `candidate_from >= created_at` and
+  `planned_expiry > created_at` (strictly) when `planned_expiry` is set;
+  all timestamps are explicit UTC instants (`Z` / `+00:00` only).
+
 ### 9.1 Revoked candidates are reachable (historical revoked key model)
 
 A candidate whose `lifecycle_state == "revoked"` is a REAL, reachable state
@@ -241,7 +263,32 @@ authority:
   candidate/generated/registered key all fail closed;
 - `rollback_policy_sha256` in the packet stays mandatory for revoked
   candidates, and every `revoked_at` must fall inside the review window
-  (see 5.3).
+  (see 5.3);
+- a NON-revoked key must have `revocation_record_id` strictly `null` — a
+  dangling record-id token fails closed in every lifecycle state;
+- the approval packet's `producer_key_fingerprints` covers between seven
+  and fourteen distinct fingerprints (one per role, plus one same-role
+  successor per revoked role).
+
+### 9.2 Replacement (successor) semantics — three-way exact binding
+
+A replacement fact can be declared in THREE places and, whenever more than
+one is present, they must agree EXACTLY:
+
+```text
+RevocationRecord.superseded_by_key_id == Y      (revoked key X is succeeded by Y)
+PublicKeyRegistration.replaces_key_id  == X     (on the SUCCESSOR key Y)
+RotationEntry.replaces_key_id          == Y     (entry of the REPLACED key X)
+```
+
+A successor `Y` must be a real, same-role key, distinct from the revoked
+key, NOT itself revoked/archived, with a different public key, and its own
+`replaces_key_id` must point back at `X`; the rotation entry of `X` must
+declare the same `Y`.  Unknown, self-referencing, cross-role, revoked,
+same-public-key or drifted declarations all fail closed.  `null` is the
+valid "no successor" value.  In a revoked candidate a role may carry at most
+two keys (one revoked key plus one successor); in every other candidate each
+role carries exactly one key.
 
 ## 10. Approval packet
 
