@@ -1772,6 +1772,54 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    false；production Runtime/Planner/Multi-Agent disabled；未生成/伪造真实 production evidence；
    未读根 `.env`；未访问/迁移业务数据库；未修改冻结输入 worktree；未 push/PR/merge。
 
+### P34.7 Trust Policy R0：candidate 信任治理合同（2026-08-08）
+
+> PR #19 合并后的最新 main（merge commit `36b48a72`，tree `643cd44f`）上新增
+> engineering-only 的 trust-policy candidate 治理合同，正式状态保持
+> `ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`，决策文件声明
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`。
+
+1. **新模块**：`backend/src/omnibase/production/trust_policy_candidate.py`（16 个冻结
+   dataclass/DTO：TrustPolicyCandidate、ProducerRoleRegistration、
+   PublicKeyRegistration、KeyCustodyMetadata、SigningScope、SourceSealCandidate、
+   ArtifactApprovalCandidate、CommandTemplateCandidate、GatewayTrustCandidate、
+   EvidenceFreshnessCandidate、ApprovalPacket、ApprovalReview、RotationPlan、
+   RevocationRecord、SupersessionLink、CandidateValidationReport）；严格闭集解析复用
+   joint_gate 的 `_sha256`/`_git_oid`/`_utc_instant`/`_relative_path`/`_keys` 等，不产生漂移实现。
+2. **七角色闭集与冻结 scope 矩阵**：core/runner/broker/gateway/overlay/recovery_sla/sealer
+   恰好七个、第八角色拒绝；七把 Ed25519 公钥全部不同、64 位小写 hex、非全零；sealer 不与任何
+   producer 共用 key；每角色只能声明自己冻结行的 scope（`ROLE_SIGNING_SCOPES`），wildcard 与
+   越权 scope 拒绝。
+3. **Git source seal**：`git_object_format` 闭集 sha1|sha256，原始 OID 不二次哈希；
+   example 绑定当前 main merge commit `36b48a72…` 与真实 tree `643cd44f…`，
+   `candidate_only=true`、`production_approved=false`。
+4. **密钥生命周期/轮换/撤销**：闭集状态机 `LEGAL_TRANSITIONS`（R0 不构造 active；拒绝
+   revoked->active、candidate->active、自替换、环、跨角色、同公钥替换、revoked 保留 scope、
+   删除历史、改写历史 bytes）；custody_kind 仅计划元数据，未证明 posture 一律 not_proven。
+5. **Approval packet**：独立外部文件，`candidate_policy_raw_sha256` 与 candidate 原始字节
+   一致，section digests 绑定实际 canonical 内容；author/reviewer/producer-owner 分离；
+   decision 闭集 draft|candidate|rejected|superseded|revoked，approved/
+   approved_for_production/production_ready/passed/published 一律拒绝。
+6. **秘密字段扫描**：递归 forbidden-field 扫描（`scan_forbidden_secrets`）覆盖大小写、
+   snake/camel/kebab 与嵌套对象；任何 DTO 不得携带 private_key/seed/mnemonic/passphrase/
+   api_key/bearer token/password/provider credential/root `.env` locator。
+7. **CLI**：`scripts/production/validate_p34_7_trust_policy_candidate.py`（exit 0 =
+   `candidate/valid_not_approved`、production_approved=false、approved_digest_written=false、
+   activation_allowed=false；exit 1 = invalid/veto）。
+8. **验证**：`test_p34_7_trust_policy_candidate.py` 65 passed（40 项负向矩阵 + 正向证明：
+   真实 SHA-1 main commit/tree 进入 source seal、digest 一致、身份分离、lifecycle candidate、
+   `candidate/valid_not_approved`、production Gate 仍 blocked/not_proven）；joint focused
+   回归 84 passed 无回退。
+9. **文档**：`docs/architecture/p34-7-trust-policy-r0.md`、
+   `docs/runbooks/p34-7-trust-policy-ceremony.md`（rehearsal only，不生成生产私钥）、
+   `docs/runbooks/p34-7-trust-policy-rotation-revocation.md`、
+   `docs/evidence/p34-7/trust-policy-r0-decision.md`（CANDIDATE_CONTRACT_ONLY_NOT_APPROVED）；
+   维护地图新增 INV-053 与 `trust-policy-r0` 模块，security-invariants/ai-maintainer-map
+   同步，sealed digest 链重算。
+10. **保留项**：`_APPROVED_TRUST_POLICY_SHA256` 仍为 `frozenset()`；未生成/打印/提交/上传任何
+    私钥；migration head 0012、0013 absent；Feature Gates false/false/false；production
+    Runtime/Planner/Multi-Agent disabled；未读根 `.env`；未访问/迁移业务数据库；未 push/PR/merge。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不

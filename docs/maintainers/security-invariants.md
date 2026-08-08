@@ -2526,3 +2526,100 @@ If redaction leaks a secret or a capability fact over-claims from executable
 presence, stop use of the diagnostics bundle, fix the redactor/detector in a
 new commit, and re-run the attack matrix. Keep Hardened `blocked/not_proven`
 and every Phase 5 Feature Gate false.
+
+## INV-053 trust-policy-candidate-governance
+
+**权威源码**
+
+- `backend/src/omnibase/production/trust_policy_candidate.py`
+- `backend/tests/test_p34_7_trust_policy_candidate.py`
+- `scripts/production/validate_p34_7_trust_policy_candidate.py`
+- `deployment/production/p34-7-trust-policy-candidate.example.json`
+- `deployment/production/p34-7-trust-policy-approval-packet.example.json`
+- `docs/architecture/p34-7-trust-policy-r0.md`
+- `docs/runbooks/p34-7-trust-policy-ceremony.md`
+- `docs/runbooks/p34-7-trust-policy-rotation-revocation.md`
+- `docs/evidence/p34-7/trust-policy-r0-decision.md`
+
+**为何存在**
+
+P34.7 的信任锚是独立安装、独立审批的 trust policy；在 R0 阶段只允许建立
+candidate 治理合同，任何 candidate 都不得自我批准、不得由 producer 批准、
+不得改变 `joint_gate._APPROVED_TRUST_POLICY_SHA256`（保持空集）。R0 的最高
+正向状态是 `candidate/valid_not_approved`；`production_approved`、
+`approved_digest_written`、`activation_allowed` 必须恒为 false。
+
+candidate 必须且只能包含七个 producer 角色（core/runner/broker/gateway/
+overlay/recovery_sla/sealer），第七个角色 sealer 的密钥不得与任何 producer
+共用；七把 Ed25519 公钥必须全部不同、恰好 64 位小写 hex、非全零。每个角色
+只能声明自己冻结行的 signing scope（core_runtime_posture、core_runner_
+request_identity 等，见 `ROLE_SIGNING_SCOPES`），禁止 wildcard 与任意扩展
+scope。producer 不得声明其他 producer 的 scope；sealer 只能签 evidence seal
+与 cleanup/seal 边界。
+
+Git source seal 复用 joint gate 的 object-format 语义：`git_object_format`
+闭集 `sha1 | sha256`；sha1 恰好 40 位小写 hex、sha256 恰好 64 位小写 hex；
+commit/tree 保留原始 Git OID 不二次哈希；unknown format、长度错误、大小写
+错误、跨格式 drift 全部 fail-closed。candidate 的 approved_commits/
+approved_trees 只是候选 source set，绝不构成 production approval。
+
+任何 DTO 都不得包含 private_key、seed、mnemonic、passphrase、api_key、
+bearer token、database password、provider credential、root `.env` locator
+等秘密形态字段；递归 forbidden-field 扫描必须覆盖大小写、snake_case、
+camelCase、kebab-case 与嵌套对象，命中即 fail-closed 且错误不泄露值。
+
+Approval packet 是独立于 candidate 的外部文件，candidate 不得内嵌自己的
+批准根，packet 不得内嵌 trust root；`candidate_policy_raw_sha256` 必须与
+candidate 实际原始字节一致；author 不得出现在 reviewer_ids、reviewer 不得
+重复、reviewer 不得是任何 producer owner、review_completed_at 不得早于
+review_started_at、decision 只能在 `draft/candidate/rejected/superseded/
+revoked` 闭集内（approved/approved_for_production/production_ready/passed/
+published 一律拒绝）；空 decision reason 拒绝。
+
+密钥生命周期闭集为 `generated/registered/candidate/active/rotating/revoked/
+archived`；R0 candidate 文件中的密钥状态最多到 candidate，validator 不得
+构造新的 active/rotating；合法迁移闭集固定为 generated->registered、
+registered->candidate、candidate->rejected|superseded|revoked、
+active->rotating|revoked、rotating->active（仅 replacement key）|revoked、
+revoked->archived；拒绝 revoked->active、archived->active、rejected->active、
+candidate->active、自我替换、rotation cycle、跨角色 replacement、新旧公钥
+相同、revoked key 保留 signing scope、删除历史 revocation、改写历史 policy
+bytes 伪装新 candidate。custody_kind 只是计划性元数据（operator_offline/
+hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned），
+不得当作实际 HSM/KMS 证明；未真实证明的 custody posture 必须报告 not_proven。
+
+**允许的改法**
+
+- 扩展 candidate/packet 合同字段，同时保持闭集解析与秘密字段扫描不降级。
+- 增加新角色或 scope 时必须在同一 change 中更新冻结矩阵与全部测试。
+- 为未来的真实 key ceremony 增加独立审批流程文档，不改变 R0 的
+  candidate-only 边界。
+
+**禁止的改法**
+
+- 让任何 candidate 或 packet 产生 approved/passed/published 或
+  activation_allowed=true。
+- 向 `_APPROVED_TRUST_POLICY_SHA256` 写入任何 digest（含示例/测试 digest）。
+- 生成、打印、提交或上传真实或占位私钥；放宽秘密字段扫描。
+- 放宽七角色闭集、scope 矩阵、object format、digest、lifecycle、轮换/
+  撤销、approval separation 中任何一项。
+- 创建 migration 0013 或打开任何 Phase 5 Feature Gate。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_trust_policy_candidate.py`（负向矩阵：缺失/第八
+  角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
+  drift、digest drift、lifecycle/轮换/撤销违例、approval 违例、路径/link
+  攻击、migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
+  commit/tree 进入 source seal、digest 一致、身份分离、lifecycle candidate、
+  `candidate/valid_not_approved`、production Gate 仍 blocked/not_proven）
+- `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
+  deployment/production/p34-7-trust-policy-candidate.example.json
+  --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json
+  --validate-only`（预期 exit 0、candidate/valid_not_approved）
+
+**失败恢复**
+
+candidate 或 packet 出现 drift/违例时：冻结 candidate，保留 packet 与
+历史记录取证，从新的 clean checkout 重新验证；不得删除 veto、不得把
+candidate 改成 approved、不得写入 approved digest、不得打开 Runtime。

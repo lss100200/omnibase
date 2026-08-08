@@ -1591,3 +1591,37 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py
 ```
+
+### 12.11 P34.7 Trust Policy Candidate R0
+
+`backend/src/omnibase/production/trust_policy_candidate.py` 建立 engineering-only
+的 candidate 信任治理合同：candidate 文件必须 `candidate_only=true`、
+`production_approved=false`、lifecycle ∈ `draft|candidate|rejected|
+superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，validator
+永不写 `_APPROVED_TRUST_POLICY_SHA256`（保持空 frozenset）。复用 joint_gate
+的严格解析器（`_sha256`/`_git_oid`/`_utc_instant`/`_relative_path`/
+`_keys` 等），不复制漂移实现。
+
+- 七角色闭集与冻结 scope 矩阵在 `ROLE_SIGNING_SCOPES`；sealer 不得与 producer
+  共用 key；wildcard/越权 scope 拒绝。
+- Approval packet 是独立外部文件：`candidate_policy_raw_sha256` 与 candidate
+  原始字节一致，section digests（artifact/commands/env/gateway）绑定 candidate
+  实际 canonical 内容；author/reviewer/producer-owner 分离；decision 闭集
+  `draft|candidate|rejected|superseded|revoked`，approved 类一律拒绝。
+- 密钥生命周期/轮换/撤销状态机为闭集 `LEGAL_TRANSITIONS`；R0 不构造 active，
+  拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。
+- 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；
+  custody_kind 只是计划元数据，未真实证明的 custody posture 报告 not_proven。
+- 命令：
+  ```powershell
+  python scripts/production/validate_p34_7_trust_policy_candidate.py `
+    --candidate deployment/production/p34-7-trust-policy-candidate.example.json `
+    --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json `
+    --validate-only
+  docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+    tests/test_p34_7_trust_policy_candidate.py -q
+  ```
+- 正式状态：`CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`；不生成生产私钥、不批准
+  digest、不采集 production evidence、不激活 Runtime；P34.7 仍
+  blocked/not_proven；migration head 0012、0013 absent；Feature Gates
+  false/false/false。
