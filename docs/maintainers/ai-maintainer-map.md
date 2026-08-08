@@ -1386,21 +1386,34 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   a live gate probe (which patches the process environment and measures the
   runtime resolver, the live posture and the single supported mode) inside the
   backend container, then seals the tested source bytes, command receipts and
-  measurements under unique raw-byte SHA-256 sidecars. Every claim is derived
+  measurements under unique raw-byte SHA-256 sidecars. The sealed source
+  manifest is a **closed set** covering every file that decides Compose
+  Lite-flag wiring (`docker-compose.yml`, `.env.example`), frontend
+  `canInvoke` (`frontend/lib/lite-gate.ts` + its test) and Gate admission; the
+  gate tests assert the maintenance-map `lite-agent-product-loop` module /
+  `INV-051` source paths stay a subset of the closure. Every claim is derived
   from an executed receipt or a sealed file measurement, or reported
   `not_proven`; the root-env/business-database negatives are re-derived from
-  the recorded command vectors and the migration head is re-discovered from the
-  repository files. The run directory is preserved on success and on failure
-  and can be re-verified with `--verify-evidence`, which re-executes the same
-  closed-set admission decision and validates the exact argv template of every
-  recorded command (explicit `.env.example`, closed production flags, exact
-  test target). The sealed evidence is a **self-contained integrity receipt**
-  only: run-scoped byte integrity, never external authenticity, no independent
-  trust anchor, never production admission. The Gate never reads the root
-  `.env`, never touches a business database, never creates migration `0013`,
-  never opens a Phase 5 production Feature Gate, never claims formal P5.4B
-  integration, and does not replace the heavier P5.4B disposable PostgreSQL
-  Gate.
+  the recorded command vectors and the migration head is re-discovered from
+  the repository files. The formal-builder disclosure is recorded **honestly**
+  as two independent claims: `formal_builder_integration = not_proven` (this
+  Gate never executes the formal P5.4B composition) and
+  `formal_builder_posture_not_integrated = true` (the probe genuinely reports
+  `not_integrated`); any other probe token is recorded verbatim and fails the
+  admission decision (`passed=false` and `--verify-evidence` rejects). The run
+  directory is preserved on success and on failure and can be re-verified with
+  `--verify-evidence`, which re-executes the same closed-set admission
+  decision, validates the exact argv template of every recorded command
+  (explicit `.env.example`, closed production flags, exact test target) and
+  strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
+  exit code equal to the receipt `returncode`; non-integer, multi-line,
+  missing and 0/1-drifted sidecars are rejected). The sealed evidence is a
+  **self-contained integrity receipt** only: run-scoped byte integrity, never
+  external authenticity, no independent trust anchor, never production
+  admission. The Gate never reads the root `.env`, never touches a business
+  database, never creates migration `0013`, never opens a Phase 5 production
+  Feature Gate, never claims formal P5.4B integration, and does not replace
+  the heavier P5.4B disposable PostgreSQL Gate.
 
 Focused commands:
 

@@ -1878,25 +1878,42 @@ sidecars. Every claim in the report is derived from an executed receipt or a
 sealed file measurement, or is reported `not_proven`; the
 root-env/business-database negatives are re-derived from the recorded command
 vectors and the migration head is re-discovered from the repository files, so
-nothing is a hardcoded measurement. The Gate only PASSES when the closed-set
+nothing is a hardcoded measurement. The sealed source manifest is a **closed
+set** covering every file that decides Compose Lite-flag wiring
+(`docker-compose.yml`, `.env.example`), frontend `canInvoke`
+(`frontend/lib/lite-gate.ts` and `frontend/lib/lite-gate.test.ts`) and Gate
+admission, and the Gate tests assert that the maintenance-map
+`lite-agent-product-loop` module / `INV-051` source paths stay a subset of the
+closure. The Gate only PASSES when the closed-set
 admission decision holds: `lite_gate_default_off`, `absent_off`, `false_off`,
-`true_on`, `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only
-and `formal_builder_named` all `true`; `root_env_accessed`,
-`business_database_accessed`, `business_database_migrated` and
-`production_runtime_activated` all `false`; `formal_builder_integration` stays
-`not_proven`. A single mismatch makes `passed=false`.
-`formal_builder_integration` is reported `not_proven` because this Gate never
-executes the formal persisted composition. The run directory is **preserved**
+`true_on`, `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only,
+`formal_builder_named` and `formal_builder_posture_not_integrated` all `true`;
+`root_env_accessed`, `business_database_accessed`, `business_database_migrated`
+and `production_runtime_activated` all `false`; `formal_builder_integration`
+stays `not_proven`. A single mismatch makes `passed=false`. The two
+formal-builder claims are **independent**: `formal_builder_integration =
+not_proven` means this Gate did not execute the formal P5.4B composition,
+while `formal_builder_posture_not_integrated = true` requires the executed
+probe to genuinely report `not_integrated`. The probe's token is recorded
+**honestly** — it is rewritten to `not_proven` only when the probe genuinely
+reports `not_integrated`; a probe reporting
+`integrated`/`enabled`/`available`/`selectable`/empty/unknown is recorded
+verbatim and fails the admission decision (`--run` produces `passed=false`
+and `--verify-evidence` rejects). The run directory is **preserved**
 on success and on failure and can be re-verified with `--verify-evidence`
 after the process exits; the Gate never deletes its own evidence and never
 claims production admission. `--verify-evidence` validates the **exact argv
 template** of every recorded command (the explicit `.env.example` path, the
 closed production engineering flags and the exact test target / probe source —
-a drifted vector that exited 0 is rejected) and **re-executes the same
+a drifted vector that exited 0 is rejected), strictly parses every
+`commands/*.exitcode` sidecar (exactly one decimal exit code that must equal
+the receipt `returncode`; non-integer, multi-line, missing and 0/1-drifted
+sidecars are all rejected) and **re-executes the same
 closed-set admission decision** that `--run` computed: verifying is not just
 "report equals derived values", because derived values that miss an admission
 expectation (e.g. `true_on=false`, `invalid_fail_closed=false`,
-`live_posture=false`, mode drift, command-vector drift) must reject the
+`live_posture=false`, `formal_builder_posture_not_integrated=false`, mode
+drift, command-vector drift or exitcode-sidecar drift) must reject the
 evidence. The sealed evidence is a **self-contained integrity receipt**: it
 proves run-scoped byte integrity of the recorded source manifest, command
 receipts and measurements, but without an independent trust anchor it proves

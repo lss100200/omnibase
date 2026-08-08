@@ -31,9 +31,18 @@ product loop (P5.2C). P5.4C is intentionally narrow:
 - `backend/src/omnibase/agent_alpha/schemas.py`
 - `backend/src/omnibase/agent_alpha/engineering.py`
 - `backend/src/omnibase/agent_executor/engineering.py`
+- `docker-compose.yml` (Compose Lite-flag wiring)
 - `frontend/app/(dashboard)/agents/page.tsx`
 - `frontend/lib/api.ts`
+- `frontend/lib/lite-gate.ts` (frontend `canInvoke` decision)
+- `frontend/lib/lite-gate.test.ts`
 - `scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py`
+
+All of the above — plus `.env.example`, the maintainer docs and the other
+files listed in the Gate `SOURCE_FILES` closed set — are sealed by the
+disposable Gate's source manifest; the Gate tests assert that the maintenance
+map's `lite-agent-product-loop` module / `INV-051` source paths stay a subset
+of the closure.
 
 ## The Lite gate
 
@@ -117,21 +126,30 @@ run-scoped, engineering-only disposable Gate with three modes:
   `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only and
   `formal_builder_named` must all be `true`; `root_env_accessed`,
   `business_database_accessed`, `business_database_migrated` and
-  `production_runtime_activated` must all be `false`; and
-  `formal_builder_integration` must stay `not_proven`. A single mismatch makes
-  `passed=false` — the run directory is still preserved with the failing
-  claims.
+  `production_runtime_activated` must all be `false`;
+  `formal_builder_integration` must stay `not_proven` **and**
+  `formal_builder_posture_not_integrated` must be `true`. The probe's
+  `formal_builder_integration` token is recorded **honestly**: it is
+  `not_proven` only when the executed probe genuinely reports
+  `not_integrated`, and any other token (`integrated`, `enabled`,
+  `available`, `selectable`, empty or unknown) is recorded verbatim and fails
+  the admission decision, so `--run` produces `passed=false`. A single
+  mismatch makes `passed=false` — the run directory is still preserved with
+  the failing claims.
 - `--verify-evidence <path>`: re-verifies the sealed source, artifact and
   evidence bytes, re-parses the probe receipt, validates the **exact argv
   template** of every recorded command (the explicit `.env.example` path, the
   closed production engineering flags and the exact test target / probe source
   are part of the closed set — a drifted vector that exited 0 is rejected),
-  re-derives every claim from the recorded command vectors, and then
-  **re-executes the same closed-set admission decision** that `--run`
-  computed. Verifying is not just "report equals derived values": derived
-  values that miss an admission expectation (e.g. `true_on=false`,
-  `invalid_fail_closed=false`, `live_posture=false`, mode drift or
-  command-vector drift) reject the evidence instead of verifying it.
+  strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
+  exit code, equal to the receipt `returncode`; non-integer, multi-line,
+  missing or 0/1-drifted sidecars are rejected), re-derives every claim from
+  the recorded command vectors, and then **re-executes the same closed-set
+  admission decision** that `--run` computed. Verifying is not just "report
+  equals derived values": derived values that miss an admission expectation
+  (e.g. `true_on=false`, `invalid_fail_closed=false`, `live_posture=false`,
+  `formal_builder_posture_not_integrated=false`, mode drift or command-vector
+  drift) reject the evidence instead of verifying it.
 
 Every claim in the report is **derived from an executed receipt or a sealed
 file measurement** — nothing is hardcoded as a measurement:
@@ -142,9 +160,14 @@ file measurement** — nothing is hardcoded as a measurement:
 - `root_env_accessed`, `business_database_accessed` and
   `business_database_migrated` are re-derived from the recorded command
   vectors;
-- `formal_builder_integration` is reported `not_proven`: this Gate never
-  executes the formal P5.4B persisted composition (that belongs to the P5.4B
-  disposable PostgreSQL Gate), so it never claims integration.
+- the probe's `formal_builder_integration` token is recorded honestly:
+  `formal_builder_integration` is `not_proven` only when the probe genuinely
+  reports `not_integrated` (this Gate never executes the formal P5.4B
+  persisted composition — that belongs to the P5.4B disposable PostgreSQL
+  Gate), and `formal_builder_posture_not_integrated` independently records
+  whether the probe really returned `not_integrated`. A probe reporting
+  `integrated`/`enabled`/`available`/`selectable`/empty/unknown is recorded
+  verbatim and rejected by the admission decision.
 
 The run directory is **preserved** on success and on failure and can be
 re-verified later; the Gate never deletes its own evidence. The Gate never

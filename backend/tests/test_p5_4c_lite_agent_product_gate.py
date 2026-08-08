@@ -112,6 +112,50 @@ def test_source_closure_excludes_secrets_and_env() -> None:
     assert "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py" in paths
 
 
+def test_source_closure_seals_compose_and_frontend_gate_files() -> None:
+    """Round-4 closure: every file that decides Compose Lite-flag wiring,
+    frontend ``canInvoke`` and Gate admission must be sealed in the source
+    manifest."""
+    paths = set(gate.SOURCE_FILES)
+    for required in (
+        "docker-compose.yml",
+        ".env.example",
+        "frontend/lib/lite-gate.ts",
+        "frontend/lib/lite-gate.test.ts",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "docs/phase-5-lite-agent-product-loop.md",
+        "docs/maintainers/maintenance-map.json",
+        "docs/maintainers/security-invariants.md",
+        "deployment/production/phase5-typed-executor.example.json",
+    ):
+        assert required in paths, f"source closure is missing {required}"
+
+
+def test_source_closure_covers_maintenance_map_authoritative_sources() -> None:
+    """Authoritative sources declared by the maintenance map must not be
+    missing from the Gate closure: the lite-agent-product-loop module
+    source_paths and the INV-051 invariant source_paths must be a subset of
+    ``SOURCE_FILES``."""
+    map_path = gate.REPO_ROOT / "docs/maintainers/maintenance-map.json"
+    assert map_path.is_file()
+    maintenance_map = json.loads(map_path.read_text(encoding="utf-8"))
+    module = next(
+        item for item in maintenance_map["modules"] if item["id"] == "lite-agent-product-loop"
+    )
+    invariant = next(item for item in maintenance_map["invariants"] if item["id"] == "INV-051")
+    declared = set(module["source_paths"]) | set(invariant["source_paths"])
+    missing = sorted(declared - set(gate.SOURCE_FILES))
+    assert not missing, f"maintenance-map authoritative sources missing from closure: {missing}"
+
+
+def test_source_closure_files_all_exist() -> None:
+    for relative in gate.SOURCE_FILES:
+        path = gate.REPO_ROOT / relative
+        assert path.is_file(), f"sealed source path does not exist: {relative}"
+        assert not path.is_symlink(), f"sealed source path is a symlink: {relative}"
+
+
 def test_container_command_uses_env_file_and_closed_gates() -> None:
     command = gate._container_command("python", "-m", "pytest")
     assert command[:4] == ["docker", "compose", "--env-file", str(gate.ENV_FILE)]
@@ -170,6 +214,7 @@ def test_receipt_derivations_are_computed_not_hardcoded() -> None:
     assert claims["knowledge_search_read_only_not_supported"] is True
     assert claims["formal_builder_named"] is True
     assert claims["formal_builder_integration"] == "not_proven"
+    assert claims["formal_builder_posture_not_integrated"] is True
     assert claims["root_env_accessed"] is False
     assert claims["business_database_accessed"] is False
     assert claims["business_database_migrated"] is False
@@ -240,19 +285,63 @@ def test_verify_rejects_mode_drift_in_claim_even_if_report_matches(
         gate._verify(evidence)
 
 
-def test_gate_never_claims_formal_builder_integration_from_probe(
+def test_gate_records_probe_builder_integration_honestly_and_rejects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Even a probe that reports the formal posture as 'integrated' must not
-    make the Gate claim formal P5.4B integration: the Gate claim stays
-    not_proven because this Gate never executes the formal composition."""
+    """Round-4: the Gate must NOT unconditionally discard the probe's
+    formal_builder_integration and rewrite it to not_proven.  The probe result
+    is recorded honestly — when the probe reports 'integrated', the report
+    claims 'integrated' — and the admission decision rejects the evidence
+    instead of verifying it."""
     evidence, report = _synthetic_run(
         tmp_path,
         monkeypatch,
         probe_json=_probe_variant(formal_builder_integration="integrated"),
     )
-    assert report["formal_builder_integration"] == "not_proven"
-    gate._verify(evidence)
+    assert report["formal_builder_integration"] == "integrated"
+    assert report["formal_builder_posture_not_integrated"] is False
+    with pytest.raises(RuntimeError, match="admission expectation mismatch"):
+        gate._verify(evidence)
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "integrated",
+        "enabled",
+        "available",
+        "selectable",
+        "",
+        "not_proven",
+        "unknown_token",
+        "TRUE",
+        "1",
+    ],
+)
+def test_probe_builder_integration_token_matrix_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    """Round-4: any probe formal_builder_integration token other than the
+    genuine ``not_integrated`` posture must make ``--run`` produce
+    passed=false and ``--verify-evidence`` reject.  The token is still
+    recorded honestly in the report (never rewritten)."""
+    evidence, report = _synthetic_run(
+        tmp_path,
+        monkeypatch,
+        probe_json=_probe_variant(formal_builder_integration=token),
+    )
+    assert report["formal_builder_integration"] == token
+    assert report["formal_builder_posture_not_integrated"] is False
+    # The admission decision is what rejects: the run's own claim derivation
+    # would flag the mismatch (passed=false) and --verify-evidence re-executes
+    # the same decision.
+    probe = gate._parse_probe(_probe_variant(formal_builder_integration=token))
+    claims = gate._derive_claims(probe, report["commands"])
+    mismatch = gate._admission_mismatch(claims, production_runtime_activated=False)
+    assert mismatch is not None
+    assert "formal_builder" in mismatch
+    with pytest.raises(RuntimeError, match="admission expectation mismatch"):
+        gate._verify(evidence)
 
 
 @pytest.mark.parametrize(
@@ -302,6 +391,88 @@ def test_verify_rejects_root_env_in_command_vector(
     # receipt-derived root_env_accessed claim; either rejection is correct.
     with pytest.raises(RuntimeError, match="does not match the exact closed template|root \\.env"):
         gate._verify(evidence)
+
+
+# ---------------------------------------------------------------------------
+# Round-4: the verifier must strictly parse the commands/*.exitcode sidecars
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "abc\n",
+        "",
+        "0\n1\n",
+        "1\n0\n",
+        "0\n\n",
+        "1.0\n",
+        "0x0\n",
+        "0",
+        " 0\n",
+        "-1\n",
+        "0 ",
+    ],
+)
+def test_verify_rejects_malformed_exitcode_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    """A sidecar that is not exactly one decimal exit code must be rejected."""
+    evidence, _ = _synthetic_run(tmp_path, monkeypatch)
+    sidecar = evidence.parent / "commands" / "lite-unit-suite.exitcode"
+    sidecar.write_text(content, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="exitcode sidecar"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_exitcode_sidecar_returncode_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0/1 drift: the sidecar must equal the receipt returncode exactly."""
+    evidence, _ = _synthetic_run(tmp_path, monkeypatch)
+    sidecar = evidence.parent / "commands" / "lite-unit-suite.exitcode"
+    sidecar.write_text("1\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="exitcode sidecar drift"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_missing_exitcode_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence, _ = _synthetic_run(tmp_path, monkeypatch)
+    sidecar = evidence.parent / "commands" / "lite-unit-suite.exitcode"
+    sidecar.unlink()
+    with pytest.raises(RuntimeError, match="exitcode sidecar is missing"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_receipt_returncode_not_an_integer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The receipt returncode must be a strict JSON integer."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["returncode"] = "0"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="returncode is invalid|did not prove success"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_exitcode_path_escape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["exitcode"] = "../outside.exitcode"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="escaped run directory"):
+        gate._verify(evidence)
+
+
+def test_parse_exitcode_sidecar_strict_grammar() -> None:
+    assert gate._parse_exitcode_sidecar("0\n") == 0
+    assert gate._parse_exitcode_sidecar("127\n") == 127
+    for bad in ("", "abc\n", "0\n1\n", "0\n\n", "1.0\n", "-1\n", "0", "0\n1"):
+        with pytest.raises(RuntimeError, match="exactly one decimal exit code"):
+            gate._parse_exitcode_sidecar(bad)
 
 
 def test_admission_decision_is_shared_between_run_and_verify() -> None:
@@ -357,6 +528,7 @@ def test_integrity_receipt_is_self_contained(
         ("knowledge_search_read_only_not_supported", False),
         ("formal_builder_named", False),
         ("formal_builder_integration", "integrated"),
+        ("formal_builder_posture_not_integrated", False),
         ("root_env_accessed", True),
         ("business_database_accessed", True),
         ("business_database_migrated", True),

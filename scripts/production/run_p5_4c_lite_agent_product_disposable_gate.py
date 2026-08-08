@@ -18,9 +18,14 @@ sealed file measurement; nothing is hardcoded as a measurement:
 - ``root_env_accessed`` / ``business_database_accessed`` /
   ``business_database_migrated`` are re-derived from the recorded command
   vectors (the Gate only ever runs the recorded commands);
-- ``formal_builder_integration`` is reported ``not_proven``: this Gate never
-  executes the formal P5.4B persisted composition (that belongs to the P5.4B
-  disposable PostgreSQL Gate), so it must never claim integration.
+- the probe's ``formal_builder_integration`` token is recorded **honestly**:
+  the report-level ``formal_builder_integration`` claim is ``not_proven`` only
+  when the executed probe genuinely reports ``not_integrated`` (this Gate
+  never executes the formal P5.4B persisted composition), and
+  ``formal_builder_posture_not_integrated`` independently records whether the
+  probe really returned ``not_integrated``.  Any other probe token
+  (``integrated``/``enabled``/``available``/``selectable``/empty/unknown) is
+  recorded verbatim and fails the closed-set admission decision.
 
 The run directory is **preserved** on success and on failure and can be
 independently re-verified later with ``--verify-evidence``; the Gate never
@@ -30,13 +35,16 @@ the root ``.env``, never touches a business database, never creates migration
 
 **Integrity scope.**  The sealed evidence is a **self-contained integrity
 receipt**: it proves run-scoped byte integrity of the recorded source
-manifest, command receipts and measurements (raw-byte SHA-256 sidecars, exact
-command-vector templates and the re-executed admission closed-set decision).
-Without an independent trust anchor it proves **no external authenticity**: it
-cannot authenticate who produced the bytes or that they came from any
-particular host, and it is never production admission.  ``--verify-evidence``
-re-executes the same admission decision that ``--run`` computed, and rejects
-any evidence whose receipts or vectors fail it.
+manifest (the closed set of files that decide Compose Lite-flag wiring,
+frontend ``canInvoke`` and Gate admission — including ``docker-compose.yml``,
+``frontend/lib/lite-gate.ts`` and ``frontend/lib/lite-gate.test.ts``),
+command receipts (including the strictly parsed single-decimal
+``commands/*.exitcode`` sidecars) and measurements.  Without an independent
+trust anchor it proves **no external authenticity**: it cannot authenticate
+who produced the bytes or that they came from any particular host, and it is
+never production admission.  ``--verify-evidence`` re-executes the same
+admission decision that ``--run`` computed, and rejects any evidence whose
+receipts or vectors fail it.
 """
 
 from __future__ import annotations
@@ -109,6 +117,16 @@ _PROBE_SOURCE = (
     "}, sort_keys=True))\n"
 )
 
+# The sealed source closure must cover every file that decides the Gate
+# admission surface: the Compose Lite-flag wiring (docker-compose.yml,
+# .env.example), the backend gate/parser/posture and router wiring
+# (agent_alpha/**), the executor migration-head bound (agent_executor/**), the
+# frontend canInvoke decision (frontend/lib/lite-gate.ts and its tests, the
+# workbench page and API client), the focused test targets, the offline typed
+# executor contract the admission re-reads, the maintainer docs that declare
+# the INV-051 invariant, the handover report and this runner itself.  The
+# maintenance map's lite-agent-product-loop module source_paths must stay a
+# subset of this closure (enforced by the gate tests).
 SOURCE_FILES = (
     "AGENTS.md",
     ".env.example",
@@ -130,12 +148,16 @@ SOURCE_FILES = (
     "backend/tests/test_agent_alpha_engineering.py",
     "backend/tests/test_p5_4b_engineering_composition.py",
     "deployment/production/phase5-typed-executor.example.json",
+    "docker-compose.yml",
     "docs/handover-report.md",
     "docs/maintainers/ai-maintainer-map.md",
     "docs/maintainers/maintenance-map.json",
     "docs/maintainers/security-invariants.md",
+    "docs/phase-5-lite-agent-product-loop.md",
     "frontend/app/(dashboard)/agents/page.tsx",
     "frontend/lib/api.ts",
+    "frontend/lib/lite-gate.ts",
+    "frontend/lib/lite-gate.test.ts",
     "scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py",
 )
 
@@ -318,6 +340,22 @@ def _run_step(
     return record
 
 
+_EXITCODE_SIDECAR_RE = re.compile(r"[0-9]+\n")
+
+
+def _parse_exitcode_sidecar(raw: str) -> int:
+    """Strictly parse a ``commands/*.exitcode`` sidecar.
+
+    The Gate writes exactly one decimal exit code followed by a newline
+    (``_record_command``).  The verifier requires that exact single-line shape:
+    non-integer content, empty content, multi-line content and missing files
+    are all rejected rather than guessed at.
+    """
+    if _EXITCODE_SIDECAR_RE.fullmatch(raw) is None:
+        raise RuntimeError("command exitcode sidecar must contain exactly one decimal exit code")
+    return int(raw.rstrip("\n"))
+
+
 def _container_command(*arguments: str) -> list[str]:
     return [
         "docker",
@@ -412,17 +450,34 @@ def _parse_probe(stdout: str) -> dict[str, object]:
             raise RuntimeError(f"P5.4C gate probe receipt field {key} is invalid")
     if not isinstance(probe.get("modes"), list) or not isinstance(probe.get("formal_builder"), str):
         raise RuntimeError("P5.4C gate probe receipt disclosure fields are invalid")
+    if not isinstance(probe.get("formal_builder_integration"), str):
+        raise RuntimeError("P5.4C gate probe receipt formal_builder_integration is invalid")
     return probe
 
 
 def _derive_claims(
     probe: dict[str, object], commands: list[dict[str, object]]
 ) -> dict[str, object]:
-    """Derive every claim from the executed probe receipt and command vectors."""
+    """Derive every claim from the executed probe receipt and command vectors.
+
+    The formal-builder disclosure is recorded **honestly**: the probe reports
+    the live posture's ``formal_builder_integration`` token and that token is
+    what the Gate records.  ``formal_builder_integration`` is the Gate-level
+    claim — ``not_proven`` only when the executed probe genuinely reports
+    ``not_integrated`` (this Gate never executes the formal P5.4B persisted
+    composition); any other probe token is recorded verbatim and then fails the
+    closed-set admission decision.  ``formal_builder_posture_not_integrated``
+    is the independent posture-level claim: ``True`` only when the probe really
+    returned ``not_integrated``.
+    """
     raw_modes = probe.get("modes")
     if not isinstance(raw_modes, list):
         raise RuntimeError("P5.4C gate probe receipt modes field is invalid")
     modes = tuple(str(item) for item in raw_modes)
+    probe_integration = probe["formal_builder_integration"]
+    if not isinstance(probe_integration, str):
+        raise RuntimeError("P5.4C gate probe receipt formal_builder_integration is invalid")
+    posture_not_integrated = probe_integration == "not_integrated"
     return {
         "lite_gate_default_off": probe["absent_off"] is True,
         "runtime_env_resolver_absent_off": probe["absent_off"] is True,
@@ -434,7 +489,16 @@ def _derive_claims(
             modes == ("no_tool",) and "knowledge_search_read_only" not in modes
         ),
         "formal_builder_named": probe["formal_builder"] == FORMAL_BUILDER_NAME,
-        "formal_builder_integration": "not_proven",
+        # Honest recording of the probe token: not_proven only when the probe
+        # genuinely reports not_integrated; otherwise the probe value itself is
+        # recorded so the admission decision can enforce it (see
+        # ADMISSION_EXPECTATIONS).
+        "formal_builder_integration": (
+            "not_proven" if posture_not_integrated else probe_integration
+        ),
+        # Independent posture-level claim: the probe must genuinely report
+        # not_integrated for the Gate to pass.
+        "formal_builder_posture_not_integrated": posture_not_integrated,
         "root_env_accessed": _receipt_root_env_accessed(commands),
         "business_database_accessed": _receipt_business_database_accessed(commands),
         "business_database_migrated": _receipt_business_database_migrated(commands),
@@ -445,6 +509,12 @@ def _derive_claims(
 # (and any evidence re-verification of it) is rejected.  The Gate may only
 # PASS when all of the following hold; a single mismatch makes ``passed``
 # false, and ``--verify-evidence`` re-executes the same decision.
+# ``formal_builder_integration`` must be ``not_proven`` (this Gate never
+# executes the formal P5.4B composition) and
+# ``formal_builder_posture_not_integrated`` must be ``True`` (the executed
+# probe genuinely reported ``not_integrated``).  A probe that reports
+# integrated/enabled/available/selectable/empty/unknown is recorded honestly
+# in the report but fails both expectations and is rejected.
 ADMISSION_EXPECTATIONS: dict[str, object] = {
     "lite_gate_default_off": True,
     "runtime_env_resolver_absent_off": True,
@@ -455,6 +525,7 @@ ADMISSION_EXPECTATIONS: dict[str, object] = {
     "knowledge_search_read_only_not_supported": True,
     "formal_builder_named": True,
     "formal_builder_integration": "not_proven",
+    "formal_builder_posture_not_integrated": True,
     "root_env_accessed": False,
     "business_database_accessed": False,
     "business_database_migrated": False,
@@ -527,13 +598,6 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("source manifest canonical digest mismatch")
     if _manifest() != source_manifest:
         raise RuntimeError("current source bytes differ from sealed source manifest")
-    if not isinstance(artifact_manifest, dict):
-        raise RuntimeError("artifact manifest is invalid")
-    for relative, metadata in artifact_manifest.items():
-        if _artifact(run_dir / relative, root=run_dir) != metadata:
-            raise RuntimeError(f"artifact digest mismatch: {relative}")
-    if report.get("artifacts") != artifact_manifest:
-        raise RuntimeError("evidence artifact index mismatch")
     if report.get("gate") != GATE_NAME or report.get("run_id") != run_dir.name:
         raise RuntimeError("evidence run binding mismatch")
     if report.get("schema_version") != 1 or report.get("passed") is not True:
@@ -559,7 +623,9 @@ def _verify(path: Path) -> None:  # noqa: C901
     ):
         raise RuntimeError("command receipt set does not match the closed P5.4C step set")
     for item in commands:
-        if not isinstance(item, dict) or item.get("returncode") != 0:
+        if not isinstance(item, dict) or not isinstance(item.get("returncode"), int):
+            raise RuntimeError("command receipt returncode is invalid")
+        if item.get("returncode") != 0:
             raise RuntimeError("command did not prove success")
         # Fix-3/Fix-4: the verifier validates the EXACT argv template of every
         # recorded command — the explicit .env.example path, the closed
@@ -589,6 +655,41 @@ def _verify(path: Path) -> None:  # noqa: C901
             raise RuntimeError("command sidecar escaped run directory")
         if _sha256(stdout_path) != item.get("stdout_sha256"):
             raise RuntimeError("command stdout digest mismatch")
+        # Fix-7: the verifier must read the commands/*.exitcode sidecar,
+        # strictly parse exactly one decimal exit code and require it to equal
+        # the receipt returncode.  A missing sidecar, a non-integer or
+        # multi-line sidecar and any 0/1 drift between the sidecar and the
+        # receipt are all rejected.
+        exitcode_relative = item.get("exitcode")
+        if not isinstance(exitcode_relative, str):
+            raise RuntimeError("command exitcode path is invalid")
+        # Resolve BEFORE the containment check so a lexical ".." escape cannot
+        # slip past a parents() comparison on the unresolved path.
+        exitcode_path = (run_dir / exitcode_relative).resolve()
+        if run_dir.resolve() not in exitcode_path.parents:
+            raise RuntimeError("command exitcode sidecar escaped run directory")
+        if not exitcode_path.is_file() or exitcode_path.is_symlink():
+            raise RuntimeError("command exitcode sidecar is missing")
+        try:
+            sidecar_exit = _parse_exitcode_sidecar(
+                exitcode_path.read_text(encoding="utf-8", errors="strict")
+            )
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("command exitcode sidecar is missing or undecodable") from exc
+        if sidecar_exit != item["returncode"]:
+            raise RuntimeError("command exitcode sidecar drift: sidecar does not equal returncode")
+    # The artifact byte check runs after the per-command semantic checks so
+    # that a fabricated-but-self-consistent evidence tree (sidecar bytes,
+    # manifests and hashes all rewritten together) is still rejected by the
+    # strict exitcode sidecar parsing and the re-executed admission decision,
+    # while any real byte tamper is rejected here.
+    if not isinstance(artifact_manifest, dict):
+        raise RuntimeError("artifact manifest is invalid")
+    for relative, metadata in artifact_manifest.items():
+        if _artifact(run_dir / relative, root=run_dir) != metadata:
+            raise RuntimeError(f"artifact digest mismatch: {relative}")
+    if report.get("artifacts") != artifact_manifest:
+        raise RuntimeError("evidence artifact index mismatch")
     # Re-derive every claim from the sealed receipts; a tampered or fabricated
     # report cannot match the executed probe bytes and command vectors.
     probe_stdout_path = None
@@ -684,6 +785,7 @@ def _write_report(
         ],
         "formal_builder_named": claims["formal_builder_named"],
         "formal_builder_integration": claims["formal_builder_integration"],
+        "formal_builder_posture_not_integrated": claims["formal_builder_posture_not_integrated"],
         "integrity_receipt": {
             "scope": "run-scoped byte integrity only",
             "external_authenticity": False,
@@ -706,7 +808,8 @@ def _write_report(
             "live_posture_reflects_env": "probe receipt",
             "knowledge_search_read_only_not_supported": "probe receipt (modes == no_tool)",
             "formal_builder_named": "probe receipt (disclosure only)",
-            "formal_builder_integration": "not_proven (formal P5.4B composition is not executed by this Gate)",
+            "formal_builder_integration": "probe receipt, recorded honestly (not_proven only when the probe genuinely reports not_integrated; the formal P5.4B composition is not executed by this Gate)",
+            "formal_builder_posture_not_integrated": "probe receipt (the posture must genuinely report not_integrated)",
             "root_env_accessed": "derived from recorded command vectors",
             "business_database_accessed": "derived from recorded command vectors",
             "business_database_migrated": "derived from recorded command vectors",
@@ -743,8 +846,10 @@ def _write_report(
             ),
             (
                 "- Formal builder disclosed: "
-                f"`{report['formal_builder_named']}`; integration: "
-                f"`{report['formal_builder_integration']}` (not_proven)"
+                f"`{report['formal_builder_named']}`; integration claim: "
+                f"`{report['formal_builder_integration']}` (not_proven only when the "
+                "executed probe genuinely reports not_integrated); posture "
+                f"not-integrated: `{report['formal_builder_posture_not_integrated']}`"
             ),
             (
                 "- Root .env / business database access (receipt-derived): "
@@ -870,6 +975,7 @@ def main() -> int:
             "knowledge_search_read_only_not_supported": False,
             "formal_builder_named": False,
             "formal_builder_integration": "not_proven",
+            "formal_builder_posture_not_integrated": False,
             "root_env_accessed": _receipt_root_env_accessed(commands),
             "business_database_accessed": _receipt_business_database_accessed(commands),
             "business_database_migrated": _receipt_business_database_migrated(commands),

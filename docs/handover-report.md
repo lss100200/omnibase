@@ -3018,6 +3018,70 @@ push/PR/merge。Production 状态继续为 `blocked/not_proven`；P5.4C disposab
 Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实性），
 `formal_builder_integration=not_proven`，不声称正式组合集成。
 
+### P5.4C Lite Agent product loop review-fix Round 4（2026-08-07）
+
+外部 review 对 Round 3 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **Gate source closure 补全（fix 1/2）**：
+   `run_p5_4c_lite_agent_product_disposable_gate.py` 的 `SOURCE_FILES`
+   闭集新增 `docker-compose.yml`、`frontend/lib/lite-gate.ts`、
+   `frontend/lib/lite-gate.test.ts`、`docs/phase-5-lite-agent-product-loop.md`
+   ——即所有直接决定 Compose Lite flag 接线、前端 `canInvoke` 与 Gate
+   准入的文件现在都被 source manifest 封存。新增 source-closure 测试：
+   断言上述文件被 sealed，并断言 maintenance-map 的
+   `lite-agent-product-loop` module / `INV-051` 权威 source_paths 是
+   `SOURCE_FILES` 的子集（map 同步加入 `docker-compose.yml` 与两个
+   frontend gate 文件）。
+2. **formal-builder 两个独立声明（fix 3/4/5）**：不再无条件丢弃 probe 的
+   `formal_builder_integration` 并改写为 `not_proven`。现在 probe token
+   **诚实记录**：`formal_builder_integration = not_proven`（本 Gate 未执行
+   正式 P5.4B 组合）仅当 probe 真实报告 `not_integrated` 时成立；
+   `formal_builder_posture_not_integrated = true` 独立要求 probe 确实报告
+   `not_integrated`。probe 返回 `integrated`/`enabled`/`available`/
+   `selectable`/空值/未知 token 时，report 原样记录该 token（不重写），
+   闭集准入决策失败 → `--run` 输出 `passed=false`、`--verify-evidence`
+   拒绝。新增 probe token matrix 负例测试（9 种 token 全部被拒）。
+3. **exitcode sidecar 严格解析（fix 6）**：`--verify-evidence` 现在读取每个
+   `commands/*.exitcode` sidecar，严格解析**恰好一个十进制退出码**并强制
+   其等于 receipt `returncode`；非整数、多行、缺失、`0/1` 漂移（含 receipt
+   returncode 非严格整数、sidecar 路径逃逸）全部被拒。新增
+   `_parse_exitcode_sidecar` 严格语法与 11 种 malformed 内容 + drift +
+   missing 负例测试。
+4. **Round 3 无回归（fix 7）**：精确 argv 模板、显式 `.env.example`、关闭的
+   生产工程 flags、准入闭集、run-scoped byte-integrity-only receipt 措辞均
+   保持不变并被既有测试继续覆盖。
+5. **证据重跑（fix 8）**：从新 clean commit 正式执行 `--run` 生成新的
+   immutable run 目录；Round-3 run
+   （`20260807T160511333576Z-8e04fa3dd555`）**保留**并在
+   `.tmp/p5-4c-lite-agent-product-loop-gate/superseded.json` 标记
+   superseded/incomplete（其密封字节不被修改）；随后 `--verify-evidence`
+   复核新证据（PASS）并诚实记录旧证据无法再按当前源码复核。
+6. **共享 seal 链重算（fix 9）**：maintenance-map/security-invariants 变更后
+   按依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链（maintainer_map、
+   security_invariants、P5.1A 配置、P5.2A 配置的 digest 全部更新并交叉
+   校验）；从最终 clean commit 复测三个 verifier：P5.1A/P5.2A/P5.3A 均
+   exit 2 `blocked/not_proven`、`contract_valid=true`、`vetoes=[]`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）`test_p5_4c_lite_gate.py`
++ `test_p5_4c_lite_agent_product_gate.py`（新增 source-closure / token
+matrix / exitcode sidecar 负例后全绿）+ `test_agent_alpha_engineering.py`
+focused PASS；全量 `pytest -m "not integration"` PASS；frontend
+typecheck/lint/test/build PASS；maintainer map/benchmark validators exit 0；
+P5.4C disposable Gate `--run`（clean commit）+ `--verify-evidence` PASS（新
+run 目录见 `.tmp/p5-4c-lite-agent-product-loop-gate/`，旧 run 在
+`superseded.json` 中标记 superseded/incomplete）。production Runtime 继续
+disabled，Phase 5 Feature Gates 保持 false，migration head `0012`，migration
+`0013` absent，root `.env` 未读取，业务数据库未访问/迁移，未
+push/PR/merge。Production 状态继续为 `blocked/not_proven`；P5.4C disposable
+Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实性），
+`formal_builder_integration=not_proven` +
+`formal_builder_posture_not_integrated=true`（probe 诚实记录），不声称正式
+组合集成。
+
 ---
 
 ### P5.6A first-party native Skill contract admission（2026-08-05）
