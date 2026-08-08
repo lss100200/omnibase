@@ -1,0 +1,75 @@
+{
+  "schema": "omnibase.p34-7.hardened-joint-evidence.v2",
+  "schema_version": "2",
+  "run_id": "example-contract-only-not-a-real-run",
+  "run_started_at": "2026-08-07T00:00:00Z",
+  "run_completed_at": "2026-08-07T01:00:00Z",
+  "evidence_issued_at": "2026-08-07T01:01:00Z",
+  "evidence_valid_until": "2026-08-09T01:01:00Z",
+  "environment": "production",
+  "disposable": false,
+  "provenance": {
+    "git_object_format": "sha1",
+    "source_commit": "0000000000000000000000000000000000000000",
+    "source_tree": "0000000000000000000000000000000000000000",
+    "dirty": false,
+    "repository": "https://github.com/lss100200/omnibase.git"
+  },
+  "source_manifest": {
+    "raw_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "files": [
+      {
+        "path": "source-not-present-in-contract-mode.txt",
+        "size": 0,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "artifact_manifest": {
+    "raw_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "files": [
+      {
+        "path": "artifact-not-present-in-contract-mode.txt",
+        "size": 0,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "commands": {
+    "core_runner": {"order": 0, "receipt": {"path": "receipts/core_runner.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "runner_broker": {"order": 1, "receipt": {"path": "receipts/runner_broker.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "runner_gateway": {"order": 2, "receipt": {"path": "receipts/runner_gateway.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "broker_gateway": {"order": 3, "receipt": {"path": "receipts/broker_gateway.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "overlay_data_plane": {"order": 4, "receipt": {"path": "receipts/overlay_data_plane.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "recovery_sla": {"order": 5, "receipt": {"path": "receipts/recovery_sla.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null}
+  },
+  "components": {
+    "core": {"evidence": {"path": "components/core.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "runner": {"evidence": {"path": "components/runner.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "broker": {"evidence": {"path": "components/broker.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "gateway": {"evidence": {"path": "components/gateway.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "overlay": {"evidence": {"path": "components/overlay.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null},
+    "recovery_sla": {"evidence": {"path": "components/recovery_sla.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "signature": null}
+  },
+  "measurements": {
+    "posture": {
+      "evidence": {"path": "measurements/posture.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+      "signature": null
+    }
+  },
+  "migration_head": "0012",
+  "feature_gates": {"agent_runtime_enabled": false, "agent_planner_enabled": false, "multi_agent_enabled": false},
+  "attack_matrix": {
+    "evidence": {"path": "attack/attack-matrix.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+    "signature": null
+  },
+  "cleanup": {
+    "evidence": {"path": "cleanup/cleanup-inventory.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+    "signature": null
+  },
+  "evidence_seal": {
+    "producer": "sealer",
+    "binding_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": null
+  }
+}

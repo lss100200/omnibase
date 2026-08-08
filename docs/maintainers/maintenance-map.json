@@ -1585,7 +1585,7 @@
     },
     {
       "id": "production-readiness",
-      "name": "P34.7 production evidence, composition, provider, Overlay and release admission",
+      "name": "P34.7 production evidence, composition, provider, Overlay, hardened joint gate and release admission (engineering-only, integrated on latest-main branch; approved trust policy absent)",
       "source_paths": [
         "backend/src/omnibase/production/**",
         "backend/src/omnibase/workspace_data/provider_adapters.py",
@@ -1605,8 +1605,14 @@
       ],
       "entrypoints": [
         "backend/src/omnibase/production/composition.py:ProductionCompositionGate",
+        "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence",
+        "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence_contract",
+        "backend/src/omnibase/production/joint_gate.py:verify_joint_evidence",
+        "backend/src/omnibase/production/joint_gate.py:load_trust_policy",
+        "backend/src/omnibase/production/joint_gate.py:compute_seal_binding",
         "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
         "scripts/production/validate_p34_7_composition.py:main",
+        "scripts/production/validate_p34_7_joint_gate.py:main",
         "scripts/workspace-data/run_p34_7_provider_gate.py:main",
         "scripts/overlay/p34_7_production_gate.py:main",
         "scripts/overlay/p34_7_sla_report.py:main",
@@ -1649,8 +1655,12 @@
       ],
       "verification": [
         "python scripts/production/validate_p34_7_composition.py --validate-only",
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
+        "python scripts/production/validate_p34_7_joint_gate.py --validate-only --evidence deployment/production/p34-7-joint-evidence-contract.example.json",
+        "python scripts/production/forge_p34_7_evidence_bundle.py --output <operator-controlled-path>/p34-7-forged-bundle",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_joint_gate.py tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production src/omnibase/workspace_data",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/joint_gate.py tests/test_p34_7_joint_gate.py ../scripts/production/validate_p34_7_joint_gate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/joint_gate.py tests/test_p34_7_joint_gate.py ../scripts/production/validate_p34_7_joint_gate.py",
         "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
         "cd sdk/typescript && pnpm test && pnpm typecheck",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest ../sdk/contracts/test_openapi_contract.py ../sdk/python/tests -q"

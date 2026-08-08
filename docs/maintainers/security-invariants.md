@@ -1039,32 +1039,50 @@ Snapshot 只有在服务端生成并核验完整 resource/version/digest/size in
 - `deployment/production/**`
 - `scripts/production/**`
 - `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p34_7_joint_gate.py`
 
 **为何存在**
 
 P34.7 的生产结论必须能够从公开 clean checkout 重建，并精确绑定 Git commit/tree、受控 tracked-source manifest、部署配置和每份 evidence 的 SHA-256 与 JSON assertions。工作树 dirty、证据漂移、缺少当前源码证明或只存在历史报告时，状态只能是 `blocked/not_proven` 或 `invalid/veto`，不能靠人工文字改成 PASS。
+
+哈希只证明 operator 写入的字节未被改写，不证明证据真实性。自伪造的完整 bundle（所有文件与哈希都由同一 operator 生成）绝不能得到 `passed`：component/attack/cleanup/posture evidence 必须是解析过的 canonical JSON 并绑定 run id、producer、source/artifact identity、command receipt、peer identities、measurements 与 results；每条 evidence 与 command receipt 都需要能对照**证据目录之外的独立 trust policy**（allowlisted producer Ed25519 公钥、approved source seal、approved artifact manifest、精确 argv 模板、env allowlist、gateway certificate pins）验证的 detached signature。policy 的原始字节必须命中代码内 pin 的 approved digest（当前为空集，因此任何 bundle 都保持 `blocked/not_proven`）；bundle 内携带的公钥不是信任锚。攻击与清理结果必须从已签名 evidence 解析并与 inventory 交叉核对，不得用内联 status/count 字段替代。
+
+执行体必须三重绑定：receipt 声明的 executable digest、policy pin 的 digest 与**实际文件字节**的 SHA-256 必须一致，且每个 executable 必须出现在 approved artifact manifest 中（manifest 的 path/size/sha256 条目逐项对照真实字节）。任何只在 receipt/policy 声明中存在、或磁盘字节与签名 receipt 声明漂移的 executable 都是 `artifact_provenance=not_proven` 阻塞项。
+
+evidence seal 的 canonical binding 必须覆盖 schema/schema_version、environment、disposable、完整 provenance（repository/source_commit/source_tree/dirty）以及验证链派生的全部当前顶层安全姿态（signature_authenticity、artifact_provenance、command_semantics、certificate_posture、replay_posture、runtime_posture、production_runtime_inactive、hostile_code_not_executed、root_env_not_accessed、business_database_not_accessed、business_database_not_migrated、attack_results、cleanup_complete）；外层字段的任何改写（environment `staging`→`production`、`disposable` `true`→`false`、`dirty` `true`→`false` 等）都会使重算 binding 与 recorded digest/签名不符而失败。
+
+policy 的七个 producer 角色（六个组件 + sealer）公钥必须全部唯一，至少 sealer 必须与所有 producer 不同；重复公钥在 policy 解析时 fail-closed。gateway 证书必须满足 `valid_from <= now < valid_until`；`valid_until == now` 已过期（`valid_until <= now` 拒绝），`valid_from == now` 允许；issuer/SAN/最大有效期/吊销/replay 检查保持强制。
+
+Git source provenance 必须绑定显式 object format（闭集 `sha1 | sha256`）：`provenance.git_object_format`、trust-policy `source_seal.git_object_format` 与每个 component evidence `git_object_format` 必须一致；`sha1` 只接受 40 位小写十六进制、`sha256` 只接受 64 位小写十六进制；commit/tree 保留原始 Git OID，不得自行二次 SHA-256；source/artifact manifest 继续使用原始字节 SHA-256，不得弱化。未知 format、长度不匹配、大小写错误、provenance/policy/component/seal format drift 全部 fail-closed。
+
+Evidence 必须绑定冻结的有效期窗口：`run_started_at <= run_completed_at <= evidence_issued_at < evidence_valid_until`；每条 command receipt 与 posture/attack/cleanup 时间戳必须位于 run window 内；`now` 必须满足 `evidence_issued_at <= now < evidence_valid_until`；evidence age 与窗口长度均不得超过 trust policy 的 bounded `max_evidence_age_seconds`。验证只允许在单次调用内读取一次时钟（`verify_joint_evidence` 的 `now` clock seam）；四个时间字段与 object format 必须进入 evidence seal canonical binding；外层时间字段改写不重签、跨窗口 receipt、过期/未来 issued/超长窗口 bundle、policy max-age drift 全部拒绝；同一未过期 bundle 可幂等离线复验，过期 bundle 永不重判 PASS（`evidence_freshness` 变 blocker）。seal 绑定的 posture 以签发时刻时钟推导，保证复验不使有效 seal 失效。
+
+Integration R1（2026-08-08）：本不变量随 P34.7 Integration R1 移植到最新 main-derived engineering branch（`codex/p34-7-joint-gate-integration-r1`，base = PR #18 merge commit `dfd4b20`）。这只是 Gate 代码进入统一主线：`joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集，P34.7 仍 `blocked/not_proven`，production activation 仍关闭，migration 0013 未创建，三个 Phase 5 Feature Gates 保持 false；本不变量的每一条强制执行要求不因移植而放宽。Review-Fix Round 2（2026-08-08）在此基础上关闭 object format、freshness window 与证书精确过期边界三个发现，本段前四段即为该轮新增的强制执行要求；`_APPROVED_TRUST_POLICY_SHA256` 仍为空，P34.7 仍 `blocked/not_proven`。
 
 **允许的改法**
 
 - 扩展显式 source scope、evidence schema 或验证断言，同时保留根 `.env`、symlink/reparse、非 regular file 和仓库外路径拒绝。
 - 为新的独立生产组件增加当前源码绑定的 evidence 项；缺失项保持 `not_proven`。
 - 将验证与激活分离；Gate 通过只产生 admission decision，不自动启动服务或授予 authority。
+- 增加更强制的证据真实性要求（签名、canonical JSON schema、外部 trust policy、inventory 交叉核对、UTC instant 时间比较、每个路径组件的 junction/reparse 检查）；`_APPROVED_TRUST_POLICY_SHA256` 只有在真实独立 producer 链建立并审计后才允许追加 digest。
 
 **禁止的改法**
 
 - 在 dirty checkout、未跟踪生产源码、证据哈希不匹配或 source manifest 不完整时发出 production PASS。
+- 从同一 untrusted bundle 内同时信任字段与其 sidecar 哈希；接受 bundle 内自带的公钥/trust root；把未签名或验签失败的 evidence 当作真实性证明；把 `runtime_posture.measured=false` 或其他 `not_proven` safety 项当作非阻塞信息。
 - 将 Docker Desktop、WSL、mock、test double、disposable Gate、旧 commit evidence 或端口可达性冒充当前生产证据。
 - 读取、打印、散列或纳入根 `.env`，或让 evidence path 逃逸仓库/受控 operator 目录。
 
 **必须运行的测试**
 
 - `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p34_7_joint_gate.py`（含 `scripts/production/forge_p34_7_evidence_bundle.py` 生成的自伪造完整 bundle：unsigned/forged signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/stale certificate/modified raw bytes/safety evidence absence 均必须 `blocked/not_proven`，永不 `passed`；并含唯一的 TRUE positive control —— 测试内 monkeypatch 临时批准 policy digest 后完整签名、manifest 绑定、seal 一致的链可达到 `passed`，monkeypatch 不落入 production approved set —— 以及 post-approval 攻击矩阵：替换实际 executable 字节、executable 缺席 artifact manifest、environment/disposable/dirty 外层改写不重签、七角色共用一把 key、sealer 与 producer 共用 key、valid_from 在未来、executable/manifest/receipt 三方 digest 漂移，全部必须 `passed=false` 或 `ConfigurationError`）
 - `python scripts/production/validate_p34_7_composition.py --validate-only`
 - 提交后必须从 clean checkout 运行 `--verify`；外部证据未齐时预期为 `blocked/not_proven`，不是失败伪装。
 
 **失败恢复**
 
-把 `activation_requested` 恢复为 false，撤销受影响组件的 admission，保留原 evidence 和 manifest 取证。修复源码或重新采集证据后从新的 clean checkout 验证；不得删除 Veto、忽略 dirty scope 或复用旧哈希。
+把 `activation_requested` 恢复为 false，撤销受影响组件的 admission，保留原 evidence 和 manifest 取证。修复源码或重新采集证据后从新的 clean checkout 验证；不得删除 Veto、忽略 dirty scope 或复用旧哈希。签名/trust policy 相关失败必须保持 `blocked/not_proven`，不得降级为 warning 或改为 passed。
 
 ## INV-036 production-composition-separation
 

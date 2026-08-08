@@ -1022,7 +1022,7 @@ TypeScript SDK 独立 lockfile 已完成：
 | **Phase 1.6** | BGE-M3 双索引评估 | ✅ 工程+CPU benchmark 完成 | V1 仍为权威主通道；真实语料质量 gate 未完成，生产 V2 回填/cutover 冻结 |
 | **Phase 2** | API 基础设施硬化 | ✅ 工程完成、待原子提交 | `/api/v1`、Request ID、请求边界、限流、数据库实时主体/RBAC、离线模型边界；独立生产 smoke 通过 |
 | **Phase 3-4** | **安全 AI 工作空间与能力平台 / Secure AI Workspace & Capability Platform** | P34.0–P34.3 ✅；P34.4 元数据控制面 ✅；P34.5A0-A3/B/C/D ✅；A4 code hardened、target 12/12 `pending/not_proven`；P34.6 Foundation ✅ | A4 旧 11/11 已失效且新 12/12 未证明；Broker 两轮 26/26；fresh-clone Headscale control-plane 与 clean-checkout split-process mTLS 四读 Gate；P34.6 Workspace-data fail-closed primitives 已实现；production 联合激活进入 P34.7 |
-| **Phase 5** | Agent Runtime 与受控编排 | `PLANNED / FROZEN`，待 P34.7 PASS | P5.0–P5.9 已形成详细路线；Planner 只提交 Proposal，确定性 Validator 决定可调度 DAG，Executor/Memory/Skill/多 Agent 只能作为 Workspace 内受约束 workload 通过逻辑 capability 使用能力 |
+| **Phase 5** | Agent Runtime 与受控编排 | engineering/product Lite path 已实现并进入主线（P5.0–P5.6A，engineering-only）；production Runtime `disabled / blocked/not_proven`；Planner production activation `disabled`；Multi-Agent `disabled` | P5.0–P5.9 已形成详细路线；Planner 只提交 Proposal，确定性 Validator 决定可调度 DAG，Executor/Memory/Skill/多 Agent 只能作为 Workspace 内受约束 workload 通过逻辑 capability 使用能力；P34.7 Hardened/high-risk Runtime 仍 `blocked/not_proven` |
 | **Phase 6** | Skill + MCP 扩展生态 | 待 Phase 3-4/5 | 工作空间边界内的一等公民扩展生态 |
 | **Phase 7** | 开源准备 | 远期 | 文档、Demo、部署脚本、CI/CD、安全审计 |
 
@@ -1035,7 +1035,7 @@ TypeScript SDK 独立 lockfile 已完成：
 - `.omo/plans/phase-1-5-closeout-and-next-phase.md` — Phase 1.5 收口与下一阶段
 - `docs/phase-1-6-and-beyond-implementation-plan.md` — Phase 1.6 收口、AI 工作空间优先和 Phase 2–7 实施计划
 - `docs/phase-3-4-secure-ai-workspace-implementation-plan.md` — Phase 3-4 Resource Registry、Capability、Sandbox Runner、RuntimeDriver 与 P34.0–P34.7 正式实施契约
-- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 P5.0–P5.9 统一契约：P34.7 Evidence Admission Gate、Agent identity/Task Lease/fencing、compile-only Planner 与确定性 Validator、Executor/Model/Tool Gateway、Context Capsule/长期 Memory、第一方原生 Skill、有界多 Agent DAG、unknown no-replay、恢复/reconciliation、UI/SDK 和 production Gate；当前保持 `PLANNED / FROZEN`
+- `docs/phase-5-agent-runtime-implementation-plan.md` — Phase 5 P5.0–P5.9 统一契约：P34.7 Evidence Admission Gate、Agent identity/Task Lease/fencing、compile-only Planner 与确定性 Validator、Executor/Model/Tool Gateway、Context Capsule/长期 Memory、第一方原生 Skill、有界多 Agent DAG、unknown no-replay、恢复/reconciliation、UI/SDK 和 production Gate；P5 engineering/product Lite path（P5.0–P5.6A）已实现并进入主线（engineering-only），P5 production Runtime/Planner/Multi-Agent 保持 disabled / blocked/not_proven，P34.7 PASS 前不解冻
 - `docs/phase-3-4-threat-model.md` — Phase 3-4 资产、信任边界、安全不变量、攻击矩阵和运行时验收 Gate
 - `docs/deployment-guide.md` — 部署指南（9 节，含开发 vs 生产镜像）
 - `.zcode/plans/plan-sess_3caa018d-836b-4fda-aaf1-50e27f4281cf.md` — 前端性能/认证重构执行计划
@@ -1588,7 +1588,7 @@ git diff --check：passed
 
 ### P34.7 production readiness 工程实现与当前阻塞（2026-08-02）
 
-> 本节记录已落地的 P34.7A–G 工程合同与本地验证，不把缺失的目标环境证据写成生产通过。当前总判定：`P34.7 production total Gate = BLOCKED / NOT_PROVEN`；`Phase 5 = PLANNED / FROZEN`。
+> 本节记录已落地的 P34.7A–G 工程合同与本地验证，不把缺失的目标环境证据写成生产通过。当前总判定：`P34.7 production total Gate = BLOCKED / NOT_PROVEN`；P5 engineering/product Lite path 已进入主线（engineering-only），P5 production Runtime、Planner production activation、Multi-Agent 均 `disabled / blocked/not_proven`。
 
 1. **P34.7A/B：clean-checkout provenance 与四组件 production composition**
 
@@ -1626,6 +1626,151 @@ git diff --check：passed
    - Maintainer map validator 与 benchmark validator 已通过；最终精确计数和 clean-checkout `--verify` 结果记录于 `docs/evidence/p34-7/production-readiness-decision.md`。`--verify` 必须在提交后的 fresh clean checkout 运行；外部 evidence 未齐时正确结果仍是 `blocked/not_proven`，绝不称 P34.7 PASS。
    - 实现提交 `63790b49a73927dcd0c3c67d2093edb5dec8d8e6` 的 clean-checkout formal `--verify` 已实际执行：source tree `be394f19ce5ac741d752fb3e67dd86572b6f3907`、123 files、manifest `8dd165724700d7c139a8ca5044128ffd59f58b9880870d0447ca52fe77650132`、exit 2、`blocked/not_proven`、10 blockers、0 Veto、evaluator-key scope 0、activation=false。该结果证明当前源码可复现地安全拒绝，不是 production PASS。
    - 本轮未读取根 `.env`，未迁移或访问普通业务数据库，未访问 non-disposable tenant/RAG，未启动 hostile code、真实 production component、真实 Overlay revoke 或 canonical cutover，未启动 Agent Runtime。
+
+### P34.7 joint gate 证据真实性加固（Round 2 review-fix，2026-08-07）
+
+> Round 1 的 inline-string+hash 方案被外部评审拒绝：同一 operator 可以同时伪造文件与匹配哈希，
+> `evidence_seal.status=passed` 与 `env_manifest.secret_free=true` 等仍是自断言字段。Round 2 把 joint gate
+> 改为 trust-anchored 证据真实性边界；由于不存在独立 approved trust policy，P34.7 总判定保持
+> `BLOCKED / NOT_PROVEN`，任何 fixture 都不能获得 production `passed`。
+
+1. **外部 trust policy 成为唯一信任锚**：`backend/src/omnibase/production/joint_gate.py` 新增
+   `load_trust_policy`/`TrustPolicy`，policy 必须位于证据目录之外，包含 allowlisted producer Ed25519
+   公钥（core/runner/broker/gateway/overlay/recovery_sla/sealer）、source seal（repository + approved
+   commit/tree）、approved artifact manifest（executable path→SHA-256→boundary）、六个 boundary 的精确
+   argv 模板、env 名 allowlist 与 gateway certificate pins。policy 原始字节必须命中代码内 pin 的
+   `_APPROVED_TRUST_POLICY_SHA256`（当前空集 → 所有 bundle 恒为 `blocked/not_proven`）；bundle 内携带
+   的公钥/trust root 不是信任锚（未知字段直接 veto）。
+2. **全部证据解析为 canonical JSON 并做 detached Ed25519 签名**：command receipt
+   （`omnibase.p34-7.command-receipt.v1`）、component evidence（`omnibase.p34-7.component-evidence.v1`，
+   交叉绑定 run id/producer/source commit+tree/source+artifact manifest digest/component identity/peer
+   identities/owned receipts/executables/posture digest/attack+cleanup digest）、posture measurement、
+   attack matrix（结果与 inventory 交叉核对）、cleanup inventory（counts 与 inventory 交叉核对）以及
+   sealer 对整个验证链的 seal signature。exit code/argv/timestamps/secret-free/attack 结果/cleanup
+   counts/evidence_seal.status 不再作为内联自断言字段存在。
+3. **每个 safety `not_proven` 都是 blocker**：trust_policy、source_provenance、artifact_provenance、
+   command_semantics、signature_authenticity、runtime_posture、production_runtime_inactive、
+   hostile_code_not_executed、root_env_not_accessed、business_database_not_accessed、
+   business_database_not_migrated、attack_results、cleanup_complete、certificate_posture、replay_posture、
+   evidence_seal；`runtime_posture.measured=false` 现在明确 `passed=false`（旧测试被改写为回归断言）。
+4. **对抗性负证明工具**：新增 `scripts/production/forge_p34_7_evidence_bundle.py` 从零伪造完整 bundle
+   （全部文件与匹配哈希），`backend/tests/test_p34_7_joint_gate.py` 断言 unsigned/forged
+   signature/bundle-supplied trust root/swapped producer key/cross-run replay/cross-component replay/
+   stale certificate/modified raw bytes/safety evidence absence 全部 `blocked/not_proven` 永不 `passed`；
+   CLI 端到端 `--verify-evidence` 对伪造 bundle 恒 exit 2。Windows junction 位于路径中间组件的场景也
+   被拒绝（每级 lstat）。
+5. **schema v2 only、UTC instant 比较**：schema_version `1` 被拒绝；时间戳解析为 UTC instant 后比较，
+   不再按字符串字典序；P5 合同链 sealed digest 已在最终字节上重算（含 planner contract 中 stale 的
+   `maintainer_map` digest）。
+6. **验证结果**：`test_p34_7_joint_gate.py` 54 passed / 1 skipped（Windows symlink 由 reparse 守卫覆盖）；
+   production 模块 mypy 0 issues；changed scope ruff check/format check 通过；`--validate-only` exit 2。
+   P34.7 总判定维持 `BLOCKED / NOT_PROVEN`，P5 production Runtime/Planner/multi-Agent 继续
+   `disabled / blocked/not_proven`，未读取根 `.env`，未访问或
+   迁移业务数据库，未激活 production Runtime/Planner/multi-Agent，未创建 migration 0013。
+
+### P34.7 joint gate 生产级加固（Round 3 review-fix，2026-08-07）
+
+> Round 3 是安全关键加固轮：全部十项要求已实现并有测试覆盖，其中唯一的 TRUE positive control 证明
+> pass 路径真实存在（测试内 monkeypatch 临时批准 policy digest，不落入 production approved set），
+> 9 个 post-approval 攻击测试证明任何单一漂移都会 `passed=false` 或 `invalid/veto`。由于不存在独立
+> approved trust policy，P34.7 总判定保持 `BLOCKED / NOT_PROVEN`。
+
+1. **executable 实际字节三重绑定**：`_verify_receipt_executable` 读取 run 目录下 executable 的真实文件
+   字节并计算 SHA-256，要求 actual digest == receipt 声明 digest == policy pin digest；component
+   evidence 的 executables 列表同样对照 manifest。替换实际字节而不改 receipt 的攻击被
+   `artifact_provenance=not_proven` 阻塞。
+2. **每个 executable 必须出现在 approved artifact manifest**：manifest 的 path/size/sha256 条目逐项
+   对照真实字节（`_verify_manifest` 返回 path→(size, sha256) 映射），receipt 与 component 均强制
+   manifest membership；只在 receipt/policy 声明中存在的 executable 不能通过。forge 工具与测试
+   fixture 的 artifact manifest 现已包含全部 `bin/*` 执行体。
+3. **evidence seal 绑定完整姿态**：canonical binding 覆盖 schema/schema_version、environment、
+   disposable、完整 provenance（repository/source_commit/source_tree/dirty）与验证链派生的全部当前
+   顶层安全姿态（signature_authenticity、artifact_provenance、command_semantics、certificate_posture、
+   replay_posture、runtime_posture、production_runtime_inactive、hostile_code_not_executed、
+   root_env_not_accessed、business_database_not_accessed、business_database_not_migrated、
+   attack_results、cleanup_complete）；`joint_gate.compute_seal_binding()` 是 verifier/forger/tests
+   共用的唯一 canonical builder，任何外层字段改写都会使重算 binding 与 recorded digest/签名不符。
+4. **七个 producer 公钥唯一**：policy 解析强制六组件 + sealer 七把 Ed25519 公钥全部不同，sealer 必须
+   区别于所有 producer；重复 key fail-closed（`invalid/veto`）。`p34-7-trust-policy.example.json`
+   占位 key 已改为七个互不相同的值。
+5. **gateway 证书时间窗**：必须满足 `valid_from <= now < valid_until`；未来证书（valid_from 在未来）
+   与过期证书同样被 `certificate_posture=not_proven` 拒绝，issuer/SAN/最大有效期/吊销/replay 检查
+   全部保留。
+6. **TRUE positive control（政策批准后）**：`test_positive_control_signed_chain_passes_after_policy_approval`
+   用 pytest monkeypatch 临时把测试 policy digest 放入 `_APPROVED_TRUST_POLICY_SHA256`（in-process
+   仅此测试），完整签名、manifest 绑定、seal 一致的链达到 `passed`、零 blocker；teardown 恢复空集，
+   production approved set 仍为空，测试 digest 永不提交。
+7. **9 个 post-approval 攻击测试**全部 `passed=false` 或 `ConfigurationError`：替换实际
+   bin/core_runner 字节不改 receipt（artifact_provenance 阻塞）；executable 缺席 artifact manifest
+   （阻塞）；environment staging→production、disposable true→false、dirty true→false 无重签改写
+   （envelope veto 与 seal-binding veto 双路径）；七角色共用一把 Ed25519 key（policy 解析 veto）；
+   sealer 与 producer 共用 key（policy 解析 veto）；valid_from 在未来（certificate_posture 阻塞）；
+   executable/manifest/receipt 三方 digest 漂移（receipt 侧阻塞 + manifest 侧 veto）。
+8. **`_APPROVED_TRUST_POLICY_SHA256` 保持空集**：本轮未批准任何真实 trust policy；所有 fixture 恒
+   `blocked/not_proven`（除上述 in-process positive control）。
+9. **验证**：`test_p34_7_joint_gate.py` 65 passed / 1 skipped（Windows symlink 由 reparse 守卫覆盖，
+   如实报告）；P34.7 focused + P5.0/P5.1A/P5.2A/P5.3A 联合 562 passed / 1 skipped（host）；
+   容器 canonical 矩阵、production mypy、changed-scope ruff check/format、maintainer map/benchmark
+   结果见 commit 报告；P34.7+Phase 5 sealed digest 链在最终字节上重算。
+10. P34.7 总判定不变：`BLOCKED / NOT_PROVEN`，production activation DISABLED；P5 production
+    Runtime/Planner/Multi-Agent 保持 `disabled / blocked/not_proven`，未读取根 `.env`，未访问或迁移业务数据库，未激活 production
+    Runtime/Planner/multi-Agent，未创建 migration 0013，未 push。
+
+### P34.7 Integration R1：hardened joint gates 进入统一主线（2026-08-08）
+
+> 工程 Gate 进入最新主线，不是 Production Runtime 激活。冻结输入分支
+> `external/p34-7-hardened-joint-gates`（HEAD `867a506661e4d958404387133370c3d566070a02`，提交链
+> 09cd09d → 6418a91 → a2c5a3b → 867a506）的四个提交按序以普通 cherry-pick 移植到验证过的最新
+> `origin/main`（PR #18 merge commit `dfd4b20bf7ffced7717b0adfbd88b19a9eaabbaa`），目标分支
+> `codex/p34-7-joint-gate-integration-r1`。joint-gate 模块、测试、forge/validate 脚本、合同与 runbook
+> 与冻结终态逐字节一致；冲突仅出现在 Phase 5 合同示例的 sealed-digest 行，统一以最新 main 文件字节
+> （及其 digest）为准。
+
+1. P34.7 hardened joint Gate 已整合到最新 main-derived engineering branch。
+2. 这只代表 Gate 代码进入统一主线，不是 production evidence。
+3. `joint_gate._APPROVED_TRUST_POLICY_SHA256` 仍为空集。
+4. P34.7 仍为 `blocked/not_proven`。
+5. Production activation 仍关闭（`activation_allowed = false`）。
+6. Migration 0013 未创建；migration head 保持 0012。
+7. P5 Lite/no-tool/只读 `knowledge_search` 产品化不等于 Hardened Sandbox 解冻。
+8. Shell、SQL、任意 HTTP、宿主文件写入、高风险 Skill/MCP、敌对代码执行仍必须等待 P34.7 PASS。
+9. 真实 Linux Runner 12/12、两成员 Overlay、DERP、node-compromise、non-disposable tenant/RAG 与 SLA
+   证据仍缺失/not_proven。
+10. 下一阶段是独立 trust-policy 设计/审批与真实生产证据采集，不是打开 Feature Gates。
+
+`AGENT_RUNTIME_ENABLED` / `AGENT_PLANNER_ENABLED` / `MULTI_AGENT_ENABLED` 保持 false/false/false；
+production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merge、未建 PR。
+
+### P34.7 Integration Review-Fix Round 2：object format / freshness / 过期边界（2026-08-08）
+
+> 在 Integration R1 基础上普通 forward-fix 关闭三个评审发现，未改变正式状态：
+> `ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED` 不变，P34.7 仍 `blocked/not_proven`。
+
+1. **P1-A Git object format**：`provenance.git_object_format`、policy
+   `source_seal.git_object_format`、component evidence `git_object_format` 绑定同一闭集
+   `sha1 | sha256`；sha1=40 位小写 hex、sha256=64 位小写 hex；commit/tree 保留原始 Git OID 不二次
+   哈希；manifest 仍为原始字节 SHA-256；未知 format/长度/大小写/跨层 drift 全部 fail-closed。
+   当前仓库 `git rev-parse --show-object-format` = sha1；真实 40 位 `HEAD`/`HEAD^{tree}` OID 已由
+   `test_current_repo_object_format_is_sha1` 与 `test_real_repo_sha1_oids_enter_the_chain_without_production_pass`
+   证明可进入解析与签名链（无 policy 批准时 blocked/not_proven，不 veto；monkeypatch 批准后 passed），
+   容器内 worktree `.git` 不可达时测试回退到新建真实 SHA-1 仓库，同一断言不降级。
+2. **P1-B evidence freshness**：冻结合同新增 `run_started_at`/`run_completed_at`/
+   `evidence_issued_at`/`evidence_valid_until`（`run_started_at <= run_completed_at <=
+   evidence_issued_at < evidence_valid_until`）；receipt/posture/attack/cleanup 时间戳必须在 run
+   window 内；`now` 必须满足 `evidence_issued_at <= now < evidence_valid_until`；age 与窗口长度均
+   受 policy bounded `max_evidence_age_seconds` 约束；单次验证只读一次时钟（`verify_joint_evidence`
+   的 `now` clock seam，`_utc_now()` 为唯一墙钟读取点）；四个时间字段与 object format 进入 seal
+   canonical binding；seal 绑定的 posture 以签发时刻时钟（`window.issued_at`）推导，复验不使有效
+   seal 失效——过期 bundle 保持有效 seal 并以 `evidence_freshness` blocker 拒绝；同一未过期 bundle
+   幂等离线复验允许，过期 bundle 永不重判 PASS。
+3. **P2 证书精确过期边界**：实现改为 `valid_until <= now` 拒绝（文档语义
+   `valid_from <= now < valid_until`），`valid_from == now` 允许；新增
+   `test_certificate_expires_exactly_at_now_is_blocked`（valid_until == now fail-closed，前一秒
+   verified）与 `test_certificate_valid_from_exactly_now_is_allowed`。
+4. **保留项**：`_APPROVED_TRUST_POLICY_SHA256` 仍为 `frozenset()`；唯一 TRUE positive control 仍
+   只经测试内 monkeypatch；migration head 0012、0013 absent；三个 Phase 5 Feature Gates 保持
+   false；production Runtime/Planner/Multi-Agent disabled；未生成/伪造真实 production evidence；
+   未读根 `.env`；未访问/迁移业务数据库；未修改冻结输入 worktree；未 push/PR/merge。
 
 ### P5.0 Phase 5 admission gate（2026-08-02）
 

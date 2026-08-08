@@ -1,0 +1,46 @@
+{
+  "schema": "omnibase.p34-7.trust-policy.v1",
+  "schema_version": "2",
+  "producers": {
+    "core": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000001"},
+    "runner": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000002"},
+    "broker": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000003"},
+    "gateway": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000004"},
+    "overlay": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000005"},
+    "recovery_sla": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000006"},
+    "sealer": {"ed25519_public_key": "0000000000000000000000000000000000000000000000000000000000000007"}
+  },
+  "source_seal": {
+    "repository": "https://github.com/lss100200/omnibase.git",
+    "git_object_format": "sha1",
+    "approved_commits": [],
+    "approved_trees": []
+  },
+  "executables": {
+    "bin/core_runner": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["core_runner"]},
+    "bin/runner_broker": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["runner_broker"]},
+    "bin/runner_gateway": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["runner_gateway"]},
+    "bin/broker_gateway": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["broker_gateway"]},
+    "bin/overlay_data_plane": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["overlay_data_plane"]},
+    "bin/recovery_sla": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111", "commands": ["recovery_sla"]}
+  },
+  "commands": {
+    "core_runner": ["/run/omnibase/bin/core_runner", "--probe"],
+    "runner_broker": ["/run/omnibase/bin/runner_broker", "--probe"],
+    "runner_gateway": ["/run/omnibase/bin/runner_gateway", "--probe"],
+    "broker_gateway": ["/run/omnibase/bin/broker_gateway", "--probe"],
+    "overlay_data_plane": ["/run/omnibase/bin/overlay_data_plane", "--probe"],
+    "recovery_sla": ["/run/omnibase/bin/recovery_sla", "--probe"]
+  },
+  "allowed_env_names": [
+    "PATH",
+    "OMNIBASE_RUN_ID"
+  ],
+  "gateway": {
+    "issuer": "0000000000000000000000000000000000000000000000000000000000000000",
+    "san_suffix": ".omnibase",
+    "validity_seconds": 3153600000
+  },
+  "max_evidence_age_seconds": 604800,
+  "migration_head": "0012"
+}
