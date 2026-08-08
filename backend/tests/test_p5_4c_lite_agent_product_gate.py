@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -78,7 +79,7 @@ def _synthetic_run(
     probe = gate._parse_probe(probe_result.stdout)
     claims = gate._derive_claims(probe, commands)
     measurements = {
-        "lite_unit_summary": {"passed": 20, "skipped": 0},
+        "lite_unit_summary": gate._parse_test_summary(unit_result.stdout),
         "probe_measurements": probe,
         "migration_head": gate.EXPECTED_MIGRATION_HEAD,
     }
@@ -182,10 +183,23 @@ def test_manifest_seals_only_declared_regular_files() -> None:
 
 
 def test_test_summary_parser_requires_passed_count() -> None:
-    assert gate._parse_test_summary("14 passed in 6.77s\n") == {"passed": 14, "skipped": 0}
+    assert gate._parse_test_summary("14 passed in 6.77s\n") == {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0,
+        "deselected": 0,
+    }
     assert gate._parse_test_summary("14 passed, 2 skipped in 6.77s\n") == {
         "passed": 14,
+        "failed": 0,
         "skipped": 2,
+        "deselected": 0,
+    }
+    assert gate._parse_test_summary("12 passed, 1 failed, 3 skipped, 4 deselected in 6.77s\n") == {
+        "passed": 12,
+        "failed": 1,
+        "skipped": 3,
+        "deselected": 4,
     }
     with pytest.raises(RuntimeError):
         gate._parse_test_summary("no summary here")
@@ -453,7 +467,7 @@ def test_verify_rejects_receipt_returncode_not_an_integer(
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     report["commands"][0]["returncode"] = "0"
     _rewrite_evidence(evidence, report)
-    with pytest.raises(RuntimeError, match="returncode is invalid|did not prove success"):
+    with pytest.raises(RuntimeError, match="returncode is not a strict integer|did not prove success"):
         gate._verify(evidence)
 
 
@@ -463,7 +477,9 @@ def test_verify_rejects_exitcode_path_escape(
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     report["commands"][0]["exitcode"] = "../outside.exitcode"
     _rewrite_evidence(evidence, report)
-    with pytest.raises(RuntimeError, match="escaped run directory"):
+    # Round-5: the literal-binding check rejects the escape path BEFORE resolve,
+    # so the error is the literal mismatch (not the containment escape).
+    with pytest.raises(RuntimeError, match="exitcode sidecar literal|escaped run directory"):
         gate._verify(evidence)
 
 
@@ -629,3 +645,360 @@ def test_successful_run_never_deletes_evidence(
     assert report["evidence_preserved"] is True
     assert report["cleanup"]["evidence_preserved"] is True
     assert evidence.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Round-5: strict exit-code type, sidecar precise binding, cross-binding
+# rejection and unit-summary re-derivation attack matrix.  Every attack below
+# must be REJECTED by --verify-evidence; the legitimate synthetic run still
+# verifies (positive control in test_synthetic_sealed_run_verifies).
+# ---------------------------------------------------------------------------
+
+
+def _repackage_full(evidence: Path, report: dict) -> None:
+    """Re-write evidence.json, evidence.sha256, artifact-manifest and its hash
+    from a (possibly tampered) report so the evidence tree is byte-consistent
+    with the on-disk sidecars — simulating a full evidence re-packaging that
+    also recomputes each receipt's ``stdout_sha256`` from the current bytes."""
+    run_dir = evidence.parent
+    excluded = {
+        "evidence.json",
+        "evidence.sha256",
+        "artifact-manifest.json",
+        "artifact-manifest.sha256",
+    }
+    for item in report.get("commands", []):
+        stdout_rel = item.get("stdout")
+        if isinstance(stdout_rel, str):
+            stdout_file = run_dir / stdout_rel
+            if stdout_file.is_file() and not stdout_file.is_symlink():
+                item["stdout_sha256"] = gate._sha256(stdout_file)
+    artifact_manifest = gate._artifacts(run_dir, exclude=excluded)
+    artifact_raw_sha = gate._write_json(run_dir / "artifact-manifest.json", artifact_manifest)
+    gate._write_bytes(run_dir / "artifact-manifest.sha256", f"{artifact_raw_sha}\n".encode())
+    report["artifact_manifest_raw_sha256"] = artifact_raw_sha
+    report["artifacts"] = artifact_manifest
+    digest = gate._write_json(evidence, report)
+    gate._write_bytes(evidence.with_name("evidence.sha256"), f"{digest}\n".encode())
+
+
+@pytest.mark.parametrize(
+    "returncode",
+    [False, True, 0.0, "0", None, -1, 1],
+)
+def test_verify_rejects_non_strict_returncode_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, returncode: object
+) -> None:
+    """Round-5 Fix-1: the receipt returncode must be a strict ``int`` equal to
+    ``0``.  ``type(value) is int`` rejects JSON ``false``/``true`` (Python
+    ``bool``, which ``isinstance(value, int)`` would wrongly accept because
+    ``False == 0``), floats like ``0.0``, strings like ``"0"``, ``null``,
+    negative and non-zero integers."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["returncode"] = returncode
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="returncode is not a strict integer|did not prove success"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_unit_stdout_cross_bound_to_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-3/Fix-4: the unit receipt must bind its OWN stdout
+    (``commands/lite-unit-suite.stdout``); pointing it at the probe's stdout
+    literal is rejected by the exact-literal-binding check BEFORE resolve."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["stdout"] = "commands/lite-gate-probes.stdout"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout sidecar literal"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_probe_stdout_cross_bound_to_unit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-3/Fix-4: the probe receipt must bind its OWN stdout
+    (``commands/lite-gate-probes.stdout``); pointing it at the unit's stdout
+    literal is rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][1]["stdout"] = "commands/lite-unit-suite.stdout"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout sidecar literal"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_unit_exitcode_cross_bound_to_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-3/Fix-4: the unit receipt must bind its OWN exitcode
+    sidecar; pointing it at the probe's exitcode is rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["exitcode"] = "commands/lite-gate-probes.exitcode"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="exitcode sidecar literal"):
+        gate._verify(evidence)
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "commands/../commands/lite-unit-suite.stdout",
+        "commands/./lite-unit-suite.stdout",
+        "commands//lite-unit-suite.stdout",
+        "Commands/lite-unit-suite.stdout",
+        "/commands/lite-unit-suite.stdout",
+        "commands\\lite-unit-suite.stdout",
+        "C:commands/lite-unit-suite.stdout",
+        "file://commands/lite-unit-suite.stdout",
+    ],
+)
+def test_verify_rejects_lexical_stdout_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alias: str
+) -> None:
+    """Round-5 Fix-3: the stdout path LITERAL must be exactly
+    ``commands/lite-unit-suite.stdout``.  Absolute paths, backslash
+    alternatives, ``.``/``..`` segments, repeated separators, case aliases,
+    URL/drive paths and every lexical alias are rejected BEFORE resolve."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["stdout"] = alias
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout sidecar literal"):
+        gate._verify(evidence)
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "commands/../commands/lite-unit-suite.exitcode",
+        "commands/./lite-unit-suite.exitcode",
+        "commands//lite-unit-suite.exitcode",
+        "/commands/lite-unit-suite.exitcode",
+        "commands\\lite-unit-suite.exitcode",
+    ],
+)
+def test_verify_rejects_lexical_exitcode_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alias: str
+) -> None:
+    """Round-5 Fix-3: the exitcode path LITERAL must be exactly
+    ``commands/lite-unit-suite.exitcode``; lexical aliases are rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][0]["exitcode"] = alias
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="exitcode sidecar literal"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_unit_receipt_pointing_at_probe_stdout_with_forged_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-3/Fix-4: even if the attacker forges the stdout_sha256 to
+    match the probe's stdout bytes, the unit receipt must bind
+    ``commands/lite-unit-suite.stdout``; the literal mismatch is rejected
+    before the digest is even compared."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    probe_stdout = evidence.parent / "commands" / "lite-gate-probes.stdout"
+    forged_sha = gate._sha256(probe_stdout)
+    report["commands"][0]["stdout"] = "commands/lite-gate-probes.stdout"
+    report["commands"][0]["stdout_sha256"] = forged_sha
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout sidecar literal"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_two_commands_sharing_one_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-4: two commands must not bind the same stdout literal.  The
+    exact-literal binding forces each key to its own sidecar, but the explicit
+    distinct-set check rejects any attempt to bind both commands to the same
+    file."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    unit_sha = report["commands"][0]["stdout_sha256"]
+    report["commands"][1]["stdout"] = "commands/lite-unit-suite.stdout"
+    report["commands"][1]["stdout_sha256"] = unit_sha
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout sidecar literal|must not be shared"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_two_commands_sharing_one_exitcode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-4: two commands must not bind the same exitcode literal."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][1]["exitcode"] = "commands/lite-unit-suite.exitcode"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="exitcode sidecar literal|must not be shared"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_command_key_duplication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-2: duplicate command keys are rejected (closed set, no
+    duplicates)."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][1]["key"] = "lite-unit-suite"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="must not be duplicated|is not the closed"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_unknown_command_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-2: an unknown/extra command key is rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["commands"][1]["key"] = "rogue-step"
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="is not the closed|not in the closed step set"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_modified_unit_stdout_repackaged_evidence_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: modifying the unit stdout FILE's summary line and then
+    re-packaging only evidence.json (not the artifact manifest) is rejected by
+    the per-command stdout digest check and/or the artifact digest check."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    stdout = evidence.parent / "commands" / "lite-unit-suite.stdout"
+    stdout.write_text("21 passed in 1.23s\n", encoding="utf-8")
+    report["lite_unit_summary"] = gate._parse_test_summary("21 passed in 1.23s\n")
+    report["measurements"]["lite_unit_summary"] = report["lite_unit_summary"]
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="stdout digest mismatch|artifact digest mismatch"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_modified_unit_stdout_full_repackage_stale_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: even after a FULL evidence re-package (stdout file +
+    artifact manifest + all hashes made self-consistent), if the stored
+    ``lite_unit_summary`` field is stale (not updated to match the new stdout),
+    the re-derivation from the precisely-bound stdout catches the drift."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    stdout = evidence.parent / "commands" / "lite-unit-suite.stdout"
+    stdout.write_text("21 passed in 1.23s\n", encoding="utf-8")
+    # Re-package everything (artifact manifest + hashes) but leave the stored
+    # summary stale at {"passed": 20, ...}.
+    _repackage_full(evidence, report)
+    with pytest.raises(RuntimeError, match="lite_unit_summary.*drift|fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_only_top_level_lite_unit_summary_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: tampering ONLY the top-level ``lite_unit_summary`` (leaving
+    ``measurements.lite_unit_summary`` and the stdout unchanged) is rejected
+    because the re-derived summary matches measurements but not the top-level."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["lite_unit_summary"] = {"passed": 99, "failed": 0, "skipped": 0, "deselected": 0}
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="lite_unit_summary.*drift|fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_only_measurements_lite_unit_summary_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: tampering ONLY ``measurements.lite_unit_summary`` (leaving
+    the top-level and the stdout unchanged) is rejected because the re-derived
+    summary matches the top-level but not measurements."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["measurements"]["lite_unit_summary"] = {
+        "passed": 99,
+        "failed": 0,
+        "skipped": 0,
+        "deselected": 0,
+    }
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="measurements.lite_unit_summary.*drift|fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_top_and_measurements_agree_but_disagree_with_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: top-level and ``measurements.lite_unit_summary`` agree with
+    each other (both tampered to the same wrong value) but disagree with the
+    re-derived summary from the actual stdout — rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    wrong = {"passed": 99, "failed": 0, "skipped": 0, "deselected": 0}
+    report["lite_unit_summary"] = wrong
+    report["measurements"]["lite_unit_summary"] = wrong
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="lite_unit_summary.*drift|fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_boolean_as_int_in_unit_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: a boolean-as-int (``False`` where ``0`` is expected, or
+    ``True`` where a count is expected) in the stored summary is rejected by
+    the strict ``type(value) is int`` comparison."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["lite_unit_summary"] = {"passed": False, "failed": 0, "skipped": 0, "deselected": 0}
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="not a strict integer"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_missing_field_in_unit_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: a stored summary missing a field (e.g. ``deselected``)
+    is rejected because the field sets differ."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    report["lite_unit_summary"] = {"passed": 20, "failed": 0, "skipped": 0}
+    report["measurements"]["lite_unit_summary"] = report["lite_unit_summary"]
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_extra_field_in_unit_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-5: a stored summary with an extra field is rejected."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    summary = dict(report["lite_unit_summary"])
+    summary["errors"] = 0
+    report["lite_unit_summary"] = summary
+    report["measurements"]["lite_unit_summary"] = summary
+    _rewrite_evidence(evidence, report)
+    with pytest.raises(RuntimeError, match="fields differ"):
+        gate._verify(evidence)
+
+
+def test_verify_rejects_symlink_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 Fix-3: a symlink sidecar must be rejected.  On platforms that
+    support symlinks (POSIX), replacing the unit stdout with a symlink is
+    rejected.  On platforms without symlink support the test is skipped with a
+    documented note."""
+    evidence, report = _synthetic_run(tmp_path, monkeypatch)
+    real_stdout = evidence.parent / "commands" / "lite-unit-suite.stdout"
+    target = evidence.parent / "commands" / "lite-gate-probes.stdout"
+    real_stdout.unlink()
+    try:
+        os.symlink(target, real_stdout)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink sidecar test: platform does not support symlinks")
+    # The symlink must be rejected before any digest comparison.
+    with pytest.raises(RuntimeError, match="must not be a symlink|is not a regular file"):
+        gate._verify(evidence)
+
+
+def test_positive_control_legitimate_synthetic_run_still_verifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-5 positive control: a legitimate synthetic run (exact-literal
+    binding, strict returncode, consistent unit summary, honest probe) still
+    passes --verify-evidence after all the new strictness."""
+    evidence, _ = _synthetic_run(tmp_path, monkeypatch)
+    gate._verify(evidence)

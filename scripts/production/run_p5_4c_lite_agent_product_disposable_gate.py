@@ -342,6 +342,47 @@ def _run_step(
 
 _EXITCODE_SIDECAR_RE = re.compile(r"[0-9]+\n")
 
+# The only two command keys the Gate may record, in the only order it may
+# record them.  The verifier requires the receipt set to be exactly this
+# closed set: no missing key, no duplicate, no extra/unknown key, no re-order.
+COMMAND_KEYS: tuple[str, ...] = ("lite-unit-suite", "lite-gate-probes")
+
+# The exact POSIX path literal every command key must bind its stdout and
+# exitcode sidecar to.  The verifier compares the receipt's path LITERAL against
+# this string BEFORE resolving (``_is_exact_sidecar_literal``): absolute paths,
+# backslash alternatives, ``.``/``..`` segments, repeated separators, case
+# aliases, URL/drive paths and any lexical alias (``commands/../commands/...``,
+# ``commands/./...``) are rejected outright.  Only after the literal matches
+# does the verifier resolve and check run-dir containment, regular-file,
+# non-symlink and digest.  This binds each command key to its OWN unique
+# sidecar, so two commands cannot share or swap stdout/exitcode artefacts.
+def _expected_sidecar_literal(key: str, suffix: str) -> str:
+    return f"commands/{key}.{suffix}"
+
+
+def _is_exact_sidecar_literal(raw: object, *, key: str, suffix: str) -> bool:
+    """Return ``True`` only if ``raw`` is exactly ``commands/{key}.{suffix}``.
+
+    Rejects absolute paths, backslash alternatives, ``.``/``..`` segments,
+    repeated separators, case aliases, URL/drive paths and any lexical alias
+    BEFORE any filesystem resolution occurs.  ``isinstance(value, int)`` is
+    deliberately avoided: this is a literal string comparison only.
+    """
+    if not isinstance(raw, str):
+        return False
+    expected = _expected_sidecar_literal(key, suffix)
+    if raw != expected:
+        return False
+    # Defence in depth: the literal equality above already rejects every alias,
+    # but also assert the normalised POSIX form is unchanged and there are no
+    # absolute/drive/URL/backslash markers or traversal segments.
+    if "\\" in raw or ":" in raw or raw.startswith("/"):
+        return False
+    parts = raw.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    return Path(raw).as_posix() == expected
+
 
 def _parse_exitcode_sidecar(raw: str) -> int:
     """Strictly parse a ``commands/*.exitcode`` sidecar.
@@ -617,24 +658,41 @@ def _verify(path: Path) -> None:  # noqa: C901
     commands = report.get("commands")
     if not isinstance(commands, list) or not commands:
         raise RuntimeError("command evidence is missing")
-    if tuple(item.get("key") for item in commands) != (
-        "lite-unit-suite",
-        "lite-gate-probes",
-    ):
-        raise RuntimeError("command receipt set does not match the closed P5.4C step set")
+    # Fix-2 (command closed set): the verifier requires the command keys to be
+    # EXACTLY the Gate's closed set — no missing key, no duplicate, no
+    # extra/unknown key, no re-order.  ``isinstance(value, int)`` is not used
+    # for the returncode check below because ``bool`` is an ``int`` subclass.
+    keys = [item.get("key") for item in commands]
+    if not all(isinstance(key, str) for key in keys):
+        raise RuntimeError("command receipt key is invalid")
+    if len(keys) != len(set(keys)):
+        raise RuntimeError("command receipt keys must not be duplicated")
+    if len(keys) != len(COMMAND_KEYS) or set(keys) != set(COMMAND_KEYS):
+        raise RuntimeError("command receipt set is not the closed P5.4C step set")
+    if tuple(keys) != COMMAND_KEYS:
+        raise RuntimeError("command receipt set does not match the closed P5.4C step order")
+    stdout_literals: list[str] = []
+    exitcode_literals: list[str] = []
+    resolved_sidecars: list[Path] = []
     for item in commands:
-        if not isinstance(item, dict) or not isinstance(item.get("returncode"), int):
-            raise RuntimeError("command receipt returncode is invalid")
-        if item.get("returncode") != 0:
+        if not isinstance(item, dict):
+            raise RuntimeError("command receipt is invalid")
+        # Fix-1 (strict exit-code type): ``returncode`` must be a strict
+        # ``int`` that equals ``0``.  ``type(value) is int`` rejects JSON
+        # ``false``/``true`` (Python ``bool``, which ``isinstance(value, int)``
+        # would wrongly accept because ``False == 0``), floats like ``0.0``,
+        # strings like ``"0"``, ``null`` and any non-zero integer.
+        returncode = item.get("returncode")
+        if type(returncode) is not int:  # noqa: E721
+            raise RuntimeError("command receipt returncode is not a strict integer")
+        if returncode != 0:
             raise RuntimeError("command did not prove success")
         # Fix-3/Fix-4: the verifier validates the EXACT argv template of every
         # recorded command — the explicit .env.example path, the closed
-        # production engineering flags and the exact test target / probe
-        # source are part of the closed set.  A command that merely "ran and
+        # production engineering flags and the exact test target / probe source
+        # are part of the closed set.  A command that merely "ran and
         # exited 0" with drifted arguments must be rejected.
-        key = item.get("key")
-        if not isinstance(key, str):
-            raise RuntimeError("command receipt key is invalid")
+        key = item["key"]
         template = _EXPECTED_COMMAND_TEMPLATES.get(key)
         if template is None:
             raise RuntimeError(f"command receipt key is not in the closed step set: {key!r}")
@@ -647,12 +705,26 @@ def _verify(path: Path) -> None:  # noqa: C901
             raise RuntimeError(f"command vector for {key} does not match the exact closed template")
         if any(Path(part).name == ".env" for part in command_vector):
             raise RuntimeError("recorded command must not reference the root .env")
+        # Fix-3 (sidecar precise binding): the receipt's stdout path LITERAL
+        # must be exactly ``commands/{key}.stdout`` BEFORE any resolve.  This
+        # rejects absolute paths, backslash alternatives, ``.``/``..`` segments,
+        # repeated separators, case aliases, URL/drive paths and every lexical
+        # alias (``commands/../commands/{key}.stdout``, ``commands/./{key}.stdout``)
+        # so that two commands cannot share or swap stdout artefacts and a unit
+        # receipt cannot point at the probe's stdout (or vice versa).
         stdout_relative = item.get("stdout")
-        if not isinstance(stdout_relative, str):
-            raise RuntimeError("command stdout path is invalid")
-        stdout_path = (run_dir / stdout_relative).resolve(strict=True)
+        if not _is_exact_sidecar_literal(stdout_relative, key=key, suffix="stdout"):
+            raise RuntimeError(f"command stdout sidecar literal is not exactly commands/{key}.stdout")
+        stdout_literals.append(str(stdout_relative))
+        stdout_unresolved = run_dir / str(stdout_relative)
+        if stdout_unresolved.is_symlink():
+            raise RuntimeError("command stdout sidecar must not be a symlink")
+        stdout_path = stdout_unresolved.resolve(strict=True)
         if run_dir.resolve() not in stdout_path.parents:
             raise RuntimeError("command sidecar escaped run directory")
+        if stdout_path.is_symlink() or not stdout_path.is_file():
+            raise RuntimeError("command stdout sidecar is not a regular file")
+        resolved_sidecars.append(stdout_path)
         if _sha256(stdout_path) != item.get("stdout_sha256"):
             raise RuntimeError("command stdout digest mismatch")
         # Fix-7: the verifier must read the commands/*.exitcode sidecar,
@@ -661,15 +733,22 @@ def _verify(path: Path) -> None:  # noqa: C901
         # multi-line sidecar and any 0/1 drift between the sidecar and the
         # receipt are all rejected.
         exitcode_relative = item.get("exitcode")
-        if not isinstance(exitcode_relative, str):
-            raise RuntimeError("command exitcode path is invalid")
+        if not _is_exact_sidecar_literal(exitcode_relative, key=key, suffix="exitcode"):
+            raise RuntimeError(
+                f"command exitcode sidecar literal is not exactly commands/{key}.exitcode"
+            )
+        exitcode_literals.append(str(exitcode_relative))
+        exitcode_unresolved = run_dir / str(exitcode_relative)
+        if exitcode_unresolved.is_symlink():
+            raise RuntimeError("command exitcode sidecar must not be a symlink")
         # Resolve BEFORE the containment check so a lexical ".." escape cannot
         # slip past a parents() comparison on the unresolved path.
-        exitcode_path = (run_dir / exitcode_relative).resolve()
+        exitcode_path = exitcode_unresolved.resolve()
         if run_dir.resolve() not in exitcode_path.parents:
             raise RuntimeError("command exitcode sidecar escaped run directory")
-        if not exitcode_path.is_file() or exitcode_path.is_symlink():
+        if exitcode_path.is_symlink() or not exitcode_path.is_file():
             raise RuntimeError("command exitcode sidecar is missing")
+        resolved_sidecars.append(exitcode_path)
         try:
             sidecar_exit = _parse_exitcode_sidecar(
                 exitcode_path.read_text(encoding="utf-8", errors="strict")
@@ -678,6 +757,28 @@ def _verify(path: Path) -> None:  # noqa: C901
             raise RuntimeError("command exitcode sidecar is missing or undecodable") from exc
         if sidecar_exit != item["returncode"]:
             raise RuntimeError("command exitcode sidecar drift: sidecar does not equal returncode")
+    # Fix-4 (cross-binding rejection): no two commands may share the same
+    # stdout or exitcode sidecar literal, and the resolved artefacts must be
+    # distinct.  The exact-literal binding above already forces each key to its
+    # own sidecar, but this explicit distinct-set check rejects any attempt to
+    # bind two commands to the same file (e.g. both pointing at the unit
+    # stdout) and any same-inode sharing where the platform exposes inodes.
+    if len(set(stdout_literals)) != len(stdout_literals):
+        raise RuntimeError("command stdout sidecars must not be shared between commands")
+    if len(set(exitcode_literals)) != len(exitcode_literals):
+        raise RuntimeError("command exitcode sidecars must not be shared between commands")
+    seen_inodes: set[tuple[object, object]] = set()
+    for resolved in resolved_sidecars:
+        stat = resolved.stat()
+        identity = (stat.st_dev, stat.st_ino)
+        # Platforms that do not expose a stable inode (e.g. some Windows
+        # filesystems report st_ino == 0 for every file) collapse to a single
+        # identity; in that case the literal+digest binding above is the
+        # authoritative cross-binding defence, and this inode check is a
+        # best-effort no-op rather than a false positive.
+        if identity in seen_inodes and identity != (0, 0):
+            raise RuntimeError("command sidecars must not share the same inode")
+        seen_inodes.add(identity)
     # The artifact byte check runs after the per-command semantic checks so
     # that a fabricated-but-self-consistent evidence tree (sidecar bytes,
     # manifests and hashes all rewritten together) is still rejected by the
@@ -690,14 +791,38 @@ def _verify(path: Path) -> None:  # noqa: C901
             raise RuntimeError(f"artifact digest mismatch: {relative}")
     if report.get("artifacts") != artifact_manifest:
         raise RuntimeError("evidence artifact index mismatch")
+    # Fix-5 (re-derive unit summary from the precisely-bound unit stdout):
+    # read the EXACT ``commands/lite-unit-suite.stdout`` bytes (not the
+    # receipt's recorded stdout string, which could be tampered), call the
+    # formal ``_parse_test_summary()`` and compare the re-derived summary with
+    # BOTH the top-level ``lite_unit_summary`` and
+    # ``measurements["lite_unit_summary"]`` field-by-field with strict type +
+    # value equality.  A missing/extra field, a boolean-as-int, a
+    # passed/failed/skipped/deselected count that disagrees with the sealed
+    # stdout, or a top-level-vs-measurement drift is rejected.
+    unit_stdout_path = run_dir / _expected_sidecar_literal("lite-unit-suite", "stdout")
+    if not unit_stdout_path.is_file() or unit_stdout_path.is_symlink():
+        raise RuntimeError("lite-unit-suite stdout sidecar is missing")
+    derived_unit_summary = _parse_test_summary(
+        unit_stdout_path.read_text(encoding="utf-8", errors="strict")
+    )
+    _assert_unit_summary_matches(
+        derived_unit_summary, report.get("lite_unit_summary"), where="lite_unit_summary"
+    )
+    measurements = report.get("measurements")
+    if not isinstance(measurements, dict):
+        raise RuntimeError("measurements are missing")
+    _assert_unit_summary_matches(
+        derived_unit_summary, measurements.get("lite_unit_summary"), where="measurements.lite_unit_summary"
+    )
     # Re-derive every claim from the sealed receipts; a tampered or fabricated
     # report cannot match the executed probe bytes and command vectors.
-    probe_stdout_path = None
-    for item in commands:
-        if item.get("key") == "lite-gate-probes":
-            probe_stdout_path = run_dir / str(item["stdout"])
-            break
-    if probe_stdout_path is None or not probe_stdout_path.is_file():
+    # Fix-3/Fix-6: the probe is re-parsed from the precisely-bound
+    # ``commands/lite-gate-probes.stdout``; ``formal_builder_integration`` and
+    # ``formal_builder_posture_not_integrated`` stay two independent claims
+    # (not_proven only when the probe genuinely reports not_integrated).
+    probe_stdout_path = run_dir / _expected_sidecar_literal("lite-gate-probes", "stdout")
+    if not probe_stdout_path.is_file() or probe_stdout_path.is_symlink():
         raise RuntimeError("probe command receipt is missing")
     probe = _parse_probe(probe_stdout_path.read_text(encoding="utf-8"))
     expected_claims = _derive_claims(probe, commands)
@@ -732,10 +857,64 @@ def _verify(path: Path) -> None:  # noqa: C901
 
 
 def _parse_test_summary(stdout: str) -> dict[str, object]:
-    match = re.search(r"\b(\d+) passed(?:,\s*(\d+) skipped)?", stdout)
-    if match is None:
+    """Parse the focused Lite unit suite pytest summary into a closed dict.
+
+    Captures ``passed``, ``failed``, ``skipped`` and ``deselected`` counts from
+    the pytest summary line, each as a strict ``int`` (so a boolean-as-int
+    cannot sneak through), defaulting absent counters to ``0``.  The Gate
+    writes the same dict into both ``lite_unit_summary`` and
+    ``measurements["lite_unit_summary"]`` during ``--run``; ``--verify-evidence``
+    re-derives it from the precisely-bound ``commands/lite-unit-suite.stdout``
+    bytes and compares every field with strict type+value equality, so any
+    drift (a missing/extra field, a boolean-as-int, or a
+    passed/failed/skipped/deselected count that disagrees with the actual
+    sealed stdout) rejects the evidence.
+    """
+    summary: dict[str, object] = {}
+    for field in ("passed", "failed", "skipped", "deselected"):
+        match = re.search(rf"\b(\d+)\s+{field}\b", stdout)
+        if match is not None:
+            summary[field] = int(match.group(1))
+    if "passed" not in summary:
         raise RuntimeError("P5.4C unit suite summary not found")
-    return {"passed": int(match.group(1)), "skipped": int(match.group(2) or 0)}
+    for field in ("failed", "skipped", "deselected"):
+        summary.setdefault(field, 0)
+    return summary
+
+
+def _assert_unit_summary_matches(
+    derived: dict[str, object], stored: object, *, where: str
+) -> None:
+    """Field-by-field strict comparison of a re-derived unit summary.
+
+    ``derived`` is re-parsed from the precisely-bound
+    ``commands/lite-unit-suite.stdout`` bytes; ``stored`` is the value found in
+    the report (either the top-level ``lite_unit_summary`` or
+    ``measurements["lite_unit_summary"]``).  The comparison rejects a missing
+    summary, a non-dict summary, any missing/extra field, any non-integer
+    value (using ``type(value) is int`` so a JSON ``false``/``true`` boolean
+    cannot masquerade as ``0``/``1``), and any passed/failed/skipped/deselected
+    count that disagrees with the sealed stdout.
+    """
+    if not isinstance(stored, dict):
+        raise RuntimeError(f"{where} is not a JSON object")
+    if set(derived.keys()) != set(stored.keys()):
+        raise RuntimeError(
+            f"{where} fields differ from the re-derived summary: "
+            f"missing={sorted(set(derived.keys()) - set(stored.keys()))} "
+            f"extra={sorted(set(stored.keys()) - set(derived.keys()))}"
+        )
+    for field in ("passed", "failed", "skipped", "deselected"):
+        stored_value = stored.get(field)
+        derived_value = derived.get(field)
+        if type(stored_value) is not int:  # noqa: E721
+            raise RuntimeError(f"{where}.{field} is not a strict integer")
+        if type(derived_value) is not int:  # noqa: E721
+            raise RuntimeError(f"re-derived {where}.{field} is not a strict integer")
+        if stored_value != derived_value:
+            raise RuntimeError(
+                f"{where}.{field} drift: stored={stored_value} re-derived={derived_value}"
+            )
 
 
 def _write_report(
@@ -814,7 +993,7 @@ def _write_report(
             "business_database_accessed": "derived from recorded command vectors",
             "business_database_migrated": "derived from recorded command vectors",
             "migration_head": "discovered from migration directory + typed executor config",
-            "lite_unit_summary": "parsed from pytest receipt",
+            "lite_unit_summary": "parsed from the precisely-bound commands/lite-unit-suite.stdout; re-derived and field-compared against lite_unit_summary and measurements.lite_unit_summary by --verify-evidence",
             "production_runtime_activated": "derived from recorded command vectors",
             "evidence_preserved": "run directory is retained for --verify-evidence",
             "integrity_receipt": "self-contained run-scoped byte-integrity receipt; no external authenticity and no trust anchor",

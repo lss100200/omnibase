@@ -1914,7 +1914,45 @@ closed-set admission decision** that `--run` computed: verifying is not just
 expectation (e.g. `true_on=false`, `invalid_fail_closed=false`,
 `live_posture=false`, `formal_builder_posture_not_integrated=false`, mode
 drift, command-vector drift or exitcode-sidecar drift) must reject the
-evidence. The sealed evidence is a **self-contained integrity receipt**: it
+evidence.
+
+Round-5 hardens the receipt and sidecar binding so a fabricated-but-
+self-consistent evidence tree cannot pass. The verifier requires each
+receipt's `returncode` to be a **strict `int`** (`type(value) is int`, not
+`isinstance(value, int)`) equal to `0`; this rejects JSON `false`/`true`
+(Python `bool`, which `isinstance(value, int)` would wrongly accept because
+`False == 0`), floats like `0.0`, strings like `"0"`, `null`, negative and
+non-zero integers. The command keys must form the **exact closed set**
+(`lite-unit-suite`, `lite-gate-probes`) with no missing, duplicate, extra or
+unknown key and no re-order. Each command key binds its **own** sidecar by
+**exact POSIX path literal**: the receipt's `stdout` path must be exactly
+`commands/{key}.stdout` and its `exitcode` path exactly
+`commands/{key}.exitcode`, compared **before** any filesystem resolution; this
+rejects absolute paths, backslash alternatives, `.`/`..` segments, repeated
+separators, case aliases, URL/drive paths and every lexical alias
+(`commands/../commands/{key}.stdout`, `commands/./{key}.stdout`) so two
+commands cannot share or swap stdout/exitcode artefacts and a unit receipt
+cannot point at the probe's stdout (or vice versa). Only after the literal
+matches does the verifier resolve and check run-dir containment, regular-file,
+non-symlink and digest; symlink sidecars are rejected outright
+(platform-dependent: on platforms without symlink support the test is
+documented as skipped). No two commands may share the same stdout or exitcode
+literal, and the resolved artefacts must have distinct inodes where the
+platform exposes them. Finally, the verifier **re-derives the unit summary**
+from the precisely-bound `commands/lite-unit-suite.stdout` bytes (not the
+receipt's recorded stdout string) by calling the formal
+`_parse_test_summary()`, and compares the re-derived `passed`/`failed`/
+`skipped`/`deselected` counts field-by-field with strict `type(value) is int`
+equality against **both** the top-level `lite_unit_summary` and
+`measurements["lite_unit_summary"]`; a missing/extra field, a boolean-as-int,
+a count that disagrees with the sealed stdout, or a top-level-vs-measurements
+drift rejects the evidence. The probe is re-parsed from the precisely-bound
+`commands/lite-gate-probes.stdout`; `formal_builder_integration =
+not_proven` and `formal_builder_posture_not_integrated = true` stay two
+independent claims, and `integrated`/`enabled`/`available`/`selectable`/
+empty/unknown tokens continue to be recorded verbatim and rejected.
+
+The sealed evidence is a **self-contained integrity receipt**: it
 proves run-scoped byte integrity of the recorded source manifest, command
 receipts and measurements, but without an independent trust anchor it proves
 **no external authenticity** (it cannot authenticate who produced the bytes)

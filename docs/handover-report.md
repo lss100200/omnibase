@@ -3084,6 +3084,81 @@ Lite Gate 仅是工程证据与自包含完整性收据（不证明外部真实�
 
 ---
 
+### P5.4C Lite Agent product loop review-fix Round 5（2026-08-08）
+
+外部 review 对 Round 4 提出新的 fix 清单（本分支普通 forward-fix 提交，
+**未** amend/rebase/reset、**未** push/PR/merge、**未** 读取根 `.env`、**未**
+访问/迁移业务数据库、**未** 创建 migration `0013`、**未** 开启任何 Phase 5
+生产 Feature Gate、**未** 激活生产 Runtime）：
+
+1. **严格退出码类型（fix 1）**：receipt `returncode` 现在要求
+   `type(returncode) is int` 且严格等于 `0`，显式拒绝 JSON `false`/`true`
+   （Python `bool`，`isinstance(value, int)` 会因 `False == 0` 错误接受）、
+   `0.0`、`"0"`、`null`、负数和非零整数。
+2. **command 闭集（fix 2）**：验证器要求 command keys 恰好为
+   `("lite-unit-suite", "lite-gate-probes")`，不得缺失、重复、增加未知 key
+   或乱序。
+3. **sidecar 精确绑定（fix 3）**：每个 command key 的 receipt `stdout`/
+   `exitcode` 路径字面值必须在 resolve 之前精确等于
+   `commands/{key}.stdout` / `commands/{key}.exitcode`；拒绝绝对路径、反斜杠
+   替代、`.`/`..`、重复分隔符、大小写别名、URL/drive 路径和任何 lexical
+   alias（`commands/../commands/{key}.stdout`、`commands/./{key}.stdout`）。
+   resolve 后仍检查 run-dir containment、普通文件、非 symlink 并校验 digest；
+   symlink sidecar 直接拒绝（平台不支持时测试标记 skipped）。
+4. **禁止交叉绑定（fix 4）**：两个 command 不得交换 stdout/exitcode/digest；
+   `lite-unit-suite` 不得指向 probe artifact，probe 不得指向 unit artifact；
+   相同 stdout/exitcode 字面值或相同 inode 被多个 command 共用也必须拒绝。
+5. **重新推导 unit 摘要（fix 5）**：从精确绑定的 `commands/lite-unit-suite.stdout`
+   读取 UTF-8 文本，调用正式 `_parse_test_summary()`（现在捕获
+   passed/failed/skipped/deselected，各为严格 `int`）；将推导结果同时与顶层
+   `lite_unit_summary`、`measurements["lite_unit_summary"]` 逐字段严格比较
+   （`type(value) is int`）。缺失/额外字段、boolean-as-int、passed/failed/
+   skipped/deselected 数值漂移、顶层与 measurements 互相漂移全部拒绝。
+6. **probe 语义保持严格（fix 6）**：继续从精确绑定的 probe stdout 重新解析
+   posture；`formal_builder_integration=not_proven` 与
+   `formal_builder_posture_not_integrated=true` 继续作为独立 claim；
+   integrated/enabled/available/selectable/空值/未知 token 继续拒绝。
+7. **Round 4 边界不回退（fix 7）**：SOURCE_FILES/source-manifest closure、
+   Compose/front-end helper 封存、精确 command template、显式 `.env.example`、
+   production flags 关闭、admission closed set、run-scoped byte integrity、旧
+   evidence 保留、seal digest 链均未回退。
+8. **新不可变 evidence（fix 8）**：保留所有既有 runs 字节不变，把 Round 4
+   最新 run `20260808T013438760017Z-d93e5f01d4a4` 标记为
+   superseded/incomplete（replacement 指向 Round 5 新 run）；从新 clean committed
+   HEAD 正式执行 `--run` 生成全新 immutable run-scoped evidence，再执行官方
+   `--verify-evidence`（PASS）。
+9. **文档与 seal 链重算（fix 9）**：更新 security-invariants（INV-051）、
+   ai-maintainer-map（6.15）、phase-5-lite-agent-product-loop、handover；
+   按依赖顺序重算 P5.1A → P5.2A → P5.3A 引用链（P5.0/P5.1A/P5.2A/P5.3A
+   verifiers 不引用 P5.4C 文档，digest 不受影响）；P5.4C source manifest digest
+   由 `--run` 从最终 clean commit 重算并封存。
+
+强制攻击反例（全部被拒绝，`backend/tests/test_p5_4c_lite_agent_product_gate.py`
+新增 114 passed，含 Round-5 attack matrix）：receipt `returncode=false/true/
+0.0/"0"/null/-1/1`；unit/probe stdout 交叉绑定；unit/probe exitcode 交叉绑定；
+`commands/../commands/{key}.stdout`；`commands/./{key}.stdout`；反斜杠/绝对
+路径 alias；unit receipt 指向 probe stdout 且伪造 digest；两个 command 绑定
+同一 stdout/exitcode；修改 unit stdout summary 后仅重新封装 evidence；
+只修改顶层 `lite_unit_summary`；只修改 `measurements.lite_unit_summary`；
+顶层与 measurements 一致但与 unit stdout 推导值不一致；symlink sidecar
+（平台支持时拒绝，不支持时 skipped）；command key 重复/未知；boolean-as-int
+summary；summary 缺失/额外字段。正向控制：合法 synthetic run 仍通过
+`--verify-evidence`。
+
+本轮执行证据：容器内（Docker server 29.6.2，`--env-file .env.example` +
+完整仓库挂载 `-v .:/workspace -w /workspace/backend`）
+`test_p5_4c_lite_agent_product_gate.py` 114 passed +
+`test_p5_4c_lite_gate.py` + `test_agent_alpha_engineering.py` 61 passed
+focused PASS。production Runtime 继续 disabled，Phase 5 Feature Gates 保持
+false，migration head `0012`，migration `0013` absent，root `.env` 未读取，
+业务数据库未访问/迁移，未 push/PR/merge。Production 状态继续为
+`blocked/not_proven`；P5.4C disposable Lite Gate 仅是工程证据与自包含完整性
+收据（不证明外部真实性），`formal_builder_integration=not_proven` +
+`formal_builder_posture_not_integrated=true`（probe 诚实记录），不声称正式
+组合集成。
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、

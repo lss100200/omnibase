@@ -1407,7 +1407,27 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
   (explicit `.env.example`, closed production flags, exact test target) and
   strictly parses every `commands/*.exitcode` sidecar (exactly one decimal
   exit code equal to the receipt `returncode`; non-integer, multi-line,
-  missing and 0/1-drifted sidecars are rejected). The sealed evidence is a
+  missing and 0/1-drifted sidecars are rejected). Round-5 additionally
+  requires each receipt's `returncode` to be a **strict `int`**
+  (`type(value) is int`, rejecting JSON `false`/`true`, `0.0`, `"0"`, `null`,
+  negative and non-zero integers, since `isinstance(value, int)` would wrongly
+  accept `bool` because `False == 0`); the command keys to form the **exact
+  closed set** with no missing/duplicate/extra/unknown key; each key to bind
+  its **own** sidecar by **exact POSIX path literal**
+  (`commands/{key}.stdout` / `commands/{key}.exitcode`, compared before any
+  resolve, rejecting absolute/backslash/`.`/`..`/repeated-separator/case/URL/
+  drive aliases and every lexical alias so two commands cannot share or swap
+  stdout/exitcode and a unit receipt cannot point at the probe stdout); symlink
+  sidecars to be rejected; no two commands to share a stdout/exitcode literal
+  or inode; and the **unit summary** to be **re-derived** from the
+  precisely-bound `commands/lite-unit-suite.stdout` bytes and compared
+  field-by-field (`passed`/`failed`/`skipped`/`deselected`, strict
+  `type(value) is int`) against both the top-level `lite_unit_summary` and
+  `measurements["lite_unit_summary"]`, so a missing/extra field, a
+  boolean-as-int, a count that disagrees with the sealed stdout, or a
+  top-level-vs-measurements drift rejects the evidence. The probe is
+  re-parsed from the precisely-bound `commands/lite-gate-probes.stdout` and
+  the two formal-builder claims stay independent. The sealed evidence is a
   **self-contained integrity receipt** only: run-scoped byte integrity, never
   external authenticity, no independent trust anchor, never production
   admission. The Gate never reads the root `.env`, never touches a business

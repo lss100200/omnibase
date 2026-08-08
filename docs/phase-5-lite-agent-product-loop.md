@@ -151,6 +151,43 @@ run-scoped, engineering-only disposable Gate with three modes:
   `formal_builder_posture_not_integrated=false`, mode drift or command-vector
   drift) reject the evidence instead of verifying it.
 
+  Round-5 additionally hardens the receipt and sidecar binding so a
+  fabricated-but-self-consistent evidence tree cannot pass:
+
+  - **Strict exit-code type**: each receipt's `returncode` must be a strict
+    `int` (`type(value) is int`, not `isinstance`) equal to `0`; JSON
+    `false`/`true` (`bool`, which `isinstance(value, int)` would wrongly
+    accept because `False == 0`), `0.0`, `"0"`, `null`, negative and non-zero
+    integers are rejected.
+  - **Command closed set**: the command keys must be exactly
+    (`lite-unit-suite`, `lite-gate-probes`) with no missing, duplicate, extra,
+    unknown or re-ordered key.
+  - **Sidecar precise binding**: each key binds its own sidecar by exact POSIX
+    path literal (`commands/{key}.stdout` / `commands/{key}.exitcode`), compared
+    before any resolve — absolute/backslash/`.`/`..`/repeated-separator/case/
+    URL/drive aliases and every lexical alias
+    (`commands/../commands/{key}.stdout`) are rejected, so two commands cannot
+    share or swap stdout/exitcode and a unit receipt cannot point at the probe
+    stdout (or vice versa). Symlink sidecars are rejected outright
+    (platform-dependent; skipped where symlinks are unsupported).
+  - **Cross-binding rejection**: no two commands may share a stdout or exitcode
+    literal, and the resolved artefacts must have distinct inodes where the
+    platform exposes them.
+  - **Unit-summary re-derivation**: the verifier re-derives the
+    `passed`/`failed`/`skipped`/`deselected` summary from the precisely-bound
+    `commands/lite-unit-suite.stdout` bytes (not the receipt's recorded
+    string), and compares it field-by-field with strict `type(value) is int`
+    equality against **both** the top-level `lite_unit_summary` and
+    `measurements["lite_unit_summary"]`; a missing/extra field, a
+    boolean-as-int, a count that disagrees with the sealed stdout, or a
+    top-level-vs-measurements drift rejects the evidence.
+  - **Probe semantics stay strict**: the probe is re-parsed from the
+    precisely-bound `commands/lite-gate-probes.stdout`;
+    `formal_builder_integration = not_proven` and
+    `formal_builder_posture_not_integrated = true` stay two independent claims;
+    `integrated`/`enabled`/`available`/`selectable`/empty/unknown tokens
+    continue to be recorded verbatim and rejected.
+
 Every claim in the report is **derived from an executed receipt or a sealed
 file measurement** — nothing is hardcoded as a measurement:
 
