@@ -650,6 +650,24 @@
       "test_paths": [
         "backend/tests/test_p5_6a_skill_contract.py"
       ]
+    },
+    {
+      "id": "INV-052",
+      "title": "Desktop diagnostics redact secrets recursively and capability facts carry provenance",
+      "document": "docs/maintainers/security-invariants.md#inv-052-desktop-diagnostics-redaction",
+      "source_paths": [
+        "backend/src/omnibase/runtime/diagnostics.py",
+        "backend/src/omnibase/runtime/capabilities.py",
+        "backend/src/omnibase/runtime/lifecycle.py",
+        "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
+        "backend/tests/test_runtime_capabilities.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
+        "backend/tests/test_runtime_capabilities.py"
+      ]
     }
   ],
   "modules": [
@@ -2510,6 +2528,64 @@
         "Follow docs/runbooks/postgresql-backup-restore.md and verify the new database before cutover.",
         "Do not weaken sentinel names, disposable Compose project guards, or cleanup confirmation words.",
         "Never run bare docker compose config --format json from the repository root; use --env-file .env.example so the root .env is neither read nor expanded into diagnostics."
+      ]
+    },
+    {
+      "id": "desktop-runtime",
+      "name": "Cross-platform desktop runtime and RAG performance profiles",
+      "source_paths": [
+        "backend/src/omnibase/runtime/**",
+        "backend/src/omnibase/rag/performance.py",
+        "backend/tests/test_runtime_capabilities.py",
+        "backend/tests/test_runtime_redaction_attacks.py",
+        "backend/tests/test_runtime_lifecycle.py",
+        "backend/tests/test_rag_performance.py",
+        "scripts/runtime/omnibase_desktop.py",
+        "docs/desktop-runtime.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/runtime/capabilities.py:probe_capabilities",
+        "backend/src/omnibase/runtime/capabilities.py:resolve_engine_resolution",
+        "backend/src/omnibase/runtime/capabilities.py:verify_executable_identity",
+        "backend/src/omnibase/runtime/diagnostics.py:redact_mapping",
+        "backend/src/omnibase/runtime/diagnostics.py:diagnostics_json",
+        "backend/src/omnibase/runtime/lifecycle.py:start",
+        "backend/src/omnibase/runtime/lifecycle.py:status",
+        "backend/src/omnibase/runtime/lifecycle.py:health",
+        "backend/src/omnibase/runtime/lifecycle.py:logs",
+        "backend/src/omnibase/runtime/lifecycle.py:stop",
+        "scripts/runtime/omnibase_desktop.py:main"
+      ],
+      "public_interfaces": [
+        "Provider-neutral host capability report with provenance and evidence state",
+        "Recursive, bounded, deterministic secret redaction for diagnostics payloads",
+        "Allowlisted, argument-array-only desktop lifecycle verbs over Compose with --env-file .env.example",
+        "Bounded CPU/CUDA/MPS RAG performance profiles with explicit fallback_rrf"
+      ],
+      "depends_on": [
+        "runtime-composition"
+      ],
+      "invariants": [
+        "INV-052"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_runtime_capabilities.py tests/test_runtime_redaction_attacks.py tests/test_runtime_lifecycle.py tests/test_rag_performance.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/runtime src/omnibase/rag/performance.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/runtime src/omnibase/rag/performance.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/runtime src/omnibase/rag/performance.py",
+        "docker compose --env-file .env.example run --rm --no-deps -e PYTHONPATH=/workspace/backend/src -v .:/workspace -w /workspace backend python scripts/runtime/omnibase_desktop.py doctor",
+        "docker compose --env-file .env.example run --rm --no-deps -e PYTHONPATH=/workspace/backend/src -v .:/workspace -w /workspace backend python scripts/runtime/omnibase_desktop.py start --profile hardened",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Never treat Docker/Podman/WSL/Hyper-V presence or a hostname as hostile-code isolation or network evidence.",
+        "Keep Hardened mode fail-closed and blocked/not_proven unless independently sealed Runner/Broker/Gateway evidence is injected and verified.",
+        "Never expand root .env; always pass --env-file .env.example to Compose and route all status/health/log output through the diagnostic redactor.",
+        "Keep the capability probe and lifecycle on the single resolve_engine_resolution contract; never infer Compose Local from shutil.which alone — only an exit-0 bounded shell=False `docker compose version` / `podman compose version` probe (stdout/stderr discarded to DEVNULL so a replaced executable cannot exhaust memory) declares the compose provider verified, and executable_detected / compose_provider_verified / local_mode_available stay distinct facts. A Podman-only host must either execute the controlled podman compose --env-file .env.example path or never claim Local available.",
+        "The lifecycle must use the canonical absolute path of the verified executable captured at probe time as argv[0] and re-verify its stable stat identity (dev/ino/size/mtime/ctime + symlink flag) before building any Compose command; it must never re-resolve PATH via shutil.which, so a TOCTOU that swaps the which result after probe time cannot redirect execution. Deletion, replacement, symlink/reparse drift or any stat change must fail closed (container_engine_identity_drift) before any subprocess is attempted.",
+        "Subprocess output must be bounded DURING reading with independent per-stream and combined-total byte caps and a terminated-on-exceed process; it must never buffer an unbounded stream into memory or a temp file first and then truncate. Timeout and byte caps are two independent constraints and both must have negative tests.",
+        "The redactor must use acronym-aware case tokenization (lower/digit->upper AND acronym->CapitalizedWord), consume confirmed sensitive Header values to the physical line end (no {/}/;/quote/comma early-stop), use an escape-aware quoted scanner (a quote terminates only when the preceding backslash run is even), and a deterministic inline flag state machine that preserves allowlisted --name=value / sensitive --name=value structures and redacts plain dash-prefixed value slots."
       ]
     }
   ]

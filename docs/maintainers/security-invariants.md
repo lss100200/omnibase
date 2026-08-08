@@ -2258,3 +2258,228 @@ If the contract, Git source, migration head or example manifest drifts, stop
 admission and restore the last reviewed compile-only contract or forward-fix it
 in a new commit. Keep every Phase 5 Feature Gate false. Do not create a database
 rollback or runtime fallback: P5.6A has no database and executes no Skill.
+
+## INV-052 desktop-diagnostics-redaction
+
+**Authoritative source**
+
+- `backend/src/omnibase/runtime/diagnostics.py`
+- `backend/src/omnibase/runtime/capabilities.py`
+- `backend/src/omnibase/runtime/lifecycle.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_lifecycle.py`
+
+**Why it exists**
+
+The desktop diagnostics redactor is the privacy boundary between operator
+support bundles and secrets. It must redact secrets recursively through
+mappings, lists and tuples, match sensitive keys case-insensitively
+(authorization, cookie/set-cookie, api key/token/secret/password/private-key/
+credential variants and repository-specific provider credential names), bound
+depth/collection size/rendered string length, and handle cycles deterministically
+without recursion crashes or leaking cycle contents. The public payload must stay
+JSON-serializable and deterministic, and the typed signature must never forward
+untyped `*args/**kwargs` into the payload builder.
+
+The sensitive-name policy is a **normalized token/full-field closed set plus a
+bounded `_`-delimited suffix policy with no arbitrary substring matching**:
+`monkey`, `keyboard_layout`, `design` and `session_count` are preserved while
+`api_key`, `access_token`, `signature`, `session_token` and provider variants
+are redacted. Keys are tokenized at **acronym-aware** case boundaries: both
+lower/digit -> upper (`stripeA` -> `stripe_A`) and the end of an all-caps
+acronym run before a Capitalized word (`APIKey` -> `API_Key`), so
+`stripeAPIKey` -> `stripe_api_key`, `OPENAIApiKey` -> `openai_api_key`,
+`openAIApiKey` -> `open_ai_api_key`, `azureADAccessToken` ->
+`azure_ad_access_token`, `myTOKEN` -> `my_token`, `providerPASSWORD` ->
+`provider_password` and `xAPIKey` -> `x_api_key` are redacted while non-secret
+controls (`sortKey`, `cacheID`, `apiVersion`, `foreignKey`, `keyboardLayout`,
+`monkey`) are preserved. The `_key` suffix rule is **narrow**: `sort_key`,
+`cache_key`, `foreign_key`, `keyboard_layout` and `monkey` are PRESERVED while
+`api_key`, `secret_key`, `access_key`, `signing_key`, `private_key`,
+`encryption_key` and provider variants are REDACTED.
+
+Scalar strings must additionally pass through a bounded, deterministic line
+tokenizer that removes credentials from common structures **without relying on
+keyword-bearing samples**: URI/DSN userinfo passwords for any scheme
+(`scheme://user:password@host`), sensitive query keys and fragments (`key`,
+`api_key`, `token`, `access_token`, `signature`, `sig`, `credential`,
+`password` and provider variants), `NAME=value` assignments, CLI
+`--name=value` forms, `Name: value` headers and quoted JSON-ish log lines, all
+with the same normalized sensitive-name policy. **Any bounded horizontal
+whitespace** around separators is recognized (`NAME = value`, `--name =
+value`, `Name : value`), so "more than 8 spaces means pass-through" must never
+hold; parser state beyond the bounded horizontal-whitespace limit fails
+closed as a whole `[REDACTED]` item. **Quoted assignment values are consumed
+completely** through the closing quote (`OPENAI_API_KEY = "q7x9opaque
+rest8v"` keeps neither the tail nor the quotes); the quoted scanner is
+**escape-aware** — a quote terminates the value only when the preceding run of
+backslashes is even, so `\\` (escaped backslash) and escaped quotes inside
+the value (`OPENAI_API_KEY="q7x9\"rest8v"`) never leave a secret tail; an
+unterminated, over-long or state-uncertain quoted value fails closed as a
+whole item. **Once a sensitive Header is confirmed, the entire Header value
+is consumed to the physical line end** — `{`, `}`, `;`, quotes, commas and
+whitespace are NOT early-stop boundaries, so `Authorization: q7x9{rest8v}`,
+`Authorization: q7x9}rest8v}` and `X-Api-Key: q7x9;rest8v,more` never keep a
+tail (a JSON right-brace is sacrificed rather than risking a secret tail).
+Sequences additionally redact **cross-element CLI argument pairs** through an
+explicit, deterministic inline-flag state machine: a sensitive flag element
+such as `--api-key` redacts the following array element as one whole item
+(`["--api-key", "SECRET"]`) **even when that value starts with `-` or `--`**
+(`["--api-key", "--q7x9opaque"]`, `["--token", "-opaque"]`,
+`["--password", "--"]`); a sensitive flag with no value fails closed on its
+own, and a following element that deterministically belongs to another
+allowlisted flag — including its inline `--name=value` form
+(`--profile=lite`, `--service=backend`) or a sensitive inline flag
+(`--token=value`) that belongs to its own structure — is never swallowed —
+the flag has no value there and is redacted itself while the other flag's
+structure is preserved (`["--api-key", "--profile=lite"]` ->
+`["[REDACTED]", "--profile=lite"]`, `["--api-key", "--token=value"]` ->
+`["[REDACTED]", "--token=[REDACTED]"]`); unknown or ambiguous state fails
+closed.
+Provider-key shapes are covered through the value of a sensitive name, never
+through guessing secret prefixes. All parsing is bounded and linear (no
+nested or unbounded quantifiers, no catastrophic backtracking). Sensitive
+Header/JSON/assignment values that exceed the single-item parse limit **fail
+closed as a whole item**: the entire item is replaced with `[REDACTED]`, never
+a truncated prefix that would leak the tail. `LifecycleResult` stdout/stderr,
+status/health/log text, exception text and serialized diagnostics all pass
+through this protection.
+
+Capability facts must carry provenance and an evidence state. A hostname is not
+network evidence; Docker/Podman/WSL/Hyper-V executable presence is not
+hostile-code isolation proof; and Hardened mode stays fail-closed and
+`blocked/not_proven` unless independently sealed Runner/Broker/Gateway evidence
+is injected and verified. The capability probe and the lifecycle wrapper share
+**one container-engine resolution contract** (`resolve_engine_resolution`:
+Docker first, then Podman, then `none`) that **never infers Compose Local
+capability from `shutil.which` alone**: each candidate runs a bounded,
+`shell=False`, short-timeout probe of `docker compose version` /
+`podman compose version` whose stdout/stderr are discarded to `DEVNULL` (the
+probe needs only the exit code, so a replaced or malicious executable cannot
+exhaust memory by streaming huge output before exit), and **only exit 0
+declares the compose provider verified**. The probe captures the canonical
+absolute path and a stable file identity (stat dev/ino/size/mtime/ctime +
+symlink flag) of the verified executable; the lifecycle uses that path as
+`argv[0]` and **re-verifies the identity before building any Compose command**,
+never re-resolving `PATH` via `shutil.which`, so a TOCTOU that swaps the
+`which` result after probe time cannot redirect execution. Deletion,
+replacement, symlink/reparse drift or any stat change fails closed
+(`container_engine_identity_drift`) before any subprocess. The report
+distinguishes `executable_detected` (which presence only),
+`compose_provider_verified` (exit-0 probe) and `local_mode_available` (only
+when a provider is verified); a Podman executable without a verified compose
+provider is reported as `detected`/`not_proven` and Local is never claimed.
+The negative matrix covers Docker-only, Podman-only, both present with
+compose failing, timeout, not-found, neither present, TOCTOU
+trusted-path→replacement-`which`, verified-executable deletion/replacement/
+identity drift, and compose-version/probe output overflow, on both the probe
+and the lifecycle sides. Subprocess output is bounded **during reading** with
+independent per-stream and combined-total byte caps and a
+terminated-on-exceed process (never buffered unbounded into memory or a temp
+file first and then truncated); timeout and byte caps are two independent
+constraints. Evidence from one host is never generalized to another platform.
+
+**Allowed changes**
+
+- Tighten redaction key tokens/suffixes, bounds, deterministic markers or the
+  evidence/provenance vocabulary.
+- Add attack tests for nested sequences, mixed case, bearer/basic credentials,
+  URLs, DSNs, multiline exceptions, cycles, excessive depth/width and oversized
+  strings, cross-element CLI argument pairs (including dash-prefixed value
+  slots such as `["--api-key", "--q7x9opaque"]` and the allowlisted-flag
+  not-swallowed cases), inline `--name=value` flag structures (allowlisted
+  `--profile=lite`/`--service=backend` preserved and sensitive
+  `--token=value` redacted on its own), wide bounded-whitespace assignment
+  forms, quoted assignment values, escaped quotes/backslashes, unterminated
+  quotes, header values with `{`/`}`/`;`/comma tails consumed to the physical
+  line end, acronym-aware camelCase tokens (`stripeAPIKey`, `OPENAIApiKey`,
+  `openAIApiKey`, `azureADAccessToken`, `myTOKEN`, `providerPASSWORD`,
+  `xAPIKey`) and the narrowed `_key` suffix rule, asserting forbidden markers
+  are absent from structured output and serialized JSON.
+  Attack samples must include opaque secrets that contain no token/secret/
+  password keyword (URI userinfo, DSN userinfo, sensitive query keys/fragments,
+  `NAME=value`, CLI `--name=value` / `--name value`, `Name: value` headers and
+  JSON-ish log lines) and must assert absence from both structured results and
+  serialized JSON.
+- Add focused lifecycle tests that mock the subprocess boundary and prove exact
+  argument arrays with explicit `--env-file .env.example` for every verb, no
+  shell invocation, profile/service/verb allowlists, Hardened rejection,
+  timeout and executable-not-found behavior, bounded/redacted stdout and
+  stderr, start bind-failure propagation, `logs --tail` bounds, status/health
+  failure behavior, Windows path handling without command injection, that the
+  root `.env` is never selected, the container-engine resolution matrix
+  (Docker-only, Podman-only, both present with compose failing, timeout,
+  not-found, neither present), the verified-absolute-path `argv[0]`/no-`which`
+  TOCTOU defense, identity-drift/deleted/replaced rejection, and per-stream/
+  total byte-cap truncation during reading, on both the probe and lifecycle
+  sides.
+- Extend lifecycle verbs only through the allowlisted Compose argument-array
+  wrapper with explicit `--env-file .env.example` and the shared
+  `resolve_engine_resolution` contract.
+- Tighten the engine probe (shorter timeout, explicit stdout/stderr bounding,
+  per-engine probe records) as long as only exit 0 of the bounded
+  `docker compose version` / `podman compose version` probe declares Compose
+  Local available and `executable_detected` / `compose_provider_verified` /
+  `local_mode_available` remain distinct facts, and the lifecycle uses the
+  verified canonical absolute path as `argv[0]` with identity re-verification
+  and byte-bounded output read during reading.
+
+**Forbidden changes**
+
+- Returning secrets embedded in nested sequences, exception representations,
+  command arguments, environment values, URLs/query strings, headers or
+  connection strings, or leaking a truncated prefix of an oversized sensitive
+  item while leaving its tail visible.
+- Matching sensitive names by arbitrary substring (which would redact `monkey`,
+  `keyboard_layout`, `design` or `session_count`), or keeping a generic `_key`
+  suffix rule that would redact `sort_key`, `cache_key` or `foreign_key`.
+- Letting "more than 8 spaces means pass-through" escape: bounded horizontal
+  whitespace around `=` / `:` separators must be recognized up to the bound,
+  and over-limit parser state must fail closed as a whole item.
+- Retaining the tail of a quoted assignment value (including after an escaped
+  quote that was wrongly treated as a closing quote) or of a confirmed
+  sensitive Header (a `{`/`}`/`;`/quote/comma stopping the value early, or
+  preserving a JSON right-brace at the cost of leaking a secret tail).
+- Tokenizing only at lower/digit -> upper boundaries and missing the
+  acronym -> Capitalized word boundary (so `stripeAPIKey` / `OPENAIApiKey`
+  never become `stripe_api_key` / `openai_api_key` and leak).
+- Swallowing an entire following structure that deterministically belongs to
+  another allowlisted flag (including its inline `--name=value` form) or to a
+  sensitive inline flag's own structure, or leaving a sensitive flag's
+  dash-prefixed value slot visible.
+- Inferring network availability from hostname, or claiming Hardened/Local
+  capability from executable presence alone (`shutil.which` is never a compose
+  provider probe), or letting the probe and lifecycle resolve container
+  engines from different contracts, or declaring Compose Local available
+  without an exit-0 bounded `compose version` probe.
+- Re-resolving `PATH` via `shutil.which` in the lifecycle after probe time
+  (a TOCTOU that swaps the `which` result could redirect execution), skipping
+  identity re-verification, or using a bare engine name as `argv[0]`.
+- Buffering subprocess output unbounded into memory or a temp file and then
+  truncating to claim bounded output, or treating timeout as the only output
+  bound.
+- Building shell command strings from user input, exposing arbitrary command
+  execution, or running Compose without `--env-file .env.example`.
+- Creating migration `0013`, activating production Runtime, or opening any
+  Phase 5 Feature Gate from desktop diagnostics or lifecycle behavior.
+
+**Required verification**
+
+- `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_lifecycle.py`
+- `backend/tests/test_rag_performance.py`
+- Focused Ruff check/format and Mypy for `backend/src/omnibase/runtime/**` and
+  `backend/src/omnibase/rag/performance.py`
+- `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
+- CLI negative test: `start --profile hardened` must be rejected
+- Maintainer map and benchmark validators
+- Compose config with explicit `.env.example`
+
+**Recovery**
+
+If redaction leaks a secret or a capability fact over-claims from executable
+presence, stop use of the diagnostics bundle, fix the redactor/detector in a
+new commit, and re-run the attack matrix. Keep Hardened `blocked/not_proven`
+and every Phase 5 Feature Gate false.

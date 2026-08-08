@@ -650,6 +650,103 @@ router、Agent Runtime、Planner/Executor/scheduler/worker、模型/工具调用
   Model Gateway 与无工具 Alpha 是另行授权的 engineering modules。生产
   Runtime、Planner/Executor/scheduler/worker、工具与多 Agent 仍 frozen。
 
+### 6.12 桌面运行时、诊断与 RAG 性能 profile（INV-052）
+
+`backend/src/omnibase/runtime/**` 提供 provider-neutral 的本地宿主能力
+contract（`capabilities.py`：OS/arch/memory/disk/GPU/container engine/
+network/ports，全部携带 `EvidenceState` provenance）、递归有界脱敏诊断
+（`diagnostics.py`：mapping/list/tuple 递归 redact、大小写不敏感敏感键、
+depth/width/string 上限、cycle 确定性标记、JSON 确定性与类型化签名）与
+allowlisted Compose 生命周期包装（`lifecycle.py`：
+`doctor/ports/start/status/health/logs/stop`，只传参数数组并显式
+`--env-file .env.example`，绝不拼接 shell 字符串）。
+`backend/src/omnibase/rag/performance.py` 提供有界 CPU/CUDA/MPS profile，
+embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
+`fallback_rrf`。`scripts/runtime/omnibase_desktop.py` 是对应 CLI。
+
+- 硬性边界：hostname 不是网络证据；Docker/Podman/WSL/Hyper-V 可执行文件
+  存在不是 hostile-code isolation 证明；Hardened 模式始终
+  `blocked/not_proven`，除非独立 sealed Runner/Broker/Gateway 证据链被注入
+  并验证。桌面 wrapper 永不声称 Hardened start 支持。
+- **容器引擎共享契约**：capability probe 与 lifecycle 使用同一个
+  `resolve_engine_resolution()`（Docker 优先、其次 Podman、都没有则为
+  `none`），并且 **绝不只凭 `shutil.which` 推断 Compose Local 能力**：每个
+  候选执行有界、`shell=False`、短超时且 stdout/stderr 定向到 `DEVNULL`
+  的 `docker compose version` / `podman compose version` 探针（探针只需 exit
+  code，DEVNULL 使被替换的可执行文件无法靠退出前海量输出耗尽内存），
+  **只有 exit 0 才声明 compose provider 已验证**。探针记录已验证可执行文件
+  的规范绝对路径与稳定 stat 身份（dev/ino/size/mtime/ctime + symlink 标志）；
+  lifecycle 以该路径作为 `argv[0]` 并在构建任何 Compose 命令前**重新验证
+  身份**，绝不再次 `shutil.which` 解析 PATH，因此探针后 `which` 结果被替换的
+  TOCTOU 无法重定向执行。删除、替换、symlink/reparse drift 或任何 stat 变化
+  都 fail-closed `container_engine_identity_drift`（subprocess 前拒绝）。
+  报告区分 `executable_detected`（仅有可执行文件）、
+  `compose_provider_verified`（exit-0 探针）与 `local_mode_available`（仅在
+  provider 验证后）；Podman 可执行文件存在但 compose provider 缺失时报告
+  `detected`/`not_proven` 且绝不 claim Local。只有 Podman 时 Local 之所以被
+  claim，是因为 lifecycle 确实执行受控
+  `podman compose --env-file .env.example -f docker-compose.yml` 参数数组
+  路径；两个引擎都没有或探针失败时 fail-closed `container_engine_not_found`
+  （subprocess 前拒绝，Local 绝不 claim）。subprocess 输出**在读取期间**有界
+  （每流 64 KiB、合计 128 KiB，超限即终止进程并标记 truncated，绝不先无限
+  缓冲到内存或临时文件再截断）；timeout 与 byte cap 是两个独立约束。
+  负向矩阵覆盖 Docker-only / Podman-only / 两者都存在但 compose 失败 /
+  timeout / not-found / 两者都不存在 / trusted-path→replacement-`which` TOCTOU
+  / 已验证可执行文件删除/替换/identity drift / compose-version 输出超限，在
+  probe 与 lifecycle 两侧都有测试。
+- 脱敏边界：sensitive name policy 是 **normalized token/full-field 闭集 +
+  有界 `_` 后缀策略，禁止任意 substring 匹配**——`monkey`、
+  `keyboard_layout`、`design`、`session_count` 保留，`api_key`、
+  `access_token`、`signature`、`session_token` 及 provider 变体脱敏；
+  cased 键在**acronym-aware** 大小写边界分词（同时处理 lower/digit→upper 与
+  acronym→CapitalizedWord 边界：`stripeAPIKey`→`stripe_api_key`、
+  `OPENAIApiKey`→`openai_api_key`、`openAIApiKey`→`open_ai_api_key`、
+  `azureADAccessToken`→`azure_ad_access_token`、`myTOKEN`→`my_token`、
+  `providerPASSWORD`→`provider_password`、`xAPIKey`→`x_api_key`）；`_key` 后缀
+  **收窄**：`sort_key`/`cache_key`/`foreign_key`/`keyboard_layout`/`monkey`
+  保留，`api_key`/`secret_key`/`access_key`/`signing_key`/`private_key`/
+  `encryption_key` 脱敏。嵌套 sequence 内的 secret 必须替换；sequence 内
+  **跨元素 CLI 参数对**用显式确定性 inline-flag state machine：敏感 flag
+  把紧跟的元素整体脱敏（`["--api-key", "SECRET"]`），**即使该值以 `-` 或
+  `--` 开头**（`["--api-key", "--q7x9opaque"]`、`["--token", "-opaque"]`、
+  `["--password", "--"]`）；无值的敏感 flag 自身 fail-closed；紧跟元素确定
+  性属于另一个 allowlisted flag——包括其 inline `--name=value` 形式
+  （`--profile=lite`/`--service=backend`）或属于自身结构的敏感 inline flag
+  （`--token=value`）——时绝不吞并该结构
+  （`["--api-key", "--profile=lite"]`→`["[REDACTED]", "--profile=lite"]`、
+  `["--api-key", "--token=value"]`→`["[REDACTED]", "--token=[REDACTED]"]`）；
+  未知或歧义状态 fail-closed。分隔符两侧
+  **任意有界水平空白**形式（`NAME = value`、`--name = value`、
+  `Name : value`）均解析（“超过 8 个空格即放行”必须不成立），超过有界
+  空白上限的 parser state 整项 fail-closed；**带引号的赋值值完整消费**
+  （`OPENAI_API_KEY = "q7x9opaque rest8v"` 不留 tail 也不留引号），引号扫描
+  **escape-aware**（仅在前面连续反斜杠为偶数时终止，`\\` 与转义引号不留
+  tail），未闭合/超长/状态不确定的引号整项 fail-closed；**确认敏感 Header
+  后整个 value 消费到物理行尾**（`{`/`}`/`;`/引号/逗号/空白均非提前停止边界，
+  `Authorization: q7x9{rest8v}`、`Authorization: q7x9}rest8v}`、
+  `X-Api-Key: q7x9;rest8v,more` 不留 tail；为保留 JSON 右花括号而泄漏 secret
+  不成立）；异常文本/
+  命令行/env/URL/DSN 中的凭据不得泄漏；超出深度/宽度/长度用确定性 marker
+  而非递归或泄漏。**敏感 Header/JSON/assignment 的 value 超过单项解析上限
+  时整项 fail-closed 为 `[REDACTED]`，绝不只截断前 512 字符而泄漏尾部。**
+  字符串值经过有界、确定性的行级 parser（URI/DSN userinfo、敏感 query
+  key/fragment、`NAME=value`、CLI `--name=value`、`Name: value` header、
+  JSON-ish log line），opaque secret（不含 token/secret/password 关键字）
+  也按结构化位置脱敏，不依赖关键字或 secret 前缀猜测；解析全部线性有界，
+  禁止灾难性回溯。攻击测试矩阵见
+  `backend/tests/test_runtime_redaction_attacks.py`；生命周期 wrapper 的
+  focused 测试（精确参数数组与 `--env-file .env.example`、无 shell、
+  allowlist、Hardened 拒绝、timeout/可执行文件缺失、有界脱敏输出、bind
+  failure 传播、`logs --tail` 上限、status/health 失败行为、Windows 路径
+  无注入、根 `.env` 永不选中、容器引擎探针负向矩阵）见
+  `backend/tests/test_runtime_lifecycle.py`。
+- 平台证据矩阵：只有当前实测 host 标记 detected；Windows/macOS/Linux、
+  x86_64/ARM64、NVIDIA/MPS 与容器变体未在本机运行的一律 `not_proven`。
+- 维护者 map 模块 `desktop-runtime`（INV-052）与验证命令见
+  `docs/maintainers/maintenance-map.json`；本机 CLI 验证用
+  `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
+  及 `start --profile hardened` 负向测试。
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
