@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 
@@ -236,28 +237,75 @@ def test_compose_probe_timeout_keeps_local_not_proven(monkeypatch, tmp_path) -> 
     assert facts["local_mode_available"] is EvidenceState.NOT_PROVEN
 
 
-def test_probe_uses_bounded_shell_false_capture_output_run(monkeypatch) -> None:
-    # The bounded probe must pass an argument array with shell=False and
-    # capture_output=True; only exit 0 declares the provider verified.
+def test_probe_uses_bounded_shell_false_devnull_output_run(monkeypatch, tmp_path) -> None:
+    # The bounded probe needs only the exit code, so stdout/stderr are
+    # discarded to DEVNULL (a replaced/malicious executable cannot exhaust
+    # memory by streaming huge output before exit); shell is always False and
+    # only exit 0 declares the provider verified.
     from omnibase.runtime import capabilities as caps
 
+    fake_exe = tmp_path / "docker"
+    fake_exe.write_text("binary", encoding="utf-8")
+    exe_path = os.path.abspath(str(fake_exe))
     calls: list[dict[str, object]] = []
 
     def _fake_run(command: object, **kwargs: object) -> object:
         calls.append({"command": command, **kwargs})
         return type("Done", (), {"returncode": 0})()
 
-    monkeypatch.setattr(caps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(caps.shutil, "which", lambda _name: str(fake_exe))
     monkeypatch.setattr(caps.subprocess, "run", _fake_run)
     result = caps._probe_compose("docker")
     assert result.executable_detected is True
     assert result.compose_provider_verified is True
     assert result.exit_code == 0
-    assert calls[0]["command"] == ["/usr/bin/docker", "compose", "version"]
+    assert calls[0]["command"] == [exe_path, "compose", "version"]
     assert calls[0]["shell"] is False
-    assert calls[0]["capture_output"] is True
+    assert calls[0]["stdout"] is subprocess.DEVNULL
+    assert calls[0]["stderr"] is subprocess.DEVNULL
+    assert "capture_output" not in calls[0]
     assert calls[0]["check"] is False
     assert calls[0]["timeout"] == caps.COMPOSE_PROBE_TIMEOUT
+
+
+def test_probe_captures_verified_executable_path_and_identity(monkeypatch, tmp_path) -> None:
+    # The probe records the canonical absolute path and stable file identity
+    # of the verified executable so the lifecycle can use them as argv[0] and
+    # re-verify identity without re-resolving PATH.
+    from omnibase.runtime import capabilities as caps
+
+    fake_exe = tmp_path / "docker"
+    fake_exe.write_text("binary", encoding="utf-8")
+    exe_path = os.path.abspath(str(fake_exe))
+    monkeypatch.setattr(caps.shutil, "which", lambda _name: str(fake_exe))
+    monkeypatch.setattr(
+        caps.subprocess,
+        "run",
+        lambda command, **kwargs: type("Done", (), {"returncode": 0})(),
+    )
+    result = caps._probe_compose("docker")
+    assert result.executable_path == exe_path
+    assert result.executable_identity is not None
+    assert result.executable_identity.path == exe_path
+    resolution = caps.resolve_engine_resolution()
+    assert resolution.container_engine == "docker"
+    assert resolution.selected_executable_path == exe_path
+    assert resolution.selected_executable_identity is not None
+
+
+def test_probe_identity_drift_rejected_by_real_verifier(monkeypatch, tmp_path) -> None:
+    # A real temp executable is probed, then replaced; the REAL
+    # verify_executable_identity detects the stat change and rejects.
+    from omnibase.runtime import capabilities as caps
+
+    trusted = tmp_path / "docker.exe"
+    trusted.write_text("original", encoding="utf-8")
+    identity = caps._capture_executable_identity(str(trusted))
+    assert identity is not None
+    trusted.write_text("replacement-longer", encoding="utf-8")
+    assert caps.verify_executable_identity(str(trusted), identity) is False
+    trusted.unlink()
+    assert caps.verify_executable_identity(str(trusted), identity) is False
 
 
 def test_mode_selection_rejects_unproven_local() -> None:

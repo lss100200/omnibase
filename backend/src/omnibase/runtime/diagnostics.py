@@ -20,30 +20,43 @@ keyword-bearing samples**:
   lines, all with the same normalized sensitive-name policy;
 * quoted assignment values are consumed **completely** through the closing
   quote (``OPENAI_API_KEY = "q7x9opaque rest8v"`` keeps neither the tail nor
-  the quotes); an unterminated quote fails closed as a whole item;
-* once a sensitive Header is confirmed its **entire** value is redacted
-  (``Authorization: q7x9opaque;rest8v`` never keeps the tail after the
-  semicolon);
+  the quotes); the quoted scanner is **escape-aware** — a quote terminates the
+  value only when the preceding run of backslashes is even, so ``\\``
+  (escaped backslash) and escaped quotes inside the value never leave a secret
+  tail; an unterminated, over-long or state-uncertain quoted value fails closed
+  as a whole item;
+* once a sensitive Header is confirmed its **entire** value is consumed to
+  the physical line end — ``{``, ``}``, ``;``, quotes, commas and whitespace
+  are NOT early-stop boundaries, so ``Authorization: q7x9{rest8v}``,
+  ``Authorization: q7x9}rest8v}`` and ``X-Api-Key: q7x9;rest8v,more`` keep no
+  tail (a JSON right-brace is sacrificed rather than risking a leak);
 * cross-element CLI argument pairs in sequences: a sensitive flag such as
   ``--api-key`` redacts the *following* array element as one whole item
   (``["--api-key", "SECRET"]``) **even when that element starts with ``-`` or
   ``--``** (``["--api-key", "--q7x9opaque"]``, ``["--token", "-opaque"]``,
   ``["--password", "--"]``), while non-sensitive arguments are preserved; a
   following element that deterministically belongs to another allowlisted flag
-  (``--profile``, ``--service``, ``--port``, ``--tail``, ``--help`` or a
-  sensitive flag itself) is never swallowed — the flag then has no value and
-  fails closed on its own;
+  — including its inline ``--name=value`` form (``--profile=lite``,
+  ``--service=backend``) or a sensitive inline flag (``--token=value``) that
+  belongs to its own structure — is never swallowed; the flag then has no value
+  and fails closed on its own; unknown or ambiguous state fails closed;
 * provider-key shapes are covered through the value of a sensitive name, never
   through guessing secret prefixes.
 
 The sensitive-name policy is a normalized token/full-field closed set plus a
 bounded ``_``-delimited suffix policy — deliberately **no arbitrary substring
-matching**. CamelCase/PascalCase keys are tokenized at case boundaries
-(``stripeApiKey`` -> ``stripe_api_key``, ``azureAccessToken`` ->
-``azure_access_token``, ``openAiApiKey`` -> ``open_ai_api_key``). The ``_key``
-suffix is **narrow**: ``sort_key``, ``cache_key``, ``foreign_key``,
-``keyboard_layout`` and ``monkey`` are preserved while ``api_key``,
-``secret_key``, ``access_key``, ``signing_key``, ``private_key``,
+matching**. Cased keys are tokenized at **acronym-aware** case boundaries:
+both lower/digit -> upper (``stripeA`` -> ``stripe_A``) and the end of an
+all-caps acronym run before a Capitalized word (``APIKey`` -> ``API_Key``),
+so ``stripeAPIKey`` -> ``stripe_api_key``, ``OPENAIApiKey`` ->
+``openai_api_key``, ``openAIApiKey`` -> ``open_ai_api_key``,
+``azureADAccessToken`` -> ``azure_ad_access_token``, ``myTOKEN`` ->
+``my_token``, ``providerPASSWORD`` -> ``provider_password`` and ``xAPIKey`` ->
+``x_api_key`` are all redacted while non-secret controls such as ``sortKey``,
+``cacheID``, ``apiVersion``, ``foreignKey``, ``keyboardLayout`` and ``monkey``
+are preserved. The ``_key`` suffix is **narrow**: ``sort_key``, ``cache_key``,
+``foreign_key``, ``keyboard_layout`` and ``monkey`` are preserved while
+``api_key``, ``secret_key``, ``access_key``, ``signing_key``, ``private_key``,
 ``encryption_key`` and provider variants (``STRIPE_API_KEY``) are redacted.
 
 All parsing is bounded and linear (no unbounded quantifiers, no nested
@@ -230,6 +243,15 @@ _URI_USERINFO_RE: Final[re.Pattern[str]] = re.compile(
 # pairs such as ``["--api-key", "SECRET"]``.
 _CLI_FLAG_ONLY_RE: Final[re.Pattern[str]] = re.compile(r"--[A-Za-z][A-Za-z0-9_.\-]{0,127}")
 
+# An inline ``--name=value`` CLI flag element. The name is captured up to the
+# first ``=``; this lets the cross-element state machine tell apart:
+#   * allowlisted structural inline flags (``--profile=lite``, ``--service=backend``)
+#   * sensitive inline flags (``--token=value``, ``--api-key=value``) that belong
+#     to their OWN structure and must never be swallowed as a prior flag's value
+# A plain dash-prefixed value that is neither (``--q7x9opaque``) is still
+# treated as a value slot and redacted whole.
+_CLI_FLAG_EQUALS_RE: Final[re.Pattern[str]] = re.compile(r"--([A-Za-z][A-Za-z0-9_.\-]{0,127})=.*")
+
 # Deterministic closed set of the desktop CLI's own allowlisted flags. A
 # sensitive flag whose following element is one of these deterministically
 # belongs to ANOTHER allowlisted flag structure, so the sensitive flag has no
@@ -263,25 +285,43 @@ def select_mode(report: CapabilityReport, requested: ProductMode | None = None) 
     return ProductMode.LOCAL if report.supports(ProductMode.LOCAL) else ProductMode.LITE
 
 
+# Acronym-aware case-boundary splitter. Two zero-width boundaries are inserted:
+# (1) lower/digit -> upper (``stripeA`` -> ``stripe_A``) and (2) the end of an
+# all-caps acronym run before a Capitalized word (``APIKey`` -> ``API_Key``,
+# ``OPENAIApiKey`` -> ``OPENAI_Api_Key``). Without (2) a continuous acronym such
+# as ``API`` inside ``stripeAPIKey`` / ``OPENAIApiKey`` never splits from the
+# following Capitalized word, so the token never becomes ``api_key`` and the
+# secret leaks. The combined splitter makes ``stripeAPIKey`` -> ``stripe_api_key``,
+# ``OPENAIApiKey`` -> ``openai_api_key``, ``openAIApiKey`` -> ``open_ai_api_key``,
+# ``azureADAccessToken`` -> ``azure_ad_access_token``, ``myTOKEN`` ->
+# ``my_token``, ``providerPASSWORD`` -> ``provider_password`` and ``xAPIKey`` ->
+# ``x_api_key`` while non-secret controls such as ``sortKey`` -> ``sort_key``,
+# ``cacheID`` -> ``cache_id``, ``apiVersion`` -> ``api_version``,
+# ``foreignKey`` -> ``foreign_key``, ``keyboardLayout`` -> ``keyboard_layout``
+# and ``monkey`` stay outside the closed set/suffix policy.
+_CASE_BOUNDARY_SPLIT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])"
+)
+
+
 def _is_sensitive_key(key: object) -> bool:
     """Return True when ``key`` matches the normalized sensitive-name policy.
 
     The key is normalized into a separator form (``API-Key`` -> ``api_key``),
-    a flat form (``APIKey`` -> ``apikey``) and a camelCase/PascalCase form
-    (``stripeApiKey`` -> ``stripe_api_key``, ``azureAccessToken`` ->
-    ``azure_access_token``) and matched against a closed set of full-field
-    tokens or a bounded ``_``-delimited suffix set. There is deliberately no
-    arbitrary substring matching and the ``_key`` suffix is narrowed so
-    ``sort_key``/``cache_key``/``foreign_key`` are preserved.
+    a flat form (``APIKey`` -> ``apikey``) and an acronym-aware cased form
+    (``stripeAPIKey`` -> ``stripe_api_key``, ``OPENAIApiKey`` ->
+    ``openai_api_key``, ``azureADAccessToken`` -> ``azure_ad_access_token``)
+    and matched against a closed set of full-field tokens or a bounded
+    ``_``-delimited suffix set. There is deliberately no arbitrary substring
+    matching and the ``_key`` suffix is narrowed so ``sort_key``/``cache_key``/
+    ``foreign_key`` are preserved.
     """
     if not isinstance(key, str):
         return False
     lower = key.lower()
     sep = re.sub(r"[^a-z0-9]+", "_", lower).strip("_")
     flat = re.sub(r"[^a-z0-9]", "", lower)
-    camel = re.sub(r"[^a-z0-9]+", "_", re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key).lower()).strip(
-        "_"
-    )
+    camel = re.sub(r"[^a-z0-9]+", "_", _CASE_BOUNDARY_SPLIT_RE.sub("_", key).lower()).strip("_")
     if sep in _SENSITIVE_KEY_TOKENS:
         return True
     if flat in _SENSITIVE_KEY_TOKENS:
@@ -385,13 +425,15 @@ def _match_colon_quoted_name(line: str, sep_index: int) -> tuple[str, int, int, 
 def _redact_colon_items(line: str) -> str:
     """Redact ``Name: value`` headers with the whole remaining line as value.
 
-    Once a sensitive Header name is confirmed the ENTIRE value is replaced —
-    semicolons, whitespace and quotes no longer end the value, so
-    ``Authorization: q7x9opaque;rest8v`` never keeps the tail after the
-    semicolon. The value stops only at a JSON-ish ``{``/``}`` boundary (so
-    quoted JSON-ish log lines keep their closing brace) or the line end. A
-    sensitive item whose bounded horizontal whitespace or value-length limit
-    is exceeded fails closed as one whole ``[REDACTED]`` item.
+    Once a sensitive Header name is confirmed the ENTIRE value is consumed to
+    the physical line end — semicolons, whitespace, quotes, commas, ``{`` and
+    ``}`` no longer end the value, so ``Authorization: q7x9{rest8v}``,
+    ``Authorization: q7x9}rest8v}`` and ``X-Api-Key: q7x9;rest8v,more`` never
+    keep any tail. A JSON right-brace is sacrificed rather than risking a
+    secret tail: over-redaction is fail-closed and safe; preserving JSON
+    structure is not. A sensitive item whose bounded horizontal whitespace or
+    value-length limit is exceeded fails closed as one whole ``[REDACTED]``
+    item (the whole match is consumed, never a truncated prefix with a leak).
     """
     out: list[str] = []
     index = 0
@@ -416,11 +458,9 @@ def _redact_colon_items(line: str) -> str:
             out.append(line[name_start : sep + 1])
             index = sep + 1
             continue
+        # The whole physical line tail is the value; {/}/;/quote/comma are
+        # NOT early-stop boundaries. An over-limit item fails closed whole.
         value_end = len(line)
-        for boundary in ("{", "}"):
-            found = line.find(boundary, sep + 1)
-            if found != -1:
-                value_end = min(value_end, found)
         value = line[sep + 1 : value_end].rstrip("\r")
         if ws_before > MAX_HORIZONTAL_WS or len(value) > MAX_ITEM_VALUE_LENGTH:
             out.append(_REDACTED)
@@ -440,6 +480,15 @@ def _match_equals_value(line: str, sep_index: int) -> tuple[str, int, int, int] 
     quotes), unquoted values stop at whitespace, ``&`` and ``#`` so
     consecutive query keys are redacted one by one — or ``None`` for an
     unterminated quote, which callers must fail closed as a whole item.
+
+    The quoted scanner is escape-aware: a quote terminates the value only when
+    the preceding run of backslashes is even. ``\\`` is an escaped backslash
+    (not a quote terminator) and ``\\"`` is an escaped quote inside the value,
+    so ``OPENAI_API_KEY="q7x9\\"rest8v"`` and ``OPENAI_API_KEY="q7x9\\"rest``
+    no longer leave a secret tail after a wrongly-guessed quote boundary.
+    Single and double quotes are handled identically. An unterminated,
+    over-length or state-uncertain quoted value returns ``None`` so the caller
+    fail-closes the whole item as ``[REDACTED]``.
     """
     index = sep_index + 1
     ws_after = 0
@@ -450,10 +499,17 @@ def _match_equals_value(line: str, sep_index: int) -> tuple[str, int, int, int] 
     if index < len(line) and line[index] in "\"'":
         quote = line[index]
         index += 1
-        while index < len(line) and line[index] != quote and line[index] not in "\r\n":
+        while index < len(line) and line[index] not in "\r\n":
+            if line[index] == "\\":
+                # Escaped char: skip the backslash and the following character
+                # so ``\\`` (escaped backslash) and ``\"`` (escaped quote) are
+                # consumed as part of the value. A trailing lone backslash at
+                # end-of-line falls through to the unterminated return below.
+                index += 2
+                continue
+            if line[index] == quote:
+                return line[value_start : index + 1], value_start, index + 1, ws_after
             index += 1
-        if index < len(line) and line[index] == quote:
-            return line[value_start : index + 1], value_start, index + 1, ws_after
         return None
     while index < len(line) and line[index] not in " \t\r\n&#":
         index += 1
@@ -557,15 +613,32 @@ def _redact_string(value: str) -> str:
 def _belongs_to_another_allowlisted_flag(item: object) -> bool:
     """Return True when ``item`` deterministically belongs to another flag.
 
-    The item is either one of the desktop CLI's own allowlisted flags
-    (``--profile``, ``--service``, ``--port``, ``--tail``, ``--help``,
-    ``-h``) or itself a sensitive flag element (``--token``). A sensitive
-    flag followed by such an element must never swallow that structure.
+    The item is one of:
+    * a desktop CLI allowlisted flag (``--profile``, ``--service``, ``--port``,
+      ``--tail``, ``--help``, ``-h``), including its inline ``--name=value``
+      form (``--profile=lite``, ``--service=backend``);
+    * itself a sensitive flag element, either standalone (``--token``) or in
+      the inline ``--name=value`` form (``--token=value``, ``--api-key=value``)
+      — such an element belongs to its OWN structure and is redacted on its own,
+      so a preceding sensitive flag must never swallow it.
+
+    A plain dash-prefixed value that is neither allowlisted nor a sensitive
+    flag (``--q7x9opaque``, ``-opaque``, ``--``) is NOT another flag's
+    structure: it is the value slot of the preceding sensitive flag and is
+    redacted whole. Unknown or ambiguous state fails closed.
     """
     if not isinstance(item, str):
         return False
     if item in KNOWN_ALLOWLISTED_CLI_FLAGS:
         return True
+    # Inline --name=value form: split out the name and classify it.
+    inline = _CLI_FLAG_EQUALS_RE.fullmatch(item)
+    if inline is not None:
+        name = inline.group(1)
+        if f"--{name}" in KNOWN_ALLOWLISTED_CLI_FLAGS:
+            return True
+        return _is_sensitive_key(name)
+    # Standalone --name form: only a sensitive flag belongs to its own structure.
     return _CLI_FLAG_ONLY_RE.fullmatch(item) is not None and _is_sensitive_key(item[2:])
 
 

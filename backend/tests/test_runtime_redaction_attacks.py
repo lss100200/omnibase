@@ -342,9 +342,11 @@ def test_jsonish_log_line_assignments_are_redacted() -> None:
     _assert_opaque_secrets_absent(redacted)
     assert '"api_key": [REDACTED]' in redacted["log_line"]
     assert '"provider": "openai"' in redacted["log_line"]
-    # The dsn name policy redacts the whole value; the userinfo inside it was
-    # already removed by the URI pass before the name match replaced the rest.
-    assert redacted["json_record"] == '{"dsn": [REDACTED]}'
+    # The dsn name policy redacts the whole value to the physical line end;
+    # the userinfo inside it was already removed by the URI pass before the
+    # name match replaced the rest. The JSON right-brace is sacrificed rather
+    # than risking a secret tail (round-5 consume-to-line-end behavior).
+    assert redacted["json_record"] == '{"dsn": [REDACTED]'
 
 
 def test_provider_key_shapes_redacted_by_name_not_prefix() -> None:
@@ -782,3 +784,129 @@ def test_narrowed_key_suffix_rule() -> None:
     assert redacted["camel"]["sortKey"] == "created_at"
     assert redacted["camel"]["cacheKey"] == "user:42"
     assert redacted["camel"]["stripeApiKey"] == "[REDACTED]"
+
+
+# --- Round 5: acronym-aware tokenization, header consume-to-line-end,
+# --- escape-aware quoted scanner, inline flag state machine ---------------
+
+ACRONYM_SECRET = "q7x9acronym8v"
+
+
+def test_acronym_camel_case_keys_are_redacted() -> None:
+    # The acronym-aware splitter handles continuous uppercase acronyms followed
+    # by a Capitalized word so the sensitive suffix is recognized.
+    payload = {
+        "mapping": {
+            "stripeAPIKey": ACRONYM_SECRET,
+            "OPENAIApiKey": ACRONYM_SECRET,
+            "openAIApiKey": ACRONYM_SECRET,
+            "azureADAccessToken": ACRONYM_SECRET,
+            "myTOKEN": ACRONYM_SECRET,
+            "providerPASSWORD": ACRONYM_SECRET,
+            "xAPIKey": ACRONYM_SECRET,
+        },
+        "log_line": (
+            f"stripeAPIKey={ACRONYM_SECRET} azureADAccessToken={ACRONYM_SECRET} "
+            f"--xAPIKey={ACRONYM_SECRET}"
+        ),
+    }
+    redacted = redact_mapping(payload)
+    serialized = json.dumps(redacted)
+    assert ACRONYM_SECRET not in serialized
+    for key in (
+        "stripeAPIKey",
+        "OPENAIApiKey",
+        "openAIApiKey",
+        "azureADAccessToken",
+        "myTOKEN",
+        "providerPASSWORD",
+        "xAPIKey",
+    ):
+        assert redacted["mapping"][key] == "[REDACTED]"
+    assert "stripeAPIKey=[REDACTED]" in redacted["log_line"]
+    assert "azureADAccessToken=[REDACTED]" in redacted["log_line"]
+    assert "--xAPIKey=[REDACTED]" in redacted["log_line"]
+
+
+def test_acronym_split_keeps_non_secret_controls() -> None:
+    # The acronym-aware splitter must not over-redact non-secret controls.
+    payload = {
+        "controls": {
+            "sortKey": "created_at",
+            "cacheID": "user:42",
+            "apiVersion": "v1",
+            "foreignKey": "tenant_id",
+            "keyboardLayout": "qwerty",
+            "monkey": "banana",
+        },
+    }
+    redacted = redact_mapping(payload)
+    assert redacted["controls"] == payload["controls"]
+
+
+HEADER_TAIL_SECRETS = ("q7x9", "rest8v", "more", "end8v")
+
+
+def _assert_header_tail_absent(payload: object) -> None:
+    serialized = json.dumps(payload, sort_keys=True, default=str)
+    for secret in HEADER_TAIL_SECRETS:
+        assert secret not in serialized
+
+
+def test_sensitive_header_consumes_brace_and_brace_tail() -> None:
+    payload = {
+        "brace": "Authorization: q7x9{rest8v}",
+        "brace_only": "Authorization: q7x9}rest8v}",
+        "key_tail": "X-Api-Key: q7x9;rest8v,more",
+        "quoted_json": '"api_key": "q7x9}rest8v", "status": 200',
+    }
+    redacted = redact_mapping(payload)
+    _assert_header_tail_absent(redacted)
+    assert redacted["brace"] == "Authorization: [REDACTED]"
+    assert redacted["brace_only"] == "Authorization: [REDACTED]"
+    assert redacted["key_tail"] == "X-Api-Key: [REDACTED]"
+    # The quoted JSON key's value consumes to the physical line end; the JSON
+    # right-brace is sacrificed rather than risking a secret tail.
+    assert redacted["quoted_json"] == '"api_key": [REDACTED]'
+
+
+def test_escaped_quote_in_assignment_does_not_leak_tail() -> None:
+    # An escaped quote inside a quoted value no longer terminates the value
+    # early; the whole quoted value is consumed and redacted.
+    payload = {
+        "log_line": r'OPENAI_API_KEY="q7x9\"rest8v"',
+        "single_quote": r"API_KEY='q7x9\'rest8v'",
+        "escaped_backslash": r'TOKEN="q7x9\\rest8v"',
+    }
+    redacted = redact_mapping(payload)
+    _assert_header_tail_absent(redacted)
+    assert redacted["log_line"] == "OPENAI_API_KEY=[REDACTED]"
+    assert redacted["single_quote"] == "API_KEY=[REDACTED]"
+    assert redacted["escaped_backslash"] == "TOKEN=[REDACTED]"
+
+
+def test_unterminated_escaped_quote_fails_closed_whole_item() -> None:
+    payload = {"log_line": r'OPENAI_API_KEY="q7x9\"rest8v'}
+    redacted = redact_mapping(payload)
+    _assert_header_tail_absent(redacted)
+    assert redacted["log_line"] == "[REDACTED]"
+
+
+def test_inline_flag_state_machine_distinguishes_structures() -> None:
+    # allowlisted structural --profile=lite is preserved; the sensitive flag
+    # has no value and fails closed on its own.
+    payload = {"argv": ["--api-key", "--profile=lite", "server"]}
+    redacted = redact_mapping(payload)
+    assert redacted["argv"] == ["[REDACTED]", "--profile=lite", "server"]
+
+    # A sensitive inline flag (--token=value) belongs to its own structure: it
+    # is never swallowed as the prior flag's value; the prior flag fails closed
+    # and the inline flag is redacted on its own.
+    payload2 = {"argv": ["--api-key", "--token=value"]}
+    redacted2 = redact_mapping(payload2)
+    assert redacted2["argv"] == ["[REDACTED]", "--token=[REDACTED]"]
+
+    # A plain dash-prefixed opaque value is redacted as the value slot.
+    payload3 = {"argv": ["--api-key", "--q7x9opaque"]}
+    redacted3 = redact_mapping(payload3)
+    assert redacted3["argv"] == ["--api-key", "[REDACTED]"]
