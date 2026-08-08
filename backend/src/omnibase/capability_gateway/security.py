@@ -166,9 +166,15 @@ class CoreCapabilityVerifier:
 
         try:
             identity = credential.trusted_context
+            authorization = credential.authorization
+            if not authorization.startswith("Capability "):
+                raise CapabilityVerificationError
+            token = authorization.removeprefix("Capability ")
+            if not token:
+                raise CapabilityVerificationError
             core = verify_capability(
                 session,
-                token=credential.authorization,
+                token=token,
                 expected_tenant_id=identity.tenant_id,
                 expected_workspace_id=identity.workspace_id,
                 expected_runtime_instance_id=identity.runtime_instance_id,
@@ -263,6 +269,9 @@ class CoreCapabilityVerifier:
         core = capability.core_verification
         if not isinstance(core, CoreVerifiedCapability):
             raise CapabilityVerificationError
+        workload_identity_digest = credential.trusted_context.workload_identity_digest
+        if not workload_identity_digest:
+            raise CapabilityVerificationError
         try:
             return verify_and_reserve_workspace_data_capability(
                 session,
@@ -272,7 +281,7 @@ class CoreCapabilityVerifier:
                 expected_tenant_id=capability.tenant_id,
                 expected_workspace_id=capability.workspace_id,
                 expected_runtime_instance_id=capability.runtime_instance_id,
-                expected_workload_identity_digest=credential.trusted_context.certificate_thumbprint,
+                expected_workload_identity_digest=workload_identity_digest,
                 action=action,
                 resource_id=resource_id,
                 resource_version=resource_version,
@@ -373,7 +382,10 @@ def get_workload_credential(
             },
         ) from exc
     return WorkloadCredential(
-        authorization=token,
+        # Preserve the authenticated scheme inside the server-owned envelope.
+        # CoreCapabilityVerifier is the single boundary that removes it before
+        # handing the raw token to the capability service.
+        authorization=f"Capability {token}",
         identity=x_omnibase_workload_identity,
         trusted_context=context,
     )

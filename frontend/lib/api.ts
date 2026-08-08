@@ -399,6 +399,7 @@ export const agentAlphaApi = {
     api
       .get<{
         engineering_implemented: boolean
+        lite_gate_enabled: boolean
         engineering_assembled: boolean
         engineering_flag_enabled: boolean
         environment_allowed: boolean
@@ -406,6 +407,13 @@ export const agentAlphaApi = {
         production_activation_allowed: boolean
         tools_enabled: boolean
         multi_agent_enabled: boolean
+        formal_builder: string
+        alpha_builder: string
+        supported_invocation_modes: string[]
+        formal_builder_integration: string
+        engineering_composition_ready: boolean
+        activation_allowed: boolean
+        expected_migration_head: string
       }>(`/workspaces/${workspaceId}/agent-alpha/status`)
       .then((response) => response.data),
 

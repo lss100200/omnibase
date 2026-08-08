@@ -655,6 +655,7 @@ def test_alpha_success_persists_durable_lifecycle(
     from omnibase.model_gateway import ModelGateway
 
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-success")
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     os.environ.pop("AGENT_RUNTIME_ENABLED", None)
@@ -787,6 +788,7 @@ def test_alpha_success_persists_durable_lifecycle(
         assert rag_calls[0] == 1
     finally:
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
 
@@ -847,6 +849,7 @@ def test_alpha_cancellation_is_scope_bound_and_durable(db_engine, run_owned_reso
     from omnibase.tenants.dependencies import get_current_tenant
 
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-cancel")
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     os.environ.pop("AGENT_RUNTIME_ENABLED", None)
@@ -991,6 +994,7 @@ def test_alpha_cancellation_is_scope_bound_and_durable(db_engine, run_owned_reso
         server.should_exit = True
         thread.join(timeout=10)
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
 
@@ -1001,6 +1005,7 @@ def test_alpha_rejects_tool_bearing_version(db_engine, run_owned_resources) -> N
 
     # Reuse the shared helper's default tool-bearing version (rag_search).
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-tools", tool_free=False)
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     engineering_module.configured_model_gateway = lambda: ModelGateway(  # type: ignore[assignment]
@@ -1020,6 +1025,7 @@ def test_alpha_rejects_tool_bearing_version(db_engine, run_owned_resources) -> N
         assert "agent_alpha_tools_forbidden" in body
     finally:
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
 
@@ -1031,6 +1037,7 @@ def test_alpha_deterministic_failure_clears_both_runtime_ledgers(
     from omnibase.model_gateway import ModelGateway
 
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-failed")
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     engineering_module.configured_model_gateway = lambda: ModelGateway(  # type: ignore[assignment]
@@ -1062,6 +1069,7 @@ def test_alpha_deterministic_failure_clears_both_runtime_ledgers(
         )
     finally:
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
 
@@ -1071,6 +1079,7 @@ def test_alpha_unknown_provider_outcome_never_replays(db_engine, run_owned_resou
     from omnibase.model_gateway import ModelGateway
 
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-unknown")
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     counts: list[int] = [0]
@@ -1134,6 +1143,7 @@ def test_alpha_unknown_provider_outcome_never_replays(db_engine, run_owned_resou
         )
     finally:
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
 
@@ -1143,6 +1153,7 @@ def test_alpha_api_and_ledger_contain_no_secrets(db_engine, run_owned_resources)
     from omnibase.model_gateway import ModelGateway
 
     target = _seed_alpha_target(db_engine, run_owned_resources, "alpha-secrets")
+    os.environ["AGENT_LITE_ENGINEERING_ENABLED"] = "true"
     os.environ["AGENT_ALPHA_ENGINEERING_ENABLED"] = "true"
     os.environ["ENV"] = "development"
     engineering_module.configured_model_gateway = lambda: ModelGateway(  # type: ignore[assignment]
@@ -1175,5 +1186,6 @@ def test_alpha_api_and_ledger_contain_no_secrets(db_engine, run_owned_resources)
         assert effect_digest
     finally:
         engineering_module.configured_model_gateway = None  # type: ignore[assignment]
+        os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)

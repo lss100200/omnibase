@@ -76,6 +76,7 @@ class TrustedGatewayPeerEvidence:
     run_fencing_token: int
     node_fencing_token: int
     certificate_thumbprint: str
+    workload_identity_digest: str
     evidence_digest: str
     expires_at: datetime
 
@@ -104,6 +105,7 @@ class TrustedGatewayPeerEvidence:
         ):
             _positive_int(getattr(self, name), name)
         _digest(self.certificate_thumbprint, "certificate_thumbprint")
+        _digest(self.workload_identity_digest, "workload_identity_digest")
         _digest(self.evidence_digest, "evidence_digest")
         object.__setattr__(self, "expires_at", _aware_utc(self.expires_at, "expires_at"))
 
@@ -142,7 +144,7 @@ class SqlAlchemyRunLeaseWorkloadAttestor(WorkloadAttestor):
                 node_id=evidence.node_id,
                 generation=evidence.workspace_generation,
                 fencing_token=evidence.run_fencing_token,
-                workload_identity_digest=evidence.certificate_thumbprint,
+                workload_identity_digest=evidence.workload_identity_digest,
             )
             expected = (
                 evidence.tenant_id,
@@ -154,7 +156,7 @@ class SqlAlchemyRunLeaseWorkloadAttestor(WorkloadAttestor):
                 evidence.workspace_generation,
                 evidence.run_fencing_token,
                 evidence.node_fencing_token,
-                evidence.certificate_thumbprint,
+                evidence.workload_identity_digest,
             )
             actual = (
                 facts.tenant_id,
@@ -185,6 +187,7 @@ class SqlAlchemyRunLeaseWorkloadAttestor(WorkloadAttestor):
             workspace_id=evidence.workspace_id,
             runtime_instance_id=evidence.runtime_instance_id,
             certificate_thumbprint=evidence.certificate_thumbprint,
+            workload_identity_digest=facts.workload_identity_digest,
         )
 
 
@@ -204,6 +207,7 @@ class GatewayCredentialIssueRequest:
     run_fencing_token: int
     node_fencing_token: int
     certificate_thumbprint: str
+    workload_identity_digest: str
 
     def __post_init__(self) -> None:
         for name in (
@@ -237,6 +241,7 @@ class GatewayCredentialIssueRequest:
         ):
             _positive_int(getattr(self, name), name)
         _digest(self.certificate_thumbprint, "certificate_thumbprint")
+        _digest(self.workload_identity_digest, "workload_identity_digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,7 +350,7 @@ class SqlAlchemyGatewayCredentialIssuer:
                 node_id=request.node_id,
                 generation=request.workspace_generation,
                 fencing_token=request.run_fencing_token,
-                workload_identity_digest=request.certificate_thumbprint,
+                workload_identity_digest=request.workload_identity_digest,
             )
             expected = (
                 request.tenant_id,
@@ -357,7 +362,7 @@ class SqlAlchemyGatewayCredentialIssuer:
                 request.workspace_generation,
                 request.run_fencing_token,
                 request.node_fencing_token,
-                request.certificate_thumbprint,
+                request.workload_identity_digest,
             )
             actual = (
                 facts.tenant_id,

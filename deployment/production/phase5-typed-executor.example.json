@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "phase": "P5.4A",
+  "activation_requested": false,
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "migration_baseline": "0012",
+  "executor_runtime_authorized": false,
+  "allowed_tool_bindings": [
+    {
+      "tool_id": "knowledge_search",
+      "capability": "workspace.knowledge.search",
+      "version": "1.0.0",
+      "effect_class": "read_only"
+    }
+  ],
+  "forbidden_capabilities": [
+    "shell",
+    "sql",
+    "arbitrary_http",
+    "file_write",
+    "mcp",
+    "skill_runtime",
+    "sandbox_exec",
+    "multi_agent"
+  ],
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "require_clean_checkout": true,
+    "tracked_pathspecs": [
+      "AGENTS.md",
+      "backend/src/omnibase/agent_executor",
+      "backend/tests/test_p5_4a_gateway_adapter.py",
+      "backend/src/omnibase/production/phase5_planner_contract.py",
+      "backend/tests/test_p5_4a_typed_executor.py",
+      "deployment/production/phase5-typed-executor.example.json",
+      "docs/maintainers",
+      "docs/phase-5-planner-contract.md",
+      "docs/phase-5-typed-executor-contract.md",
+      "docs/phase-5-threat-model.md",
+      "scripts/production/run_p5_4a_gateway_adapter_gate.py",
+      "scripts/production/run_p5_4a_gateway_disposable_gate.py",
+      "Makefile"
+    ]
+  },
+  "evidence": {
+    "status": "not_proven",
+    "path": null,
+    "sha256": null,
+    "required_for_activation": true
+  }
+}

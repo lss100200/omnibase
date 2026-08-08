@@ -1733,6 +1733,338 @@ server-owned runtime identity 与非占位 workload digest 绑定到 P34 Workspa
 和 P5 AgentRun；Provider/Agent deadline、TaskLease TTL、Workspace RunLease TTL
 必须严格留出终结余量。Server-created Model Gateway Node identity 绑定 deployment
 instance，attestation 为短期；revoked/rejected Node 不得被原地复活。
+
+## INV-050 p54b-engineering-composition
+
+P5.4B is an **engineering-only** composition seam over the P5.4A typed
+single-Agent Executor. `build_engineering_single_agent_executor()` must remain
+fail closed unless the explicit engineering flag is enabled, migration head is
+exactly `0012`, all three Phase 5 Feature Gates are false, and the Gateway,
+server-owned workload credential seam and session factory are explicitly
+injected. The builder never migrates or connects merely to inspect the head.
+Production Runtime activation remains disabled and migration `0013` is not
+created.
+
+The composition exposes only `knowledge_search -> workspace.knowledge.search`.
+The Gateway adapter accepts server-owned `WorkloadCredential` material and
+bounded logical DTOs only; Browser JWTs, physical PostgreSQL/object-store
+locators, provider secrets, host paths, process/socket handles and arbitrary
+tool expansion remain forbidden. `LiveRuntimeAuthorityValidator` must read
+live Workspace, Task, sealed AgentVersion, installed binding, Agent Run,
+Workspace RunLease and Workspace Node facts in a fresh session before each
+Gateway call. Task actor, plan/version/scope/budget digests, generation,
+runtime/workload identity, current WorkspaceRun fencing cursor, database-clock
+lease expiry, verified Node and exact Run/Node fencing must all agree. The mTLS
+certificate thumbprint and workload identity digest are distinct mandatory
+server-owned SHA-256 facts; the certificate binds transport/token `cnf`, while
+the workload digest binds persisted execution authority.
+
+The P5.4B disposable Gate may use only an isolated `omnibase_test_p54b_*`
+sentinel and must pin the sentinel migration head to `0012`. Gate v2 records
+production/runtime and feature gates disabled, migration `0013` absent, root
+`.env` and business database untouched, workload-container egress denied,
+local-only image acquisition enforced by pull-never, and cleanup `0/0/0` under
+a unique run-scoped directory. It preserves the legacy evidence
+chain as superseded/incomplete, captures raw command/exit-code sidecars, and
+independently seals source, artifact and evidence bytes. Image/venv/package
+measurements are sealed but explicitly ambient-runtime-dependent. Digest drift stops
+admission and requires a forward fix from a clean checkout; historical chains
+must not be rewritten or replaced.
+
+Credential attestation, the live P5.4B validator and Gateway Core verification
+are layered separate transactions, not an atomic authority closure. The
+residual revocation race must be documented; database locks must not be held
+across arbitrary RAG/provider work, and production admission remains
+blocked/not_proven.
+
+**Allowed changes**
+
+- Tighten the engineering composition's closed flag, migration, identity,
+  fencing, DTO or fail-closed checks.
+- Add focused negative tests and maintainer/evidence documentation without
+  adding Browser/API, SDK, persistence or production Runtime authority.
+- Add a new isolated disposable evidence run only with explicit sentinel
+  prefixes, explicit cleanup and a newly sealed manifest.
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating a disposable Gate as production admission.
+- Falling back to direct database/RAG access, Browser credentials, provider
+  clients, arbitrary tools, queue/worker scheduling or a second capability.
+- Mutating historical sealed evidence, bypassing clean-checkout/source digest
+  checks, reading the root `.env`, or touching the business database.
+- Changing production composition implementation or a sealed/disposable Gate
+  script as a documentation-only maintenance task.
+
+**Required verification**
+
+- `backend/tests/test_p34_7_production_composition.py`
+- `backend/tests/test_p5_4a_typed_executor.py`
+- `backend/tests/test_p5_4a_gateway_adapter.py`
+- `backend/tests/test_p5_4b_gate_v2.py`
+- `backend/tests/integration/test_p5_4b_engineering_composition_foundation.py`
+- `python scripts/production/run_p5_4b_engineering_composition_disposable_gate.py --validate-only`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On flag, migration-head, feature-gate, identity, lease/fencing, source-manifest
+or evidence drift, return the seam to unavailable and keep production disabled.
+Preserve the old sealed chain, capture the failing report, and forward-fix in a
+new reviewed commit or isolated sentinel run. Do not downgrade the business
+database, create `0013`, retry an unknown provider outcome, or activate a
+production component while evidence is incomplete.
+
+## INV-051 p54c-lite-agent-product-loop
+
+P5.4C is the **engineering-only product surface** for the single-Agent loop.
+`AGENT_LITE_ENGINEERING_ENABLED` is an independent closed-set gate that defaults
+off; any token other than exactly `true` or `false` (including missing, empty,
+`TRUE`, `1`, `yes`, `on`, `enabled`) must fail closed. The gate is a *product*
+entry guard, never an authorization fact: passing it only opens the Lite
+Browser surface in a development/engineering deployment. It never authorizes
+production Agent Runtime, Planner, multi-Agent execution, arbitrary tools,
+migration `0013`, or any of the three Phase 5 production Feature Gates, which
+must remain exactly `false`.
+
+The Lite product loop supports exactly one invocation mode: `no_tool`, carried
+by the P5.2C Alpha seam `build_engineering_agent_alpha` (the `/invoke` route
+always dispatches through that seam; `AlphaInvokeRequest` has no mode field).
+The formal P5.4B builder `build_engineering_single_agent_executor` (which
+installs `LiveRuntimeAuthorityValidator` and
+`CapabilityGatewayKnowledgeSearchPort`) is formally connected to this product
+loop (`formal_builder_integration = proven_engineering_only`) through a proven
+engineering integration fixture that exercises the real persisted authority
+chain (AgentVersion, AgentTask, AgentRun, WorkspaceRun, RunLease,
+WorkspaceNode, NodeAttestation, server-owned WorkloadCredential with bound
+workload identity digest) and resolves AgentRun → WorkspaceRun via
+`AgentRunModel.workspace_run_id`. The proof is **engineering-only**
+(`engineering_composition_ready = true`, `activation_allowed = false`): it is
+never assembled in the Browser request path, never routed, never
+production-selectable, and a builder name in a status DTO is never a supported
+mode. The formal composition remains a separate P5.4B engineering seam whose
+only authority is the P5.4B disposable PostgreSQL Gate with real persisted
+runtime/lease facts. `lite_agent_posture()` is read-only and non-authorizing:
+it only describes which builder the UI should label; assembly decisions stay
+in the fail-closed builders. The status DTO must not leak provider secrets,
+physical locators, credentials, migration internals or runtime handles.
+
+The pure parser `resolve_lite_agent_flag(raw)` is independent of the ambient
+host environment: `None` is documented to mean "the variable is absent" and
+resolves to `False` even when a stray `AGENT_LITE_ENGINEERING_ENABLED` is set
+in the process environment, and the parser never calls `os.environ` itself.
+The runtime resolver `runtime_lite_agent_enabled()` is the only place the gate
+reads `os.environ.get(AGENT_LITE_ENGINEERING_ENABLED)` and passes the value
+into the parser; the Browser dependency `router.get_agent_alpha()` and the live
+posture must use it, so setting the flag to `true` genuinely enables the route.
+`lite_agent_posture()` with `env=None` resolves the Lite flag through the
+runtime resolver and must never read the flag from `os.environ` directly; only
+an explicit `env` mapping or an explicit `raw` argument feeds the pure parser.
+`docker-compose.yml` passes `AGENT_LITE_ENGINEERING_ENABLED` (and the closed
+`P5_4B_ENGINEERING_ENABLED`) to the backend environment explicitly with
+fail-closed defaults of `false`; `.env.example` documents both, and
+`docker compose --env-file .env.example config` must show `"false"` by default
+and `"true"` only under an explicit engineering override. Tests must isolate
+environment state with `monkeypatch`, proving absent -> off, false -> off,
+true -> on, invalid -> fail closed, ambient-variable independence of the pure
+parser, that the runtime resolver reads the patched environment, and that the
+`env=None` posture never reads the Lite flag from `os.environ` itself.
+API-level tests must prove that the flag reaches the assembled or unavailable
+Alpha dependency as appropriate instead of always returning the
+Lite-gate-disabled path.
+
+The P5.4C disposable Gate is run-scoped and engineering-only. It executes the
+focused Lite posture suite **and** the P5.4B formal engineering-composition
+suite before an executed gate probe patches the process environment and
+measures the runtime resolver, the live posture and the single supported mode
+inside the backend container. The formal suite exercises
+`build_engineering_single_agent_executor`, `LiveRuntimeAuthorityValidator`, the
+AgentRun-to-WorkspaceRun distinction and workload-identity-digest drift
+negatives. The Gate then seals the tested source
+bytes, command receipts and measurements under unique raw-byte SHA-256
+sidecars. Every claim in the report is derived from an executed receipt or a
+sealed file measurement, or is reported `not_proven`; the
+root-env/business-database negatives are re-derived from the recorded command
+vectors and the migration head is re-discovered from the repository files, so
+nothing is a hardcoded measurement. The sealed source manifest is a **closed
+set** covering every file that decides Compose Lite-flag wiring
+(`docker-compose.yml`, `.env.example`), frontend `canInvoke`
+(`frontend/lib/lite-gate.ts` and `frontend/lib/lite-gate.test.ts`) and Gate
+admission, and the Gate tests assert that the maintenance-map
+`lite-agent-product-loop` module / `INV-051` source paths stay a subset of the
+closure. The Gate only PASSES when the closed-set
+admission decision holds: `lite_gate_default_off`, `absent_off`, `false_off`,
+`true_on`, `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only,
+`formal_builder_named` and `engineering_composition_ready` all `true`;
+`root_env_accessed`, `business_database_accessed`, `business_database_migrated`,
+`production_runtime_activated`, `formal_builder_posture_not_integrated` and
+`activation_allowed` all `false`; `formal_builder_integration` stays
+`proven_engineering_only`. The integration claim is admissible only because the
+same sealed `lite-unit-suite` receipt includes the formal composition suite; a
+posture constant without that executed target is not proof. A single mismatch
+makes `passed=false`. The two
+formal-builder claims are **independent**: `formal_builder_integration =
+proven_engineering_only` means the formal P5.4B builder is formally connected
+to this product loop through a proven integration fixture, while
+`formal_builder_posture_not_integrated = false` requires the executed probe to
+genuinely report `proven_engineering_only` (not `not_integrated`). The probe's
+token is recorded **honestly** — `proven_engineering_only` is recorded verbatim;
+a tampered probe reporting `not_integrated` is rewritten to `not_proven` as
+defence-in-depth and fails the admission expectation; a probe reporting
+`integrated`/`enabled`/`available`/`selectable`/empty/unknown is recorded
+verbatim and fails the admission decision (`--run` produces `passed=false`
+and `--verify-evidence` rejects). The run directory is **preserved**
+on success and on failure and can be re-verified with `--verify-evidence`
+after the process exits; the Gate never deletes its own evidence and never
+claims production admission. `--verify-evidence` validates the **exact argv
+template** of every recorded command (the explicit `.env.example` path, the
+closed production engineering flags and the exact Lite/formal-composition test
+targets / probe source —
+a drifted vector that exited 0 is rejected), strictly parses every
+`commands/*.exitcode` sidecar (exactly one decimal exit code that must equal
+the receipt `returncode`; non-integer, multi-line, missing and 0/1-drifted
+sidecars are all rejected) and **re-executes the same
+closed-set admission decision** that `--run` computed: verifying is not just
+"report equals derived values", because derived values that miss an admission
+expectation (e.g. `true_on=false`, `invalid_fail_closed=false`,
+`live_posture=false`, `engineering_composition_ready=false`,
+`activation_allowed=true`, `formal_builder_posture_not_integrated=true`, mode
+drift, command-vector drift or exitcode-sidecar drift) must reject the
+evidence.
+
+Round-5 hardens the receipt and sidecar binding so a fabricated-but-
+self-consistent evidence tree cannot pass. The verifier requires each
+receipt's `returncode` to be a **strict `int`** (`type(value) is int`, not
+`isinstance(value, int)`) equal to `0`; this rejects JSON `false`/`true`
+(Python `bool`, which `isinstance(value, int)` would wrongly accept because
+`False == 0`), floats like `0.0`, strings like `"0"`, `null`, negative and
+non-zero integers. The command keys must form the **exact closed set**
+(`lite-unit-suite`, `lite-gate-probes`) with no missing, duplicate, extra or
+unknown key and no re-order. Each command key binds its **own** sidecar by
+**exact POSIX path literal**: the receipt's `stdout` path must be exactly
+`commands/{key}.stdout` and its `exitcode` path exactly
+`commands/{key}.exitcode`, compared **before** any filesystem resolution; this
+rejects absolute paths, backslash alternatives, `.`/`..` segments, repeated
+separators, case aliases, URL/drive paths and every lexical alias
+(`commands/../commands/{key}.stdout`, `commands/./{key}.stdout`) so two
+commands cannot share or swap stdout/exitcode artefacts and a unit receipt
+cannot point at the probe's stdout (or vice versa). Only after the literal
+matches does the verifier resolve and check run-dir containment, regular-file,
+non-symlink and digest; symlink sidecars are rejected outright
+(platform-dependent: on platforms without symlink support the test is
+documented as skipped). No two commands may share the same stdout or exitcode
+literal, and the resolved artefacts must have distinct inodes where the
+platform exposes them. Finally, the verifier **re-derives the unit summary**
+from the precisely-bound `commands/lite-unit-suite.stdout` bytes (not the
+receipt's recorded stdout string) by calling the formal
+`_parse_test_summary()`, and compares the re-derived `passed`/`failed`/
+`skipped`/`deselected` counts field-by-field with strict `type(value) is int`
+equality against **both** the top-level `lite_unit_summary` and
+`measurements["lite_unit_summary"]`; a missing/extra field, a boolean-as-int,
+a count that disagrees with the sealed stdout, or a top-level-vs-measurements
+drift rejects the evidence. The probe is re-parsed from the precisely-bound
+`commands/lite-gate-probes.stdout`; `formal_builder_integration =
+proven_engineering_only` and `formal_builder_posture_not_integrated = false`
+stay two independent claims, and `not_integrated`/`integrated`/`enabled`/
+`available`/`selectable`/empty/unknown tokens continue to be recorded (with
+`not_integrated` rewritten to `not_proven` as defence-in-depth) and rejected.
+
+The sealed evidence is a **self-contained integrity receipt**: it
+proves run-scoped byte integrity of the recorded source manifest, command
+receipts and measurements, but without an independent trust anchor it proves
+**no external authenticity** (it cannot authenticate who produced the bytes)
+and is never production admission; the report records this scope
+(`integrity_receipt.external_authenticity=false`,
+`integrity_receipt.trust_anchor=null`) and the verifier enforces the wording.
+
+**Allowed changes**
+
+- Tighten the Lite gate's closed-set parser, runtime resolver, fail-closed
+  defaults, posture disclosure or UI state labels without adding Browser
+  authorization, SDK, persistence or production Runtime authority.
+- Add focused negative tests, API-level reachability tests, maintainer/evidence
+  documentation and the disposable Gate's source seal without enabling
+  production admission.
+- Tighten the formal-builder disclosure (identity, DTO or fail-closed checks)
+  and the formal integration fixture without adding Browser authorization,
+  production Runtime authority, or treating the engineering proof as production
+  proof.
+- Require the closed-set admission decision and the exact command-vector
+  templates in both `--run` and `--verify-evidence`, and describe the evidence
+  with self-contained integrity-receipt wording (run-scoped byte integrity,
+  no external authenticity, no trust anchor).
+
+**Forbidden changes**
+
+- Enabling production Runtime or any Phase 5 Feature Gate, creating migration
+  `0013`, or treating the disposable Lite Gate as production admission.
+- Presenting the P5.2C Alpha seam as the knowledge-search authority path,
+  advertising `knowledge_search_read_only` as a supported mode, using a
+  fake `_Authority`/fake authority object or the weaker
+  `build_engineering_typed_executor` bypass in the formal integration path,
+  or assembling the formal composition in the Browser request path instead
+  of leaving assembly to the P5.4B disposable Gate.
+- Letting the gate parser depend on the ambient host environment, accepting a
+  non-exact token through loose bool coercion, or wiring the Browser dependency
+  or live posture to anything other than `runtime_lite_agent_enabled()`.
+- Leaking provider secrets, physical locators, credentials, migration internals
+  or runtime handles into browser state, logs, diagnostics, errors or DTOs.
+- Mutating historical sealed evidence, deleting preserved Gate evidence,
+  bypassing clean-checkout/source digest checks, reading the root `.env`, or
+  touching the business database.
+
+**Required verification**
+
+- `backend/tests/test_p5_4c_lite_gate.py`
+- `backend/tests/test_p5_4c_lite_agent_product_gate.py`
+- `backend/tests/test_p5_4b_engineering_composition.py` (formal builder
+  integration fixture with real persisted authority chain)
+- `backend/tests/test_agent_alpha_engineering.py`
+- `python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --validate-only`
+- Frontend `pnpm typecheck`, `pnpm lint`, `pnpm test`, `NODE_ENV=production pnpm build`
+- Maintainer map and benchmark validators
+- Disposable Gate `--verify-evidence` against its own sealed report, when run
+
+**Recovery**
+
+On gate, posture, source-manifest or evidence drift, close the Lite product
+surface (return `UnavailableAgentAlpha` from `get_agent_alpha`) and keep
+production disabled. Preserve the old sealed chain and the Gate evidence,
+capture the failing report, and forward-fix in a new reviewed commit or
+isolated run. Do not enable a Phase 5 production Feature Gate, create `0013`,
+retry an unknown provider outcome, or present a disposable Lite Gate as
+production admission while evidence is incomplete.
+
+## INV-049 p54a-typed-single-agent-executor
+
+P5.4A 是 engineering-only 的第一个 typed Executor 切片。它只能接收一份
+通过 P5.3A Validator 的 immutable `ValidatedPlan`，并且只能执行一个节点、
+一个固定的只读逻辑能力：`knowledge_search` →
+`workspace.knowledge.search`。Planner 的“提案已通过”不是执行授权；Executor
+在边界上必须再次核对 proposal digest、Tenant、Workspace、generation、Actor、
+Task、Run fencing、AgentVersion digest 和 node identity。
+
+P5.4A 的 node 必须是 low risk、`read_only` effect、未扩大 tool allowlist，且
+tool budget 与 response bytes 不能超过 server-owned ceilings。结果只能通过
+注入的 Capability-Gateway-backed `KnowledgeSearchPort` 获得；当前唯一实现
+`CapabilityGatewayKnowledgeSearchPort` 必须使用 server-owned `WorkloadCredential`、
+独立 Gateway 的 `rag_search` 和每次调用前的 runtime/lease/fencing validator；默认 builder 必须
+返回 `UnavailableTypedSingleAgentExecutor`，不能因为缺少 adapter、attestor、
+verifier 或 Gateway wiring 而回退为直连数据库/RAG、允许执行或宽松鉴权。
+
+Executor DTO 只接受 bounded logical identifiers 和 bounded search data，禁止
+physical PostgreSQL/object-store locator、Browser JWT、Provider credential、
+process/socket/host path、model handle 以及任意 `tools`/`tool_choice` 扩展。适配器
+异常必须 fail closed，不能生成成功 receipt；未来的 timeout、断线和未知 effect
+必须进入 durable Task/Effect reconciliation，不能自动 replay。
+
+P5.4A 不创建 migration `0013`，不挂载 Browser route/SDK，不启用 Planner Runtime、
+queue、worker、scheduler、Skill/MCP、Shell、SQL、任意 HTTP、Sandbox 或 multi-Agent。
+三个 Phase 5 Feature Gates 继续为 false，production Runtime activation 仍需单独
+准入。
+
 ## INV-047 user-profile-and-personal-provider-credentials
 
 **Authoritative source**
@@ -1951,3 +2283,228 @@ If the contract, Git source, migration head or example manifest drifts, stop
 admission and restore the last reviewed compile-only contract or forward-fix it
 in a new commit. Keep every Phase 5 Feature Gate false. Do not create a database
 rollback or runtime fallback: P5.6A has no database and executes no Skill.
+
+## INV-052 desktop-diagnostics-redaction
+
+**Authoritative source**
+
+- `backend/src/omnibase/runtime/diagnostics.py`
+- `backend/src/omnibase/runtime/capabilities.py`
+- `backend/src/omnibase/runtime/lifecycle.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_lifecycle.py`
+
+**Why it exists**
+
+The desktop diagnostics redactor is the privacy boundary between operator
+support bundles and secrets. It must redact secrets recursively through
+mappings, lists and tuples, match sensitive keys case-insensitively
+(authorization, cookie/set-cookie, api key/token/secret/password/private-key/
+credential variants and repository-specific provider credential names), bound
+depth/collection size/rendered string length, and handle cycles deterministically
+without recursion crashes or leaking cycle contents. The public payload must stay
+JSON-serializable and deterministic, and the typed signature must never forward
+untyped `*args/**kwargs` into the payload builder.
+
+The sensitive-name policy is a **normalized token/full-field closed set plus a
+bounded `_`-delimited suffix policy with no arbitrary substring matching**:
+`monkey`, `keyboard_layout`, `design` and `session_count` are preserved while
+`api_key`, `access_token`, `signature`, `session_token` and provider variants
+are redacted. Keys are tokenized at **acronym-aware** case boundaries: both
+lower/digit -> upper (`stripeA` -> `stripe_A`) and the end of an all-caps
+acronym run before a Capitalized word (`APIKey` -> `API_Key`), so
+`stripeAPIKey` -> `stripe_api_key`, `OPENAIApiKey` -> `openai_api_key`,
+`openAIApiKey` -> `open_ai_api_key`, `azureADAccessToken` ->
+`azure_ad_access_token`, `myTOKEN` -> `my_token`, `providerPASSWORD` ->
+`provider_password` and `xAPIKey` -> `x_api_key` are redacted while non-secret
+controls (`sortKey`, `cacheID`, `apiVersion`, `foreignKey`, `keyboardLayout`,
+`monkey`) are preserved. The `_key` suffix rule is **narrow**: `sort_key`,
+`cache_key`, `foreign_key`, `keyboard_layout` and `monkey` are PRESERVED while
+`api_key`, `secret_key`, `access_key`, `signing_key`, `private_key`,
+`encryption_key` and provider variants are REDACTED.
+
+Scalar strings must additionally pass through a bounded, deterministic line
+tokenizer that removes credentials from common structures **without relying on
+keyword-bearing samples**: URI/DSN userinfo passwords for any scheme
+(`scheme://user:password@host`), sensitive query keys and fragments (`key`,
+`api_key`, `token`, `access_token`, `signature`, `sig`, `credential`,
+`password` and provider variants), `NAME=value` assignments, CLI
+`--name=value` forms, `Name: value` headers and quoted JSON-ish log lines, all
+with the same normalized sensitive-name policy. **Any bounded horizontal
+whitespace** around separators is recognized (`NAME = value`, `--name =
+value`, `Name : value`), so "more than 8 spaces means pass-through" must never
+hold; parser state beyond the bounded horizontal-whitespace limit fails
+closed as a whole `[REDACTED]` item. **Quoted assignment values are consumed
+completely** through the closing quote (`OPENAI_API_KEY = "q7x9opaque
+rest8v"` keeps neither the tail nor the quotes); the quoted scanner is
+**escape-aware** — a quote terminates the value only when the preceding run of
+backslashes is even, so `\\` (escaped backslash) and escaped quotes inside
+the value (`OPENAI_API_KEY="q7x9\"rest8v"`) never leave a secret tail; an
+unterminated, over-long or state-uncertain quoted value fails closed as a
+whole item. **Once a sensitive Header is confirmed, the entire Header value
+is consumed to the physical line end** — `{`, `}`, `;`, quotes, commas and
+whitespace are NOT early-stop boundaries, so `Authorization: q7x9{rest8v}`,
+`Authorization: q7x9}rest8v}` and `X-Api-Key: q7x9;rest8v,more` never keep a
+tail (a JSON right-brace is sacrificed rather than risking a secret tail).
+Sequences additionally redact **cross-element CLI argument pairs** through an
+explicit, deterministic inline-flag state machine: a sensitive flag element
+such as `--api-key` redacts the following array element as one whole item
+(`["--api-key", "SECRET"]`) **even when that value starts with `-` or `--`**
+(`["--api-key", "--q7x9opaque"]`, `["--token", "-opaque"]`,
+`["--password", "--"]`); a sensitive flag with no value fails closed on its
+own, and a following element that deterministically belongs to another
+allowlisted flag — including its inline `--name=value` form
+(`--profile=lite`, `--service=backend`) or a sensitive inline flag
+(`--token=value`) that belongs to its own structure — is never swallowed —
+the flag has no value there and is redacted itself while the other flag's
+structure is preserved (`["--api-key", "--profile=lite"]` ->
+`["[REDACTED]", "--profile=lite"]`, `["--api-key", "--token=value"]` ->
+`["[REDACTED]", "--token=[REDACTED]"]`); unknown or ambiguous state fails
+closed.
+Provider-key shapes are covered through the value of a sensitive name, never
+through guessing secret prefixes. All parsing is bounded and linear (no
+nested or unbounded quantifiers, no catastrophic backtracking). Sensitive
+Header/JSON/assignment values that exceed the single-item parse limit **fail
+closed as a whole item**: the entire item is replaced with `[REDACTED]`, never
+a truncated prefix that would leak the tail. `LifecycleResult` stdout/stderr,
+status/health/log text, exception text and serialized diagnostics all pass
+through this protection.
+
+Capability facts must carry provenance and an evidence state. A hostname is not
+network evidence; Docker/Podman/WSL/Hyper-V executable presence is not
+hostile-code isolation proof; and Hardened mode stays fail-closed and
+`blocked/not_proven` unless independently sealed Runner/Broker/Gateway evidence
+is injected and verified. The capability probe and the lifecycle wrapper share
+**one container-engine resolution contract** (`resolve_engine_resolution`:
+Docker first, then Podman, then `none`) that **never infers Compose Local
+capability from `shutil.which` alone**: each candidate runs a bounded,
+`shell=False`, short-timeout probe of `docker compose version` /
+`podman compose version` whose stdout/stderr are discarded to `DEVNULL` (the
+probe needs only the exit code, so a replaced or malicious executable cannot
+exhaust memory by streaming huge output before exit), and **only exit 0
+declares the compose provider verified**. The probe captures the canonical
+absolute path and a stable file identity (stat dev/ino/size/mtime/ctime +
+symlink flag) of the verified executable; the lifecycle uses that path as
+`argv[0]` and **re-verifies the identity before building any Compose command**,
+never re-resolving `PATH` via `shutil.which`, so a TOCTOU that swaps the
+`which` result after probe time cannot redirect execution. Deletion,
+replacement, symlink/reparse drift or any stat change fails closed
+(`container_engine_identity_drift`) before any subprocess. The report
+distinguishes `executable_detected` (which presence only),
+`compose_provider_verified` (exit-0 probe) and `local_mode_available` (only
+when a provider is verified); a Podman executable without a verified compose
+provider is reported as `detected`/`not_proven` and Local is never claimed.
+The negative matrix covers Docker-only, Podman-only, both present with
+compose failing, timeout, not-found, neither present, TOCTOU
+trusted-path→replacement-`which`, verified-executable deletion/replacement/
+identity drift, and compose-version/probe output overflow, on both the probe
+and the lifecycle sides. Subprocess output is bounded **during reading** with
+independent per-stream and combined-total byte caps and a
+terminated-on-exceed process (never buffered unbounded into memory or a temp
+file first and then truncated); timeout and byte caps are two independent
+constraints. Evidence from one host is never generalized to another platform.
+
+**Allowed changes**
+
+- Tighten redaction key tokens/suffixes, bounds, deterministic markers or the
+  evidence/provenance vocabulary.
+- Add attack tests for nested sequences, mixed case, bearer/basic credentials,
+  URLs, DSNs, multiline exceptions, cycles, excessive depth/width and oversized
+  strings, cross-element CLI argument pairs (including dash-prefixed value
+  slots such as `["--api-key", "--q7x9opaque"]` and the allowlisted-flag
+  not-swallowed cases), inline `--name=value` flag structures (allowlisted
+  `--profile=lite`/`--service=backend` preserved and sensitive
+  `--token=value` redacted on its own), wide bounded-whitespace assignment
+  forms, quoted assignment values, escaped quotes/backslashes, unterminated
+  quotes, header values with `{`/`}`/`;`/comma tails consumed to the physical
+  line end, acronym-aware camelCase tokens (`stripeAPIKey`, `OPENAIApiKey`,
+  `openAIApiKey`, `azureADAccessToken`, `myTOKEN`, `providerPASSWORD`,
+  `xAPIKey`) and the narrowed `_key` suffix rule, asserting forbidden markers
+  are absent from structured output and serialized JSON.
+  Attack samples must include opaque secrets that contain no token/secret/
+  password keyword (URI userinfo, DSN userinfo, sensitive query keys/fragments,
+  `NAME=value`, CLI `--name=value` / `--name value`, `Name: value` headers and
+  JSON-ish log lines) and must assert absence from both structured results and
+  serialized JSON.
+- Add focused lifecycle tests that mock the subprocess boundary and prove exact
+  argument arrays with explicit `--env-file .env.example` for every verb, no
+  shell invocation, profile/service/verb allowlists, Hardened rejection,
+  timeout and executable-not-found behavior, bounded/redacted stdout and
+  stderr, start bind-failure propagation, `logs --tail` bounds, status/health
+  failure behavior, Windows path handling without command injection, that the
+  root `.env` is never selected, the container-engine resolution matrix
+  (Docker-only, Podman-only, both present with compose failing, timeout,
+  not-found, neither present), the verified-absolute-path `argv[0]`/no-`which`
+  TOCTOU defense, identity-drift/deleted/replaced rejection, and per-stream/
+  total byte-cap truncation during reading, on both the probe and lifecycle
+  sides.
+- Extend lifecycle verbs only through the allowlisted Compose argument-array
+  wrapper with explicit `--env-file .env.example` and the shared
+  `resolve_engine_resolution` contract.
+- Tighten the engine probe (shorter timeout, explicit stdout/stderr bounding,
+  per-engine probe records) as long as only exit 0 of the bounded
+  `docker compose version` / `podman compose version` probe declares Compose
+  Local available and `executable_detected` / `compose_provider_verified` /
+  `local_mode_available` remain distinct facts, and the lifecycle uses the
+  verified canonical absolute path as `argv[0]` with identity re-verification
+  and byte-bounded output read during reading.
+
+**Forbidden changes**
+
+- Returning secrets embedded in nested sequences, exception representations,
+  command arguments, environment values, URLs/query strings, headers or
+  connection strings, or leaking a truncated prefix of an oversized sensitive
+  item while leaving its tail visible.
+- Matching sensitive names by arbitrary substring (which would redact `monkey`,
+  `keyboard_layout`, `design` or `session_count`), or keeping a generic `_key`
+  suffix rule that would redact `sort_key`, `cache_key` or `foreign_key`.
+- Letting "more than 8 spaces means pass-through" escape: bounded horizontal
+  whitespace around `=` / `:` separators must be recognized up to the bound,
+  and over-limit parser state must fail closed as a whole item.
+- Retaining the tail of a quoted assignment value (including after an escaped
+  quote that was wrongly treated as a closing quote) or of a confirmed
+  sensitive Header (a `{`/`}`/`;`/quote/comma stopping the value early, or
+  preserving a JSON right-brace at the cost of leaking a secret tail).
+- Tokenizing only at lower/digit -> upper boundaries and missing the
+  acronym -> Capitalized word boundary (so `stripeAPIKey` / `OPENAIApiKey`
+  never become `stripe_api_key` / `openai_api_key` and leak).
+- Swallowing an entire following structure that deterministically belongs to
+  another allowlisted flag (including its inline `--name=value` form) or to a
+  sensitive inline flag's own structure, or leaving a sensitive flag's
+  dash-prefixed value slot visible.
+- Inferring network availability from hostname, or claiming Hardened/Local
+  capability from executable presence alone (`shutil.which` is never a compose
+  provider probe), or letting the probe and lifecycle resolve container
+  engines from different contracts, or declaring Compose Local available
+  without an exit-0 bounded `compose version` probe.
+- Re-resolving `PATH` via `shutil.which` in the lifecycle after probe time
+  (a TOCTOU that swaps the `which` result could redirect execution), skipping
+  identity re-verification, or using a bare engine name as `argv[0]`.
+- Buffering subprocess output unbounded into memory or a temp file and then
+  truncating to claim bounded output, or treating timeout as the only output
+  bound.
+- Building shell command strings from user input, exposing arbitrary command
+  execution, or running Compose without `--env-file .env.example`.
+- Creating migration `0013`, activating production Runtime, or opening any
+  Phase 5 Feature Gate from desktop diagnostics or lifecycle behavior.
+
+**Required verification**
+
+- `backend/tests/test_runtime_capabilities.py`
+- `backend/tests/test_runtime_redaction_attacks.py`
+- `backend/tests/test_runtime_lifecycle.py`
+- `backend/tests/test_rag_performance.py`
+- Focused Ruff check/format and Mypy for `backend/src/omnibase/runtime/**` and
+  `backend/src/omnibase/rag/performance.py`
+- `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
+- CLI negative test: `start --profile hardened` must be rejected
+- Maintainer map and benchmark validators
+- Compose config with explicit `.env.example`
+
+**Recovery**
+
+If redaction leaks a secret or a capability fact over-claims from executable
+presence, stop use of the diagnostics bundle, fix the redactor/detector in a
+new commit, and re-run the attack matrix. Keep Hardened `blocked/not_proven`
+and every Phase 5 Feature Gate false.

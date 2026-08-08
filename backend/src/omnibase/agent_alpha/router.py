@@ -12,6 +12,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from omnibase.agent_alpha.engineering import build_engineering_agent_alpha, engineering_alpha_status
+from omnibase.agent_alpha.lite import (
+    ALPHA_BUILDER_NAME,
+    FORMAL_BUILDER_NAME,
+    SUPPORTED_INVOCATION_MODES,
+    lite_agent_posture,
+    runtime_lite_agent_enabled,
+)
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
     AlphaInvokeRequest,
@@ -32,13 +39,28 @@ _SAFE_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
-    """Production default remains rejecting until the engineering seam assembles it.
+    """Keep the Lite product entry point independently fail-closed.
 
-    The engineering seam is the only path that may return the DB-backed
-    service; it is never opened by a request parameter, Browser cookie, JWT
-    claim or URL query.
+    The Lite gate is a *product* entry guard, never an authorization fact. The
+    only supported invocation mode is ``no_tool``, carried by the older P5.2C
+    ``build_engineering_agent_alpha`` seam; the formal P5.4B builder
+    ``build_engineering_single_agent_executor`` is formally connected to this
+    product loop (proven through a formal integration fixture with the real
+    persisted authority chain) but is never assembled in the Browser request
+    path — the P5.4B disposable Gate assembles it separately with real
+    persisted authority.
+
+    The gate is resolved through ``runtime_lite_agent_enabled()``, which
+    explicitly reads ``AGENT_LITE_ENGINEERING_ENABLED`` from the process
+    environment, so setting the flag genuinely enables the route. When the
+    gate is open this factory delegates to the Alpha engineering seam, which
+    itself remains fail-closed until every P5.2C dependency (environment,
+    Phase 5 gates, provider gateway, migration head 0012) holds.
+    ``lite_agent_posture`` exposes the honest single-mode posture to the
+    status endpoint without authorizing anything.
     """
-
+    if not runtime_lite_agent_enabled():
+        return UnavailableAgentAlpha()
     return build_engineering_agent_alpha()
 
 
@@ -72,8 +94,10 @@ def alpha_status(
 ) -> AlphaStatusResponse:
     del ctx
     posture = engineering_alpha_status()
+    lite = lite_agent_posture()
     return AlphaStatusResponse(
         engineering_implemented=True,
+        lite_gate_enabled=bool(lite["lite_gate_enabled"]),
         engineering_assembled=posture["assembled"],
         engineering_flag_enabled=posture["engineering_flag_enabled"],
         environment_allowed=posture["environment_allowed"],
@@ -81,6 +105,13 @@ def alpha_status(
         production_activation_allowed=False,
         tools_enabled=False,
         multi_agent_enabled=False,
+        formal_builder=FORMAL_BUILDER_NAME,
+        alpha_builder=ALPHA_BUILDER_NAME,
+        supported_invocation_modes=list(SUPPORTED_INVOCATION_MODES),
+        formal_builder_integration=str(lite["formal_builder_integration"]),
+        engineering_composition_ready=bool(lite["engineering_composition_ready"]),
+        activation_allowed=bool(lite["activation_allowed"]),
+        expected_migration_head=str(lite["expected_migration_head"]),
     )
 
 

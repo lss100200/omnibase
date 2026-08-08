@@ -40,88 +40,88 @@ const repositoryUrl = 'https://github.com/lss100200/omnibase'
 
 const copy = {
   zh: {
-    nav: ['基础底座', 'Agent Studio', '团队协作', '路线图'],
-    badge: 'Public Preview · Agent-native workbench',
-    meta: '开源 · 自托管 · 可版本化 · AI 可维护',
-    heroLead: '让每个人都能创造、训练并长期培养自己的',
-    heroAccent: 'AI 员工。',
+    nav: ['产品底座', '真实闭环', '角色设计', '路线图'],
+    badge: 'Public Preview · 可运行的 Agent 工作台',
+    meta: '开源 · 自托管 · 用户模型 · 版本化 Agent',
+    heroLead: '从一个工作空间开始，创造并运行你的',
+    heroAccent: '第一个 AI 员工。',
     heroBody:
-      'OmniBase 把知识、RAG、工作空间、沙箱与 Agent 组织在同一张工作台上。用户创造的不是一段一次性 Prompt，而是一个可以试用、评测、发布、安装、协作和持续成长的数字职位。',
+      '连接自己的 OpenAI-compatible 模型，创建 Workspace，定义员工职责和版本，然后发起真实运行。OmniBase 把模型、知识、任务、运行记录和安全边界放进同一个可维护的工作台。',
     github: '查看公开源码',
-    explore: '了解 Agent Studio',
-    principles: ['Apache-2.0', 'Local-first', 'Versioned agents', 'Source-repairable'],
+    explore: '查看真实产品闭环',
+    principles: ['Apache-2.0', 'Self-hosted', 'Personal model', 'Source-repairable'],
     metrics: [
-      ['Natural language', '用一句话创建 Agent'],
-      ['Role → Version', '职位与工作手册分离'],
-      ['Workspace-bound', '按项目任命与积累记忆'],
-      ['Human-readable', '所有行为都有可读合同'],
+      ['Personal provider', '管理并测试自己的模型 API'],
+      ['Workspace', '为每个项目隔离上下文'],
+      ['Agent Builder', '创建版本化的数字员工'],
+      ['Task → Run', '让一次工作留下可审计记录'],
     ],
     foundationKicker: 'A WORKBENCH, NOT A CHAT WRAPPER',
-    foundationTitle: '先有可持续的工作空间，再有真正的 Agent。',
+    foundationTitle: '它首先是 AI 工作台，然后才是数据库与自动化平台。',
     foundationBody:
-      'OmniBase 不把多模型聊天包装成 Agent 平台。数据库、知识、项目上下文、验证证据和维护者地图共同构成 Agent 可以长期工作的底座。',
-    studioKicker: 'CREATE YOUR OWN AI WORKER',
-    studioTitle: '用自然语言创建一个职位，用版本管理它的成长。',
+      '用户从模型、Workspace 和 Agent 开始工作；数据库、RAG、任务账本、租约、审计和维护者地图在背后提供可持续的工程底座。',
+    studioKicker: 'A REAL PRODUCT LOOP',
+    studioTitle: '今天就能完成从模型连接到第一次 Agent 运行。',
     studioBody:
-      '描述它负责什么、如何完成、与谁合作以及应该交付什么。OmniBase 把自然语言编译成结构化 AgentDefinition 与 AgentVersion，再通过试用任务验证它。',
-    teamKicker: 'LOGICAL TEAM · ADAPTIVE COST',
-    teamTitle: '角色可以很多，真正启动的模型应该尽量少。',
+      '当前公开主线已经具备用户 Provider、连接测试、Workspace 创建、Agent Builder、真实模型调用、持久化 Task/Run 记录和工作空间只读知识能力。',
+    teamKicker: 'ONE RELIABLE AGENT FIRST',
+    teamTitle: '先让一个 Agent 可靠工作，再按任务需要扩展角色。',
     teamBody:
-      '简单任务由主 Agent 一人完成；复杂任务才展开 Explorer、Builder、Verifier、Curator 与 Operator。逻辑分工清晰，但不会为了“多 Agent”而浪费上下文和余额。',
+      'OmniBase 已经定义清晰的角色语言，但生产多 Agent Runtime 仍然关闭。当前重点是让单 Agent 的职责、模型、Workspace、知识、预算和运行记录真正闭环。',
     roadmapKicker: 'HONEST ROADMAP',
     roadmapTitle: '我们只展示真实完成和真实正在建设的部分。',
     roadmapBody:
-      '基础设施已经进入可公开维护阶段；Agent 角色、版本和工作空间任命合同正在落地。自主 Runtime 与多 Agent 长循环不会被提前宣传成可用能力。',
+      '用户可用产品能力已经进入主线；Planner、Typed Executor、只读 Capability Gateway 和 Desktop 正在统一整合。生产 Runtime、自我改造和多 Agent 长循环仍保持关闭。',
     delivered: '已经具备',
     building: '正在建设',
     later: '后续阶段',
     ctaKicker: 'BUILD WITH US',
-    ctaTitle: '让 AI 帮人创造，而不是让人不断为 AI 的错误买单。',
+    ctaTitle: '从第一个 Workspace 和第一个 AI 员工开始。',
     ctaBody:
-      'OmniBase 正在把 Agent 从聊天人格变成可理解、可测试、可维护、可成长的开源数字员工。欢迎阅读源码、提出角色设计，或者带着你的第一个 Agent 想法加入。',
+      'OmniBase 正在把 Agent 从一次性聊天人格变成有职位、有版本、有项目上下文和可审计运行记录的开源数字员工。欢迎试用、阅读源码或参与验证。',
     contribute: '参与共建',
     footer: 'AI workers, repairable by design.',
   },
   en: {
-    nav: ['Foundation', 'Agent Studio', 'Teamwork', 'Roadmap'],
-    badge: 'Public Preview · Agent-native workbench',
-    meta: 'Open source · Self-hosted · Versioned · AI-maintainable',
-    heroLead: 'Create, train and grow AI workers that remain',
-    heroAccent: 'understandable.',
+    nav: ['Product', 'Real workflow', 'Role design', 'Roadmap'],
+    badge: 'Public Preview · A working Agent workbench',
+    meta: 'Open source · Self-hosted · Personal models · Versioned agents',
+    heroLead: 'Start with a workspace. Create and run your',
+    heroAccent: 'first AI worker.',
     heroBody:
-      'OmniBase brings knowledge, RAG, workspaces, sandboxes and agent organization into one workbench. You are not creating a disposable prompt. You are creating a digital role that can be tested, evaluated, published, installed, collaborated with and improved over time.',
+      'Connect your own OpenAI-compatible provider, create a workspace, define a worker and its version, then start a real run. OmniBase keeps models, knowledge, tasks, run records and safety boundaries in one maintainable workbench.',
     github: 'View source on GitHub',
-    explore: 'Explore Agent Studio',
-    principles: ['Apache-2.0', 'Local-first', 'Versioned agents', 'Source-repairable'],
+    explore: 'See the real product loop',
+    principles: ['Apache-2.0', 'Self-hosted', 'Personal model', 'Source-repairable'],
     metrics: [
-      ['Natural language', 'Create an agent in one sentence'],
-      ['Role → Version', 'Separate jobs from handbooks'],
-      ['Workspace-bound', 'Appointments and memory per project'],
-      ['Human-readable', 'Every behavior has a visible contract'],
+      ['Personal provider', 'Manage and test your own model API'],
+      ['Workspace', 'Keep project context isolated'],
+      ['Agent Builder', 'Create versioned digital workers'],
+      ['Task → Run', 'Keep every shift observable and auditable'],
     ],
     foundationKicker: 'A WORKBENCH, NOT A CHAT WRAPPER',
-    foundationTitle: 'Sustainable workspaces come before autonomous agents.',
+    foundationTitle: 'An AI workbench first. A data and automation platform underneath.',
     foundationBody:
-      'OmniBase does not rebrand multi-model chat as an agent platform. Databases, knowledge, project context, verification evidence and an AI-readable maintainer map form the foundation where agents can work for the long term.',
-    studioKicker: 'CREATE YOUR OWN AI WORKER',
-    studioTitle: 'Describe a role in natural language. Manage its growth as software.',
+      'Users begin with models, workspaces and agents. Databases, RAG, task ledgers, leases, audits and an AI-readable maintainer map provide the durable foundation underneath.',
+    studioKicker: 'A REAL PRODUCT LOOP',
+    studioTitle: 'Go from connecting a model to your first Agent run today.',
     studioBody:
-      'Define what it owns, how it finishes work, who it collaborates with and what it must deliver. OmniBase compiles that intent into a structured AgentDefinition and AgentVersion, then validates it with trial tasks.',
-    teamKicker: 'LOGICAL TEAM · ADAPTIVE COST',
-    teamTitle: 'Many roles can exist without launching many models.',
+      'The public main line already includes personal providers, connection tests, workspace creation, Agent Builder, real model invocation, durable Task/Run records and workspace-scoped read-only knowledge.',
+    teamKicker: 'ONE RELIABLE AGENT FIRST',
+    teamTitle: 'Make one Agent reliable before expanding into a team.',
     teamBody:
-      'A primary agent handles simple work alone. Explorer, Builder, Verifier, Curator and Operator roles unfold only when the task benefits from specialization or independent review. Clear responsibilities without agent theatre.',
+      'OmniBase has a clear role language, but production multi-agent runtime remains disabled. The current priority is closing the loop around one Agent: role, model, workspace, knowledge, budget and durable run records.',
     roadmapKicker: 'HONEST ROADMAP',
     roadmapTitle: 'We show what is real, what is being built and what is not ready yet.',
     roadmapBody:
-      'The infrastructure is becoming publicly maintainable. Agent roles, versions and workspace appointments are being formalized. Autonomous runtime and long-running multi-agent loops are not advertised before they exist.',
+      'The usable product slice is already on main. Planner, typed execution, read-only Capability Gateway composition and Desktop are being consolidated. Production runtime, self-modification and long-running multi-agent loops remain disabled.',
     delivered: 'Available now',
     building: 'In development',
     later: 'Later phases',
     ctaKicker: 'BUILD WITH US',
-    ctaTitle: 'Let AI help people create without making people endlessly pay for AI mistakes.',
+    ctaTitle: 'Start with your first workspace and your first AI worker.',
     ctaBody:
-      'OmniBase is turning agents from chat personas into open-source digital workers that can be understood, tested, maintained and improved. Read the source, challenge the role design or bring your first agent idea.',
+      'OmniBase is turning disposable chat personas into open-source digital workers with roles, versions, project context and auditable run records. Try it, read the source or help us verify the boundaries.',
     contribute: 'Contribute',
     footer: 'AI workers, repairable by design.',
   },
@@ -130,46 +130,46 @@ const copy = {
 const foundationCards = {
   zh: [
     [
-      'DATABASE + RAG',
-      '让知识成为 Agent 的长期工作资产',
-      '关系数据、向量索引、混合检索、引用回链与用户知识库共同组成可查询的项目记忆。',
+      'PERSONAL MODEL GATEWAY',
+      '使用并测试你自己的模型',
+      '用户可以配置 OpenAI-compatible Provider、管理 API Key 并在保存前后进行连接测试。',
     ],
     [
       'WORKSPACE',
-      '每个项目都有独立上下文',
-      '角色、知识、成员、任务、产物与长期记忆都绑定到 Workspace，而不是散落在聊天记录中。',
+      '每个项目拥有自己的上下文',
+      '成员、Agent、知识、任务和运行记录都绑定到 Workspace，而不是继续散落在聊天历史中。',
     ],
     [
-      'CAPABILITY GATEWAY',
-      '能力由工作合同明确表达',
-      'Agent 使用的是逻辑能力、Skills 与工具合同；运行结果可以被记录、验证和复现。',
+      'AGENT REGISTRY + RUNS',
+      '职位、版本与每次工作相互分离',
+      'AgentDefinition、AgentVersion、Workspace 绑定和 Task/Run 账本让数字员工能够被创建、运行和审计。',
     ],
     [
-      'AI MAINTAINABILITY',
-      '让下一位 AI 也能继续维护',
-      '机器可读维护者地图保留模块入口、依赖、验证命令和恢复路径，让更换模型不等于失去工程记忆。',
+      'GOVERNED KNOWLEDGE',
+      '知识检索停留在 Workspace 边界内',
+      'RAG、引用回链和工程预览中的只读 knowledge_search 服从租户、Workspace、预算、审计与能力边界。',
     ],
   ],
   en: [
     [
-      'DATABASE + RAG',
-      'Turn knowledge into a long-lived working asset',
-      'Relational data, vector indexes, hybrid retrieval, citations and user knowledge form queryable project memory.',
+      'PERSONAL MODEL GATEWAY',
+      'Bring and test your own model',
+      'Configure an OpenAI-compatible provider, manage the API key and test connectivity before relying on it.',
     ],
     [
       'WORKSPACE',
       'Give every project its own context',
-      'Roles, knowledge, members, tasks, artifacts and long-term memory belong to a workspace instead of disappearing into chat history.',
+      'Members, agents, knowledge, tasks and run records belong to a workspace instead of disappearing into chat history.',
     ],
     [
-      'CAPABILITY GATEWAY',
-      'Express abilities as explicit work contracts',
-      'Agents use logical capabilities, skills and tool contracts. Work can be recorded, verified and reproduced.',
+      'AGENT REGISTRY + RUNS',
+      'Separate a role, its version and each shift of work',
+      'AgentDefinition, AgentVersion, workspace bindings and the Task/Run ledger make workers creatable, runnable and auditable.',
     ],
     [
-      'AI MAINTAINABILITY',
-      'Make the project repairable by the next AI',
-      'An AI-readable maintainer map preserves entrypoints, dependencies, verification commands and recovery paths across model changes.',
+      'GOVERNED KNOWLEDGE',
+      'Keep retrieval inside workspace boundaries',
+      'RAG, citations and engineering-preview read-only knowledge_search remain tenant-, workspace-, budget-, audit- and capability-bound.',
     ],
   ],
 } as const
@@ -202,42 +202,42 @@ const roleCards = {
 const roadmap = {
   zh: {
     delivered: [
-      '自托管知识库与生产 RAG 主链路',
-      'Workspace 控制面与沙箱工程基础',
-      '受控数据能力、SDK 合同与恢复 Runbook',
-      'AI 可读维护者地图与公开源码',
+      '用户 Profile、个人模型 Provider、API Key 管理与连接测试',
+      'Workspace 创建、Agent Builder、AgentDefinition 与版本化员工',
+      '真实无工具单 Agent 模型调用与持久化 Task / Run 记录',
+      '自托管 RAG、引用回链、恢复 Runbook 与 AI 可读维护者地图',
     ],
     building: [
-      'AgentDefinition / AgentVersion / WorkspaceBinding',
-      '用户创建 Agent 的对话式 Agent Studio',
-      '角色分工、结构化交接与团队模板',
-      '分层长期记忆与原生 Skills',
+      'Planner Proposal、Typed Executor 与正式 Builder 主线收口',
+      'Capability Gateway 只读 knowledge_search 工程组合',
+      'Lite / Local Desktop 启动、诊断与端口检查',
+      '原生 Skill 合同、版本边界与工程验证',
     ],
     later: [
-      'Agent Run 与任务图',
-      '单 Agent Planner / Executor',
-      'Model / Tool / Memory / Skill Runtime',
-      '按预算展开的多 Agent 编排',
+      '可安装的 Skill 持久化与 Runtime',
+      '隔离 worktree 中的 Self-Development Alpha',
+      '按任务与预算展开的多 Agent Runtime',
+      'P34.7 通过后的 Hardened Production Runtime',
     ],
   },
   en: {
     delivered: [
-      'Self-hosted knowledge and production RAG path',
-      'Workspace control plane and sandbox engineering foundation',
-      'Controlled data capabilities, SDK contracts and recovery runbooks',
-      'AI-readable maintainer map and public source',
+      'Profiles, personal model providers, API-key management and connection tests',
+      'Workspace creation, Agent Builder, AgentDefinition and versioned workers',
+      'Real tool-free single-Agent model calls with durable Task/Run records',
+      'Self-hosted RAG, citations, recovery runbooks and an AI-readable maintainer map',
     ],
     building: [
-      'AgentDefinition / AgentVersion / WorkspaceBinding',
-      'Conversational Agent Studio for user-created workers',
-      'Role division, structured handoffs and team templates',
-      'Layered long-term memory and native skills',
+      'Planner Proposal, typed execution and formal Builder consolidation',
+      'Read-only knowledge_search through the Capability Gateway',
+      'Lite / Local Desktop startup, diagnostics and port checks',
+      'Native Skill contracts, version boundaries and engineering verification',
     ],
     later: [
-      'Agent runs and task graphs',
-      'Single-agent planner and executor',
-      'Model / tool / memory / skill runtime',
-      'Budget-aware multi-agent orchestration',
+      'Installable Skill persistence and runtime',
+      'Self-Development Alpha inside isolated worktrees',
+      'Task- and budget-aware multi-agent runtime',
+      'Hardened production runtime after P34.7 admission',
     ],
   },
 } as const
@@ -405,38 +405,38 @@ export function PublicPreviewClient() {
               <div className="mt-8 space-y-3">
                 <StudioStep
                   icon={Sparkles}
-                  title={locale === 'zh' ? '描述' : 'Describe'}
+                  title={locale === 'zh' ? '连接模型' : 'Connect a model'}
                   text={
                     locale === 'zh'
-                      ? '用一句自然语言说明你想创造什么样的数字员工。'
-                      : 'Explain the digital worker you want in one natural-language request.'
+                      ? '添加自己的 OpenAI-compatible Provider，保存 API Key 并测试真实连接。'
+                      : 'Add your OpenAI-compatible provider, save the API key and test the real connection.'
                   }
                 />
                 <StudioStep
                   icon={Wrench}
-                  title={locale === 'zh' ? '编译' : 'Compile'}
+                  title={locale === 'zh' ? '创建 Workspace' : 'Create a workspace'}
                   text={
                     locale === 'zh'
-                      ? '生成可读的职责、输入输出、Skills、模型与协作合同。'
-                      : 'Generate visible responsibilities, I/O, skills, model and collaboration contracts.'
+                      ? '为项目建立独立成员、知识、Agent、任务与运行上下文。'
+                      : 'Create isolated project context for members, knowledge, agents, tasks and runs.'
                   }
                 />
                 <StudioStep
                   icon={Play}
-                  title={locale === 'zh' ? '试用' : 'Trial'}
+                  title={locale === 'zh' ? '创建 AI 员工' : 'Build an AI worker'}
                   text={
                     locale === 'zh'
-                      ? '在测试任务中观察行为、成本、工具使用和交付质量。'
-                      : 'Observe behavior, cost, tool use and delivery quality on trial tasks.'
+                      ? '定义职位、系统指令、模型和版本，让 Agent 成为可管理的项目成员。'
+                      : 'Define the role, system instructions, model and version so the Agent becomes a managed project member.'
                   }
                 />
                 <StudioStep
                   icon={Rocket}
-                  title={locale === 'zh' ? '发布' : 'Publish'}
+                  title={locale === 'zh' ? '运行并检查' : 'Run and inspect'}
                   text={
                     locale === 'zh'
-                      ? '封存版本并安装到 Workspace；后续成长产生新版本而不覆盖历史。'
-                      : 'Seal a version and appoint it to a workspace; improvements become new versions.'
+                      ? '发起真实模型调用，并在 Task、Run、预算、知识结果和审计记录中检查这次工作。'
+                      : 'Start a real model call and inspect the shift through Task, Run, budget, knowledge results and audit records.'
                   }
                 />
               </div>
