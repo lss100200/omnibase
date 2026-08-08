@@ -65,7 +65,8 @@ requires:
 
 - `author_id` of the candidate must equal the approval-packet author;
 - reviewers must be distinct logical identities, disjoint from the author and
-  from every producer owner;
+  from every producer owner AND backup owner (producer-level and key-level);
+  a producer or its backup can never approve its own policy;
 - the approval packet is a SEPARATE file; a candidate can never carry its own
   approval root, and an approval packet must never embed trust-root/key
   material.
@@ -92,6 +93,36 @@ The highest status the R0 validator can return is
 `candidate/valid_not_approved`; `production_approved`,
 `approved_digest_written` and `activation_allowed` are always `false`.
 
+### 5.1 Entry semantics: structural-only vs raw-byte verification
+
+The validator has two entry points with different evidentiary strength:
+
+| Entry | Input | `candidate_digest_verified` | Status |
+| --- | --- | --- | --- |
+| `validate_trust_policy_candidate` | parsed objects | always `false` | `candidate/structural_valid` + blocker `candidate_digest_unverified` |
+| `validate_trust_policy_candidate_files` | files in repo | `true` only after `SHA256(raw bytes) == candidate_policy_raw_sha256` | `candidate/valid_not_approved` (lifecycle `candidate`) |
+
+The object-level entry has no raw bytes and therefore NEVER claims the digest
+was verified — a caller that mutates the candidate can at most get a
+structural report, never a verified one.  Only the file-level entry performs
+the raw-byte verification, then the repo-containment and packet-path binding
+checks, and only then can it construct the positive report.  The CLI
+(`validate_p34_7_trust_policy_candidate.py`) exits `0` ONLY for
+`candidate/valid_not_approved`; any structural-only or non-candidate outcome
+exits `1`.
+
+### 5.2 Lifecycle/decision binding
+
+The approval-packet `decision` must EQUAL the candidate `lifecycle_state`,
+and the packet review window must start no earlier than the candidate's
+`created_at`.  Only `candidate`/`candidate` yields
+`candidate/valid_not_approved`; every other closed-set state is reported as
+`<lifecycle>/not_approved` with blocker `lifecycle_not_candidate` (never as a
+candidate).  `superseded` additionally requires a COMPLETE supersession link
+(supersedes_policy_sha256 + superseded_at + reason) echoed by the packet;
+`revoked` requires non-empty revocation records plus a rollback policy in the
+packet.
+
 ## 6. Git source seal
 
 Reuses the joint gate's strict object-format semantics:
@@ -113,12 +144,19 @@ The checked-in examples bind the current main merge commit
 ## 7. Artifact / command / env / gateway / freshness contracts
 
 - `artifact_approvals`: repository-relative regular-file paths (no traversal,
-  no links, no `.env`), raw-byte SHA-256, bound to required joint boundaries.
+  no links, no `.env`), raw-byte SHA-256, bound to required joint boundaries;
+  every approval's `path` must equal its map key, and the set must cover the
+  six required joint commands exactly once (missing, duplicate, unknown or
+  key/path-drifted coverage fails closed).  R0 validates the PIN CONTRACT
+  only — real artifact file bytes are NOT verified by the candidate module.
 - `commands`: exactly the six joint boundaries
   (`core_runner`, `runner_broker`, `runner_gateway`, `broker_gateway`,
   `overlay_data_plane`, `recovery_sla`) with exact argv templates.
-- `allowed_env_names`: non-empty strings; secret env names are always
-  rejected.
+- `allowed_env_names`: non-empty strings; secret env names are rejected after
+  case/separator normalization (`openai_api_key`, `OpenAiApiKey`,
+  `postgres_password`, `DATABASE_URL`, `bearer_token`, ...), and root `.env`
+  locators are rejected in every case/separator/Windows-drive variant
+  (`.env`, `./.env`, `.ENV`, `E:\...\.env`, `C:/foo/.Env`).
 - `gateway`: issuer SHA-256 pin, dot-prefixed SAN suffix, bounded validity
   window.
 - `evidence_freshness`: bounded `max_evidence_age_seconds` (1..365 days).
@@ -169,6 +207,10 @@ Decision ∈ `{draft, candidate, rejected, superseded, revoked}`;
 `approved`/`approved_for_production`/`production_ready`/`passed`/`published`
 are forbidden in R0.  The packet must be byte-consistent with the candidate
 (including section digests) and must not embed trust-root or secret material.
+The packet's `candidate_policy_path` must equal the candidate file's actual
+repository-relative POSIX path, and both files must resolve INSIDE the
+repository root (no absolute, traversing, linked or external paths).  The
+packet `decision` must equal the candidate `lifecycle_state` (see 5.2).
 
 ## 11. Residual risks
 

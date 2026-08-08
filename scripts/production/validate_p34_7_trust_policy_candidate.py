@@ -9,9 +9,12 @@ never changes the P34.7 production decision (which stays blocked/not_proven).
 
 Exit codes:
 
-* 0 -- contract valid, still NOT approved (``candidate/valid_not_approved``,
-  ``production_approved=false``, ``activation_allowed=false``);
-* 1 -- ``invalid/veto`` (structural contract violation).
+* 0 -- raw bytes verified and lifecycle is ``candidate``
+  (``candidate/valid_not_approved``, ``production_approved=false``,
+  ``activation_allowed=false``);
+* 1 -- anything else: ``invalid/veto`` (structural contract violation),
+  ``candidate/structural_valid`` (raw digest not verified) or any
+  ``<lifecycle>/not_approved`` non-candidate outcome.
 
 The tool never reads the root ``.env``, never accesses a database, never
 opens a network connection and never executes hostile code.
@@ -78,7 +81,7 @@ def main() -> int:
         print(json.dumps(payload, indent=2))
         return 1
     print(json.dumps(report.to_dict(), indent=2))
-    return 0
+    return 0 if report.status == "candidate/valid_not_approved" else 1
 
 
 if __name__ == "__main__":

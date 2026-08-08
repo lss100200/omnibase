@@ -3,14 +3,19 @@
 The candidate validator must never approve anything: the highest positive
 status is ``candidate/valid_not_approved``, ``production_approved`` and
 ``activation_allowed`` stay ``False``, and validating a candidate NEVER
-writes into ``joint_gate._APPROVED_TRUST_POLICY_SHA256``.  The suite covers
-the full negative matrix (missing/eighth roles, duplicate/zero keys, secret
-shapes, wildcard and out-of-role scopes, Git object-format drift, digest
-drift, lifecycle/rotation/revocation violations, approval-packet violations,
-path/link attacks, migration and feature-gate posture) plus the positive
-proofs (seven unique roles, real SHA-1 main commit/tree in the source seal,
-digest consistency, identity separation, candidate lifecycle, and the P34.7
-production Gate remaining blocked/not_proven).
+writes into ``joint_gate._APPROVED_TRUST_POLICY_SHA256``.  Only the
+file-level entry verifies the candidate RAW bytes (``candidate_digest_verified``);
+the object-level entry is structural-only and reports blocker
+``candidate_digest_unverified`` with status ``candidate/structural_valid``.
+The suite covers the full negative matrix (missing/eighth roles,
+duplicate/zero keys, secret shapes, wildcard and out-of-role scopes, Git
+object-format drift, raw-digest/canonical-bytes bypass, lifecycle/decision
+binding, supersession/revocation completeness, repo containment and packet
+path binding, artifact coverage closure, backup-owner approvers, sensitive
+env names, path/link attacks, migration and feature-gate posture) plus the
+positive proofs (seven unique roles, real SHA-1 main commit/tree in the
+source seal, raw-byte digest verification, identity separation, candidate
+lifecycle, and the P34.7 production Gate remaining blocked/not_proven).
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ from omnibase.production import joint_gate as jg
 from omnibase.production.composition import ConfigurationError
 from omnibase.production.trust_policy_candidate import (
     CANDIDATE_SCHEMA,
+    CandidateValidationReport,
     _detect_replacement_cycles,
     scan_forbidden_secrets,
     validate_trust_policy_candidate,
@@ -205,6 +211,39 @@ def _valid_pair() -> tuple[dict[str, object], dict[str, object]]:
     return candidate, packet
 
 
+def _fake_repo_root(tmp_path: Path) -> Path:
+    """A disposable repository scaffold whose migration head is 0012 (the R0
+    contract requires the head to stay 0012 and forbids migration 0013)."""
+    root = tmp_path / "fake-repo"
+    versions = root / "backend" / "src" / "omnibase" / "migrations" / "versions"
+    versions.mkdir(parents=True)
+    (versions / "0012_user_profiles_provider_credentials.py").write_text(
+        "revision = '0012'\ndown_revision = None\n", encoding="utf-8"
+    )
+    return root
+
+
+def _write_pair_files(
+    root: Path, candidate: dict[str, object], packet: dict[str, object]
+) -> tuple[Path, Path]:
+    """Write candidate + packet as canonical files inside ``root`` carrying
+    the raw-digest and path bindings a real approval packet must have."""
+    candidate_path = root / "deployment" / "production" / "candidate.json"
+    packet_path = root / "deployment" / "production" / "packet.json"
+    _write_canonical(candidate_path, candidate)
+    packet["candidate_policy_raw_sha256"] = _digest(_canonical(candidate))
+    packet["candidate_policy_path"] = "deployment/production/candidate.json"
+    _write_canonical(packet_path, packet)
+    return candidate_path, packet_path
+
+
+def _validate_files(
+    root: Path, candidate: dict[str, object], packet: dict[str, object]
+) -> CandidateValidationReport:
+    candidate_path, packet_path = _write_pair_files(root, candidate, packet)
+    return validate_trust_policy_candidate_files(candidate_path, packet_path, root)
+
+
 # ---------------------------------------------------------------------------
 # Positive proofs
 # ---------------------------------------------------------------------------
@@ -213,21 +252,28 @@ def _valid_pair() -> tuple[dict[str, object], dict[str, object]]:
 def test_seven_roles_unique_keys_positive() -> None:
     candidate, packet = _valid_pair()
     report = _validate(candidate, packet)
-    assert report.status == "candidate/valid_not_approved"
+    assert report.status == "candidate/structural_valid"
     assert report.role_set_verified is True
     assert report.key_uniqueness_verified is True
     assert report.contract_valid is True
+    # The object-level entry has no raw bytes: it must never claim the digest.
+    assert report.candidate_digest_verified is False
+    assert report.blockers == ("candidate_digest_unverified",)
 
 
 def test_example_files_validate() -> None:
     """The checked-in candidate and approval-packet examples are valid,
-    candidate-only and bind the current main merge commit (sha1 OIDs)."""
+    candidate-only and bind the current main merge commit (sha1 OIDs).  The
+    file-level entry verifies the actual raw bytes and is the only path that
+    can produce the positive status."""
     report = validate_trust_policy_candidate_files(
         REPO_ROOT / "deployment" / "production" / "p34-7-trust-policy-candidate.example.json",
         REPO_ROOT / "deployment" / "production" / "p34-7-trust-policy-approval-packet.example.json",
         REPO_ROOT,
     )
     assert report.status == "candidate/valid_not_approved"
+    assert report.candidate_digest_verified is True
+    assert report.blockers == ()
     assert report.production_approved is False
     assert report.approved_digest_written is False
     assert report.activation_allowed is False
@@ -293,14 +339,24 @@ def test_real_main_sha1_commit_tree_enter_candidate_seal(tmp_path: Path) -> None
     packet = _packet_dict(candidate)
     packet["candidate_policy_raw_sha256"] = _digest(_canonical(candidate))
     report = _validate(candidate, packet)
-    assert report.status == "candidate/valid_not_approved"
+    assert report.status == "candidate/structural_valid"
     assert report.source_seal_verified is True
 
 
-def test_digest_consistency_positive() -> None:
+def test_digest_consistency_positive(tmp_path: Path) -> None:
+    """Only the file-level entry can prove the raw bytes: when the candidate
+    file's canonical bytes match the packet's recorded digest the report
+    carries ``candidate_digest_verified=True`` and the positive status.  The
+    object-level entry never claims a digest it did not verify."""
+    root = _fake_repo_root(tmp_path)
     candidate, packet = _valid_pair()
-    report = _validate(candidate, packet)
+    report = _validate_files(root, candidate, packet)
     assert report.candidate_digest_verified is True
+    assert report.status == "candidate/valid_not_approved"
+    assert report.blockers == ()
+    structural = _validate(candidate, packet)
+    assert structural.candidate_digest_verified is False
+    assert structural.status == "candidate/structural_valid"
 
 
 def test_identity_separation_positive() -> None:
@@ -535,17 +591,14 @@ def test_uppercase_git_oid_is_rejected() -> None:
 
 def test_candidate_raw_digest_drift_is_rejected(tmp_path: Path) -> None:
     candidate, packet = _valid_pair()
-    candidate_path = tmp_path / "candidate.json"
-    packet_path = tmp_path / "packet.json"
-    _write_canonical(candidate_path, candidate)
-    packet["candidate_policy_raw_sha256"] = _digest(_canonical(candidate))
-    _write_canonical(packet_path, packet)
+    root = _fake_repo_root(tmp_path)
+    candidate_path, packet_path = _write_pair_files(root, candidate, packet)
     # Rewrite the candidate with a drifted field; the packet still pins the
     # OLD raw digest.
     candidate["policy_id"] = "drifted-policy-id"
     _write_canonical(candidate_path, candidate)
     with pytest.raises(ConfigurationError, match="does not match the candidate raw bytes"):
-        validate_trust_policy_candidate_files(candidate_path, packet_path, REPO_ROOT)
+        validate_trust_policy_candidate_files(candidate_path, packet_path, root)
 
 
 def test_source_commit_tree_drift_is_rejected() -> None:
@@ -657,7 +710,7 @@ def test_duplicate_reviewer_is_rejected() -> None:
 def test_producer_owner_as_approver_is_rejected() -> None:
     candidate, packet = _valid_pair()
     packet["reviewer_ids"] = ["owner-core", "reviewer-bob"]
-    with pytest.raises(ConfigurationError, match="producer owner cannot be an approver"):
+    with pytest.raises(ConfigurationError, match="producer or backup owner cannot be an approver"):
         _validate(candidate, packet)
 
 
@@ -751,12 +804,8 @@ def test_root_env_named_field_is_rejected() -> None:
 def test_migration_head_0013_is_rejected(tmp_path: Path) -> None:
     """A repository whose migration head is 0013 must veto the candidate."""
     candidate, packet = _valid_pair()
-    fake_repo = tmp_path / "fake-repo"
+    fake_repo = _fake_repo_root(tmp_path)
     versions = fake_repo / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    versions.mkdir(parents=True)
-    (versions / "0012_user_profiles_provider_credentials.py").write_text(
-        "revision = '0012'\ndown_revision = None\n", encoding="utf-8"
-    )
     (versions / "0013_bad_migration.py").write_text(
         "revision = '0013'\ndown_revision = '0012'\n", encoding="utf-8"
     )
@@ -782,7 +831,7 @@ def test_approved_digest_injection_never_lands_in_production_code(
     monkeypatch.setattr(jg, "_APPROVED_TRUST_POLICY_SHA256", frozenset({injected}))
     report = _validate(candidate, packet)
     assert report.approved_digest_written is False
-    assert report.status == "candidate/valid_not_approved"
+    assert report.status == "candidate/structural_valid"
     assert frozenset({injected}) == jg._APPROVED_TRUST_POLICY_SHA256
     # Teardown restores the committed empty set; the report never claimed an
     # approval or a digest write.
@@ -811,3 +860,265 @@ def test_production_pin_stays_empty_after_full_validation() -> None:
     candidate, packet = _valid_pair()
     _validate(candidate, packet)
     assert frozenset() == jg._APPROVED_TRUST_POLICY_SHA256
+
+
+# ---------------------------------------------------------------------------
+# Review-fix Round 1 counterexamples
+# ---------------------------------------------------------------------------
+
+
+def test_object_level_tampered_policy_cannot_claim_digest_verified() -> None:
+    """P1-1: an object-level caller that mutates the candidate must never be
+    able to claim the raw digest was verified -- the structural-only entry
+    reports ``candidate_digest_unverified`` no matter how consistent the
+    objects look."""
+    candidate, packet = _valid_pair()
+    candidate["policy_id"] = "tampered-policy-id"
+    report = _validate(candidate, packet)
+    assert report.status == "candidate/structural_valid"
+    assert report.candidate_digest_verified is False
+    assert "candidate_digest_unverified" in report.blockers
+
+
+def test_non_canonical_candidate_bytes_are_rejected(tmp_path: Path) -> None:
+    """P1-1: the file-level entry hashes the RAW bytes; pretty-printed (non-
+    canonical) candidate bytes fail even though the parsed object is
+    identical."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate_path, packet_path = _write_pair_files(root, candidate, packet)
+    candidate_path.write_text(json.dumps(candidate, indent=2), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="does not match the candidate raw bytes"):
+        validate_trust_policy_candidate_files(candidate_path, packet_path, root)
+
+
+def test_decision_lifecycle_mismatch_is_rejected() -> None:
+    """P1-2: the packet decision must equal the candidate lifecycle state."""
+    candidate, packet = _valid_pair()
+    packet["decision"] = "draft"
+    with pytest.raises(ConfigurationError, match="must equal the candidate lifecycle state"):
+        _validate(candidate, packet)
+
+
+def test_review_before_candidate_creation_is_rejected() -> None:
+    """P1-2: a review cannot start before the candidate existed."""
+    candidate, packet = _valid_pair()
+    packet["review_started_at"] = "2026-08-07T00:00:00Z"
+    packet["review_completed_at"] = "2026-08-07T01:00:00Z"
+    with pytest.raises(ConfigurationError, match="must not start before the candidate was created"):
+        _validate(candidate, packet)
+
+
+@pytest.mark.parametrize("lifecycle", ["draft", "rejected"])
+def test_non_candidate_lifecycle_yields_not_approved_status(lifecycle: str, tmp_path: Path) -> None:
+    """P1-2: a structurally valid draft/rejected lifecycle with a matching
+    packet decision is reported as ``<lifecycle>/not_approved`` with blocker
+    ``lifecycle_not_candidate`` -- never as a candidate."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = lifecycle
+    packet["decision"] = lifecycle
+    report = _validate_files(root, candidate, packet)
+    assert report.status == f"{lifecycle}/not_approved"
+    assert report.blockers == ("lifecycle_not_candidate",)
+    assert report.lifecycle_valid is False
+    assert report.production_approved is False
+
+
+def test_superseded_complete_link_yields_not_approved_status(tmp_path: Path) -> None:
+    """P1-2: a complete supersession (target digest + timestamp + reason)
+    echoed by the packet yields ``superseded/not_approved``."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-09T00:00:00Z",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "superseded/not_approved"
+    assert report.blockers == ("lifecycle_not_candidate",)
+
+
+def test_superseded_without_link_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    with pytest.raises(ConfigurationError, match="complete supersession link"):
+        _validate(candidate, packet)
+
+
+def test_superseded_partial_link_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": None,
+        "reason": None,
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    with pytest.raises(ConfigurationError, match="must pin the superseding policy digest"):
+        _validate(candidate, packet)
+
+
+def test_superseded_packet_mismatch_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-09T00:00:00Z",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "e" * 64
+    with pytest.raises(ConfigurationError, match="must match the candidate supersession"):
+        _validate(candidate, packet)
+
+
+def test_revoked_without_records_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "revoked"
+    packet["decision"] = "revoked"
+    packet["rollback_policy_sha256"] = "d" * 64
+    with pytest.raises(ConfigurationError, match="must carry revocation records"):
+        _validate(candidate, packet)
+
+
+def test_revoked_record_fails_closed() -> None:
+    """P1-2: a revocation record fails closed against the R0 key state
+    machine -- a revoked key cannot keep signing scopes inside a candidate."""
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "revoked"
+    candidate["revocation_records"] = [
+        {
+            "revocation_record_id": "rev-001",
+            "key_id": "key-core-001",
+            "role": "core",
+            "revoked_at": "2026-08-09T00:00:00Z",
+            "reason": "R0 rehearsal",
+            "superseded_by_key_id": None,
+        }
+    ]
+    packet["decision"] = "revoked"
+    packet["rollback_policy_sha256"] = "d" * 64
+    with pytest.raises(ConfigurationError, match="cannot keep signing scopes"):
+        _validate(candidate, packet)
+
+
+def test_packet_path_binding_mismatch_is_rejected(tmp_path: Path) -> None:
+    """P1-3: the packet's recorded candidate policy path must equal the
+    candidate file's actual repository-relative POSIX path."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate_path, packet_path = _write_pair_files(root, candidate, packet)
+    packet["candidate_policy_path"] = "deployment/production/other.json"
+    _write_canonical(packet_path, packet)
+    with pytest.raises(ConfigurationError, match="does not match the candidate file location"):
+        validate_trust_policy_candidate_files(candidate_path, packet_path, root)
+
+
+def test_files_outside_repo_root_are_rejected(tmp_path: Path) -> None:
+    """P1-3: both files must resolve INSIDE the repository root."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate_path = tmp_path / "candidate.json"
+    packet_path = tmp_path / "packet.json"
+    _write_canonical(candidate_path, candidate)
+    _write_canonical(packet_path, packet)
+    with pytest.raises(ConfigurationError, match="must resolve inside the repository"):
+        validate_trust_policy_candidate_files(candidate_path, packet_path, root)
+
+
+def test_candidate_and_packet_same_file_is_rejected(tmp_path: Path) -> None:
+    """P1-3: a candidate can never carry its own approval root."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate_path, packet_path = _write_pair_files(root, candidate, packet)
+    with pytest.raises(ConfigurationError, match="separate file"):
+        validate_trust_policy_candidate_files(packet_path, packet_path, root)
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    ["openai_api_key", "OpenAiApiKey", "postgres_password", "DATABASE_URL", "bearer_token"],
+)
+def test_sensitive_env_names_are_rejected(env_name: str) -> None:
+    """P1-4: sensitive environment names are rejected after case/separator
+    normalization, so ``openai_api_key``, ``OpenAiApiKey`` and
+    ``postgres_password`` cannot slip through an allowlist."""
+    candidate, packet = _valid_pair()
+    candidate["allowed_env_names"] = [env_name]
+    with pytest.raises(ConfigurationError, match="sensitive environment name is forbidden"):
+        _validate(candidate, packet)
+
+
+def test_windows_env_locator_env_name_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["allowed_env_names"] = ["E:\\secrets\\.env"]
+    with pytest.raises(ConfigurationError, match="root .env locator is forbidden"):
+        _validate(candidate, packet)
+
+
+def test_safe_env_names_positive_control() -> None:
+    """P1-4: the canonical PATH / OMNIBASE_RUN_ID allowlist stays valid."""
+    candidate, packet = _valid_pair()
+    assert candidate["allowed_env_names"] == ["PATH", "OMNIBASE_RUN_ID"]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+    assert report.status == "candidate/structural_valid"
+
+
+def test_artifact_coverage_missing_command_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    del candidate["artifact_approvals"]["bin/core_runner"]  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must cover every required"):
+        _validate(candidate, packet)
+
+
+def test_artifact_coverage_unknown_command_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["artifact_approvals"]["bin/core_runner"]["commands"] = [  # type: ignore[index]
+        "core_runner",
+        "bogus",
+    ]
+    with pytest.raises(ConfigurationError, match="required joint boundaries only"):
+        _validate(candidate, packet)
+
+
+def test_artifact_coverage_duplicate_command_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["artifact_approvals"]["bin/runner_broker"]["commands"] = [  # type: ignore[index]
+        "core_runner",
+        "runner_broker",
+    ]
+    with pytest.raises(ConfigurationError, match="covered more than once"):
+        _validate(candidate, packet)
+
+
+def test_artifact_path_mismatch_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["artifact_approvals"]["bin/core_runner"]["path"] = "bin/other"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must equal the map key"):
+        _validate(candidate, packet)
+
+
+def test_backup_owner_as_reviewer_is_rejected() -> None:
+    """P2-2: a producer's backup owner can never approve its own policy."""
+    candidate, packet = _valid_pair()
+    packet["reviewer_ids"] = ["backup-owner-core", "reviewer-bob"]
+    with pytest.raises(ConfigurationError, match="producer or backup owner cannot be an approver"):
+        _validate(candidate, packet)
+
+
+def test_key_backup_owner_as_reviewer_is_rejected() -> None:
+    """P2-2: a key-level backup owner is disjoint from reviewers too."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["backup_owner_id"] = "key-backup-core"  # type: ignore[index]
+    packet["reviewer_ids"] = ["key-backup-core", "reviewer-bob"]
+    with pytest.raises(ConfigurationError, match="producer or backup owner cannot be an approver"):
+        _validate(candidate, packet)

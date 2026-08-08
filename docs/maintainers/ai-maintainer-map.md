@@ -1605,12 +1605,24 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
 - 七角色闭集与冻结 scope 矩阵在 `ROLE_SIGNING_SCOPES`；sealer 不得与 producer
   共用 key；wildcard/越权 scope 拒绝。
 - Approval packet 是独立外部文件：`candidate_policy_raw_sha256` 与 candidate
-  原始字节一致，section digests（artifact/commands/env/gateway）绑定 candidate
-  实际 canonical 内容；author/reviewer/producer-owner 分离；decision 闭集
-  `draft|candidate|rejected|superseded|revoked`，approved 类一律拒绝。
+  原始字节一致（仅文件级入口验证 raw bytes；对象级入口为 structural-only，
+  报告 `candidate/structural_valid` + blocker `candidate_digest_unverified`，
+  永不声明 digest 已验证）；section digests（artifact/commands/env/gateway）
+  绑定 candidate 实际 canonical 内容；author/reviewer/producer-owner 分离且
+  reviewer 不得是 producer/key 的 backup owner；decision 闭集
+  `draft|candidate|rejected|superseded|revoked`，approved 类一律拒绝；
+  packet.decision 必须等于 candidate.lifecycle_state，仅 candidate/candidate
+  产生 `candidate/valid_not_approved`，其余状态报告
+  `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；superseded
+  需完整 supersession link 且 packet 一致，revoked 需 revocation_records +
+  packet.rollback_policy_sha256；两文件都必须 resolve 在 repo-root 内且
+  packet.candidate_policy_path == 实际仓库相对 POSIX 路径。
 - 密钥生命周期/轮换/撤销状态机为闭集 `LEGAL_TRANSITIONS`；R0 不构造 active，
   拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。
-- 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；
+- 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；env name
+  归一化后拒绝敏感 token（openai_api_key/OpenAiApiKey/postgres_password 等）
+  与 root `.env` locator（`/`、`\`、Windows drive、大小写变体）；
+  artifact_approvals 恰好覆盖六个必需 joint command 各一次且 path==map key；
   custody_kind 只是计划元数据，未真实证明的 custody posture 报告 not_proven。
 - 命令：
   ```powershell

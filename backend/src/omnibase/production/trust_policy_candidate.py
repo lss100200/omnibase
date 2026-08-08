@@ -162,6 +162,51 @@ def _normalize_name(name: str) -> str:
     return "".join(ch for ch in name.lower() if ch.isalnum())
 
 
+# Sensitive environment-name tokens, matched after case/separator
+# normalization ("OPENAI_API_KEY" -> "openai_apikey", "OpenAiApiKey" ->
+# "openaiapikey", "postgres_password" -> "postgrespassword").  A normalized
+# env name containing ANY of these tokens is rejected.
+_SENSITIVE_ENV_TOKENS = frozenset(
+    {
+        "apikey",
+        "token",
+        "password",
+        "secret",
+        "credential",
+        "privatekey",
+        "accesskey",
+        "databasepassword",
+        "databaseurl",
+        "dsn",
+        "connectionstring",
+        "jwt",
+        "bearer",
+        "clientsecret",
+        "mnemonic",
+        "passphrase",
+        "seed",
+        "auth",
+        "session",
+        "cookie",
+    }
+)
+
+
+def _forbidden_env_name(name: str) -> bool:
+    """Case-insensitive, separator/camelCase-aware sensitive env-name check."""
+    normalized = _normalize_name(name)
+    return any(token in normalized for token in _SENSITIVE_ENV_TOKENS)
+
+
+def _looks_like_env_locator(value: str) -> bool:
+    """Root ``.env`` locator detection covering ``/``, ``\\``, Windows drive
+    paths, case variants and normalized paths (``.env``, ``./.env``,
+    ``.ENV``, ``E:\\...\\.env``, ``C:/foo/.Env``).  Errors never echo the
+    offending value."""
+    normalized = value.replace("\\", "/").lower()
+    return normalized in {".env", "./.env", "../.env", "/.env"} or normalized.endswith("/.env")
+
+
 def _require_identity(value: object, name: str) -> str:
     """A logical identity: non-secret, stable, format-restricted.  Never a
     Browser JWT or an email password."""
@@ -180,8 +225,9 @@ def scan_forbidden_secrets(value: object, name: str = "payload") -> None:
     Covers arbitrary case and separators (``private_key``, ``privateKey``,
     ``private-key``, ``signingSeed``, ``bearer_token``, ``api_key``,
     ``password``, ...) at every nesting level, plus root ``.env`` path
-    locators as values.  Any hit fails closed with a stable contract error
-    that never leaks the offending value."""
+    locators as values (``.env``, ``./.env``, ``.ENV``, backslash paths,
+    Windows drive paths and normalized variants).  Any hit fails closed with
+    a stable contract error that never leaks the offending value."""
     if isinstance(value, dict):
         for key, child in value.items():
             if not isinstance(key, str):
@@ -192,9 +238,14 @@ def scan_forbidden_secrets(value: object, name: str = "payload") -> None:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             scan_forbidden_secrets(child, f"{name}[{index}]")
-    elif isinstance(value, str) and (
-        value in {".env", "./.env", "../.env"} or value.endswith("/.env")
-    ):
+    elif isinstance(value, str) and _looks_like_env_locator(value):
+        raise ConfigurationError(f"{name}: root .env locator is forbidden")
+
+
+def _check_locator_free(value: object, name: str) -> None:
+    """Fail-closed locator check for strings that can carry a path (env
+    names, argv entries, identity-adjacent values)."""
+    if isinstance(value, str) and _looks_like_env_locator(value):
         raise ConfigurationError(f"{name}: root .env locator is forbidden")
 
 
@@ -634,10 +685,12 @@ def _parse_source_seal(value: object, name: str) -> SourceSealCandidate:
     )
 
 
-def _parse_artifact_approval(value: object, name: str) -> ArtifactApprovalCandidate:
+def _parse_artifact_approval(value: object, name: str, map_key: str) -> ArtifactApprovalCandidate:
     data = _object(value, name)
     _keys(data, {"path", "sha256", "commands"}, name)
     path = _relative_path(data.get("path"), f"{name}.path")
+    if path != map_key:
+        raise ConfigurationError(f"{name}.path must equal the map key")
     digest = _sha256(data.get("sha256"), f"{name}.sha256")
     commands = _list(data.get("commands"), f"{name}.commands")
     if not commands or not all(isinstance(c, str) and c in _REQUIRED_COMMANDS for c in commands):
@@ -649,6 +702,36 @@ def _parse_artifact_approval(value: object, name: str) -> ArtifactApprovalCandid
     )
 
 
+def _verify_artifact_coverage(artifact_approvals: tuple[ArtifactApprovalCandidate, ...]) -> None:
+    """The artifact-approval set must be non-empty and cover the six required
+    joint commands exactly once each (no missing, duplicate, unknown or
+    key/path-drifted coverage).  R0 validates the candidate PIN CONTRACT
+    only: real artifact file bytes are NOT verified by this module."""
+    if not artifact_approvals:
+        raise ConfigurationError("trust policy candidate.artifact_approvals must be non-empty")
+    seen_paths: set[str] = set()
+    coverage: set[str] = set()
+    for approval in artifact_approvals:
+        if approval.path in seen_paths:
+            raise ConfigurationError(
+                f"trust policy candidate.artifact_approvals: duplicate path {approval.path}"
+            )
+        seen_paths.add(approval.path)
+        for command in approval.commands:
+            if command in coverage:
+                raise ConfigurationError(
+                    f"trust policy candidate.artifact_approvals: "
+                    f"required command {command} is covered more than once"
+                )
+            coverage.add(command)
+    if coverage != set(_REQUIRED_COMMANDS):
+        missing = sorted(set(_REQUIRED_COMMANDS) - coverage)
+        raise ConfigurationError(
+            "trust policy candidate.artifact_approvals must cover every required "
+            f"joint command exactly once; missing: {', '.join(missing)}"
+        )
+
+
 def _parse_command_template(value: object, name: str) -> CommandTemplateCandidate:
     data = _object(value, name)
     _keys(data, {"command", "argv"}, name)
@@ -658,6 +741,8 @@ def _parse_command_template(value: object, name: str) -> CommandTemplateCandidat
     argv = _list(data.get("argv"), f"{name}.argv")
     if not argv or not all(isinstance(a, str) and a for a in argv):
         raise ConfigurationError(f"{name}.argv must be a non-empty argv template")
+    for index, entry in enumerate(argv):
+        _check_locator_free(entry, f"{name}.argv[{index}]")
     return CommandTemplateCandidate(
         command=command, argv=tuple(a for a in argv if isinstance(a, str))
     )
@@ -796,6 +881,24 @@ _CANDIDATE_KEYS: set[str] = {
 }
 
 
+def _parse_allowed_env_names(data: dict[str, Any], name: str) -> frozenset[str]:
+    """Env allowlist with the closed checks: non-empty strings, no locator-
+    shaped entries (any separator/case/Windows variant), and no sensitive
+    env names after case/separator normalization."""
+    env_names = _list(data.get("allowed_env_names"), f"{name}.allowed_env_names")
+    if not env_names or not all(isinstance(n, str) and n for n in env_names):
+        raise ConfigurationError(f"{name}.allowed_env_names must be non-empty strings")
+    for index, env_name in enumerate(env_names):
+        _check_locator_free(env_name, f"{name}.allowed_env_names[{index}]")
+        if _forbidden_env_name(str(env_name)):
+            raise ConfigurationError(
+                f"{name}.allowed_env_names[{index}]: sensitive environment name is forbidden"
+            )
+    if any(n in _FORBIDDEN_ENV_NAMES for n in env_names):
+        raise ConfigurationError(f"{name}.allowed_env_names must not include secret env names")
+    return frozenset(n for n in env_names if isinstance(n, str))
+
+
 def _parse_candidate(value: object) -> TrustPolicyCandidate:
     data = _object(value, "trust policy candidate")
     scan_forbidden_secrets(data, "trust policy candidate")
@@ -837,13 +940,17 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
     artifacts_raw = _object(
         data.get("artifact_approvals"), "trust policy candidate.artifact_approvals"
     )
+    if not artifacts_raw:
+        raise ConfigurationError("trust policy candidate.artifact_approvals must be non-empty")
     artifact_approvals = tuple(
         _parse_artifact_approval(
             artifacts_raw.get(path),
             f"trust policy candidate.artifact_approvals.{path}",
+            _relative_path(path, "trust policy candidate.artifact_approvals key"),
         )
         for path in sorted(artifacts_raw)
     )
+    _verify_artifact_coverage(artifact_approvals)
     commands_raw = _object(data.get("commands"), "trust policy candidate.commands")
     if set(commands_raw) != set(_REQUIRED_COMMANDS):
         raise ConfigurationError(
@@ -855,15 +962,7 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
         )
         for command in _REQUIRED_COMMANDS
     )
-    env_names = _list(data.get("allowed_env_names"), "trust policy candidate.allowed_env_names")
-    if not env_names or not all(isinstance(n, str) and n for n in env_names):
-        raise ConfigurationError(
-            "trust policy candidate.allowed_env_names must be non-empty strings"
-        )
-    if any(n in _FORBIDDEN_ENV_NAMES for n in env_names):
-        raise ConfigurationError(
-            "trust policy candidate.allowed_env_names must not include secret env names"
-        )
+    allowed_env_names = _parse_allowed_env_names(data, "trust policy candidate")
     gateway = _parse_gateway_trust(data.get("gateway"), "trust policy candidate.gateway")
     freshness = _parse_freshness(
         data.get("evidence_freshness"), "trust policy candidate.evidence_freshness"
@@ -894,7 +993,7 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
         source_seal=source_seal,
         artifact_approvals=artifact_approvals,
         commands=commands,
-        allowed_env_names=frozenset(n for n in env_names if isinstance(n, str)),
+        allowed_env_names=allowed_env_names,
         gateway=gateway,
         evidence_freshness=freshness,
         rotation_plan=rotation_plan,
@@ -1150,18 +1249,32 @@ def _verify_source_seal(candidate: TrustPolicyCandidate) -> None:
 def _verify_approver_separation(candidate: TrustPolicyCandidate, packet: ApprovalPacket) -> None:
     """The packet author must equal the candidate author; reviewers must be
     distinct logical identities, disjoint from the candidate author and from
-    every producer owner (a producer cannot approve its own policy)."""
+    every producer owner AND backup owner (a producer -- or its backup -- can
+    never approve its own policy)."""
     if packet.author_id != candidate.author_id:
         raise ConfigurationError("approval packet author must equal the candidate author")
-    producer_owners = {producer.owner_id for producer in candidate.producers} | {
-        key.owner_id for producer in candidate.producers for key in producer.keys if key.owner_id
-    }
+    producer_owners = (
+        {producer.owner_id for producer in candidate.producers}
+        | {producer.backup_owner_id for producer in candidate.producers if producer.backup_owner_id}
+        | {
+            key.owner_id
+            for producer in candidate.producers
+            for key in producer.keys
+            if key.owner_id
+        }
+        | {
+            key.backup_owner_id
+            for producer in candidate.producers
+            for key in producer.keys
+            if key.backup_owner_id
+        }
+    )
     for reviewer in packet.reviewer_ids:
         if reviewer == candidate.author_id:
             raise ConfigurationError("the candidate author cannot be a reviewer")
         if reviewer in producer_owners:
             raise ConfigurationError(
-                "a producer owner cannot be an approver of their own candidate policy"
+                "a producer or backup owner cannot be an approver of their own candidate policy"
             )
 
 
@@ -1239,6 +1352,53 @@ def _verify_revocation_records(
         raise ConfigurationError("revocation records must have unique ids")
 
 
+def _verify_lifecycle_binding(candidate: TrustPolicyCandidate, packet: ApprovalPacket) -> None:
+    """Bind the approval-packet decision to the candidate lifecycle state.
+
+    A packet decision that differs from the candidate lifecycle is a hard
+    veto: the review must decide the SAME closed-set state the candidate
+    declares, and the review window must open only after the candidate was
+    created.  ``superseded`` additionally requires a complete supersession
+    link (target digest, timestamp and reason) that the packet echoes, and
+    ``revoked`` requires revocation records plus a rollback policy in the
+    packet.  These are completeness requirements, not approvals: no state
+    transition here can produce a production-approved outcome."""
+    if packet.decision != candidate.lifecycle_state:
+        raise ConfigurationError(
+            "approval packet decision must equal the candidate lifecycle state"
+        )
+    if packet.review_started_at < candidate.created_at:
+        raise ConfigurationError(
+            "approval packet review must not start before the candidate was created"
+        )
+    if candidate.lifecycle_state == "superseded":
+        link = candidate.supersession
+        if link is None:
+            raise ConfigurationError(
+                "a superseded candidate must carry a complete supersession link"
+            )
+        if (
+            link.supersedes_policy_sha256 is None
+            or link.superseded_at is None
+            or link.reason is None
+        ):
+            raise ConfigurationError(
+                "a superseded candidate must pin the superseding policy digest, "
+                "timestamp and reason"
+            )
+        if packet.supersedes_policy_sha256 != link.supersedes_policy_sha256:
+            raise ConfigurationError(
+                "approval packet supersedes_policy_sha256 must match the candidate supersession"
+            )
+    if candidate.lifecycle_state == "revoked":
+        if not candidate.revocation_records:
+            raise ConfigurationError("a revoked candidate must carry revocation records")
+        if packet.rollback_policy_sha256 is None:
+            raise ConfigurationError(
+                "a revoked candidate requires a rollback policy in the approval packet"
+            )
+
+
 def _verify_rotation_revocation(candidate: TrustPolicyCandidate) -> None:
     """Validate the rotation plan and revocation records as a closed state
     machine: legal transitions only, no self-replacement, no cycles, no
@@ -1282,19 +1442,24 @@ def _verify_packet_section_digests(
             )
 
 
-def validate_trust_policy_candidate(
+def _validate_candidate_structure(
     candidate_payload: object,
     approval_packet_payload: object,
     repo_root: Path,
+    *,
+    digest_verified: bool,
 ) -> CandidateValidationReport:
-    """Validate one P34.7 trust-policy candidate and its external approval
-    packet against the frozen R0 contract.
+    """Structural validation shared by both entry points.
 
-    The highest possible status is ``candidate/valid_not_approved``; this
-    function NEVER approves a policy, NEVER writes into
-    ``joint_gate._APPROVED_TRUST_POLICY_SHA256`` and never changes the P34.7
-    production decision.  Structural violations raise
-    :class:`ConfigurationError` (``invalid/veto``).
+    ``digest_verified`` is a caller-provided FACT: only the file-level entry
+    proves it against the candidate raw bytes BEFORE calling this helper.
+    Only when the raw digest was actually verified AND the lifecycle is
+    ``candidate`` can the report carry the positive status
+    ``candidate/valid_not_approved``; every other combination is an explicit
+    non-candidate outcome with a blocker.  This function NEVER approves a
+    policy, NEVER writes into ``joint_gate._APPROVED_TRUST_POLICY_SHA256``
+    and never changes the P34.7 production decision.  Structural violations
+    raise :class:`ConfigurationError` (``invalid/veto``).
     """
     candidate = _parse_candidate(candidate_payload)
     packet = _parse_approval_packet(approval_packet_payload)
@@ -1303,6 +1468,7 @@ def validate_trust_policy_candidate(
     _verify_source_seal(candidate)
     _verify_approver_separation(candidate, packet)
     _verify_rotation_revocation(candidate)
+    _verify_lifecycle_binding(candidate, packet)
     _verify_packet_section_digests(candidate_dict, packet)
     # The approval packet must reference the candidate digest AND agree with
     # the candidate's source seal, scope set and freshness bounds.
@@ -1334,9 +1500,18 @@ def validate_trust_policy_candidate(
     )
     if migration_0013_created:
         raise ConfigurationError("migration 0013 must not exist")
+    if digest_verified and candidate.lifecycle_state == "candidate":
+        status = "candidate/valid_not_approved"
+        blockers: tuple[str, ...] = ()
+    elif digest_verified:
+        status = f"{candidate.lifecycle_state}/not_approved"
+        blockers = ("lifecycle_not_candidate",)
+    else:
+        status = "candidate/structural_valid"
+        blockers = ("candidate_digest_unverified",)
     return CandidateValidationReport(
         contract_valid=True,
-        candidate_digest_verified=True,
+        candidate_digest_verified=digest_verified,
         role_set_verified=True,
         key_uniqueness_verified=True,
         source_seal_verified=True,
@@ -1344,7 +1519,7 @@ def validate_trust_policy_candidate(
         author_reviewer_separation_verified=True,
         producer_approver_separation_verified=True,
         forbidden_secret_fields_absent=True,
-        lifecycle_valid=True,
+        lifecycle_valid=(packet.decision == candidate.lifecycle_state == "candidate"),
         production_approved=False,
         approved_digest_written=False,
         activation_allowed=False,
@@ -1359,8 +1534,39 @@ def validate_trust_policy_candidate(
             "agent_planner_enabled": False,
             "multi_agent_enabled": False,
         },
-        status="candidate/valid_not_approved",
+        status=status,
+        blockers=blockers,
     )
+
+
+def validate_trust_policy_candidate(
+    candidate_payload: object,
+    approval_packet_payload: object,
+    repo_root: Path,
+) -> CandidateValidationReport:
+    """Structural-only, object-level validation (no raw file bytes).
+
+    This entry parses and cross-checks the candidate and approval-packet
+    OBJECTS against the frozen R0 contract, but it has no raw bytes to
+    verify, so it NEVER claims ``candidate_digest_verified``: the report
+    carries ``candidate_digest_verified=False``, status
+    ``candidate/structural_valid`` and blocker ``candidate_digest_unverified``.
+    The file-level entry :func:`validate_trust_policy_candidate_files` is the
+    ONLY path that performs raw-byte digest verification and can construct
+    the positive ``candidate/valid_not_approved`` report.
+    """
+    return _validate_candidate_structure(
+        candidate_payload, approval_packet_payload, repo_root, digest_verified=False
+    )
+
+
+def _is_within(root: Path, path: Path) -> bool:
+    """Containment test for already-resolved, link-free paths."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def validate_trust_policy_candidate_files(
@@ -1371,15 +1577,21 @@ def validate_trust_policy_candidate_files(
     """File-based entry point with the same fail-closed guarantees.
 
     Both files must be regular, non-link, non-reparse files with canonical
-    JSON bytes and must resolve inside the repository.  The approval packet is
-    a SEPARATE file -- a candidate can never carry its own approval root --
-    and the recorded candidate digest must match the actual candidate raw
-    bytes."""
+    JSON bytes and must resolve INSIDE the repository root.  The approval
+    packet is a SEPARATE file -- a candidate can never carry its own approval
+    root -- and its recorded candidate policy path must equal the candidate's
+    actual repository-relative POSIX path.  Only after the candidate raw
+    bytes are verified against ``candidate_policy_raw_sha256`` can this entry
+    construct the positive ``candidate/valid_not_approved`` report."""
     root = repo_root.resolve(strict=True)
     candidate = _load_regular_json(candidate_path, "candidate policy")
     packet = _load_regular_json(approval_packet_path, "approval packet")
     if candidate == packet:
         raise ConfigurationError("the approval packet must be a separate file from the candidate")
+    if not _is_within(root, candidate) or not _is_within(root, packet):
+        raise ConfigurationError(
+            "candidate policy and approval packet must resolve inside the repository"
+        )
     candidate_raw = candidate.read_bytes()
     packet_payload = _read_canonical(packet, "approval packet")
     if hashlib.sha256(candidate_raw).hexdigest() != packet_payload.get(
@@ -1388,8 +1600,16 @@ def validate_trust_policy_candidate_files(
         raise ConfigurationError(
             "approval packet candidate_policy_raw_sha256 does not match the candidate raw bytes"
         )
+    recorded_path = packet_payload.get("candidate_policy_path")
+    actual_path = candidate.relative_to(root).as_posix()
+    if not isinstance(recorded_path, str) or recorded_path != actual_path:
+        raise ConfigurationError(
+            "approval packet candidate_policy_path does not match the candidate file location"
+        )
     candidate_payload = _read_canonical(candidate, "candidate policy")
-    return validate_trust_policy_candidate(candidate_payload, packet_payload, root)
+    return _validate_candidate_structure(
+        candidate_payload, packet_payload, root, digest_verified=True
+    )
 
 
 def _load_regular_json(path: Path, name: str) -> Path:

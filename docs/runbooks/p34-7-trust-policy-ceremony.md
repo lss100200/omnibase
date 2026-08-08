@@ -24,7 +24,10 @@ audited operation and is NOT part of R0.
 5. The validator and all DTOs recursively reject secret-shaped fields
    (`private_key`, `privateKey`, `signingSeed`, `mnemonic`, `passphrase`,
    `api_key`, `bearer_token`, `password`, provider credentials, root `.env`
-   locators) — this is enforced by tests, not by discipline.
+   locators in `/`, `\` and Windows-drive variants) and sensitive environment
+   names after case/separator normalization (`openai_api_key`,
+   `OpenAiApiKey`, `postgres_password`, ...) — this is enforced by tests, not
+   by discipline.
 6. A future real ceremony requires its own approval and a new runbook entry;
    this runbook does not authorize one.
 
@@ -37,8 +40,21 @@ python scripts/production/validate_p34_7_trust_policy_candidate.py \
   --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json \
   --validate-only
 # Expected: exit 0, status=candidate/valid_not_approved,
+# candidate_digest_verified=true (raw bytes verified by the file-level entry),
 # production_approved=false, approved_digest_written=false,
 # activation_allowed=false
+# NOTE: the CLI exits 0 ONLY for candidate/valid_not_approved; a structural
+# result (candidate/structural_valid + blocker candidate_digest_unverified)
+# or any <lifecycle>/not_approved outcome exits 1.
+
+# 1b. Negative control: tamper the candidate bytes and re-validate
+cp deployment/production/p34-7-trust-policy-candidate.example.json /tmp/candidate-tampered.json
+printf '\n' >> /tmp/candidate-tampered.json   # non-canonical bytes
+python scripts/production/validate_p34_7_trust_policy_candidate.py \
+  --candidate /tmp/candidate-tampered.json \
+  --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json \
+  --validate-only
+# Expected: exit 1 (raw digest mismatch -> invalid/veto)
 
 # 2. Run the negative matrix
 docker compose --env-file .env.example run --rm --no-deps \

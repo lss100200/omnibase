@@ -2570,11 +2570,30 @@ camelCase、kebab-case 与嵌套对象，命中即 fail-closed 且错误不泄�
 
 Approval packet 是独立于 candidate 的外部文件，candidate 不得内嵌自己的
 批准根，packet 不得内嵌 trust root；`candidate_policy_raw_sha256` 必须与
-candidate 实际原始字节一致；author 不得出现在 reviewer_ids、reviewer 不得
-重复、reviewer 不得是任何 producer owner、review_completed_at 不得早于
-review_started_at、decision 只能在 `draft/candidate/rejected/superseded/
+candidate 实际原始字节一致——对象级入口（`validate_trust_policy_candidate`）
+没有原始字节，永远不得声明 `candidate_digest_verified=true`，只能报告
+`candidate/structural_valid` + blocker `candidate_digest_unverified`；只有
+文件级入口（`validate_trust_policy_candidate_files`）在完成 raw-byte 校验、
+repo-root containment 校验（两个文件都必须解析在仓库根内）和
+`candidate_policy_path` 与实际仓库相对 POSIX 路径一致校验后，才能构造
+`candidate/valid_not_approved`。CLI 只在 status==candidate/valid_not_approved
+时 exit 0。author 不得出现在 reviewer_ids、reviewer 不得重复、reviewer 不得
+是任何 producer owner 或 backup owner（producer 级与 key 级）、
+review_completed_at 不得早于 review_started_at、review_started_at 不得早于
+candidate.created_at、decision 只能在 `draft/candidate/rejected/superseded/
 revoked` 闭集内（approved/approved_for_production/production_ready/passed/
-published 一律拒绝）；空 decision reason 拒绝。
+published 一律拒绝）；packet.decision 必须等于 candidate.lifecycle_state，
+只有 candidate/candidate 组合才产生 `candidate/valid_not_approved`，其余
+闭集状态报告 `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；
+superseded 必须携带完整 supersession link（supersedes_policy_sha256 +
+superseded_at + reason）且 packet.supersedes_policy_sha256 一致；revoked
+必须携带非空 revocation_records 且 packet.rollback_policy_sha256 非空；
+空 decision reason 拒绝。allowed_env_names 按大小写/分隔符归一化后禁止
+敏感 token（openai_api_key/OpenAiApiKey/postgres_password/DATABASE_URL/
+bearer_token 等），argv 与 env name 中的 root `.env` locator（`/`、`\`、
+Windows drive、大小写变体）一律拒绝；artifact_approvals 必须恰好覆盖六个
+必需 joint command 各一次（缺项/重复/未知/路径与 key 漂移全部 fail-closed），
+且每项 `path` 必须等于其 map key。
 
 密钥生命周期闭集为 `generated/registered/candidate/active/rotating/revoked/
 archived`；R0 candidate 文件中的密钥状态最多到 candidate，validator 不得
@@ -2609,14 +2628,18 @@ hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned）�
 
 - `backend/tests/test_p34_7_trust_policy_candidate.py`（负向矩阵：缺失/第八
   角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
-  drift、digest drift、lifecycle/轮换/撤销违例、approval 违例、路径/link
+  drift、raw-digest/canonical-bytes bypass、lifecycle/decision binding、
+  supersession/revocation 完整性、repo containment/packet path binding、
+  artifact coverage 闭合、backup owner approver、敏感 env name、路径/link
   攻击、migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
-  commit/tree 进入 source seal、digest 一致、身份分离、lifecycle candidate、
-  `candidate/valid_not_approved`、production Gate 仍 blocked/not_proven）
+  commit/tree 进入 source seal、文件级 raw-byte digest 验证、身份分离、
+  lifecycle candidate、`candidate/valid_not_approved`、production Gate 仍
+  blocked/not_proven）
 - `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
   deployment/production/p34-7-trust-policy-candidate.example.json
   --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json
-  --validate-only`（预期 exit 0、candidate/valid_not_approved）
+  --validate-only`（预期 exit 0、candidate/valid_not_approved；只有该 status
+  exit 0，structural-only 或非 candidate 状态一律 exit 1）
 
 **失败恢复**
 

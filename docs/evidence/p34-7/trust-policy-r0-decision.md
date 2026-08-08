@@ -27,3 +27,42 @@ The highest positive status produced by this round is
 `candidate/valid_not_approved` from
 `scripts/production/validate_p34_7_trust_policy_candidate.py` — a valid R0
 candidate changes nothing about the P34.7 production decision.
+
+## Review-fix Round 1 (2026-08-08)
+
+Status after the independent review round:
+
+```text
+REVIEW_FIX_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+```
+
+The six review findings were fixed in this round (no push / no PR / no merge;
+the change sits in one forward-fix commit on the branch):
+
+- **P1-1** — the object-level validator can no longer claim the candidate raw
+  digest was verified: it is structural-only and reports status
+  `candidate/structural_valid` with blocker `candidate_digest_unverified`.
+  Only the file-level entry verifies `SHA256(raw bytes)` against
+  `candidate_policy_raw_sha256` and may produce `candidate/valid_not_approved`.
+- **P1-2** — the approval-packet `decision` must equal the candidate
+  `lifecycle_state` (veto on mismatch), the review window must open after the
+  candidate's `created_at`, `superseded` requires a complete supersession link
+  echoed by the packet, `revoked` requires revocation records plus a rollback
+  policy, and every non-candidate lifecycle reports `<lifecycle>/not_approved`
+  with blocker `lifecycle_not_candidate`.
+- **P1-3** — both files must resolve inside the repository root and the
+  packet's `candidate_policy_path` must equal the candidate's actual
+  repository-relative POSIX path.
+- **P1-4** — sensitive environment names are rejected after
+  case/separator normalization (`openai_api_key`, `OpenAiApiKey`,
+  `postgres_password`, ...) and root `.env` locators are rejected in Windows
+  and case variants; argv entries and env names are locator-checked.
+- **P2-1** — the artifact-approval set must cover the six required joint
+  commands exactly once (no missing, duplicate, unknown or key/path-drifted
+  coverage).
+- **P2-2** — reviewers are additionally disjoint from producer/key
+  `backup_owner_id`.
+
+All previous explicit statements (no approval, empty approved-digest set,
+`blocked/not_proven`, migration head `0012`, no feature-gate opening, no
+root `.env`, no business database) remain true.
