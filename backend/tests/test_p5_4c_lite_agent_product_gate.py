@@ -1,12 +1,13 @@
 """Fail-closed unit tests for the P5.4C Lite Agent product disposable Gate.
 
-The Gate must derive every claimed result from executed receipts or report it
-as ``not_proven``: the parser/resolver/posture claims come from the sealed
-probe stdout, the migration head from a file measurement, and the
-root-env/business-database negatives from the recorded command vectors.  The
-run directory must be preserved (``evidence_preserved``) so the sealed
-evidence can be re-verified after the process exits, and the Gate must never
-claim integration of the formal P5.4B composition.
+The Gate must derive every claimed result from executed receipts: the
+parser/resolver/posture claims come from the sealed probe stdout, the
+migration head from a file measurement, and the root-env/business-database
+negatives from the recorded command vectors.  The run directory must be
+preserved (``evidence_preserved``) so the sealed evidence can be re-verified
+after the process exits.  The formal P5.4B builder is formally connected to
+this product loop (``proven_engineering_only``) through a proven integration
+fixture, but production activation remains ``not_allowed``.
 """
 
 from __future__ import annotations
@@ -52,7 +53,8 @@ _PROBE_JSON = (
     '{"absent_off": true, "false_off": true, "true_on": true, '
     '"invalid_fail_closed": true, "live_posture_reflects_env": true, '
     '"modes": ["no_tool"], "formal_builder": "build_engineering_single_agent_executor", '
-    '"formal_builder_integration": "not_integrated"}'
+    '"formal_builder_integration": "proven_engineering_only", '
+    '"engineering_composition_ready": true, "activation_allowed": false}'
 )
 
 
@@ -227,8 +229,10 @@ def test_receipt_derivations_are_computed_not_hardcoded() -> None:
     assert claims["runtime_env_resolver_true_on"] is True
     assert claims["knowledge_search_read_only_not_supported"] is True
     assert claims["formal_builder_named"] is True
-    assert claims["formal_builder_integration"] == "not_proven"
-    assert claims["formal_builder_posture_not_integrated"] is True
+    assert claims["formal_builder_integration"] == "proven_engineering_only"
+    assert claims["formal_builder_posture_not_integrated"] is False
+    assert claims["engineering_composition_ready"] is True
+    assert claims["activation_allowed"] is False
     assert claims["root_env_accessed"] is False
     assert claims["business_database_accessed"] is False
     assert claims["business_database_migrated"] is False
@@ -303,10 +307,9 @@ def test_gate_records_probe_builder_integration_honestly_and_rejects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Round-4: the Gate must NOT unconditionally discard the probe's
-    formal_builder_integration and rewrite it to not_proven.  The probe result
-    is recorded honestly — when the probe reports 'integrated', the report
-    claims 'integrated' — and the admission decision rejects the evidence
-    instead of verifying it."""
+    formal_builder_integration.  The probe result is recorded honestly — when
+    the probe reports 'integrated', the report claims 'integrated' — and the
+    admission decision rejects the evidence instead of verifying it."""
     evidence, report = _synthetic_run(
         tmp_path,
         monkeypatch,
@@ -327,6 +330,7 @@ def test_gate_records_probe_builder_integration_honestly_and_rejects(
         "selectable",
         "",
         "not_proven",
+        "not_integrated",
         "unknown_token",
         "TRUE",
         "1",
@@ -336,16 +340,21 @@ def test_probe_builder_integration_token_matrix_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
 ) -> None:
     """Round-4: any probe formal_builder_integration token other than the
-    genuine ``not_integrated`` posture must make ``--run`` produce
+    genuine ``proven_engineering_only`` posture must make ``--run`` produce
     passed=false and ``--verify-evidence`` reject.  The token is still
-    recorded honestly in the report (never rewritten)."""
+    recorded honestly in the report (never rewritten, except ``not_integrated``
+    which is rewritten to ``not_proven`` as defence-in-depth)."""
     evidence, report = _synthetic_run(
         tmp_path,
         monkeypatch,
         probe_json=_probe_variant(formal_builder_integration=token),
     )
-    assert report["formal_builder_integration"] == token
-    assert report["formal_builder_posture_not_integrated"] is False
+    # ``not_integrated`` is rewritten to ``not_proven`` as defence-in-depth;
+    # every other token is recorded verbatim.
+    expected_claim = "not_proven" if token == "not_integrated" else token
+    assert report["formal_builder_integration"] == expected_claim
+    expected_posture_not_integrated = token == "not_integrated"
+    assert report["formal_builder_posture_not_integrated"] is expected_posture_not_integrated
     # The admission decision is what rejects: the run's own claim derivation
     # would flag the mismatch (passed=false) and --verify-evidence re-executes
     # the same decision.
@@ -519,7 +528,7 @@ def test_integrity_receipt_is_self_contained(
 ) -> None:
     """Fix-5: the evidence is a self-contained run-scoped integrity receipt.
     It must never claim external authenticity and must not name an independent
-    trust anchor; production stays not_proven."""
+    trust anchor; production activation stays not_allowed."""
     evidence, report = _synthetic_run(tmp_path, monkeypatch)
     receipt = report["integrity_receipt"]
     assert receipt["scope"] == "run-scoped byte integrity only"
@@ -546,7 +555,10 @@ def test_integrity_receipt_is_self_contained(
         ("knowledge_search_read_only_not_supported", False),
         ("formal_builder_named", False),
         ("formal_builder_integration", "integrated"),
-        ("formal_builder_posture_not_integrated", False),
+        ("formal_builder_integration", "not_proven"),
+        ("formal_builder_posture_not_integrated", True),
+        ("engineering_composition_ready", False),
+        ("activation_allowed", True),
         ("root_env_accessed", True),
         ("business_database_accessed", True),
         ("business_database_migrated", True),

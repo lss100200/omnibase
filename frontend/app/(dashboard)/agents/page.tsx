@@ -119,6 +119,8 @@ export default function AgentAlphaPage() {
     alpha_builder: string
     supported_invocation_modes: string[]
     formal_builder_integration: string
+    engineering_composition_ready: boolean
+    activation_allowed: boolean
     expected_migration_head: string
   } | null>(null)
   const [postureLoading, setPostureLoading] = useState(false)
@@ -570,8 +572,8 @@ export default function AgentAlphaPage() {
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">Formal P5.4B knowledge search</span>
               <Badge variant="outline">
-                {posture?.formal_builder_integration === 'not_integrated'
-                  ? 'NOT INTEGRATED'
+                {posture?.formal_builder_integration === 'proven_engineering_only'
+                  ? 'ENG-PROVEN'
                   : 'LOCKED'}
               </Badge>
             </div>
@@ -619,7 +621,7 @@ export default function AgentAlphaPage() {
                 <p className="font-medium">Formal knowledge-search builder</p>
                 <p className="text-xs text-muted-foreground">
                   {posture
-                    ? `${posture.formal_builder} (${posture.formal_builder_integration}) — not selectable in this loop`
+                    ? `${posture.formal_builder} (${posture.formal_builder_integration}) — engineering-only, not production-selectable`
                     : 'Posture unavailable until a Workspace is selected.'}
                 </p>
                 <p className="mt-1 break-all text-xs text-muted-foreground">

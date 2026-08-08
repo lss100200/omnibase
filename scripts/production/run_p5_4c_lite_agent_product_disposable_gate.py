@@ -19,13 +19,15 @@ sealed file measurement; nothing is hardcoded as a measurement:
   ``business_database_migrated`` are re-derived from the recorded command
   vectors (the Gate only ever runs the recorded commands);
 - the probe's ``formal_builder_integration`` token is recorded **honestly**:
-  the report-level ``formal_builder_integration`` claim is ``not_proven`` only
-  when the executed probe genuinely reports ``not_integrated`` (this Gate
-  never executes the formal P5.4B persisted composition), and
-  ``formal_builder_posture_not_integrated`` independently records whether the
-  probe really returned ``not_integrated``.  Any other probe token
-  (``integrated``/``enabled``/``available``/``selectable``/empty/unknown) is
-  recorded verbatim and fails the closed-set admission decision.
+  the posture reports ``proven_engineering_only`` (the formal P5.4B builder
+  is formally connected to this product loop through a proven integration
+  fixture).  The ``not_proven`` rewrite for ``not_integrated`` probe tokens
+  is retained as defence-in-depth: a tampered probe that reports
+  ``not_integrated`` is rewritten to ``not_proven`` and fails the admission
+  expectation; any other non-matching token is recorded verbatim and fails
+  the closed-set admission decision.  ``formal_builder_posture_not_integrated``
+  independently records whether the probe really returned ``not_integrated``
+  (``False`` when the posture genuinely reports ``proven_engineering_only``).
 
 The run directory is **preserved** on success and on failure and can be
 independently re-verified later with ``--verify-evidence``; the Gate never
@@ -114,6 +116,8 @@ _PROBE_SOURCE = (
     "    'modes': list(posture['supported_invocation_modes']),\n"
     "    'formal_builder': posture['formal_builder'],\n"
     "    'formal_builder_integration': posture['formal_builder_integration'],\n"
+    "    'engineering_composition_ready': posture['engineering_composition_ready'],\n"
+    "    'activation_allowed': posture['activation_allowed'],\n"
     "}, sort_keys=True))\n"
 )
 
@@ -511,6 +515,14 @@ def _parse_probe(stdout: str) -> dict[str, object]:
         raise RuntimeError(
             "P5.4C gate probe receipt formal_builder_integration is invalid"
         )
+    if not isinstance(probe.get("engineering_composition_ready"), bool):
+        raise RuntimeError(
+            "P5.4C gate probe receipt engineering_composition_ready is invalid"
+        )
+    if not isinstance(probe.get("activation_allowed"), bool):
+        raise RuntimeError(
+            "P5.4C gate probe receipt activation_allowed is invalid"
+        )
     return probe
 
 
@@ -519,13 +531,16 @@ def _derive_claims(
 ) -> dict[str, object]:
     """Derive every claim from the executed probe receipt and command vectors.
 
-    The formal-builder disclosure is recorded **honestly**: the probe reports
+    The formal-builder integration is recorded **honestly**: the probe reports
     the live posture's ``formal_builder_integration`` token and that token is
-    what the Gate records.  ``formal_builder_integration`` is the Gate-level
-    claim — ``not_proven`` only when the executed probe genuinely reports
-    ``not_integrated`` (this Gate never executes the formal P5.4B persisted
-    composition); any other probe token is recorded verbatim and then fails the
-    closed-set admission decision.  ``formal_builder_posture_not_integrated``
+    what the Gate records.  The posture now reports
+    ``proven_engineering_only`` (the formal P5.4B builder is formally connected
+    to this product loop through a proven integration fixture).  The
+    ``not_proven`` rewrite for ``not_integrated`` probe tokens is retained as
+    defence-in-depth: a tampered probe that reports ``not_integrated`` is
+    rewritten to ``not_proven`` and then fails the admission expectation
+    (``proven_engineering_only``); any other non-matching token is recorded
+    verbatim and fails the same expectation.  ``formal_builder_posture_not_integrated``
     is the independent posture-level claim: ``True`` only when the probe really
     returned ``not_integrated``.
     """
@@ -551,16 +566,21 @@ def _derive_claims(
             modes == ("no_tool",) and "knowledge_search_read_only" not in modes
         ),
         "formal_builder_named": probe["formal_builder"] == FORMAL_BUILDER_NAME,
-        # Honest recording of the probe token: not_proven only when the probe
-        # genuinely reports not_integrated; otherwise the probe value itself is
-        # recorded so the admission decision can enforce it (see
-        # ADMISSION_EXPECTATIONS).
+        # Honest recording: proven_engineering_only is recorded verbatim; a
+        # tampered not_integrated probe is rewritten to not_proven (defence-in-
+        # depth) and fails the admission expectation; any other token is
+        # recorded verbatim and fails.
         "formal_builder_integration": (
             "not_proven" if posture_not_integrated else probe_integration
         ),
-        # Independent posture-level claim: the probe must genuinely report
-        # not_integrated for the Gate to pass.
+        # Independent posture-level claim: False when the posture genuinely
+        # reports proven_engineering_only (not not_integrated).
         "formal_builder_posture_not_integrated": posture_not_integrated,
+        # New engineering-only proof claims: the composition is ready but
+        # production activation is never allowed.
+        "engineering_composition_ready": probe.get("engineering_composition_ready")
+        is True,
+        "activation_allowed": probe.get("activation_allowed"),
         "root_env_accessed": _receipt_root_env_accessed(commands),
         "business_database_accessed": _receipt_business_database_accessed(commands),
         "business_database_migrated": _receipt_business_database_migrated(commands),
@@ -571,12 +591,13 @@ def _derive_claims(
 # (and any evidence re-verification of it) is rejected.  The Gate may only
 # PASS when all of the following hold; a single mismatch makes ``passed``
 # false, and ``--verify-evidence`` re-executes the same decision.
-# ``formal_builder_integration`` must be ``not_proven`` (this Gate never
-# executes the formal P5.4B composition) and
-# ``formal_builder_posture_not_integrated`` must be ``True`` (the executed
-# probe genuinely reported ``not_integrated``).  A probe that reports
-# integrated/enabled/available/selectable/empty/unknown is recorded honestly
-# in the report but fails both expectations and is rejected.
+# ``formal_builder_integration`` must be ``proven_engineering_only`` (the
+# formal P5.4B builder is formally connected to this product loop through a
+# proven integration fixture) and ``formal_builder_posture_not_integrated``
+# must be ``False`` (the posture genuinely reports ``proven_engineering_only``,
+# not ``not_integrated``).  A probe that reports
+# integrated/enabled/available/selectable/empty/unknown/not_integrated is
+# recorded honestly in the report but fails the expectations and is rejected.
 ADMISSION_EXPECTATIONS: dict[str, object] = {
     "lite_gate_default_off": True,
     "runtime_env_resolver_absent_off": True,
@@ -586,8 +607,10 @@ ADMISSION_EXPECTATIONS: dict[str, object] = {
     "live_posture_reflects_env": True,
     "knowledge_search_read_only_not_supported": True,
     "formal_builder_named": True,
-    "formal_builder_integration": "not_proven",
-    "formal_builder_posture_not_integrated": True,
+    "formal_builder_integration": "proven_engineering_only",
+    "formal_builder_posture_not_integrated": False,
+    "engineering_composition_ready": True,
+    "activation_allowed": False,
     "root_env_accessed": False,
     "business_database_accessed": False,
     "business_database_migrated": False,
@@ -861,7 +884,8 @@ def _verify(path: Path) -> None:  # noqa: C901
     # Fix-3/Fix-6: the probe is re-parsed from the precisely-bound
     # ``commands/lite-gate-probes.stdout``; ``formal_builder_integration`` and
     # ``formal_builder_posture_not_integrated`` stay two independent claims
-    # (not_proven only when the probe genuinely reports not_integrated).
+    # (proven_engineering_only recorded verbatim; not_integrated rewritten to
+    # not_proven as defence-in-depth and rejected).
     probe_stdout_path = run_dir / _expected_sidecar_literal(
         "lite-gate-probes", "stdout"
     )
@@ -1013,6 +1037,8 @@ def _write_report(
         "formal_builder_posture_not_integrated": claims[
             "formal_builder_posture_not_integrated"
         ],
+        "engineering_composition_ready": claims["engineering_composition_ready"],
+        "activation_allowed": claims["activation_allowed"],
         "integrity_receipt": {
             "scope": "run-scoped byte integrity only",
             "external_authenticity": False,
@@ -1035,8 +1061,10 @@ def _write_report(
             "live_posture_reflects_env": "probe receipt",
             "knowledge_search_read_only_not_supported": "probe receipt (modes == no_tool)",
             "formal_builder_named": "probe receipt (disclosure only)",
-            "formal_builder_integration": "probe receipt, recorded honestly (not_proven only when the probe genuinely reports not_integrated; the formal P5.4B composition is not executed by this Gate)",
-            "formal_builder_posture_not_integrated": "probe receipt (the posture must genuinely report not_integrated)",
+            "formal_builder_integration": "probe receipt, recorded honestly (proven_engineering_only when the formal builder is integrated; not_proven only as defence-in-depth when a tampered probe reports not_integrated)",
+            "formal_builder_posture_not_integrated": "probe receipt (False when the posture genuinely reports proven_engineering_only)",
+            "engineering_composition_ready": "probe receipt (the formal P5.4B composition is proven ready, engineering-only)",
+            "activation_allowed": "probe receipt (production activation is never allowed by the engineering proof)",
             "root_env_accessed": "derived from recorded command vectors",
             "business_database_accessed": "derived from recorded command vectors",
             "business_database_migrated": "derived from recorded command vectors",
@@ -1074,9 +1102,11 @@ def _write_report(
             (
                 "- Formal builder disclosed: "
                 f"`{report['formal_builder_named']}`; integration claim: "
-                f"`{report['formal_builder_integration']}` (not_proven only when the "
-                "executed probe genuinely reports not_integrated); posture "
-                f"not-integrated: `{report['formal_builder_posture_not_integrated']}`"
+                f"`{report['formal_builder_integration']}` (proven_engineering_only "
+                "when the formal builder is formally connected); posture "
+                f"not-integrated: `{report['formal_builder_posture_not_integrated']}`; "
+                f"engineering_composition_ready: `{report['engineering_composition_ready']}`; "
+                f"activation_allowed: `{report['activation_allowed']}`"
             ),
             (
                 "- Root .env / business database access (receipt-derived): "
@@ -1209,6 +1239,8 @@ def main() -> int:
             "formal_builder_named": False,
             "formal_builder_integration": "not_proven",
             "formal_builder_posture_not_integrated": False,
+            "engineering_composition_ready": False,
+            "activation_allowed": False,
             "root_env_accessed": _receipt_root_env_accessed(commands),
             "business_database_accessed": _receipt_business_database_accessed(commands),
             "business_database_migrated": _receipt_business_database_migrated(commands),

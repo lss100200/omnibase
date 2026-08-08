@@ -19,6 +19,7 @@ from omnibase.agent_executor.engineering import (
     build_engineering_single_agent_executor,
 )
 from omnibase.agent_executor.service import TypedExecutorPolicyDenied
+from omnibase.agent_registry.models import AgentVersionModel, WorkspaceAgentBindingModel
 from omnibase.capability_gateway.contracts import (
     RagSearchResponse,
     SearchHitRead,
@@ -26,6 +27,14 @@ from omnibase.capability_gateway.contracts import (
     WorkloadCredential,
 )
 from omnibase.production.phase5_planner_contract import PlanValidationReport, ValidatedPlan
+from omnibase.task_ledger.models import AgentRunModel, AgentTaskModel
+from omnibase.workspaces.models import (
+    NodeAttestation,
+    RunLease,
+    Workspace,
+    WorkspaceNode,
+    WorkspaceRun,
+)
 from tests.test_p5_4a_typed_executor import DEFINITION, RESOURCE, _context, _plan
 
 DIGEST = "ab" * 32
@@ -500,3 +509,289 @@ def test_composition_rejects_missing_dependencies() -> None:
         },
     )
     assert isinstance(executor, UnavailableEngineeringSingleAgentExecutor)
+
+
+# ---------------------------------------------------------------------------
+# P5.4C formal builder integration: real persisted authority chain.
+#
+# Unlike the SimpleNamespace-based tests above, this fixture constructs real
+# ORM model instances (AgentVersionModel, AgentTaskModel, AgentRunModel,
+# WorkspaceRun, RunLease, WorkspaceNode, NodeAttestation, Workspace,
+# WorkspaceAgentBindingModel) and exercises build_engineering_single_agent_executor
+# with LiveRuntimeAuthorityValidator — no _Authority fake, no fake authority
+# object, no build_engineering_typed_executor bypass.  The AgentRun ID and
+# WorkspaceRun ID deliberately differ; the validator resolves AgentRun →
+# WorkspaceRun via AgentRunModel.workspace_run_id, never treating the AgentRun
+# ID as the WorkspaceRun ID.
+# ---------------------------------------------------------------------------
+
+
+def _formal_authority_session(context) -> Mock:
+    """Build a Mock session backed by real ORM model instances.
+
+    The execute call order matches LiveRuntimeAuthorityValidator.validate():
+    Workspace → AgentTaskModel → AgentRunModel → AgentVersionModel →
+    WorkspaceAgentBindingModel → clock_timestamp → WorkspaceRun → RunLease →
+    WorkspaceNode (get_active_attested_node) → clock_timestamp (_db_now) →
+    NodeAttestation (get_active_attested_node).
+    """
+    now = datetime.now(UTC)
+    workspace = Workspace(
+        id=context.workspace_id,
+        tenant_id=context.tenant_id,
+        generation=context.workspace_generation,
+        desired_state="running",
+        observed_state="running",
+    )
+    task = AgentTaskModel(
+        id=context.task_id,
+        tenant_id=context.tenant_id,
+        workspace_id=context.workspace_id,
+        workspace_generation=context.workspace_generation,
+        actor_user_id=context.actor_user_id,
+        agent_definition_id=DEFINITION,
+        agent_version_id=context.agent_version_id,
+        agent_version_digest=context.agent_version_digest,
+        workspace_agent_binding_id="00000000-0000-0000-0000-0000000000f5",
+        task_generation=context.task_generation,
+        plan_id="00000000-0000-0000-0000-0000000000b1",
+        plan_version=context.proposal_version,
+        plan_digest=context.proposal_digest,
+        deadline=now + timedelta(minutes=5),
+        state="scheduled",
+        resource_scope_digest=context.resource_scope_digest,
+        budget_policy_digest=context.budget_policy_digest,
+        request_hash=context.proposal_digest,
+    )
+    run = AgentRunModel(
+        id=context.run_id,
+        tenant_id=context.tenant_id,
+        task_id=context.task_id,
+        workspace_id=context.workspace_id,
+        workspace_generation=context.workspace_generation,
+        workspace_run_id=WORKSPACE_RUN,
+        runtime_instance_id=RUNTIME,
+        workload_identity_digest=DIGEST,
+        node_id=RUNTIME_NODE,
+        node_fencing_token=7,
+        run_lease_id=LEASE,
+        run_fencing_token=context.run_fencing_token,
+        state="leased",
+    )
+    version = AgentVersionModel(
+        id=context.agent_version_id,
+        tenant_id=context.tenant_id,
+        definition_id=DEFINITION,
+        version="1.0.0",
+        version_state="sealed",
+        manifest_payload={},
+        manifest_digest=context.agent_version_digest,
+        model_policy_id="00000000-0000-0000-0000-0000000000c1",
+        instructions_digest="dd" * 32,
+        max_context_tokens=4096,
+        allowed_tool_ids=["knowledge_search"],
+        input_schema={},
+        output_schema={},
+        max_concurrency=1,
+        default_budget={},
+        risk_level="low",
+        created_by=context.actor_user_id,
+    )
+    binding = WorkspaceAgentBindingModel(
+        id="00000000-0000-0000-0000-0000000000f5",
+        tenant_id=context.tenant_id,
+        workspace_id=context.workspace_id,
+        workspace_generation=context.workspace_generation,
+        agent_definition_id=DEFINITION,
+        agent_version_id=context.agent_version_id,
+        agent_version_digest=context.agent_version_digest,
+        binding_state="installed",
+    )
+    workspace_run = WorkspaceRun(
+        id=WORKSPACE_RUN,
+        tenant_id=context.tenant_id,
+        workspace_id=context.workspace_id,
+        kind="interactive",
+        generation=context.workspace_generation,
+        desired_state="running",
+        observed_state="running",
+        next_fencing_token=context.run_fencing_token + 1,
+        version=1,
+        request_digest=context.proposal_digest,
+        runtime_instance_id=RUNTIME,
+        workload_identity_digest=DIGEST,
+        created_by_user_id=context.actor_user_id,
+    )
+    lease = RunLease(
+        id=LEASE,
+        tenant_id=context.tenant_id,
+        run_id=WORKSPACE_RUN,
+        workspace_id=context.workspace_id,
+        node_id=RUNTIME_NODE,
+        node_fencing_token=7,
+        generation=context.workspace_generation,
+        fencing_token=context.run_fencing_token,
+        state="active",
+        heartbeat_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    node = WorkspaceNode(
+        id=RUNTIME_NODE,
+        tenant_id=context.tenant_id,
+        workspace_id=context.workspace_id,
+        owner_user_id=context.actor_user_id,
+        display_name="trusted-node",
+        identity_digest=DIGEST,
+        state="active",
+        attestation_state="verified",
+        fencing_token=7,
+        version=1,
+    )
+    attestation = NodeAttestation(
+        id="00000000-0000-0000-0000-0000000000f8",
+        tenant_id=context.tenant_id,
+        node_id=RUNTIME_NODE,
+        nonce_digest="ee" * 32,
+        evidence_digest=DIGEST,
+        verifier="local-attestor",
+        state="verified",
+        verified_at=now - timedelta(minutes=10),
+        expires_at=now + timedelta(minutes=5),
+    )
+    session = Mock()
+    session.execute.side_effect = [
+        _result(workspace),
+        _result(task),
+        _result(run),
+        _result(version),
+        _result(binding),
+        _result(datetime.now(UTC), one=datetime.now(UTC)),
+        _result(workspace_run),
+        _result(lease),
+        _result(node),
+        _result(now, one=now),
+        _result(attestation),
+    ]
+    session.facts = SimpleNamespace(
+        workspace=workspace,
+        task=task,
+        run=run,
+        version=version,
+        binding=binding,
+        workspace_run=workspace_run,
+        lease=lease,
+        node=node,
+        attestation=attestation,
+        now=now,
+    )
+    return session
+
+
+def test_formal_builder_integration_uses_real_persisted_authority_chain() -> None:
+    """The P5.4C formal integration fixture must exercise the real persisted
+    authority chain with ORM model instances — not SimpleNamespace mocks, not a
+    fake _Authority validator, and not the weaker build_engineering_typed_executor
+    bypass.  AgentRun ID and WorkspaceRun ID must differ; the validator resolves
+    AgentRun → WorkspaceRun via AgentRunModel.workspace_run_id, never treating
+    the AgentRun ID as the WorkspaceRun ID.  The server-owned WorkloadCredential
+    must bind and check the persisted workload identity digest.
+    """
+    plan = _plan()
+    context = _context(plan)
+    credential_seam = _CredentialSeam(_credential())
+    gateway = Mock()
+    gateway.rag_search.return_value = RagSearchResponse(
+        resource_id=RESOURCE,
+        results=[
+            SearchHitRead(
+                citation_id="88888888-8888-8888-8888-888888888888",
+                document_id="99999999-9999-9999-9999-999999999999",
+                score=0.9,
+                snippet="formal integration result",
+                page_number=1,
+            )
+        ],
+        total_found=1,
+        bytes_out=64,
+        truncated=False,
+    )
+    authority_session = _formal_authority_session(context)
+    gateway_session = Mock()
+    session_factory = _SessionFactory(authority_session, gateway_session)
+    executor = build_engineering_single_agent_executor(
+        enabled=True,
+        migration_head="0012",
+        feature_gates={
+            "agent_runtime_enabled": False,
+            "agent_planner_enabled": False,
+            "multi_agent_enabled": False,
+        },
+        gateway=gateway,
+        session_factory=session_factory,
+        workload_credential_seam=credential_seam,
+    )
+    assert isinstance(executor, EngineeringSingleAgentExecutor)
+    result = executor.execute(
+        context=context,
+        plan=plan,
+        request=KnowledgeSearchRequest(resource_id=RESOURCE, query="formal"),
+    )
+    assert result.receipt.status == "succeeded"
+    assert result.receipt.effect_class == "read_only"
+    assert len(result.output.results) == 1
+    # The live authority validator (not a fake _Authority) validated the full
+    # persisted chain: Workspace → AgentTask → AgentRun → AgentVersion →
+    # WorkspaceAgentBinding → clock_timestamp → WorkspaceRun → RunLease →
+    # WorkspaceNode → clock_timestamp → NodeAttestation.
+    assert authority_session.execute.call_count == 11
+    assert authority_session.commit.call_count == 1
+    assert authority_session.close.call_count == 1
+    # The server-owned credential seam was called exactly once.
+    assert credential_seam.calls == 1
+    # The Gateway was called exactly once with the server-owned credential.
+    gateway.rag_search.assert_called_once()
+    # AgentRun ID and WorkspaceRun ID must differ.
+    assert context.run_id != WORKSPACE_RUN
+    # The credential binds the persisted workload identity digest.
+    credential = credential_seam.credential
+    assert credential.trusted_context.workload_identity_digest == DIGEST
+    # The authority chain used real ORM model instances, not SimpleNamespace.
+    facts = authority_session.facts
+    assert isinstance(facts.workspace, Workspace)
+    assert isinstance(facts.task, AgentTaskModel)
+    assert isinstance(facts.run, AgentRunModel)
+    assert isinstance(facts.version, AgentVersionModel)
+    assert isinstance(facts.binding, WorkspaceAgentBindingModel)
+    assert isinstance(facts.workspace_run, WorkspaceRun)
+    assert isinstance(facts.lease, RunLease)
+    assert isinstance(facts.node, WorkspaceNode)
+    assert isinstance(facts.attestation, NodeAttestation)
+    # AgentRun → WorkspaceRun resolution: workspace_run_id differs from run.id.
+    assert facts.run.workspace_run_id == facts.workspace_run.id
+    assert facts.run.workspace_run_id != facts.run.id
+
+
+def test_formal_builder_integration_rejects_agentrun_treated_as_workspacerun() -> None:
+    """If AgentRunModel.workspace_run_id == AgentRunModel.id, the validator must
+    reject (runtime_fencing_stale) — the AgentRun ID must never be treated as
+    the WorkspaceRun ID.
+    """
+    context = _context(_plan())
+    session = _formal_authority_session(context)
+    # Simulate the bug: workspace_run_id == run.id
+    session.facts.run.workspace_run_id = session.facts.run.id
+    validator = LiveRuntimeAuthorityValidator(session_factory=lambda: session)
+    with pytest.raises(EngineeringCompositionError, match="runtime_fencing_stale"):
+        validator.validate(context=context, credential=_credential())
+
+
+def test_formal_builder_integration_rejects_workload_digest_drift() -> None:
+    """If the persisted AgentRun workload_identity_digest differs from the
+    server-owned WorkloadCredential's digest, the validator must reject.
+    """
+    context = _context(_plan())
+    session = _formal_authority_session(context)
+    session.facts.run.workload_identity_digest = "ff" * 32
+    validator = LiveRuntimeAuthorityValidator(session_factory=lambda: session)
+    with pytest.raises(EngineeringCompositionError, match="runtime_fencing_stale"):
+        validator.validate(context=context, credential=_credential())

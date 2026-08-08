@@ -411,6 +411,8 @@ export const agentAlphaApi = {
         alpha_builder: string
         supported_invocation_modes: string[]
         formal_builder_integration: string
+        engineering_composition_ready: boolean
+        activation_allowed: boolean
         expected_migration_head: string
       }>(`/workspaces/${workspaceId}/agent-alpha/status`)
       .then((response) => response.data),

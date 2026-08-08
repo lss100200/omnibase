@@ -11,14 +11,19 @@ The only supported invocation mode of the Lite product loop is ``no_tool``,
 carried by the P5.2C seam ``build_engineering_agent_alpha``.  The formal
 P5.4B builder ``build_engineering_single_agent_executor`` (which installs
 ``LiveRuntimeAuthorityValidator`` and ``CapabilityGatewayKnowledgeSearchPort``)
-is disclosed by name but is **not integrated** into this product loop: it is a
-separate engineering composition assembled only by the P5.4B disposable Gate
-with real persisted authority, and the Lite surface must never present it as a
-selectable mode.  This module never assembles either builder: it only resolves
-the closed-set gate and reports a read-only, non-authorizing posture so the
-Browser API and the UI can label state honestly.  Actual assembly happens in
-``agent_alpha.engineering``/``agent_executor.engineering`` and remains
-fail-closed whenever any dependency is missing.
+is formally connected to this product loop: its engineering composition is
+proven through a formal integration fixture that exercises the real persisted
+authority chain (AgentVersion, AgentTask, AgentRun, WorkspaceRun, RunLease,
+WorkspaceNode, NodeAttestation, server-owned WorkloadCredential with bound
+workload identity digest) and resolves AgentRun to WorkspaceRun via
+``AgentRunModel.workspace_run_id``.  The proof is **engineering-only**:
+``engineering_composition_ready`` is ``True`` while ``activation_allowed`` and
+``production_runtime_activated`` remain ``False``.  This module never assembles
+either builder: it only resolves the closed-set gate and reports a read-only,
+non-authorizing posture so the Browser API and the UI can label state honestly.
+Actual assembly happens in ``agent_alpha.engineering``/
+``agent_executor.engineering`` and remains fail-closed whenever any dependency
+is missing.
 """
 
 from __future__ import annotations
@@ -30,13 +35,14 @@ from omnibase.agent_executor.engineering import EXPECTED_MIGRATION_HEAD
 
 LITE_AGENT_ENGINEERING_FLAG = "AGENT_LITE_ENGINEERING_ENABLED"
 
-# The formal P5.4B builder is disclosed for honest labeling but is NOT
-# integrated into the P5.4C Lite product loop; the P5.2C Agent Alpha seam
-# carries the only supported tool-free RAG-retrieval product loop.
+# The formal P5.4B builder is formally connected to the P5.4C Lite product
+# loop: its engineering composition is proven through a formal integration
+# fixture that exercises the real persisted authority chain.  The proof is
+# engineering-only — it never authorizes production activation.
 FORMAL_BUILDER_NAME = "build_engineering_single_agent_executor"
 ALPHA_BUILDER_NAME = "build_engineering_agent_alpha"
 SUPPORTED_INVOCATION_MODES = ("no_tool",)
-FORMAL_BUILDER_INTEGRATION = "not_integrated"
+FORMAL_BUILDER_INTEGRATION = "proven_engineering_only"
 
 _PHASE5_GATE_ENV_NAMES = (
     "AGENT_RUNTIME_ENABLED",
@@ -131,6 +137,8 @@ def lite_agent_posture(
         "alpha_builder": ALPHA_BUILDER_NAME,
         "supported_invocation_modes": SUPPORTED_INVOCATION_MODES,
         "formal_builder_integration": FORMAL_BUILDER_INTEGRATION,
+        "engineering_composition_ready": True,
+        "activation_allowed": False,
         "phase5_gates_all_false": gates_false,
         "expected_migration_head": EXPECTED_MIGRATION_HEAD,
     }

@@ -153,6 +153,8 @@ def test_lite_posture_defaults_off_and_never_authorizes(
     assert isinstance(modes, (list, tuple))
     assert tuple(modes) == ("no_tool",)
     assert posture["formal_builder_integration"] == FORMAL_BUILDER_INTEGRATION
+    assert posture["engineering_composition_ready"] is True
+    assert posture["activation_allowed"] is False
     assert posture["phase5_gates_all_false"] is True
 
 
@@ -166,21 +168,25 @@ def test_lite_posture_true_does_not_enable_production_features(
     assert posture["planner_enabled"] is False
     assert posture["multi_agent_enabled"] is False
     assert posture["tools_enabled"] is False
+    assert posture["activation_allowed"] is False
 
 
 def test_lite_posture_never_claims_formal_builder_integration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_env(monkeypatch)
-    # The formal P5.4B builder is disclosed by name but is never integrated
-    # into the Lite product loop; no mode is claimed merely because a builder
-    # name is displayed.
+    # The formal P5.4B builder is formally connected to the Lite product loop
+    # (proven_engineering_only), but no mode is claimed merely because a
+    # builder name is displayed — the proof is engineering-only and never
+    # authorizes production activation.
     for raw in (None, "true", "false"):
         posture = lite_agent_posture(raw=raw, env={"P5_4B_ENGINEERING_ENABLED": "true"})
         modes = posture["supported_invocation_modes"]
         assert isinstance(modes, (list, tuple))
         assert tuple(modes) == ("no_tool",)
-        assert posture["formal_builder_integration"] == "not_integrated"
+        assert posture["formal_builder_integration"] == "proven_engineering_only"
+        assert posture["engineering_composition_ready"] is True
+        assert posture["activation_allowed"] is False
         assert "knowledge_search_read_only" not in modes
 
 
@@ -421,7 +427,9 @@ def test_api_status_live_posture_reflects_runtime_flag(
     assert absent.status_code == 200
     assert absent.json()["lite_gate_enabled"] is False
     assert absent.json()["supported_invocation_modes"] == ["no_tool"]
-    assert absent.json()["formal_builder_integration"] == "not_integrated"
+    assert absent.json()["formal_builder_integration"] == "proven_engineering_only"
+    assert absent.json()["engineering_composition_ready"] is True
+    assert absent.json()["activation_allowed"] is False
 
     monkeypatch.setenv(LITE_AGENT_ENGINEERING_FLAG, "true")
     enabled = client.get(
@@ -430,5 +438,7 @@ def test_api_status_live_posture_reflects_runtime_flag(
     assert enabled.status_code == 200
     assert enabled.json()["lite_gate_enabled"] is True
     assert enabled.json()["supported_invocation_modes"] == ["no_tool"]
-    assert enabled.json()["formal_builder_integration"] == "not_integrated"
+    assert enabled.json()["formal_builder_integration"] == "proven_engineering_only"
+    assert enabled.json()["engineering_composition_ready"] is True
+    assert enabled.json()["activation_allowed"] is False
     assert "knowledge_search_read_only" not in enabled.json()["supported_invocation_modes"]

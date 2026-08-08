@@ -44,10 +44,11 @@ def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
     The Lite gate is a *product* entry guard, never an authorization fact. The
     only supported invocation mode is ``no_tool``, carried by the older P5.2C
     ``build_engineering_agent_alpha`` seam; the formal P5.4B builder
-    ``build_engineering_single_agent_executor`` is disclosed by name but is
-    **not integrated** into this product loop and is never constructed here
-    (the P5.4B disposable Gate assembles it separately with real persisted
-    authority).
+    ``build_engineering_single_agent_executor`` is formally connected to this
+    product loop (proven through a formal integration fixture with the real
+    persisted authority chain) but is never assembled in the Browser request
+    path — the P5.4B disposable Gate assembles it separately with real
+    persisted authority.
 
     The gate is resolved through ``runtime_lite_agent_enabled()``, which
     explicitly reads ``AGENT_LITE_ENGINEERING_ENABLED`` from the process
@@ -108,6 +109,8 @@ def alpha_status(
         alpha_builder=ALPHA_BUILDER_NAME,
         supported_invocation_modes=list(SUPPORTED_INVOCATION_MODES),
         formal_builder_integration=str(lite["formal_builder_integration"]),
+        engineering_composition_ready=bool(lite["engineering_composition_ready"]),
+        activation_allowed=bool(lite["activation_allowed"]),
         expected_migration_head=str(lite["expected_migration_head"]),
     )
 
