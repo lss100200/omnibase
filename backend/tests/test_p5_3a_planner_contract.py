@@ -6,7 +6,6 @@ a stable reason code, never just "an exception was raised".
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -16,7 +15,6 @@ import pytest
 from omnibase.production.composition import AdmissionState, ConfigurationError
 from omnibase.production.phase5_planner_contract import (
     AgentVersionSnapshot,
-    EffectClass,
     ExecutionRequirement,
     FrozenTaskSnapshot,
     NodeKind,
@@ -31,8 +29,6 @@ from omnibase.production.phase5_planner_contract import (
     PlanProposal,
     PlanProposalValidator,
     PlanRetryPolicy,
-    PlanValidationFinding,
-    RiskLevel,
     ToolVersionSnapshot,
     ValidatedPlan,
     WorkspaceScopeSnapshot,
@@ -409,7 +405,7 @@ def _default_validator(
 
 
 def _default_policy():
-    from omnibase.production.phase5_planner_contract import PlannerPolicy, PlannerCeilings
+    from omnibase.production.phase5_planner_contract import PlannerCeilings, PlannerPolicy
 
     return PlannerPolicy(
         schema_version=1,
@@ -678,7 +674,7 @@ class TestDagNegative:
         assert "dag_duplicate_dependency" in codes
 
     def test_node_count_exceeds_ceiling(self) -> None:
-        from omnibase.production.phase5_planner_contract import PlannerPolicy, PlannerCeilings
+        from omnibase.production.phase5_planner_contract import PlannerCeilings, PlannerPolicy
 
         policy = PlannerPolicy(
             schema_version=1,
@@ -686,9 +682,21 @@ class TestDagNegative:
             allowed_node_kinds=tuple(NodeKind),
             allowed_tool_ids=("knowledge_search",),
             max_replan=2,
-            approval_policy={"low": "optional", "medium": "optional", "high": "required", "critical": "required"},
+            approval_policy={
+                "low": "optional",
+                "medium": "optional",
+                "high": "required",
+                "critical": "required",
+            },
             ceilings=PlannerCeilings(
-                values={"max_nodes": 2, "max_depth": 8, "max_fan_out": 8, "max_concurrency": 4, "max_replan": 2, "max_attempts_per_node": 2}
+                values={
+                    "max_nodes": 2,
+                    "max_depth": 8,
+                    "max_fan_out": 8,
+                    "max_concurrency": 4,
+                    "max_replan": 2,
+                    "max_attempts_per_node": 2,
+                }
             ),
         )
         n1 = _build_node(node_id=NODE_1_ID)
@@ -786,22 +794,26 @@ class TestDataFlowNegative:
 
     def test_unknown_input_kind(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError)):
-            PlanInputBinding.from_mapping({
-                "node_id": NODE_1_ID,
-                "binding_kind": "unknown_kind",
-                "source_ref": "ref",
-                "source_field": "field",
-            })
+            PlanInputBinding.from_mapping(
+                {
+                    "node_id": NODE_1_ID,
+                    "binding_kind": "unknown_kind",
+                    "source_ref": "ref",
+                    "source_field": "field",
+                }
+            )
 
     def test_extra_fields_rejected(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError)):
-            PlanInputBinding.from_mapping({
-                "node_id": NODE_1_ID,
-                "binding_kind": "task_input",
-                "source_ref": "task",
-                "source_field": "goal",
-                "extra_field": "injected",
-            })
+            PlanInputBinding.from_mapping(
+                {
+                    "node_id": NODE_1_ID,
+                    "binding_kind": "task_input",
+                    "source_ref": "task",
+                    "source_field": "goal",
+                    "extra_field": "injected",
+                }
+            )
 
     def test_remote_json_schema_ref_rejected(self) -> None:
         schema = {
@@ -810,20 +822,27 @@ class TestDataFlowNegative:
             "properties": {"x": {"type": "string"}},
         }
         with pytest.raises((PlannerContractError, ConfigurationError)):
-            PlanOutputContract.from_mapping({
-                "output_schema": schema,
-                "output_digest": OUTPUT_DIGEST,
-            })
+            PlanOutputContract.from_mapping(
+                {
+                    "output_schema": schema,
+                    "output_digest": OUTPUT_DIGEST,
+                }
+            )
 
     def test_recursive_schema_rejected(self) -> None:
-        deep_schema: dict[str, object] = {"type": "object", "properties": {"leaf": {"type": "string"}}}
+        deep_schema: dict[str, object] = {
+            "type": "object",
+            "properties": {"leaf": {"type": "string"}},
+        }
         for _ in range(15):
             deep_schema = {"type": "object", "properties": {"nested": deep_schema}}
         with pytest.raises((PlannerContractError, ConfigurationError)):
-            PlanOutputContract.from_mapping({
-                "output_schema": deep_schema,
-                "output_digest": OUTPUT_DIGEST,
-            })
+            PlanOutputContract.from_mapping(
+                {
+                    "output_schema": deep_schema,
+                    "output_digest": OUTPUT_DIGEST,
+                }
+            )
 
 
 # ===========================================================================
@@ -904,7 +923,7 @@ class TestAgentVersionTool:
         av = _agent_version(tool_ids=("shell_exec",))
         ws = _workspace_scope(tool_binding_ids=("shell_exec",))
         policy = _default_policy()
-        from omnibase.production.phase5_planner_contract import PlannerPolicy, PlannerCeilings
+        from omnibase.production.phase5_planner_contract import PlannerPolicy
 
         policy = PlannerPolicy(
             schema_version=1,
@@ -912,7 +931,12 @@ class TestAgentVersionTool:
             allowed_node_kinds=tuple(NodeKind),
             allowed_tool_ids=("shell_exec",),
             max_replan=2,
-            approval_policy={"low": "optional", "medium": "optional", "high": "required", "critical": "required"},
+            approval_policy={
+                "low": "optional",
+                "medium": "optional",
+                "high": "required",
+                "critical": "required",
+            },
             ceilings=policy.ceilings,
         )
         node = _build_node(allowed_tool_ids=("shell_exec",))
@@ -969,32 +993,40 @@ class TestScopeNegative:
 
     def test_duplicate_scopes_rejected(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError), match="duplicates"):
-            PlanNodeProposal.from_mapping({
-                "node_id": NODE_1_ID,
-                "node_kind": "model_reasoning",
-                "agent_definition_id": DEF_ID,
-                "agent_version_id": VER_ID,
-                "agent_version_digest": AGENT_VERSION_DIGEST,
-                "depends_on": [],
-                "input_bindings": [],
-                "output_contract": {"output_schema": _OUTPUT_SCHEMA, "output_digest": OUTPUT_DIGEST},
-                "allowed_tool_ids": [],
-                "resource_scopes": ["workspace-docs", "workspace-docs"],
-                "risk_level": "low",
-                "budget": _NODE_BUDGET,
-                "timeout_ms": 10000,
-                "retry_policy": {"policy": "no_retry", "max_retries": 0, "backoff_base_ms": 0},
-                "approval_requirement": None,
-                "effect_class": "read_only",
-                "execution_requirement": None,
-                "node_digest": "00" * 32,
-            }, ceilings=_BUDGET_CEILINGS)
+            PlanNodeProposal.from_mapping(
+                {
+                    "node_id": NODE_1_ID,
+                    "node_kind": "model_reasoning",
+                    "agent_definition_id": DEF_ID,
+                    "agent_version_id": VER_ID,
+                    "agent_version_digest": AGENT_VERSION_DIGEST,
+                    "depends_on": [],
+                    "input_bindings": [],
+                    "output_contract": {
+                        "output_schema": _OUTPUT_SCHEMA,
+                        "output_digest": OUTPUT_DIGEST,
+                    },
+                    "allowed_tool_ids": [],
+                    "resource_scopes": ["workspace-docs", "workspace-docs"],
+                    "risk_level": "low",
+                    "budget": _NODE_BUDGET,
+                    "timeout_ms": 10000,
+                    "retry_policy": {"policy": "no_retry", "max_retries": 0, "backoff_base_ms": 0},
+                    "approval_requirement": None,
+                    "effect_class": "read_only",
+                    "execution_requirement": None,
+                    "node_digest": "00" * 32,
+                },
+                ceilings=_BUDGET_CEILINGS,
+            )
 
     def test_scope_input_order_digest_invariant(self) -> None:
         n1 = _build_node(resource_scopes=("workspace-docs", "workspace-images"))
         n2 = _build_node(resource_scopes=("workspace-images", "workspace-docs"))
         # Canonical payload sorts resource_scopes
-        assert n1.canonical_payload()["resource_scopes"] == n2.canonical_payload()["resource_scopes"]
+        assert (
+            n1.canonical_payload()["resource_scopes"] == n2.canonical_payload()["resource_scopes"]
+        )
 
 
 # ===========================================================================
@@ -1280,11 +1312,18 @@ class TestHashReplay:
             created_at="2026-08-05T00:00:00Z",
             nodes=(node,),
             plan_budget={
-                "input_tokens": 1_000_000, "output_tokens": 500_000,
-                "reasoning_tokens": 500_000, "total_tokens": 2_000_000,
-                "cost_micros": 100_000, "model_calls": 10, "tool_calls": 5,
-                "wall_clock_ms": 60_000, "artifact_bytes": 1_048_576,
-                "sandbox_jobs": 1, "max_attempts": 4, "max_parallel_steps": 2,
+                "input_tokens": 1_000_000,
+                "output_tokens": 500_000,
+                "reasoning_tokens": 500_000,
+                "total_tokens": 2_000_000,
+                "cost_micros": 100_000,
+                "model_calls": 10,
+                "tool_calls": 5,
+                "wall_clock_ms": 60_000,
+                "artifact_bytes": 1_048_576,
+                "sandbox_jobs": 1,
+                "max_attempts": 4,
+                "max_parallel_steps": 2,
             },
             plan_risk_summary={"low": 1, "medium": 0, "high": 0, "critical": 0},
             proposal_digest="00" * 32,
@@ -1352,14 +1391,12 @@ class TestConfigBoundary:
         """A proposal containing 'hyperv' must be rejected."""
         node = _build_node()
         # Inject forbidden token into a description-like field
-        from omnibase.production.phase5_admission import _canonical_json, _sha256_bytes
 
         # Build proposal normally, then check portability detection
         proposal = _build_proposal(nodes=(node,))
         # The validator checks the serialized JSON for forbidden tokens
         # We test by creating a proposal with a node that has hyperv in its ID
         # (which would fail UUID validation), so instead test the validator logic directly
-        validator = _default_validator()
         # Directly call _validate_portability with a mock
         raw = json.dumps(proposal.to_dict())
         assert "hyperv" not in raw.lower()
@@ -1408,19 +1445,23 @@ class TestRetryDeadline:
 
     def test_no_retry_with_retries_rejected(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError), match="no_retry"):
-            PlanRetryPolicy.from_mapping({
-                "policy": "no_retry",
-                "max_retries": 1,
-                "backoff_base_ms": 0,
-            })
+            PlanRetryPolicy.from_mapping(
+                {
+                    "policy": "no_retry",
+                    "max_retries": 1,
+                    "backoff_base_ms": 0,
+                }
+            )
 
     def test_max_retries_exceeds_ceiling(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError), match="ceiling"):
-            PlanRetryPolicy.from_mapping({
-                "policy": "retry_idempotent",
-                "max_retries": 99,
-                "backoff_base_ms": 100,
-            })
+            PlanRetryPolicy.from_mapping(
+                {
+                    "policy": "retry_idempotent",
+                    "max_retries": 99,
+                    "backoff_base_ms": 100,
+                }
+            )
 
 
 # ===========================================================================
@@ -1445,16 +1486,18 @@ class TestExecutionRequirement:
 
     def test_unknown_isolation_class_rejected(self) -> None:
         with pytest.raises((PlannerContractError, ConfigurationError), match="isolation_class"):
-            ExecutionRequirement.from_mapping({
-                "isolation_class": "hyper_v",
-                "untrusted_code": False,
-                "os_architecture": "linux/amd64",
-                "network_policy": "deny_all",
-                "workspace_data_access_mode": "none",
-                "artifact_policy": "none",
-                "resource_ceilings": {},
-                "required_logical_capabilities": [],
-            })
+            ExecutionRequirement.from_mapping(
+                {
+                    "isolation_class": "hyper_v",
+                    "untrusted_code": False,
+                    "os_architecture": "linux/amd64",
+                    "network_policy": "deny_all",
+                    "workspace_data_access_mode": "none",
+                    "artifact_policy": "none",
+                    "resource_ceilings": {},
+                    "required_logical_capabilities": [],
+                }
+            )
 
     def test_execution_requirement_portability(self) -> None:
         """ExecutionRequirement must not contain provider-specific fields."""
@@ -1494,12 +1537,6 @@ class TestCanonicalHashing:
 
     def test_dependency_order_canonical(self) -> None:
         """depends_on is sorted in canonical_payload, so order doesn't affect digest."""
-        n1 = _build_node(node_id=NODE_1_ID)
-        n2 = _build_node(node_id=NODE_2_ID)
-        n3_a = _build_node(
-            node_id=NODE_3_ID, depends_on=(NODE_1_ID, NODE_2_ID)
-        )
-        n3_b = _build_node(
-            node_id=NODE_3_ID, depends_on=(NODE_2_ID, NODE_1_ID)
-        )
+        n3_a = _build_node(node_id=NODE_3_ID, depends_on=(NODE_1_ID, NODE_2_ID))
+        n3_b = _build_node(node_id=NODE_3_ID, depends_on=(NODE_2_ID, NODE_1_ID))
         assert n3_a.canonical_payload() == n3_b.canonical_payload()
