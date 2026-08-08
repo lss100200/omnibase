@@ -513,6 +513,19 @@ def _parse_scopes(value: object, name: str, role: str) -> frozenset[str]:
     return frozenset(parsed)
 
 
+def _parse_revoked_scopes(value: object, name: str, role: str) -> frozenset[str]:
+    """A revoked historical key holds NO signing authority: its scope list
+    must be empty (the frozen per-role matrix still applies to every CURRENT
+    key, so a revoked key can never appear in the producer signing
+    allowlist)."""
+    raw = _list(value, name)
+    if raw:
+        raise ConfigurationError(
+            f"{name}: a revoked key must declare no signing scopes (empty list)"
+        )
+    return frozenset()
+
+
 def _parse_public_key(value: object, name: str) -> str:
     key = _string(value, name)
     if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -522,7 +535,9 @@ def _parse_public_key(value: object, name: str) -> str:
     return key
 
 
-def _parse_key_registration(value: object, name: str, role: str) -> PublicKeyRegistration:
+def _parse_key_registration(
+    value: object, name: str, role: str, *, candidate_lifecycle: str
+) -> PublicKeyRegistration:
     data = _object(value, name)
     _keys(
         data,
@@ -567,21 +582,38 @@ def _parse_key_registration(value: object, name: str, role: str) -> PublicKeyReg
     lifecycle_state = _string(data.get("lifecycle_state"), f"{name}.lifecycle_state")
     if lifecycle_state not in KEY_LIFECYCLE_STATES:
         raise ConfigurationError(f"{name}.lifecycle_state is unknown")
-    if lifecycle_state not in R0_CANDIDATE_KEY_STATES:
-        raise ConfigurationError(
-            f"{name}.lifecycle_state must stay in the R0 pre-approval set "
-            "(active/rotating cannot be constructed by a candidate validator)"
+    replaces_key_id = _opt_string(data.get("replaces_key_id"), f"{name}.replaces_key_id")
+    revocation_record_id: str | None
+    if lifecycle_state == "revoked":
+        # A revoked key is HISTORY: it may only exist inside a candidate that
+        # declares lifecycle_state == "revoked", it holds NO signing scopes
+        # (it can never appear in the producer signing allowlist) and it must
+        # be bound to exactly one revocation record via revocation_record_id.
+        if candidate_lifecycle != "revoked":
+            raise ConfigurationError(
+                f"{name}: a revoked key is only allowed inside a revoked candidate"
+            )
+        scopes = _parse_revoked_scopes(
+            data.get("allowed_signing_scopes"), f"{name}.allowed_signing_scopes", role
+        )
+        revocation_record_id = _string(
+            data.get("revocation_record_id"), f"{name}.revocation_record_id"
+        )
+    else:
+        if lifecycle_state not in R0_CANDIDATE_KEY_STATES:
+            raise ConfigurationError(
+                f"{name}.lifecycle_state must stay in the R0 pre-approval set "
+                "(active/rotating cannot be constructed by a candidate validator)"
+            )
+        scopes = _parse_scopes(
+            data.get("allowed_signing_scopes"), f"{name}.allowed_signing_scopes", role
+        )
+        revocation_record_id = _opt_string(
+            data.get("revocation_record_id"), f"{name}.revocation_record_id"
         )
     custody_kind = _string(data.get("custody_kind"), f"{name}.custody_kind")
     if custody_kind not in CUSTODY_KINDS:
         raise ConfigurationError(f"{name}.custody_kind is unknown")
-    scopes = _parse_scopes(
-        data.get("allowed_signing_scopes"), f"{name}.allowed_signing_scopes", role
-    )
-    replaces_key_id = _opt_string(data.get("replaces_key_id"), f"{name}.replaces_key_id")
-    revocation_record_id = _opt_string(
-        data.get("revocation_record_id"), f"{name}.revocation_record_id"
-    )
     return PublicKeyRegistration(
         key_id=key_id,
         role=role,
@@ -607,7 +639,9 @@ def _opt_identity(value: object, name: str) -> str | None:
     return _require_identity(value, name)
 
 
-def _parse_producer_registration(value: object, name: str, role: str) -> ProducerRoleRegistration:
+def _parse_producer_registration(
+    value: object, name: str, role: str, *, candidate_lifecycle: str
+) -> ProducerRoleRegistration:
     data = _object(value, name)
     _keys(
         data,
@@ -622,7 +656,10 @@ def _parse_producer_registration(value: object, name: str, role: str) -> Produce
     if not keys_raw:
         raise ConfigurationError(f"{name}.keys must be non-empty")
     keys = tuple(
-        _parse_key_registration(item, f"{name}.keys[{i}]", role) for i, item in enumerate(keys_raw)
+        _parse_key_registration(
+            item, f"{name}.keys[{i}]", role, candidate_lifecycle=candidate_lifecycle
+        )
+        for i, item in enumerate(keys_raw)
     )
     scopes = _parse_scopes(
         data.get("allowed_signing_scopes"), f"{name}.allowed_signing_scopes", role
@@ -632,7 +669,7 @@ def _parse_producer_registration(value: object, name: str, role: str) -> Produce
         if key.key_id in seen_key_ids:
             raise ConfigurationError(f"{name}.keys: duplicate key_id")
         seen_key_ids.add(key.key_id)
-        if key.allowed_signing_scopes != scopes:
+        if key.lifecycle_state != "revoked" and key.allowed_signing_scopes != scopes:
             raise ConfigurationError(
                 f"{name}.keys: key scopes must match the role registration scopes"
             )
@@ -695,6 +732,8 @@ def _parse_artifact_approval(value: object, name: str, map_key: str) -> Artifact
     commands = _list(data.get("commands"), f"{name}.commands")
     if not commands or not all(isinstance(c, str) and c in _REQUIRED_COMMANDS for c in commands):
         raise ConfigurationError(f"{name}.commands must reference required joint boundaries only")
+    if len(set(commands)) != len(commands):
+        raise ConfigurationError(f"{name}.commands must not repeat a command")
     return ArtifactApprovalCandidate(
         path=path,
         sha256=digest,
@@ -732,12 +771,14 @@ def _verify_artifact_coverage(artifact_approvals: tuple[ArtifactApprovalCandidat
         )
 
 
-def _parse_command_template(value: object, name: str) -> CommandTemplateCandidate:
+def _parse_command_template(value: object, name: str, map_key: str) -> CommandTemplateCandidate:
     data = _object(value, name)
     _keys(data, {"command", "argv"}, name)
     command = _string(data.get("command"), f"{name}.command")
     if command not in _REQUIRED_COMMANDS:
         raise ConfigurationError(f"{name}.command must be a required joint boundary")
+    if command != map_key:
+        raise ConfigurationError(f"{name}.command must equal the map key")
     argv = _list(data.get("argv"), f"{name}.argv")
     if not argv or not all(isinstance(a, str) and a for a in argv):
         raise ConfigurationError(f"{name}.argv must be a non-empty argv template")
@@ -882,12 +923,16 @@ _CANDIDATE_KEYS: set[str] = {
 
 
 def _parse_allowed_env_names(data: dict[str, Any], name: str) -> frozenset[str]:
-    """Env allowlist with the closed checks: non-empty strings, no locator-
-    shaped entries (any separator/case/Windows variant), and no sensitive
-    env names after case/separator normalization."""
+    """Env allowlist with the closed checks: non-empty strings, no duplicate
+    entries (a repeated name is vetoed even when the section digest binds the
+    repeated list), no locator-shaped entries (any separator/case/Windows
+    variant), and no sensitive env names after case/separator
+    normalization."""
     env_names = _list(data.get("allowed_env_names"), f"{name}.allowed_env_names")
     if not env_names or not all(isinstance(n, str) and n for n in env_names):
         raise ConfigurationError(f"{name}.allowed_env_names must be non-empty strings")
+    if len(set(env_names)) != len(env_names):
+        raise ConfigurationError(f"{name}.allowed_env_names must not repeat a name")
     for index, env_name in enumerate(env_names):
         _check_locator_free(env_name, f"{name}.allowed_env_names[{index}]")
         if _forbidden_env_name(str(env_name)):
@@ -932,7 +977,10 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
         )
     producers = tuple(
         _parse_producer_registration(
-            producers_raw.get(role), f"trust policy candidate.producers.{role}", role
+            producers_raw.get(role),
+            f"trust policy candidate.producers.{role}",
+            role,
+            candidate_lifecycle=lifecycle,
         )
         for role in REQUIRED_ROLES
     )
@@ -958,7 +1006,9 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
         )
     commands = tuple(
         _parse_command_template(
-            commands_raw.get(command), f"trust policy candidate.commands.{command}"
+            commands_raw.get(command),
+            f"trust policy candidate.commands.{command}",
+            command,
         )
         for command in _REQUIRED_COMMANDS
     )
@@ -1334,22 +1384,47 @@ def _verify_revocation_records(
     keys: dict[str, PublicKeyRegistration],
     key_ids: frozenset[str],
 ) -> None:
-    """Revocation records are immutable history: they must reference known
-    same-role keys, carry unique record ids, and a revoked key must not keep
-    signing scopes inside the candidate."""
-    revoked_ids = {record.key_id for record in candidate.revocation_records}
+    """Revocation records are immutable history with a closed 1:1 binding:
+
+    * every record references a KNOWN, same-role key whose lifecycle state is
+      ``revoked``, whose ``revocation_record_id`` equals the record id, and
+      which holds no signing scopes;
+    * every revoked key inside the candidate is referenced by EXACTLY ONE
+      record (record ids and key ids are both unique, and the counts match).
+
+    A record that points at a candidate/generated/registered key, or a
+    revoked key without a matching record, fails closed."""
+    revoked_keys = {key_id: key for key_id, key in keys.items() if key.lifecycle_state == "revoked"}
+    record_ids = {record.revocation_record_id for record in candidate.revocation_records}
+    if len(record_ids) != len(candidate.revocation_records):
+        raise ConfigurationError("revocation records must have unique ids")
+    referenced_key_ids: set[str] = set()
     for record in candidate.revocation_records:
         if record.key_id not in key_ids:
             raise ConfigurationError(
                 f"revocation record references an unknown key: {record.key_id}"
             )
-        if record.role != keys[record.key_id].role:
+        key = keys[record.key_id]
+        if record.role != key.role:
             raise ConfigurationError("revocation record role must match the key role")
-        if record.key_id in revoked_ids and keys[record.key_id].allowed_signing_scopes:
+        if key.lifecycle_state != "revoked":
+            raise ConfigurationError(
+                "a revocation record must reference a revoked key, not a "
+                f"{key.lifecycle_state} key"
+            )
+        if record.key_id in referenced_key_ids:
+            raise ConfigurationError("a revocation record cannot reference a key twice")
+        referenced_key_ids.add(record.key_id)
+        if key.revocation_record_id != record.revocation_record_id:
+            raise ConfigurationError(
+                "revocation record id must match the referenced key's " "revocation_record_id"
+            )
+        if key.allowed_signing_scopes:
             raise ConfigurationError("a revoked key cannot keep signing scopes")
-    record_ids = {record.revocation_record_id for record in candidate.revocation_records}
-    if len(record_ids) != len(candidate.revocation_records):
-        raise ConfigurationError("revocation records must have unique ids")
+    if len(candidate.revocation_records) != len(revoked_keys):
+        raise ConfigurationError(
+            "every revoked key must be referenced by exactly one revocation record"
+        )
 
 
 def _verify_lifecycle_binding(candidate: TrustPolicyCandidate, packet: ApprovalPacket) -> None:
@@ -1362,7 +1437,16 @@ def _verify_lifecycle_binding(candidate: TrustPolicyCandidate, packet: ApprovalP
     link (target digest, timestamp and reason) that the packet echoes, and
     ``revoked`` requires revocation records plus a rollback policy in the
     packet.  These are completeness requirements, not approvals: no state
-    transition here can produce a production-approved outcome."""
+    transition here can produce a production-approved outcome.
+
+    Timeline rule: every lifecycle event timestamp (``superseded_at`` /
+    ``revoked_at``) must fall INSIDE the review window
+    (``review_started_at <= event <= review_completed_at``), which itself
+    opens no earlier than the candidate's ``created_at``.  All comparisons
+    happen on normalized UTC datetimes (the parser accepts only explicit UTC
+    instants, ``Z`` or ``+00:00``), so mixed spellings of the SAME instant
+    compare equal; the bounds are inclusive, so an event exactly equal to a
+    bound instant is allowed."""
     if packet.decision != candidate.lifecycle_state:
         raise ConfigurationError(
             "approval packet decision must equal the candidate lifecycle state"
@@ -1390,6 +1474,7 @@ def _verify_lifecycle_binding(candidate: TrustPolicyCandidate, packet: ApprovalP
             raise ConfigurationError(
                 "approval packet supersedes_policy_sha256 must match the candidate supersession"
             )
+        _require_event_inside_review_window(link.superseded_at, "superseded_at", candidate, packet)
     if candidate.lifecycle_state == "revoked":
         if not candidate.revocation_records:
             raise ConfigurationError("a revoked candidate must carry revocation records")
@@ -1397,6 +1482,25 @@ def _verify_lifecycle_binding(candidate: TrustPolicyCandidate, packet: ApprovalP
             raise ConfigurationError(
                 "a revoked candidate requires a rollback policy in the approval packet"
             )
+        for record in candidate.revocation_records:
+            _require_event_inside_review_window(record.revoked_at, "revoked_at", candidate, packet)
+
+
+def _require_event_inside_review_window(
+    event: datetime,
+    event_name: str,
+    candidate: TrustPolicyCandidate,
+    packet: ApprovalPacket,
+) -> None:
+    """A lifecycle event must not precede the candidate's creation and must
+    fall inside the review window (inclusive UTC-instant bounds)."""
+    if event < candidate.created_at:
+        raise ConfigurationError(f"{event_name} must not precede the candidate creation timestamp")
+    if event < packet.review_started_at or event > packet.review_completed_at:
+        raise ConfigurationError(
+            f"{event_name} must fall inside the review window "
+            "(review_started_at <= event <= review_completed_at)"
+        )
 
 
 def _verify_rotation_revocation(candidate: TrustPolicyCandidate) -> None:

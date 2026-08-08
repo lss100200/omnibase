@@ -927,13 +927,14 @@ def test_non_candidate_lifecycle_yields_not_approved_status(lifecycle: str, tmp_
 
 def test_superseded_complete_link_yields_not_approved_status(tmp_path: Path) -> None:
     """P1-2: a complete supersession (target digest + timestamp + reason)
-    echoed by the packet yields ``superseded/not_approved``."""
+    echoed by the packet yields ``superseded/not_approved``.  The supersession
+    timestamp must fall inside the review window (P2-2)."""
     root = _fake_repo_root(tmp_path)
     candidate, packet = _valid_pair()
     candidate["lifecycle_state"] = "superseded"
     candidate["supersession"] = {
         "supersedes_policy_sha256": "c" * 64,
-        "superseded_at": "2026-08-09T00:00:00Z",
+        "superseded_at": "2026-08-08T01:30:00Z",
         "reason": "R0 rehearsal supersession",
     }
     packet["decision"] = "superseded"
@@ -990,8 +991,8 @@ def test_revoked_without_records_is_rejected() -> None:
 
 
 def test_revoked_record_fails_closed() -> None:
-    """P1-2: a revocation record fails closed against the R0 key state
-    machine -- a revoked key cannot keep signing scopes inside a candidate."""
+    """P1-2: a revocation record must reference a REVOKED key -- a record
+    that points at a candidate key fails closed."""
     candidate, packet = _valid_pair()
     candidate["lifecycle_state"] = "revoked"
     candidate["revocation_records"] = [
@@ -999,14 +1000,14 @@ def test_revoked_record_fails_closed() -> None:
             "revocation_record_id": "rev-001",
             "key_id": "key-core-001",
             "role": "core",
-            "revoked_at": "2026-08-09T00:00:00Z",
+            "revoked_at": "2026-08-08T01:30:00Z",
             "reason": "R0 rehearsal",
             "superseded_by_key_id": None,
         }
     ]
     packet["decision"] = "revoked"
     packet["rollback_policy_sha256"] = "d" * 64
-    with pytest.raises(ConfigurationError, match="cannot keep signing scopes"):
+    with pytest.raises(ConfigurationError, match="must reference a revoked key"):
         _validate(candidate, packet)
 
 
@@ -1122,3 +1123,352 @@ def test_key_backup_owner_as_reviewer_is_rejected() -> None:
     packet["reviewer_ids"] = ["key-backup-core", "reviewer-bob"]
     with pytest.raises(ConfigurationError, match="producer or backup owner cannot be an approver"):
         _validate(candidate, packet)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix Round 2 counterexamples
+# ---------------------------------------------------------------------------
+
+
+def _revoked_core_pair() -> tuple[dict[str, object], dict[str, object]]:
+    """A revoked candidate whose core key is a revoked historical key with an
+    exactly matching revocation record (timestamps inside the review window)."""
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "revoked"
+    candidate["producers"]["core"]["keys"][0].update(  # type: ignore[index]
+        {
+            "lifecycle_state": "revoked",
+            "allowed_signing_scopes": [],
+            "revocation_record_id": "rev-core-001",
+        }
+    )
+    candidate["revocation_records"] = [
+        {
+            "revocation_record_id": "rev-core-001",
+            "key_id": "key-core-001",
+            "role": "core",
+            "revoked_at": "2026-08-08T01:30:00Z",
+            "reason": "R0 rehearsal revocation",
+            "superseded_by_key_id": None,
+        }
+    ]
+    packet["decision"] = "revoked"
+    packet["rollback_policy_sha256"] = "d" * 64
+    return candidate, packet
+
+
+def test_command_swap_is_rejected() -> None:
+    """P1-1: the internal command must equal its map key; a swap is a veto
+    even though both names are required joint boundaries."""
+    candidate, packet = _valid_pair()
+    candidate["commands"]["core_runner"]["command"] = "runner_broker"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must equal the map key"):
+        _validate(candidate, packet)
+
+
+def test_command_swap_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P1-1: file-level veto survives full reseal of the command-templates
+    section digest, the candidate raw digest and the packet digest."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["commands"]["core_runner"]["command"] = "runner_broker"  # type: ignore[index]
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must equal the map key"):
+        _validate_files(root, candidate, packet)
+
+
+def test_six_command_boundaries_positive_control() -> None:
+    """P1-1: every required command template binds its own map key exactly."""
+    candidate, packet = _valid_pair()
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+    assert sorted(t["command"] for t in candidate["commands"].values()) == sorted(  # type: ignore[index]
+        _COMMANDS
+    )
+
+
+def test_revoked_candidate_yields_revoked_not_approved_status(tmp_path: Path) -> None:
+    """P1-2: a revoked candidate with a matching revoked historical key and
+    record is reachable and reports ``revoked/not_approved`` with blocker
+    ``lifecycle_not_candidate``."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_core_pair()
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "revoked/not_approved"
+    assert report.blockers == ("lifecycle_not_candidate",)
+    assert report.lifecycle_valid is False
+    assert report.production_approved is False
+
+
+def test_revoked_key_outside_revoked_candidate_is_rejected() -> None:
+    """P1-2: a revoked key can never appear inside a non-revoked candidate."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0].update(  # type: ignore[index]
+        {
+            "lifecycle_state": "revoked",
+            "allowed_signing_scopes": [],
+            "revocation_record_id": "rev-core-001",
+        }
+    )
+    with pytest.raises(ConfigurationError, match="only allowed inside a revoked candidate"):
+        _validate(candidate, packet)
+
+
+def test_revoked_key_keeping_scopes_is_rejected() -> None:
+    """P1-2: a revoked key must carry an EMPTY signing scope list."""
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["core"]["keys"][0]["allowed_signing_scopes"] = [  # type: ignore[index]
+        "core_runtime_posture"
+    ]
+    with pytest.raises(ConfigurationError, match="must declare no signing scopes"):
+        _validate(candidate, packet)
+
+
+def test_revoked_key_without_record_id_is_rejected() -> None:
+    """P1-2: a revoked key must be bound to its revocation record id."""
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["core"]["keys"][0]["revocation_record_id"] = None  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="revocation_record_id"):
+        _validate(candidate, packet)
+
+
+def test_record_id_drift_is_rejected() -> None:
+    """P1-2: the record id must equal the referenced key's
+    revocation_record_id."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"][0]["revocation_record_id"] = "rev-other-001"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must match the referenced key"):
+        _validate(candidate, packet)
+
+
+def test_record_role_drift_is_rejected() -> None:
+    """P1-2: a revocation record's role must match its key's role."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"][0]["role"] = "runner"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must match the key role"):
+        _validate(candidate, packet)
+
+
+def test_record_key_id_drift_is_rejected() -> None:
+    """P1-2: a revocation record referencing an unknown key fails closed."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"][0]["key_id"] = "key-ghost-001"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="unknown key"):
+        _validate(candidate, packet)
+
+
+def test_duplicate_record_id_is_rejected() -> None:
+    """P1-2: revocation record ids must be unique across the candidate."""
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["runner"]["keys"][0].update(  # type: ignore[index]
+        {
+            "lifecycle_state": "revoked",
+            "allowed_signing_scopes": [],
+            "revocation_record_id": "rev-core-001",
+        }
+    )
+    candidate["revocation_records"].append(  # type: ignore[union-attr]
+        {
+            "revocation_record_id": "rev-core-001",
+            "key_id": "key-runner-001",
+            "role": "runner",
+            "revoked_at": "2026-08-08T01:30:00Z",
+            "reason": "R0 rehearsal revocation",
+            "superseded_by_key_id": None,
+        }
+    )
+    with pytest.raises(ConfigurationError, match="unique ids"):
+        _validate(candidate, packet)
+
+
+def test_record_duplicate_key_reference_is_rejected() -> None:
+    """P1-2: two records can never reference the same revoked key."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"].append(  # type: ignore[union-attr]
+        {
+            "revocation_record_id": "rev-core-002",
+            "key_id": "key-core-001",
+            "role": "core",
+            "revoked_at": "2026-08-08T01:45:00Z",
+            "reason": "duplicate reference",
+            "superseded_by_key_id": None,
+        }
+    )
+    with pytest.raises(ConfigurationError, match="cannot reference a key twice"):
+        _validate(candidate, packet)
+
+
+def test_unmatched_revoked_key_is_rejected() -> None:
+    """P1-2: every revoked key must be referenced by exactly one record."""
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["runner"]["keys"][0].update(  # type: ignore[index]
+        {
+            "lifecycle_state": "revoked",
+            "allowed_signing_scopes": [],
+            "revocation_record_id": "rev-runner-001",
+        }
+    )
+    with pytest.raises(ConfigurationError, match="exactly one revocation record"):
+        _validate(candidate, packet)
+
+
+def test_intra_artifact_duplicate_command_is_rejected() -> None:
+    """P2-1: the same command repeated inside ONE artifact is a veto."""
+    candidate, packet = _valid_pair()
+    candidate["artifact_approvals"]["bin/core_runner"]["commands"] = [  # type: ignore[index]
+        "core_runner",
+        "core_runner",
+    ]
+    with pytest.raises(ConfigurationError, match="must not repeat a command"):
+        _validate(candidate, packet)
+
+
+def test_intra_artifact_duplicate_command_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P2-1: the intra-artifact duplicate veto survives full reseal of the
+    artifact-manifest section digest and the candidate raw digest."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["artifact_approvals"]["bin/core_runner"]["commands"] = [  # type: ignore[index]
+        "core_runner",
+        "core_runner",
+    ]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not repeat a command"):
+        _validate_files(root, candidate, packet)
+
+
+def test_superseded_before_candidate_creation_is_rejected() -> None:
+    """P2-2: superseded_at must not precede the candidate creation."""
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-07T23:00:00Z",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    with pytest.raises(ConfigurationError, match="must not precede the candidate creation"):
+        _validate(candidate, packet)
+
+
+def test_superseded_after_review_window_is_rejected() -> None:
+    """P2-2: superseded_at must fall inside the review window."""
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-08T03:00:00Z",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    with pytest.raises(ConfigurationError, match="must fall inside the review window"):
+        _validate(candidate, packet)
+
+
+def test_revoked_before_candidate_creation_is_rejected() -> None:
+    """P2-2: revoked_at must not precede the candidate creation."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"][0]["revoked_at"] = "2026-08-07T23:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not precede the candidate creation"):
+        _validate(candidate, packet)
+
+
+def test_revoked_after_review_window_is_rejected() -> None:
+    """P2-2: revoked_at must fall inside the review window."""
+    candidate, packet = _revoked_core_pair()
+    candidate["revocation_records"][0]["revoked_at"] = "2026-08-08T03:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must fall inside the review window"):
+        _validate(candidate, packet)
+
+
+def test_mixed_offset_utc_spelling_is_accepted(tmp_path: Path) -> None:
+    """P2-2: ``Z`` and ``+00:00`` spellings of the SAME UTC instant compare
+    equal after normalization (inclusive bounds)."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-08T01:30:00+00:00",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "superseded/not_approved"
+
+
+def test_equivalent_instant_at_review_boundary_is_accepted(tmp_path: Path) -> None:
+    """P2-2: an event exactly equal to a review-window bound instant is
+    allowed (inclusive UTC-instant comparison)."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-08T02:00:00Z",  # == review_completed_at
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "superseded/not_approved"
+
+
+def test_non_zero_offset_timestamp_is_rejected() -> None:
+    """P2-2: non-zero offsets remain fail-closed (explicit UTC instants
+    only, per the shared joint-gate parser), so no ambiguous offset can ever
+    enter the timeline comparison."""
+    candidate, packet = _valid_pair()
+    candidate["lifecycle_state"] = "superseded"
+    candidate["supersession"] = {
+        "supersedes_policy_sha256": "c" * 64,
+        "superseded_at": "2026-08-08T09:30:00+08:00",
+        "reason": "R0 rehearsal supersession",
+    }
+    packet["decision"] = "superseded"
+    packet["supersedes_policy_sha256"] = "c" * 64
+    with pytest.raises(ConfigurationError, match="explicit UTC instant"):
+        _validate(candidate, packet)
+
+
+def test_env_allowlist_duplicate_is_rejected() -> None:
+    """P2-3: a repeated env name is a veto before the frozenset conversion."""
+    candidate, packet = _valid_pair()
+    candidate["allowed_env_names"] = ["PATH", "PATH", "OMNIBASE_RUN_ID"]
+    with pytest.raises(ConfigurationError, match="must not repeat a name"):
+        _validate(candidate, packet)
+
+
+def test_env_allowlist_duplicate_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P2-3: the duplicate-env veto survives reseal of the env-allowlist
+    section digest and the candidate raw digest."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["allowed_env_names"] = ["PATH", "PATH", "OMNIBASE_RUN_ID"]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not repeat a name"):
+        _validate_files(root, candidate, packet)

@@ -2596,14 +2596,33 @@ Windows drive、大小写变体）一律拒绝；artifact_approvals 必须恰好
 且每项 `path` 必须等于其 map key。
 
 密钥生命周期闭集为 `generated/registered/candidate/active/rotating/revoked/
-archived`；R0 candidate 文件中的密钥状态最多到 candidate，validator 不得
+archived`；R0 candidate 文件中的当前密钥状态最多到 candidate，validator 不得
 构造新的 active/rotating；合法迁移闭集固定为 generated->registered、
 registered->candidate、candidate->rejected|superseded|revoked、
 active->rotating|revoked、rotating->active（仅 replacement key）|revoked、
 revoked->archived；拒绝 revoked->active、archived->active、rejected->active、
 candidate->active、自我替换、rotation cycle、跨角色 replacement、新旧公钥
-相同、revoked key 保留 signing scope、删除历史 revocation、改写历史 policy
-bytes 伪装新 candidate。custody_kind 只是计划性元数据（operator_offline/
+相同、删除历史 revocation、改写历史 policy bytes 伪装新 candidate。
+revoked lifecycle 可达（历史 revoked key 模型）：仅当 candidate
+lifecycle_state=="revoked" 时，被 revocation record 引用的历史 key 可声明
+lifecycle_state=="revoked"、allowed_signing_scopes 为空（不再持有签名权，
+不得出现在 producer signing allowlist）、revocation_record_id 非空；当前
+key（generated/registered/candidate）仍必须精确持有自身角色的冻结 scope
+矩阵；record 与 revoked key 必须 1:1 闭合绑定（同 role、同 key_id、同
+revocation_record_id、record id 唯一、key 引用唯一、计数相等）；missing
+record、duplicate record id、重复 key 引用、record-id/role/key-id drift、
+revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record 指向
+candidate key 全部 fail-closed；revoked 仍需 packet.rollback_policy_sha256。
+生命周期时间顺序闭合：superseded_at / 每条 record 的 revoked_at 必须落在
+review window 内（review_started_at <= event <= review_completed_at）且不早于
+candidate.created_at；所有比较在归一化 UTC datetime 上进行（解析器只接受
+Z/+00:00，非零 offset 视为歧义拒绝），边界 inclusive（等价 UTC instant
+允许）。command 模板内部 command 必须精确等于其 map key（六个 map key 与
+六个内部 command 各自形成 _REQUIRED_COMMANDS 精确闭集，swap/内部重复/缺失/
+未知全部拒绝，重算全部 digest 也不能绕过）；同一 artifact 内 command 重复
+（["core_runner","core_runner"]）与跨 artifact 重复覆盖都拒绝；allowed_env_names
+在 frozenset 转换前拒绝重复值（section digest 绑定重复列表也不能接受）。
+custody_kind 只是计划性元数据（operator_offline/
 hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned），
 不得当作实际 HSM/KMS 证明；未真实证明的 custody posture 必须报告 not_proven。
 
@@ -2629,12 +2648,14 @@ hsm_planned/kms_planned/remote_runner_local/external_signing_service_planned）�
 - `backend/tests/test_p34_7_trust_policy_candidate.py`（负向矩阵：缺失/第八
   角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
   drift、raw-digest/canonical-bytes bypass、lifecycle/decision binding、
-  supersession/revocation 完整性、repo containment/packet path binding、
-  artifact coverage 闭合、backup owner approver、敏感 env name、路径/link
+  command map-key swap（含全 digest 重算文件级）、supersession/revocation
+  完整性（1:1 record-key 绑定、时间顺序闭合）、repo containment/packet
+  path binding、artifact coverage 闭合（含 artifact 内 command 重复）、
+  env allowlist 重复、backup owner approver、敏感 env name、路径/link
   攻击、migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
   commit/tree 进入 source seal、文件级 raw-byte digest 验证、身份分离、
-  lifecycle candidate、`candidate/valid_not_approved`、production Gate 仍
-  blocked/not_proven）
+  lifecycle candidate、revoked/not_approved 文件级正向控制、
+  `candidate/valid_not_approved`、production Gate 仍 blocked/not_proven）
 - `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
   deployment/production/p34-7-trust-policy-candidate.example.json
   --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json

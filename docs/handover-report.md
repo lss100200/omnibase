@@ -1821,8 +1821,7 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    repo containment/packet path binding、artifact coverage 闭合、backup owner approver、
    敏感 env name、路径/link 攻击等；正向证明：文件级 raw-byte digest 验证后才产生
    `candidate/valid_not_approved`、对象级永不声明 digest 已验证）；joint focused
-   回归 84 passed 无回退。
-9. **文档**：`docs/architecture/p34-7-trust-policy-r0.md`、
+   回归 84 passed 无回退。9. **文档**：`docs/architecture/p34-7-trust-policy-r0.md`、
    `docs/runbooks/p34-7-trust-policy-ceremony.md`（rehearsal only，不生成生产私钥）、
    `docs/runbooks/p34-7-trust-policy-rotation-revocation.md`、
    `docs/evidence/p34-7/trust-policy-r0-decision.md`（CANDIDATE_CONTRACT_ONLY_NOT_APPROVED）；
@@ -1869,6 +1868,40 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    benchmark validators、CLI validate-only（exit 0）与 CLI tampered negative control
    （exit 1）全绿；composition --verify 与 P5.0/P5.1A/P5.2A/P5.3A/P5.6A --verify 保持
    exit 2（formal gates 未打开）；sealed digest 链重算后重新提交。
+
+### P34.7 Trust Policy R0 Review-Fix Round 2（2026-08-08）
+
+> 独立 review 的 5 项 findings（P1-1…P2-3）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_2_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 command map key 绑定**：`_parse_command_template` 接收 map_key，内部
+   `command` 必须精确等于 map key；六个 map key 与六个内部 command 各自形成
+   `_REQUIRED_COMMANDS` 精确闭集；swap/内部重复/缺失/未知全部 veto；文件级负向测试
+   重算 command_templates_sha256、candidate raw digest 与 packet digest 后仍 veto。
+2. **P1-2 revoked lifecycle 可达**：历史 revoked key 模型——仅 revoked candidate 内
+   允许 `lifecycle_state=="revoked"` 的 key（scopes 空、revocation_record_id 非空、
+   不出现于 producer signing allowlist）；当前 key 仍精确持有冻结 role scope 矩阵；
+   record 与 revoked key 1:1 闭合绑定（同 role/key_id/record_id、record id 唯一、
+   key 引用唯一、计数相等）；missing/duplicate record、record-id/role/key-id drift、
+   revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record 指向
+   candidate key 全部 veto；rollback_policy_sha256 继续必需；新增
+   `revoked/not_approved` 文件级正向控制。
+3. **P2-1 artifact 内 command 重复**：frozenset 转换前检查，
+   `["core_runner","core_runner"]` veto；跨 artifact 重复覆盖继续 veto；structural
+   与 file-level（全 digest 重算）两类测试。
+4. **P2-2 时间顺序闭合**：superseded_at / revoked_at 必须落在 review window 内
+   （review_started_at <= event <= review_completed_at）且不早于 created_at；比较
+   在归一化 UTC datetime 上进行（Z/+00:00 only，非零 offset fail-closed，边界
+   inclusive，等价 instant 允许）；新增 superseded/revoked 早于 candidate、晚于
+   review、mixed-offset、equivalent-instant 边界测试。
+5. **P2-3 env allowlist 重复**：frozenset 转换前拒绝 `["PATH","PATH",...]`；
+   section digest 绑定重复列表也不能接受；file-level 重算 digest 后仍 veto。
+6. **验证**：candidate focused 117 passed；Round 1 全部边界保留（structural-only
+   对象级、文件级 raw-byte 验证、repo containment、path binding、secret env 归一化、
+   backup owner 分离、CLI exit 语义）；正式 gates 从 clean HEAD 全部 exit 2；
+   sealed digest 链重算后重新提交。
 
 ### P5.0 Phase 5 admission gate（2026-08-02）
 

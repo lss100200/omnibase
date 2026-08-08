@@ -24,8 +24,14 @@ Rejected transitions: `revoked -> active`, `archived -> active`,
 
 1. Freeze admission; do not delete or rewrite any evidence or revocation
    history (audit records are append-only).
-2. Record a `RevocationRecord` (`revoked_at`, reason, superseded key) — the
-   revoked key must not keep signing scopes.
+2. Record a `RevocationRecord` (`revoked_at`, reason, superseded key).  In a
+   candidate whose `lifecycle_state == "revoked"` the referenced key is a
+   REVOKED historical key: `lifecycle_state == "revoked"`, empty
+   `allowed_signing_scopes`, non-empty `revocation_record_id` matching the
+   record id, bound 1:1 with exactly one record.  The revoked key must not
+   keep signing scopes and can never appear in the producer signing
+   allowlist; the record's `revoked_at` must fall inside the approval review
+   window.
 3. Plan a replacement via `RotationEntry` — same role, distinct public key,
    no self-replacement, no cycle.
 4. Re-verify from a new clean checkout; the joint gate stays

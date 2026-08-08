@@ -123,6 +123,22 @@ candidate).  `superseded` additionally requires a COMPLETE supersession link
 `revoked` requires non-empty revocation records plus a rollback policy in the
 packet.
 
+### 5.3 Lifecycle timeline closure
+
+Every lifecycle event timestamp must fall INSIDE the review window:
+
+```text
+candidate.created_at <= review_started_at
+review_started_at <= superseded_at <= review_completed_at   (superseded)
+review_started_at <= revoked_at    <= review_completed_at   (revoked, per record)
+```
+
+All comparisons happen on NORMALIZED UTC datetimes: the shared joint-gate
+parser accepts only explicit UTC instants (`Z` or `+00:00`) and rejects
+non-zero offsets as ambiguous, so mixed spellings of the same instant compare
+equal and no offset ambiguity can enter the timeline.  The bounds are
+INCLUSIVE: an event exactly equal to a bound instant is allowed.
+
 ## 6. Git source seal
 
 Reuses the joint gate's strict object-format semantics:
@@ -145,14 +161,20 @@ The checked-in examples bind the current main merge commit
 
 - `artifact_approvals`: repository-relative regular-file paths (no traversal,
   no links, no `.env`), raw-byte SHA-256, bound to required joint boundaries;
-  every approval's `path` must equal its map key, and the set must cover the
-  six required joint commands exactly once (missing, duplicate, unknown or
-  key/path-drifted coverage fails closed).  R0 validates the PIN CONTRACT
+  every approval's `path` must equal its map key, the command list of ONE
+  artifact must not repeat a command, and the set must cover the six required
+  joint commands exactly once (missing, duplicate, unknown or key/path-
+  drifted coverage fails closed).  R0 validates the PIN CONTRACT
   only — real artifact file bytes are NOT verified by the candidate module.
 - `commands`: exactly the six joint boundaries
   (`core_runner`, `runner_broker`, `runner_gateway`, `broker_gateway`,
-  `overlay_data_plane`, `recovery_sla`) with exact argv templates.
-- `allowed_env_names`: non-empty strings; secret env names are rejected after
+  `overlay_data_plane`, `recovery_sla`) with exact argv templates; the
+  internal `command` must EQUAL its map key, so swaps, internal duplicates,
+  internal misses and unknown commands all fail closed (a resealed packet
+  cannot paper over a swap).
+- `allowed_env_names`: non-empty strings with NO duplicate entries (a
+  repeated name is a veto even when the section digest binds the repeated
+  list); secret env names are rejected after
   case/separator normalization (`openai_api_key`, `OpenAiApiKey`,
   `postgres_password`, `DATABASE_URL`, `bearer_token`, ...), and root `.env`
   locators are rejected in every case/separator/Windows-drive variant
@@ -195,6 +217,31 @@ Rejected: `revoked -> active`, `archived -> active`, `rejected -> active`,
 rotation cycles, cross-role replacement, same-public-key replacement, revoked
 keys keeping signing scopes, deleting historical revocations, and rewriting
 historical policy bytes to fake a new candidate.
+
+### 9.1 Revoked candidates are reachable (historical revoked key model)
+
+A candidate whose `lifecycle_state == "revoked"` is a REAL, reachable state
+(``revoked/not_approved``), built from history rather than from signing
+authority:
+
+- inside a revoked candidate ONLY, a key may declare
+  `lifecycle_state == "revoked"` with an EMPTY `allowed_signing_scopes` list
+  and a NON-EMPTY `revocation_record_id` — it holds no signing authority and
+  can never appear in the producer signing allowlist;
+- the frozen per-role scope matrix still applies unchanged to every CURRENT
+  key (`generated`/`registered`/`candidate`), which must keep exactly its
+  role's scopes;
+- the binding is closed and 1:1: every revocation record must reference a
+  known, same-role, REVOKED key whose `revocation_record_id` equals the
+  record id, and every revoked key must be referenced by EXACTLY ONE record
+  (unique record ids, unique key references, equal counts);
+- missing record, duplicate record id, duplicate key reference, record-id
+  drift, role drift, key-id drift, a revoked key keeping scopes, a revoked
+  key inside a non-revoked candidate, or a record pointing at a
+  candidate/generated/registered key all fail closed;
+- `rollback_policy_sha256` in the packet stays mandatory for revoked
+  candidates, and every `revoked_at` must fall inside the review window
+  (see 5.3).
 
 ## 10. Approval packet
 

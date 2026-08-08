@@ -66,3 +66,47 @@ the change sits in one forward-fix commit on the branch):
 All previous explicit statements (no approval, empty approved-digest set,
 `blocked/not_proven`, migration head `0012`, no feature-gate opening, no
 root `.env`, no business database) remain true.
+
+## Review-fix Round 2 (2026-08-08)
+
+Status after the second independent review round:
+
+```text
+REVIEW_FIX_ROUND_2_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+```
+
+Five findings were closed in this round (no push / no PR / no merge; one
+forward-fix commit on the branch):
+
+- **P1-1** — every command template's internal `command` must exactly equal
+  its map key (six map keys and six internal commands each form the exact
+  `_REQUIRED_COMMANDS` closed set); command swaps, internal duplicates,
+  internal misses and unknown commands veto even after every section digest,
+  the candidate raw digest and the packet digest are resealed.
+- **P1-2** — the `revoked` lifecycle is now REACHABLE: inside a revoked
+  candidate only, a historical key may declare `lifecycle_state ==
+  "revoked"` with empty signing scopes and a non-empty
+  `revocation_record_id`; records and revoked keys bind 1:1 (same role, same
+  key id, same record id, unique ids, equal counts); non-revoked candidates
+  cannot embed revoked keys and current keys keep exactly their frozen role
+  scopes.  A real `revoked/not_approved` file-level positive control plus the
+  full negative matrix (missing/duplicate record, record-id/role/key-id
+  drift, revoked key keeping scopes, revoked key outside a revoked candidate,
+  record pointing at a candidate key) were added.
+- **P2-1** — a command repeated inside ONE artifact (`["core_runner",
+  "core_runner"]`) vetoes before frozenset conversion; cross-artifact
+  duplicate coverage still vetoes; both structural and file-level tests
+  (with fully resealed digests) were added.
+- **P2-2** — lifecycle timeline closure: `superseded_at` / `revoked_at` must
+  fall inside the review window (`review_started_at <= event <=
+  review_completed_at`) and never precede `created_at`; comparisons run on
+  normalized UTC datetimes (Z / +00:00 only, non-zero offsets fail closed),
+  bounds are inclusive, and mixed-spelling/equal-instant tests were added.
+- **P2-3** — the env allowlist rejects duplicate entries before frozenset
+  conversion; the veto survives resealed section/raw digests.
+
+All Round 1 boundaries (structural-only object entry, file-level raw-byte
+verification, lifecycle/decision binding, repo containment and path binding,
+secret env normalization, Windows `.env` locator rejection, six-artifact
+coverage closure, backup-owner/reviewer separation, CLI exit 0 only for
+`candidate/valid_not_approved`) remain in force.

@@ -1618,12 +1618,20 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
   packet.rollback_policy_sha256；两文件都必须 resolve 在 repo-root 内且
   packet.candidate_policy_path == 实际仓库相对 POSIX 路径。
 - 密钥生命周期/轮换/撤销状态机为闭集 `LEGAL_TRANSITIONS`；R0 不构造 active，
-  拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。
+  拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。revoked
+  lifecycle 可达（历史 revoked key 模型）：仅 revoked candidate 内允许
+  lifecycle_state=="revoked" 的 key（scopes 空 + revocation_record_id 非空），
+  record 与 revoked key 1:1 闭合绑定（同 role/key_id/record_id、唯一 id、
+  计数相等）；时间顺序闭合：superseded_at/revoked_at 必须落在 review window
+  内且不早于 created_at（归一化 UTC 比较，Z/+00:00 only，边界 inclusive）。
 - 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；env name
   归一化后拒绝敏感 token（openai_api_key/OpenAiApiKey/postgres_password 等）
-  与 root `.env` locator（`/`、`\`、Windows drive、大小写变体）；
-  artifact_approvals 恰好覆盖六个必需 joint command 各一次且 path==map key；
-  custody_kind 只是计划元数据，未真实证明的 custody posture 报告 not_proven。
+  与 root `.env` locator（`/`、`\`、Windows drive、大小写变体），重复 env
+  name 在 frozenset 转换前拒绝；command 模板内部 command 必须精确等于 map
+  key（swap/重复/缺失/未知拒绝，重算全部 digest 也不能绕过）；
+  artifact_approvals 恰好覆盖六个必需 joint command 各一次且 path==map key、
+  同一 artifact 内 command 不重复；custody_kind 只是计划元数据，未真实证明
+  的 custody posture 报告 not_proven。
 - 命令：
   ```powershell
   python scripts/production/validate_p34_7_trust_policy_candidate.py `
