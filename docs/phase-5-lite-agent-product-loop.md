@@ -15,14 +15,17 @@ product loop (P5.2C). P5.4C is intentionally narrow:
 - It adds one independent product gate (`AGENT_LITE_ENGINEERING_ENABLED`).
 - It supports exactly one invocation mode: `no_tool`.
 - It discloses the honest builder chain to the Browser status endpoint and the
-  Next.js workbench, and explicitly labels the formal P5.4B composition as
-  `not_integrated` in this product loop.
+  Next.js workbench, and labels the formal P5.4B composition as
+  `proven_engineering_only` — formally connected through a proven integration
+  fixture but never production-selectable.
 - It does **not** create a new migration, a new capability, a new tool, a new
   Planner, a new multi-Agent path, a new production Runtime, or a new
-  database-backed authority, and it does **not** integrate the formal P5.4B
-  builder (`build_engineering_single_agent_executor`) — that composition is a
-  separate engineering seam assembled only by the P5.4B disposable PostgreSQL
-  Gate with real persisted authority.
+  database-backed authority. The formal P5.4B builder
+  (`build_engineering_single_agent_executor`) is formally connected to this
+  product loop through a proven engineering integration fixture (real persisted
+  authority chain), but is never assembled in the Browser request path — the
+  P5.4B disposable PostgreSQL Gate assembles it separately with real persisted
+  authority.
 
 ## Authority sources
 
@@ -90,10 +93,17 @@ P5.4C supports exactly one invocation mode:
 
 The formal P5.4B builder `build_engineering_single_agent_executor` (which
 installs `LiveRuntimeAuthorityValidator` and
-`CapabilityGatewayKnowledgeSearchPort`) is disclosed by name in the posture and
-status DTO, but `formal_builder_integration` is always `not_integrated`: it is
-not selectable, not routed and never assembled by this product loop. A builder
-name in a status DTO is never a supported mode.
+`CapabilityGatewayKnowledgeSearchPort`) is formally connected to this product
+loop through a proven engineering integration fixture: the fixture exercises the
+real persisted authority chain (AgentVersion, AgentTask, AgentRun, WorkspaceRun,
+RunLease, WorkspaceNode, NodeAttestation, server-owned WorkloadCredential with
+bound workload identity digest) and resolves AgentRun → WorkspaceRun via
+`AgentRunModel.workspace_run_id`. `formal_builder_integration` is always
+`proven_engineering_only`, but the builder is never assembled in the Browser
+request path and is never production-selectable. A builder name in a status DTO
+is never a supported mode. `engineering_composition_ready` is `true` while
+`activation_allowed` remains `false` — the proof is engineering-only and never
+authorizes production activation.
 
 ## Status DTO
 
@@ -105,7 +115,9 @@ name in a status DTO is never a supported mode.
   `false`), `multi_agent_enabled` (always `false`).
 - `formal_builder` (disclosure name only), `alpha_builder`,
   `supported_invocation_modes` (always `["no_tool"]`),
-  `formal_builder_integration` (always `"not_integrated"`),
+  `formal_builder_integration` (always `"proven_engineering_only"`),
+  `engineering_composition_ready` (always `true`),
+  `activation_allowed` (always `false`),
   `expected_migration_head` (`"0012"`).
 
 Provider secrets, physical locators, credentials, migration internals and
@@ -123,19 +135,21 @@ run-scoped, engineering-only disposable Gate with three modes:
   manifest, command receipts and measurements under unique raw-byte SHA-256
   sidecars. The Gate only PASSES when every admission boolean meets its
   expectation: `lite_gate_default_off`, `absent_off`, `false_off`, `true_on`,
-  `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only and
-  `formal_builder_named` must all be `true`; `root_env_accessed`,
-  `business_database_accessed`, `business_database_migrated` and
-  `production_runtime_activated` must all be `false`;
-  `formal_builder_integration` must stay `not_proven` **and**
-  `formal_builder_posture_not_integrated` must be `true`. The probe's
-  `formal_builder_integration` token is recorded **honestly**: it is
-  `not_proven` only when the executed probe genuinely reports
-  `not_integrated`, and any other token (`integrated`, `enabled`,
-  `available`, `selectable`, empty or unknown) is recorded verbatim and fails
-  the admission decision, so `--run` produces `passed=false`. A single
-  mismatch makes `passed=false` — the run directory is still preserved with
-  the failing claims.
+  `invalid_fail_closed`, `live_posture_reflects_env`, `no_tool`-only,
+  `formal_builder_named` and `engineering_composition_ready` must all be
+  `true`; `root_env_accessed`, `business_database_accessed`,
+  `business_database_migrated`, `production_runtime_activated`,
+  `formal_builder_posture_not_integrated` and `activation_allowed` must all
+  be `false`; `formal_builder_integration` must stay
+  `proven_engineering_only`. The probe's `formal_builder_integration` token
+  is recorded **honestly**: the posture reports `proven_engineering_only`
+  (the formal builder is formally connected), and this is recorded verbatim.
+  A tampered probe reporting `not_integrated` is rewritten to `not_proven`
+  as defence-in-depth and fails the admission expectation; any other token
+  (`integrated`, `enabled`, `available`, `selectable`, empty or unknown) is
+  recorded verbatim and fails the admission decision, so `--run` produces
+  `passed=false`. A single mismatch makes `passed=false` — the run directory
+  is still preserved with the failing claims.
 - `--verify-evidence <path>`: re-verifies the sealed source, artifact and
   evidence bytes, re-parses the probe receipt, validates the **exact argv
   template** of every recorded command (the explicit `.env.example` path, the
@@ -148,7 +162,8 @@ run-scoped, engineering-only disposable Gate with three modes:
   admission decision** that `--run` computed. Verifying is not just "report
   equals derived values": derived values that miss an admission expectation
   (e.g. `true_on=false`, `invalid_fail_closed=false`, `live_posture=false`,
-  `formal_builder_posture_not_integrated=false`, mode drift or command-vector
+  `engineering_composition_ready=false`, `activation_allowed=true`,
+  `formal_builder_posture_not_integrated=true`, mode drift or command-vector
   drift) reject the evidence instead of verifying it.
 
   Round-5 additionally hardens the receipt and sidecar binding so a
@@ -183,10 +198,11 @@ run-scoped, engineering-only disposable Gate with three modes:
     top-level-vs-measurements drift rejects the evidence.
   - **Probe semantics stay strict**: the probe is re-parsed from the
     precisely-bound `commands/lite-gate-probes.stdout`;
-    `formal_builder_integration = not_proven` and
-    `formal_builder_posture_not_integrated = true` stay two independent claims;
-    `integrated`/`enabled`/`available`/`selectable`/empty/unknown tokens
-    continue to be recorded verbatim and rejected.
+    `formal_builder_integration = proven_engineering_only` and
+    `formal_builder_posture_not_integrated = false` stay two independent claims;
+    `not_integrated`/`integrated`/`enabled`/`available`/`selectable`/empty/unknown
+    tokens continue to be recorded (with `not_integrated` rewritten to
+    `not_proven` as defence-in-depth) and rejected.
 
 Every claim in the report is **derived from an executed receipt or a sealed
 file measurement** — nothing is hardcoded as a measurement:
@@ -198,13 +214,15 @@ file measurement** — nothing is hardcoded as a measurement:
   `business_database_migrated` are re-derived from the recorded command
   vectors;
 - the probe's `formal_builder_integration` token is recorded honestly:
-  `formal_builder_integration` is `not_proven` only when the probe genuinely
-  reports `not_integrated` (this Gate never executes the formal P5.4B
-  persisted composition — that belongs to the P5.4B disposable PostgreSQL
-  Gate), and `formal_builder_posture_not_integrated` independently records
-  whether the probe really returned `not_integrated`. A probe reporting
-  `integrated`/`enabled`/`available`/`selectable`/empty/unknown is recorded
-  verbatim and rejected by the admission decision.
+  the posture reports `proven_engineering_only` (the formal P5.4B builder is
+  formally connected to this product loop through a proven integration
+  fixture), and this is recorded verbatim. A tampered probe reporting
+  `not_integrated` is rewritten to `not_proven` as defence-in-depth and fails
+  the admission expectation. `formal_builder_posture_not_integrated`
+  independently records whether the probe returned `not_integrated` (`false`
+  when the posture genuinely reports `proven_engineering_only`). A probe
+  reporting `integrated`/`enabled`/`available`/`selectable`/empty/unknown is
+  recorded verbatim and rejected by the admission decision.
 
 The run directory is **preserved** on success and on failure and can be
 re-verified later; the Gate never deletes its own evidence. The Gate never
@@ -235,9 +253,10 @@ python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 ## Production boundary
 
 Production status remains `blocked/not_proven`. The Lite gate, the disposable
-Gate, the focused unit suite and the frontend build are engineering evidence
-only; they are not production admission. P5.4C must never enable a Phase 5
-production Feature Gate, create migration `0013`, retry an unknown provider
-outcome, present a disposable Lite Gate as production admission, present the
-formal P5.4B builder as an integrated mode, or expose provider secrets in
-browser state, logs, diagnostics, errors or DTOs.
+Gate, the focused unit suite, the formal builder integration fixture and the
+frontend build are engineering evidence only; they are not production
+admission. P5.4C must never enable a Phase 5 production Feature Gate, create
+migration `0013`, retry an unknown provider outcome, present a disposable Lite
+Gate as production admission, present the engineering-only proof as production
+proof, or expose provider secrets in browser state, logs, diagnostics, errors
+or DTOs.
