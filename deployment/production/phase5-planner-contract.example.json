@@ -25,14 +25,14 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "651225da4c7252591a3c8c0c8782af986f38ea8c860035fb6afb79256641e28a"
+      "sha256": "4374ea2a9925e4890364b913027c446ef52b94823a2bf970ce600d3500a8897a"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "c7f0dd1c2455a21f4e8cee3e290c8cf5d20da6b0a17cb77802bf8c541630f8aa"
+      "sha256": "5ea7fd055f807bba3b6acbdcf384a248b08574b736207545521915ef5da14ce9"
     }
   },
   "source": {
