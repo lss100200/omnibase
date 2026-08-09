@@ -45,8 +45,8 @@ Reports are especially important when they involve:
 - Capability Gateway attestation, scope, budget, expiry, or revocation;
 - unsafe migration, backup, or in-place restore behavior;
 - secret exposure through logs, errors, SDK DTOs, frontend bundles, or Git;
-- a claim that Sandbox, Overlay Network, or Agent Runtime isolation exists when
-  the corresponding P34 gates remain frozen.
+- a claim that Sandbox, Overlay Network, or Agent Runtime isolation is ready for
+  production while the total P34.7 production Gate remains `blocked/not_proven`.
 
 ## Maintainer response
 

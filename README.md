@@ -18,12 +18,12 @@ Bring documents, structured data, OpenAI-compatible providers, and purpose-built
 [![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
 [![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
 
-[Public website](https://omnibase.chat/public-preview) · [Quick start](#quick-start) · [Build your first agent](#build-your-first-agent) · [Architecture](#architecture) · [Safety boundaries](#safety-boundaries)
+[Public website](https://omnibase.chat/public-preview) · [Quick start](#quick-start) · [Build your first agent](#build-your-first-agent) · [Product direction](#product-direction) · [Community](COMMUNITY.md) · [Safety boundaries](#safety-boundaries)
 
 </div>
 
 > [!IMPORTANT]
-> OmniBase is an open-source **Public Preview**, not a production Agent Runtime admission. The repository includes a usable self-hosted product slice and multiple engineering-sealed control-plane components, but the three Phase 5 production Feature Gates remain off. Production multi-Agent orchestration, hostile-code execution, and the complete P34.7 production composition are still `blocked/not_proven`.
+> OmniBase is an open-source **Public Preview**, not a production Agent Runtime admission. The repository includes a usable self-hosted product slice and multiple engineering-sealed control-plane components, but the three Phase 5 production Feature Gates remain off. P34.7 Trust Policy Candidate R0 is now part of `main`, but it is a candidate-governance contract only: no policy digest is approved and the complete production composition remains `blocked/not_proven`.
 
 ## Start with an AI workspace—not an infrastructure dashboard
 
@@ -43,7 +43,7 @@ The product is deliberately fail-closed: browser identity is not runtime authori
 | User settings | **Available in Public Preview** | Real user profile/preferences plus encrypted, user-owned OpenAI-compatible provider credentials and bounded connection tests. Provider secrets are never returned by browser DTOs. |
 | Agent Builder | **Engineering preview** | Users can create an owned AgentDefinition, seal version `1.0.0`, optionally install it into a Workspace, and use the existing tool-free Agent Alpha workbench. |
 | Agent Alpha | **Engineering-only, default off** | A single Agent can use the internal Model Gateway and read-only Workspace-derived RAG. It has durable task/run bookkeeping, SSE streaming, cancellation, citations, model identity, usage, and latency. |
-| Capability platform | **Engineering-sealed, production default reject** | Capability Gateway, Workspace/Run/Node control records, fencing, independent Linux Runner evidence, PrivateNetwork Broker, Headscale adapter, and split-process mTLS Gateway have engineering Gates. They are not a complete production composition. |
+| Capability platform | **Engineering-sealed, production default reject** | Capability Gateway, Workspace/Run/Node control records, fencing, independent Linux Runner evidence, PrivateNetwork Broker, Headscale adapter, and split-process mTLS Gateway have engineering Gates. P34.7 Trust Policy Candidate R0 validates candidate governance, lifecycle, key rotation/revocation, artifact coverage, and review separation, but does not approve a production policy. |
 | Skills | **Compile-only contract** | P5.6A validates first-party, exact-version Skill manifests. Skill persistence, installation, execution, MCP, and Marketplace remain disabled. |
 | Planner / multi-Agent / hostile code | **Blocked / roadmap** | Planner execution, multi-Agent scheduling, arbitrary shell/SQL/HTTP tools, MCP Runtime, and hostile-code Sandbox activation are not authorized. |
 
@@ -196,6 +196,19 @@ OmniBase treats these boundaries as product behavior, not optional hardening:
 
 Security issues should be reported through [SECURITY.md](SECURITY.md), not a public issue.
 
+## Product direction
+
+OmniBase is growing along two connected axes instead of splitting into unrelated products:
+
+| Axis | Evolution | Design goal |
+|---|---|---|
+| Runtime and operating systems | Full personal edition → Lite PC profile without hardened-kernel dependence → macOS and broader host support | Keep the Workspace, knowledge, model, and Agent experience available on more machines; degrade only capabilities that cannot be proved safely on a host. |
+| Organization and governance | Personal → Team → Enterprise → Customized deployments | Reuse the same tenant, Workspace, Agent, capability, audit, and policy contracts while adding collaboration, administration, compliance, and deployment controls. |
+
+The coordinate origin is the complete self-hosted personal edition: one user can create a Workspace, connect a model provider, organize knowledge, and build an Agent. Portability expands vertically; organizational scale expands horizontally. Hardened isolation remains an explicit capability tier rather than a hidden requirement that makes the whole product unusable on lower-spec PCs or macOS.
+
+For project questions, onboarding help, and community channels, use the single maintained directory in [COMMUNITY.md](COMMUNITY.md). Do not send vulnerabilities or credentials through community channels; follow [SECURITY.md](SECURITY.md).
+
 ## Roadmap
 
 | Stage | Status |
@@ -209,7 +222,8 @@ Security issues should be reported through [SECURITY.md](SECURITY.md), not a pub
 | Planner execution and multi-Agent orchestration | **Blocked / roadmap** |
 | First-party Skill contract | **Compile-only engineering admission** |
 | Skill Runtime, MCP and third-party Marketplace | **Roadmap** |
-| Production hostile-code Sandbox and P34.7 admission | **Blocked/not_proven** |
+| P34.7 Trust Policy Candidate governance | **Merged in `main`; candidate-only, not approved** |
+| Production hostile-code Sandbox and total P34.7 admission | **Blocked/not_proven** |
 
 ## Development
 
@@ -245,6 +259,8 @@ Before changing authentication, tenancy, migrations, P34, Agent contracts, SDKs,
 Documentation, onboarding improvements, focused tests, and small boundary-preserving fixes are welcome. Changes involving authentication, tenancy, migrations, Capability Gateway, Sandbox, Agent execution, provider credentials, or recovery require the verification commands and invariant updates listed in the maintenance map.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+Questions, onboarding, and community contact details are maintained in one place: [COMMUNITY.md](COMMUNITY.md).
 
 ## License
 
