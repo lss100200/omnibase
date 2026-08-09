@@ -3991,3 +3991,81 @@ Production posture is unchanged: `activation_allowed=false`, production
 Runtime/Planner/Multi-Agent disabled, all three Phase 5 production Feature
 Gates false, migration head `0012`, migration `0013` absent, and P34.7 remains
 `blocked/not_proven`.
+
+### Main-line status sync and P34.7 Trust Policy R1 preparation（2026-08-09）
+
+This section supersedes only the **current-state wording** in older historical
+entries; it does not rewrite their original execution reports or evidence.
+
+The verified default branch is now `main` at merge commit
+`6a869bc3af54957cc72460c66566f5a8e0f536f3`. The relevant ordinary merge chain
+is:
+
+1. PR `#18`, merge commit `dfd4b20bf7ffced7717b0adfbd88b19a9eaabbaa`:
+   P5 Consolidation R1 entered `main`, including P5.3A Planner Proposal,
+   P5.4 typed single-Agent Executor, Formal Engineering Composition and the
+   P5.4C Lite Agent product loop.
+2. PR `#19`, merge commit `36b48a720c11a583e104a886b9eb9f8ec88e99b3`:
+   the hardened P34.7 joint evidence Gate and its object-format/freshness/
+   exact-expiry review fixes entered `main`.
+3. PR `#20`, merge commit `f7ae932bd9495b539637829b70c124e354fa65af`:
+   Trust Policy Candidate R0 and four security review-fix rounds entered
+   `main`; R0 remains candidate-only and cannot approve itself.
+4. PR `#21`, merge commit `6a869bc3af54957cc72460c66566f5a8e0f536f3`:
+   repository introduction and the single community-contact directory entered
+   `main`; no runtime or security authority changed.
+
+Current P5 engineering truth:
+
+```text
+P5.3A-P5.4C unified engineering chain = on main
+formal_builder_integration = proven_engineering_only
+engineering_composition_ready = true
+allowed Agent tool = knowledge_search read-only
+P5.6A first-party Skill = compile-only
+production Runtime/Planner/Multi-Agent = disabled
+```
+
+Current P34.7 truth:
+
+```text
+P34.7 implementation/contracts/local gates = complete and integrated
+Trust Policy Candidate R0 = candidate/valid_not_approved
+_APPROVED_TRUST_POLICY_SHA256 = frozenset()
+real production evidence = incomplete
+P34.7 production total Gate = blocked/not_proven
+activation_allowed = false
+```
+
+The remaining production work is external-evidence work, not another broad
+contract-rewrite loop: current-source Runner 12/12; four production component
+roundtrips; real provider lifecycle and data-owner-authorized non-disposable
+tenant/RAG; two independent Linux members and DERP; compromise/rejoin and
+cleanup; dual signatures; capacity/fault/SLA observations.
+
+The approved next preparation step adds two planning-only documents:
+
+- `docs/p34-7-trust-policy-r1-preparation-plan.md` — independent authority,
+  custody, key-ceremony, policy-review and future audited digest-change plan;
+- `docs/p34-7-target-environment-evidence-plan.md` — fail-closed target-resource
+  inventory and mapping to all eleven production blockers.
+
+All target resources begin `NOT_ASSESSED`. This preparation does **not** assign
+authorities, execute a key ceremony, generate/transport private keys, approve a
+policy digest, access a target environment, collect production evidence,
+deploy, create migration `0013`, or enable a Phase 5 Feature Gate. The root
+`.env` was not read and no business database was accessed or migrated.
+
+Formal state after this documentation change remains:
+
+```text
+R1_PREPARATION_READY_FOR_AUTHORITY_AND_ENVIRONMENT_ASSIGNMENT
+TRUST_POLICY_NOT_APPROVED
+P34_7_BLOCKED_NOT_PROVEN
+PRODUCTION_ACTIVATION_DISABLED
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+```
