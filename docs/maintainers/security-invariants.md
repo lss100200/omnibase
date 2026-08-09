@@ -2526,3 +2526,178 @@ If redaction leaks a secret or a capability fact over-claims from executable
 presence, stop use of the diagnostics bundle, fix the redactor/detector in a
 new commit, and re-run the attack matrix. Keep Hardened `blocked/not_proven`
 and every Phase 5 Feature Gate false.
+
+## INV-053 trust-policy-candidate-governance
+
+**权威源码**
+
+- `backend/src/omnibase/production/trust_policy_candidate.py`
+- `backend/tests/test_p34_7_trust_policy_candidate.py`
+- `scripts/production/validate_p34_7_trust_policy_candidate.py`
+- `deployment/production/p34-7-trust-policy-candidate.example.json`
+- `deployment/production/p34-7-trust-policy-approval-packet.example.json`
+- `docs/architecture/p34-7-trust-policy-r0.md`
+- `docs/runbooks/p34-7-trust-policy-ceremony.md`
+- `docs/runbooks/p34-7-trust-policy-rotation-revocation.md`
+- `docs/evidence/p34-7/trust-policy-r0-decision.md`
+
+**为何存在**
+
+P34.7 的信任锚是独立安装、独立审批的 trust policy；在 R0 阶段只允许建立
+candidate 治理合同，任何 candidate 都不得自我批准、不得由 producer 批准、
+不得改变 `joint_gate._APPROVED_TRUST_POLICY_SHA256`（保持空集）。R0 的最高
+正向状态是 `candidate/valid_not_approved`；`production_approved`、
+`approved_digest_written`、`activation_allowed` 必须恒为 false。
+
+candidate 必须且只能包含七个 producer 角色（core/runner/broker/gateway/
+overlay/recovery_sla/sealer），第七个角色 sealer 的密钥不得与任何 producer
+共用；七把 Ed25519 公钥必须全部不同、恰好 64 位小写 hex、非全零。每个角色
+只能声明自己冻结行的 signing scope（core_runtime_posture、core_runner_
+request_identity 等，见 `ROLE_SIGNING_SCOPES`），禁止 wildcard 与任意扩展
+scope。producer 不得声明其他 producer 的 scope；sealer 只能签 evidence seal
+与 cleanup/seal 边界。
+
+Git source seal 复用 joint gate 的 object-format 语义：`git_object_format`
+闭集 `sha1 | sha256`；sha1 恰好 40 位小写 hex、sha256 恰好 64 位小写 hex；
+commit/tree 保留原始 Git OID 不二次哈希；unknown format、长度错误、大小写
+错误、跨格式 drift 全部 fail-closed。candidate 的 approved_commits/
+approved_trees 只是候选 source set，绝不构成 production approval。
+
+任何 DTO 都不得包含 private_key、seed、mnemonic、passphrase、api_key、
+bearer token、database password、provider credential、root `.env` locator
+等秘密形态字段；递归 forbidden-field 扫描必须覆盖大小写、snake_case、
+camelCase、kebab-case 与嵌套对象，命中即 fail-closed 且错误不泄露值。
+
+Approval packet 是独立于 candidate 的外部文件，candidate 不得内嵌自己的
+批准根，packet 不得内嵌 trust root；`candidate_policy_raw_sha256` 必须与
+candidate 实际原始字节一致——对象级入口（`validate_trust_policy_candidate`）
+没有原始字节，永远不得声明 `candidate_digest_verified=true`，只能报告
+`candidate/structural_valid` + blocker `candidate_digest_unverified`；只有
+文件级入口（`validate_trust_policy_candidate_files`）在完成 raw-byte 校验、
+repo-root containment 校验（两个文件都必须解析在仓库根内）和
+`candidate_policy_path` 与实际仓库相对 POSIX 路径一致校验后，才能构造
+`candidate/valid_not_approved`。CLI 只在 status==candidate/valid_not_approved
+时 exit 0。author 不得出现在 reviewer_ids、reviewer 不得重复、reviewer 不得
+是任何 producer owner 或 backup owner（producer 级与 key 级）、
+review_completed_at 不得早于 review_started_at、review_started_at 不得早于
+candidate.created_at、decision 只能在 `draft/candidate/rejected/superseded/
+revoked` 闭集内（approved/approved_for_production/production_ready/passed/
+published 一律拒绝）；packet.decision 必须等于 candidate.lifecycle_state，
+只有 candidate/candidate 组合才产生 `candidate/valid_not_approved`，其余
+闭集状态报告 `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；
+superseded 必须携带完整 supersession link（supersedes_policy_sha256 +
+superseded_at + reason）且 packet.supersedes_policy_sha256 一致；revoked
+必须携带非空 revocation_records 且 packet.rollback_policy_sha256 非空；
+空 decision reason 拒绝。allowed_env_names 按大小写/分隔符归一化后禁止
+敏感 token（openai_api_key/OpenAiApiKey/postgres_password/DATABASE_URL/
+bearer_token 等），argv 与 env name 中的 root `.env` locator（`/`、`\`、
+Windows drive、大小写变体）一律拒绝；artifact_approvals 必须恰好覆盖六个
+必需 joint command 各一次（缺项/重复/未知/路径与 key 漂移全部 fail-closed），
+且每项 `path` 必须等于其 map key。
+
+密钥生命周期闭集为 `generated/registered/candidate/active/rotating/revoked/
+archived`；R0 candidate 文件中的当前密钥状态最多到 candidate，validator 不得
+构造新的 active/rotating；合法迁移闭集固定为 generated->registered、
+registered->candidate、candidate->rejected|superseded|revoked、
+active->rotating|revoked、rotating->active（仅 replacement key）|revoked、
+revoked->archived；拒绝 revoked->active、archived->active、rejected->active、
+candidate->active、自我替换、rotation cycle、跨角色 replacement、新旧公钥
+相同、删除历史 revocation、改写历史 policy bytes 伪装新 candidate。
+revoked lifecycle 可达（历史 revoked key 模型）：仅当 candidate
+lifecycle_state=="revoked" 时，被 revocation record 引用的历史 key 可声明
+lifecycle_state=="revoked"、allowed_signing_scopes 为空（不再持有签名权，
+不得出现在 producer signing allowlist）、revocation_record_id 非空；当前
+key（generated/registered/candidate）仍必须精确持有自身角色的冻结 scope
+矩阵，且非 revoked key 的 revocation_record_id 必须严格为 null（悬空
+token 一律 fail-closed）；record 与 revoked key 必须 1:1 闭合绑定（同 role、
+同 key_id、同 revocation_record_id、record id 唯一、key 引用唯一、计数相等）；
+missing record、duplicate record id、重复 key 引用、record-id/role/key-id
+drift、revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record
+指向 candidate key 全部 fail-closed；revoked 仍需 packet.rollback_policy_sha256。
+replacement/successor 三者精确一致：RevocationRecord.superseded_by_key_id
+（被取代的 revoked key 视角）、successor key 的 replaces_key_id（successor
+视角）、rotation entry 的 replaces_key_id（被替换 key 视角）——任一非空时
+其余声明必须一致；successor 必须真实存在、同 role、非 self、非 revoked/
+archived、公钥不同；unknown/self/cross-role/revoked/same-public-key/drift
+全部拒绝。revoked role 的 key 结构闭合：单 key（revoked）= 无 successor
+的历史 key（record.superseded_by_key_id 必须 null，不得有 successor
+registration 或 replacement plan 指向它）；双 key = 恰好 1 revoked + 1
+successor，且三处绑定必须齐全（record 必须指名第二把 key、第二把 key 的
+replaces_key_id 必须指回、revoked key 的 rotation entry 必须存在并指名
+successor），任何缺失或"无关系第二把 key"一律 fail-closed。successor 在
+revocation event 时已生效：lifecycle_state 必须为 candidate、created_at <=
+candidate_from <= revoked_at、planned_expiry 为 null 或严格晚于 revoked_at
+（candidate_from == revoked_at 允许）。revoked key 的 current-state rotation
+entry：planned_at >= 匹配 RevocationRecord.revoked_at（inclusive）。
+rotation plan 冻结为当前状态直接转换语义：entry.from_state 必须精确等于
+key.lifecycle_state；每个 key_id 至多一条 entry（完全/部分/冲突重复全部
+拒绝）；planned_at 必须落在 key 有效窗口内（max(candidate.created_at,
+key.created_at, key.candidate_from) <= planned_at < planned_expiry，
+planned_expiry 非空时，下界 inclusive 上界 exclusive）；key-level 与
+plan-level replaces_key_id 必须引用真实、同 role、不同 key 与公钥并双向
+精确一致。key registration 完整有效区间：created_at <= candidate_from <
+planned_expiry（planned_expiry 非空时严格）；key.created_at 不得晚于
+policy candidate.created_at；candidate/revoked key 的 candidate_from 不得
+晚于 candidate.created_at（generated/registered key 允许未来 candidate_from，
+仅表示计划，不声称已进入 candidate）；所有时间戳必须是显式 UTC instant
+（Z/+00:00，非零 offset 视为歧义拒绝）。
+生命周期时间顺序闭合：superseded_at / 每条 record 的 revoked_at 必须落在
+review window 内（review_started_at <= event <= review_completed_at）且不早于
+candidate.created_at；所有比较在归一化 UTC datetime 上进行，边界 inclusive
+（等价 UTC instant 允许）。command 模板内部 command 必须精确等于其 map key
+（六个 map key 与六个内部 command 各自形成 _REQUIRED_COMMANDS 精确闭集，
+swap/内部重复/缺失/未知全部拒绝，重算全部 digest 也不能绕过）；同一
+artifact 内 command 重复（["core_runner","core_runner"]）与跨 artifact 重复
+覆盖都拒绝；allowed_env_names 在 frozenset 转换前拒绝重复值（section
+digest 绑定重复列表也不能接受）。custody_kind 只是计划性元数据
+（operator_offline/hsm_planned/kms_planned/remote_runner_local/
+external_signing_service_planned），不得当作实际 HSM/KMS 证明；未真实证明
+的 custody posture 必须报告 not_proven。
+
+**允许的改法**
+
+- 扩展 candidate/packet 合同字段，同时保持闭集解析与秘密字段扫描不降级。
+- 增加新角色或 scope 时必须在同一 change 中更新冻结矩阵与全部测试。
+- 为未来的真实 key ceremony 增加独立审批流程文档，不改变 R0 的
+  candidate-only 边界。
+
+**禁止的改法**
+
+- 让任何 candidate 或 packet 产生 approved/passed/published 或
+  activation_allowed=true。
+- 向 `_APPROVED_TRUST_POLICY_SHA256` 写入任何 digest（含示例/测试 digest）。
+- 生成、打印、提交或上传真实或占位私钥；放宽秘密字段扫描。
+- 放宽七角色闭集、scope 矩阵、object format、digest、lifecycle、轮换/
+  撤销、approval separation 中任何一项。
+- 创建 migration 0013 或打开任何 Phase 5 Feature Gate。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_trust_policy_candidate.py`（负向矩阵：缺失/第八
+  角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
+  drift、raw-digest/canonical-bytes bypass、lifecycle/decision binding、
+  command map-key swap（含全 digest 重算文件级）、supersession/revocation
+  完整性（1:1 record-key 绑定、双 key role 强制 successor 三方绑定、单 key
+  role 禁止 successor、successor event 有效性、revoked_at/planned_at 顺序、
+  非 revoked key 悬空 record id、rotation 语义：entry 唯一/from_state drift/
+  planned_at 窗口/replaces 双向绑定、完整 key 有效区间、key-policy 时间
+  绑定）、repo containment/packet path binding、artifact coverage 闭合
+  （含 artifact 内 command 重复）、env allowlist 重复、backup owner
+  approver、敏感 env name、路径/link 攻击、migration/Feature Gate posture；
+  正向：七角色唯一、真实 SHA-1 main commit/tree 进入 source seal、文件级
+  raw-byte digest 验证、身份分离、lifecycle candidate、revoked/not_approved
+  文件级正向控制（含单 key 无 successor、双 key 完整绑定、successor 边界
+  等价 instant）、合法 rotation 正向控制、generated/registered 未来
+  candidate_from、planned_expiry null、`candidate/valid_not_approved`、
+  production Gate 仍 blocked/not_proven）
+- `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
+  deployment/production/p34-7-trust-policy-candidate.example.json
+  --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json
+  --validate-only`（预期 exit 0、candidate/valid_not_approved；只有该 status
+  exit 0，structural-only 或非 candidate 状态一律 exit 1）
+
+**失败恢复**
+
+candidate 或 packet 出现 drift/违例时：冻结 candidate，保留 packet 与
+历史记录取证，从新的 clean checkout 重新验证；不得删除 veto、不得把
+candidate 改成 approved、不得写入 approved digest、不得打开 Runtime。

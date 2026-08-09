@@ -670,6 +670,25 @@
         "backend/tests/test_runtime_lifecycle.py",
         "backend/tests/test_runtime_capabilities.py"
       ]
+    },
+    {
+      "id": "INV-053",
+      "title": "P34.7 trust-policy candidates stay candidate-only, secret-free and never self-approve",
+      "document": "docs/maintainers/security-invariants.md#inv-053-trust-policy-candidate-governance",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_candidate.py",
+        "backend/tests/test_p34_7_trust_policy_candidate.py",
+        "scripts/production/validate_p34_7_trust_policy_candidate.py",
+        "deployment/production/p34-7-trust-policy-candidate.example.json",
+        "deployment/production/p34-7-trust-policy-approval-packet.example.json",
+        "docs/architecture/p34-7-trust-policy-r0.md",
+        "docs/runbooks/p34-7-trust-policy-ceremony.md",
+        "docs/runbooks/p34-7-trust-policy-rotation-revocation.md",
+        "docs/evidence/p34-7/trust-policy-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_trust_policy_candidate.py"
+      ]
     }
   ],
   "modules": [
@@ -2599,6 +2618,52 @@
         "The lifecycle must use the canonical absolute path of the verified executable captured at probe time as argv[0] and re-verify its stable stat identity (dev/ino/size/mtime/ctime + symlink flag) before building any Compose command; it must never re-resolve PATH via shutil.which, so a TOCTOU that swaps the which result after probe time cannot redirect execution. Deletion, replacement, symlink/reparse drift or any stat change must fail closed (container_engine_identity_drift) before any subprocess is attempted.",
         "Subprocess output must be bounded DURING reading with independent per-stream and combined-total byte caps and a terminated-on-exceed process; it must never buffer an unbounded stream into memory or a temp file first and then truncate. Timeout and byte caps are two independent constraints and both must have negative tests.",
         "The redactor must use acronym-aware case tokenization (lower/digit->upper AND acronym->CapitalizedWord), consume confirmed sensitive Header values to the physical line end (no {/}/;/quote/comma early-stop), use an escape-aware quoted scanner (a quote terminates only when the preceding backslash run is even), and a deterministic inline flag state machine that preserves allowlisted --name=value / sensitive --name=value structures and redacts plain dash-prefixed value slots."
+      ]
+    },
+    {
+      "id": "trust-policy-r0",
+      "name": "P34.7 Trust Policy Candidate R0 governance contract (engineering-only, candidate/valid_not_approved)",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_candidate.py",
+        "backend/tests/test_p34_7_trust_policy_candidate.py",
+        "scripts/production/validate_p34_7_trust_policy_candidate.py",
+        "deployment/production/p34-7-trust-policy-candidate.example.json",
+        "deployment/production/p34-7-trust-policy-approval-packet.example.json",
+        "docs/architecture/p34-7-trust-policy-r0.md",
+        "docs/runbooks/p34-7-trust-policy-ceremony.md",
+        "docs/runbooks/p34-7-trust-policy-rotation-revocation.md",
+        "docs/evidence/p34-7/trust-policy-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/trust_policy_candidate.py:validate_trust_policy_candidate",
+        "backend/src/omnibase/production/trust_policy_candidate.py:validate_trust_policy_candidate_files",
+        "backend/src/omnibase/production/trust_policy_candidate.py:scan_forbidden_secrets",
+        "scripts/production/validate_p34_7_trust_policy_candidate.py:main"
+      ],
+      "public_interfaces": [
+        "P34.7 trust-policy candidate contract (candidate_only=true, production_approved=false, lifecycle in draft|candidate|rejected|superseded|revoked)",
+        "External approval packet (decision closed set and decision==lifecycle binding, author/reviewer/producer+backup-owner separation, raw candidate digest pin verified only by the file-level entry; object-level entry is structural-only with blocker candidate_digest_unverified)",
+        "Key lifecycle/rotation/revocation closed state machine (highest status candidate/valid_not_approved; never approved/passed/activation_allowed=true; non-candidate lifecycles report <lifecycle>/not_approved with blocker lifecycle_not_candidate; revoked lifecycle reachable via 1:1 historical revoked-key/record binding; revoked-role key structure closed (one-key no-successor / two-key full three-way successor binding); successor effective at the revocation event; rotation plan = current-state direct transitions with one entry per key, planned_at inside the key validity window and not before revoked_at; superseded_at/revoked_at inside the review window on normalized UTC instants)",
+        "Repo-root containment + packet candidate_policy_path binding; command map-key == internal command exact binding; artifact coverage closure (six required joint commands exactly once, no intra-artifact duplicate); sensitive env-name, .env-locator and duplicate env-name rejection; full key validity interval (created_at <= candidate_from < planned_expiry) and key-policy time binding (key.created_at / candidate/revoked candidate_from <= candidate.created_at)",
+        "Offline candidate validator CLI (exit 0 ONLY for candidate/valid_not_approved; exit 1 for invalid/veto, structural-only or any <lifecycle>/not_approved outcome)"
+      ],
+      "depends_on": [
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-035",
+        "INV-053"
+      ],
+      "verification": [
+        "python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate deployment/production/p34-7-trust-policy-candidate.example.json --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_trust_policy_candidate.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/trust_policy_candidate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py"
+      ],
+      "recovery": [
+        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, keep migration head 0012, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
+        "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
       ]
     }
   ]

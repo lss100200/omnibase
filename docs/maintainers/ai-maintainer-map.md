@@ -1591,3 +1591,70 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/phase5_skill_contract.py
 docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_skill_contract.py tests/test_p5_6a_skill_contract.py ../scripts/production/validate_p5_6a_skill_contract.py
 ```
+
+### 12.11 P34.7 Trust Policy Candidate R0
+
+`backend/src/omnibase/production/trust_policy_candidate.py` 建立 engineering-only
+的 candidate 信任治理合同：candidate 文件必须 `candidate_only=true`、
+`production_approved=false`、lifecycle ∈ `draft|candidate|rejected|
+superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，validator
+永不写 `_APPROVED_TRUST_POLICY_SHA256`（保持空 frozenset）。复用 joint_gate
+的严格解析器（`_sha256`/`_git_oid`/`_utc_instant`/`_relative_path`/
+`_keys` 等），不复制漂移实现。
+
+- 七角色闭集与冻结 scope 矩阵在 `ROLE_SIGNING_SCOPES`；sealer 不得与 producer
+  共用 key；wildcard/越权 scope 拒绝。
+- Approval packet 是独立外部文件：`candidate_policy_raw_sha256` 与 candidate
+  原始字节一致（仅文件级入口验证 raw bytes；对象级入口为 structural-only，
+  报告 `candidate/structural_valid` + blocker `candidate_digest_unverified`，
+  永不声明 digest 已验证）；section digests（artifact/commands/env/gateway）
+  绑定 candidate 实际 canonical 内容；author/reviewer/producer-owner 分离且
+  reviewer 不得是 producer/key 的 backup owner；decision 闭集
+  `draft|candidate|rejected|superseded|revoked`，approved 类一律拒绝；
+  packet.decision 必须等于 candidate.lifecycle_state，仅 candidate/candidate
+  产生 `candidate/valid_not_approved`，其余状态报告
+  `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；superseded
+  需完整 supersession link 且 packet 一致，revoked 需 revocation_records +
+  packet.rollback_policy_sha256；两文件都必须 resolve 在 repo-root 内且
+  packet.candidate_policy_path == 实际仓库相对 POSIX 路径。
+- 密钥生命周期/轮换/撤销状态机为闭集 `LEGAL_TRANSITIONS`；R0 不构造 active，
+  拒绝自替换/环/跨角色/同公钥替换/revoked 保留 scope/改写历史。revoked
+  lifecycle 可达（历史 revoked key 模型）：仅 revoked candidate 内允许
+  lifecycle_state=="revoked" 的 key（scopes 空 + revocation_record_id 非空，
+  非 revoked key 的 record id 必须严格 null），record 与 revoked key 1:1 闭合
+  绑定（同 role/key_id/record_id、唯一 id、计数相等）；revoked role 结构
+  闭合：单 key = 无 successor 历史（record successor 必须 null、无 successor
+  registration/plan 指向），双 key = 1 revoked + 1 successor 且 record/key-
+  level/plan-level 三方绑定齐全；successor 在 revoked_at 时已生效
+  （lifecycle==candidate、created_at <= candidate_from <= revoked_at、
+  planned_expiry null 或 > revoked_at）；revoked key 的 rotation entry
+  planned_at >= revoked_at（inclusive）；rotation plan 为当前状态直接转换
+  语义（from_state == key.lifecycle_state、每 key 至多一条 entry、planned_at
+  落在 [max(candidate/key created_at, candidate_from), planned_expiry) 窗口
+  内、key-level 与 plan-level replaces 双向精确绑定）；key 完整有效区间
+  created_at <= candidate_from < planned_expiry；key.created_at 不得晚于
+  candidate.created_at，candidate/revoked key 的 candidate_from 不得晚于
+  candidate.created_at（generated/registered 允许未来 candidate_from，仅
+  表示计划）；时间顺序闭合：superseded_at/revoked_at 落在 review window 内
+  且不早于 created_at（归一化 UTC 比较，Z/+00:00 only，边界 inclusive）。
+- 递归秘密字段扫描（`scan_forbidden_secrets`）覆盖大小写与嵌套；env name
+  归一化后拒绝敏感 token（openai_api_key/OpenAiApiKey/postgres_password 等）
+  与 root `.env` locator（`/`、`\`、Windows drive、大小写变体），重复 env
+  name 在 frozenset 转换前拒绝；command 模板内部 command 必须精确等于 map
+  key（swap/重复/缺失/未知拒绝，重算全部 digest 也不能绕过）；
+  artifact_approvals 恰好覆盖六个必需 joint command 各一次且 path==map key、
+  同一 artifact 内 command 不重复；custody_kind 只是计划元数据，未真实证明
+  的 custody posture 报告 not_proven。
+- 命令：
+  ```powershell
+  python scripts/production/validate_p34_7_trust_policy_candidate.py `
+    --candidate deployment/production/p34-7-trust-policy-candidate.example.json `
+    --approval-packet deployment/production/p34-7-trust-policy-approval-packet.example.json `
+    --validate-only
+  docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+    tests/test_p34_7_trust_policy_candidate.py -q
+  ```
+- 正式状态：`CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`；不生成生产私钥、不批准
+  digest、不采集 production evidence、不激活 Runtime；P34.7 仍
+  blocked/not_proven；migration head 0012、0013 absent；Feature Gates
+  false/false/false。

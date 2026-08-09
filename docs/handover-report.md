@@ -1772,6 +1772,196 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    false；production Runtime/Planner/Multi-Agent disabled；未生成/伪造真实 production evidence；
    未读根 `.env`；未访问/迁移业务数据库；未修改冻结输入 worktree；未 push/PR/merge。
 
+### P34.7 Trust Policy R0：candidate 信任治理合同（2026-08-08）
+
+> PR #19 合并后的最新 main（merge commit `36b48a72`，tree `643cd44f`）上新增
+> engineering-only 的 trust-policy candidate 治理合同，正式状态保持
+> `ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`，决策文件声明
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`。
+
+1. **新模块**：`backend/src/omnibase/production/trust_policy_candidate.py`（16 个冻结
+   dataclass/DTO：TrustPolicyCandidate、ProducerRoleRegistration、
+   PublicKeyRegistration、KeyCustodyMetadata、SigningScope、SourceSealCandidate、
+   ArtifactApprovalCandidate、CommandTemplateCandidate、GatewayTrustCandidate、
+   EvidenceFreshnessCandidate、ApprovalPacket、ApprovalReview、RotationPlan、
+   RevocationRecord、SupersessionLink、CandidateValidationReport）；严格闭集解析复用
+   joint_gate 的 `_sha256`/`_git_oid`/`_utc_instant`/`_relative_path`/`_keys` 等，不产生漂移实现。
+2. **七角色闭集与冻结 scope 矩阵**：core/runner/broker/gateway/overlay/recovery_sla/sealer
+   恰好七个、第八角色拒绝；七把 Ed25519 公钥全部不同、64 位小写 hex、非全零；sealer 不与任何
+   producer 共用 key；每角色只能声明自己冻结行的 scope（`ROLE_SIGNING_SCOPES`），wildcard 与
+   越权 scope 拒绝。
+3. **Git source seal**：`git_object_format` 闭集 sha1|sha256，原始 OID 不二次哈希；
+   example 绑定当前 main merge commit `36b48a72…` 与真实 tree `643cd44f…`，
+   `candidate_only=true`、`production_approved=false`。
+4. **密钥生命周期/轮换/撤销**：闭集状态机 `LEGAL_TRANSITIONS`（R0 不构造 active；拒绝
+   revoked->active、candidate->active、自替换、环、跨角色、同公钥替换、revoked 保留 scope、
+   删除历史、改写历史 bytes）；custody_kind 仅计划元数据，未证明 posture 一律 not_proven。
+5. **Approval packet**：独立外部文件，`candidate_policy_raw_sha256` 与 candidate 原始字节
+   一致，section digests 绑定实际 canonical 内容；author/reviewer/producer-owner 分离（reviewer
+   同时不得是 producer/key 的 backup owner）；decision 闭集 draft|candidate|rejected|
+   superseded|revoked，approved/approved_for_production/production_ready/passed/published
+   一律拒绝；packet.decision 必须等于 candidate.lifecycle_state（否则 veto），仅
+   candidate/candidate 产生 `candidate/valid_not_approved`，其余状态报告
+   `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；review 窗口不得早于
+   candidate.created_at；superseded 需完整 supersession link（digest+时间+原因）且 packet
+   一致；revoked 需非空 revocation_records + packet.rollback_policy_sha256。
+6. **秘密字段扫描**：递归 forbidden-field 扫描（`scan_forbidden_secrets`）覆盖大小写、
+   snake/camel/kebab 与嵌套对象；任何 DTO 不得携带 private_key/seed/mnemonic/passphrase/
+   api_key/bearer token/password/provider credential/root `.env` locator（`/`、`\`、
+   Windows drive、大小写变体）；allowed_env_names 归一化后拒绝敏感 token
+   （openai_api_key/OpenAiApiKey/postgres_password/DATABASE_URL/bearer_token 等），argv 与
+   env name 均做 locator 检查；artifact_approvals 必须恰好覆盖六个必需 joint command 各一次
+   （缺项/重复/未知/路径与 map key 漂移全部 fail-closed）。
+7. **CLI**：`scripts/production/validate_p34_7_trust_policy_candidate.py`（exit 0 仅当
+   status == `candidate/valid_not_approved`，此时 production_approved=false、
+   approved_digest_written=false、activation_allowed=false；exit 1 =
+   invalid/veto / candidate/structural_valid / 任何 `<lifecycle>/not_approved`）。
+8. **验证**：`test_p34_7_trust_policy_candidate.py` 93 passed（负向矩阵覆盖 raw-digest/
+   canonical-bytes bypass、lifecycle/decision binding、supersession/revocation 完整性、
+   repo containment/packet path binding、artifact coverage 闭合、backup owner approver、
+   敏感 env name、路径/link 攻击等；正向证明：文件级 raw-byte digest 验证后才产生
+   `candidate/valid_not_approved`、对象级永不声明 digest 已验证）；joint focused
+   回归 84 passed 无回退。9. **文档**：`docs/architecture/p34-7-trust-policy-r0.md`、
+   `docs/runbooks/p34-7-trust-policy-ceremony.md`（rehearsal only，不生成生产私钥）、
+   `docs/runbooks/p34-7-trust-policy-rotation-revocation.md`、
+   `docs/evidence/p34-7/trust-policy-r0-decision.md`（CANDIDATE_CONTRACT_ONLY_NOT_APPROVED）；
+   维护地图新增 INV-053 与 `trust-policy-r0` 模块，security-invariants/ai-maintainer-map
+   同步，sealed digest 链重算。
+10. **保留项**：`_APPROVED_TRUST_POLICY_SHA256` 仍为 `frozenset()`；未生成/打印/提交/上传任何
+    私钥；migration head 0012、0013 absent；Feature Gates false/false/false；production
+    Runtime/Planner/Multi-Agent disabled；未读根 `.env`；未访问/迁移业务数据库；未 push/PR/merge。
+
+### P34.7 Trust Policy R0 Review-Fix Round 1（2026-08-08）
+
+> 独立 review 的 6 项 findings（P1-1…P2-2）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 digest 声明重构**：对象级入口 `validate_trust_policy_candidate` 降为
+   structural-only——无 raw bytes 时永不声明 `candidate_digest_verified=true`，报告
+   `candidate/structural_valid` + blocker `candidate_digest_unverified`；文件级入口
+   `validate_trust_policy_candidate_files` 完成
+   `SHA256(candidate raw bytes) == candidate_policy_raw_sha256` 后才能构造
+   `candidate/valid_not_approved`（新增 bypass/非 canonical bytes 反例）。
+2. **P1-2 lifecycle/decision binding**：packet.decision == candidate.lifecycle_state 否则
+   veto；review_started_at >= created_at；draft/rejected/superseded/revoked 报告
+   `<lifecycle>/not_approved` + blocker `lifecycle_not_candidate`；superseded 需完整
+   supersession link 且 packet.supersedes_policy_sha256 一致；revoked 需非空
+   revocation_records + packet.rollback_policy_sha256（新增组合反例测试）。
+3. **P1-3 repo containment / path binding**：两个文件都必须 resolve 在 repo-root 内
+   （绝对路径、traversal、symlink、外部文件全拒绝）；packet.candidate_policy_path 必须等于
+   candidate 实际仓库相对 POSIX 路径（wrong-path/same-file 反例；测试用 tmp_path fake repo
+   + 0012 migration scaffold）。
+4. **P1-4 secret env 归一化**：`_forbidden_env_name` 按大小写/分隔符归一化拒绝
+   openai_api_key/OpenAiApiKey/postgres_password/DATABASE_URL/bearer_token 等；
+   `_looks_like_env_locator` 覆盖 `/`、`\`、Windows drive、大小写变体（`.env`、`./.env`、
+   `.ENV`、`E:\...\.env`）；argv entries 与 env names 全部 locator-free 检查。
+5. **P2-1 artifact coverage 闭合**：`_verify_artifact_coverage` 在 parse 阶段强制六个必需
+   joint command 恰好覆盖一次（缺项/重复/未知/路径与 map key 漂移 fail-closed）。
+6. **P2-2 backup owner 排除**：reviewer 与 candidate author + producer owner/backup_owner +
+   key owner/backup_owner 全部 disjoint（producer 级与 key 级反例）。
+7. **CLI exit 语义**：仅 status == `candidate/valid_not_approved` 时 exit 0；其余
+   （invalid/veto、candidate/structural_valid、`<lifecycle>/not_approved`）一律 exit 1。
+8. **验证**：candidate focused 93 passed；joint focused 84 passed；非集成全量套件
+   2324 passed / 20 skipped / 15 deselected；mypy、ruff（3 个显式路径）、maintainer map /
+   benchmark validators、CLI validate-only（exit 0）与 CLI tampered negative control
+   （exit 1）全绿；composition --verify 与 P5.0/P5.1A/P5.2A/P5.3A/P5.6A --verify 保持
+   exit 2（formal gates 未打开）；sealed digest 链重算后重新提交。
+
+### P34.7 Trust Policy R0 Review-Fix Round 2（2026-08-08）
+
+> 独立 review 的 5 项 findings（P1-1…P2-3）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_2_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 command map key 绑定**：`_parse_command_template` 接收 map_key，内部
+   `command` 必须精确等于 map key；六个 map key 与六个内部 command 各自形成
+   `_REQUIRED_COMMANDS` 精确闭集；swap/内部重复/缺失/未知全部 veto；文件级负向测试
+   重算 command_templates_sha256、candidate raw digest 与 packet digest 后仍 veto。
+2. **P1-2 revoked lifecycle 可达**：历史 revoked key 模型——仅 revoked candidate 内
+   允许 `lifecycle_state=="revoked"` 的 key（scopes 空、revocation_record_id 非空、
+   不出现于 producer signing allowlist）；当前 key 仍精确持有冻结 role scope 矩阵；
+   record 与 revoked key 1:1 闭合绑定（同 role/key_id/record_id、record id 唯一、
+   key 引用唯一、计数相等）；missing/duplicate record、record-id/role/key-id drift、
+   revoked key 保留 scope、非 revoked candidate 嵌入 revoked key、record 指向
+   candidate key 全部 veto；rollback_policy_sha256 继续必需；新增
+   `revoked/not_approved` 文件级正向控制。
+3. **P2-1 artifact 内 command 重复**：frozenset 转换前检查，
+   `["core_runner","core_runner"]` veto；跨 artifact 重复覆盖继续 veto；structural
+   与 file-level（全 digest 重算）两类测试。
+4. **P2-2 时间顺序闭合**：superseded_at / revoked_at 必须落在 review window 内
+   （review_started_at <= event <= review_completed_at）且不早于 created_at；比较
+   在归一化 UTC datetime 上进行（Z/+00:00 only，非零 offset fail-closed，边界
+   inclusive，等价 instant 允许）；新增 superseded/revoked 早于 candidate、晚于
+   review、mixed-offset、equivalent-instant 边界测试。
+5. **P2-3 env allowlist 重复**：frozenset 转换前拒绝 `["PATH","PATH",...]`；
+   section digest 绑定重复列表也不能接受；file-level 重算 digest 后仍 veto。
+6. **验证**：candidate focused 117 passed；Round 1 全部边界保留（structural-only
+   对象级、文件级 raw-byte 验证、repo containment、path binding、secret env 归一化、
+   backup owner 分离、CLI exit 语义）；正式 gates 从 clean HEAD 全部 exit 2；
+   sealed digest 链重算后重新提交。
+
+### P34.7 Trust Policy R0 Review-Fix Round 3（2026-08-08）
+
+> 独立 review 的 4 项 findings（P1-1…P2-1）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_3_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 superseded_by_key_id 验证**：`_verify_replacement_bindings` 闭合 successor
+   语义——successor 必须真实存在、同 role、非 self、非 revoked/archived、公钥不同；
+   record.superseded_by_key_id 与 successor key 的 replaces_key_id 及 rotation
+   entry 的 replaces_key_id 三者精确一致（unknown/self/cross-role/revoked/
+   same-public-key/drift 全部 veto）；合法 same-role successor 文件级正向控制
+   （revoked/not_approved）；revoked role 至多 2 把 key（1 revoked + 1 successor），
+   packet 指纹集合放宽为 7–14。
+2. **P1-2 非 revoked key 悬空 record id**：generated/registered/candidate 三种 key
+   携带任意 revocation_record_id 一律 parse 层 fail-closed；revoked key 保持非空 +
+   恰好一条 record 绑定；含 file-level resealed 负例。
+3. **P1-3 rotation plan 语义闭合**：冻结为当前状态直接转换语义——
+   entry.from_state 必须精确等于 key.lifecycle_state；每个 key_id 至多一条 entry
+   （完全/部分/冲突重复全部拒绝）；planned_at 落在
+   [max(candidate.created_at, key.created_at, key.candidate_from),
+   planned_expiry)（下界 inclusive、上界 exclusive）；key-level replaces_key_id
+   必须引用真实、同 role、不同 key/公钥并与 plan-level 双向精确一致；
+   合法 rotation 正向控制。
+4. **P2-1 key registration 时间不变量**：candidate_from >= created_at、
+   planned_expiry > created_at（严格）；非 UTC timestamp 由共享解析器 fail-closed。
+5. **验证**：candidate focused 144 passed；P34.7 regression（joint/composition/
+   provider/overlay/SLA）与 P5 合同回归全绿；全量 non-integration 从 clean HEAD
+   重跑；mypy、ruff、maintainer map/benchmark、CLI 双向、7 个正式 gates exit 2；
+   sealed digest 链重算后重新提交。
+
+### P34.7 Trust Policy R0 Review-Fix Round 4（2026-08-08）
+
+> 独立 review 的 5 项 findings（P1-1…P2-2）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_4_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 revoked role key 结构闭合**：`_verify_revoked_role_key_counts` 扩展——
+   单 key revoked role = 无 successor 历史（record successor 必须 null、不得有
+   successor registration 或 replacement plan 指向）；双 key role 必须 1 revoked +
+   1 successor 且三方绑定齐全（record 指名第二把 key、successor.replaces_key_id
+   指回、rotation entry 存在并指名 successor），无关系第二把 key 一律拒绝。
+2. **P1-2 revoked_at/planned_at 顺序**：`_require_planned_at_in_window` 增加
+   revoked key current-state entry 的 `planned_at >= revoked_at`（inclusive，
+   相等允许，Z/+00:00 等价 instant 按归一化 UTC 比较）。
+3. **P1-3 successor event 有效性**：`_require_successor_valid_at_event`——
+   successor 在 revoked_at 时必须已处于 candidate 状态且
+   created_at <= candidate_from <= revoked_at、planned_expiry null 或严格晚于
+   revoked_at；generated/registered/过期/晚于 event 的 successor 全部拒绝。
+4. **P2-1 完整 key 有效区间**：`planned_expiry > candidate_from`（严格）——
+   candidate_from after/equal expiry 拒绝，紧贴 expiry 之前与 null expiry 允许。
+5. **P2-2 key-policy 时间绑定**：所有 key.created_at <= candidate.created_at；
+   candidate/revoked key 的 candidate_from <= candidate.created_at；
+   generated/registered key 允许未来 candidate_from（仅计划，文档明确）。
+6. **验证**：candidate focused 171 passed；P34.7 regression 与 P5 合同回归全绿；
+   全量 non-integration 从 clean HEAD 重跑；mypy、ruff、maintainer map/benchmark、
+   CLI 双向、7 个正式 gates exit 2；sealed digest 链重算后重新提交。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不
