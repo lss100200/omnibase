@@ -18,12 +18,12 @@
 [![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
 [![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
 
-[公网预览](https://omnibase.chat/public-preview) · [快速开始](#快速开始) · [创建第一个-agent](#创建第一个-agent) · [架构](#架构) · [安全边界](#安全边界)
+[公网预览](https://omnibase.chat/public-preview) · [快速开始](#快速开始) · [创建第一个-agent](#创建第一个-agent) · [产品方向](#产品方向) · [社区](COMMUNITY.md) · [安全边界](#安全边界)
 
 </div>
 
 > [!IMPORTANT]
-> OmniBase 当前是开源 **Public Preview**，不是 production Agent Runtime 的正式准入。公开源码已经包含可用的自托管产品切片和多个 engineering-sealed 控制面组件，但三个 Phase 5 生产 Feature Gate 仍然关闭。生产多 Agent 编排、敌对代码执行和完整 P34.7 生产组合仍为 `blocked/not_proven`。
+> OmniBase 当前是开源 **Public Preview**，不是 production Agent Runtime 的正式准入。公开源码已经包含可用的自托管产品切片和多个 engineering-sealed 控制面组件，但三个 Phase 5 生产 Feature Gate 仍然关闭。P34.7 Trust Policy Candidate R0 已进入 `main`，但它只是候选策略治理合同：没有任何策略摘要获得批准，完整生产组合仍为 `blocked/not_proven`。
 
 ## 首先是 AI 工作台，而不是基础设施看板
 
@@ -43,7 +43,7 @@ OmniBase 围绕三个连续任务设计：
 | 用户设置 | **Public Preview 可用** | 真实用户资料/偏好、用户自有 OpenAI-compatible Provider 凭据和有界连接测试。Browser DTO 不返回 Provider 密钥。 |
 | Agent Builder | **Engineering Preview** | 用户可以创建自有 AgentDefinition、封存 `1.0.0` Version、选择性安装到 Workspace，并进入现有 tool-free Agent Alpha 工作台。 |
 | Agent Alpha | **Engineering-only，默认关闭** | 单 Agent 可使用内部 Model Gateway 和 Workspace 范围的只读 derived RAG；支持持久 Task/Run 记录、SSE、取消、引用、模型身份、用量和延迟。 |
-| Capability 平台 | **工程封板，生产默认拒绝** | Capability Gateway、Workspace/Run/Node 元数据、fencing、独立 Linux Runner、PrivateNetwork Broker、Headscale Adapter 和 split-process mTLS Gateway 已有工程 Gate，但不代表完整生产组合已经通过。 |
+| Capability 平台 | **工程封板，生产默认拒绝** | Capability Gateway、Workspace/Run/Node 元数据、fencing、独立 Linux Runner、PrivateNetwork Broker、Headscale Adapter 和 split-process mTLS Gateway 已有工程 Gate。P34.7 Trust Policy Candidate R0 已能校验候选治理、生命周期、密钥轮换/吊销、制品覆盖和评审人隔离，但不会批准生产策略。 |
 | Skill | **仅编译期合同** | P5.6A 可验证第一方、精确版本 Skill manifest；Skill 持久化、安装、执行、MCP 和 Marketplace 仍未开放。 |
 | Planner / 多 Agent / 敌对代码 | **阻断 / 路线图** | Planner 执行、多 Agent 调度、任意 shell/SQL/HTTP、MCP Runtime 和敌对代码 Sandbox 尚未授权。 |
 
@@ -196,6 +196,19 @@ OmniBase 把以下边界视为产品行为，而不是可选加固：
 
 安全问题请通过 [SECURITY.md](SECURITY.md) 报告，不要公开创建 Issue。
 
+## 产品方向
+
+OmniBase 将沿两条相互连接的轴演化，而不是拆成彼此无关的产品：
+
+| 轴 | 演化路径 | 设计目标 |
+|---|---|---|
+| Runtime 与操作系统 | 完整个人版 → 不依赖 hardened kernel 的 Lite PC 形态 → macOS 与更多宿主系统 | 让更多电脑都能使用 Workspace、知识、模型和 Agent；某台宿主无法安全证明的能力只降级该能力，不让整个产品失效。 |
+| 组织与治理 | 个人版 → 团队版 → 企业版 → 定制部署 | 复用同一套 Tenant、Workspace、Agent、Capability、Audit 和 Policy 合同，逐步增加协作、管理、合规与部署控制。 |
+
+这个坐标系的原点是完整的自托管个人版：一个用户能够创建 Workspace、接入模型 Provider、组织知识并构建 Agent。纵向扩展可运行的平台和设备，横向扩展组织规模。Hardened isolation 是明确的能力层级，而不是让低配置 PC 或 macOS 整体无法使用产品的隐藏前提。
+
+项目交流、入门帮助和社区渠道统一维护在 [COMMUNITY.md](COMMUNITY.md)。请勿通过社区渠道发送漏洞或凭据；安全问题请遵循 [SECURITY.md](SECURITY.md)。
+
 ## 路线图
 
 | 阶段 | 状态 |
@@ -209,7 +222,8 @@ OmniBase 把以下边界视为产品行为，而不是可选加固：
 | Planner 执行与多 Agent 编排 | **阻断 / 路线图** |
 | 第一方 Skill 合同 | **仅编译期工程准入** |
 | Skill Runtime、MCP、第三方 Marketplace | **路线图** |
-| 生产敌对代码 Sandbox 与 P34.7 准入 | **blocked/not_proven** |
+| P34.7 Trust Policy Candidate 治理 | **已合入 `main`；仅候选合同，未批准** |
+| 生产敌对代码 Sandbox 与 P34.7 总准入 | **blocked/not_proven** |
 
 ## 开发与验证
 
@@ -245,6 +259,8 @@ docker compose --env-file .env.example exec -T frontend pnpm lint
 欢迎文档、入门体验、focused tests 和边界清晰的小型修复。涉及认证、租户、迁移、Capability Gateway、Sandbox、Agent 执行、Provider 凭据或恢复的改动，必须执行维护者地图中规定的验证命令并同步不变量。
 
 创建 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+问题咨询、入门交流和社区联系方式只在一个位置维护：[COMMUNITY.md](COMMUNITY.md)。
 
 ## 协议
 

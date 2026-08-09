@@ -1,9 +1,10 @@
 # Contributing to OmniBase
 
 Thank you for helping improve OmniBase. The project is in public preview: the
-infrastructure baseline is usable and continuously tested, while Workspace,
-Sandbox, Overlay Network, and Agent Runtime remain deliberately frozen until
-their security gates are implemented.
+core Workspace, knowledge, user-profile, provider, and Agent Builder product
+slice is available in the public source tree, while production Agent Runtime,
+multi-Agent orchestration, hostile-code Sandbox activation, and the complete
+P34.7 production composition remain deliberately gated.
 
 ## Good first contributions
 
@@ -49,10 +50,10 @@ evidence, then correct stale documentation in the same change.
 Canonical container-first checks include:
 
 ```text
-docker compose run --rm --no-deps backend mypy src
-docker compose run --rm --no-deps backend pytest -m "not integration" -q
-docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .
-docker compose run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
+docker compose --env-file .env.example run --rm --no-deps backend mypy src
+docker compose --env-file .env.example run --rm --no-deps backend pytest -m "not integration" -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .
 ```
 
 Frontend and SDK commands are defined in their package files and in
@@ -84,3 +85,6 @@ Keep pull requests reviewable. Include:
 
 By contributing, you agree that your contribution is licensed under the
 repository's [Apache License 2.0](LICENSE).
+
+For onboarding questions and community channels, see [COMMUNITY.md](COMMUNITY.md).
+Security reports must follow [SECURITY.md](SECURITY.md).
