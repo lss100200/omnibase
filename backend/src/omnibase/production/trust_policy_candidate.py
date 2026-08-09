@@ -1337,17 +1337,11 @@ def _verify_two_key_revoked_role(
     the successor)."""
     revoked_keys = [key for key in producer.keys if key.lifecycle_state == "revoked"]
     if len(revoked_keys) != 1:
-        raise ConfigurationError(
-            "a role carrying two keys must contain exactly one revoked key"
-        )
+        raise ConfigurationError("a role carrying two keys must contain exactly one revoked key")
     revoked_key = revoked_keys[0]
     successor_key = next(key for key in producer.keys if key.lifecycle_state != "revoked")
     record = next(
-        (
-            record
-            for record in candidate.revocation_records
-            if record.key_id == revoked_key.key_id
-        ),
+        (record for record in candidate.revocation_records if record.key_id == revoked_key.key_id),
         None,
     )
     if record is None or record.superseded_by_key_id is None:
@@ -1359,11 +1353,7 @@ def _verify_two_key_revoked_role(
             "the successor key of a two-key revoked role must point back at the revoked key"
         )
     entry = next(
-        (
-            entry
-            for entry in candidate.rotation_plan.entries
-            if entry.key_id == revoked_key.key_id
-        ),
+        (entry for entry in candidate.rotation_plan.entries if entry.key_id == revoked_key.key_id),
         None,
     )
     if entry is None or entry.replaces_key_id != successor_key.key_id:
@@ -1381,11 +1371,7 @@ def _verify_one_key_revoked_role(
     record must declare no successor, and no successor registration or
     replacement plan may point at it."""
     record = next(
-        (
-            record
-            for record in candidate.revocation_records
-            if record.key_id == revoked_key.key_id
-        ),
+        (record for record in candidate.revocation_records if record.key_id == revoked_key.key_id),
         None,
     )
     if record is not None and record.superseded_by_key_id is not None:
@@ -1423,6 +1409,8 @@ def _verify_revoked_role_key_counts(
             _verify_two_key_revoked_role(producer, candidate)
         elif revoked_keys:
             _verify_one_key_revoked_role(revoked_keys[0], candidate, keys)
+
+
 def _verify_key_uniqueness(candidate: TrustPolicyCandidate) -> frozenset[str]:
     """Seven roles, distinct non-zero Ed25519 public keys; the sealer must
     differ from every producer.  A revoked candidate may carry, in addition
