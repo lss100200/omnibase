@@ -32,9 +32,20 @@ Rejected transitions: `revoked -> active`, `archived -> active`,
    keep signing scopes and can never appear in the producer signing
    allowlist; the record's `revoked_at` must fall inside the approval review
    window.
-3. Plan a replacement via `RotationEntry` — same role, distinct public key,
+3. Decide the successor posture:
+   - NO successor (one key in the role): the record's
+     `superseded_by_key_id` must be `null`; no successor registration and no
+     replacement plan may point at the revoked key;
+   - WITH successor (two keys in the role): the record MUST name the second
+     key, the second key's `replaces_key_id` MUST point back at the revoked
+     key, and the revoked key's rotation entry MUST exist and name the
+     successor.  The successor must already be a `candidate`-state key at
+     `revoked_at` (`created_at <= candidate_from <= revoked_at`,
+     `planned_expiry > revoked_at` or null), and the rotation entry's
+     `planned_at` must not precede `revoked_at`.
+4. Plan a replacement via `RotationEntry` — same role, distinct public key,
    no self-replacement, no cycle.
-4. Re-verify from a new clean checkout; the joint gate stays
+5. Re-verify from a new clean checkout; the joint gate stays
    `blocked/not_proven` until a real approved policy and evidence exist.
 
 ### Sealer compromise

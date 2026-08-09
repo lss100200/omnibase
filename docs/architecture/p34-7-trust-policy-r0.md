@@ -236,9 +236,18 @@ state (never a hypothetical future chain):
 - `replaces_key_id` (key-level or plan-level) must reference a real,
   same-role, distinct key (distinct key id AND public key), and the
   key-level and plan-level declarations must match exactly;
-- key registrations additionally enforce `candidate_from >= created_at` and
-  `planned_expiry > created_at` (strictly) when `planned_expiry` is set;
-  all timestamps are explicit UTC instants (`Z` / `+00:00` only).
+- a REVOKED key's current-state entry must not precede its revocation
+  event: `planned_at >= matching RevocationRecord.revoked_at` (inclusive,
+  `planned_at == revoked_at` allowed);
+- key registrations additionally enforce the full validity interval
+  `created_at <= candidate_from < planned_expiry` (when `planned_expiry` is
+  set) and the policy-time binding `key.created_at <= candidate.created_at`;
+  a `candidate`/`revoked` key also requires
+  `key.candidate_from <= candidate.created_at`, while a
+  `generated`/`registered` key MAY declare a FUTURE `candidate_from` (it
+  does not claim to have entered the candidate yet; `planned_expiry` must
+  still be strictly after `candidate_from`);
+- all timestamps are explicit UTC instants (`Z` / `+00:00` only).
 
 ### 9.1 Revoked candidates are reachable (historical revoked key model)
 
@@ -270,6 +279,18 @@ authority:
   and fourteen distinct fingerprints (one per role, plus one same-role
   successor per revoked role).
 
+### 9.1.1 Revoked-role key structure is closed
+
+- A role with ONE key (revoked) is a historical revoked key WITHOUT a
+  successor: its record must declare `superseded_by_key_id == null`, no
+  successor registration (`replaces_key_id`) may point at it, and no
+  replacement plan may target it.
+- A role with TWO keys must carry exactly one revoked key plus one SUCCESSOR
+  bound in all three places: the revocation record MUST name the second key,
+  the second key's `replaces_key_id` MUST point back at the revoked key, and
+  the revoked key's rotation entry MUST exist and name the second key.
+  A second key that is not a bound successor is rejected.
+
 ### 9.2 Replacement (successor) semantics — three-way exact binding
 
 A replacement fact can be declared in THREE places and, whenever more than
@@ -289,6 +310,17 @@ same-public-key or drifted declarations all fail closed.  `null` is the
 valid "no successor" value.  In a revoked candidate a role may carry at most
 two keys (one revoked key plus one successor); in every other candidate each
 role carries exactly one key.
+
+### 9.2.1 The successor is effective AT the revocation event
+
+`superseded_by_key_id` is a COMPLETED takeover, not a future plan: the
+successor must already be in the `candidate` lifecycle state at
+`revoked_at`, with `created_at <= candidate_from <= revoked_at`, and -- when
+a planned expiry exists -- `planned_expiry > revoked_at` (strict).  A
+generated/registered successor, a successor created or entering the
+candidate after the event, or one that expires at or before the event is
+rejected.  (`candidate_from == revoked_at` is allowed; a null planned expiry
+is allowed.)
 
 ## 10. Approval packet
 

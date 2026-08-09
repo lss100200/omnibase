@@ -535,8 +535,54 @@ def _parse_public_key(value: object, name: str) -> str:
     return key
 
 
+def _require_key_time_invariants(
+    name: str,
+    lifecycle_state: str,
+    created_at: datetime,
+    candidate_from: datetime,
+    planned_expiry: datetime | None,
+    candidate_created_at: datetime,
+) -> None:
+    """Full key validity interval and policy-time binding:
+
+    * ``created_at <= candidate_from`` and, when set,
+      ``planned_expiry > created_at`` and ``planned_expiry > candidate_from``
+      (strict);
+    * every key: ``created_at <= candidate.created_at``;
+    * ``candidate``/``revoked`` keys: ``candidate_from <=
+      candidate.created_at`` (a ``generated``/``registered`` key MAY declare
+      a FUTURE ``candidate_from`` -- a plan only, it does not claim to have
+      entered the candidate yet)."""
+    if candidate_from < created_at:
+        raise ConfigurationError(f"{name}.candidate_from must not precede created_at")
+    if planned_expiry is not None and planned_expiry <= created_at:
+        raise ConfigurationError(
+            f"{name}.planned_expiry must be strictly after created_at "
+            "(equal or earlier instants are rejected)"
+        )
+    if planned_expiry is not None and planned_expiry <= candidate_from:
+        raise ConfigurationError(
+            f"{name}.planned_expiry must be strictly after candidate_from "
+            "(equal or earlier instants are rejected)"
+        )
+    if created_at > candidate_created_at:
+        raise ConfigurationError(
+            f"{name}.created_at must not be after the candidate creation timestamp"
+        )
+    if lifecycle_state in ("candidate", "revoked") and candidate_from > candidate_created_at:
+        raise ConfigurationError(
+            f"{name}.candidate_from must not be after the candidate creation timestamp "
+            "for a candidate/revoked key"
+        )
+
+
 def _parse_key_registration(
-    value: object, name: str, role: str, *, candidate_lifecycle: str
+    value: object,
+    name: str,
+    role: str,
+    *,
+    candidate_lifecycle: str,
+    candidate_created_at: datetime,
 ) -> PublicKeyRegistration:
     data = _object(value, name)
     _keys(
@@ -579,14 +625,15 @@ def _parse_key_registration(
         if data.get("planned_expiry") is not None
         else None
     )
-    if candidate_from < created_at:
-        raise ConfigurationError(f"{name}.candidate_from must not precede created_at")
-    if planned_expiry is not None and planned_expiry <= created_at:
-        raise ConfigurationError(
-            f"{name}.planned_expiry must be strictly after created_at "
-            "(equal or earlier instants are rejected)"
-        )
     lifecycle_state = _string(data.get("lifecycle_state"), f"{name}.lifecycle_state")
+    _require_key_time_invariants(
+        name,
+        lifecycle_state,
+        created_at,
+        candidate_from,
+        planned_expiry,
+        candidate_created_at,
+    )
     if lifecycle_state not in KEY_LIFECYCLE_STATES:
         raise ConfigurationError(f"{name}.lifecycle_state is unknown")
     replaces_key_id = _opt_string(data.get("replaces_key_id"), f"{name}.replaces_key_id")
@@ -651,7 +698,12 @@ def _opt_identity(value: object, name: str) -> str | None:
 
 
 def _parse_producer_registration(
-    value: object, name: str, role: str, *, candidate_lifecycle: str
+    value: object,
+    name: str,
+    role: str,
+    *,
+    candidate_lifecycle: str,
+    candidate_created_at: datetime,
 ) -> ProducerRoleRegistration:
     data = _object(value, name)
     _keys(
@@ -668,7 +720,11 @@ def _parse_producer_registration(
         raise ConfigurationError(f"{name}.keys must be non-empty")
     keys = tuple(
         _parse_key_registration(
-            item, f"{name}.keys[{i}]", role, candidate_lifecycle=candidate_lifecycle
+            item,
+            f"{name}.keys[{i}]",
+            role,
+            candidate_lifecycle=candidate_lifecycle,
+            candidate_created_at=candidate_created_at,
         )
         for i, item in enumerate(keys_raw)
     )
@@ -992,6 +1048,7 @@ def _parse_candidate(value: object) -> TrustPolicyCandidate:
             f"trust policy candidate.producers.{role}",
             role,
             candidate_lifecycle=lifecycle,
+            candidate_created_at=created_at,
         )
         for role in REQUIRED_ROLES
     )
@@ -1270,23 +1327,102 @@ def _collect_keys(
     return all_keys
 
 
-def _verify_revoked_role_key_counts(candidate: TrustPolicyCandidate) -> None:
-    """In a revoked candidate a role may carry at most two keys and, when it
-    carries two, exactly one of them must be revoked (the other is its
-    successor)."""
+def _verify_two_key_revoked_role(
+    producer: ProducerRoleRegistration,
+    candidate: TrustPolicyCandidate,
+) -> None:
+    """Two keys: exactly one revoked key plus one SUCCESSOR bound in all
+    three places (record names the second key, the second key's
+    ``replaces_key_id`` points back, the revoked key's rotation entry names
+    the successor)."""
+    revoked_keys = [key for key in producer.keys if key.lifecycle_state == "revoked"]
+    if len(revoked_keys) != 1:
+        raise ConfigurationError(
+            "a role carrying two keys must contain exactly one revoked key"
+        )
+    revoked_key = revoked_keys[0]
+    successor_key = next(key for key in producer.keys if key.lifecycle_state != "revoked")
+    record = next(
+        (
+            record
+            for record in candidate.revocation_records
+            if record.key_id == revoked_key.key_id
+        ),
+        None,
+    )
+    if record is None or record.superseded_by_key_id is None:
+        raise ConfigurationError(
+            "a two-key revoked role must declare the successor in the revocation record"
+        )
+    if successor_key.replaces_key_id != revoked_key.key_id:
+        raise ConfigurationError(
+            "the successor key of a two-key revoked role must point back at the revoked key"
+        )
+    entry = next(
+        (
+            entry
+            for entry in candidate.rotation_plan.entries
+            if entry.key_id == revoked_key.key_id
+        ),
+        None,
+    )
+    if entry is None or entry.replaces_key_id != successor_key.key_id:
+        raise ConfigurationError(
+            "the revoked key of a two-key role must have a rotation entry naming the successor"
+        )
+
+
+def _verify_one_key_revoked_role(
+    revoked_key: PublicKeyRegistration,
+    candidate: TrustPolicyCandidate,
+    keys: dict[str, PublicKeyRegistration],
+) -> None:
+    """One revoked key: a historical revoked key WITHOUT a successor -- its
+    record must declare no successor, and no successor registration or
+    replacement plan may point at it."""
+    record = next(
+        (
+            record
+            for record in candidate.revocation_records
+            if record.key_id == revoked_key.key_id
+        ),
+        None,
+    )
+    if record is not None and record.superseded_by_key_id is not None:
+        raise ConfigurationError("a one-key revoked role must not declare a successor")
+    for other in keys.values():
+        if other.replaces_key_id == revoked_key.key_id:
+            raise ConfigurationError(
+                "no successor registration may point at a one-key revoked role"
+            )
+    if any(
+        entry.key_id == revoked_key.key_id and entry.replaces_key_id is not None
+        for entry in candidate.rotation_plan.entries
+    ):
+        raise ConfigurationError("no replacement plan may target a one-key revoked role")
+
+
+def _verify_revoked_role_key_counts(
+    candidate: TrustPolicyCandidate,
+    keys: dict[str, PublicKeyRegistration],
+) -> None:
+    """Close the revoked-role key structure.
+
+    ONE key (revoked): a historical revoked key WITHOUT a successor (see
+    ``_verify_one_key_revoked_role``).  TWO keys: exactly one revoked key
+    plus one SUCCESSOR bound in all three places (see
+    ``_verify_two_key_revoked_role``).  A second key that is not a bound
+    successor is rejected."""
     for producer in candidate.producers:
         if len(producer.keys) > 2:
             raise ConfigurationError(
                 "a revoked role may carry at most one revoked key plus one successor key"
             )
+        revoked_keys = [key for key in producer.keys if key.lifecycle_state == "revoked"]
         if len(producer.keys) == 2:
-            revoked_count = sum(1 for key in producer.keys if key.lifecycle_state == "revoked")
-            if revoked_count != 1:
-                raise ConfigurationError(
-                    "a role carrying two keys must contain exactly one revoked key"
-                )
-
-
+            _verify_two_key_revoked_role(producer, candidate)
+        elif revoked_keys:
+            _verify_one_key_revoked_role(revoked_keys[0], candidate, keys)
 def _verify_key_uniqueness(candidate: TrustPolicyCandidate) -> frozenset[str]:
     """Seven roles, distinct non-zero Ed25519 public keys; the sealer must
     differ from every producer.  A revoked candidate may carry, in addition
@@ -1305,7 +1441,7 @@ def _verify_key_uniqueness(candidate: TrustPolicyCandidate) -> frozenset[str]:
             public_keys[key.public_key] = key.key_id
             fingerprints.add(key.fingerprint_sha256)
     if candidate.lifecycle_state == "revoked":
-        _verify_revoked_role_key_counts(candidate)
+        _verify_revoked_role_key_counts(candidate, _collect_keys(candidate))
     elif len(public_keys) != len(REQUIRED_ROLES):
         raise ConfigurationError("the candidate must register exactly seven distinct keys")
     sealer_key = next(
@@ -1383,7 +1519,12 @@ def _require_planned_at_in_window(
     """``planned_at`` must sit inside the key's validity window:
     ``max(candidate.created_at, key.created_at, key.candidate_from) <=
     planned_at < planned_expiry`` when ``planned_expiry`` is set (inclusive
-    lower bound, EXCLUSIVE upper bound)."""
+    lower bound, EXCLUSIVE upper bound).
+
+    For a REVOKED key the current-state transition (``from_state ==
+    revoked``) must additionally happen no earlier than the revocation
+    event: ``planned_at >= matching RevocationRecord.revoked_at``
+    (inclusive)."""
     if entry.planned_at < candidate.created_at:
         raise ConfigurationError(
             "rotation planned_at must not precede the candidate creation timestamp"
@@ -1401,6 +1542,16 @@ def _require_planned_at_in_window(
             "rotation planned_at must fall strictly before the key planned_expiry "
             "window (planned_at < planned_expiry)"
         )
+    if key.lifecycle_state == "revoked":
+        record = next(
+            (record for record in candidate.revocation_records if record.key_id == key.key_id),
+            None,
+        )
+        if record is not None and entry.planned_at < record.revoked_at:
+            raise ConfigurationError(
+                "rotation planned_at must not precede the revocation record revoked_at "
+                "for a revoked key"
+            )
 
 
 def _verify_plan_replacement_reference(
@@ -1413,9 +1564,7 @@ def _verify_plan_replacement_reference(
     replacer = entry.replaces_key_id
     assert replacer is not None
     if replacer not in key_ids:
-        raise ConfigurationError(
-            f"rotation plan references an unknown replacement key: {replacer}"
-        )
+        raise ConfigurationError(f"rotation plan references an unknown replacement key: {replacer}")
     if replacer == entry.key_id:
         raise ConfigurationError("a key cannot replace itself")
     if keys[replacer].role != keys[entry.key_id].role:
@@ -1461,9 +1610,7 @@ def _verify_rotation_entries(
             )
         _require_planned_at_in_window(entry, key, candidate)
         if entry.replaces_key_id is not None:
-            replaced_by[entry.key_id] = _verify_plan_replacement_reference(
-                entry, keys, key_ids
-            )
+            replaced_by[entry.key_id] = _verify_plan_replacement_reference(entry, keys, key_ids)
         if entry.to_state == "active":
             raise ConfigurationError(
                 "the R0 candidate validator cannot construct an active production key"
@@ -1553,6 +1700,7 @@ def _verify_record_successors(
             raise ConfigurationError("successor must stay within the same role")
         if successor_key.public_key == revoked_key.public_key:
             raise ConfigurationError("a successor must not share the revoked key's public key")
+        _require_successor_valid_at_event(successor_key, record)
         if successor_key.replaces_key_id != record.key_id:
             raise ConfigurationError(
                 "record superseded_by_key_id must match the successor key's " "replaces_key_id"
@@ -1562,6 +1710,36 @@ def _verify_record_successors(
             raise ConfigurationError(
                 "record superseded_by_key_id must match the rotation plan entry"
             )
+
+
+def _require_successor_valid_at_event(
+    successor_key: PublicKeyRegistration,
+    record: RevocationRecord,
+) -> None:
+    """The successor takes over AT the revocation event (``revoked_at``): it
+    must already be in the ``candidate`` lifecycle state with
+    ``created_at <= candidate_from <= revoked_at`` and, when it has a
+    planned expiry, ``planned_expiry > revoked_at`` (strict)."""
+    if successor_key.lifecycle_state != "candidate":
+        raise ConfigurationError(
+            "a successor must be in the candidate lifecycle state at the "
+            f"revocation event (got {successor_key.lifecycle_state})"
+        )
+    if successor_key.created_at > record.revoked_at:
+        raise ConfigurationError(
+            "a successor must already exist (created_at) at the revocation event"
+        )
+    if successor_key.candidate_from > record.revoked_at:
+        raise ConfigurationError(
+            "a successor candidate_from must not be after the revocation event"
+        )
+    if (
+        successor_key.planned_expiry is not None
+        and successor_key.planned_expiry <= record.revoked_at
+    ):
+        raise ConfigurationError(
+            "a successor planned_expiry must be strictly after the revocation event"
+        )
 
 
 def _verify_replacement_bindings(

@@ -150,3 +150,45 @@ forward-fix commit on the branch):
 
 All Round 1/2 boundaries remain in force, including the reachable
 `revoked/not_approved` state and the lifecycle timeline closure.
+
+## Review-fix Round 4 (2026-08-08)
+
+Status after the fourth independent review round:
+
+```text
+REVIEW_FIX_ROUND_4_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+```
+
+Five findings were closed in this round (no push / no PR / no merge; one
+forward-fix commit on the branch):
+
+- **P1-1** — the revoked-role key structure is closed: a ONE-key revoked
+  role is a historical revoked key WITHOUT a successor (record successor
+  null, no successor registration or replacement plan may point at it); a
+  TWO-key revoked role must carry exactly one revoked key plus one SUCCESSOR
+  bound in all three places (record names the second key, the second key's
+  `replaces_key_id` points back, the revoked key's rotation entry names the
+  successor).  Unexplained second keys and missing record/key-level/
+  plan-level links all veto; one-key/no-successor and fully-linked two-key
+  positive controls plus a file-level resealed negative were added.
+- **P1-2** — a revoked key's current-state rotation entry must not precede
+  its revocation event: `planned_at >= revoked_at` (inclusive; equal
+  instants allowed, Z/+00:00 mixed spellings compare equal); object-level
+  and file-level resealed negatives were added.
+- **P1-3** — the successor is effective AT the revocation event: it must be
+  in the `candidate` lifecycle state with `created_at <= candidate_from <=
+  revoked_at` and `planned_expiry` null or strictly after `revoked_at`.
+  Expired/equal-expiry/late-candidate/generated/registered successors veto;
+  `candidate_from == revoked_at` and null-expiry positives were added.
+- **P2-1** — the full key validity interval is enforced:
+  `created_at <= candidate_from < planned_expiry` (strict upper bound);
+  candidate_from-after/equal-expiry negatives, immediately-before and
+  null-expiry positives, and a file-level resealed negative were added.
+- **P2-2** — key-policy time binding: `key.created_at <=
+  candidate.created_at` for every key, and `key.candidate_from <=
+  candidate.created_at` for `candidate`/`revoked` keys; a
+  `generated`/`registered` key MAY declare a future `candidate_from` (plan
+  only, documented).  Object-level and file-level resealed negatives plus a
+  UTC-equivalent boundary positive were added.
+
+All Round 1/2/3 boundaries remain in force.

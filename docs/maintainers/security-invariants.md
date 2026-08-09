@@ -2619,16 +2619,28 @@ replacement/successor 三者精确一致：RevocationRecord.superseded_by_key_id
 视角）、rotation entry 的 replaces_key_id（被替换 key 视角）——任一非空时
 其余声明必须一致；successor 必须真实存在、同 role、非 self、非 revoked/
 archived、公钥不同；unknown/self/cross-role/revoked/same-public-key/drift
-全部拒绝；revoked candidate 中每 role 至多 2 把 key（1 revoked + 1
-successor），approval packet 指纹集合允许 7–14 个。rotation plan 冻结为
-当前状态直接转换语义：entry.from_state 必须精确等于 key.lifecycle_state；
-每个 key_id 至多一条 entry（完全/部分/冲突重复全部拒绝）；planned_at 必须
-落在 key 有效窗口内（max(candidate.created_at, key.created_at,
-key.candidate_from) <= planned_at < planned_expiry，planned_expiry 非空时，
-下界 inclusive 上界 exclusive）；key-level 与 plan-level replaces_key_id 必须
-引用真实、同 role、不同 key 与公钥并双向精确一致。key registration 时间
-不变量：candidate_from >= created_at、planned_expiry > created_at（严格）；
-所有时间戳必须是显式 UTC instant（Z/+00:00，非零 offset 视为歧义拒绝）。
+全部拒绝。revoked role 的 key 结构闭合：单 key（revoked）= 无 successor
+的历史 key（record.superseded_by_key_id 必须 null，不得有 successor
+registration 或 replacement plan 指向它）；双 key = 恰好 1 revoked + 1
+successor，且三处绑定必须齐全（record 必须指名第二把 key、第二把 key 的
+replaces_key_id 必须指回、revoked key 的 rotation entry 必须存在并指名
+successor），任何缺失或"无关系第二把 key"一律 fail-closed。successor 在
+revocation event 时已生效：lifecycle_state 必须为 candidate、created_at <=
+candidate_from <= revoked_at、planned_expiry 为 null 或严格晚于 revoked_at
+（candidate_from == revoked_at 允许）。revoked key 的 current-state rotation
+entry：planned_at >= 匹配 RevocationRecord.revoked_at（inclusive）。
+rotation plan 冻结为当前状态直接转换语义：entry.from_state 必须精确等于
+key.lifecycle_state；每个 key_id 至多一条 entry（完全/部分/冲突重复全部
+拒绝）；planned_at 必须落在 key 有效窗口内（max(candidate.created_at,
+key.created_at, key.candidate_from) <= planned_at < planned_expiry，
+planned_expiry 非空时，下界 inclusive 上界 exclusive）；key-level 与
+plan-level replaces_key_id 必须引用真实、同 role、不同 key 与公钥并双向
+精确一致。key registration 完整有效区间：created_at <= candidate_from <
+planned_expiry（planned_expiry 非空时严格）；key.created_at 不得晚于
+policy candidate.created_at；candidate/revoked key 的 candidate_from 不得
+晚于 candidate.created_at（generated/registered key 允许未来 candidate_from，
+仅表示计划，不声称已进入 candidate）；所有时间戳必须是显式 UTC instant
+（Z/+00:00，非零 offset 视为歧义拒绝）。
 生命周期时间顺序闭合：superseded_at / 每条 record 的 revoked_at 必须落在
 review window 内（review_started_at <= event <= review_completed_at）且不早于
 candidate.created_at；所有比较在归一化 UTC datetime 上进行，边界 inclusive
@@ -2665,15 +2677,18 @@ external_signing_service_planned），不得当作实际 HSM/KMS 证明；未真
   角色、重复/全零/畸形 key、秘密字段、wildcard/越权 scope、object format
   drift、raw-digest/canonical-bytes bypass、lifecycle/decision binding、
   command map-key swap（含全 digest 重算文件级）、supersession/revocation
-  完整性（1:1 record-key 绑定、successor 三者一致、时间顺序闭合、非 revoked
-  key 悬空 record id、rotation 语义：entry 唯一/from_state drift/planned_at
-  窗口/replaces 双向绑定、key 时间不变量）、repo containment/packet path
-  binding、artifact coverage 闭合（含 artifact 内 command 重复）、env
-  allowlist 重复、backup owner approver、敏感 env name、路径/link 攻击、
-  migration/Feature Gate posture；正向：七角色唯一、真实 SHA-1 main
-  commit/tree 进入 source seal、文件级 raw-byte digest 验证、身份分离、
-  lifecycle candidate、revoked/not_approved 文件级正向控制（含合法
-  same-role successor）、合法 rotation 正向控制、`candidate/valid_not_approved`、
+  完整性（1:1 record-key 绑定、双 key role 强制 successor 三方绑定、单 key
+  role 禁止 successor、successor event 有效性、revoked_at/planned_at 顺序、
+  非 revoked key 悬空 record id、rotation 语义：entry 唯一/from_state drift/
+  planned_at 窗口/replaces 双向绑定、完整 key 有效区间、key-policy 时间
+  绑定）、repo containment/packet path binding、artifact coverage 闭合
+  （含 artifact 内 command 重复）、env allowlist 重复、backup owner
+  approver、敏感 env name、路径/link 攻击、migration/Feature Gate posture；
+  正向：七角色唯一、真实 SHA-1 main commit/tree 进入 source seal、文件级
+  raw-byte digest 验证、身份分离、lifecycle candidate、revoked/not_approved
+  文件级正向控制（含单 key 无 successor、双 key 完整绑定、successor 边界
+  等价 instant）、合法 rotation 正向控制、generated/registered 未来
+  candidate_from、planned_expiry null、`candidate/valid_not_approved`、
   production Gate 仍 blocked/not_proven）
 - `python scripts/production/validate_p34_7_trust_policy_candidate.py --candidate
   deployment/production/p34-7-trust-policy-candidate.example.json

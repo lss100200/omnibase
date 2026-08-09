@@ -1934,6 +1934,34 @@ production Runtime、Planner、Multi-Agent 保持 disabled；未 push、未 merg
    重跑；mypy、ruff、maintainer map/benchmark、CLI 双向、7 个正式 gates exit 2；
    sealed digest 链重算后重新提交。
 
+### P34.7 Trust Policy R0 Review-Fix Round 4（2026-08-08）
+
+> 独立 review 的 5 项 findings（P1-1…P2-2）全部在本 forward-fix commit 修复；
+> 最终状态 `REVIEW_FIX_ROUND_4_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW`、仍
+> `CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`、`ACCEPTED_ENGINEERING_ONLY_PRODUCTION_BLOCKED`；
+> 仅 forward-fix commit，未 push/PR/merge。
+
+1. **P1-1 revoked role key 结构闭合**：`_verify_revoked_role_key_counts` 扩展——
+   单 key revoked role = 无 successor 历史（record successor 必须 null、不得有
+   successor registration 或 replacement plan 指向）；双 key role 必须 1 revoked +
+   1 successor 且三方绑定齐全（record 指名第二把 key、successor.replaces_key_id
+   指回、rotation entry 存在并指名 successor），无关系第二把 key 一律拒绝。
+2. **P1-2 revoked_at/planned_at 顺序**：`_require_planned_at_in_window` 增加
+   revoked key current-state entry 的 `planned_at >= revoked_at`（inclusive，
+   相等允许，Z/+00:00 等价 instant 按归一化 UTC 比较）。
+3. **P1-3 successor event 有效性**：`_require_successor_valid_at_event`——
+   successor 在 revoked_at 时必须已处于 candidate 状态且
+   created_at <= candidate_from <= revoked_at、planned_expiry null 或严格晚于
+   revoked_at；generated/registered/过期/晚于 event 的 successor 全部拒绝。
+4. **P2-1 完整 key 有效区间**：`planned_expiry > candidate_from`（严格）——
+   candidate_from after/equal expiry 拒绝，紧贴 expiry 之前与 null expiry 允许。
+5. **P2-2 key-policy 时间绑定**：所有 key.created_at <= candidate.created_at；
+   candidate/revoked key 的 candidate_from <= candidate.created_at；
+   generated/registered key 允许未来 candidate_from（仅计划，文档明确）。
+6. **验证**：candidate focused 171 passed；P34.7 regression 与 P5 合同回归全绿；
+   全量 non-integration 从 clean HEAD 重跑；mypy、ruff、maintainer map/benchmark、
+   CLI 双向、7 个正式 gates exit 2；sealed digest 链重算后重新提交。
+
 ### P5.0 Phase 5 admission gate（2026-08-02）
 
 > P5.0 是 Phase 5 唯一被允许的交付物：它验证"Phase 5 是否可以开始"，不

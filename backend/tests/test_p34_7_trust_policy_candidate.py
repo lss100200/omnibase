@@ -1545,7 +1545,8 @@ def test_cross_role_successor_is_rejected() -> None:
 
 
 def test_revoked_successor_is_rejected() -> None:
-    """P1-1: a successor that is itself revoked/archived fails closed."""
+    """P1-1: a ONE-key revoked role must not declare a successor -- a record
+    successor on a role without a second key fails closed."""
     candidate, packet = _revoked_core_pair()
     candidate["producers"]["runner"]["keys"][0].update(  # type: ignore[index]
         {
@@ -1565,7 +1566,7 @@ def test_revoked_successor_is_rejected() -> None:
         }
     )
     candidate["revocation_records"][0]["superseded_by_key_id"] = "key-runner-001"  # type: ignore[index]
-    with pytest.raises(ConfigurationError, match="must not be revoked or archived"):
+    with pytest.raises(ConfigurationError, match="must not declare a successor"):
         _validate(candidate, packet)
 
 
@@ -1584,20 +1585,20 @@ def test_same_public_key_successor_is_rejected() -> None:
 
 
 def test_successor_key_level_drift_is_rejected() -> None:
-    """P1-1: the successor key's replaces_key_id must point back at the
-    revoked key -- a dangling key-level replacement fails closed."""
+    """P1-1: the successor key of a two-key revoked role must point back at
+    the revoked key -- a dangling key-level replacement fails closed."""
     candidate, packet = _revoked_with_successor_pair()
     candidate["producers"]["core"]["keys"][1]["replaces_key_id"] = "key-ghost-001"  # type: ignore[index]
-    with pytest.raises(ConfigurationError, match="references an unknown key"):
+    with pytest.raises(ConfigurationError, match="must point back at the revoked key"):
         _validate(candidate, packet)
 
 
 def test_successor_plan_level_drift_is_rejected() -> None:
-    """P1-1: the rotation entry for the revoked key must declare the same
-    successor."""
+    """P1-1: the revoked key of a two-key role must have a rotation entry
+    naming the successor."""
     candidate, packet = _revoked_with_successor_pair()
     candidate["rotation_plan"]["entries"][0]["replaces_key_id"] = None  # type: ignore[index]
-    with pytest.raises(ConfigurationError, match="must match the rotation plan entry"):
+    with pytest.raises(ConfigurationError, match="must have a rotation entry naming the successor"):
         _validate(candidate, packet)
 
 
@@ -1686,27 +1687,6 @@ def test_rotation_planned_at_before_candidate_creation_is_rejected() -> None:
         _validate(candidate, packet)
 
 
-def test_rotation_planned_at_before_key_creation_is_rejected() -> None:
-    candidate, packet = _valid_pair()
-    candidate["producers"]["core"]["keys"][0]["created_at"] = "2026-08-08T02:00:00Z"  # type: ignore[index]
-    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T02:00:00Z"  # type: ignore[index]
-    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
-        _rotation_entry(planned_at="2026-08-08T01:30:00Z")
-    ]
-    with pytest.raises(ConfigurationError, match="must not precede the key created_at"):
-        _validate(candidate, packet)
-
-
-def test_rotation_planned_at_before_candidate_from_is_rejected() -> None:
-    candidate, packet = _valid_pair()
-    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T02:00:00Z"  # type: ignore[index]
-    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
-        _rotation_entry(planned_at="2026-08-08T01:30:00Z")
-    ]
-    with pytest.raises(ConfigurationError, match="must not precede the key candidate_from"):
-        _validate(candidate, packet)
-
-
 def test_rotation_planned_at_at_or_after_planned_expiry_is_rejected() -> None:
     """P1-3: planned_at must fall strictly before planned_expiry (exclusive
     upper bound of the key validity window)."""
@@ -1734,12 +1714,12 @@ def test_cross_role_key_level_replacement_is_rejected() -> None:
 
 
 def test_key_level_plan_level_replacement_drift_is_rejected() -> None:
-    """P1-3: key-level and plan-level replacements must agree exactly -- a
-    plan that names a successor whose key registration does not point back
+    """P1-1: key-level and plan-level replacements must agree exactly -- a
+    two-key role whose successor key does not point back at the revoked key
     fails closed."""
     candidate, packet = _revoked_with_successor_pair()
     candidate["producers"]["core"]["keys"][1]["replaces_key_id"] = None  # type: ignore[index]
-    with pytest.raises(ConfigurationError, match="must match the key-level registration"):
+    with pytest.raises(ConfigurationError, match="must point back at the revoked key"):
         _validate(candidate, packet)
 
 
@@ -1783,3 +1763,334 @@ def test_non_utc_key_timestamp_is_rejected() -> None:
     )
     with pytest.raises(ConfigurationError, match="explicit UTC instant"):
         _validate(candidate, packet)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix Round 4 counterexamples
+# ---------------------------------------------------------------------------
+
+
+def test_unexplained_second_key_is_rejected() -> None:
+    """P1-1: a two-key revoked role whose record does not name the second
+    key as successor fails closed."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["revocation_records"][0]["superseded_by_key_id"] = None  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must declare the successor"):
+        _validate(candidate, packet)
+
+
+def test_missing_record_successor_is_rejected() -> None:
+    """P1-1: same as the unexplained second key -- the revocation record of
+    a two-key role must carry the successor."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["revocation_records"][0]["superseded_by_key_id"] = None  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][1]["replaces_key_id"] = None  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must declare the successor"):
+        _validate(candidate, packet)
+
+
+def test_missing_key_level_backlink_is_rejected() -> None:
+    """P1-1: the successor key of a two-key revoked role must point back at
+    the revoked key."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["replaces_key_id"] = None  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must point back at the revoked key"):
+        _validate(candidate, packet)
+
+
+def test_missing_plan_level_link_is_rejected() -> None:
+    """P1-1: the revoked key of a two-key role must have a rotation entry
+    naming the successor."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["rotation_plan"]["entries"] = []  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must have a rotation entry naming the successor"):
+        _validate(candidate, packet)
+
+
+def test_one_key_revoked_no_successor_positive_control(tmp_path: Path) -> None:
+    """P1-1: a one-key revoked role WITHOUT a successor (no record
+    successor, no successor registration, no replacement plan) is a valid
+    historical state."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_core_pair()
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "revoked/not_approved"
+    assert report.blockers == ("lifecycle_not_candidate",)
+
+
+def test_unexplained_second_key_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P1-1: the unexplained-second-key veto survives full reseal of every
+    section digest, the candidate raw digest and the packet digest."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["revocation_records"][0]["superseded_by_key_id"] = None  # type: ignore[index]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must declare the successor"):
+        _validate_files(root, candidate, packet)
+
+
+def test_rotation_planned_at_before_revoked_at_is_rejected() -> None:
+    """P1-2: a revoked key's current-state entry must not precede its
+    revocation event."""
+    candidate, packet = _revoked_core_pair()
+    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
+        {
+            "key_id": "key-core-001",
+            "role": "core",
+            "from_state": "revoked",
+            "to_state": "archived",
+            "planned_at": "2026-08-08T00:30:00Z",
+            "replaces_key_id": None,
+        }
+    ]
+    with pytest.raises(
+        ConfigurationError, match="must not precede the revocation record revoked_at"
+    ):
+        _validate(candidate, packet)
+
+
+def test_rotation_planned_at_equal_revoked_at_is_accepted() -> None:
+    """P1-2: planned_at == revoked_at is allowed (inclusive lower bound)."""
+    candidate, packet = _revoked_core_pair()
+    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
+        {
+            "key_id": "key-core-001",
+            "role": "core",
+            "from_state": "revoked",
+            "to_state": "archived",
+            "planned_at": "2026-08-08T01:30:00Z",
+            "replaces_key_id": None,
+        }
+    ]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_rotation_planned_at_revoked_at_mixed_offset_is_accepted() -> None:
+    """P1-2: the Z / +00:00 spellings of the same instant compare equal."""
+    candidate, packet = _revoked_core_pair()
+    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
+        {
+            "key_id": "key-core-001",
+            "role": "core",
+            "from_state": "revoked",
+            "to_state": "archived",
+            "planned_at": "2026-08-08T01:30:00+00:00",
+            "replaces_key_id": None,
+        }
+    ]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_rotation_planned_at_before_revoked_at_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P1-2: the revoked_at ordering veto survives full reseal."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_core_pair()
+    candidate["rotation_plan"]["entries"] = [  # type: ignore[index]
+        {
+            "key_id": "key-core-001",
+            "role": "core",
+            "from_state": "revoked",
+            "to_state": "archived",
+            "planned_at": "2026-08-08T00:30:00Z",
+            "replaces_key_id": None,
+        }
+    ]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(
+        ConfigurationError, match="must not precede the revocation record revoked_at"
+    ):
+        _validate_files(root, candidate, packet)
+
+
+def test_successor_planned_expiry_before_revoked_at_is_rejected() -> None:
+    """P1-3: the successor must still be valid at the revocation event."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["planned_expiry"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="strictly after the revocation event"):
+        _validate(candidate, packet)
+
+
+def test_successor_planned_expiry_equal_revoked_at_is_rejected() -> None:
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["planned_expiry"] = "2026-08-08T01:30:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="strictly after the revocation event"):
+        _validate(candidate, packet)
+
+
+def test_successor_candidate_from_after_revoked_at_is_rejected() -> None:
+    """P1-3: a successor candidate_from after the revocation event is
+    impossible under the key-policy time binding (candidate_from <=
+    candidate.created_at <= revoked_at), so the event-validity check is
+    exercised through the policy-time veto first."""
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["candidate_from"] = "2026-08-08T02:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="for a candidate/revoked key"):
+        _validate(candidate, packet)
+
+
+def test_successor_generated_lifecycle_is_rejected() -> None:
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["lifecycle_state"] = "generated"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must be in the candidate lifecycle state"):
+        _validate(candidate, packet)
+
+
+def test_successor_registered_lifecycle_is_rejected() -> None:
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["lifecycle_state"] = "registered"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must be in the candidate lifecycle state"):
+        _validate(candidate, packet)
+
+
+def test_successor_candidate_from_equal_revoked_at_is_accepted(tmp_path: Path) -> None:
+    """P1-3: candidate_from == revoked_at is allowed (inclusive).  The
+    review window must open exactly at the candidate creation instant so
+    the revocation event can coincide with both."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_with_successor_pair()
+    packet["review_started_at"] = "2026-08-08T00:00:00Z"
+    packet["review_completed_at"] = "2026-08-08T01:00:00Z"
+    candidate["revocation_records"][0]["revoked_at"] = "2026-08-08T00:00:00Z"  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][1]["candidate_from"] = "2026-08-08T00:00:00Z"  # type: ignore[index]
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "revoked/not_approved"
+
+
+def test_successor_planned_expiry_null_is_accepted(tmp_path: Path) -> None:
+    """P1-3: a successor without a planned expiry is valid at the event."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _revoked_with_successor_pair()
+    candidate["producers"]["core"]["keys"][1]["planned_expiry"] = None  # type: ignore[index]
+    report = _validate_files(root, candidate, packet)
+    assert report.status == "revoked/not_approved"
+
+
+def test_candidate_from_after_planned_expiry_is_rejected() -> None:
+    """P2-1: planned_expiry must be strictly after candidate_from."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2027-09-01T00:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="strictly after candidate_from"):
+        _validate(candidate, packet)
+
+
+def test_candidate_from_equal_planned_expiry_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2027-08-08T00:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="strictly after candidate_from"):
+        _validate(candidate, packet)
+
+
+def test_candidate_from_immediately_before_planned_expiry_is_accepted() -> None:
+    """P2-1: candidate_from strictly inside the validity interval is
+    valid -- the interval may be one second long."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["planned_expiry"] = "2026-08-08T00:00:01Z"  # type: ignore[index]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_planned_expiry_null_is_accepted() -> None:
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["planned_expiry"] = None  # type: ignore[index]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_candidate_from_after_planned_expiry_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P2-1: the full-interval veto survives full reseal."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2027-09-01T00:00:00Z"  # type: ignore[index]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="strictly after candidate_from"):
+        _validate_files(root, candidate, packet)
+
+
+def test_candidate_key_created_after_policy_is_rejected() -> None:
+    """P2-2: no key may be created after the policy candidate itself."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["created_at"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not be after the candidate creation"):
+        _validate(candidate, packet)
+
+
+def test_candidate_key_candidate_from_after_policy_is_rejected() -> None:
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="for a candidate/revoked key"):
+        _validate(candidate, packet)
+
+
+def test_revoked_key_created_after_policy_is_rejected() -> None:
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["core"]["keys"][0]["created_at"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not be after the candidate creation"):
+        _validate(candidate, packet)
+
+
+def test_revoked_key_candidate_from_after_policy_is_rejected() -> None:
+    candidate, packet = _revoked_core_pair()
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="for a candidate/revoked key"):
+        _validate(candidate, packet)
+
+
+def test_generated_key_future_candidate_from_is_accepted() -> None:
+    """P2-2: a generated/registered key MAY plan a future candidate_from
+    (it does not claim to have entered the candidate yet)."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["lifecycle_state"] = "generated"  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-09T00:00:00Z"  # type: ignore[index]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_key_policy_time_utc_equivalent_boundary_is_accepted() -> None:
+    """P2-2: key.created_at spelled as +00:00 equals the Z policy instant."""
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["created_at"] = "2026-08-08T00:00:00+00:00"  # type: ignore[index]
+    report = _validate(candidate, packet)
+    assert report.contract_valid is True
+
+
+def test_key_created_after_policy_file_level_is_rejected_even_with_resealed_digests(
+    tmp_path: Path,
+) -> None:
+    """P2-2: the key-policy time binding veto survives full reseal."""
+    root = _fake_repo_root(tmp_path)
+    candidate, packet = _valid_pair()
+    candidate["producers"]["core"]["keys"][0]["created_at"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    candidate["producers"]["core"]["keys"][0]["candidate_from"] = "2026-08-08T01:00:00Z"  # type: ignore[index]
+    packet["artifact_manifest_sha256"] = _digest(  # type: ignore[index]
+        _canonical(candidate["artifact_approvals"])  # type: ignore[index]
+    )
+    packet["command_templates_sha256"] = _digest(_canonical(candidate["commands"]))  # type: ignore[index]
+    packet["env_allowlist_sha256"] = _digest(_canonical(candidate["allowed_env_names"]))  # type: ignore[index]
+    packet["gateway_policy_sha256"] = _digest(_canonical(candidate["gateway"]))  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="must not be after the candidate creation"):
+        _validate_files(root, candidate, packet)
