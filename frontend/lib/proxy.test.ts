@@ -192,3 +192,125 @@ test('stripHopByHopHeaders removes Connection-named headers too', () => {
     assert.equal(headers.has(name), false)
   }
 })
+
+// ---------------------------------------------------------------------------
+// Compression contract (P5.4D Round 2 P2-1)
+// ---------------------------------------------------------------------------
+
+import zlib from 'node:zlib'
+
+function startEncodingUpstream(
+  encoding: string | null,
+  honorIdentity: boolean,
+): Promise<{ url: string; close: () => Promise<void>; seenAcceptEncoding: () => string | null }> {
+  let seenAcceptEncoding: string | null = null
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      seenAcceptEncoding = String(req.headers['accept-encoding'] ?? '') || null
+      const payload = Buffer.from('{"hello":"world","value":"p52d-acceptance"}')
+      if (encoding === null || (encoding === 'identity' && honorIdentity)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(payload)
+        return
+      }
+      if (honorIdentity && seenAcceptEncoding === 'identity') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(payload)
+        return
+      }
+      // The upstream ignores Accept-Encoding and compresses anyway.
+      const compressed =
+        encoding === 'gzip'
+          ? zlib.gzipSync(payload)
+          : encoding === 'br'
+            ? zlib.brotliCompressSync(payload)
+            : zlib.deflateSync(payload)
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Encoding': encoding,
+        'Content-Length': String(compressed.length),
+      })
+      res.end(compressed)
+    })
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as AddressInfo
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        close: () => new Promise((done) => server.close(() => done())),
+        seenAcceptEncoding: () => seenAcceptEncoding,
+      })
+    })
+  })
+}
+
+test('gzip upstream is failed closed, never forwarded decompressed', async () => {
+  const upstream = await startEncodingUpstream('gzip', false)
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/x', { method: 'GET' }),
+    )
+    assert.equal(response.status, 502, 'compressed body must fail closed')
+    assert.equal(response.headers.get('content-encoding'), null)
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('brotli upstream is failed closed', async () => {
+  const upstream = await startEncodingUpstream('br', false)
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/x', { method: 'GET' }),
+    )
+    assert.equal(response.status, 502)
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('deflate upstream is failed closed', async () => {
+  const upstream = await startEncodingUpstream('deflate', false)
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/x', { method: 'GET' }),
+    )
+    assert.equal(response.status, 502)
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('identity is requested; a compliant upstream body passes through byte-clean', async () => {
+  const upstream = await startEncodingUpstream('gzip', true)
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/x', { method: 'GET' }),
+    )
+    assert.equal(upstream.seenAcceptEncoding(), 'identity')
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-encoding'), null)
+    const body = await response.text()
+    assert.deepEqual(JSON.parse(body), { hello: 'world', value: 'p52d-acceptance' })
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('identity header on the response is forwarded verbatim', async () => {
+  const upstream = await startEncodingUpstream('identity', true)
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/x', { method: 'GET' }),
+    )
+    assert.equal(response.status, 200)
+    const body = await response.text()
+    assert.deepEqual(JSON.parse(body), { hello: 'world', value: 'p52d-acceptance' })
+  } finally {
+    await upstream.close()
+  }
+})

@@ -63,6 +63,11 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
   stripHopByHopHeaders(headers)
   headers.delete('host')
   headers.delete('content-length')
+  // Compression contract (P5.4D Round 2 P2-1): we force `identity` so the
+  // undici fetch never auto-decompresses the body.  A body that arrives
+  // decompressed under a stale Content-Encoding/Content-Length pair would
+  // be forwarded mis-framed; the contract below prevents that entirely.
+  headers.set('accept-encoding', 'identity')
   let upstream: Response
   try {
     upstream = await fetch(upstreamUrl, {
@@ -87,6 +92,14 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
   }
   const responseHeaders = new Headers(upstream.headers)
   stripHopByHopHeaders(responseHeaders)
+  // If the upstream ignored `Accept-Encoding: identity` and still sent a
+  // compressed encoding, fail closed instead of forwarding decompressed
+  // bytes under the stale compression header (no double-decode surprises
+  // and no wrong Content-Length waits for the browser).
+  const contentEncoding = (responseHeaders.get('content-encoding') ?? '').trim().toLowerCase()
+  if (contentEncoding !== '' && contentEncoding !== 'identity') {
+    return upstreamUnavailable()
+  }
   // Server-Sent Events must not be buffered by any hop.
   responseHeaders.set('X-Accel-Buffering', 'no')
   return new Response(upstream.body, {
