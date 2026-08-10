@@ -1686,6 +1686,17 @@ running task/run 或 workspace slot。heartbeat 可以固定在 `expires_at`
 边界，但不得借此延长或复活授权；stale/replaced lease id 或 fencing token
 的 finish 必须继续拒绝。
 
+当 Workspace Run Lease 也同时过期/被撤销时，`submit_run_state` 的严格校验
+不得放宽；terminalize 只能通过 server-owned 的历史 holder 收口路径
+`close_historical_run_holder`：只接受 `failed`/`cancelled`（unknown 映射为
+failed），绝不允许把过期授权解释为 `succeeded`/committed；必须在锁内校验
+精确的历史 holder（WorkspaceRun、RunLease、node binding、workspace
+generation、run fencing、node fencing），stale/replaced lease、generation
+drift、错误 node/workspace 一律 fail closed；RunLease 不得续期、不得复活、
+不得回到 active；WorkspaceRun 终态化并清空 runtime/workload binding，释放
+interactive slot；TaskLedger、WorkspaceRun 与 reconciliation 在同一事务
+原子提交，任一后续失败整体回滚。
+
 所有 Phase 5 Feature Gates 必须继续为 false；migration `0011` 与 disposable
 Gate 通过都不授权生产 Runtime。验证只能使用 `omnibase_test_p52b_*` sentinel
 数据库，先运行 destructive preflight，最后证明容器/网络/卷 `0/0/0`，并对

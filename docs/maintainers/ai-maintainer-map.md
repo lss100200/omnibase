@@ -747,6 +747,48 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
   `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
   及 `start --profile hardened` 负向测试。
 
+## 6.16 P5.4D master-review Round 2: lease settlement, SSE and proxy boundaries
+
+- **server-owned settlement**: `settle_terminal_outcome` (task_ledger/service.py)
+  is the only clock-authoritative decision — database `clock_timestamp()` under
+  lock. A terminalization at or after `expires_at` NEVER settles `committed`;
+  it derails to `unknown` (terminal, reconciliation-only, never replayed).
+  `finish_attempt` closes Lease+Attempt atomically with the settled outcome and
+  returns it; `_terminalize` drives budget/effect/reconciliation/task/run with
+  the SAME settled outcome.
+- **double-lease expiry boundary**: when the Workspace Run Lease has also
+  lapsed/been revoked, `submit_run_state` refuses (never relaxed). The
+  server-owned `close_historical_run_holder` (workspaces/service.py) is the
+  ONLY alternative and is restricted to `failed`/`cancelled`: it validates the
+  exact historical holder (workspace run, run lease, node binding, generation,
+  run fencing, node fencing) under lock, revokes an active-but-lapsed RunLease
+  without renewal/revival, terminalizes the WorkspaceRun, clears
+  runtime/workload bindings (freeing the `workspace_runs_one_active_uq`
+  interactive slot) and creates the reconciliation case — all in the caller's
+  transaction. `committed` never falls back to this path; stale/replaced
+  identities, generation drift, wrong node/workspace fail closed.
+- **workspace slot release**: a closed historical holder leaves zero
+  `leased/starting/running/pausing/stopping` workspace runs, and the next
+  invocation begins immediately (proven by disposable-PostgreSQL scenario H).
+- **SSE terminal event is the success condition**: `consumeAgentAlphaStream`
+  (frontend/lib/agent-alpha-stream.ts) only produces a successful Agent message
+  from a legal `done` terminal; EOF without a terminal
+  (`agent_alpha_stream_incomplete`), malformed payloads, duplicate terminals or
+  events after a terminal all fail closed; `error` fails; `cancelled` and fetch
+  AbortError map to the user-cancellation message; UI text derives from stable
+  codes only.
+- **Stop/reinvoke generation ownership**: `InvocationGuard`
+  (frontend/lib/invocation-state.ts) gives every invocation a unique generation
+  + AbortController; `begin()` is refused while running/cancelling; `stop()`
+  aborts and enters `cancelling` (UI is never prematurely idle); `settle()`
+  only clears the current generation/controller pair so a stale invocation's
+  finally can never clear a newer one.
+- **compressed response consistency**: the proxy forces
+  `Accept-Encoding: identity`; an upstream that still answers with a compressed
+  `Content-Encoding` is failed closed (502) — decompressed bytes are never
+  forwarded under a stale compression header, so the browser never
+  double-decodes and never waits on a wrong Content-Length.
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
@@ -786,7 +828,14 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 
 ### 8.2 Next.js Frontend
 
-- `frontend/lib/api.ts` 使用同源 `/api/v1`，由 `next.config.js` rewrite 到 Main ASGI。
+- `frontend/lib/api.ts` 使用同源 `/api/v1`，由 Route Handler 流式代理
+  `frontend/app/api/v1/[...path]/route.ts`（核心 `frontend/lib/proxy.ts`）转发到 Main
+  ASGI；`next.config.js` **只保留 `/health` 探针 rewrite**，不再有 `/api/:path*`
+  rewrite（rewrites 会缓冲 SSE body，破坏流式与 cancel 语义）。proxy 绑定调用方
+  AbortSignal、双侧剥离 hop-by-hop/Connection-named headers、保留
+  Authorization/Idempotency-Key/Content-Type、强制 `Accept-Encoding: identity` 并对
+  无视 identity 的压缩响应 fail closed（绝不转发已解压 body + 旧压缩头），upstream
+  失败返回不泄露内部地址的稳定 502。
 - Frontend 当前消费 Auth、Documents、metadata-only Database 和 Browser RAG；未消费独立 Gateway SDK。
 - 浏览器 access/refresh token 当前保存在 localStorage，并由 Axios interceptor/Bootstrap 管理。这是用户会话实现，不是 workload credential 实现。
 - UI 隐藏不能代替后端授权。新增页面或按钮时，后端 route、Principal、tenant predicate 和错误边界仍是权威。
