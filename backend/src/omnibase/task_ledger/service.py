@@ -59,6 +59,30 @@ _IDEMPOTENCY_TTL = timedelta(hours=24)
 _LEASE_TTL_CEILING = timedelta(seconds=300)
 _ACTIVE_ATTEMPT_STATES = ("leased", "dispatching", "running")
 _TERMINAL_ATTEMPT_STATES = ("committed", "failed", "unknown", "cancelled")
+_TERMINAL_OUTCOME = Literal["committed", "failed", "unknown", "cancelled"]
+
+
+def settle_terminal_outcome(
+    *, now: datetime, expires_at: datetime, outcome: _TERMINAL_OUTCOME
+) -> _TERMINAL_OUTCOME:
+    """An expired Task Lease must never commit success.
+
+    The lease window is the live authorization for the attempt.  When the
+    terminalization arrives at or after ``expires_at`` (client-disconnected
+    stream that only finishes at the provider tail, or a long stream whose
+    TTL is deliberately shorter than the invocation deadline), the lease
+    can no longer authorize ``committed``: the outcome derails to
+    ``unknown`` (never ``failed``/``cancelled``, which would fabricate a
+    deterministic terminal state we cannot prove, and never a successful
+    commit).  ``unknown`` is terminal and only ever opens reconciliation;
+    it is never replayed.  ``failed``/``unknown``/``cancelled`` outcomes
+    are unaffected because they are not authorizations.
+    """
+    if outcome == "committed" and now >= expires_at:
+        return "unknown"
+    return outcome
+
+
 _BUDGET_DIMENSIONS = frozenset(
     {
         "input_tokens",
@@ -746,8 +770,8 @@ class TaskLedgerPersistenceService:
         attempt_id: str,
         task_lease_id: str,
         task_fencing_token: int,
-        outcome: Literal["committed", "failed", "unknown", "cancelled"],
-    ) -> AgentAttemptModel:
+        outcome: _TERMINAL_OUTCOME,
+    ) -> _TERMINAL_OUTCOME:
         if outcome not in _TERMINAL_ATTEMPT_STATES:
             raise TaskLedgerStateError("task_attempt_outcome_invalid")
         attempt = _attempt_for_update(self._session, tenant_id=tenant_id, attempt_id=attempt_id)
@@ -768,30 +792,32 @@ class TaskLedgerPersistenceService:
             or attempt.task_fencing_token != task_fencing_token
             or lease.task_fencing_token != task_fencing_token
         ):
+            # A stale or replaced lease id / fencing token is never
+            # terminalized by this caller: the attempt belongs to another
+            # (possibly newer) lease, so this finish is refused outright.
             raise TaskLedgerConflict("task_attempt_finish_stale")
         now = self._session.scalar(select(func.clock_timestamp()))
         if not isinstance(now, datetime):
             raise TaskLedgerStateError("task_database_clock_unavailable")
-        lease.state = "completed" if outcome == "committed" else "revoked"
-        # The heartbeat must stay inside the lease window
-        # (agent_task_leases_heartbeat_window_check).  A late terminalization
-        # after the window lapsed (client-disconnected stream that only
-        # finishes at the provider tail, or a long stream whose lease TTL is
-        # deliberately shorter than the invocation deadline) must still
-        # converge: clamp the heartbeat to the window boundary instead of
-        # violating the constraint, which would roll back the terminal
-        # transition and leave the task/run stuck in "running" forever.
+        # Database clock under lock is the only clock.  An expired lease
+        # cannot authorize committed; settle first, then atomically close
+        # the lease, attempt and all follow-on rows with the SAME outcome.
+        settled = settle_terminal_outcome(now=now, expires_at=lease.expires_at, outcome=outcome)
+        lease.state = "completed" if settled == "committed" else "revoked"
+        # The heartbeat stays inside the lease window
+        # (agent_task_leases_heartbeat_window_check); when the window has
+        # lapsed it is fixed at the boundary — never extended, never revived.
         lease.heartbeat_at = min(now, lease.expires_at)
         # Terminalize the lease row before clearing the attempt: the
         # agent_attempt_lease_consistency_guard trigger requires that a
         # cleared attempt has no active lease, and the two UPDATEs are emitted
         # in table order, not code order.
         self._session.flush()
-        attempt.state = outcome
+        attempt.state = settled
         attempt.task_lease_id = None
         attempt.task_fencing_token = None
         self._session.flush()
-        return attempt
+        return settled
 
     def reserve_budget(
         self, *, tenant_id: str, task_id: str, dimension: str, amount: int

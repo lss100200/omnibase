@@ -813,7 +813,27 @@ class LedgerInvocationAdapter:
                 raise AlphaAdapterUnavailable("agent_alpha_result_incomplete")
             if outcome != "committed" and result_digest is not None:
                 raise AlphaAdapterUnavailable("agent_alpha_result_forbidden")
-            if usage is not None and outcome == "committed":
+            # Settle the attempt FIRST: the lease window is the live
+            # authorization, and an expired lease must never commit success
+            # (settle_terminal_outcome derails committed -> unknown).  Every
+            # follow-on row (budget, effect, reconciliation, task, run) is
+            # driven by the SAME settled outcome so the terminal transition
+            # is atomic and no success is ever recorded from an expired lease.
+            settled = svc.finish_attempt(
+                tenant_id=identity.tenant_id,
+                attempt_id=identity.attempt_id,
+                task_lease_id=attempt.task_lease_id or "",
+                task_fencing_token=attempt.task_fencing_token or 0,
+                outcome=outcome,
+            )
+            derailed = outcome == "committed" and settled == "unknown"
+            effective_error_code = "agent_alpha_task_lease_expired" if derailed else error_code
+            if settled == "committed":
+                # settled == "committed" only ever derives from
+                # outcome == "committed" (an expired lease derails committed
+                # to unknown, never the reverse), and that path already
+                # required result_digest + usage above.
+                assert usage is not None
                 reserved_input = 4096
                 reserved_output = 2048
                 used_input = min(int(usage.input_tokens or 0), reserved_input)
@@ -850,30 +870,22 @@ class LedgerInvocationAdapter:
                 )
             effect_outcome: Literal["committed", "failed", "unknown"] = (
                 "committed"
-                if outcome == "committed"
+                if settled == "committed"
                 else "unknown"
-                if outcome == "unknown"
+                if settled == "unknown"
                 else "failed"
             )
             svc.finish_effect(
                 tenant_id=identity.tenant_id,
                 effect_id=identity.effect_id,
                 outcome=effect_outcome,
-                result_digest=result_digest,
+                result_digest=result_digest if settled == "committed" else None,
             )
-            if outcome in {"committed", "failed", "unknown", "cancelled"}:
-                svc.finish_attempt(
-                    tenant_id=identity.tenant_id,
-                    attempt_id=identity.attempt_id,
-                    task_lease_id=attempt.task_lease_id or "",
-                    task_fencing_token=attempt.task_fencing_token or 0,
-                    outcome=outcome,
-                )
-            if outcome == "unknown" and reconcile:
+            if settled == "unknown" and (reconcile or derailed):
                 svc.open_reconciliation(
                     tenant_id=identity.tenant_id,
                     attempt_id=identity.attempt_id,
-                    reason_code=error_code,
+                    reason_code=effective_error_code,
                     effect_id=identity.effect_id,
                 )
             task_state = {
@@ -881,7 +893,7 @@ class LedgerInvocationAdapter:
                 "failed": "failed",
                 "unknown": "blocked_unknown",
                 "cancelled": "cancelled",
-            }[outcome]
+            }[settled]
             task.state = task_state
             run = session.execute(
                 select(AgentRunModel).where(
@@ -893,9 +905,9 @@ class LedgerInvocationAdapter:
                 session,
                 tenant_id=identity.tenant_id,
                 run=run,
-                outcome=outcome,
-                result_digest=result_digest,
-                error_code=error_code,
+                outcome=settled,
+                result_digest=result_digest if settled == "committed" else None,
+                error_code=effective_error_code,
             )
             session.commit()
         except TaskLedgerError as exc:
