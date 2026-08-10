@@ -3495,6 +3495,70 @@ false，migration head `0012`，migration `0013` absent，root `.env` 未读取�
 
 ---
 
+### P5.4D Master Review-Fix Round 2（2026-08-10）
+
+Master Review Round 2 findings 全部实现（worktree
+`p5-4d-product-acceptance-r1`，pre-HEAD `65ad654`）：
+
+- **P1-1 双 Lease 过期**：Task Lease 与 Workspace Run Lease 同时过期时，
+  `submit_run_state` 的严格校验（`_validated_run_lease`）拒绝并回滚整个
+  terminalize 事务，task/attempt/lease/run 卡住且 interactive slot 被占。
+  新增 server-owned 历史 holder 收口路径
+  `close_historical_run_holder`（workspaces/service.py）：只接受
+  failed/cancelled（unknown 映射 failed），锁内精确校验历史 holder
+  （WorkspaceRun/RunLease/node binding/generation/run fencing/node
+  fencing），RunLease 不续期不复活，WorkspaceRun 终态化并清空
+  runtime/workload binding 释放 slot，TaskLedger/WorkspaceRun/
+  reconciliation 同事务原子提交；committed 绝不走该路径。
+- **P1-2 完整 row matrix**：lease-gate 套件断言 TaskLease/Attempt/Effect/
+  Task/AgentRun/WorkspaceRun/RunLease/Reconciliation/Budget/Workspace 全
+  持久化字段。
+- **P1-3 canonical Gate 接线**：Makefile、run_p5_2b gate（source
+  manifest + integration_tests 闭集）、test_run 脚本、maintenance map 全部
+  包含 lease-gate 套件；canonical Gate `--run` 通过（run
+  `20260810091922`，immutable evidence 在
+  `.tmp/p5-2b-task-ledger-gate/20260810091922/`，canonical evidence
+  SHA `11fecc53…`，cleanup 0/0/0），`--verify-evidence` exit 0；旧
+  P5.2B evidence（无 lease Gate）标记为 superseded。
+- **P1-4 SSE EOF fail closed**：`consumeAgentAlphaStream`
+  （frontend/lib/agent-alpha-stream.ts）只有合法 `done` terminal 才成功；
+  EOF 无 terminal、malformed、重复 terminal、terminal 后事件全部
+  fail closed；cancelled/AbortError 收敛为用户取消文案。
+- **P1-5 Stop/reinvoke 竞态**：`InvocationGuard`（frontend/lib/
+  invocation-state.ts）generation + controller CAS；旧 invocation 的
+  finally 不能清理新 invocation。
+- **P2-1 压缩一致性**：proxy 强制 `Accept-Encoding: identity`，upstream
+  仍返回压缩 Content-Encoding 时 fail closed（502），绝不在解压 body 上
+  转发旧压缩头。
+- **P2-2/P2-3 文档**：maintenance-map/ai-maintainer-map/security-invariants
+  更新；新 evidence `docs/evidence/p5-4d/master-review-fix-round-2-decision.md`；
+  Round 1 evidence 保持历史范围。
+
+全量验证：backend 2402 passed（2 个 seal-drift 预期失败在 reseal 后恢复，
+最终 clean HEAD 复跑通过）；disposable PG 14 passed；frontend 87 tests +
+typecheck/lint/build 干净；mypy 0 issues；Ruff/Prettier 干净；map +
+benchmark valid；P5.1A/P5.2A/P5.3A `--verify` exit 2 blocked/not_proven
+vetoes=[]；P34.7 `candidate/valid_not_approved`。commits：
+`a793cfe`（historical holder）、`70dc3e1`（SSE 状态机 + invocation
+guard）、`179b637`（proxy 压缩）、`8efd378`（Gate 接线）、`ca14466`
+（维护文档）及后续 evidence/reseal commits。
+
+正式状态：
+
+```text
+P5_4D_REVIEW_FIX_ROUND_2_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+P5_4D_ENGINEERING_PRODUCT_ACCEPTANCE_NOT_YET_MASTER_ACCEPTED
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+P34_7_BLOCKED_NOT_PROVEN
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+```
+
+---
+
 ### P5.4D Product Acceptance R1（2026-08-10）
 
 从普通用户视角对 P5.4C Lite Agent 产品循环做真实、可复现、fail-closed 的产品
