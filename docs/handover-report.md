@@ -4324,4 +4324,16 @@ The first bare backend-image full-suite attempt stopped during collection
 because the image does not contain three repository-root P34.7 scripts. The
 maintainer-map full-repository mount supplied those scripts and the complete
 suite passed; no test assertion failed in the initial attempt. Clean-HEAD
-formal verifier results are recorded after the ordinary forward-fix commit.
+formal verification on implementation commit `e333d97` then produced:
+
+```text
+R1-A --verify = exit 2, valid_incomplete, activation_allowed=false
+P5.0 --verify = exit 2, blocked/not_proven, vetoes=[]
+P5.1A/P5.2A/P5.3A/P5.6A --verify = exit 2, blocked/not_proven,
+  contract_valid=true, vetoes=[]
+```
+
+The Linux verification container used the worktree's Git object store through
+a read-only mount plus explicit `GIT_DIR/GIT_WORK_TREE`; the first P5.0 attempt
+without that mapping correctly vetoed inaccessible Git provenance. No verifier
+reported production readiness, approved digest installation or activation.

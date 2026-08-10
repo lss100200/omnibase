@@ -6,7 +6,7 @@ Decision:
 
 ```text
 R1_A_ASSIGNMENT_CONTRACT_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
-R1_A_REVIEW_FIX_ROUND_1_IMPLEMENTED_PENDING_FINAL_VERIFICATION
+R1_A_REVIEW_FIX_ROUND_1_VERIFIED_PENDING_MASTER_ACCEPTANCE
 R1_A_ASSIGNMENT_CONTRACT_VALID_NOT_ACCEPTED
 AUTHORITY_ASSIGNMENTS_INCOMPLETE
 CUSTODY_ASSIGNMENTS_NOT_VERIFIED
@@ -108,6 +108,22 @@ The canonical bare backend-image non-integration command was also attempted,
 but collection could not load three repository-root P34.7 scripts absent from
 that image. The same suite passed with the maintainer-map full-repository mount;
 the initial collection result is not represented as a code-test failure.
+
+Clean-HEAD formal verification of implementation commit `e333d97`:
+
+```text
+R1-A --verify = exit 2, r1_assignment/valid_incomplete, activation_allowed=false
+P5.0 --verify = exit 2, blocked/not_proven, vetoes=[]
+P5.1A --verify = exit 2, blocked/not_proven, contract_valid=true, vetoes=[]
+P5.2A --verify = exit 2, blocked/not_proven, contract_valid=true, vetoes=[]
+P5.3A --verify = exit 2, blocked/not_proven, contract_valid=true, vetoes=[]
+P5.6A --verify = exit 2, blocked/not_proven, contract_valid=true, vetoes=[]
+```
+
+The worktree Git metadata was mounted read-only into the verification container
+with explicit `GIT_DIR` and `GIT_WORK_TREE`; without that mapping, the Windows
+worktree `.git` pointer is not resolvable inside Linux and correctly yields a
+Git-provenance veto.
 
 The implementation must receive independent code/security review before it is
 eligible for push or PR. A later real R1 design acceptance requires a separate
