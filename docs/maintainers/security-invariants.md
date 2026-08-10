@@ -2832,3 +2832,66 @@ head 保持 `0012`，`0013` 不存在，三个 Phase 5 Feature Gate 保持 false
 任何 assignment、custody、resource、blocker、canonical byte 或 repository
 posture 漂移时，保留原 proposal 取证，从新 clean checkout 建立 forward-fix；
 不得通过改写历史、删除 blocker、伪造 reviewer 或启用 Runtime 来获得 ready。
+
+## INV-055 personal-single-owner-admission
+
+**权威源码**
+
+- `backend/src/omnibase/production/personal_owner_gate.py`
+- `backend/tests/test_p34_7_personal_owner_gate.py`
+- `backend/tests/integration/test_p34_7_personal_owner_gate.py`
+- `scripts/production/validate_p34_7_personal_owner_gate.py`
+- `scripts/production/run_p34_7_personal_owner_disposable_gate.py`
+- `deployment/production/personal-single-owner.example.json`
+- `docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`
+
+**为什么存在**
+
+个人版只有一个最终人类 Authority，但这不等于 Agent 可以自批或绕过服务器安全
+系统。`personal_single_owner` Gate 只接受一个实时 active Workspace Owner，且该
+Owner 必须是当前 tenant schema 中的 active tenant-admin。存在第二个 active
+Owner、Member、Maintainer、Operator 或 Viewer 时，该 AI 空间不再属于个人单用户
+profile，必须 fail closed；团队和企业 profile 不能借用此快捷路径。
+
+Owner 只表达批准意图。每次准入仍必须在同一服务端事务中重新锁定并核对：
+
+- Agent/Run/System requester 与人类 Owner 身份分离；User requester 永远不能进入
+  personal Gate；
+- `OperationRecord`、`ApprovalRequest`、logical Resource/version、request/plan/tool
+  schema digest、Workspace、Run、action 与 `CapabilityGrant` 精确一致；
+- approval 已由该唯一 Owner 决定、未过期、未消费、非 R4，且 metadata 只包含
+  frozen personal profile、sandbox mode、approval policy、network-policy digest、
+  plan digest、tool-schema digest 与 side-effect 布尔值；
+- Capability active、未过期、未撤销、non-delegable、绑定同一 runtime/workload
+  identity、Owner、Workspace、action/resource，且剩余 calls/bytes/cost budget 足够；
+- WorkspaceRun、RunLease、WorkspaceNode、NodeAttestation、workspace generation、
+  run/node fencing token 与 Workload Identity 仍实时有效；
+- network 始终 `default_deny=true`，destination 只能是排序、无重复的 logical service
+  identifier；wildcard、URL、原始 IP、localhost、Unix/Windows socket、root `.env`、
+  PostgreSQL、Redis、MinIO 或其他物理基础设施 locator 必须拒绝；
+- migration head 固定为 `0012`、`0013` 不存在，Runtime/Planner/Multi-Agent 三个
+  Feature Gate 与 enterprise approved digest 在 readiness 证明阶段全部保持 false。
+
+Gate 的 `personal/ready_for_activation` 只表示 Owner 授权的个人 canary 已具备工程
+前置，不会把 `activation_allowed` 或任何生产 Feature Gate 改为 true。实际高风险
+执行仍须调用既有 `authorize_operation` 原子消费 approval，并在 Capability 使用前
+完成预算预留；Gate 本身不得修改 approval、audit、grant、lease 或 runtime flags。
+
+**必须运行的测试**
+
+- focused/attack matrix：配置 closed set、布尔 coercion、AI 自批、第二成员、Owner
+  失活、binding/version/digest 漂移、approval consumed/expired、Grant revoke/delegate/
+  budget exhaustion、network locator 攻击、enterprise profile shortcut、evidence byte
+  drift 与 stale RunLease；
+- disposable PostgreSQL Gate：0012 真实 schema 中持久化 Owner、Membership、Agent、
+  Operation、Approval、Capability usage、WorkspaceRun、Node attestation 和 RunLease；
+  正向必须 READY，第二成员、fencing drift、approval reuse 必须 fail closed；
+- Mypy、显式路径 Ruff、P34.7 R0/R1-A/joint 回归、全量 non-integration、maintainer
+  map/benchmark，以及 P5 sealed-contract chain 重封与 clean-HEAD verifier。
+
+**失败恢复**
+
+任何 live binding 或 evidence 不确定时，保留 approval/audit/operation/grant/lease
+记录，撤销受影响的 Grant/Lease，要求 Owner 对新的 exact request 重新批准；不得直接
+改行、复活 Lease、重置预算、把 unknown 写成 success、写 enterprise approved digest
+或自动打开 Runtime。企业轨道继续依照冻结文档保存并保持 blocked/not_proven。

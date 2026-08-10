@@ -4409,3 +4409,47 @@ migration 0013 = absent
 This freeze did not execute a key ceremony, approve a digest, access a target
 environment, collect production evidence, read the root `.env`, access or
 migrate a business database, push, merge or deploy.
+
+### P34.7 personal single-Owner Gate implementation (2026-08-10)
+
+The active personal-edition integration line now contains a separately named
+`personal_single_owner` admission Gate. It does not weaken or replace the
+frozen enterprise P34.7 joint Gate.
+
+Implemented boundaries:
+
+- exactly one live Workspace Owner and no other active member;
+- Owner must be an active tenant administrator resolved from the live tenant
+  schema;
+- requester must be Agent, Run or System and cannot use the Owner identity;
+- exact Operation, ApprovalRequest, Resource/version, request/plan/tool digest,
+  CapabilityGrant, Runtime, Workload Identity, action and budget binding;
+- approval must be Owner-decided, unexpired and unconsumed; execution still
+  uses the existing atomic approval-consumption path;
+- live WorkspaceRun, RunLease, Node attestation, generation and run/node
+  fencing are revalidated on every admission;
+- network is default-deny and accepts logical service identifiers only;
+- enterprise profiles cannot use the personal shortcut;
+- migration head remains 0012, migration 0013 is absent, enterprise approved
+  digest remains empty and Runtime/Planner/Multi-Agent remain disabled.
+
+Focused verification reached 46 passed with Mypy/Ruff clean. A guarded
+`omnibase_test_p347personal_*` PostgreSQL run at migration 0012 reached 3
+passed: the full persisted positive chain returned
+`personal/ready_for_activation`; a second active member, current Node fencing
+drift and consumed-approval reuse all failed closed. The disposable run cleaned
+its project containers, network and volume. Canonical immutable evidence and
+the clean-HEAD source seal are produced by the repository Gate after the source
+commit; until that seal is present, the honest status is implementation
+complete pending canonical evidence.
+
+Current split status:
+
+```text
+P34_7_PERSONAL_OWNER_GATE_IMPLEMENTED
+PERSONAL_OWNER_ACTIVATION_PENDING_CANONICAL_EVIDENCE
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
+migration head = 0012
+migration 0013 = absent
+```

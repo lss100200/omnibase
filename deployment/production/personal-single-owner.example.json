@@ -1,0 +1,36 @@
+{
+  "agent_planner_enabled": false,
+  "agent_runtime_enabled": false,
+  "engineering_evidence": {
+    "assertions": {
+      "business_database_accessed": false,
+      "business_database_migrated": false,
+      "enterprise_production_approved": false,
+      "enterprise_track_frozen": true,
+      "migration_0013_created": false,
+      "migration_head": "0012",
+      "passed": true,
+      "personal_owner_activation_ready": true,
+      "production_runtime_activated": false,
+      "profile": "personal_single_owner",
+      "root_env_accessed": false
+    },
+    "path": "docs/evidence/p34-7/personal-owner-disposable-gate.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "enterprise_approved_digest_present": false,
+  "migration_0013_created": false,
+  "migration_head": "0012",
+  "multi_agent_enabled": false,
+  "policy": {
+    "approval_policy": "owner_preapproved_exact_scope",
+    "external_side_effects": false,
+    "network": {
+      "default_deny": true,
+      "destinations": []
+    },
+    "profile": "personal_single_owner",
+    "sandbox_mode": "workspace_auto"
+  },
+  "schema_version": 1
+}

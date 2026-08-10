@@ -23,6 +23,15 @@ from omnibase.production.joint_gate import (
     validate_joint_evidence_contract,
     verify_joint_evidence,
 )
+from omnibase.production.personal_owner_gate import (
+    PersonalGateConfigurationError,
+    PersonalGateState,
+    PersonalOwnerGate,
+    PersonalOwnerGateConfig,
+    PersonalOwnerGateReport,
+    PersonalOwnerGateRequest,
+    load_personal_owner_gate_config,
+)
 
 __all__ = [
     "AdmissionReport",
@@ -30,11 +39,18 @@ __all__ = [
     "ConfigurationError",
     "GitSourceProvenance",
     "JointGateReport",
+    "PersonalGateConfigurationError",
+    "PersonalGateState",
+    "PersonalOwnerGate",
+    "PersonalOwnerGateConfig",
+    "PersonalOwnerGateReport",
+    "PersonalOwnerGateRequest",
     "ProductionCompositionConfig",
     "ProductionCompositionGate",
     "TrustPolicy",
     "build_git_source_provenance",
     "load_production_composition_config",
+    "load_personal_owner_gate_config",
     "load_trust_policy",
     "validate_joint_evidence",
     "validate_joint_evidence_contract",

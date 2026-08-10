@@ -1787,3 +1787,34 @@ blocked/not_proven 不是测试失败。
 前置。只允许修复真实 P0/P1、保持兼容或推进个人 Owner approval；恢复企业轨道
 必须满足冻结文档列出的产品、人员和目标环境条件，并从当时的 current main
 重新收集证据。
+
+### 12.14 Personal single-Owner production admission
+
+个人版生产准入入口是 `PersonalOwnerGate`。它复用既有 P34.1 Approval/Operation、
+P34.2 Capability budget、P34.4 Workspace/Run/Node/Lease/fencing，不新建 migration 或
+第二套审批账本。维护时先读 INV-055 与
+`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`。
+
+调用顺序固定为：加载 closed-set config/request -> 校验 sealed engineering evidence ->
+锁定唯一 active Owner 与 tenant-admin User -> 锁定 Operation/Approval/Grant/Resource ->
+核对 budget/revocation -> 调用 `verify_run_lease_for_sandbox` 重验 attestation、generation、
+fencing、runtime/workload identity -> 返回 `invalid/veto`、
+`personal/owner_approval_required` 或 `personal/ready_for_activation`。
+
+`ready_for_activation` 不是 Runtime 已启动，也不是 enterprise P34.7 PASS。CLI live
+模式只读验证并输出安全报告；真实执行继续走 `authorize_operation` 的一次性消费与
+Capability 预算预留。任何新增网络 destination 必须是 logical identifier 并由 Owner
+批准，不能把 IP、URL、socket、数据库 locator 或 root `.env` 放入 policy。
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p34_7_personal_owner_gate.py `
+  --config deployment/production/personal-single-owner.example.json --validate-only
+python scripts/production/run_p34_7_personal_owner_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps backend pytest `
+  tests/test_p34_7_personal_owner_gate.py -q
+```
+
+恢复时撤销 Grant/Lease 并创建新的精确批准，禁止改写旧 approval/audit、重置 budget、
+写入 enterprise approved digest、创建 0013 或自动打开任一 Feature Gate。
