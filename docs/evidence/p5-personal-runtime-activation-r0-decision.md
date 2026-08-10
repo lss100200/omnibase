@@ -3,8 +3,10 @@
 ## Decision
 
 ```text
-P5_PERSONAL_RUNTIME_R0_IMPLEMENTATION_PRESENT_PENDING_FINAL_VERIFICATION
+P5_PERSONAL_RUNTIME_R0_ENGINEERING_COMPLETE
 PERSONAL_SINGLE_OWNER_NO_TOOL_CANARY_ONLY
+PERSONAL_SINGLE_OWNER_NO_TOOL_CANARY_VERIFIED_IN_DISPOSABLE_POSTGRESQL
+LOGIN_REFRESH_ERROR_MASKING_FIXED
 PRODUCTION_TARGET_NOT_ACTIVATED
 PLANNER_DISABLED
 MULTI_AGENT_DISABLED
@@ -54,7 +56,43 @@ MIGRATION_0013_ABSENT
 
 ## Verification record
 
-The final clean-HEAD verification matrix, commit SHA and disposable evidence
-run identifier are appended only after implementation, documentation, sealed
-contracts and the full verification matrix converge. Until then this document
-must not be interpreted as a production deployment receipt.
+Implementation commit and clean provenance:
+
+```text
+commit = 392b6f458e410573cf97ae9a0bde159da604c169
+git tree = 07ce8eb5aff04b7dc1ae142fbf46a7116b20bc01
+source checkout = clean
+remote origin = https://github.com/lss100200/omnibase.git
+```
+
+Verified matrix:
+
+- independent final security review: `ACCEPTABLE`, no P0/P1/P2 finding in
+  canonical lock order, fresh-only concurrency admission, pre-commit
+  revalidation, kill/provider checkpoints or router scope;
+- backend clean-HEAD non-integration: `2543 passed, 22 skipped, 15 deselected`;
+- frontend: `95 passed`, typecheck, lint and `NODE_ENV=production` build passed;
+- Mypy: `Success: no issues found in 200 source files`;
+- explicit changed-path Ruff check and format check passed;
+- maintainer map: `46 invariants / 39 modules / 672 path specs / 1354 matched
+  files / 279 entrypoints / 199 verification commands`; benchmark: `3 plans /
+  8 scenarios / 6 critical scenarios / 9 unsafe vetoes`;
+- disposable PostgreSQL Gate:
+  `omnibase-p5personal-r0final8` / `omnibase_test_p5personal_r0final8`, migration
+  `0012`, one persisted personal Runtime integration test passed, five control
+  CLI tests passed, and cleanup proved `containers/networks/volumes = 0/0/0`;
+- the integration test deliberately sets the generic Workspace
+  `max_active_runs=8`; the second fresh invocation is still rejected before a
+  second Task row by the personal `max_concurrent_invocations=1` admission;
+- P34.7 composition, P5.0, P5.1A, P5.2A, P5.3A and P5.6A clean-HEAD formal
+  verifiers exited `2`, remained `blocked/not_proven`, reported `vetoes=[]`
+  and did not authorize activation; P5.1A/P5.2A/P5.3A/P5.6A reported
+  `contract_valid=true`;
+- P34.7 joint validate-only exited `2 blocked/not_proven`; the frozen personal
+  Owner config validate-only exited `0`, `contract_valid=true`, migration head
+  `0012`.
+
+No root `.env` was read, no business database was accessed or migrated, no
+private key or provider secret was generated or transmitted, and no real
+target was pushed, merged, deployed or activated. This is an engineering and
+disposable-database canary receipt, not a production deployment receipt.

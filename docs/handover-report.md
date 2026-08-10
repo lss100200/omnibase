@@ -4454,7 +4454,7 @@ migration head = 0012
 migration 0013 = absent
 ```
 
-### P5 Personal Runtime Activation R0 implementation（2026-08-10）
+### P5 Personal Runtime Activation R0 engineering completion（2026-08-11）
 
 The active mainline worktree now contains the separately named
 `personal_single_owner` Runtime canary implementation. It follows the Personal
@@ -4505,11 +4505,33 @@ and all three Feature Gates are false. No real target has been started, no root
 `.env` was read, no business database was accessed or migrated, no provider
 secret was installed and no push/merge/deploy occurred in this worktree.
 
-Current pre-final-verification status:
+Final engineering verification from implementation commit
+`392b6f458e410573cf97ae9a0bde159da604c169`:
+
+- clean-HEAD backend non-integration: `2543 passed / 22 skipped / 15
+  deselected`;
+- frontend: `95 passed` plus typecheck, lint and production build;
+- Mypy: 200 source files, no issues; explicit Ruff check/format, maintainer map
+  and maintainer benchmark all passed;
+- disposable PostgreSQL project `omnibase-p5personal-r0final8`, database
+  `omnibase_test_p5personal_r0final8`: one real persisted Runtime journey and
+  five filesystem-only control CLI tests passed at migration 0012; cleanup
+  proved containers/networks/volumes `0/0/0`;
+- the disposable journey widened generic Workspace `max_active_runs` to 8 and
+  still proved the personal single slot rejects a second fresh invocation
+  before another Task row, then releases the slot after terminal convergence;
+- independent final security review returned `ACCEPTABLE`, with no P0/P1/P2;
+- clean-HEAD P34.7 composition, P5.0/P5.1A/P5.2A/P5.3A/P5.6A and joint
+  verifiers honestly remain `exit 2 blocked/not_proven`, `vetoes=[]`; the
+  personal Owner config remains `exit 0 contract_valid=true`.
+
+Current status:
 
 ```text
-P5_PERSONAL_RUNTIME_R0_IMPLEMENTATION_PRESENT
+P5_PERSONAL_RUNTIME_R0_ENGINEERING_COMPLETE
 PERSONAL_SINGLE_OWNER_NO_TOOL_CANARY_ONLY
+PERSONAL_SINGLE_OWNER_NO_TOOL_CANARY_VERIFIED_IN_DISPOSABLE_POSTGRESQL
+LOGIN_REFRESH_ERROR_MASKING_FIXED
 PRODUCTION_TARGET_NOT_ACTIVATED
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
