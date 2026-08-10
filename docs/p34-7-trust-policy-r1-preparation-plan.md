@@ -106,6 +106,16 @@ Deliver a candidate-derived proposal that freezes:
 Exit condition: two independent reviewers accept the design, but the policy
 still remains `candidate/valid_not_approved`.
 
+Implementation update (2026-08-10): the offline R1-A assignment contract now
+exists at `backend/src/omnibase/production/trust_policy_r1_assignment.py` with
+its canonical example, CLI, attack tests, architecture record and engineering
+decision. It freezes the authority/custody closed sets, fifteen target-resource
+slots and eleven blocker mappings. The example intentionally leaves all real
+assignments `UNASSIGNED` and all external facts `NOT_ASSESSED`, so the current
+derived status is `r1_assignment/valid_incomplete`, not design acceptance.
+Independent authority-registry and detached review-receipt contracts are still
+required before reviewer labels can become authenticated design acceptance.
+
 ### R1-B — key-ceremony runbook
 
 Create a separate, single-run ceremony document containing:

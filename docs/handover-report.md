@@ -4224,3 +4224,54 @@ MULTI_AGENT_ENABLED=false
 migration head=0012
 migration 0013=absent
 ```
+
+### P34.7 Trust Policy R1-A assignment contract（2026-08-10）
+
+R1-A now has an independent offline contract rather than relying on prose or
+R0 reviewer labels. The implementation adds:
+
+- exact authority slots for author, two reviewers, seven producer/backup
+  owners, ceremony operator/observers, seven custody issuers, digest approver
+  and incident/revocation authority;
+- exact seven-role custody assignments;
+- an exact fifteen-slot target-environment inventory;
+- an exact eleven-blocker mapping with frozen resource/producer/command facts;
+- canonical repository-contained JSON loading, R0 secret scanning, migration
+  and Feature-Gate posture checks;
+- a validate-only/verify CLI and focused identity, custody, environment,
+  blocker, secret, path, migration and activation attack tests.
+
+Three independent read-only audits reviewed the authority-collision model,
+target-environment state model, blocker mapping and maintainer/seal impact.
+Their central finding is preserved: a logical reviewer label is not a real
+identity root. Therefore the canonical example keeps every real authority
+`UNASSIGNED`, every custody/resource/blocker fact `NOT_ASSESSED`, and derives:
+
+```text
+R1_A_ASSIGNMENT_CONTRACT_VALID_NOT_ACCEPTED
+status = r1_assignment/valid_incomplete
+authority assignments = incomplete
+custody assignments = not verified
+environment inventory = not assessed
+production blockers = not closed
+trust policy approved = false
+approved digest written = false
+key ceremony authorized = false
+production evidence authorized = false
+P34.7 production total Gate = blocked/not_proven
+activation allowed = false
+```
+
+This work does not generate/transport private keys, execute a ceremony, access
+a target environment or business database, approve a digest, create migration
+`0013`, enable Runtime/Planner/Multi-Agent, deploy, push or merge. The next
+security design boundary is a separately pinned authority registry plus
+detached replay-bound review receipts; that is not supplied by the placeholder
+example and remains a later independently reviewed increment.
+
+Pre-commit verification completed with 46 focused R1-A tests; 296 R1-A/R0/
+joint-gate tests (1 Windows junction skip); 407 P5.1A/P5.2A/P5.3A sealed
+contract tests; 2448 non-integration tests (20 skipped, 15 deselected); Mypy on
+197 source files; focused Ruff; maintainer map/benchmark; Compose config and CI
+workflow YAML parsing. The verification suite passed, while formal production
+status intentionally remains blocked/not_proven.

@@ -2727,3 +2727,94 @@ external_signing_service_planned），不得当作实际 HSM/KMS 证明；未真
 candidate 或 packet 出现 drift/违例时：冻结 candidate，保留 packet 与
 历史记录取证，从新的 clean checkout 重新验证；不得删除 veto、不得把
 candidate 改成 approved、不得写入 approved digest、不得打开 Runtime。
+
+## INV-054 trust-policy-r1-assignment
+
+**权威源码**
+
+- `backend/src/omnibase/production/trust_policy_r1_assignment.py`
+- `backend/tests/test_p34_7_trust_policy_r1_assignment.py`
+- `scripts/production/validate_p34_7_trust_policy_r1_assignment.py`
+- `deployment/production/p34-7-trust-policy-r1-assignment.example.json`
+- `docs/architecture/p34-7-trust-policy-r1-assignment.md`
+- `docs/evidence/p34-7/trust-policy-r1-assignment-decision.md`
+- `docs/p34-7-trust-policy-r1-preparation-plan.md`
+
+**为何存在**
+
+R0 证明了候选策略文件的结构、原始字节、七角色、scope、命令、artifact、
+时间线与轮换/撤销合同，但 logical reviewer label、custody 计划字符串和资源
+名称都不是现实身份认证、托管证明或生产环境证据。R1-A 因此必须把 authority、
+custody、目标环境资源以及 P34.7 的 11 个 blocker 变成独立、离线、严格闭集
+的机器可读 assignment 合同。在真实人员、服务、托管设施和目标环境被独立
+验证前，所有事实必须保持 `UNASSIGNED` 或 `NOT_ASSESSED`，不能从当前用户、
+Codex、外部 AI、本机 Docker/WSL、mock、test double 或 disposable fixture
+猜测填充。
+
+合同必须且只能包含：两名 policy reviewer、七个 producer owner、七个 backup
+owner、ceremony operator、两名 observer、七个 custody attestation issuer、
+digest-change approver 与 incident/revocation authority；七个 custody role；15
+个目标环境资源槽；11 个 production blocker。unknown、缺失、重复或第八角色
+一律 fail-closed。真实 assignment 使用 canonical subject 与认证凭据摘要比较，
+不能只比较 display label；author/reviewer/producer/backup、operator/observer、
+digest approver、incident authority 和每个 custody issuer 的分离矩阵必须通过。
+`UNASSIGNED` 不得携带真实 identity、subject 或认证引用；`VERIFIED` 必须携带
+非秘密、content-addressed 的认证引用。
+
+目标环境状态闭集固定为 `NOT_ASSESSED | MISSING | PLANNED |
+AVAILABLE_NOT_PROVEN | EVIDENCE_COLLECTED_NOT_REVIEWED | PROVEN | REJECTED`。
+`AVAILABLE_NOT_PROVEN` 或 `EVIDENCE_COLLECTED_NOT_REVIEWED` 永远不得算作
+`PROVEN`；PROVEN blocker 必须由其映射的全部 PROVEN 资源和 content-addressed
+evidence 派生。Overlay member A/B 与 independent DERP 必须位于不同 security
+domain；non-disposable tenant/RAG 必须有独立 data-owner authority；Docker、
+WSL、mock、fixture、test double 或 disposable 环境不得冒充 PROVEN production
+resource。11 个 blocker 中 Overlay 的真实双成员、compromise/rejoin、双独立
+签名必须保持三项独立事实，即便下游 composition 目前聚合一个 evidence ID。
+
+文件入口只接受仓库内 regular、non-link、non-reparse、canonical UTF-8 JSON
+bytes；复用 R0/joint-gate 的 strict parser、secret scanner、migration discovery
+与路径规则，不复制一套会漂移的低层语义。任何 private key、seed、mnemonic、
+passphrase、API key、bearer token、数据库 credential、provider credential 或
+root `.env` locator 都必须拒绝且错误不得泄露值。CLI 不访问网络、数据库、
+业务存储或目标环境，不启动服务，不执行 key ceremony，不收集 production
+evidence。
+
+R1-A 的最高状态只允许 `r1_assignment/ready_for_independent_design_review`；
+它仍然不是 Trust Policy approval、approved digest installation、P34.7 PASS 或
+Runtime activation。无论是 `valid_incomplete` 还是未来的 design-review-ready，
+报告都必须固定：`trust_policy_approved=false`、
+`approved_digest_written=false`、`key_ceremony_authorized=false`、
+`production_evidence_authorized=false`、`activation_allowed=false`、P34.7
+`blocked/not_proven`。`_APPROVED_TRUST_POLICY_SHA256` 保持空集，migration
+head 保持 `0012`，`0013` 不存在，三个 Phase 5 Feature Gate 保持 false。
+
+**允许的改法**
+
+- 在不放宽 closed set、identity separation、canonical bytes、秘密扫描和
+  non-authorizing 状态语义的前提下扩展 proof requirements。
+- 增加未来独立 authority registry 与 detached review receipt 合同；registry
+  的 trust pin 必须是另一项独立批准，不能由 proposal 自带。
+- 为真实 R1-B ceremony runbook 做单独设计，但执行必须另获明确批准。
+
+**禁止的改法**
+
+- 把 logical label、placeholder custody、fixture、端口可达或容器存在当作现实
+  identity/custody/production proof。
+- 让输入中的 `ready`、`approved`、`passed` 或 activation 布尔值决定派生状态。
+- 写入 approved trust-policy digest、生成/显示/提交私钥、创建 migration 0013、
+  打开 Feature Gate、启动 Runtime，或访问非 disposable 目标环境/业务数据库。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_trust_policy_r1_assignment.py`
+- R0 candidate 与 P34.7 joint-gate 回归
+- 新模块 Mypy 与显式路径 Ruff check/format
+- Maintainer map/benchmark validator
+- P5.1A/P5.2A/P5.3A sealed contract 回归；修改 maintenance map 或本文件时按
+  raw-byte SHA-256 顺序重封 registry -> task-ledger -> planner 合同
+
+**失败恢复**
+
+任何 assignment、custody、resource、blocker、canonical byte 或 repository
+posture 漂移时，保留原 proposal 取证，从新 clean checkout 建立 forward-fix；
+不得通过改写历史、删除 blocker、伪造 reviewer 或启用 Runtime 来获得 ready。

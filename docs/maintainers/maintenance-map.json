@@ -690,6 +690,23 @@
       "test_paths": [
         "backend/tests/test_p34_7_trust_policy_candidate.py"
       ]
+    },
+    {
+      "id": "INV-054",
+      "title": "P34.7 R1-A authority, custody, environment and blocker assignments stay fail-closed and non-authorizing",
+      "document": "docs/maintainers/security-invariants.md#inv-054-trust-policy-r1-assignment",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py",
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "deployment/production/p34-7-trust-policy-r1-assignment.example.json",
+        "docs/architecture/p34-7-trust-policy-r1-assignment.md",
+        "docs/evidence/p34-7/trust-policy-r1-assignment-decision.md",
+        "docs/p34-7-trust-policy-r1-preparation-plan.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py"
+      ]
     }
   ],
   "modules": [
@@ -2700,6 +2717,50 @@
       "recovery": [
         "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, keep migration head 0012, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
+      ]
+    },
+    {
+      "id": "trust-policy-r1-a",
+      "name": "P34.7 Trust Policy R1-A authority and target-environment assignment contract (offline, non-authorizing)",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py",
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "deployment/production/p34-7-trust-policy-r1-assignment.example.json",
+        "docs/architecture/p34-7-trust-policy-r1-assignment.md",
+        "docs/evidence/p34-7/trust-policy-r1-assignment-decision.md",
+        "docs/p34-7-trust-policy-r1-preparation-plan.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py:validate_trust_policy_r1_assignment",
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py:validate_trust_policy_r1_assignment_file",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py:main"
+      ],
+      "public_interfaces": [
+        "Canonical R1-A assignment proposal with exact authority, seven-role custody, fifteen-resource inventory and eleven-blocker closed sets",
+        "Derived r1_assignment/valid_incomplete or ready_for_independent_design_review posture; neither status approves a trust policy, authorizes a ceremony, closes P34.7 or permits activation",
+        "Offline CLI: --validate-only exit 0 means only contract-valid; --verify exits 2 while real authority/custody/environment assignments remain incomplete"
+      ],
+      "depends_on": [
+        "trust-policy-r0",
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-035",
+        "INV-053",
+        "INV-054"
+      ],
+      "verification": [
+        "python scripts/production/validate_p34_7_trust_policy_r1_assignment.py --assignment deployment/production/p34-7-trust-policy-r1-assignment.example.json --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_candidate.py tests/test_p34_7_joint_gate.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/trust_policy_r1_assignment.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_r1_assignment.py ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_r1_assignment.py ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py"
+      ],
+      "recovery": [
+        "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0012, migration 0013 absent and all three Phase 5 Feature Gates false.",
+        "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     }
   ]

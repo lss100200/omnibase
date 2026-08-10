@@ -1711,3 +1711,46 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
   digest、不采集 production evidence、不激活 Runtime；P34.7 仍
   blocked/not_proven；migration head 0012、0013 absent；Feature Gates
   false/false/false。
+
+### 12.12 P34.7 Trust Policy R1-A assignment
+
+`backend/src/omnibase/production/trust_policy_r1_assignment.py` 把 R1 准备计划的
+authority、custody、15 个目标环境资源槽和 11 个 production blocker 变成严格
+closed-set 的离线合同。它不修改 R0 candidate validator 或 joint gate，也不
+启动服务、访问目标环境、生成密钥、收集 production evidence 或写 approved
+digest。
+
+- authority 必须覆盖 policy author、恰好两名 reviewer、七角色 primary/backup
+  owner、operator、两名 observer、七角色 custody issuer、digest approver 与
+  incident/revocation authority；真实 assignment 以 canonical subject 和认证
+  引用摘要做碰撞/分离检查，不能只比较 label。
+- custody 七角色闭集继承 R0；`NOT_ASSESSED`/selection string 不是 attestation，
+  `VERIFIED` 必须有 content-addressed proof reference。
+- environment inventory 恰好 15 槽，状态闭集到 `PROVEN`；Overlay A/B/DERP
+  security domain 分离，non-disposable tenant/RAG 需要 data-owner authority；
+  Docker/WSL/mock/test-double/fixture/disposable 不得冒充 PROVEN production。
+- blocker 恰好 11 项，producer/command/resource mapping 冻结；未独立 review 的
+  evidence 不关闭 blocker，PROVEN blocker 要求全部映射资源已 PROVEN。
+- 文件入口只接受 repo 内 canonical JSON regular file，并复用 R0 secret/path
+  规则；example 全部保持 `UNASSIGNED`/`NOT_ASSESSED`，正确状态是
+  `r1_assignment/valid_incomplete`。
+- `--validate-only` exit 0 只表示 offline contract valid；`--verify` 在现实赋值
+  未完成时 exit 2。两者都必须报告 Trust Policy 未批准、P34.7
+  `blocked/not_proven`、activation false。
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p34_7_trust_policy_r1_assignment.py `
+  --assignment deployment/production/p34-7-trust-policy-r1-assignment.example.json `
+  --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p34_7_trust_policy_r1_assignment.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production/trust_policy_r1_assignment.py
+```
+
+任何 maintainer map/security invariant 变更都要按 raw bytes 重封 P5 registry ->
+task-ledger -> planner 合同。dirty 开发树只跑 validate-only/unit/type/lint；需要
+clean provenance 的 `--verify` 必须在提交后的新 clean worktree 运行，且
+blocked/not_proven 不是测试失败。
