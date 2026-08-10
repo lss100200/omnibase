@@ -11,7 +11,15 @@ ENVIRONMENT_INVENTORY_NOT_ASSESSED
 TRUST_POLICY_NOT_APPROVED
 P34_7_BLOCKED_NOT_PROVEN
 PRODUCTION_ACTIVATION_DISABLED
+ENTERPRISE_FOLLOW_ON_TRACK_FROZEN
 ```
+
+> **当前产品定位（2026-08-10）**：R1-A 源码、合同、测试与攻击矩阵作为未来
+> 团队版/企业版治理资产保留；其后续 authority registry、review receipt、真实
+> custody 和 target-environment evidence 工作已冻结。个人版由唯一 Owner 审批，
+> 使用更轻的 Sandbox/Approval/Network profile，同时继续执行 Capability、
+> Workload Identity、Lease/fencing、预算和审计边界。详见
+> [`p34-7-enterprise-track-freeze-and-personal-approval.md`](p34-7-enterprise-track-freeze-and-personal-approval.md)。
 
 ## Purpose
 

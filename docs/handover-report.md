@@ -4337,3 +4337,75 @@ The Linux verification container used the worktree's Git object store through
 a read-only mount plus explicit `GIT_DIR/GIT_WORK_TREE`; the first P5.0 attempt
 without that mapping correctly vetoed inaccessible Git provenance. No verifier
 reported production readiness, approved digest installation or activation.
+
+### P34.7 enterprise-track freeze and personal approval pivot（2026-08-10）
+
+The P34.7 work completed to date is preserved as a reusable security asset;
+it is not being discarded or rewritten as unnecessary. The product sequence
+is now explicitly personal edition first, then team/multi-member, then
+enterprise and customized deployments.
+
+The standalone architecture and recovery record is:
+
+- `docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`
+
+The current remote default branch used by this worktree is
+`main` at `eb0a1739af1e9b73a4d59343b03ee153bba6e0a9` (PR #22 R1 preparation
+merge). The R1-A implementation and this freeze record remain on the separate
+local branch `codex/p34-7-trust-policy-r1`; neither is represented here as
+already merged.
+
+It records four separate truths:
+
+1. P34.5 Runner/Broker/Overlay/Gateway engineering Gates, P34.6 Workspace-data
+   boundaries, the P34.7 hardened joint Gate, Trust Policy R0 and the R1-A
+   assignment contract remain valuable and are retained.
+2. R1-B–R1-F multi-human authority registry, detached review receipts, real
+   seven-role key ceremony, custody attestations, approved-digest change,
+   fifteen target resources, eleven enterprise blockers, two-member
+   Overlay/DERP, compromise/rejoin, dual signatures and capacity/SLA evidence
+   are frozen until the personal edition is complete.
+3. The active personal-edition design follows the mature AI-IDE split between
+   Sandbox mode, approval policy and network policy. The single authenticated
+   Owner is the human approval authority.
+4. OmniBase keeps its additional enforcement: per-space logical Capability,
+   per-Run Workload Identity and credential, independent Task/Run Leases and
+   fencing, budget reservation, append-only audit, reconciliation and
+   shared-Sandbox infrastructure with isolated Run contexts.
+
+The personal path is not authorized to bypass the existing safety system.
+Owner approval is an intent record; the server still revalidates the live
+Owner, exact space/action/resource/version scope, Capability, expiry, budget,
+node/Run identity and revocation state. AI output, Browser DTOs and Sandbox
+workloads cannot self-declare verified authority or production equivalence.
+
+The active delivery order is now:
+
+```text
+P5.4D product acceptance and real P1 closure
+→ Personal Owner Approval Gate
+→ restricted personal-edition Canary
+→ stable personal edition
+→ resume team/enterprise P34.7 track from the frozen assets
+```
+
+No runtime or external state changed in this documentation decision. The
+formal posture remains:
+
+```text
+P34.7 enterprise production total Gate = blocked/not_proven
+Trust Policy R0 = candidate/valid_not_approved
+R1-A canonical example = r1_assignment/valid_incomplete
+R1-A maximum proposal posture = complete_not_authenticated
+_APPROVED_TRUST_POLICY_SHA256 = frozenset()
+activation_allowed = false
+AGENT_RUNTIME_ENABLED = false
+AGENT_PLANNER_ENABLED = false
+MULTI_AGENT_ENABLED = false
+migration head = 0012
+migration 0013 = absent
+```
+
+This freeze did not execute a key ceremony, approve a digest, access a target
+environment, collect production evidence, read the root `.env`, access or
+migrate a business database, push, merge or deploy.

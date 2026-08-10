@@ -1761,3 +1761,29 @@ docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /wo
 task-ledger -> planner 合同。dirty 开发树只跑 validate-only/unit/type/lint；需要
 clean provenance 的 `--verify` 必须在提交后的新 clean worktree 运行，且
 blocked/not_proven 不是测试失败。
+
+### 12.13 P34.7 enterprise freeze and personal approval profile
+
+2026-08-10 的产品边界决定把 P34.7 分为两个轨道，完整记录见
+`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`：
+
+- 已有 P34.5/P34.6/P34.7、Trust Policy R0 和 R1-A 源码、测试、合同、runbook
+  与 evidence 全部保留；
+- R1-B–R1-F 的多人 authority registry、key ceremony、custody attestation、
+  approved-digest change、15-resource/11-blocker enterprise evidence campaign
+  冻结，个人版完成后恢复；
+- 个人版唯一人类 Authority 是 live-authenticated Owner，参考成熟 AI IDE 的
+  Sandbox/Approval/Network 两层模型；
+- 用户审批不能替代服务端 Capability、Workload Identity、Lease/fencing、预算、
+  审计和 reconciliation，AI/DTO/workload 也不能自报 `VERIFIED`、`PROVEN` 或
+  `activation_allowed=true`；
+- 多个 AI 空间可以共享 Sandbox/Runner 资源池，但每个 Run 必须独立持有身份、
+  Capability、Lease、预算、临时运行边界和审计关联；
+- 团队版/企业版仍使用完整 P34.7 total Gate；个人版必须先建立独立的 Personal
+  Owner Approval Gate。在该 Gate 完成前，production Runtime/Planner/Multi-Agent
+  仍保持 disabled。
+
+维护者不得删除被冻结的企业资产，也不得让企业多人治理重新成为个人版的硬
+前置。只允许修复真实 P0/P1、保持兼容或推进个人 Owner approval；恢复企业轨道
+必须满足冻结文档列出的产品、人员和目标环境条件，并从当时的 current main
+重新收集证据。

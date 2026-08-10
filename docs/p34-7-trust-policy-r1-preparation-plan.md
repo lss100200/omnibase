@@ -6,7 +6,16 @@ Status:
 
 ```text
 DESIGN_PREPARATION_ONLY_NOT_APPROVED
+ENTERPRISE_EXECUTION_TRACK_FROZEN
 ```
+
+> **冻结决定（2026-08-10）**：R1-A 已实现的合同、测试和证据全部保留；
+> R1-B–R1-F 的多人 authority registry、key ceremony、custody attestation、
+> approved-digest change 和企业生产证据 campaign 暂停，等待个人版产品闭环
+> 完成后恢复。个人版改走 Owner 审批的 `sandbox mode + approval policy +
+> network policy` 路径，并继续复用 OmniBase 的 Capability、Workload Identity、
+> Lease/fencing、预算、审计和 Sandbox 隔离。完整冻结快照与恢复条件见
+> [`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`](architecture/p34-7-enterprise-track-freeze-and-personal-approval.md)。
 
 This document turns the R0 entry conditions into an executable governance
 plan. It does not approve a trust policy, authorize a real key ceremony, add a

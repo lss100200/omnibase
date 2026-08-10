@@ -5,6 +5,15 @@
 > 硬前置：P34.7 production total Gate 全部通过并有可复现证据前，只允许维护本计划、数据契约草案、威胁模型和离线验证器；不得启动自主 Planner、多 Agent 长循环、宿主级工具或连接 non-disposable tenant/RAG 的 Agent Runtime。
 >
 > 授权边界：用户批准继续 P34.7 和后续 Phase 5，不等于 P34.7 已经通过。P5.0 必须根据当前提交、部署哈希、迁移、证据和运行方式独立判定；任何缺项都使 Phase 5 继续保持冻结。
+>
+> 个人版分轨说明（2026-08-10）：上述 P34.7 total Gate 继续作为团队版/企业版
+> production admission，不再要求个人版先完成多人 authority、七角色真实 key
+> ceremony、双成员 Overlay/DERP 和企业 SLA。个人版将另行建立 Owner 审批的
+> Personal Activation Gate，参考 `sandbox mode + approval policy + network
+> policy`，并强制复用 Capability Gateway、Workload Identity、Lease/fencing、
+> 预算、审计和空间隔离。在该 Personal Gate 被实现、独立验证并单独批准前，
+> 当前 production Runtime/Planner/Multi-Agent 仍保持关闭。企业冻结与恢复计划见
+> `docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`。
 
 ## 1. 目标与设计原则
 
