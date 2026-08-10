@@ -57,9 +57,11 @@ from omnibase.workspace_data.models import WorkspaceDerivedIndex
 from omnibase.workspace_data.tenant_models import WorkspaceDerivedChunkV2
 from omnibase.workspaces.models import Workspace, WorkspaceMembership, WorkspaceNode
 from omnibase.workspaces.service import (
+    LeaseRejected,
     WorkspaceError,
     bind_run_runtime_identity,
     claim_run_lease,
+    close_historical_run_holder,
     submit_run_state,
 )
 from omnibase.workspaces.service import (
@@ -154,6 +156,7 @@ def _terminalize_workspace_run(
     lease_id = run.run_lease_id
     node_id = run.node_id
     fencing_token = run.run_fencing_token
+    node_fencing_token = run.node_fencing_token
     if lease_id is None or node_id is None or fencing_token is None:
         raise AlphaAdapterUnavailable("agent_alpha_run_binding_missing")
     terminal_state = {
@@ -169,18 +172,43 @@ def _terminalize_workspace_run(
     run.node_fencing_token = None
     run.runtime_instance_id = None
     run.workload_identity_digest = None
-    submit_run_state(
-        session,
-        tenant_id=tenant_id,
-        run_id=workspace_run_id,
-        lease_id=lease_id,
-        node_id=node_id,
-        generation=run.workspace_generation,
-        fencing_token=fencing_token,
-        observed_state=terminal_state,
-        result_digest=result_digest,
-        error_code=error_code or None,
-    )
+    try:
+        submit_run_state(
+            session,
+            tenant_id=tenant_id,
+            run_id=workspace_run_id,
+            lease_id=lease_id,
+            node_id=node_id,
+            generation=run.workspace_generation,
+            fencing_token=fencing_token,
+            observed_state=terminal_state,
+            result_digest=result_digest,
+            error_code=error_code or None,
+        )
+    except LeaseRejected:
+        # The Workspace Run Lease has lapsed / been revoked / gone stale
+        # while the stream was disconnected.  submit_run_state is NOT
+        # relaxed.  A committed outcome can never fall back to the
+        # historical holder path (an expired authorization can never be
+        # closed as succeeded); only terminal FAILURE states may close the
+        # exact historical holder, release the interactive slot and leave
+        # reconciliation in the same transaction.
+        if outcome == "committed":
+            raise
+        close_historical_run_holder(
+            session,
+            tenant_id=tenant_id,
+            workspace_id=run.workspace_id,
+            workspace_run_id=workspace_run_id,
+            run_lease_id=lease_id,
+            node_id=node_id,
+            generation=run.workspace_generation,
+            run_fencing_token=fencing_token,
+            node_fencing_token=node_fencing_token or 0,
+            observed_state=terminal_state,
+            result_digest=result_digest,
+            error_code=error_code or None,
+        )
 
 
 class RegistryProfileResolver:
