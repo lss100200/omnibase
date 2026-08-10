@@ -165,7 +165,8 @@ jobs:
       - name: P34.7 Trust Policy R1-A assignment contract (validate-only)
         run: |
           uv run python ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
-            --assignment ../deployment/production/p34-7-trust-policy-r1-assignment.example.json \
+            --assignment "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-r1-assignment.example.json" \
+            --repo-root "$GITHUB_WORKSPACE" \
             --validate-only
       - name: P5.1B registry persistence gate contract tests
         run: uv run pytest ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q
