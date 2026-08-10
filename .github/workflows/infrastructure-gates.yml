@@ -71,6 +71,8 @@ jobs:
             src/omnibase/production/phase5_registry_contract.py \
             src/omnibase/production/phase5_task_ledger_contract.py \
             src/omnibase/production/phase5_skill_contract.py \
+            src/omnibase/production/trust_policy_candidate.py \
+            src/omnibase/production/trust_policy_r1_assignment.py \
             tests/cleanup.py \
             tests/conftest.py \
             tests/integration/conftest.py \
@@ -88,9 +90,13 @@ jobs:
             tests/test_p5_6a_skill_contract.py \
             tests/test_p5_1b_agent_registry.py \
             tests/test_p5_1c_registry_api.py \
+            tests/test_p34_7_trust_policy_candidate.py \
+            tests/test_p34_7_trust_policy_r1_assignment.py \
             tests/integration/test_p5_1c_browser_registry_api_foundation.py \
             src/omnibase/agent_registry \
             ../scripts/production/validate_p5_6a_skill_contract.py \
+            ../scripts/production/validate_p34_7_trust_policy_candidate.py \
+            ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
             tests/test_rate_limit.py \
             tests/test_reranker_boundary.py \
             tests/test_tenants.py
@@ -117,13 +123,19 @@ jobs:
             src/omnibase/production/phase5_registry_contract.py \
             src/omnibase/production/phase5_task_ledger_contract.py \
             src/omnibase/production/phase5_skill_contract.py \
+            src/omnibase/production/trust_policy_candidate.py \
+            src/omnibase/production/trust_policy_r1_assignment.py \
             tests/test_migration_scope_fail_closed.py \
             tests/test_rate_limit.py \
             tests/test_p34_*.py \
             tests/test_p5_0_admission.py \
             tests/test_p5_2a_task_ledger_contract.py \
             tests/test_p5_6a_skill_contract.py \
+            tests/test_p34_7_trust_policy_candidate.py \
+            tests/test_p34_7_trust_policy_r1_assignment.py \
             ../scripts/production/validate_p5_6a_skill_contract.py \
+            ../scripts/production/validate_p34_7_trust_policy_candidate.py \
+            ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
             tests/integration/test_p34_*.py
       - name: Full backend typecheck
         run: uv run mypy src
@@ -143,6 +155,19 @@ jobs:
         run: uv run python ../scripts/production/validate_p5_2a_task_ledger_contract.py --validate-only
       - name: P5.6A first-party native Skill contract preflight (validate-only)
         run: uv run python ../scripts/production/validate_p5_6a_skill_contract.py --validate-only
+      - name: P34.7 Trust Policy Candidate R0 contract (validate-only)
+        run: |
+          uv run python ../scripts/production/validate_p34_7_trust_policy_candidate.py \
+            --candidate "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-candidate.example.json" \
+            --approval-packet "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-approval-packet.example.json" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --validate-only
+      - name: P34.7 Trust Policy R1-A assignment contract (validate-only)
+        run: |
+          uv run python ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
+            --assignment "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-r1-assignment.example.json" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --validate-only
       - name: P5.1B registry persistence gate contract tests
         run: uv run pytest ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q
       - name: P5.1C browser registry API gate contract tests

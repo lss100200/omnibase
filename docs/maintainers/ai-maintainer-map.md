@@ -747,6 +747,52 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
   `PYTHONPATH=backend/src python scripts/runtime/omnibase_desktop.py doctor`
   及 `start --profile hardened` 负向测试。
 
+## 6.16 P5.4D master-review Round 2: lease settlement, SSE and proxy boundaries
+
+- **server-owned settlement**: `settle_terminal_outcome` (task_ledger/service.py)
+  is the only clock-authoritative decision — database `clock_timestamp()` under
+  lock. A terminalization at or after `expires_at` NEVER settles `committed`;
+  it derails to `unknown` (terminal, reconciliation-only, never replayed).
+  `finish_attempt` closes Lease+Attempt atomically with the settled outcome and
+  returns it; `_terminalize` drives budget/effect/reconciliation/task/run with
+  the SAME settled outcome.
+- **double-lease expiry boundary**: when the Workspace Run Lease has also
+  lapsed/been revoked, `submit_run_state` refuses (never relaxed). The
+  server-owned `close_historical_run_holder` (workspaces/service.py) is the
+  ONLY alternative and is restricted to `failed`/`cancelled`: it validates the
+  exact historical holder (workspace run, run lease, node binding, generation,
+  run fencing, lease node fencing) under lock, then revalidates the current
+  persisted Node, live attestation and current Node fencing. It accepts only an
+  already revoked/expired RunLease or an active RunLease whose database-clock
+  expiry has actually elapsed; a live active lease, advanced/revoked Node or
+  stale attestation fails closed. The eligible RunLease is never renewed or
+  revived; the path terminalizes the WorkspaceRun, clears
+  runtime/workload bindings (freeing the `workspace_runs_one_active_uq`
+  interactive slot) and creates the reconciliation case — all in the caller's
+  transaction. `committed` never falls back to this path; stale/replaced
+  identities, generation drift, wrong node/workspace fail closed.
+- **workspace slot release**: a closed historical holder leaves zero
+  `leased/starting/running/pausing/stopping` workspace runs, and the next
+  invocation begins immediately (proven by disposable-PostgreSQL scenario H).
+- **SSE terminal event is the success condition**: `consumeAgentAlphaStream`
+  (frontend/lib/agent-alpha-stream.ts) only produces a successful Agent message
+  from a legal `done` terminal; EOF without a terminal
+  (`agent_alpha_stream_incomplete`), malformed payloads, duplicate terminals or
+  events after a terminal all fail closed; `error` fails; `cancelled` and fetch
+  AbortError map to the user-cancellation message; UI text derives from stable
+  codes only.
+- **Stop/reinvoke generation ownership**: `InvocationGuard`
+  (frontend/lib/invocation-state.ts) gives every invocation a unique generation
+  + AbortController; `begin()` is refused while running/cancelling; `stop()`
+  aborts and enters `cancelling` (UI is never prematurely idle); `settle()`
+  only clears the current generation/controller pair so a stale invocation's
+  finally can never clear a newer one.
+- **compressed response consistency**: the proxy forces
+  `Accept-Encoding: identity`; an upstream that still answers with a compressed
+  `Content-Encoding` is failed closed (502) — decompressed bytes are never
+  forwarded under a stale compression header, so the browser never
+  double-decodes and never waits on a wrong Content-Length.
+
 ## 7. 数据库与 migration 边界
 
 ### 7.1 物理边界
@@ -786,7 +832,14 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 
 ### 8.2 Next.js Frontend
 
-- `frontend/lib/api.ts` 使用同源 `/api/v1`，由 `next.config.js` rewrite 到 Main ASGI。
+- `frontend/lib/api.ts` 使用同源 `/api/v1`，由 Route Handler 流式代理
+  `frontend/app/api/v1/[...path]/route.ts`（核心 `frontend/lib/proxy.ts`）转发到 Main
+  ASGI；`next.config.js` **只保留 `/health` 探针 rewrite**，不再有 `/api/:path*`
+  rewrite（rewrites 会缓冲 SSE body，破坏流式与 cancel 语义）。proxy 绑定调用方
+  AbortSignal、双侧剥离 hop-by-hop/Connection-named headers、保留
+  Authorization/Idempotency-Key/Content-Type、强制 `Accept-Encoding: identity` 并对
+  无视 identity 的压缩响应 fail closed（绝不转发已解压 body + 旧压缩头），upstream
+  失败返回不泄露内部地址的稳定 502。
 - Frontend 当前消费 Auth、Documents、metadata-only Database 和 Browser RAG；未消费独立 Gateway SDK。
 - 浏览器 access/refresh token 当前保存在 localStorage，并由 Axios interceptor/Bootstrap 管理。这是用户会话实现，不是 workload credential 实现。
 - UI 隐藏不能代替后端授权。新增页面或按钮时，后端 route、Principal、tenant predicate 和错误边界仍是权威。
@@ -1658,3 +1711,110 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
   digest、不采集 production evidence、不激活 Runtime；P34.7 仍
   blocked/not_proven；migration head 0012、0013 absent；Feature Gates
   false/false/false。
+
+### 12.12 P34.7 Trust Policy R1-A assignment
+
+`backend/src/omnibase/production/trust_policy_r1_assignment.py` 把 R1 准备计划的
+authority、custody、15 个目标环境资源槽和 11 个 production blocker 变成严格
+closed-set 的离线合同。它不修改 R0 candidate validator 或 joint gate，也不
+启动服务、访问目标环境、生成密钥、收集 production evidence 或写 approved
+digest。
+
+- authority 必须覆盖 policy author、恰好两名 reviewer、七角色 primary/backup
+  owner、operator、两名 observer、七角色 custody issuer、digest approver 与
+  incident/revocation authority；真实 assignment 以 canonical subject 和认证
+  引用摘要做碰撞/分离检查，不能只比较 label。
+- custody 七角色闭集继承 R0；`NOT_ASSESSED`/selection string 不是 attestation，
+  `VERIFIED` 必须有 content-addressed proof reference。
+- environment inventory 恰好 15 槽，状态闭集到 `PROVEN`；Overlay A/B/DERP
+  security domain 分离，non-disposable tenant/RAG 需要 data-owner authority；
+  Docker/WSL/mock/test-double/fixture/disposable 不得冒充 PROVEN production。
+- blocker 恰好 11 项，producer/command/resource mapping 冻结；未独立 review 的
+  evidence 不关闭 blocker；resource mapping 的顺序也属于冻结合同。
+- v1 是 proposal-only：authority/custody 自报 `VERIFIED`、resource/blocker 自报
+  `PROVEN`、任何 `production_equivalent=true` 都 fail closed。R1-A 不能验证自己
+  携带的 digest；独立 authority registry、detached review receipt、custody
+  attestation 和 signed evidence gate 必须作为后续独立输入与 trust pin。
+- 文件入口只接受 repo 内 canonical JSON regular file，并复用 R0 secret/path
+  规则；example 全部保持 `UNASSIGNED`/`NOT_ASSESSED`，正确状态是
+  `r1_assignment/valid_incomplete`。
+- `--validate-only` exit 0 只表示 offline contract valid；`--verify` 在现实赋值
+  未被独立认证时 exit 2。完整填写的 proposal 最高为
+  `r1_assignment/complete_not_authenticated`，并固定报告 authority separation/
+  authentication、review receipts、custody attestations、environment evidence 和
+  production blockers 全部未验证/未关闭。两种模式都必须报告 Trust Policy 未批准、P34.7
+  `blocked/not_proven`、activation false。
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p34_7_trust_policy_r1_assignment.py `
+  --assignment deployment/production/p34-7-trust-policy-r1-assignment.example.json `
+  --validate-only
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest `
+  tests/test_p34_7_trust_policy_r1_assignment.py -q
+docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy `
+  src/omnibase/production/trust_policy_r1_assignment.py
+```
+
+任何 maintainer map/security invariant 变更都要按 raw bytes 重封 P5 registry ->
+task-ledger -> planner 合同。dirty 开发树只跑 validate-only/unit/type/lint；需要
+clean provenance 的 `--verify` 必须在提交后的新 clean worktree 运行，且
+blocked/not_proven 不是测试失败。
+
+### 12.13 P34.7 enterprise freeze and personal approval profile
+
+2026-08-10 的产品边界决定把 P34.7 分为两个轨道，完整记录见
+`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`：
+
+- 已有 P34.5/P34.6/P34.7、Trust Policy R0 和 R1-A 源码、测试、合同、runbook
+  与 evidence 全部保留；
+- R1-B–R1-F 的多人 authority registry、key ceremony、custody attestation、
+  approved-digest change、15-resource/11-blocker enterprise evidence campaign
+  冻结，个人版完成后恢复；
+- 个人版唯一人类 Authority 是 live-authenticated Owner，参考成熟 AI IDE 的
+  Sandbox/Approval/Network 两层模型；
+- 用户审批不能替代服务端 Capability、Workload Identity、Lease/fencing、预算、
+  审计和 reconciliation，AI/DTO/workload 也不能自报 `VERIFIED`、`PROVEN` 或
+  `activation_allowed=true`；
+- 多个 AI 空间可以共享 Sandbox/Runner 资源池，但每个 Run 必须独立持有身份、
+  Capability、Lease、预算、临时运行边界和审计关联；
+- 团队版/企业版仍使用完整 P34.7 total Gate；个人版必须先建立独立的 Personal
+  Owner Approval Gate。在该 Gate 完成前，production Runtime/Planner/Multi-Agent
+  仍保持 disabled。
+
+维护者不得删除被冻结的企业资产，也不得让企业多人治理重新成为个人版的硬
+前置。只允许修复真实 P0/P1、保持兼容或推进个人 Owner approval；恢复企业轨道
+必须满足冻结文档列出的产品、人员和目标环境条件，并从当时的 current main
+重新收集证据。
+
+### 12.14 Personal single-Owner production admission
+
+个人版生产准入入口是 `PersonalOwnerGate`。它复用既有 P34.1 Approval/Operation、
+P34.2 Capability budget、P34.4 Workspace/Run/Node/Lease/fencing，不新建 migration 或
+第二套审批账本。维护时先读 INV-055 与
+`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`。
+
+调用顺序固定为：加载 closed-set config/request -> 校验 sealed engineering evidence ->
+锁定唯一 active Owner 与 tenant-admin User -> 锁定 Operation/Approval/Grant/Resource ->
+核对 budget/revocation -> 调用 `verify_run_lease_for_sandbox` 重验 attestation、generation、
+fencing、runtime/workload identity -> 返回 `invalid/veto`、
+`personal/owner_approval_required` 或 `personal/ready_for_activation`。
+
+`ready_for_activation` 不是 Runtime 已启动，也不是 enterprise P34.7 PASS。CLI live
+模式只读验证并输出安全报告；真实执行继续走 `authorize_operation` 的一次性消费与
+Capability 预算预留。任何新增网络 destination 必须是 logical identifier 并由 Owner
+批准，不能把 IP、URL、socket、数据库 locator 或 root `.env` 放入 policy。
+
+Focused commands:
+
+```powershell
+python scripts/production/validate_p34_7_personal_owner_gate.py `
+  --config deployment/production/personal-single-owner.example.json --validate-only
+python scripts/production/run_p34_7_personal_owner_disposable_gate.py --validate-only
+docker compose --env-file .env.example run --rm --no-deps backend pytest `
+  tests/test_p34_7_personal_owner_gate.py -q
+```
+
+恢复时撤销 Grant/Lease 并创建新的精确批准，禁止改写旧 approval/audit、重置 budget、
+写入 enterprise approved digest、创建 0013 或自动打开任一 Feature Gate。

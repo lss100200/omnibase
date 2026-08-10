@@ -3495,6 +3495,161 @@ false，migration head `0012`，migration `0013` absent，root `.env` 未读取�
 
 ---
 
+### P5.4D Master Review-Fix Round 2（2026-08-10）
+
+Master Review Round 2 findings 全部实现（worktree
+`p5-4d-product-acceptance-r1`，pre-HEAD `65ad654`）：
+
+- **P1-1 双 Lease 过期**：Task Lease 与 Workspace Run Lease 同时过期时，
+  `submit_run_state` 的严格校验（`_validated_run_lease`）拒绝并回滚整个
+  terminalize 事务，task/attempt/lease/run 卡住且 interactive slot 被占。
+  新增 server-owned 历史 holder 收口路径
+  `close_historical_run_holder`（workspaces/service.py）：只接受
+  failed/cancelled（unknown 映射 failed），锁内精确校验历史 holder
+  （WorkspaceRun/RunLease/node binding/generation/run fencing/node
+  fencing），RunLease 不续期不复活，WorkspaceRun 终态化并清空
+  runtime/workload binding 释放 slot，TaskLedger/WorkspaceRun/
+  reconciliation 同事务原子提交；committed 绝不走该路径。
+- **P1-2 完整 row matrix**：lease-gate 套件断言 TaskLease/Attempt/Effect/
+  Task/AgentRun/WorkspaceRun/RunLease/Reconciliation/Budget/Workspace 全
+  持久化字段。
+- **P1-3 canonical Gate 接线**：Makefile、run_p5_2b gate（source
+  manifest + integration_tests 闭集）、test_run 脚本、maintenance map 全部
+  包含 lease-gate 套件；canonical Gate `--run` 通过（run
+  `20260810091922`，immutable evidence 在
+  `.tmp/p5-2b-task-ledger-gate/20260810091922/`，canonical evidence
+  SHA `11fecc53…`，cleanup 0/0/0），`--verify-evidence` exit 0；旧
+  P5.2B evidence（无 lease Gate）标记为 superseded。
+- **P1-4 SSE EOF fail closed**：`consumeAgentAlphaStream`
+  （frontend/lib/agent-alpha-stream.ts）只有合法 `done` terminal 才成功；
+  EOF 无 terminal、malformed、重复 terminal、terminal 后事件全部
+  fail closed；cancelled/AbortError 收敛为用户取消文案。
+- **P1-5 Stop/reinvoke 竞态**：`InvocationGuard`（frontend/lib/
+  invocation-state.ts）generation + controller CAS；旧 invocation 的
+  finally 不能清理新 invocation。
+- **P2-1 压缩一致性**：proxy 强制 `Accept-Encoding: identity`，upstream
+  仍返回压缩 Content-Encoding 时 fail closed（502），绝不在解压 body 上
+  转发旧压缩头。
+- **P2-2/P2-3 文档**：maintenance-map/ai-maintainer-map/security-invariants
+  更新；新 evidence `docs/evidence/p5-4d/master-review-fix-round-2-decision.md`；
+  Round 1 evidence 保持历史范围。
+
+全量验证：backend 2402 passed（2 个 seal-drift 预期失败在 reseal 后恢复，
+最终 clean HEAD 复跑通过）；disposable PG 14 passed；frontend 87 tests +
+typecheck/lint/build 干净；mypy 0 issues；Ruff/Prettier 干净；map +
+benchmark valid；P5.1A/P5.2A/P5.3A `--verify` exit 2 blocked/not_proven
+vetoes=[]；P34.7 `candidate/valid_not_approved`。commits：
+`a793cfe`（historical holder）、`70dc3e1`（SSE 状态机 + invocation
+guard）、`179b637`（proxy 压缩）、`8efd378`（Gate 接线）、`ca14466`
+（维护文档）及后续 evidence/reseal commits。
+
+正式状态：
+
+```text
+P5_4D_REVIEW_FIX_ROUND_2_IMPLEMENTED_PENDING_INDEPENDENT_REVIEW
+P5_4D_ENGINEERING_PRODUCT_ACCEPTANCE_NOT_YET_MASTER_ACCEPTED
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+P34_7_BLOCKED_NOT_PROVEN
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+```
+
+---
+
+### P5.4D Master Review Round 3：engineering acceptance（2026-08-10）
+
+Round 2 未原样放行。独立复核发现 `close_historical_run_holder` 只比较调用参数
+与旧 RunLease，未比较当前持久化 `WorkspaceNode.fencing_token`，也没有要求
+`active` RunLease 已按数据库时钟真实过期，因此 unrelated `LeaseRejected` 仍可能
+进入历史 holder 路径。
+
+forward-fix commit `4c94b7f` 收紧该边界：锁定并通过
+`get_active_attested_node` 重验当前 Node active/未撤销、verified 且未过期的
+attestation；比较当前 Node fencing 与 RunLease-bound fencing；使用 PostgreSQL
+`clock_timestamp()`；只允许 already revoked/expired，或 active 且
+`expires_at <= DB clock` 的精确 holder。active+未过期、completed、Node fencing
+推进、Node revoke/attestation 失效、generation drift、replaced identity 均零终态
+写入拒绝；committed/succeeded 永不进入该路径，RunLease 永不续期/复活。
+
+数据库测试不再只传错误参数：Scenario D 真实推进持久化 Node fencing，Scenario
+E 真实推进 Workspace generation，并新增 Scenario I（精确但 active+未过期的
+RunLease 不可历史关闭）与 Scenario J（当前 Node revoked/attestation rejected
+不可授权）。canonical P5.2B disposable Gate run `20260810100438` 通过，source
+manifest SHA `144690413c…`，foundation + lease Gate 闭集执行，cleanup `0/0/0`；
+旧 run `20260810091922` 对本 finding 标记为 superseded。前端 87 tests、typecheck、
+lint 复核通过；后端 Ruff/Mypy focused 通过。
+
+正式状态更新为：
+
+```text
+P5_4D_MASTER_REVIEW_ACCEPTED_ENGINEERING
+P5_4D_PRODUCT_ACCEPTANCE_R1_COMPLETE
+P5_4D_READY_FOR_PERSONAL_EDITION_CONSOLIDATION
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+```
+
+本结论接受 P5.4D 工程产品闭环，允许进入个人版整合；它不自动打开生产
+Runtime。单 Owner 个人版的 Owner Approval/Activation Gate 仍需独立完成；企业
+多权威 ceremony/custody/DERP/multi-member/SLA 路线继续冻结。
+
+---
+
+### P5.4D Product Acceptance R1（2026-08-10）
+
+从普通用户视角对 P5.4C Lite Agent 产品循环做真实、可复现、fail-closed 的产品
+验收（isolated Compose 栈 `omnibase-p54d-acceptance`、`POSTGRES_PORT=5433`、
+loopback fake OpenAI-compatible provider）。基线矩阵全绿后执行 28 步 API
+journey（`26 PASS / 0 FAIL / 2 NOT_PROVEN`）与浏览器 UI journey（12 项
+PASS），验收发现 4 项问题并全部处理：
+
+- **F-1（严重 UX）**：Next.js `rewrites` 在 dev 与 production standalone 中
+  都缓冲上游响应体，SSE 只能在流结束后一次性到达（proxy 实测 4.78s 全量 vs
+  直连 0.18/1.68/3.18s 逐块），工作台从不渲染实时 chunk，meta 事件延迟到达。
+  修复：以流式 Route Handler `frontend/app/api/v1/[...path]/route.ts` 替换
+  `/api/v1` rewrite（web stream 透传，`/health` 探针仍走 rewrites）。修复后
+  dev 与 production standalone 均逐块到达（0.36/1.86/3.36s）。
+- **F-2（UX）**：Stop 渲染原始 abort 错误文本。修复：AbortError 与后端
+  `cancelled` 事件统一显示 "Invocation cancelled."。
+- **F-3（严重）**：cancel/断开后 task/run 卡 `running`（`finish_attempt`
+  在 lease 窗口过期后写 `heartbeat_at=now` 违反
+  `agent_task_leases_heartbeat_window_check`；IntegrityError 回滚终态转换并
+  被生成器 GC 路径吞掉），且后续 invoke 全部 500 `WorkspaceConflict`
+  （interactive run 槽位被占）。修复：`finish_attempt` 将 heartbeat 收敛到
+  `min(now, lease.expires_at)`；断开场景现在收敛为 run
+  `stopped/failed + agent_alpha_sse_disconnected`、task `blocked_unknown`
+  + open reconciliation（INV-046 语义），workspace 恢复可用。
+- **F-3a（F-3 的一部分）**：`invocationId` 在 invoke 开始不重置，Stop 会用
+  过期 id 调 cancel。修复：invoke 开始时置空。
+- **F-4（接受为未实现项）**：刷新后工作台会话上下文丢失（ledger 仍保留
+  task/run；"Run / Session" tab 可见）。
+
+验收后全量验证：backend `2402 passed / 20 skipped / 15 deselected`；
+focused `253 passed`；`mypy src` 196 files 0 issues；Ruff/Prettier 干净；
+frontend typecheck/lint/test(51)/production build 干净；maintainer map +
+benchmark validators 通过；P5.2A/P5.2C/P5.4A/P5.4C verifiers 静态契约有效；
+P34.7 保持 `candidate/valid_not_approved`（未批准）。两个 forward-fix commit：
+`583f7df`（task-ledger 收敛）与 `e7e911f`（SSE 流式代理 + cancel 清理）。
+evidence：`docs/evidence/p5-4d/product-acceptance-r1-decision.md`。
+
+正式状态：
+
+```text
+P5_4D_ENGINEERING_PRODUCT_ACCEPTANCE_PASSED_PENDING_MASTER_REVIEW
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+P34_7_BLOCKED_NOT_PROVEN
+AGENT_LITE_ENGINEERING_ENABLED=true (controlled dev only)
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+```
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
@@ -4068,4 +4223,233 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 migration head=0012
 migration 0013=absent
+```
+
+### P34.7 Trust Policy R1-A assignment contract（2026-08-10）
+
+R1-A now has an independent offline contract rather than relying on prose or
+R0 reviewer labels. The implementation adds:
+
+- exact authority slots for author, two reviewers, seven producer/backup
+  owners, ceremony operator/observers, seven custody issuers, digest approver
+  and incident/revocation authority;
+- exact seven-role custody assignments;
+- an exact fifteen-slot target-environment inventory;
+- an exact eleven-blocker mapping with frozen resource/producer/command facts;
+- canonical repository-contained JSON loading, R0 secret scanning, migration
+  and Feature-Gate posture checks;
+- a validate-only/verify CLI and focused identity, custody, environment,
+  blocker, secret, path, migration and activation attack tests.
+
+Three independent read-only audits reviewed the authority-collision model,
+target-environment state model, blocker mapping and maintainer/seal impact.
+Their central finding is preserved: a logical reviewer label is not a real
+identity root. Therefore the canonical example keeps every real authority
+`UNASSIGNED`, every custody/resource/blocker fact `NOT_ASSESSED`, and derives:
+
+```text
+R1_A_ASSIGNMENT_CONTRACT_VALID_NOT_ACCEPTED
+status = r1_assignment/valid_incomplete
+authority assignments = incomplete
+custody assignments = not verified
+environment inventory = not assessed
+production blockers = not closed
+trust policy approved = false
+approved digest written = false
+key ceremony authorized = false
+production evidence authorized = false
+P34.7 production total Gate = blocked/not_proven
+activation allowed = false
+```
+
+This work does not generate/transport private keys, execute a ceremony, access
+a target environment or business database, approve a digest, create migration
+`0013`, enable Runtime/Planner/Multi-Agent, deploy, push or merge. The next
+security design boundary is a separately pinned authority registry plus
+detached replay-bound review receipts; that is not supplied by the placeholder
+example and remains a later independently reviewed increment.
+
+Pre-commit verification completed with 46 focused R1-A tests; 296 R1-A/R0/
+joint-gate tests (1 Windows junction skip); 407 P5.1A/P5.2A/P5.3A sealed
+contract tests; 2448 non-integration tests (20 skipped, 15 deselected); Mypy on
+197 source files; focused Ruff; maintainer map/benchmark; Compose config and CI
+workflow YAML parsing. The verification suite passed, while formal production
+status intentionally remains blocked/not_proven.
+
+#### R1-A Master Security Review — Round 1
+
+Master review identified one overclaim in the first contract: a proposal could
+self-declare authority/custody `VERIFIED` or environment/blocker `PROVEN` by
+supplying a syntactically valid digest, although no independently pinned
+authority registry, detached review receipt, custody attestation verifier or
+signed production-evidence gate existed. `authority_separation_verified` and
+`production_blockers_closed` could consequently overstate proposal data.
+
+The Round 1 forward-fix makes R1-A explicitly proposal-only:
+
+- `VERIFIED` authority and custody inputs fail closed;
+- `PROVEN` resource and blocker inputs fail closed;
+- `production_equivalent=true` always fails closed;
+- Docker/WSL/mock/test-double/fixture/disposable identifiers are rejected in
+  every assessed target assignment state;
+- blocker resource tuples are order-bound, not set-compared;
+- complete authority slots use `ASSIGNED_NOT_VERIFIED`, complete custody uses
+  `SELECTED_NOT_VERIFIED`, and the highest status is
+  `r1_assignment/complete_not_authenticated`;
+- structural separation is reported separately as
+  `authority_separation_contract_valid`; real separation/authentication,
+  review receipts, custody attestations, environment evidence and production
+  blocker closure remain false.
+
+The canonical example remains `valid_incomplete`. No authority registry,
+review receipt, target environment, private key, production evidence, approved
+digest, migration `0013`, Feature Gate or Runtime activation was introduced.
+
+Round 1 pre-commit verification passed:
+
+```text
+focused R1-A = 51 passed
+R1-A + R0 + joint Gate = 307 passed, 1 Windows junction skipped
+P5.1A/P5.2A/P5.3A sealed contracts = 407 passed
+full backend non-integration (full-repository mount) = 2454 passed, 20 skipped, 15 deselected
+Mypy = 197 source files, no issues
+Ruff explicit paths = check/format passed
+maintainer map = valid (44 invariants, 38 modules)
+maintainer benchmark = valid
+Compose config = valid
+canonical R1-A validate-only = exit 0, valid_incomplete
+```
+
+The first bare backend-image full-suite attempt stopped during collection
+because the image does not contain three repository-root P34.7 scripts. The
+maintainer-map full-repository mount supplied those scripts and the complete
+suite passed; no test assertion failed in the initial attempt. Clean-HEAD
+formal verification on implementation commit `e333d97` then produced:
+
+```text
+R1-A --verify = exit 2, valid_incomplete, activation_allowed=false
+P5.0 --verify = exit 2, blocked/not_proven, vetoes=[]
+P5.1A/P5.2A/P5.3A/P5.6A --verify = exit 2, blocked/not_proven,
+  contract_valid=true, vetoes=[]
+```
+
+The Linux verification container used the worktree's Git object store through
+a read-only mount plus explicit `GIT_DIR/GIT_WORK_TREE`; the first P5.0 attempt
+without that mapping correctly vetoed inaccessible Git provenance. No verifier
+reported production readiness, approved digest installation or activation.
+
+### P34.7 enterprise-track freeze and personal approval pivot（2026-08-10）
+
+The P34.7 work completed to date is preserved as a reusable security asset;
+it is not being discarded or rewritten as unnecessary. The product sequence
+is now explicitly personal edition first, then team/multi-member, then
+enterprise and customized deployments.
+
+The standalone architecture and recovery record is:
+
+- `docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`
+
+The current remote default branch used by this worktree is
+`main` at `eb0a1739af1e9b73a4d59343b03ee153bba6e0a9` (PR #22 R1 preparation
+merge). The R1-A implementation and this freeze record remain on the separate
+local branch `codex/p34-7-trust-policy-r1`; neither is represented here as
+already merged.
+
+It records four separate truths:
+
+1. P34.5 Runner/Broker/Overlay/Gateway engineering Gates, P34.6 Workspace-data
+   boundaries, the P34.7 hardened joint Gate, Trust Policy R0 and the R1-A
+   assignment contract remain valuable and are retained.
+2. R1-B–R1-F multi-human authority registry, detached review receipts, real
+   seven-role key ceremony, custody attestations, approved-digest change,
+   fifteen target resources, eleven enterprise blockers, two-member
+   Overlay/DERP, compromise/rejoin, dual signatures and capacity/SLA evidence
+   are frozen until the personal edition is complete.
+3. The active personal-edition design follows the mature AI-IDE split between
+   Sandbox mode, approval policy and network policy. The single authenticated
+   Owner is the human approval authority.
+4. OmniBase keeps its additional enforcement: per-space logical Capability,
+   per-Run Workload Identity and credential, independent Task/Run Leases and
+   fencing, budget reservation, append-only audit, reconciliation and
+   shared-Sandbox infrastructure with isolated Run contexts.
+
+The personal path is not authorized to bypass the existing safety system.
+Owner approval is an intent record; the server still revalidates the live
+Owner, exact space/action/resource/version scope, Capability, expiry, budget,
+node/Run identity and revocation state. AI output, Browser DTOs and Sandbox
+workloads cannot self-declare verified authority or production equivalence.
+
+The active delivery order is now:
+
+```text
+P5.4D product acceptance and real P1 closure
+→ Personal Owner Approval Gate
+→ restricted personal-edition Canary
+→ stable personal edition
+→ resume team/enterprise P34.7 track from the frozen assets
+```
+
+No runtime or external state changed in this documentation decision. The
+formal posture remains:
+
+```text
+P34.7 enterprise production total Gate = blocked/not_proven
+Trust Policy R0 = candidate/valid_not_approved
+R1-A canonical example = r1_assignment/valid_incomplete
+R1-A maximum proposal posture = complete_not_authenticated
+_APPROVED_TRUST_POLICY_SHA256 = frozenset()
+activation_allowed = false
+AGENT_RUNTIME_ENABLED = false
+AGENT_PLANNER_ENABLED = false
+MULTI_AGENT_ENABLED = false
+migration head = 0012
+migration 0013 = absent
+```
+
+This freeze did not execute a key ceremony, approve a digest, access a target
+environment, collect production evidence, read the root `.env`, access or
+migrate a business database, push, merge or deploy.
+
+### P34.7 personal single-Owner Gate implementation (2026-08-10)
+
+The active personal-edition integration line now contains a separately named
+`personal_single_owner` admission Gate. It does not weaken or replace the
+frozen enterprise P34.7 joint Gate.
+
+Implemented boundaries:
+
+- exactly one live Workspace Owner and no other active member;
+- Owner must be an active tenant administrator resolved from the live tenant
+  schema;
+- requester must be Agent, Run or System and cannot use the Owner identity;
+- exact Operation, ApprovalRequest, Resource/version, request/plan/tool digest,
+  CapabilityGrant, Runtime, Workload Identity, action and budget binding;
+- approval must be Owner-decided, unexpired and unconsumed; execution still
+  uses the existing atomic approval-consumption path;
+- live WorkspaceRun, RunLease, Node attestation, generation and run/node
+  fencing are revalidated on every admission;
+- network is default-deny and accepts logical service identifiers only;
+- enterprise profiles cannot use the personal shortcut;
+- migration head remains 0012, migration 0013 is absent, enterprise approved
+  digest remains empty and Runtime/Planner/Multi-Agent remain disabled.
+
+Focused verification reached 46 passed with Mypy/Ruff clean. A guarded
+`omnibase_test_p347personal_*` PostgreSQL run at migration 0012 reached 3
+passed: the full persisted positive chain returned
+`personal/ready_for_activation`; a second active member, current Node fencing
+drift and consumed-approval reuse all failed closed. The canonical repository
+Gate then reran both suites from committed source `28a69ab`, published
+`docs/evidence/p34-7/personal-owner-disposable-gate.json`, sealed source manifest
+`f2d998a50f173c5500b899dcaad323ebb1d5cd9cf94153181047ce846155e2b9`, and
+proved cleanup `containers/networks/volumes = 0/0/0`.
+
+Current split status:
+
+```text
+P34_7_PERSONAL_ENGINEERING_COMPLETE
+PERSONAL_OWNER_ACTIVATION_READY
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
+migration head = 0012
+migration 0013 = absent
 ```

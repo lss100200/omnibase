@@ -57,9 +57,11 @@ from omnibase.workspace_data.models import WorkspaceDerivedIndex
 from omnibase.workspace_data.tenant_models import WorkspaceDerivedChunkV2
 from omnibase.workspaces.models import Workspace, WorkspaceMembership, WorkspaceNode
 from omnibase.workspaces.service import (
+    LeaseRejected,
     WorkspaceError,
     bind_run_runtime_identity,
     claim_run_lease,
+    close_historical_run_holder,
     submit_run_state,
 )
 from omnibase.workspaces.service import (
@@ -154,6 +156,7 @@ def _terminalize_workspace_run(
     lease_id = run.run_lease_id
     node_id = run.node_id
     fencing_token = run.run_fencing_token
+    node_fencing_token = run.node_fencing_token
     if lease_id is None or node_id is None or fencing_token is None:
         raise AlphaAdapterUnavailable("agent_alpha_run_binding_missing")
     terminal_state = {
@@ -169,18 +172,43 @@ def _terminalize_workspace_run(
     run.node_fencing_token = None
     run.runtime_instance_id = None
     run.workload_identity_digest = None
-    submit_run_state(
-        session,
-        tenant_id=tenant_id,
-        run_id=workspace_run_id,
-        lease_id=lease_id,
-        node_id=node_id,
-        generation=run.workspace_generation,
-        fencing_token=fencing_token,
-        observed_state=terminal_state,
-        result_digest=result_digest,
-        error_code=error_code or None,
-    )
+    try:
+        submit_run_state(
+            session,
+            tenant_id=tenant_id,
+            run_id=workspace_run_id,
+            lease_id=lease_id,
+            node_id=node_id,
+            generation=run.workspace_generation,
+            fencing_token=fencing_token,
+            observed_state=terminal_state,
+            result_digest=result_digest,
+            error_code=error_code or None,
+        )
+    except LeaseRejected:
+        # The Workspace Run Lease has lapsed / been revoked / gone stale
+        # while the stream was disconnected.  submit_run_state is NOT
+        # relaxed.  A committed outcome can never fall back to the
+        # historical holder path (an expired authorization can never be
+        # closed as succeeded); only terminal FAILURE states may close the
+        # exact historical holder, release the interactive slot and leave
+        # reconciliation in the same transaction.
+        if outcome == "committed":
+            raise
+        close_historical_run_holder(
+            session,
+            tenant_id=tenant_id,
+            workspace_id=run.workspace_id,
+            workspace_run_id=workspace_run_id,
+            run_lease_id=lease_id,
+            node_id=node_id,
+            generation=run.workspace_generation,
+            run_fencing_token=fencing_token,
+            node_fencing_token=node_fencing_token or 0,
+            observed_state=terminal_state,
+            result_digest=result_digest,
+            error_code=error_code or None,
+        )
 
 
 class RegistryProfileResolver:
@@ -813,7 +841,27 @@ class LedgerInvocationAdapter:
                 raise AlphaAdapterUnavailable("agent_alpha_result_incomplete")
             if outcome != "committed" and result_digest is not None:
                 raise AlphaAdapterUnavailable("agent_alpha_result_forbidden")
-            if usage is not None and outcome == "committed":
+            # Settle the attempt FIRST: the lease window is the live
+            # authorization, and an expired lease must never commit success
+            # (settle_terminal_outcome derails committed -> unknown).  Every
+            # follow-on row (budget, effect, reconciliation, task, run) is
+            # driven by the SAME settled outcome so the terminal transition
+            # is atomic and no success is ever recorded from an expired lease.
+            settled = svc.finish_attempt(
+                tenant_id=identity.tenant_id,
+                attempt_id=identity.attempt_id,
+                task_lease_id=attempt.task_lease_id or "",
+                task_fencing_token=attempt.task_fencing_token or 0,
+                outcome=outcome,
+            )
+            derailed = outcome == "committed" and settled == "unknown"
+            effective_error_code = "agent_alpha_task_lease_expired" if derailed else error_code
+            if settled == "committed":
+                # settled == "committed" only ever derives from
+                # outcome == "committed" (an expired lease derails committed
+                # to unknown, never the reverse), and that path already
+                # required result_digest + usage above.
+                assert usage is not None
                 reserved_input = 4096
                 reserved_output = 2048
                 used_input = min(int(usage.input_tokens or 0), reserved_input)
@@ -850,30 +898,22 @@ class LedgerInvocationAdapter:
                 )
             effect_outcome: Literal["committed", "failed", "unknown"] = (
                 "committed"
-                if outcome == "committed"
+                if settled == "committed"
                 else "unknown"
-                if outcome == "unknown"
+                if settled == "unknown"
                 else "failed"
             )
             svc.finish_effect(
                 tenant_id=identity.tenant_id,
                 effect_id=identity.effect_id,
                 outcome=effect_outcome,
-                result_digest=result_digest,
+                result_digest=result_digest if settled == "committed" else None,
             )
-            if outcome in {"committed", "failed", "unknown", "cancelled"}:
-                svc.finish_attempt(
-                    tenant_id=identity.tenant_id,
-                    attempt_id=identity.attempt_id,
-                    task_lease_id=attempt.task_lease_id or "",
-                    task_fencing_token=attempt.task_fencing_token or 0,
-                    outcome=outcome,
-                )
-            if outcome == "unknown" and reconcile:
+            if settled == "unknown" and (reconcile or derailed):
                 svc.open_reconciliation(
                     tenant_id=identity.tenant_id,
                     attempt_id=identity.attempt_id,
-                    reason_code=error_code,
+                    reason_code=effective_error_code,
                     effect_id=identity.effect_id,
                 )
             task_state = {
@@ -881,7 +921,7 @@ class LedgerInvocationAdapter:
                 "failed": "failed",
                 "unknown": "blocked_unknown",
                 "cancelled": "cancelled",
-            }[outcome]
+            }[settled]
             task.state = task_state
             run = session.execute(
                 select(AgentRunModel).where(
@@ -893,9 +933,9 @@ class LedgerInvocationAdapter:
                 session,
                 tenant_id=identity.tenant_id,
                 run=run,
-                outcome=outcome,
-                result_digest=result_digest,
-                error_code=error_code,
+                outcome=settled,
+                result_digest=result_digest if settled == "committed" else None,
+                error_code=effective_error_code,
             )
             session.commit()
         except TaskLedgerError as exc:

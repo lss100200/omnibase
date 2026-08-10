@@ -8,16 +8,17 @@
   },
   "database_sentinel_verified": true,
   "feature_gates_enabled": false,
-  "finished_at": "2026-08-05T01:25:32.858253+00:00",
+  "finished_at": "2026-08-10T10:06:29.747954+00:00",
   "gate": "P5.2B Task ledger persistence disposable Gate",
   "integration_tests": [
-    "backend/tests/integration/test_p5_2b_task_ledger_foundation.py"
+    "backend/tests/integration/test_p5_2b_task_ledger_foundation.py",
+    "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py"
   ],
   "migration_head": "0011",
   "passed": true,
   "production_runtime_activated": false,
   "root_env_accessed": false,
   "schema_version": 1,
-  "source_manifest_sha256": "b1b52e8b5adcfde26dc06d3baf76e7d21bb4f512f00e82696199ead761aec79b",
-  "started_at": "2026-08-05T01:24:38.304065+00:00"
+  "source_manifest_sha256": "144690413cb4ebf59c4470e2b0da8ec0d86924f80fccd6e2a2a1549b4163d848",
+  "started_at": "2026-08-10T10:04:38.899480+00:00"
 }

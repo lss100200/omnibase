@@ -169,3 +169,69 @@ def test_migration_declares_unique_head_and_populated_downgrade_guard() -> None:
     assert "P5.2B populated downgrade is forbidden" in source
     assert "ERRCODE = '55000'" in source
     assert "migration_schema_scope" in source
+
+
+def test_task_lease_heartbeat_window_and_terminal_convergence_contract() -> None:
+    """The lease heartbeat must stay inside [created_at, expires_at].
+
+    ``TaskLedgerPersistenceService.finish_attempt`` clamps a late
+    terminalization heartbeat to ``expires_at``; if the window constraint
+    were ever relaxed or the clamp removed, a disconnected stream that
+    finalizes after its lease lapsed would roll back the terminal
+    transition and leave the task/run stuck in "running" forever
+    (P5.4D acceptance finding F-3b).
+    """
+    checks = " ".join(
+        str(item.sqltext)
+        for item in models.AgentTaskLeaseModel.__table__.constraints
+        if isinstance(item, CheckConstraint)
+    )
+    assert "heartbeat_at >= created_at" in checks
+    assert "heartbeat_at <= expires_at" in checks
+    assert "expires_at > created_at" in checks
+    source = inspect.getsource(TaskLedgerPersistenceService.finish_attempt)
+    assert "min(now, lease.expires_at)" in source
+    assert "lease.heartbeat_at" in source
+
+
+def test_settle_terminal_outcome_expired_lease_never_commits() -> None:
+    """Behavior matrix for the lease-window settlement rule (P5.4D P1-2).
+
+    A terminalization at or after ``expires_at`` must never settle
+    ``committed``: the lease window is the live authorization, and an
+    expired lease cannot authorize a successful commit.  It derails to
+    ``unknown`` (terminal, reconciliation-only, never replayed); the other
+    outcomes are not authorizations and pass through unchanged.  This is a
+    real behavior test of ``settle_terminal_outcome`` — not a source-string
+    assertion.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from omnibase.task_ledger.service import settle_terminal_outcome
+
+    created = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+    expires_at = created + timedelta(seconds=90)
+    before = created + timedelta(seconds=89)
+    equal = expires_at
+    after = expires_at + timedelta(seconds=1)
+
+    # before expiry: committed stays committed
+    assert (
+        settle_terminal_outcome(now=before, expires_at=expires_at, outcome="committed")
+        == "committed"
+    )
+    # equal expiry: committed derails to unknown (never committed/succeeded)
+    assert (
+        settle_terminal_outcome(now=equal, expires_at=expires_at, outcome="committed") == "unknown"
+    )
+    # after expiry: committed derails to unknown
+    assert (
+        settle_terminal_outcome(now=after, expires_at=expires_at, outcome="committed") == "unknown"
+    )
+    # non-authorization outcomes pass through unchanged at/after expiry
+    for outcome in ("failed", "unknown", "cancelled"):
+        assert settle_terminal_outcome(now=equal, expires_at=expires_at, outcome=outcome) == outcome
+        assert settle_terminal_outcome(now=after, expires_at=expires_at, outcome=outcome) == outcome
+        assert (
+            settle_terminal_outcome(now=before, expires_at=expires_at, outcome=outcome) == outcome
+        )

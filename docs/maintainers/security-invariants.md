@@ -1676,6 +1676,32 @@ replay。服务只参加调用方拥有的事务，不自行 commit，不调用�
 工具。Populated `0011` downgrade 必须以 SQLSTATE `55000` fail closed；恢复
 只能 forward-fix 或 restore 到新的 `omnibase_restore_*` 数据库。
 
+Task Lease 窗口是 Attempt 的唯一存活授权：数据库时钟（锁内）是唯一时钟，
+terminalize 时刻 `now >= expires_at` 的 lease 绝不允许 settled 为
+`committed`/succeeded —— `settle_terminal_outcome` 必须把这种 late
+terminalization 派生为 `unknown`（终态、只开 reconciliation、禁止自动
+replay），并且 Lease/Attempt/Task/AgentRun/WorkspaceRun 在同一个事务里用
+同一个 settled outcome 原子收口，不得遗留 active lease、running attempt、
+running task/run 或 workspace slot。heartbeat 可以固定在 `expires_at`
+边界，但不得借此延长或复活授权；stale/replaced lease id 或 fencing token
+的 finish 必须继续拒绝。
+
+当 Workspace Run Lease 也同时过期/被撤销时，`submit_run_state` 的严格校验
+不得放宽；terminalize 只能通过 server-owned 的历史 holder 收口路径
+`close_historical_run_holder`：只接受 `failed`/`cancelled`（unknown 映射为
+failed），绝不允许把过期授权解释为 `succeeded`/committed；必须在锁内校验
+精确的历史 holder（WorkspaceRun、RunLease、node binding、workspace
+generation、run fencing、旧 Lease node fencing），并重新验证当前持久化
+WorkspaceNode 仍 active、attestation 仍 verified 且未过期、当前 Node fencing
+仍与历史 Lease 完全一致；stale/replaced lease、generation drift、Node fencing
+推进、Node revoke/attestation 失效、错误 node/workspace 一律 fail closed。
+该路径不是任意 `LeaseRejected` 的兜底：RunLease 必须已是 revoked/expired，或
+仍为 active 但数据库 `clock_timestamp()` 已到/超过 `expires_at`；active 且未过期
+的 holder 绝不能由历史路径关闭。RunLease 不得续期、不得复活、不得回到
+active；WorkspaceRun 终态化并清空 runtime/workload binding，释放 interactive
+slot；TaskLedger、WorkspaceRun 与 reconciliation 在同一事务原子提交，任一
+后续失败整体回滚。
+
 所有 Phase 5 Feature Gates 必须继续为 false；migration `0011` 与 disposable
 Gate 通过都不授权生产 Runtime。验证只能使用 `omnibase_test_p52b_*` sentinel
 数据库，先运行 destructive preflight，最后证明容器/网络/卷 `0/0/0`，并对
@@ -2701,3 +2727,171 @@ external_signing_service_planned），不得当作实际 HSM/KMS 证明；未真
 candidate 或 packet 出现 drift/违例时：冻结 candidate，保留 packet 与
 历史记录取证，从新的 clean checkout 重新验证；不得删除 veto、不得把
 candidate 改成 approved、不得写入 approved digest、不得打开 Runtime。
+
+## INV-054 trust-policy-r1-assignment
+
+**权威源码**
+
+- `backend/src/omnibase/production/trust_policy_r1_assignment.py`
+- `backend/tests/test_p34_7_trust_policy_r1_assignment.py`
+- `scripts/production/validate_p34_7_trust_policy_r1_assignment.py`
+- `deployment/production/p34-7-trust-policy-r1-assignment.example.json`
+- `docs/architecture/p34-7-trust-policy-r1-assignment.md`
+- `docs/evidence/p34-7/trust-policy-r1-assignment-decision.md`
+- `docs/p34-7-trust-policy-r1-preparation-plan.md`
+
+**为何存在**
+
+R0 证明了候选策略文件的结构、原始字节、七角色、scope、命令、artifact、
+时间线与轮换/撤销合同，但 logical reviewer label、custody 计划字符串和资源
+名称都不是现实身份认证、托管证明或生产环境证据。R1-A 因此必须把 authority、
+custody、目标环境资源以及 P34.7 的 11 个 blocker 变成独立、离线、严格闭集
+的机器可读 assignment 合同。在真实人员、服务、托管设施和目标环境被独立
+验证前，所有事实必须保持 `UNASSIGNED` 或 `NOT_ASSESSED`，不能从当前用户、
+Codex、外部 AI、本机 Docker/WSL、mock、test double 或 disposable fixture
+猜测填充。
+
+合同必须且只能包含：两名 policy reviewer、七个 producer owner、七个 backup
+owner、ceremony operator、两名 observer、七个 custody attestation issuer、
+digest-change approver 与 incident/revocation authority；七个 custody role；15
+个目标环境资源槽；11 个 production blocker。unknown、缺失、重复或第八角色
+一律 fail-closed。真实 assignment 使用 canonical subject 与认证凭据摘要比较，
+不能只比较 display label；author/reviewer/producer/backup、operator/observer、
+digest approver、incident authority 和每个 custody issuer 的分离矩阵必须通过。
+`UNASSIGNED` 不得携带真实 identity、subject 或认证引用；R1-A v1 只允许把真实
+slot 填到 `ASSIGNED_NOT_VERIFIED`。输入自报的 `VERIFIED` 即使携带格式正确的
+content-addressed 引用也必须拒绝，因为 proposal 没有 independently pinned
+authority registry 或 detached review receipt verifier。分离矩阵通过只能派生
+`authority_separation_contract_valid=true`，不能派生现实身份认证或已验证分离。
+
+目标环境状态闭集固定为 `NOT_ASSESSED | MISSING | PLANNED |
+AVAILABLE_NOT_PROVEN | EVIDENCE_COLLECTED_NOT_REVIEWED | PROVEN | REJECTED`。
+`AVAILABLE_NOT_PROVEN` 或 `EVIDENCE_COLLECTED_NOT_REVIEWED` 永远不得算作
+`PROVEN`；R1-A v1 不接受任何输入自报的 resource/blocker `PROVEN`，也不接受
+`production_equivalent=true`。这些结论属于后续独立签名 evidence gate，而非
+assignment proposal。Overlay member A/B 与 independent DERP 必须位于不同
+security domain；non-disposable tenant/RAG 必须有独立 data-owner authority；
+Docker、WSL、mock、fixture、test double 或 disposable 环境不得出现在任何已
+填写的目标资源 assignment 中，更不得冒充 production resource。11 个 blocker
+中 Overlay 的真实双成员、compromise/rejoin、双独立
+签名必须保持三项独立事实，即便下游 composition 目前聚合一个 evidence ID。
+
+文件入口只接受仓库内 regular、non-link、non-reparse、canonical UTF-8 JSON
+bytes；复用 R0/joint-gate 的 strict parser、secret scanner、migration discovery
+与路径规则，不复制一套会漂移的低层语义。任何 private key、seed、mnemonic、
+passphrase、API key、bearer token、数据库 credential、provider credential 或
+root `.env` locator 都必须拒绝且错误不得泄露值。CLI 不访问网络、数据库、
+业务存储或目标环境，不启动服务，不执行 key ceremony，不收集 production
+evidence。
+
+R1-A 的最高状态只允许 `r1_assignment/complete_not_authenticated`；它只表示
+authority slots、custody choices 和 target inventory 已填写，仍然不是现实身份
+认证、独立 review、Trust Policy approval、approved digest installation、P34.7
+PASS 或 Runtime activation。无论是 `valid_incomplete` 还是
+`complete_not_authenticated`，报告都必须固定：
+`authority_separation_verified=false`、
+`authority_authentication_verified=false`、
+`independent_review_receipts_verified=false`、
+`custody_attestations_verified=false`、
+`environment_evidence_verified=false`、
+`production_blockers_closed=false`、`trust_policy_approved=false`、
+`approved_digest_written=false`、`key_ceremony_authorized=false`、
+`production_evidence_authorized=false`、`activation_allowed=false`、P34.7
+`blocked/not_proven`。`_APPROVED_TRUST_POLICY_SHA256` 保持空集，migration
+head 保持 `0012`，`0013` 不存在，三个 Phase 5 Feature Gate 保持 false。
+
+**允许的改法**
+
+- 在不放宽 closed set、identity separation、canonical bytes、秘密扫描和
+  non-authorizing 状态语义的前提下扩展 proof requirements。
+- 增加未来独立 authority registry 与 detached review receipt 合同；registry
+  的 trust pin 必须是另一项独立批准，不能由 proposal 自带。
+- 为真实 R1-B ceremony runbook 做单独设计，但执行必须另获明确批准。
+
+**禁止的改法**
+
+- 把 logical label、placeholder custody、fixture、端口可达或容器存在当作现实
+  identity/custody/production proof。
+- 让输入中的 `ready`、`approved`、`passed` 或 activation 布尔值决定派生状态。
+- 仅凭 proposal 自带的 identity/custody/evidence digest 接受 `VERIFIED`、`PROVEN`
+  或 production equivalence。
+- 写入 approved trust-policy digest、生成/显示/提交私钥、创建 migration 0013、
+  打开 Feature Gate、启动 Runtime，或访问非 disposable 目标环境/业务数据库。
+
+**必须运行的测试**
+
+- `backend/tests/test_p34_7_trust_policy_r1_assignment.py`
+- R0 candidate 与 P34.7 joint-gate 回归
+- 新模块 Mypy 与显式路径 Ruff check/format
+- Maintainer map/benchmark validator
+- P5.1A/P5.2A/P5.3A sealed contract 回归；修改 maintenance map 或本文件时按
+  raw-byte SHA-256 顺序重封 registry -> task-ledger -> planner 合同
+
+**失败恢复**
+
+任何 assignment、custody、resource、blocker、canonical byte 或 repository
+posture 漂移时，保留原 proposal 取证，从新 clean checkout 建立 forward-fix；
+不得通过改写历史、删除 blocker、伪造 reviewer 或启用 Runtime 来获得 ready。
+
+## INV-055 personal-single-owner-admission
+
+**权威源码**
+
+- `backend/src/omnibase/production/personal_owner_gate.py`
+- `backend/tests/test_p34_7_personal_owner_gate.py`
+- `backend/tests/integration/test_p34_7_personal_owner_gate.py`
+- `scripts/production/validate_p34_7_personal_owner_gate.py`
+- `scripts/production/run_p34_7_personal_owner_disposable_gate.py`
+- `deployment/production/personal-single-owner.example.json`
+- `docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`
+
+**为什么存在**
+
+个人版只有一个最终人类 Authority，但这不等于 Agent 可以自批或绕过服务器安全
+系统。`personal_single_owner` Gate 只接受一个实时 active Workspace Owner，且该
+Owner 必须是当前 tenant schema 中的 active tenant-admin。存在第二个 active
+Owner、Member、Maintainer、Operator 或 Viewer 时，该 AI 空间不再属于个人单用户
+profile，必须 fail closed；团队和企业 profile 不能借用此快捷路径。
+
+Owner 只表达批准意图。每次准入仍必须在同一服务端事务中重新锁定并核对：
+
+- Agent/Run/System requester 与人类 Owner 身份分离；User requester 永远不能进入
+  personal Gate；
+- `OperationRecord`、`ApprovalRequest`、logical Resource/version、request/plan/tool
+  schema digest、Workspace、Run、action 与 `CapabilityGrant` 精确一致；
+- approval 已由该唯一 Owner 决定、未过期、未消费、非 R4，且 metadata 只包含
+  frozen personal profile、sandbox mode、approval policy、network-policy digest、
+  plan digest、tool-schema digest 与 side-effect 布尔值；
+- Capability active、未过期、未撤销、non-delegable、绑定同一 runtime/workload
+  identity、Owner、Workspace、action/resource，且剩余 calls/bytes/cost budget 足够；
+- WorkspaceRun、RunLease、WorkspaceNode、NodeAttestation、workspace generation、
+  run/node fencing token 与 Workload Identity 仍实时有效；
+- network 始终 `default_deny=true`，destination 只能是排序、无重复的 logical service
+  identifier；wildcard、URL、原始 IP、localhost、Unix/Windows socket、root `.env`、
+  PostgreSQL、Redis、MinIO 或其他物理基础设施 locator 必须拒绝；
+- migration head 固定为 `0012`、`0013` 不存在，Runtime/Planner/Multi-Agent 三个
+  Feature Gate 与 enterprise approved digest 在 readiness 证明阶段全部保持 false。
+
+Gate 的 `personal/ready_for_activation` 只表示 Owner 授权的个人 canary 已具备工程
+前置，不会把 `activation_allowed` 或任何生产 Feature Gate 改为 true。实际高风险
+执行仍须调用既有 `authorize_operation` 原子消费 approval，并在 Capability 使用前
+完成预算预留；Gate 本身不得修改 approval、audit、grant、lease 或 runtime flags。
+
+**必须运行的测试**
+
+- focused/attack matrix：配置 closed set、布尔 coercion、AI 自批、第二成员、Owner
+  失活、binding/version/digest 漂移、approval consumed/expired、Grant revoke/delegate/
+  budget exhaustion、network locator 攻击、enterprise profile shortcut、evidence byte
+  drift 与 stale RunLease；
+- disposable PostgreSQL Gate：0012 真实 schema 中持久化 Owner、Membership、Agent、
+  Operation、Approval、Capability usage、WorkspaceRun、Node attestation 和 RunLease；
+  正向必须 READY，第二成员、fencing drift、approval reuse 必须 fail closed；
+- Mypy、显式路径 Ruff、P34.7 R0/R1-A/joint 回归、全量 non-integration、maintainer
+  map/benchmark，以及 P5 sealed-contract chain 重封与 clean-HEAD verifier。
+
+**失败恢复**
+
+任何 live binding 或 evidence 不确定时，保留 approval/audit/operation/grant/lease
+记录，撤销受影响的 Grant/Lease，要求 Owner 对新的 exact request 重新批准；不得直接
+改行、复活 Lease、重置预算、把 unknown 写成 success、写 enterprise approved digest
+或自动打开 Runtime。企业轨道继续依照冻结文档保存并保持 blocked/not_proven。

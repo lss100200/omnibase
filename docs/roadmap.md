@@ -1,7 +1,7 @@
 # OmniBase 分阶段路线图
 
-> **状态同步日期**：2026-08-09
-> **基于**：`main` `6a869bc`（PR #18 P5 Consolidation、PR #19 P34.7 joint Gate、PR #20 Trust Policy Candidate R0、PR #21 repository introduction 均已合并）
+> **状态同步日期**：2026-08-10
+> **基于**：`main` `eb0a173`（PR #18 P5 Consolidation、PR #19 P34.7 joint Gate、PR #20 Trust Policy Candidate R0、PR #21 repository introduction、PR #22 R1 preparation 均已合并；R1-A implementation 仍在独立未推送工作线）
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
 本文档覆盖从当前状态到产品远景规划的完整路径。每个阶段都列出了前置条件、关键任务和预估复杂度。
@@ -19,7 +19,7 @@
 | 前端性能 + 认证 | ✅ 100% | Bootstrap singleton, 节流, 分页, 生产镜像 |
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 已进入 `main` | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC 与离线模型边界持续由 CI 验证 |
-| Phase 3-4 安全 AI 工作空间与能力平台 | 🟡 P34.7 工程 Gate 已集成，生产总 Gate 未通过 | P34.1–P34.6 工程边界已建立；P34.7 hardened joint Gate 与 Trust Policy Candidate R0 已进入 `main`。approved policy digest 仍为空，真实 provider/non-disposable tenant/RAG、current-source Runner 12/12、四组件 roundtrip、双成员 Overlay/DERP/node-compromise、双签名和容量/SLA 证据仍缺失，production total Gate=`blocked/not_proven` |
+| Phase 3-4 安全 AI 工作空间与能力平台 | 🟡 企业 P34.7 轨道冻结保留；个人版审批轨道启动 | P34.1–P34.6、P34.7 hardened joint Gate、Trust Policy R0 和 R1-A assignment 均作为长期安全资产保留。企业多人 authority/key ceremony/15-resource/11-blocker evidence campaign 在个人版完成前冻结；个人版参考主流 AI IDE 的 Sandbox/Approval/Network 模型，并叠加 OmniBase Capability、Workload Identity、Lease/fencing、预算、审计和多 AI 空间隔离。当前 production Gate 仍为 `blocked/not_proven`，Feature Gates 仍关闭 |
 | Agent 编排 | 🟡 P5.4C engineering on `main` | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、Agent Builder、P5.3A Planner Proposal、P5.4 typed Executor/Formal Builder/Lite product loop 已通过统一工程验收；production Runtime/Planner/Multi-Agent 仍关闭 |
 | Skill/MCP 扩展 | 🟡 合同起步 | P5.6A 第一方原生 Skill compile-only 合同已建立；无 persistence/API/install/runtime，第三方 Marketplace 与 MCP 仍关闭 |
 
@@ -103,10 +103,10 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.4 Workspace 控制面** | HIGH | ✅ 工程 Gate：17 张 global metadata 表；Workspace aggregate 串行化 membership/last-owner；模板事务内实时 admin 重验与 PostgreSQL 自然幂等；Run Lease 绑定 Node fencing 和实时 attestation；终态 Run 不可复活；Network Lease 仅签逻辑授权且不调用 provider；Node/Peer/Service/Authority 统一锁序与撤销；不执行代码、不接真实网络或数据 |
 | **P34.5 沙箱隔离后接只读网关** | HIGH | ✅ A0-A3/B/C/D 工程 Gate；A4 current-source target-host 12/12 `pending/not_proven`：Network Broker 两轮 26/26、真实 Headscale control-plane + mTLS Node-Daemon test-double、split-process mTLS Gateway disposable Gate 已通过；旧 11/11 不适用于 UID/GID-hardened launcher。production Core↔Runner/Broker/Gateway 联合装配、真实成员数据面、DERP、节点失陷、容量和 SLA 留给 P34.7 |
 | **P34.6 私有写入、promotion 与 snapshot 基础** | HIGH | ✅ Foundation / Contracts / Fail-closed primitives：final `cc48baa` ordinary clone 的 Overlay/Gateway source-built Gates、164 related tests、Mypy、OpenAPI 与 Ruff clean-checkout Gate 通过；Workspace-private/derived 逻辑写入、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Approval/Publication metadata 与 server-generated snapshot inventory 已通过隔离 Gate。Promotion/Restore `COMMITTED`、`controlled_shared` 成功可见性、真实 provider copy/restore 和 production snapshot barrier 继续拒绝，禁止原地修改 source 或创建/改写 `canonical_readonly` |
-| **P34.7 生产总验收** | HIGH | 🟡 PR #19 已将 hardened joint Gate 合入 `main`，PR #20 已将 Trust Policy Candidate R0 合入 `main`；production total Gate 仍为 `BLOCKED / NOT_PROVEN`。R0 最高状态仅 `candidate/valid_not_approved`，`_APPROVED_TRUST_POLICY_SHA256` 为空。下一阶段是独立 Trust Policy R1 设计/审批、真实 key ceremony/custody attestation 和目标环境 11 类生产证据；任何 canonical cutover 与 Runtime activation 都需独立批准 |
+| **P34.7 生产总验收** | HIGH | 🟡 企业轨道冻结保留：PR #19 hardened joint Gate、PR #20 Trust Policy R0 与当前 R1-A assignment 均保留，canonical example 仍为 `UNASSIGNED / NOT_ASSESSED`，R0 最高 `candidate/valid_not_approved`，R1-A 最高能力 `complete_not_authenticated`，approved digest 为空。独立 authority registry、key ceremony/custody、15-resource/11-blocker、双成员 Overlay/DERP 和 SLA campaign 等企业工作暂停，待个人版稳定后从冻结文档恢复。当前活动方向是 Personal Owner Approval Gate，不改变现有 production `BLOCKED / NOT_PROVEN` |
 | **P5 Fast Track engineering slice** | MEDIUM | 🟢 PR #18 已统一 P5.3A–P5.4C：durable ledger、Model Gateway、tool-free Alpha、compile-only Planner Proposal、typed single-Agent Executor、Formal Engineering Composition 与 Lite product loop 均在 `main`；P5.6A first-party Skill 仍为 compile-only。migration head 为 `0012`、`0013` absent，三项 production Feature Gate 保持 false；生产 Runtime、Planner、Multi-Agent、真实 Skill/MCP 与高风险工具未授权 |
 
-**不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。真实 provider/object transfer、non-disposable tenant/RAG、成员 Overlay/DERP、生产恢复、容量/SLA 与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
+**不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。团队版/企业版继续使用完整 P34.7 total Gate。个人版不再等待多人 authority、双成员 Overlay/DERP 和企业 SLA，但必须先实现并独立验证 Personal Owner Approval Gate；该 Gate 仍需绑定 Sandbox、Capability Gateway、Workload Identity、Lease/fencing、预算、审计、网络 allowlist 和 kill switch。在新 Gate 完成前，不得启动 production Agent 编排。
 
 长期硬约束：workspace 保存身份、配置、资源意图和私有状态，是长期逻辑资源；run/session 是带短期凭据与配额、可随时销毁重建的执行实例。普通 Docker 容器只能作为开发和生命周期验证基线，不代表能够安全运行任意敌对代码；未通过 P34.5 隔离 Gate 的运行时不得连接真实数据。
 
@@ -116,7 +116,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 
 ## Phase 5: Agent 编排基础
 
-> **前置条件**：Phase 3-4 的 P34.7 总 Gate（沙箱、能力网关、审批、配额、审计和恢复）全部通过
+> **前置条件**：团队版/企业版必须通过完整 P34.7 总 Gate；个人版必须通过另行实现的 Personal Owner Approval Gate（Sandbox、Capability Gateway、Workload Identity、Lease/fencing、预算、审计、网络 allowlist 和 kill switch）。当前两条 production admission 均未通过，因此 Runtime/Planner/Multi-Agent 继续关闭
 > **预估工期**：3-4 周
 > **目标**：让 Agent 作为工作空间内的受约束负载执行复杂任务
 >
@@ -141,7 +141,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > rollback Gate、示例 `Workspace Librarian` 与离线 validator。正式状态保持
 > `blocked/not_proven`；最多接受 `tested` manifest，不接受无真实 sealed
 > evidence 的 `approved/published`，不创建 migration `0013`，不暴露
-> `/api/v1/skills`，不安装或执行 Skill。P5.3A–P5.4C 工程链已经合入；下一条正式主链是 Trust Policy R1 与 P34.7 真实证据 → P34.7 total Gate → 单独批准的 P5 production admission。P5.6B persistence 与 migration `0013` 仍需另行明确授权。
+> `/api/v1/skills`，不安装或执行 Skill。P5.3A–P5.4C 工程链已经合入；当前正式主链改为 P5.4D 产品收口 → Personal Owner Approval Gate → 个人版受限 Canary。Trust Policy R1-B–R1-F 与 P34.7 企业真实证据轨道冻结保留，待个人版稳定后恢复。P5.6B persistence 与 migration `0013` 仍需另行明确授权。
 
 ---
 

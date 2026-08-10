@@ -6,7 +6,16 @@ Status:
 
 ```text
 DESIGN_PREPARATION_ONLY_NOT_APPROVED
+ENTERPRISE_EXECUTION_TRACK_FROZEN
 ```
+
+> **冻结决定（2026-08-10）**：R1-A 已实现的合同、测试和证据全部保留；
+> R1-B–R1-F 的多人 authority registry、key ceremony、custody attestation、
+> approved-digest change 和企业生产证据 campaign 暂停，等待个人版产品闭环
+> 完成后恢复。个人版改走 Owner 审批的 `sandbox mode + approval policy +
+> network policy` 路径，并继续复用 OmniBase 的 Capability、Workload Identity、
+> Lease/fencing、预算、审计和 Sandbox 隔离。完整冻结快照与恢复条件见
+> [`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`](architecture/p34-7-enterprise-track-freeze-and-personal-approval.md)。
 
 This document turns the R0 entry conditions into an executable governance
 plan. It does not approve a trust policy, authorize a real key ceremony, add a
@@ -105,6 +114,22 @@ Deliver a candidate-derived proposal that freezes:
 
 Exit condition: two independent reviewers accept the design, but the policy
 still remains `candidate/valid_not_approved`.
+
+Implementation update (2026-08-10): the offline R1-A assignment contract now
+exists at `backend/src/omnibase/production/trust_policy_r1_assignment.py` with
+its canonical example, CLI, attack tests, architecture record and engineering
+decision. It freezes the authority/custody closed sets, fifteen target-resource
+slots and eleven blocker mappings. The example intentionally leaves all real
+assignments `UNASSIGNED` and all external facts `NOT_ASSESSED`, so the current
+derived status is `r1_assignment/valid_incomplete`, not design acceptance.
+Independent authority-registry and detached review-receipt contracts are still
+required before reviewer labels can become authenticated design acceptance.
+The R1-A validator therefore rejects proposal-declared `VERIFIED`, `PROVEN`
+and `production_equivalent=true` facts. A fully populated proposal can reach
+only `r1_assignment/complete_not_authenticated`; authority authentication,
+review receipts, custody attestations, environment evidence and production
+blocker closure all remain false until separate independently pinned gates
+exist.
 
 ### R1-B — key-ceremony runbook
 

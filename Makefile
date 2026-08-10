@@ -271,7 +271,8 @@ test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engi
 		cd backend; \
 		uv run python tests/destructive_preflight.py; \
 		uv run alembic upgrade head; \
-		uv run pytest -m integration tests/integration/test_p5_2b_task_ledger_foundation.py -q; \
+		uv run pytest -m integration tests/integration/test_p5_2b_task_ledger_foundation.py \
+		tests/integration/test_p5_2b_task_ledger_lease_gate.py -q; \
 		cd "$$repo_root"; \
 		uv run pytest scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py -q
 

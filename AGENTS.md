@@ -177,6 +177,21 @@ runtime evidence; then correct the stale documentation in the same change.
   signing that logical Network lease. Every use revalidates the current live
   attestation. Terminal Runs cannot return to a running state or retain runtime
   or workload identity metadata.
+- P34.7 Trust Policy R1-A is an offline assignment contract only. Its canonical
+  example deliberately keeps every real authority `UNASSIGNED`, every custody
+  selection and target resource `NOT_ASSESSED`, and every production blocker
+  open. A valid R1-A contract is not an authenticated authority registry, Trust
+  Policy approval, key-ceremony authorization, production evidence, P34.7 PASS
+  or Runtime activation. R1-A rejects input-declared authority/custody
+  `VERIFIED`, environment/blocker `PROVEN`, and any `production_equivalent=true`;
+  those facts require separately pinned registry, review-receipt, attestation
+  and signed-evidence validators. A fully populated proposal is at most
+  `complete_not_authenticated`, with every independent-verification field false.
+  Do not infer real authorities from the user, an AI
+  session, Docker/WSL, mocks, test doubles or disposable fixtures. Keep
+  `_APPROVED_TRUST_POLICY_SHA256` empty, migration head `0012`, migration `0013`
+  absent and all Phase 5 Feature Gates false unless a later task explicitly and
+  separately authorizes the relevant external state change.
 - P5.6A freezes a compile-only first-party native Skill contract. It does not
   authorize Skill persistence, migration `0013`, Browser Skill APIs,
   installation, execution, MCP, Marketplace or production Runtime. Instruction

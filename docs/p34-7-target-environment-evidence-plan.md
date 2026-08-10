@@ -7,7 +7,14 @@ Status:
 ```text
 INVENTORY_NOT_ASSESSED
 PRODUCTION_EVIDENCE_NOT_COLLECTED
+ENTERPRISE_EVIDENCE_CAMPAIGN_FROZEN
 ```
+
+> **冻结决定（2026-08-10）**：本清单及其 15 项资源、11 项 blocker 映射作为
+> 团队版/企业版资产保留，但真实 target-environment evidence campaign 在个人版
+> 完成前暂停。本文件不得作为个人版 Runtime 的额外多人治理前置，也不得因冻结
+> 被改写成已证明。恢复条件和个人版替代路径见
+> [`docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md`](architecture/p34-7-enterprise-track-freeze-and-personal-approval.md)。
 
 This document is a planning and inventory surface. It does not authorize
 access to a machine, network, provider, tenant, database, object store, key,

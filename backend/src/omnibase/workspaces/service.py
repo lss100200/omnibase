@@ -1615,6 +1615,155 @@ def submit_run_state(
     return run
 
 
+def _require_historical_holder_eligibility(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    node_id: str,
+    node_fencing_token: int,
+    lease: RunLease,
+) -> None:
+    try:
+        node = get_active_attested_node(
+            session,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            node_id=node_id,
+            lock=True,
+        )
+    except WorkspaceNotFound as exc:
+        raise LeaseRejected("run lease holder is unavailable") from exc
+    if node.fencing_token != node_fencing_token:
+        raise LeaseRejected("run lease is expired, stale, revoked, or incorrectly fenced")
+    now = session.scalar(select(func.clock_timestamp()))
+    if not isinstance(now, datetime):
+        raise LeaseRejected("run lease database clock is unavailable")
+    if lease.state == "active":
+        if lease.expires_at > now:
+            raise LeaseRejected("run lease is still active")
+        lease.state = "revoked"
+        lease.revoked_at = now
+    elif lease.state not in {"expired", "revoked"}:
+        raise LeaseRejected("run lease is not eligible for historical close")
+
+
+def close_historical_run_holder(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    workspace_run_id: str,
+    run_lease_id: str,
+    node_id: str,
+    generation: int,
+    run_fencing_token: int,
+    node_fencing_token: int,
+    observed_state: str,
+    result_digest: str | None = None,
+    error_code: str | None = None,
+) -> WorkspaceRun:
+    """Fail-closed terminal close of a HISTORICAL run holder.
+
+    Server-owned recovery for the real long-disconnect path where BOTH the
+    Task Lease and the Workspace Run Lease have lapsed before the terminal
+    transition arrives.  ``submit_run_state`` deliberately refuses expired /
+    revoked / stale leases through ``_validated_run_lease`` — that check is
+    never relaxed.  This path is the ONLY alternative, and it is restricted
+    to terminal FAILURE states:
+
+    * ``observed_state`` must be ``failed`` or ``cancelled`` — a historical
+      holder can never be closed as ``succeeded``/``stopped`` (no committed
+      success interpretation of an expired authorization);
+    * the holder identity must match EXACTLY: workspace run, run lease,
+      node binding, workspace generation, run fencing and node fencing are
+      all validated against the server-owned rows under lock; any mismatch
+      (stale/replaced lease, generation drift, wrong node, wrong workspace)
+      fails closed and touches nothing;
+    * the RunLease is never renewed, never revived and never returned to
+      ``active`` — an active-but-lapsed lease is revoked, an already
+      revoked/expired lease stays as it is, and the heartbeat window is
+      never extended;
+    * the WorkspaceRun is terminalized (failed/cancelled), its
+      runtime/workload bindings are cleared, and the partial unique index
+      ``workspace_runs_one_active_uq`` therefore frees the interactive slot;
+    * all writes happen in the caller's transaction: any later failure
+      rolls the whole terminal transition back.
+    """
+    if observed_state not in {"failed", "cancelled"}:
+        raise WorkspaceConflict(
+            "historical run holder close only accepts failed or cancelled states"
+        )
+    if result_digest is not None:
+        _validate_digest(result_digest, "result_digest")
+    workspace = session.execute(
+        select(Workspace)
+        .where(
+            Workspace.id == workspace_id,
+            Workspace.tenant_id == tenant_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if workspace is None:
+        raise LeaseRejected("run lease not found")
+    run = session.execute(
+        select(WorkspaceRun)
+        .where(
+            WorkspaceRun.id == workspace_run_id,
+            WorkspaceRun.tenant_id == tenant_id,
+            WorkspaceRun.workspace_id == workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if run is None:
+        raise LeaseRejected("run lease not found")
+    if run.generation != generation or workspace.generation != generation:
+        raise LeaseRejected("run lease is expired, stale, revoked, or incorrectly fenced")
+    lease = session.execute(
+        select(RunLease)
+        .where(
+            RunLease.id == run_lease_id,
+            RunLease.tenant_id == tenant_id,
+            RunLease.run_id == workspace_run_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if lease is None:
+        raise LeaseRejected("run lease not found")
+    # Exact historical holder: node binding, generation, run fencing and
+    # node fencing must all match the server-owned rows.  A replaced lease,
+    # a new node or an advanced fencing token never authorizes this close.
+    if (
+        lease.node_id != node_id
+        or lease.generation != generation
+        or lease.node_fencing_token != node_fencing_token
+        or lease.fencing_token != run_fencing_token
+        or run.next_fencing_token - 1 != run_fencing_token
+    ):
+        raise LeaseRejected("run lease is expired, stale, revoked, or incorrectly fenced")
+    # Historical recovery is not a generic LeaseRejected fallback.  It may
+    # close an already revoked/expired exact holder, or an active holder only
+    # after its server-owned expiry.  A live active lease remains exclusively
+    # governed by submit_run_state and can never be terminalized here.
+    _require_historical_holder_eligibility(
+        session,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        node_id=node_id,
+        node_fencing_token=node_fencing_token,
+        lease=lease,
+    )
+    run.observed_state = observed_state
+    run.desired_state = "cancelled" if observed_state == "cancelled" else "stopped"
+    run.runtime_instance_id = None
+    run.workload_identity_digest = None
+    run.last_result_digest = result_digest
+    run.last_error_code = error_code
+    run.version += 1
+    session.flush()
+    return run
+
+
 def create_snapshot(
     session: Session,
     *,

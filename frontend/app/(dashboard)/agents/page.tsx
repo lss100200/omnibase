@@ -22,6 +22,9 @@ import {
   type AgentAlphaProfileList,
 } from '@/lib/api'
 import { canInvokeLiteAgent, liteInvokeConditionsMet } from '@/lib/lite-gate'
+import { isUserCancelledError } from '@/lib/cancel-detection'
+import { consumeAgentAlphaStream } from '@/lib/agent-alpha-stream'
+import { InvocationGuard, type InvocationPhase } from '@/lib/invocation-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -54,42 +57,10 @@ interface WorkbenchMessage {
   }>
 }
 
-interface ParsedEvent {
-  readonly event: string
-  readonly data: Record<string, unknown>
-}
-
-interface Citation {
-  readonly index: number
-  readonly chunk_id: string
-  readonly document_id: string
-  readonly snippet: string
-  readonly page_number?: number
-  readonly score?: number
-}
-
 interface UsageInfo {
   readonly input_tokens?: number
   readonly output_tokens?: number
   readonly total_tokens?: number
-}
-
-function parseEvents(buffer: string): [ParsedEvent[], string] {
-  const blocks = buffer.replaceAll('\r\n', '\n').split('\n\n')
-  const remaining = blocks.pop() ?? ''
-  const events: ParsedEvent[] = []
-  for (const block of blocks) {
-    let event = 'message'
-    const dataLines: string[] = []
-    for (const line of block.split('\n')) {
-      if (line.startsWith('event:')) event = line.slice(6).trim()
-      if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-    }
-    if (dataLines.length > 0) {
-      events.push({ event, data: JSON.parse(dataLines.join('\n')) as Record<string, unknown> })
-    }
-  }
-  return [events, remaining]
 }
 
 export default function AgentAlphaPage() {
@@ -100,7 +71,6 @@ export default function AgentAlphaPage() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<WorkbenchMessage[]>([])
   const [streaming, setStreaming] = useState('')
-  const [running, setRunning] = useState(false)
   const [invocationId, setInvocationId] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [identity, setIdentity] = useState('Provider identity appears after invocation')
@@ -137,6 +107,9 @@ export default function AgentAlphaPage() {
     maxOutputTokens: 2_048,
     maxWallClockSeconds: 120,
   })
+  const guardRef = useRef<InvocationGuard | null>(null)
+  if (guardRef.current === null) guardRef.current = new InvocationGuard()
+  const [phase, setPhase] = useState<InvocationPhase>('idle')
   const controllerRef = useRef<AbortController | null>(null)
   const startedAtRef = useRef<number | null>(null)
 
@@ -228,7 +201,14 @@ export default function AgentAlphaPage() {
   const invoke = async () => {
     const userMessage = input.trim()
     if (!canInvokeLiteAgent(posture, userMessage, workspaceId, bindingId)) return
-    if (running) return
+    // P1-5: a unique generation owns each invocation; begin() is refused
+    // while the previous promise is still running or cancelling.
+    const guard = guardRef.current!
+    const started = guard.begin()
+    if (started === null) return
+    const { generation, controller } = started
+    controllerRef.current = controller
+    setPhase('running')
     setMessages((current) => [
       ...current,
       { id: crypto.randomUUID(), role: 'user', content: userMessage },
@@ -238,12 +218,8 @@ export default function AgentAlphaPage() {
     setUsage(null)
     setLatencyMs(null)
     setTaskId(null)
-    setRunning(true)
-    const controller = new AbortController()
-    controllerRef.current = controller
+    setInvocationId(null)
     startedAtRef.current = performance.now()
-    let answer = ''
-    let citations: Citation[] = []
     try {
       const response = await agentAlphaApi.invokeStream(
         workspaceId,
@@ -259,74 +235,82 @@ export default function AgentAlphaPage() {
           payload?.error?.code ?? payload?.detail?.error?.code ?? `HTTP ${response.status}`
         throw new Error(code)
       }
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let terminal = false
-      while (!terminal) {
-        const { done, value } = await reader.read()
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
-        const [events, remaining] = parseEvents(buffer)
-        buffer = remaining
-        for (const event of events) {
-          if (event.event === 'meta') {
-            const currentInvocation = String(event.data.invocation_id ?? '')
-            setInvocationId(currentInvocation || null)
-            setTaskId(String(event.data.task_id ?? '') || null)
-            setIdentity(
-              `${String(event.data.provider_id ?? 'unknown')} / ${String(
-                event.data.requested_model_id ?? 'unknown',
-              )} · ${String(event.data.credential_source ?? 'operator_default')}`,
-            )
-          } else if (event.event === 'citations') {
-            citations = Array.isArray(event.data.citations)
-              ? (event.data.citations as Citation[])
-              : []
-          } else if (event.event === 'chunk') {
-            answer += String(event.data.content ?? '')
-            setStreaming(answer)
-          } else if (event.event === 'usage') {
-            setUsage({
-              input_tokens: Number(event.data.input_tokens ?? 0),
-              output_tokens: Number(event.data.output_tokens ?? 0),
-              total_tokens: Number(event.data.total_tokens ?? 0),
-            })
-          } else if (event.event === 'done') {
-            answer = String(event.data.answer ?? answer)
-            const actualModel = String(event.data.actual_model_id ?? '')
-            if (actualModel) {
-              setIdentity(
-                `${String(event.data.provider_id ?? 'unknown')} / ${actualModel} (actual) · ${String(
-                  event.data.credential_source ?? 'operator_default',
-                )}`,
-              )
-            }
-            setUsage(
-              typeof event.data.usage === 'object' && event.data.usage !== null
-                ? (event.data.usage as UsageInfo)
-                : null,
-            )
-            terminal = true
-          } else if (event.event === 'error' || event.event === 'cancelled') {
-            throw new Error(String(event.data.code ?? event.event))
-          }
-        }
-        if (done) break
-      }
-      if (startedAtRef.current !== null) {
-        setLatencyMs(Math.round(performance.now() - startedAtRef.current))
-      }
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: 'agent',
-          content: answer || 'No answer returned.',
-          citations,
+      const terminal = await consumeAgentAlphaStream(response.body.getReader(), {
+        onMeta: (meta) => {
+          if (!guard.isCurrent(generation)) return
+          setInvocationId(meta.invocationId)
+          setTaskId(meta.taskId)
+          if (meta.identity) setIdentity(meta.identity)
         },
-      ])
-      setStreaming('')
+        onChunk: (content) => {
+          if (!guard.isCurrent(generation)) return
+          setStreaming((current) => current + content)
+        },
+        onCitations: (citations) => {
+          // Citations are collected by the consumer and delivered on the
+          // `done` terminal; no live citation state is needed.
+          void citations
+        },
+        onUsage: (usage) => {
+          if (!guard.isCurrent(generation)) return
+          setUsage(
+            usage === null
+              ? null
+              : {
+                  input_tokens: usage.input_tokens,
+                  output_tokens: usage.output_tokens,
+                  total_tokens: usage.total_tokens,
+                },
+          )
+        },
+      })
+      if (!guard.isCurrent(generation)) return
+      if (terminal.kind === 'done') {
+        if (startedAtRef.current !== null) {
+          setLatencyMs(Math.round(performance.now() - startedAtRef.current))
+        }
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: 'agent',
+            content: terminal.answer || 'No answer returned.',
+            citations: terminal.citations,
+          },
+        ])
+        setStreaming('')
+      } else if (terminal.kind === 'cancelled') {
+        setMessages((current) => [
+          ...current,
+          { id: crypto.randomUUID(), role: 'agent', content: 'Invocation cancelled.' },
+        ])
+        setStreaming('')
+      } else {
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: 'agent',
+            content:
+              terminal.code === 'agent_alpha_unavailable'
+                ? 'Engineering Alpha is not assembled in this environment (flag off, wrong environment, gate open, missing provider or migration head not 0012). Production Runtime remains locked.'
+                : `Invocation failed: ${terminal.code}`,
+          },
+        ])
+        setStreaming('')
+      }
     } catch (error) {
+      if (!guard.isCurrent(generation)) return
+      // A user-initiated stop aborts the fetch (AbortError); never leak the
+      // raw DOMException text.
+      if (isUserCancelledError(error)) {
+        setMessages((current) => [
+          ...current,
+          { id: crypto.randomUUID(), role: 'agent', content: 'Invocation cancelled.' },
+        ])
+        setStreaming('')
+        return
+      }
       const errorCode = error instanceof Error ? error.message : 'agent_alpha_failed'
       setMessages((current) => [
         ...current,
@@ -341,17 +325,22 @@ export default function AgentAlphaPage() {
       ])
       setStreaming('')
     } finally {
-      setRunning(false)
-      controllerRef.current = null
+      // Only THIS generation and controller may settle the guard; a stale
+      // invocation's finally can never clear a newer one.
+      guard.settle(generation, controller)
+      if (controllerRef.current === controller) controllerRef.current = null
+      setPhase(guard.phase)
     }
   }
 
   const stop = async () => {
-    controllerRef.current?.abort()
+    const guard = guardRef.current!
+    const controller = guard.stop()
+    if (controller !== null) controllerRef.current = controller
+    setPhase('cancelling')
     if (invocationId && workspaceId) {
       await agentAlphaApi.cancel(workspaceId, invocationId).catch(() => undefined)
     }
-    setRunning(false)
   }
 
   const postureBadges = (
@@ -469,9 +458,9 @@ export default function AgentAlphaPage() {
               onKeyDown={(event) => event.key === 'Enter' && !event.shiftKey && invoke()}
               placeholder="Ask your Agent to research, explain or draft from workspace knowledge..."
               className="h-10 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-              disabled={running}
+              disabled={phase !== 'idle'}
             />
-            {running ? (
+            {phase !== 'idle' ? (
               <Button variant="destructive" size="icon" onClick={stop} aria-label="Stop invocation">
                 <Square className="h-4 w-4" />
               </Button>
@@ -479,9 +468,7 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={
-                  !canInvokeLiteAgent(posture, input, workspaceId, bindingId)
-                }
+                disabled={!canInvokeLiteAgent(posture, input, workspaceId, bindingId)}
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -606,12 +593,12 @@ export default function AgentAlphaPage() {
                 <p className="text-xs text-muted-foreground">
                   {postureLoading
                     ? 'Reading live posture…'
-                    : statusError ??
+                    : (statusError ??
                       (!liteInvokeConditionsMet(posture)
                         ? 'Invoke is locked: the Lite gate, the assembled engineering Alpha, the allowed environment and all-Phase-5-gates-false must hold simultaneously. Production Runtime remains locked.'
                         : posture?.engineering_assembled
                           ? 'Tool-free Alpha assembled in this environment.'
-                          : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.')}
+                          : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.'))}
                 </p>
               </div>
             </div>
@@ -628,7 +615,8 @@ export default function AgentAlphaPage() {
                   Tool-free loop: {posture?.alpha_builder ?? 'build_engineering_agent_alpha'}.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Supported invocation modes: {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
+                  Supported invocation modes:{' '}
+                  {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
                 </p>
               </div>
             </div>
@@ -644,7 +632,7 @@ export default function AgentAlphaPage() {
               </div>
             </div>
             <div className="flex items-start gap-3">
-              {running ? (
+              {phase !== 'idle' ? (
                 <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-primary" />
               ) : (
                 <BrainCircuit className="mt-0.5 h-4 w-4 text-foreground" />

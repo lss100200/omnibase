@@ -508,7 +508,8 @@
       "test_paths": [
         "backend/tests/test_p5_2b_task_ledger.py",
         "backend/tests/integration/test_p5_2b_task_ledger_foundation.py",
-        "scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py"
+        "scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py",
+        "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py"
       ]
     },
     {
@@ -688,6 +689,43 @@
       ],
       "test_paths": [
         "backend/tests/test_p34_7_trust_policy_candidate.py"
+      ]
+    },
+    {
+      "id": "INV-054",
+      "title": "P34.7 R1-A authority, custody, environment and blocker assignments stay fail-closed and non-authorizing",
+      "document": "docs/maintainers/security-invariants.md#inv-054-trust-policy-r1-assignment",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py",
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "deployment/production/p34-7-trust-policy-r1-assignment.example.json",
+        "docs/architecture/p34-7-trust-policy-r1-assignment.md",
+        "docs/evidence/p34-7/trust-policy-r1-assignment-decision.md",
+        "docs/p34-7-trust-policy-r1-preparation-plan.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py"
+      ]
+    },
+    {
+      "id": "INV-055",
+      "title": "Personal production admission requires one live human Owner and exact Approval, Capability, Resource, budget and fenced Run bindings",
+      "document": "docs/maintainers/security-invariants.md#inv-055-personal-single-owner-admission",
+      "source_paths": [
+        "backend/src/omnibase/production/personal_owner_gate.py",
+        "backend/tests/test_p34_7_personal_owner_gate.py",
+        "backend/tests/integration/test_p34_7_personal_owner_gate.py",
+        "scripts/production/validate_p34_7_personal_owner_gate.py",
+        "scripts/production/run_p34_7_personal_owner_disposable_gate.py",
+        "deployment/production/personal-single-owner.example.json",
+        "docs/architecture/p34-7-enterprise-track-freeze-and-personal-approval.md",
+        "docs/evidence/p34-7/personal-owner-disposable-gate.json",
+        "docs/evidence/p34-7/personal-owner-readiness-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p34_7_personal_owner_gate.py",
+        "backend/tests/integration/test_p34_7_personal_owner_gate.py"
       ]
     }
   ],
@@ -1624,6 +1662,7 @@
       ],
       "entrypoints": [
         "backend/src/omnibase/production/composition.py:ProductionCompositionGate",
+        "backend/src/omnibase/production/personal_owner_gate.py:PersonalOwnerGate",
         "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence",
         "backend/src/omnibase/production/joint_gate.py:validate_joint_evidence_contract",
         "backend/src/omnibase/production/joint_gate.py:verify_joint_evidence",
@@ -1631,6 +1670,8 @@
         "backend/src/omnibase/production/joint_gate.py:compute_seal_binding",
         "backend/src/omnibase/workspace_data/provider_adapters.py:WorkspaceDataProviderAdapter",
         "scripts/production/validate_p34_7_composition.py:main",
+        "scripts/production/validate_p34_7_personal_owner_gate.py:main",
+        "scripts/production/run_p34_7_personal_owner_disposable_gate.py:main",
         "scripts/production/validate_p34_7_joint_gate.py:main",
         "scripts/workspace-data/run_p34_7_provider_gate.py:main",
         "scripts/overlay/p34_7_production_gate.py:main",
@@ -1640,6 +1681,7 @@
       ],
       "public_interfaces": [
         "P34.7 production composition admission report",
+        "Personal single-Owner admission report (ready for Owner-authorized activation; never activates Runtime)",
         "P34.7 provider/recovery disposable reference Gate",
         "P34.7 real-member Overlay and SLA evidence contract",
         "Browser Workspace control-plane UI without private-data write authority",
@@ -1670,10 +1712,14 @@
         "INV-035",
         "INV-036",
         "INV-037",
-        "INV-038"
+        "INV-038",
+        "INV-055"
       ],
       "verification": [
         "python scripts/production/validate_p34_7_composition.py --validate-only",
+        "python scripts/production/validate_p34_7_personal_owner_gate.py --config deployment/production/personal-single-owner.example.json --validate-only",
+        "python scripts/production/run_p34_7_personal_owner_disposable_gate.py --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_personal_owner_gate.py -q",
         "python scripts/production/validate_p34_7_joint_gate.py --validate-only --evidence deployment/production/p34-7-joint-evidence-contract.example.json",
         "python scripts/production/forge_p34_7_evidence_bundle.py --output <operator-controlled-path>/p34-7-forged-bundle",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_joint_gate.py tests/test_p34_7_production_composition.py tests/test_p34_7_workspace_provider.py tests/test_p34_7_overlay_production_gate.py tests/test_p34_7_overlay_sla.py -q",
@@ -1686,6 +1732,8 @@
       ],
       "recovery": [
         "Restore activation_requested=false and rejecting/unavailable production adapters whenever evidence is missing, stale or ambiguous.",
+        "Keep the enterprise approved digest empty while the enterprise track is frozen; personal readiness uses its separately named Gate and can never authorize enterprise_separated_authority.",
+        "If Owner membership, approval, operation, resource version, Capability budget, workload identity, attestation, Run Lease or fencing is ambiguous, revoke the affected grant/lease and require a new exact Owner approval rather than repairing rows in place.",
         "Do not replay pending or unknown provider effects; retain journals, receipts, signatures and source manifests for reconciliation.",
         "Revoke affected Run, Network Lease, workload certificate and node credentials before re-admitting a compromised component.",
         "Phase 5 remains frozen until the clean-checkout P34.7 total Gate is independently PASS."
@@ -1994,13 +2042,18 @@
         "scripts/production/run_p5_2b_task_ledger_disposable_gate.py",
         "scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py",
         "docs/phase-5-task-ledger-persistence-design.md",
-        "docs/handover-report.md"
+        "docs/handover-report.md",
+        "backend/src/omnibase/workspaces/service.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py"
       ],
       "entrypoints": [
         "backend/src/omnibase/task_ledger/service.py:TaskLedgerPersistenceService",
         "backend/src/omnibase/task_ledger/service.py:canonical_digest",
         "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py:upgrade",
-        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py:downgrade"
+        "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py:downgrade",
+        "backend/src/omnibase/task_ledger/service.py:settle_terminal_outcome",
+        "backend/src/omnibase/workspaces/service.py:close_historical_run_holder"
       ],
       "public_interfaces": [
         "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
@@ -2021,6 +2074,7 @@
         "INV-044"
       ],
       "verification": [
+        "make test-p5-2b-task-ledger with an omnibase_test_p52b_* PostgreSQL sentinel (foundation + lease_gate integration suites)",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend python -m compileall -q src/omnibase/task_ledger src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/task_ledger src/omnibase/workspaces/models.py",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/task_ledger src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py src/omnibase/workspaces/models.py",
@@ -2030,7 +2084,8 @@
       "recovery": [
         "All three Phase 5 Feature Gates remain false. Migration 0011 is engineering admission only and does not authorize production Runtime composition.",
         "A populated 0011 downgrade must fail with SQLSTATE 55000. Recover by forward-fix or restore into a new omnibase_restore_* database.",
-        "TaskLease history is append-only; Attempt and active Lease are bidirectionally checked at deferred commit, fencing chronology is allocated from the locked per-Task cursor using the database clock, and unknown Effects are never replayed automatically."
+        "TaskLease history is append-only; Attempt and active Lease are bidirectionally checked at deferred commit, fencing chronology is allocated from the locked per-Task cursor using the database clock, and unknown Effects are never replayed automatically.",
+        "Double lease expiry (Task Lease AND Workspace Run Lease lapsed) is closed through close_historical_run_holder: failed/unknown/cancelled only, exact historical holder, never committed/succeeded. Revalidate the current active/live-attested WorkspaceNode and current Node fencing under lock; only revoked/expired or database-clock-expired active RunLeases are eligible. A live active lease, advanced/revoked Node, stale attestation, stale generation or replaced identity must fail closed with zero terminal writes. RunLease is never renewed/revived, the interactive slot is released only for an eligible exact holder, and reconciliation stays in the same transaction. Never relax submit_run_state._validated_run_lease for this path."
       ]
     },
     {
@@ -2145,19 +2200,42 @@
         "backend/tests/test_agent_alpha.py",
         "frontend/app/(dashboard)/agents/page.tsx",
         "frontend/components/layout/sidebar.tsx",
-        "frontend/lib/api.ts"
+        "frontend/lib/api.ts",
+        "frontend/app/api/v1/**",
+        "frontend/next.config.js",
+        "frontend/lib/proxy.ts",
+        "frontend/lib/proxy.test.ts",
+        "frontend/lib/cancel-detection.ts",
+        "frontend/lib/cancel-detection.test.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/agent-alpha-stream.test.ts",
+        "frontend/lib/invocation-state.ts",
+        "frontend/lib/invocation-state.test.ts",
+        "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py"
       ],
       "entrypoints": [
         "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
         "backend/src/omnibase/agent_alpha/service.py:UnavailableAgentAlpha",
         "backend/src/omnibase/agent_alpha/router.py:router",
         "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
-        "frontend/app/(dashboard)/agents/page.tsx:AgentAlphaPage"
+        "frontend/app/(dashboard)/agents/page.tsx:AgentAlphaPage",
+        "frontend/app/api/v1/[...path]/route.ts:GET",
+        "frontend/app/api/v1/[...path]/route.ts:POST",
+        "frontend/app/api/v1/[...path]/route.ts:PUT",
+        "frontend/app/api/v1/[...path]/route.ts:PATCH",
+        "frontend/app/api/v1/[...path]/route.ts:DELETE",
+        "frontend/app/api/v1/[...path]/route.ts:HEAD",
+        "frontend/app/api/v1/[...path]/route.ts:OPTIONS",
+        "frontend/lib/proxy.ts:proxyRequest",
+        "frontend/lib/proxy.ts:stripHopByHopHeaders",
+        "frontend/lib/agent-alpha-stream.ts:consumeAgentAlphaStream",
+        "frontend/lib/invocation-state.ts:InvocationGuard"
       ],
       "public_interfaces": [
         "Authenticated /api/v1/workspaces/{workspace_id}/agent-alpha status, invoke SSE and cancel routes",
         "One installed sealed AgentVersion, read-only workspace knowledge, one request-scoped personal-or-operator Model Gateway stream and durable invocation callbacks",
-        "Frontend AI Employee Workbench; production calls still return 503 agent_alpha_unavailable until separately authorized"
+        "Frontend AI Employee Workbench; production calls still return 503 agent_alpha_unavailable until separately authorized",
+        "SSE invoke/cancel flows reach the backend through the streaming route-handler proxy frontend/app/api/v1/[...path]/route.ts (Next.js rewrites buffer the body and break live streaming); /health probes still use rewrites"
       ],
       "depends_on": [
         "p5-task-ledger-persistence",
@@ -2176,13 +2254,18 @@
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_alpha src/omnibase/model_gateway src/omnibase/main.py",
-        "frontend: tsc --noEmit, lib tests and Prettier check"
+        "frontend: tsc --noEmit, lib tests and Prettier check",
+        "cd frontend && pnpm test (lib/proxy.test.ts streaming/abort/headers/502, lib/cancel-detection.test.ts SSE cancelled mapping)",
+        "cd frontend && pnpm test (agent-alpha-stream incomplete/terminal contract, invocation-state Stop/reinvoke ownership, proxy streaming/abort/compression)"
       ],
       "recovery": [
         "Do not override get_agent_alpha in production without a separate activation decision. The checked-in dependency must remain UnavailableAgentAlpha.",
         "Alpha rejects any AgentVersion with allowed_tool_ids. It has no shell, SQL, arbitrary HTTP, MCP, Skill, Planner or multi-Agent port.",
         "Provider ambiguity records an unknown outcome through the ledger port; cancellation is a new terminal outcome and retry is a new invocation identity.",
-        "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider."
+        "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider.",
+        "Do not reintroduce an /api/:path* rewrite for the workbench: rewrites buffer the upstream body so SSE chunks arrive only after the stream ends and the invocation id arrives too late for Stop/cancel. Task/run terminalization must converge even when the lease window lapsed (finish_attempt clamps heartbeat_at to expires_at).",
+        "The Route Handler proxy (lib/proxy.ts) must keep the caller AbortSignal bound to the upstream fetch, strip hop-by-hop headers on request and response, preserve Authorization/Idempotency-Key/Content-Type, forward GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS, return a secret-free 502 on upstream failure, and never restore an /api/:path* rewrite (rewrites buffer the SSE body).",
+        "SSE success requires a legal done terminal (EOF without terminal is agent_alpha_stream_incomplete; malformed/duplicate/after-terminal fail closed). Stop uses InvocationGuard generations so a stale finally can never clear a newer invocation. The proxy forces Accept-Encoding identity and fails closed on compressed upstream responses."
       ]
     },
     {
@@ -2664,6 +2747,51 @@
       "recovery": [
         "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, keep migration head 0012, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
+      ]
+    },
+    {
+      "id": "trust-policy-r1-a",
+      "name": "P34.7 Trust Policy R1-A authority and target-environment assignment contract (offline, non-authorizing)",
+      "source_paths": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py",
+        "backend/tests/test_p34_7_trust_policy_r1_assignment.py",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "deployment/production/p34-7-trust-policy-r1-assignment.example.json",
+        "docs/architecture/p34-7-trust-policy-r1-assignment.md",
+        "docs/evidence/p34-7/trust-policy-r1-assignment-decision.md",
+        "docs/p34-7-trust-policy-r1-preparation-plan.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py:validate_trust_policy_r1_assignment",
+        "backend/src/omnibase/production/trust_policy_r1_assignment.py:validate_trust_policy_r1_assignment_file",
+        "scripts/production/validate_p34_7_trust_policy_r1_assignment.py:main"
+      ],
+      "public_interfaces": [
+        "Canonical R1-A assignment proposal with exact authority, seven-role custody, fifteen-resource inventory and eleven-blocker closed sets",
+        "Derived r1_assignment/valid_incomplete or complete_not_authenticated posture; neither status authenticates an authority, verifies separation, approves a trust policy, authorizes a ceremony, closes P34.7 or permits activation",
+        "R1-A rejects self-declared VERIFIED/PROVEN facts and production equivalence; authority registry, review receipts, custody attestations and environment evidence remain separate independently pinned validators",
+        "Offline CLI: --validate-only exit 0 means only contract-valid; --verify exits 2 because R1-A cannot independently authenticate or prove its proposal facts"
+      ],
+      "depends_on": [
+        "trust-policy-r0",
+        "production-readiness"
+      ],
+      "invariants": [
+        "INV-035",
+        "INV-053",
+        "INV-054"
+      ],
+      "verification": [
+        "python scripts/production/validate_p34_7_trust_policy_r1_assignment.py --assignment deployment/production/p34-7-trust-policy-r1-assignment.example.json --validate-only",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p34_7_trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_candidate.py tests/test_p34_7_joint_gate.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/production/trust_policy_r1_assignment.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_r1_assignment.py ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_r1_assignment.py tests/test_p34_7_trust_policy_r1_assignment.py ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py"
+      ],
+      "recovery": [
+        "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0012, migration 0013 absent and all three Phase 5 Feature Gates false.",
+        "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     }
   ]
