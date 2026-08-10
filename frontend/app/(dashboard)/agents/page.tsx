@@ -238,6 +238,7 @@ export default function AgentAlphaPage() {
     setUsage(null)
     setLatencyMs(null)
     setTaskId(null)
+    setInvocationId(null)
     setRunning(true)
     const controller = new AbortController()
     controllerRef.current = controller
@@ -327,6 +328,23 @@ export default function AgentAlphaPage() {
       ])
       setStreaming('')
     } catch (error) {
+      // A user-initiated stop aborts the fetch and/or surfaces the backend
+      // "cancelled" event; never leak the raw DOMException text.
+      const isUserCancelled =
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        (error instanceof Error && error.message === 'agent_alpha_cancelled')
+      if (isUserCancelled) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: 'agent',
+            content: 'Invocation cancelled.',
+          },
+        ])
+        setStreaming('')
+        return
+      }
       const errorCode = error instanceof Error ? error.message : 'agent_alpha_failed'
       setMessages((current) => [
         ...current,
@@ -479,9 +497,7 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={
-                  !canInvokeLiteAgent(posture, input, workspaceId, bindingId)
-                }
+                disabled={!canInvokeLiteAgent(posture, input, workspaceId, bindingId)}
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -606,12 +622,12 @@ export default function AgentAlphaPage() {
                 <p className="text-xs text-muted-foreground">
                   {postureLoading
                     ? 'Reading live posture…'
-                    : statusError ??
+                    : (statusError ??
                       (!liteInvokeConditionsMet(posture)
                         ? 'Invoke is locked: the Lite gate, the assembled engineering Alpha, the allowed environment and all-Phase-5-gates-false must hold simultaneously. Production Runtime remains locked.'
                         : posture?.engineering_assembled
                           ? 'Tool-free Alpha assembled in this environment.'
-                          : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.')}
+                          : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.'))}
                 </p>
               </div>
             </div>
@@ -628,7 +644,8 @@ export default function AgentAlphaPage() {
                   Tool-free loop: {posture?.alpha_builder ?? 'build_engineering_agent_alpha'}.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Supported invocation modes: {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
+                  Supported invocation modes:{' '}
+                  {posture?.supported_invocation_modes.join(', ') ?? 'no_tool'}.
                 </p>
               </div>
             </div>

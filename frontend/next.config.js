@@ -6,16 +6,13 @@ const nextConfig = {
   // 强类型 + React 严格模式
   reactStrictMode: true,
 
-  // 开发模式下的 API 代理，避免前端跨域问题
-  // 注意：rewrites 在 Next.js 服务端执行（容器内），所以用 docker compose
+  // API 反向代理：/api/v1/* 由 app/api/v1/[...path]/route.ts 流式转发
+  // （rewrites 会缓冲响应体，破坏 SSE 流式输出）。/health 探针仍走 rewrites。
+  // 注意：转发在 Next.js 服务端执行（容器内），所以用 docker compose
   // 的服务名 'backend'，不是 'localhost'
   async rewrites() {
     const apiBaseUrl = process.env.API_PROXY_URL || 'http://backend:8000'
     return [
-      {
-        source: '/api/:path*',
-        destination: `${apiBaseUrl}/api/:path*`,
-      },
       {
         source: '/health',
         destination: `${apiBaseUrl}/health`,
