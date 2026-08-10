@@ -4,7 +4,7 @@ Date: 2026-08-10
 
 Worktree: `OmniBase Worktrees/Active/p5-4d-product-acceptance-r1`
 Branch: `external/p5-4d-product-acceptance-r1`
-Pre-HEAD: `eb0a1739` · Final HEAD: `_see git log below`
+Pre-HEAD: `eb0a1739` · Final HEAD: `0f571f9df8baea700e256a5d7a1fc8db45bb08e7`
 
 Decision:
 
@@ -151,17 +151,26 @@ Runtime verification on the same disposable stack:
   (workspaces/members/status/profiles/runs/templates/profile): all 200 — PASS
 - Backend full non-integration suite: `2402 passed, 20 skipped, 15
   deselected` — PASS
-- Focused suites `test_agent_alpha.py test_agent_alpha_engineering.py
-  test_p5_2b_task_ledger.py test_p5_2a_task_ledger_contract.py`: 253 passed
-  (post-fix, with the new contract test: 254 in the p5_2b rerun) — PASS
+- Focused suites: `test_agent_alpha.py` + `test_agent_alpha_engineering.py`
+  + `test_p5_2b_task_ledger.py` + `test_p5_2a_task_ledger_contract.py`
+  together `253 passed`; a separate rerun of `test_p5_2b_task_ledger.py`
+  alone was `10 passed` (the 9 baseline tests plus the new contract test
+  `test_task_lease_heartbeat_window_and_terminal_convergence_contract`)
+  — PASS
 - `mypy src`: no issues (196 files) · `ruff check`/`format --check` on
   changed paths: clean · `pnpm typecheck`/`lint`/`test` (51)/production
   `build`: clean · `compose config --quiet`: OK · maintainer map +
   benchmark validators: valid
-- P5/P34 verifiers from the final clean commit: P5.2A contract, P5.2C
-  static, P5.4A adapter + gateway, P5.4C static all valid; P34.7 candidate
-  remains `candidate/valid_not_approved` (exit 0, production_approved
-  false, feature gates false)
+- P5/P34 verifiers (validate-only static mode, NOT clean-HEAD sealed
+  `--verify`): P5.2A contract, P5.2C static, P5.4A adapter + gateway,
+  P5.4C static all valid; P34.7 candidate
+  `candidate/valid_not_approved` (exit 0, production_approved
+  false, feature gates false).  At this HEAD the P5.1A/P5.2A/P5.3A
+  `--verify` sealed checks reported `invalid/veto` with
+  `sealed contract drifted: maintainer_map` because this round modified
+  `docs/maintainers/maintenance-map.json`; the reseal and re-verify are
+  part of the follow-up master-review fix round, not this acceptance
+  evidence.
 - API journey re-run: see journey output appended below (26 PASS expected)
 
 ## Findings after the fixes
@@ -185,8 +194,12 @@ Runtime verification on the same disposable stack:
   keys generated.
 - All Phase 5 feature gates false; `AGENT_RUNTIME_ENABLED`,
   `AGENT_PLANNER_ENABLED`, `MULTI_AGENT_ENABLED` untouched (false).
-- No push / PR / merge / deploy; changes live in two forward commits on
-  `external/p5-4d-product-acceptance-r1`.
+- No push / PR / merge / deploy; changes live in four forward commits on
+  `external/p5-4d-product-acceptance-r1` (`583f7df` task-ledger lease
+  convergence, `e7e911f` SSE streaming proxy + cancel cleanup, `64e9984`
+  and `0f571f9` evidence/handover/maintenance-map documentation; the last
+  commit restores minimal byte diffs after a Windows CRLF round-trip in
+  `64e9984`).
 - Disposable stack only (`omnibase-p54d-acceptance`, `omnibase_test_*`
   names, fake provider on loopback).
 

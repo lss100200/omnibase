@@ -1676,6 +1676,16 @@ replay。服务只参加调用方拥有的事务，不自行 commit，不调用�
 工具。Populated `0011` downgrade 必须以 SQLSTATE `55000` fail closed；恢复
 只能 forward-fix 或 restore 到新的 `omnibase_restore_*` 数据库。
 
+Task Lease 窗口是 Attempt 的唯一存活授权：数据库时钟（锁内）是唯一时钟，
+terminalize 时刻 `now >= expires_at` 的 lease 绝不允许 settled 为
+`committed`/succeeded —— `settle_terminal_outcome` 必须把这种 late
+terminalization 派生为 `unknown`（终态、只开 reconciliation、禁止自动
+replay），并且 Lease/Attempt/Task/AgentRun/WorkspaceRun 在同一个事务里用
+同一个 settled outcome 原子收口，不得遗留 active lease、running attempt、
+running task/run 或 workspace slot。heartbeat 可以固定在 `expires_at`
+边界，但不得借此延长或复活授权；stale/replaced lease id 或 fencing token
+的 finish 必须继续拒绝。
+
 所有 Phase 5 Feature Gates 必须继续为 false；migration `0011` 与 disposable
 Gate 通过都不授权生产 Runtime。验证只能使用 `omnibase_test_p52b_*` sentinel
 数据库，先运行 destructive preflight，最后证明容器/网络/卷 `0/0/0`，并对

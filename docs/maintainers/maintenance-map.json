@@ -2147,14 +2147,18 @@
         "frontend/components/layout/sidebar.tsx",
         "frontend/lib/api.ts",
         "frontend/app/api/v1/**",
-        "frontend/next.config.js"
+        "frontend/next.config.js",
+        "frontend/lib/proxy.ts",
+        "frontend/lib/proxy.test.ts",
+        "frontend/lib/cancel-detection.ts"
       ],
       "entrypoints": [
         "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
         "backend/src/omnibase/agent_alpha/service.py:UnavailableAgentAlpha",
         "backend/src/omnibase/agent_alpha/router.py:router",
         "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
-        "frontend/app/(dashboard)/agents/page.tsx:AgentAlphaPage"
+        "frontend/app/(dashboard)/agents/page.tsx:AgentAlphaPage",
+        "frontend/app/api/v1/[...path]/route.ts:GET"
       ],
       "public_interfaces": [
         "Authenticated /api/v1/workspaces/{workspace_id}/agent-alpha status, invoke SSE and cancel routes",
@@ -2179,14 +2183,16 @@
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend mypy src/omnibase/agent_alpha src/omnibase/model_gateway src/omnibase/main.py",
-        "frontend: tsc --noEmit, lib tests and Prettier check"
+        "frontend: tsc --noEmit, lib tests and Prettier check",
+        "cd frontend && pnpm test (lib/proxy.test.ts streaming/abort/headers/502, lib/cancel-detection.test.ts SSE cancelled mapping)"
       ],
       "recovery": [
         "Do not override get_agent_alpha in production without a separate activation decision. The checked-in dependency must remain UnavailableAgentAlpha.",
         "Alpha rejects any AgentVersion with allowed_tool_ids. It has no shell, SQL, arbitrary HTTP, MCP, Skill, Planner or multi-Agent port.",
         "Provider ambiguity records an unknown outcome through the ledger port; cancellation is a new terminal outcome and retry is a new invocation identity.",
         "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider.",
-        "Do not reintroduce an /api/:path* rewrite for the workbench: rewrites buffer the upstream body so SSE chunks arrive only after the stream ends and the invocation id arrives too late for Stop/cancel. Task/run terminalization must converge even when the lease window lapsed (finish_attempt clamps heartbeat_at to expires_at)."
+        "Do not reintroduce an /api/:path* rewrite for the workbench: rewrites buffer the upstream body so SSE chunks arrive only after the stream ends and the invocation id arrives too late for Stop/cancel. Task/run terminalization must converge even when the lease window lapsed (finish_attempt clamps heartbeat_at to expires_at).",
+        "The Route Handler proxy (lib/proxy.ts) must keep the caller AbortSignal bound to the upstream fetch, strip hop-by-hop headers on request and response, preserve Authorization/Idempotency-Key/Content-Type, forward GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS, return a secret-free 502 on upstream failure, and never restore an /api/:path* rewrite (rewrites buffer the SSE body)."
       ]
     },
     {
