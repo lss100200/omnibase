@@ -4437,17 +4437,17 @@ Focused verification reached 46 passed with Mypy/Ruff clean. A guarded
 `omnibase_test_p347personal_*` PostgreSQL run at migration 0012 reached 3
 passed: the full persisted positive chain returned
 `personal/ready_for_activation`; a second active member, current Node fencing
-drift and consumed-approval reuse all failed closed. The disposable run cleaned
-its project containers, network and volume. Canonical immutable evidence and
-the clean-HEAD source seal are produced by the repository Gate after the source
-commit; until that seal is present, the honest status is implementation
-complete pending canonical evidence.
+drift and consumed-approval reuse all failed closed. The canonical repository
+Gate then reran both suites from committed source `28a69ab`, published
+`docs/evidence/p34-7/personal-owner-disposable-gate.json`, sealed source manifest
+`f2d998a50f173c5500b899dcaad323ebb1d5cd9cf94153181047ce846155e2b9`, and
+proved cleanup `containers/networks/volumes = 0/0/0`.
 
 Current split status:
 
 ```text
-P34_7_PERSONAL_OWNER_GATE_IMPLEMENTED
-PERSONAL_OWNER_ACTIVATION_PENDING_CANONICAL_EVIDENCE
+P34_7_PERSONAL_ENGINEERING_COMPLETE
+PERSONAL_OWNER_ACTIVATION_READY
 PRODUCTION_RUNTIME_NOT_ACTIVATED
 ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
 migration head = 0012
