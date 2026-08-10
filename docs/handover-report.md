@@ -3559,6 +3559,44 @@ migration 0013=absent
 
 ---
 
+### P5.4D Master Review Round 3：engineering acceptance（2026-08-10）
+
+Round 2 未原样放行。独立复核发现 `close_historical_run_holder` 只比较调用参数
+与旧 RunLease，未比较当前持久化 `WorkspaceNode.fencing_token`，也没有要求
+`active` RunLease 已按数据库时钟真实过期，因此 unrelated `LeaseRejected` 仍可能
+进入历史 holder 路径。
+
+forward-fix commit `4c94b7f` 收紧该边界：锁定并通过
+`get_active_attested_node` 重验当前 Node active/未撤销、verified 且未过期的
+attestation；比较当前 Node fencing 与 RunLease-bound fencing；使用 PostgreSQL
+`clock_timestamp()`；只允许 already revoked/expired，或 active 且
+`expires_at <= DB clock` 的精确 holder。active+未过期、completed、Node fencing
+推进、Node revoke/attestation 失效、generation drift、replaced identity 均零终态
+写入拒绝；committed/succeeded 永不进入该路径，RunLease 永不续期/复活。
+
+数据库测试不再只传错误参数：Scenario D 真实推进持久化 Node fencing，Scenario
+E 真实推进 Workspace generation，并新增 Scenario I（精确但 active+未过期的
+RunLease 不可历史关闭）与 Scenario J（当前 Node revoked/attestation rejected
+不可授权）。canonical P5.2B disposable Gate run `20260810100438` 通过，source
+manifest SHA `144690413c…`，foundation + lease Gate 闭集执行，cleanup `0/0/0`；
+旧 run `20260810091922` 对本 finding 标记为 superseded。前端 87 tests、typecheck、
+lint 复核通过；后端 Ruff/Mypy focused 通过。
+
+正式状态更新为：
+
+```text
+P5_4D_MASTER_REVIEW_ACCEPTED_ENGINEERING
+P5_4D_PRODUCT_ACCEPTANCE_R1_COMPLETE
+P5_4D_READY_FOR_PERSONAL_EDITION_CONSOLIDATION
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+```
+
+本结论接受 P5.4D 工程产品闭环，允许进入个人版整合；它不自动打开生产
+Runtime。单 Owner 个人版的 Owner Approval/Activation Gate 仍需独立完成；企业
+多权威 ceremony/custody/DERP/multi-member/SLA 路线继续冻结。
+
+---
+
 ### P5.4D Product Acceptance R1（2026-08-10）
 
 从普通用户视角对 P5.4C Lite Agent 产品循环做真实、可复现、fail-closed 的产品

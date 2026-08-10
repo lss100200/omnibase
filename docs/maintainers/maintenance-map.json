@@ -2038,7 +2038,7 @@
         "All three Phase 5 Feature Gates remain false. Migration 0011 is engineering admission only and does not authorize production Runtime composition.",
         "A populated 0011 downgrade must fail with SQLSTATE 55000. Recover by forward-fix or restore into a new omnibase_restore_* database.",
         "TaskLease history is append-only; Attempt and active Lease are bidirectionally checked at deferred commit, fencing chronology is allocated from the locked per-Task cursor using the database clock, and unknown Effects are never replayed automatically.",
-        "Double lease expiry (Task Lease AND Workspace Run Lease lapsed) is closed through close_historical_run_holder: failed/unknown/cancelled only, exact historical holder, never committed/succeeded, RunLease never renewed/revived, interactive slot released, reconciliation in the same transaction. Never relax submit_run_state._validated_run_lease for this path."
+        "Double lease expiry (Task Lease AND Workspace Run Lease lapsed) is closed through close_historical_run_holder: failed/unknown/cancelled only, exact historical holder, never committed/succeeded. Revalidate the current active/live-attested WorkspaceNode and current Node fencing under lock; only revoked/expired or database-clock-expired active RunLeases are eligible. A live active lease, advanced/revoked Node, stale attestation, stale generation or replaced identity must fail closed with zero terminal writes. RunLease is never renewed/revived, the interactive slot is released only for an eligible exact holder, and reconciliation stays in the same transaction. Never relax submit_run_state._validated_run_lease for this path."
       ]
     },
     {

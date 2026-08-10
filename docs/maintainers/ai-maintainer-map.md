@@ -761,8 +761,12 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
   server-owned `close_historical_run_holder` (workspaces/service.py) is the
   ONLY alternative and is restricted to `failed`/`cancelled`: it validates the
   exact historical holder (workspace run, run lease, node binding, generation,
-  run fencing, node fencing) under lock, revokes an active-but-lapsed RunLease
-  without renewal/revival, terminalizes the WorkspaceRun, clears
+  run fencing, lease node fencing) under lock, then revalidates the current
+  persisted Node, live attestation and current Node fencing. It accepts only an
+  already revoked/expired RunLease or an active RunLease whose database-clock
+  expiry has actually elapsed; a live active lease, advanced/revoked Node or
+  stale attestation fails closed. The eligible RunLease is never renewed or
+  revived; the path terminalizes the WorkspaceRun, clears
   runtime/workload bindings (freeing the `workspace_runs_one_active_uq`
   interactive slot) and creates the reconciliation case — all in the caller's
   transaction. `committed` never falls back to this path; stale/replaced
