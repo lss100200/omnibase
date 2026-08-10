@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -48,6 +49,7 @@ from omnibase.task_ledger.models import (
     AgentTaskModel,
 )
 from omnibase.task_ledger.service import (
+    TaskAdmissionContext,
     TaskLedgerConflict,
     TaskLedgerError,
     TaskLedgerPersistenceService,
@@ -506,8 +508,26 @@ class LedgerInvocationAdapter:
     never auto-replays.
     """
 
-    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        *,
+        invocation_guard: Callable[
+            [
+                Session,
+                str,
+                str,
+                str,
+                AlphaAgentProfile,
+                TaskAdmissionContext,
+                str | None,
+            ],
+            None,
+        ]
+        | None = None,
+    ) -> None:
         self._factory = session_factory
+        self._invocation_guard = invocation_guard
 
     @staticmethod
     def _replay_payload_anchor(
@@ -574,6 +594,26 @@ class LedgerInvocationAdapter:
                 idempotency_key=idempotency_key,
             )
             svc = TaskLedgerPersistenceService(session)
+            admission_context: TaskAdmissionContext | None = None
+
+            def admission_guard(
+                *,
+                session: Session,
+                context: TaskAdmissionContext,
+            ) -> None:
+                nonlocal admission_context
+                if self._invocation_guard is not None:
+                    self._invocation_guard(
+                        session,
+                        tenant_id,
+                        workspace_id,
+                        actor_user_id,
+                        profile,
+                        context,
+                        None,
+                    )
+                admission_context = context
+
             task = svc.create_task(
                 tenant_id=tenant_id,
                 actor_user_id=actor_user_id,
@@ -590,6 +630,7 @@ class LedgerInvocationAdapter:
                 budget_policy_digest=profile.budget_policy_digest,
                 budget_limits=dict(_ALPHA_BUDGET_LIMITS),
                 request_hash_override=request_hash,
+                admission_guard=(admission_guard if self._invocation_guard is not None else None),
             )
             existing_attempt = session.execute(
                 select(AgentAttemptModel)
@@ -779,6 +820,16 @@ class LedgerInvocationAdapter:
             session.flush()
             task.state = "running"
             session.flush()
+            if self._invocation_guard is not None and admission_context is not None:
+                self._invocation_guard(
+                    session,
+                    tenant_id,
+                    workspace_id,
+                    actor_user_id,
+                    profile,
+                    admission_context,
+                    workspace_run.id,
+                )
             session.commit()
             return AlphaInvocationIdentity(
                 invocation_id=task.id,

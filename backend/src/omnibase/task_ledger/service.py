@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, cast
 from uuid import uuid4
@@ -60,6 +61,26 @@ _LEASE_TTL_CEILING = timedelta(seconds=300)
 _ACTIVE_ATTEMPT_STATES = ("leased", "dispatching", "running")
 _TERMINAL_ATTEMPT_STATES = ("committed", "failed", "unknown", "cancelled")
 _TERMINAL_OUTCOME = Literal["committed", "failed", "unknown", "cancelled"]
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAdmissionContext:
+    tenant: Tenant
+    actor: User
+    workspace: Workspace
+    actor_membership: WorkspaceMembership
+    binding: WorkspaceAgentBindingModel
+    definition: AgentDefinitionModel
+    version: AgentVersionModel
+
+
+class TaskAdmissionGuard(Protocol):
+    def __call__(
+        self,
+        *,
+        session: Session,
+        context: TaskAdmissionContext,
+    ) -> None: ...
 
 
 def settle_terminal_outcome(
@@ -285,12 +306,13 @@ class TaskLedgerPersistenceService:
         budget_policy_digest: str,
         budget_limits: dict[str, int],
         request_hash_override: str | None = None,
+        admission_guard: TaskAdmissionGuard | None = None,
     ) -> AgentTaskModel:
         """Create one low-risk, tool-free task with Resource/Operation/Audit atomically."""
 
-        _lock_tenant(self._session, tenant_id)
-        _lock_actor(self._session, actor_user_id)
-        workspace, _ = _lock_workspace_access(
+        tenant = _lock_tenant(self._session, tenant_id)
+        actor = _lock_actor(self._session, actor_user_id)
+        workspace, membership = _lock_workspace_access(
             self._session,
             tenant_id=tenant_id,
             workspace_id=workspace_id,
@@ -359,6 +381,19 @@ class TaskLedgerPersistenceService:
         # original durable task instead of failing.
         if deadline.tzinfo is None or deadline <= datetime.now(UTC):
             raise TaskLedgerStateError("task_deadline_invalid")
+        if admission_guard is not None:
+            admission_guard(
+                session=self._session,
+                context=TaskAdmissionContext(
+                    tenant=tenant,
+                    actor=actor,
+                    workspace=workspace,
+                    actor_membership=membership,
+                    binding=binding,
+                    definition=definition,
+                    version=version,
+                ),
+            )
 
         resource = register_resource(
             self._session,

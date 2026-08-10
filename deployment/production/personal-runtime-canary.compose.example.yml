@@ -1,0 +1,24 @@
+services:
+  backend:
+    environment:
+      ENV: production
+      AGENT_RUNTIME_ENABLED: "true"
+      AGENT_PLANNER_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
+      PERSONAL_RUNTIME_PROFILE: personal_single_owner
+      PERSONAL_RUNTIME_CANARY_CONFIG: /run/omnibase-personal/canary.json
+      PERSONAL_RUNTIME_STATE_DIR: /run/omnibase-personal/state
+      PERSONAL_RUNTIME_READINESS_ROOT: /run/omnibase-personal/readiness-root
+    volumes:
+      - type: bind
+        source: ${PERSONAL_RUNTIME_CANARY_HOST_CONFIG:?set an absolute canonical config path}
+        target: /run/omnibase-personal/canary.json
+        read_only: true
+      - type: bind
+        source: ${PERSONAL_RUNTIME_CANARY_HOST_STATE:?set an absolute run-scoped state directory}
+        target: /run/omnibase-personal/state
+        read_only: true
+      - type: bind
+        source: ${PERSONAL_RUNTIME_READINESS_HOST_ROOT:?set an immutable readiness evidence root}
+        target: /run/omnibase-personal/readiness-root
+        read_only: true

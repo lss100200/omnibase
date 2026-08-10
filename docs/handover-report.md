@@ -4453,3 +4453,73 @@ ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
 migration head = 0012
 migration 0013 = absent
 ```
+
+### P5 Personal Runtime Activation R0 implementation（2026-08-10）
+
+The active mainline worktree now contains the separately named
+`personal_single_owner` Runtime canary implementation. It follows the Personal
+Owner readiness Gate without reopening the frozen enterprise Trust Policy
+program or reinterpreting engineering Lite as production authority.
+
+Implemented engineering boundaries:
+
+- canonical exact-scope config for one Tenant, Workspace, live Owner and
+  AgentVersion, no-tool only, concurrency one, bounded lifetime and `top_k`;
+- deterministic plan digest requiring exact operator confirmation;
+- run-scoped append-only activation/rollback hash chain, automatic expiry and
+  an independent irreversible kill marker that wins over corrupt state;
+- canonical event bytes and filename/event binding; future activation time is
+  invalid rather than prematurely active;
+- production Runtime=true with Planner=false and Multi-Agent=false only;
+- migration 0012, migration 0013 absent, default-deny/no-destination workload
+  network and no external side effects;
+- Browser builder that requires a minimal read-only readiness root and verifies
+  its raw-byte Personal Owner evidence seal;
+- transaction-A admission after canonical Tenant/User/Workspace/Membership/
+  Binding/Definition/Version locks, with live config/readiness/ledger/database
+  time/gates/migration/Owner/AgentVersion revalidation before Task insert and
+  again before commit;
+- a fresh-only one-invocation slot backed by non-terminal WorkspaceRun state,
+  while exact replay remains write-free;
+- kill rechecks before fresh reservation, before commit, before provider
+  dispatch and at stream checkpoints; the filesystem marker is not represented
+  as a cross-system linearizable DB kill;
+- exact-scope facade and frontend workbench posture;
+- filesystem-only validate, plan, activate, status, rollback and
+  config-independent kill commands;
+- default-locked Compose wiring plus an explicit read-only config/state/
+  readiness-root overlay;
+- frontend auth forward-fix: login/register/refresh 401 responses no longer
+  invoke refresh or expose `No refresh token available`.
+
+The canary remains narrower than Sandbox or formal P5.4B Gateway execution. It
+uses the Core-owned read-only RAG retriever and the existing durable
+Task/AgentRun/WorkspaceRun/RunLease lifecycle. It has no tools, shell, SQL,
+arbitrary HTTP, MCP, Skills, Planner, Multi-Agent or workload network access.
+The full Personal Owner Approval/Capability path remains required for future
+high-risk or Sandbox activation.
+
+The activation ledger is an integrity/lifecycle receipt, not an externally
+signed authenticity root. Base Compose profile/config/state values are empty
+and all three Feature Gates are false. No real target has been started, no root
+`.env` was read, no business database was accessed or migrated, no provider
+secret was installed and no push/merge/deploy occurred in this worktree.
+
+Current pre-final-verification status:
+
+```text
+P5_PERSONAL_RUNTIME_R0_IMPLEMENTATION_PRESENT
+PERSONAL_SINGLE_OWNER_NO_TOOL_CANARY_ONLY
+PRODUCTION_TARGET_NOT_ACTIVATED
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
+migration head=0012
+migration 0013=absent
+```
+
+Canonical sources:
+
+- `docs/architecture/p5-personal-runtime-activation-r0.md`
+- `docs/runbooks/p5-personal-runtime-canary.md`
+- `docs/evidence/p5-personal-runtime-activation-r0-decision.md`

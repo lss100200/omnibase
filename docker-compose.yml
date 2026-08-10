@@ -184,6 +184,14 @@ services:
       AGENT_RUNTIME_ENABLED: ${AGENT_RUNTIME_ENABLED:-false}
       AGENT_PLANNER_ENABLED: ${AGENT_PLANNER_ENABLED:-false}
       MULTI_AGENT_ENABLED: ${MULTI_AGENT_ENABLED:-false}
+      # P5 personal single-Owner production canary. Empty profile/path values
+      # are locked. An operator overlay must mount the canonical config and
+      # run-scoped state directory explicitly; this base Compose file mounts
+      # neither and therefore cannot activate the lane by itself.
+      PERSONAL_RUNTIME_PROFILE: ${PERSONAL_RUNTIME_PROFILE:-}
+      PERSONAL_RUNTIME_CANARY_CONFIG: ${PERSONAL_RUNTIME_CANARY_CONFIG:-}
+      PERSONAL_RUNTIME_STATE_DIR: ${PERSONAL_RUNTIME_STATE_DIR:-}
+      PERSONAL_RUNTIME_READINESS_ROOT: ${PERSONAL_RUNTIME_READINESS_ROOT:-}
       # Embedding index write lanes
       EMBEDDING_INDEX_VERSION: ${EMBEDDING_INDEX_VERSION:-v1}
       EMBEDDING_SHADOW_INDEX_VERSION: ${EMBEDDING_SHADOW_INDEX_VERSION:-}

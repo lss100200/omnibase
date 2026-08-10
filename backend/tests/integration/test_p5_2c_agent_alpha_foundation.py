@@ -18,6 +18,7 @@ import socket
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
@@ -791,6 +792,230 @@ def test_alpha_success_persists_durable_lifecycle(
         os.environ.pop("AGENT_LITE_ENGINEERING_ENABLED", None)
         os.environ.pop("AGENT_ALPHA_ENGINEERING_ENABLED", None)
         os.environ.pop("ENV", None)
+
+
+def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
+    db_engine,
+    run_owned_resources,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    from omnibase.agent_alpha import personal as personal_module
+    from omnibase.agent_alpha.personal import PersonalCanaryAgentAlpha
+    from omnibase.agent_alpha.service import AgentAlphaUnavailable
+    from omnibase.core.config import get_settings
+    from omnibase.model_gateway import ModelGateway
+    from omnibase.production.personal_runtime_activation import (
+        PersonalRuntimeCanaryConfig,
+        activate_personal_runtime_canary,
+        kill_personal_runtime_canary,
+    )
+    from omnibase.tenants.context import reset_schema, set_current_schema
+
+    target = _seed_alpha_target(db_engine, run_owned_resources, "personal-canary")
+    # Keep the generic Workspace allowance deliberately wider than the personal
+    # contract. The second fresh invocation must be rejected by the personal
+    # single-slot admission seam before any Task row, not by max_active_runs.
+    with _session(db_engine, str(target["tenant_id"])) as session:
+        session.execute(
+            text(
+                "UPDATE omnibase_meta.workspaces "
+                "SET quota = CAST(:quota AS jsonb) "
+                "WHERE tenant_id = :tenant AND id = :workspace"
+            ),
+            {
+                "quota": json.dumps({"max_active_runs": 8}),
+                "tenant": target["tenant_id"],
+                "workspace": target["workspace_id"],
+            },
+        )
+        session.commit()
+    repo_root = Path(__file__).resolve().parents[3]
+    config_mapping = {
+        "agent_planner_enabled": False,
+        "agent_version_id": str(target["agent_version_id"]),
+        "canary_id": str(uuid.uuid4()),
+        "enterprise_approved_digest_present": False,
+        "environment": "production",
+        "external_side_effects": False,
+        "invocation_mode": "no_tool",
+        "max_canary_seconds": 900,
+        "max_concurrent_invocations": 1,
+        "max_top_k": 5,
+        "migration_0013_created": False,
+        "migration_head": "0012",
+        "multi_agent_enabled": False,
+        "network": {"default_deny": True, "destinations": []},
+        "owner_readiness": {
+            "path": "deployment/production/personal-single-owner.example.json",
+            "sha256": "d71516d6a4c9ebd2e335c5e06e7507ce300ddc138e581b6dd34f9992933185de",
+        },
+        "owner_user_id": ACTOR_ID,
+        "profile": "personal_single_owner",
+        "schema_version": 1,
+        "tenant_id": str(target["tenant_id"]),
+        "workspace_id": str(target["workspace_id"]),
+    }
+    config = PersonalRuntimeCanaryConfig.from_mapping(config_mapping)
+    config_path = (tmp_path / "personal-canary.json").resolve()
+    config_path.write_text(
+        json.dumps(config_mapping, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    state_dir = (tmp_path / "personal-state").resolve()
+    activate_personal_runtime_canary(
+        config,
+        state_dir=state_dir,
+        confirmed_plan_sha256=config.activation_plan().canonical_digest(),
+    )
+
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setenv("AGENT_RUNTIME_ENABLED", "true")
+    monkeypatch.setenv("AGENT_PLANNER_ENABLED", "false")
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "false")
+    monkeypatch.setenv("AGENT_LITE_ENGINEERING_ENABLED", "false")
+    monkeypatch.setenv("PERSONAL_RUNTIME_PROFILE", "personal_single_owner")
+    monkeypatch.setenv("PERSONAL_RUNTIME_CANARY_CONFIG", str(config_path))
+    monkeypatch.setenv("PERSONAL_RUNTIME_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("PERSONAL_RUNTIME_READINESS_ROOT", str(repo_root))
+    get_settings.cache_clear()
+    calls = [0]
+    gateway = ModelGateway(
+        provider=DeterministicFakeProvider(call_count=calls),
+        model_id=_MODEL_ID,
+    )
+    monkeypatch.setattr(
+        personal_module,
+        "configured_model_gateway",
+        lambda: gateway,
+    )
+    tenant_context_token = None
+    try:
+        client = _client(db_engine, str(target["tenant_id"]))
+        posture = client.get(f"/api/v1/workspaces/{target['workspace_id']}/agent-alpha/status")
+        assert posture.status_code == 200
+        assert posture.json()["runtime_profile"] == "personal_single_owner"
+        assert posture.json()["personal_runtime_active"] is True
+        assert posture.json()["production_activation_allowed"] is True
+        tenant_context_token = set_current_schema(
+            _tenant_schema_name(db_engine, target["tenant_id"])
+        )
+
+        alpha = personal_module.build_personal_agent_alpha(
+            tenant_id=str(target["tenant_id"]),
+            workspace_id=str(target["workspace_id"]),
+            actor_user_id=ACTOR_ID,
+            profile="personal_single_owner",
+            config_path=str(config_path),
+            state_dir=str(state_dir),
+            readiness_root=str(repo_root),
+            gate_values=os.environ,
+            settings=get_settings(),
+            session_factory=sessionmaker(bind=db_engine, expire_on_commit=False),
+            gateway=gateway,
+        )
+        assert isinstance(alpha, PersonalCanaryAgentAlpha)
+        first_events = alpha.invoke(
+            tenant_id=str(target["tenant_id"]),
+            tenant_schema=_tenant_schema_name(db_engine, target["tenant_id"]),
+            workspace_id=str(target["workspace_id"]),
+            actor_user_id=ACTOR_ID,
+            agent_version_id=str(target["agent_version_id"]),
+            message="Hold the personal invocation slot",
+            top_k=1,
+            idempotency_key="personal-slot-first",
+            retry_of=None,
+        )
+        with _session(db_engine, str(target["tenant_id"])) as session:
+            task_count_before = int(
+                session.execute(text("SELECT count(*) FROM agent_tasks")).scalar_one()
+            )
+        with pytest.raises(AgentAlphaUnavailable, match="invocation_slot_occupied"):
+            alpha.invoke(
+                tenant_id=str(target["tenant_id"]),
+                tenant_schema=_tenant_schema_name(db_engine, target["tenant_id"]),
+                workspace_id=str(target["workspace_id"]),
+                actor_user_id=ACTOR_ID,
+                agent_version_id=str(target["agent_version_id"]),
+                message="A concurrent second invocation",
+                top_k=1,
+                idempotency_key="personal-slot-second",
+                retry_of=None,
+            )
+        with _session(db_engine, str(target["tenant_id"])) as session:
+            task_count_after = int(
+                session.execute(text("SELECT count(*) FROM agent_tasks")).scalar_one()
+            )
+        assert task_count_after == task_count_before
+        assert calls == [0]
+        assert [event.kind for event in first_events][-1] == "done"
+        assert calls == [1]
+
+        status, events, _ = _invoke_events(
+            client,
+            str(target["workspace_id"]),
+            str(target["agent_version_id"]),
+            "Run the bounded personal canary",
+            idempotency_key="personal-canary-live-owner",
+        )
+        assert status == 200, events
+        assert [kind for kind, _ in events][-1] == "done"
+        assert calls == [2]
+        task_id = str(events[0][1]["task_id"])
+        _assert_terminal_runtime_state(
+            db_engine,
+            tenant_id=str(target["tenant_id"]),
+            task_id=task_id,
+            agent_state="succeeded",
+            workspace_state="succeeded",
+            lease_state="completed",
+        )
+
+        killed_events = alpha.invoke(
+            tenant_id=str(target["tenant_id"]),
+            tenant_schema=_tenant_schema_name(db_engine, target["tenant_id"]),
+            workspace_id=str(target["workspace_id"]),
+            actor_user_id=ACTOR_ID,
+            agent_version_id=str(target["agent_version_id"]),
+            message="Reserve, then trip the independent kill marker",
+            top_k=1,
+            idempotency_key="personal-kill-after-reservation",
+            retry_of=None,
+        )
+        kill_personal_runtime_canary(
+            state_dir=state_dir,
+            canary_id=config.canary_id,
+            reason_code="integration_emergency_stop",
+        )
+        killed_result = list(killed_events)
+        assert [event.kind for event in killed_result] == ["error"]
+        assert killed_result[0].payload == {"code": "personal_runtime_control_state_unavailable"}
+        assert calls == [2]
+        with _session(db_engine, str(target["tenant_id"])) as session:
+            tasks_before_rejected_admission = int(
+                session.execute(text("SELECT count(*) FROM agent_tasks")).scalar_one()
+            )
+        with pytest.raises(AgentAlphaUnavailable, match="control_state_unavailable"):
+            alpha.invoke(
+                tenant_id=str(target["tenant_id"]),
+                tenant_schema=_tenant_schema_name(db_engine, target["tenant_id"]),
+                workspace_id=str(target["workspace_id"]),
+                actor_user_id=ACTOR_ID,
+                agent_version_id=str(target["agent_version_id"]),
+                message="Must not reserve after kill",
+                top_k=1,
+                idempotency_key="personal-kill-rejected",
+                retry_of=None,
+            )
+        with _session(db_engine, str(target["tenant_id"])) as session:
+            assert (
+                int(session.execute(text("SELECT count(*) FROM agent_tasks")).scalar_one())
+                == tasks_before_rejected_admission
+            )
+    finally:
+        if tenant_context_token is not None:
+            reset_schema(tenant_context_token)
+        get_settings.cache_clear()
 
 
 def test_workspace_rag_never_returns_another_workspace_chunk(

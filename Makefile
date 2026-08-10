@@ -173,7 +173,7 @@ shell: backend-shell ## 别名：后端 shell
 # 测试与质量
 # ------------------------------------------------------------
 
-.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-3a-planner-contract test-p5-4a-typed-executor test-p5-6a-skill-contract lint lint-backend lint-frontend typecheck format format-check
+.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-personal-runtime test-p5-3a-planner-contract test-p5-4a-typed-executor test-p5-6a-skill-contract lint lint-backend lint-frontend typecheck format format-check
 
 test: test-backend test-frontend ## 运行所有测试
 
@@ -275,6 +275,37 @@ test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engi
 		tests/integration/test_p5_2b_task_ledger_lease_gate.py -q; \
 		cd "$$repo_root"; \
 		uv run pytest scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py -q
+
+test-p5-personal-runtime: ## Disposable migration-0012 personal single-Owner no-tool Runtime Gate
+	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p5personal-*) ;; \
+		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use the omnibase-p5personal- prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_NAME)" in omnibase_test_p5personal_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_NAME must use the omnibase_test_p5personal_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_ROLE)" in omnibase_test_p5personal_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_ROLE must use the omnibase_test_p5personal_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@if [ -z "$(TEST_DATABASE_OWNER_PASSWORD)" ] || [ -z "$(TEST_DATABASE_PASSWORD)" ]; then \
+		echo "$(YELLOW)Explicit disposable database passwords are required$(RESET)"; exit 1; \
+	fi
+	@set -eu; \
+		repo_root="$$(pwd)"; \
+		base_file="$$repo_root/docker-compose.yml"; \
+		compose_file="$$repo_root/docker-compose.destructive-tests.yml"; \
+		trap 'cd "$$repo_root"; $(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$base_file" -f "$$compose_file" down -v --remove-orphans' EXIT INT TERM; \
+		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$base_file" -f "$$compose_file" up -d --wait postgres-test; \
+		db_url="postgresql+psycopg://$(TEST_DATABASE_ROLE):$(TEST_DATABASE_PASSWORD)@postgres-test:5432/$(TEST_DATABASE_NAME)"; \
+		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$base_file" -f "$$compose_file" run --rm --no-deps \
+		  -v "$$repo_root:/workspace" -w /workspace/backend \
+		  -e UV_PROJECT_ENVIRONMENT=/app/.venv \
+		  -e OMNIBASE_INTEGRATION_TESTS=1 -e TEST_DATABASE_URL="$$db_url" -e DATABASE_URL="$$db_url" \
+		  -e MINIO_ENDPOINT=localhost:9000 -e MINIO_ACCESS_KEY=test_access -e MINIO_SECRET_KEY=test_secret \
+		  -e REDIS_URL=redis://localhost:6379/15 -e JWT_SECRET=test_secret_at_least_32_characters_long_for_validation \
+		  backend sh -c "uv sync --dev && /app/.venv/bin/python tests/destructive_preflight.py && /app/.venv/bin/python -m alembic upgrade head && /app/.venv/bin/python -m pytest -m integration tests/integration/test_p5_2c_agent_alpha_foundation.py::test_personal_runtime_canary_assembles_from_live_owner_and_persists_run -q"; \
+		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$base_file" -f "$$compose_file" run --rm --no-deps \
+		  -v "$$repo_root:/workspace" -w /workspace backend \
+		  /app/.venv/bin/python -m pytest scripts/production/test_manage_p5_personal_runtime.py -q
 
 test-p5-3a-planner-contract: ## 离线 P5.3A Planner Proposal 合同预检（validate-only，只读，不碰数据库）
 	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace backend \

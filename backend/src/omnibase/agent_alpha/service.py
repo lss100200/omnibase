@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from threading import Event, Lock
 
@@ -123,6 +123,7 @@ class AgentAlphaService:
         gateway: ModelGateway,
         gateway_resolver: AlphaGatewayResolver | None = None,
         preferences_resolver: AlphaUserPreferencesResolver | None = None,
+        runtime_guard: Callable[[], None] | None = None,
         limits: AlphaLimits | None = None,
     ) -> None:
         self._profiles = profiles
@@ -131,7 +132,18 @@ class AgentAlphaService:
         self._gateway = gateway
         self._gateway_resolver = gateway_resolver
         self._preferences_resolver = preferences_resolver
+        self._runtime_guard = runtime_guard
         self._limits = limits or AlphaLimits()
+
+    def _verify_runtime_guard(self) -> None:
+        if self._runtime_guard is None:
+            return
+        try:
+            self._runtime_guard()
+        except AgentAlphaError:
+            raise
+        except RuntimeError as exc:
+            raise AgentAlphaUnavailable("agent_alpha_runtime_guard_unavailable") from exc
 
     def list_profiles(
         self,
@@ -164,6 +176,7 @@ class AgentAlphaService:
         idempotency_key: str,
         retry_of: str | None,
     ) -> Iterator[AlphaStreamEvent]:
+        self._verify_runtime_guard()
         if len(message) > self._limits.max_message_characters:
             raise AgentAlphaError("agent_alpha_message_too_large")
         if top_k < 1 or top_k > self._limits.max_rag_chunks:
@@ -249,6 +262,7 @@ class AgentAlphaService:
     ) -> Iterator[AlphaStreamEvent]:
         """SSE event stream for one durable invocation (or its exact replay)."""
         try:
+            self._verify_runtime_guard()
             yield AlphaStreamEvent(
                 kind="meta",
                 payload={
@@ -289,6 +303,7 @@ class AgentAlphaService:
                     ]
                 },
             )
+            self._verify_runtime_guard()
             yield from self._emit_provider_stream(
                 identity=identity,
                 profile=profile,
@@ -378,11 +393,13 @@ class AgentAlphaService:
             ModelMessage(role="system", content=_context_message(chunks)),
             ModelMessage(role="user", content=message),
         )
+        self._verify_runtime_guard()
         for chunk in selection.gateway.stream(
             messages,
             max_output_tokens=min(profile.max_context_tokens, self._limits.max_output_tokens),
             temperature=0.2,
         ):
+            self._verify_runtime_guard()
             if time.monotonic() > deadline:
                 raise AgentAlphaProviderOutcomeUnknown("agent_alpha_invocation_deadline_exceeded")
             actual_model_id = chunk.actual_model_id
