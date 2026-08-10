@@ -7,6 +7,11 @@ to those resources.  It deliberately does not authenticate a real person,
 approve a trust policy, authorize a key ceremony, collect production evidence,
 write an approved digest, start a service, or activate Agent Runtime.
 
+The proposal is not an authority registry, review-receipt verifier, custody
+attestation gate, or production-evidence gate.  Consequently it rejects
+input-declared ``VERIFIED`` and ``PROVEN`` facts instead of trusting a digest
+that the proposal supplied about itself.
+
 The example contract intentionally contains only ``UNASSIGNED`` and
 ``NOT_ASSESSED`` facts.  Such a document can be structurally valid while the
 derived result remains ``r1_assignment/valid_incomplete`` and P34.7 remains
@@ -269,11 +274,17 @@ class PrincipalAssignment:
                     f"{name}: assigned identities require canonical_subject_id"
                 )
             if state == "VERIFIED":
-                if authentication_kind == "NOT_ASSESSED" or reference is None:
-                    raise ConfigurationError(f"{name}: VERIFIED requires authentication evidence")
-            elif authentication_kind == "NOT_ASSESSED" and reference is not None:
+                raise ConfigurationError(
+                    f"{name}: VERIFIED requires an independently pinned authority registry "
+                    "and review-receipt verifier"
+                )
+            if authentication_kind == "NOT_ASSESSED" and reference is not None:
                 raise ConfigurationError(
                     f"{name}: authentication reference requires an assessed authentication kind"
+                )
+            if authentication_kind != "NOT_ASSESSED" and reference is None:
+                raise ConfigurationError(
+                    f"{name}: assessed authentication kind requires a content-addressed reference"
                 )
         return cls(identity, state, subject, authentication_kind, reference)
 
@@ -282,8 +293,8 @@ class PrincipalAssignment:
         return self.assignment_state != "UNASSIGNED"
 
     @property
-    def verified(self) -> bool:
-        return self.assignment_state == "VERIFIED"
+    def proposed(self) -> bool:
+        return self.assignment_state == "ASSIGNED_NOT_VERIFIED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -474,8 +485,14 @@ class CustodyAssignment:
             raise ConfigurationError(f"{name}: NOT_ASSESSED cannot claim custody evidence")
         if state in {"SELECTED_NOT_VERIFIED", "VERIFIED"} and kind is None:
             raise ConfigurationError(f"{name}: selected custody requires custody_kind")
-        if state == "VERIFIED" and reference is None:
-            raise ConfigurationError(f"{name}: VERIFIED custody requires attestation evidence")
+        if state == "VERIFIED":
+            raise ConfigurationError(
+                f"{name}: VERIFIED custody requires an independently reviewed attestation contract"
+            )
+        if state == "SELECTED_NOT_VERIFIED" and reference is not None:
+            raise ConfigurationError(
+                f"{name}: unverified custody selection cannot claim attestation evidence"
+            )
         return cls(role, state, kind, reference)
 
 
@@ -563,16 +580,21 @@ class EnvironmentResource:
             raise ConfigurationError(
                 f"{name}: evidence state requires a content-addressed reference"
             )
-        if state == "PROVEN" and not production_equivalent:
-            raise ConfigurationError(f"{name}: PROVEN requires production_equivalent=true")
+        if state == "PROVEN":
+            raise ConfigurationError(
+                f"{name}: PROVEN requires the later independently signed evidence gate"
+            )
+        if production_equivalent:
+            raise ConfigurationError(f"{name}: R1-A assignment cannot claim production equivalence")
         if kind == "non_disposable_tenant_rag" and state != "NOT_ASSESSED" and data_owner is None:
             raise ConfigurationError(f"{name}: tenant/RAG assessment requires data-owner authority")
-        if state == "PROVEN":
-            joined = " ".join(value or "" for value in (resource_id, owner, access, domain)).lower()
-            if any(token in joined for token in _FORBIDDEN_PRODUCTION_SUBSTITUTES):
-                raise ConfigurationError(
-                    f"{name}: engineering substitute cannot be PROVEN production infrastructure"
-                )
+        joined = " ".join(
+            value or "" for value in (resource_id, owner, access, domain, data_owner)
+        ).lower()
+        if any(token in joined for token in _FORBIDDEN_PRODUCTION_SUBSTITUTES):
+            raise ConfigurationError(
+                f"{name}: engineering substitute cannot be assigned as target infrastructure"
+            )
         return cls(
             kind,
             state,
@@ -655,7 +677,7 @@ class BlockerAssignment:
         command = _string(item.get("command"), f"{name}.command")
         expected_resources, expected_role, expected_command = BLOCKER_REQUIREMENTS[blocker_id]
         if (
-            set(resources) != set(expected_resources)
+            resources != expected_resources
             or producer_role != expected_role
             or command != expected_command
         ):
@@ -670,14 +692,16 @@ class BlockerAssignment:
             raise ConfigurationError(
                 f"{name}: evidence state requires a content-addressed reference"
             )
+        if state == "PROVEN":
+            raise ConfigurationError(
+                f"{name}: PROVEN blocker requires the later independently signed evidence gate"
+            )
         if state not in {"EVIDENCE_COLLECTED_NOT_REVIEWED", "PROVEN"} and evidence is not None:
             raise ConfigurationError(f"{name}: evidence reference is not valid for this state")
         return cls(blocker_id, state, resources, producer_role, command, evidence)
 
 
-def _blocker_assignments(
-    value: object, inventory: dict[str, EnvironmentResource]
-) -> dict[str, BlockerAssignment]:
+def _blocker_assignments(value: object) -> dict[str, BlockerAssignment]:
     raw = _list(value, "blocker_assignments")
     parsed = [
         BlockerAssignment.from_mapping(item, f"blocker_assignments[{index}]")
@@ -688,14 +712,6 @@ def _blocker_assignments(
         raise ConfigurationError(
             "blocker_assignments must contain blockers 1 through 11 exactly once"
         )
-    for blocker in parsed:
-        if blocker.assessment_state == "PROVEN" and any(
-            inventory[resource].assessment_state != "PROVEN"
-            for resource in blocker.environment_resources
-        ):
-            raise ConfigurationError(
-                "a PROVEN blocker requires every mapped environment resource to be PROVEN"
-            )
     return {item.blocker_id: item for item in parsed}
 
 
@@ -703,9 +719,14 @@ def _blocker_assignments(
 class R1AssignmentReport:
     contract_valid: bool
     assignment_complete: bool
+    authority_separation_contract_valid: bool
     authority_separation_verified: bool
+    authority_authentication_verified: bool
+    independent_review_receipts_verified: bool
     custody_assignment_complete: bool
+    custody_attestations_verified: bool
     environment_inventory_complete: bool
+    environment_evidence_verified: bool
     production_blockers_closed: bool
     trust_policy_approved: bool
     approved_digest_written: bool
@@ -729,9 +750,14 @@ class R1AssignmentReport:
             "status": self.status,
             "contract_valid": self.contract_valid,
             "assignment_complete": self.assignment_complete,
+            "authority_separation_contract_valid": self.authority_separation_contract_valid,
             "authority_separation_verified": self.authority_separation_verified,
+            "authority_authentication_verified": self.authority_authentication_verified,
+            "independent_review_receipts_verified": self.independent_review_receipts_verified,
             "custody_assignment_complete": self.custody_assignment_complete,
+            "custody_attestations_verified": self.custody_attestations_verified,
             "environment_inventory_complete": self.environment_inventory_complete,
+            "environment_evidence_verified": self.environment_evidence_verified,
             "production_blockers_closed": self.production_blockers_closed,
             "trust_policy_approved": self.trust_policy_approved,
             "approved_digest_written": self.approved_digest_written,
@@ -825,17 +851,18 @@ def _derive_blockers(
     assignment_complete: bool,
     custody_complete: bool,
     inventory_complete: bool,
-    blockers_closed: bool,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     if not assignment_complete:
         blockers.append("authority_assignments_incomplete")
+    blockers.extend(("authority_registry_unpinned", "independent_review_receipts_absent"))
     if not custody_complete:
-        blockers.append("custody_assignments_not_verified")
+        blockers.append("custody_assignments_incomplete")
+    blockers.append("custody_attestations_not_independently_verified")
     if not inventory_complete:
         blockers.append("environment_inventory_not_assessed")
-    if not blockers_closed:
-        blockers.append("production_blockers_not_closed")
+    blockers.append("environment_evidence_not_independently_verified")
+    blockers.append("production_blockers_not_closed")
     return tuple(blockers)
 
 
@@ -845,32 +872,33 @@ def validate_trust_policy_r1_assignment(payload: object, repo_root: Path) -> R1A
     authorities = AuthorityAssignments.from_mapping(item.get("authority_assignments"))
     custody = _custody_assignments(item.get("custody_assignments"))
     inventory = _environment_inventory(item.get("environment_inventory"))
-    blocker_assignments = _blocker_assignments(item.get("blocker_assignments"), inventory)
+    _blocker_assignments(item.get("blocker_assignments"))
     migration_head = _verify_repository_posture(repo_root)
-    assignment_complete = all(principal.verified for principal in authorities.all_principals())
-    custody_complete = all(entry.selection_state == "VERIFIED" for entry in custody.values())
+    assignment_complete = all(principal.proposed for principal in authorities.all_principals())
+    custody_complete = all(
+        entry.selection_state == "SELECTED_NOT_VERIFIED" for entry in custody.values()
+    )
     inventory_complete = all(
         entry.assessment_state not in {"NOT_ASSESSED", "MISSING", "REJECTED"}
         for entry in inventory.values()
     )
-    blockers_closed = all(
-        entry.assessment_state == "PROVEN" for entry in blocker_assignments.values()
-    )
-    blockers = _derive_blockers(
-        assignment_complete, custody_complete, inventory_complete, blockers_closed
-    )
-    ready = assignment_complete and custody_complete and inventory_complete
+    blockers_closed = False
+    blockers = _derive_blockers(assignment_complete, custody_complete, inventory_complete)
+    complete = assignment_complete and custody_complete and inventory_complete
     status = (
-        "r1_assignment/ready_for_independent_design_review"
-        if ready
-        else "r1_assignment/valid_incomplete"
+        "r1_assignment/complete_not_authenticated" if complete else "r1_assignment/valid_incomplete"
     )
     return R1AssignmentReport(
         contract_valid=True,
         assignment_complete=assignment_complete,
-        authority_separation_verified=True,
+        authority_separation_contract_valid=True,
+        authority_separation_verified=False,
+        authority_authentication_verified=False,
+        independent_review_receipts_verified=False,
         custody_assignment_complete=custody_complete,
+        custody_attestations_verified=False,
         environment_inventory_complete=inventory_complete,
+        environment_evidence_verified=False,
         production_blockers_closed=blockers_closed,
         trust_policy_approved=False,
         approved_digest_written=False,

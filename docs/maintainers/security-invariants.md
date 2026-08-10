@@ -2758,17 +2758,22 @@ digest-change approver 与 incident/revocation authority；七个 custody role�
 一律 fail-closed。真实 assignment 使用 canonical subject 与认证凭据摘要比较，
 不能只比较 display label；author/reviewer/producer/backup、operator/observer、
 digest approver、incident authority 和每个 custody issuer 的分离矩阵必须通过。
-`UNASSIGNED` 不得携带真实 identity、subject 或认证引用；`VERIFIED` 必须携带
-非秘密、content-addressed 的认证引用。
+`UNASSIGNED` 不得携带真实 identity、subject 或认证引用；R1-A v1 只允许把真实
+slot 填到 `ASSIGNED_NOT_VERIFIED`。输入自报的 `VERIFIED` 即使携带格式正确的
+content-addressed 引用也必须拒绝，因为 proposal 没有 independently pinned
+authority registry 或 detached review receipt verifier。分离矩阵通过只能派生
+`authority_separation_contract_valid=true`，不能派生现实身份认证或已验证分离。
 
 目标环境状态闭集固定为 `NOT_ASSESSED | MISSING | PLANNED |
 AVAILABLE_NOT_PROVEN | EVIDENCE_COLLECTED_NOT_REVIEWED | PROVEN | REJECTED`。
 `AVAILABLE_NOT_PROVEN` 或 `EVIDENCE_COLLECTED_NOT_REVIEWED` 永远不得算作
-`PROVEN`；PROVEN blocker 必须由其映射的全部 PROVEN 资源和 content-addressed
-evidence 派生。Overlay member A/B 与 independent DERP 必须位于不同 security
-domain；non-disposable tenant/RAG 必须有独立 data-owner authority；Docker、
-WSL、mock、fixture、test double 或 disposable 环境不得冒充 PROVEN production
-resource。11 个 blocker 中 Overlay 的真实双成员、compromise/rejoin、双独立
+`PROVEN`；R1-A v1 不接受任何输入自报的 resource/blocker `PROVEN`，也不接受
+`production_equivalent=true`。这些结论属于后续独立签名 evidence gate，而非
+assignment proposal。Overlay member A/B 与 independent DERP 必须位于不同
+security domain；non-disposable tenant/RAG 必须有独立 data-owner authority；
+Docker、WSL、mock、fixture、test double 或 disposable 环境不得出现在任何已
+填写的目标资源 assignment 中，更不得冒充 production resource。11 个 blocker
+中 Overlay 的真实双成员、compromise/rejoin、双独立
 签名必须保持三项独立事实，即便下游 composition 目前聚合一个 evidence ID。
 
 文件入口只接受仓库内 regular、non-link、non-reparse、canonical UTF-8 JSON
@@ -2779,10 +2784,17 @@ root `.env` locator 都必须拒绝且错误不得泄露值。CLI 不访问网�
 业务存储或目标环境，不启动服务，不执行 key ceremony，不收集 production
 evidence。
 
-R1-A 的最高状态只允许 `r1_assignment/ready_for_independent_design_review`；
-它仍然不是 Trust Policy approval、approved digest installation、P34.7 PASS 或
-Runtime activation。无论是 `valid_incomplete` 还是未来的 design-review-ready，
-报告都必须固定：`trust_policy_approved=false`、
+R1-A 的最高状态只允许 `r1_assignment/complete_not_authenticated`；它只表示
+authority slots、custody choices 和 target inventory 已填写，仍然不是现实身份
+认证、独立 review、Trust Policy approval、approved digest installation、P34.7
+PASS 或 Runtime activation。无论是 `valid_incomplete` 还是
+`complete_not_authenticated`，报告都必须固定：
+`authority_separation_verified=false`、
+`authority_authentication_verified=false`、
+`independent_review_receipts_verified=false`、
+`custody_attestations_verified=false`、
+`environment_evidence_verified=false`、
+`production_blockers_closed=false`、`trust_policy_approved=false`、
 `approved_digest_written=false`、`key_ceremony_authorized=false`、
 `production_evidence_authorized=false`、`activation_allowed=false`、P34.7
 `blocked/not_proven`。`_APPROVED_TRUST_POLICY_SHA256` 保持空集，migration
@@ -2801,6 +2813,8 @@ head 保持 `0012`，`0013` 不存在，三个 Phase 5 Feature Gate 保持 false
 - 把 logical label、placeholder custody、fixture、端口可达或容器存在当作现实
   identity/custody/production proof。
 - 让输入中的 `ready`、`approved`、`passed` 或 activation 布尔值决定派生状态。
+- 仅凭 proposal 自带的 identity/custody/evidence digest 接受 `VERIFIED`、`PROVEN`
+  或 production equivalence。
 - 写入 approved trust-policy digest、生成/显示/提交私钥、创建 migration 0013、
   打开 Feature Gate、启动 Runtime，或访问非 disposable 目标环境/业务数据库。
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -22,14 +23,20 @@ def _payload() -> dict[str, object]:
     return json.loads(EXAMPLE.read_text(encoding="utf-8"))
 
 
-def _verified(identity: str, subject: str, marker: str) -> dict[str, object]:
+def _assigned(identity: str, subject: str | None = None) -> dict[str, object]:
     return {
         "identity_id": identity,
-        "assignment_state": "VERIFIED",
-        "canonical_subject_id": subject,
+        "assignment_state": "ASSIGNED_NOT_VERIFIED",
+        "canonical_subject_id": subject or f"subject-{identity}",
         "authentication_kind": "ED25519_PUBLIC_KEY",
-        "authentication_reference_sha256": marker * 64,
+        "authentication_reference_sha256": hashlib.sha256(identity.encode()).hexdigest(),
     }
+
+
+def _verified(identity: str, subject: str) -> dict[str, object]:
+    item = _assigned(identity, subject)
+    item["assignment_state"] = "VERIFIED"
+    return item
 
 
 def _authorities(payload: dict[str, object]) -> dict[str, object]:
@@ -59,8 +66,14 @@ def test_example_is_valid_but_explicitly_incomplete() -> None:
     assert report.contract_valid is True
     assert report.status == "r1_assignment/valid_incomplete"
     assert report.assignment_complete is False
+    assert report.authority_separation_contract_valid is True
+    assert report.authority_separation_verified is False
+    assert report.authority_authentication_verified is False
+    assert report.independent_review_receipts_verified is False
     assert report.custody_assignment_complete is False
+    assert report.custody_attestations_verified is False
     assert report.environment_inventory_complete is False
+    assert report.environment_evidence_verified is False
     assert report.production_blockers_closed is False
     assert report.trust_policy_approved is False
     assert report.approved_digest_written is False
@@ -156,13 +169,12 @@ def test_unassigned_marker_cannot_claim_identity_or_authentication() -> None:
         _validate(payload)
 
 
-def test_verified_identity_requires_authentication_evidence() -> None:
+def test_verified_identity_cannot_be_self_declared_with_an_arbitrary_digest() -> None:
     payload = _payload()
     author = _authorities(payload)["policy_author"]
     assert isinstance(author, dict)
-    author.update(_verified("author-a", "subject-a", "a"))
-    author["authentication_reference_sha256"] = None
-    with pytest.raises(ConfigurationError, match="VERIFIED requires authentication evidence"):
+    author.update(_verified("author-a", "subject-a"))
+    with pytest.raises(ConfigurationError, match="independently pinned authority registry"):
         _validate(payload)
 
 
@@ -170,16 +182,19 @@ def test_reviewers_cannot_alias_subject_or_authentication_key() -> None:
     payload = _payload()
     reviewers = _authorities(payload)["policy_reviewers"]
     assert isinstance(reviewers, list)
-    reviewers[0] = _verified("reviewer-a", "reviewer-subject", "a")
-    reviewers[1] = _verified("reviewer-b", "reviewer-subject", "b")
+    reviewers[0] = _assigned("reviewer-a", "reviewer-subject")
+    reviewers[1] = _assigned("reviewer-b", "reviewer-subject")
     with pytest.raises(ConfigurationError, match="reviewers must be independent"):
         _validate(payload)
 
     payload = _payload()
     reviewers = _authorities(payload)["policy_reviewers"]
     assert isinstance(reviewers, list)
-    reviewers[0] = _verified("reviewer-a", "reviewer-subject-a", "a")
-    reviewers[1] = _verified("reviewer-b", "reviewer-subject-b", "a")
+    reviewers[0] = _assigned("reviewer-a", "reviewer-subject-a")
+    reviewers[1] = _assigned("reviewer-b", "reviewer-subject-b")
+    reviewers[1]["authentication_reference_sha256"] = reviewers[0][
+        "authentication_reference_sha256"
+    ]
     with pytest.raises(ConfigurationError, match="reviewers must be independent"):
         _validate(payload)
 
@@ -218,7 +233,7 @@ def test_authority_collision_matrix(
         assert isinstance(current, (dict, list))
         current[path[-1]] = value  # type: ignore[index]
 
-    identity = _verified("same-principal", "same-subject", "c")
+    identity = _assigned("same-principal", "same-subject")
     set_path(left_path, copy.deepcopy(identity))
     set_path(right_path, copy.deepcopy(identity))
     with pytest.raises(ConfigurationError, match=message):
@@ -284,7 +299,8 @@ def test_custody_assignments_are_closed_and_cannot_fake_attestation() -> None:
     assert isinstance(custody, list)
     custody[0]["selection_state"] = "VERIFIED"  # type: ignore[index]
     custody[0]["custody_kind"] = "managed_kms_hsm"  # type: ignore[index]
-    with pytest.raises(ConfigurationError, match="requires attestation evidence"):
+    custody[0]["attestation_reference_sha256"] = "a" * 64  # type: ignore[index]
+    with pytest.raises(ConfigurationError, match="independently reviewed attestation"):
         _validate(payload)
 
     payload = _payload()
@@ -319,21 +335,21 @@ def test_not_assessed_resource_cannot_carry_production_facts() -> None:
         _validate(payload)
 
 
-def _make_proven(item: dict[str, object], marker: str) -> None:
+def _make_planned(item: dict[str, object], marker: str) -> None:
     item.update(
         {
-            "assessment_state": "PROVEN",
+            "assessment_state": "PLANNED",
             "resource_id": f"resource-{marker}",
             "owner_identity_id": f"owner-{marker}",
             "access_authority_identity_id": f"access-{marker}",
             "security_domain_id": f"domain-{marker}",
-            "evidence_reference_sha256": marker * 64,
-            "production_equivalent": True,
+            "evidence_reference_sha256": None,
+            "production_equivalent": False,
         }
     )
 
 
-def test_proven_resource_requires_complete_real_production_facts() -> None:
+def test_proven_resource_cannot_be_self_declared_with_an_arbitrary_digest() -> None:
     payload = _payload()
     resource = _inventory(payload)[0]
     resource["assessment_state"] = "PROVEN"
@@ -342,7 +358,34 @@ def test_proven_resource_requires_complete_real_production_facts() -> None:
 
     payload = _payload()
     resource = _inventory(payload)[0]
-    _make_proven(resource, "a")
+    _make_planned(resource, "a")
+    resource["assessment_state"] = "PROVEN"
+    resource["evidence_reference_sha256"] = "a" * 64
+    with pytest.raises(ConfigurationError, match="independently signed evidence gate"):
+        _validate(payload)
+
+
+def test_assignment_cannot_claim_production_equivalence() -> None:
+    payload = _payload()
+    resource = _inventory(payload)[0]
+    _make_planned(resource, "a")
+    resource["production_equivalent"] = True
+    with pytest.raises(ConfigurationError, match="cannot claim production equivalence"):
+        _validate(payload)
+
+
+@pytest.mark.parametrize(
+    "state", ["PLANNED", "AVAILABLE_NOT_PROVEN", "EVIDENCE_COLLECTED_NOT_REVIEWED"]
+)
+def test_engineering_substitute_is_rejected_in_every_assessed_assignment_state(
+    state: str,
+) -> None:
+    payload = _payload()
+    resource = _inventory(payload)[0]
+    _make_planned(resource, "a")
+    resource["assessment_state"] = state
+    if state == "EVIDENCE_COLLECTED_NOT_REVIEWED":
+        resource["evidence_reference_sha256"] = "a" * 64
     resource["resource_id"] = "docker-fixture"
     with pytest.raises(ConfigurationError, match="engineering substitute"):
         _validate(payload)
@@ -353,7 +396,7 @@ def test_non_disposable_tenant_rag_requires_data_owner_authority() -> None:
     resource = next(
         item for item in _inventory(payload) if item["resource_kind"] == "non_disposable_tenant_rag"
     )
-    _make_proven(resource, "d")
+    _make_planned(resource, "d")
     with pytest.raises(ConfigurationError, match="data-owner authority"):
         _validate(payload)
 
@@ -364,7 +407,7 @@ def test_overlay_members_and_derp_require_independent_security_domains() -> None
     for marker, kind in zip(
         "abc", ("overlay_member_a", "overlay_member_b", "independent_derp"), strict=True
     ):
-        _make_proven(inventory[kind], marker)
+        _make_planned(inventory[kind], marker)
     inventory["overlay_member_b"]["security_domain_id"] = inventory["overlay_member_a"][
         "security_domain_id"
     ]
@@ -376,7 +419,7 @@ def test_overlay_members_and_derp_require_independent_security_domains() -> None
     for marker, kind in zip(
         "abc", ("overlay_member_a", "overlay_member_b", "independent_derp"), strict=True
     ):
-        _make_proven(inventory[kind], marker)
+        _make_planned(inventory[kind], marker)
     inventory["independent_derp"]["security_domain_id"] = inventory["overlay_member_a"][
         "security_domain_id"
     ]
@@ -384,7 +427,7 @@ def test_overlay_members_and_derp_require_independent_security_domains() -> None
         _validate(payload)
 
 
-def test_blocker_mapping_is_exact_and_proven_is_derived_from_resources() -> None:
+def test_blocker_mapping_is_exact_and_proven_cannot_be_self_declared() -> None:
     payload = _payload()
     _blockers(payload).pop()
     with pytest.raises(ConfigurationError, match="blockers 1 through 11"):
@@ -399,7 +442,16 @@ def test_blocker_mapping_is_exact_and_proven_is_derived_from_resources() -> None
     blocker = _blockers(payload)[0]
     blocker["assessment_state"] = "PROVEN"
     blocker["evidence_reference_sha256"] = "a" * 64
-    with pytest.raises(ConfigurationError, match="requires every mapped"):
+    with pytest.raises(ConfigurationError, match="independently signed evidence gate"):
+        _validate(payload)
+
+
+def test_blocker_resource_mapping_order_is_frozen() -> None:
+    payload = _payload()
+    resources = _blockers(payload)[0]["environment_resources"]
+    assert isinstance(resources, list)
+    resources.reverse()
+    with pytest.raises(ConfigurationError, match="mapping drifted"):
         _validate(payload)
 
 
@@ -469,3 +521,79 @@ def test_report_never_reinterprets_contract_validation_as_production_pass() -> N
     assert report["production_evidence_authorized"] is False
     assert report["activation_allowed"] is False
     assert report["p34_7_production_total_gate"] == "blocked/not_proven"
+    assert report["authority_separation_contract_valid"] is True
+    assert report["authority_separation_verified"] is False
+    assert report["authority_authentication_verified"] is False
+    assert report["independent_review_receipts_verified"] is False
+    assert report["custody_attestations_verified"] is False
+    assert report["environment_evidence_verified"] is False
+    assert report["production_blockers_closed"] is False
+
+
+def _fill_complete_unauthenticated_proposal(payload: dict[str, object]) -> None:
+    authorities = _authorities(payload)
+    counter = 0
+
+    def next_assignment(label: str) -> dict[str, object]:
+        nonlocal counter
+        counter += 1
+        return _assigned(f"{label}-{counter}")
+
+    authorities["policy_author"] = next_assignment("author")
+    authorities["policy_reviewers"] = [
+        next_assignment("reviewer"),
+        next_assignment("reviewer"),
+    ]
+    for map_name in (
+        "producer_owners",
+        "producer_backup_owners",
+        "custody_attestation_issuers",
+    ):
+        role_map = authorities[map_name]
+        assert isinstance(role_map, dict)
+        for role in role_map:
+            role_map[role] = next_assignment(f"{map_name}-{role}")
+    authorities["ceremony_operator"] = next_assignment("operator")
+    authorities["ceremony_observers"] = [
+        next_assignment("observer"),
+        next_assignment("observer"),
+    ]
+    authorities["digest_change_approver"] = next_assignment("digest-approver")
+    authorities["incident_revocation_authority"] = next_assignment("incident-authority")
+
+    custody = payload["custody_assignments"]
+    assert isinstance(custody, list)
+    for item in custody:
+        assert isinstance(item, dict)
+        item["selection_state"] = "SELECTED_NOT_VERIFIED"
+        item["custody_kind"] = "managed_kms_hsm"
+
+    for index, resource in enumerate(_inventory(payload)):
+        _make_planned(resource, f"slot-{index}")
+        if resource["resource_kind"] == "non_disposable_tenant_rag":
+            resource["data_owner_authority_identity_id"] = "data-owner-authority"
+
+
+def test_complete_proposal_remains_not_authenticated_and_cannot_close_blockers() -> None:
+    payload = _payload()
+    _fill_complete_unauthenticated_proposal(payload)
+    report = _validate(payload)
+    assert report.status == "r1_assignment/complete_not_authenticated"
+    assert report.assignment_complete is True
+    assert report.authority_separation_contract_valid is True
+    assert report.authority_separation_verified is False
+    assert report.authority_authentication_verified is False
+    assert report.independent_review_receipts_verified is False
+    assert report.custody_assignment_complete is True
+    assert report.custody_attestations_verified is False
+    assert report.environment_inventory_complete is True
+    assert report.environment_evidence_verified is False
+    assert report.production_blockers_closed is False
+    assert report.activation_allowed is False
+    assert report.blockers == (
+        "authority_registry_unpinned",
+        "independent_review_receipts_absent",
+        "custody_attestations_not_independently_verified",
+        "environment_evidence_not_independently_verified",
+        "production_blockers_not_closed",
+    )

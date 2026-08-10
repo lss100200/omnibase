@@ -115,6 +115,12 @@ assignments `UNASSIGNED` and all external facts `NOT_ASSESSED`, so the current
 derived status is `r1_assignment/valid_incomplete`, not design acceptance.
 Independent authority-registry and detached review-receipt contracts are still
 required before reviewer labels can become authenticated design acceptance.
+The R1-A validator therefore rejects proposal-declared `VERIFIED`, `PROVEN`
+and `production_equivalent=true` facts. A fully populated proposal can reach
+only `r1_assignment/complete_not_authenticated`; authority authentication,
+review receipts, custody attestations, environment evidence and production
+blocker closure all remain false until separate independently pinned gates
+exist.
 
 ### R1-B — key-ceremony runbook
 

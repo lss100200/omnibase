@@ -182,7 +182,12 @@ runtime evidence; then correct the stale documentation in the same change.
   selection and target resource `NOT_ASSESSED`, and every production blocker
   open. A valid R1-A contract is not an authenticated authority registry, Trust
   Policy approval, key-ceremony authorization, production evidence, P34.7 PASS
-  or Runtime activation. Do not infer real authorities from the user, an AI
+  or Runtime activation. R1-A rejects input-declared authority/custody
+  `VERIFIED`, environment/blocker `PROVEN`, and any `production_equivalent=true`;
+  those facts require separately pinned registry, review-receipt, attestation
+  and signed-evidence validators. A fully populated proposal is at most
+  `complete_not_authenticated`, with every independent-verification field false.
+  Do not infer real authorities from the user, an AI
   session, Docker/WSL, mocks, test doubles or disposable fixtures. Keep
   `_APPROVED_TRUST_POLICY_SHA256` empty, migration head `0012`, migration `0013`
   absent and all Phase 5 Feature Gates false unless a later task explicitly and

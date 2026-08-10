@@ -1730,12 +1730,19 @@ digest。
   security domain 分离，non-disposable tenant/RAG 需要 data-owner authority；
   Docker/WSL/mock/test-double/fixture/disposable 不得冒充 PROVEN production。
 - blocker 恰好 11 项，producer/command/resource mapping 冻结；未独立 review 的
-  evidence 不关闭 blocker，PROVEN blocker 要求全部映射资源已 PROVEN。
+  evidence 不关闭 blocker；resource mapping 的顺序也属于冻结合同。
+- v1 是 proposal-only：authority/custody 自报 `VERIFIED`、resource/blocker 自报
+  `PROVEN`、任何 `production_equivalent=true` 都 fail closed。R1-A 不能验证自己
+  携带的 digest；独立 authority registry、detached review receipt、custody
+  attestation 和 signed evidence gate 必须作为后续独立输入与 trust pin。
 - 文件入口只接受 repo 内 canonical JSON regular file，并复用 R0 secret/path
   规则；example 全部保持 `UNASSIGNED`/`NOT_ASSESSED`，正确状态是
   `r1_assignment/valid_incomplete`。
 - `--validate-only` exit 0 只表示 offline contract valid；`--verify` 在现实赋值
-  未完成时 exit 2。两者都必须报告 Trust Policy 未批准、P34.7
+  未被独立认证时 exit 2。完整填写的 proposal 最高为
+  `r1_assignment/complete_not_authenticated`，并固定报告 authority separation/
+  authentication、review receipts、custody attestations、environment evidence 和
+  production blockers 全部未验证/未关闭。两种模式都必须报告 Trust Policy 未批准、P34.7
   `blocked/not_proven`、activation false。
 
 Focused commands:

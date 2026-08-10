@@ -6,8 +6,8 @@ Exit codes:
 * 0: the assignment document is structurally valid.  The report may still be
   ``r1_assignment/valid_incomplete`` and always remains non-production.
 * 1: contract violation (``invalid/veto``).
-* 2: ``--verify`` was requested and the real assignments, custody facts,
-  environment inventory, or production blockers remain incomplete.
+* 2: ``--verify`` was requested.  R1-A cannot independently authenticate the
+  assignments or review receipts and therefore always remains not proven.
 
 This command never approves a policy, writes a digest, runs a key ceremony,
 collects production evidence, starts a service, reads the root ``.env`` or
@@ -56,7 +56,14 @@ def main() -> int:
         )
         return 1
     print(json.dumps(report.to_dict(), indent=2))
-    if args.verify and report.status != "r1_assignment/ready_for_independent_design_review":
+    independently_verified = (
+        report.authority_authentication_verified
+        and report.independent_review_receipts_verified
+        and report.custody_attestations_verified
+        and report.environment_evidence_verified
+        and report.production_blockers_closed
+    )
+    if args.verify and not independently_verified:
         return 2
     return 0
 

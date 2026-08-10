@@ -4275,3 +4275,53 @@ contract tests; 2448 non-integration tests (20 skipped, 15 deselected); Mypy on
 197 source files; focused Ruff; maintainer map/benchmark; Compose config and CI
 workflow YAML parsing. The verification suite passed, while formal production
 status intentionally remains blocked/not_proven.
+
+#### R1-A Master Security Review — Round 1
+
+Master review identified one overclaim in the first contract: a proposal could
+self-declare authority/custody `VERIFIED` or environment/blocker `PROVEN` by
+supplying a syntactically valid digest, although no independently pinned
+authority registry, detached review receipt, custody attestation verifier or
+signed production-evidence gate existed. `authority_separation_verified` and
+`production_blockers_closed` could consequently overstate proposal data.
+
+The Round 1 forward-fix makes R1-A explicitly proposal-only:
+
+- `VERIFIED` authority and custody inputs fail closed;
+- `PROVEN` resource and blocker inputs fail closed;
+- `production_equivalent=true` always fails closed;
+- Docker/WSL/mock/test-double/fixture/disposable identifiers are rejected in
+  every assessed target assignment state;
+- blocker resource tuples are order-bound, not set-compared;
+- complete authority slots use `ASSIGNED_NOT_VERIFIED`, complete custody uses
+  `SELECTED_NOT_VERIFIED`, and the highest status is
+  `r1_assignment/complete_not_authenticated`;
+- structural separation is reported separately as
+  `authority_separation_contract_valid`; real separation/authentication,
+  review receipts, custody attestations, environment evidence and production
+  blocker closure remain false.
+
+The canonical example remains `valid_incomplete`. No authority registry,
+review receipt, target environment, private key, production evidence, approved
+digest, migration `0013`, Feature Gate or Runtime activation was introduced.
+
+Round 1 pre-commit verification passed:
+
+```text
+focused R1-A = 51 passed
+R1-A + R0 + joint Gate = 307 passed, 1 Windows junction skipped
+P5.1A/P5.2A/P5.3A sealed contracts = 407 passed
+full backend non-integration (full-repository mount) = 2454 passed, 20 skipped, 15 deselected
+Mypy = 197 source files, no issues
+Ruff explicit paths = check/format passed
+maintainer map = valid (44 invariants, 38 modules)
+maintainer benchmark = valid
+Compose config = valid
+canonical R1-A validate-only = exit 0, valid_incomplete
+```
+
+The first bare backend-image full-suite attempt stopped during collection
+because the image does not contain three repository-root P34.7 scripts. The
+maintainer-map full-repository mount supplied those scripts and the complete
+suite passed; no test assertion failed in the initial attempt. Clean-HEAD
+formal verifier results are recorded after the ordinary forward-fix commit.

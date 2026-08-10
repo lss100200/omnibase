@@ -33,7 +33,9 @@ the contract shape is valid, but the real-world facts have not been supplied.
 R0 candidate bytes structurally valid
   != R1-A authority/environment assignment complete
 
-R1-A assignment ready for independent design review
+R1-A assignment complete but not authenticated
+  != authority identities verified
+  != independent design review accepted
   != trust policy approved
   != key ceremony authorized
 
@@ -70,15 +72,20 @@ The authority closed set contains:
 
 Each assignment has a state from `UNASSIGNED`, `ASSIGNED_NOT_VERIFIED`,
 `VERIFIED`, or `REJECTED`. `UNASSIGNED` must use the literal identity marker
-and cannot carry a subject or authentication evidence. `VERIFIED` requires a
-format-restricted logical identity, canonical subject, assessed authentication
-kind and content-addressed authentication reference.
+and cannot carry a subject or authentication evidence. In R1-A v1,
+`ASSIGNED_NOT_VERIFIED` is the highest accepted proposal state. Input-declared
+`VERIFIED` is rejected even when it carries a well-formed digest: the proposal
+does not contain an independently pinned authority registry or detached review
+receipt verifier, so it cannot authenticate its own identity claims.
 
-Separation compares canonical subjects and authentication-reference digests,
-not only display labels. The validator rejects author self-review, reviewer and
+Separation-contract checks compare canonical subjects and claimed
+authentication-reference digests, not only display labels. The validator rejects author self-review, reviewer and
 producer/backup overlap, primary/backup overlap, operator/observer overlap,
 digest approver concentration, incident authority holding producer ownership,
-and custody self-attestation for the same role.
+and custody self-attestation for the same role. Passing those structural checks
+sets `authority_separation_contract_valid=true`, while
+`authority_separation_verified`, `authority_authentication_verified` and
+`independent_review_receipts_verified` remain false.
 
 This contract still does not provide an independent identity root. A future
 R1 review package must add a separately pinned authority registry and detached,
@@ -107,10 +114,11 @@ runner_local_protected
 external_signing_service
 ```
 
-Selection is not proof. `VERIFIED` additionally requires a content-addressed
-attestation reference and an independently separated issuer assignment. The
-example does not select or attest any custody mode and therefore cannot reach
-the design-review-ready posture.
+Selection is not proof. `SELECTED_NOT_VERIFIED` records only the proposed mode
+and cannot carry an attestation reference. Input-declared `VERIFIED` is rejected
+until a separate independently reviewed attestation contract exists. The
+example does not select any custody mode; even a complete selection keeps
+`custody_attestations_verified=false`.
 
 ## Target-environment inventory
 
@@ -134,14 +142,15 @@ The inventory is an exact fifteen-slot closed set:
 
 Resource identifiers are logical and format restricted. Physical IPs, ports,
 database locators, object keys, credentials and `.env` paths are not accepted
-public inventory facts. A PROVEN resource requires owner, access authority,
-security domain, content-addressed evidence and explicit production
-equivalence. Non-disposable tenant/RAG additionally requires a data-owner
-authority. Overlay members A/B and DERP cannot share a security domain.
+public inventory facts. R1-A may record a plan, an available-but-unproven
+resource or evidence collected but not reviewed. It rejects input-declared
+`PROVEN` and every `production_equivalent=true`; only a later independently
+signed evidence gate can establish those facts. Non-disposable tenant/RAG
+additionally requires a data-owner authority. Overlay members A/B and DERP
+cannot share a security domain.
 
 Docker Desktop, WSL, mocks, test doubles, fixtures and disposable resources
-cannot be promoted to PROVEN production infrastructure by naming them in the
-contract.
+cannot be assigned as target production infrastructure at any assessed state.
 
 ## Eleven blocker mapping
 
@@ -159,11 +168,12 @@ The assignment contains exactly eleven independent blocker records:
 10. dual independent member signatures;
 11. production capacity/fault/SLA.
 
-Every blocker has a frozen producer role, command and resource mapping.
-`EVIDENCE_COLLECTED_NOT_REVIEWED` is not closed. A blocker can be PROVEN only
-when every mapped resource is independently PROVEN and a content-addressed
-evidence reference exists. Items 8, 9 and 10 remain three separate facts even
-though the downstream composition currently aggregates their evidence.
+Every blocker has a frozen producer role, command and ordered resource mapping.
+`EVIDENCE_COLLECTED_NOT_REVIEWED` is not closed, and R1-A rejects an
+input-declared `PROVEN` blocker even if the input supplies arbitrary evidence
+digests. `production_blockers_closed` is therefore always false in this module.
+Items 8, 9 and 10 remain three separate facts even though the downstream
+composition currently aggregates their evidence.
 
 ## File and secret boundary
 
@@ -182,9 +192,10 @@ python scripts/production/validate_p34_7_trust_policy_r1_assignment.py `
 ```
 
 `--validate-only` exits 0 when the offline contract is structurally valid,
-including the expected `valid_incomplete` state. This is not a production
-PASS. `--verify` exits 2 until the independently authenticated real assignment
-facts are complete. Invalid structure exits 1.
+including `valid_incomplete` or `complete_not_authenticated`. This is not a
+production PASS. `--verify` exits 2 because this proposal-only validator cannot
+authenticate the registry, review receipts, custody attestations or production
+evidence. Invalid structure exits 1.
 
 ## Next authorized boundary
 

@@ -2738,8 +2738,9 @@
       ],
       "public_interfaces": [
         "Canonical R1-A assignment proposal with exact authority, seven-role custody, fifteen-resource inventory and eleven-blocker closed sets",
-        "Derived r1_assignment/valid_incomplete or ready_for_independent_design_review posture; neither status approves a trust policy, authorizes a ceremony, closes P34.7 or permits activation",
-        "Offline CLI: --validate-only exit 0 means only contract-valid; --verify exits 2 while real authority/custody/environment assignments remain incomplete"
+        "Derived r1_assignment/valid_incomplete or complete_not_authenticated posture; neither status authenticates an authority, verifies separation, approves a trust policy, authorizes a ceremony, closes P34.7 or permits activation",
+        "R1-A rejects self-declared VERIFIED/PROVEN facts and production equivalence; authority registry, review receipts, custody attestations and environment evidence remain separate independently pinned validators",
+        "Offline CLI: --validate-only exit 0 means only contract-valid; --verify exits 2 because R1-A cannot independently authenticate or prove its proposal facts"
       ],
       "depends_on": [
         "trust-policy-r0",
