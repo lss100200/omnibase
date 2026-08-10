@@ -158,8 +158,9 @@ jobs:
       - name: P34.7 Trust Policy Candidate R0 contract (validate-only)
         run: |
           uv run python ../scripts/production/validate_p34_7_trust_policy_candidate.py \
-            --candidate ../deployment/production/p34-7-trust-policy-candidate.example.json \
-            --approval-packet ../deployment/production/p34-7-trust-policy-approval-packet.example.json \
+            --candidate "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-candidate.example.json" \
+            --approval-packet "$GITHUB_WORKSPACE/deployment/production/p34-7-trust-policy-approval-packet.example.json" \
+            --repo-root "$GITHUB_WORKSPACE" \
             --validate-only
       - name: P34.7 Trust Policy R1-A assignment contract (validate-only)
         run: |
