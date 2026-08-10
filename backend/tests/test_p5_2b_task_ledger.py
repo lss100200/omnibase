@@ -169,3 +169,26 @@ def test_migration_declares_unique_head_and_populated_downgrade_guard() -> None:
     assert "P5.2B populated downgrade is forbidden" in source
     assert "ERRCODE = '55000'" in source
     assert "migration_schema_scope" in source
+
+
+def test_task_lease_heartbeat_window_and_terminal_convergence_contract() -> None:
+    """The lease heartbeat must stay inside [created_at, expires_at].
+
+    ``TaskLedgerPersistenceService.finish_attempt`` clamps a late
+    terminalization heartbeat to ``expires_at``; if the window constraint
+    were ever relaxed or the clamp removed, a disconnected stream that
+    finalizes after its lease lapsed would roll back the terminal
+    transition and leave the task/run stuck in "running" forever
+    (P5.4D acceptance finding F-3b).
+    """
+    checks = " ".join(
+        str(item.sqltext)
+        for item in models.AgentTaskLeaseModel.__table__.constraints
+        if isinstance(item, CheckConstraint)
+    )
+    assert "heartbeat_at >= created_at" in checks
+    assert "heartbeat_at <= expires_at" in checks
+    assert "expires_at > created_at" in checks
+    source = inspect.getsource(TaskLedgerPersistenceService.finish_attempt)
+    assert "min(now, lease.expires_at)" in source
+    assert "lease.heartbeat_at" in source

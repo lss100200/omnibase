@@ -773,7 +773,15 @@ class TaskLedgerPersistenceService:
         if not isinstance(now, datetime):
             raise TaskLedgerStateError("task_database_clock_unavailable")
         lease.state = "completed" if outcome == "committed" else "revoked"
-        lease.heartbeat_at = now
+        # The heartbeat must stay inside the lease window
+        # (agent_task_leases_heartbeat_window_check).  A late terminalization
+        # after the window lapsed (client-disconnected stream that only
+        # finishes at the provider tail, or a long stream whose lease TTL is
+        # deliberately shorter than the invocation deadline) must still
+        # converge: clamp the heartbeat to the window boundary instead of
+        # violating the constraint, which would roll back the terminal
+        # transition and leave the task/run stuck in "running" forever.
+        lease.heartbeat_at = min(now, lease.expires_at)
         # Terminalize the lease row before clearing the attempt: the
         # agent_attempt_lease_consistency_guard trigger requires that a
         # cleared attempt has no active lease, and the two UPDATEs are emitted
