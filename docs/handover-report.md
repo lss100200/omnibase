@@ -3495,6 +3495,59 @@ false，migration head `0012`，migration `0013` absent，root `.env` 未读取�
 
 ---
 
+### P5.4D Product Acceptance R1（2026-08-10）
+
+从普通用户视角对 P5.4C Lite Agent 产品循环做真实、可复现、fail-closed 的产品
+验收（isolated Compose 栈 `omnibase-p54d-acceptance`、`POSTGRES_PORT=5433`、
+loopback fake OpenAI-compatible provider）。基线矩阵全绿后执行 28 步 API
+journey（`26 PASS / 0 FAIL / 2 NOT_PROVEN`）与浏览器 UI journey（12 项
+PASS），验收发现 4 项问题并全部处理：
+
+- **F-1（严重 UX）**：Next.js `rewrites` 在 dev 与 production standalone 中
+  都缓冲上游响应体，SSE 只能在流结束后一次性到达（proxy 实测 4.78s 全量 vs
+  直连 0.18/1.68/3.18s 逐块），工作台从不渲染实时 chunk，meta 事件延迟到达。
+  修复：以流式 Route Handler `frontend/app/api/v1/[...path]/route.ts` 替换
+  `/api/v1` rewrite（web stream 透传，`/health` 探针仍走 rewrites）。修复后
+  dev 与 production standalone 均逐块到达（0.36/1.86/3.36s）。
+- **F-2（UX）**：Stop 渲染原始 abort 错误文本。修复：AbortError 与后端
+  `cancelled` 事件统一显示 "Invocation cancelled."。
+- **F-3（严重）**：cancel/断开后 task/run 卡 `running`（`finish_attempt`
+  在 lease 窗口过期后写 `heartbeat_at=now` 违反
+  `agent_task_leases_heartbeat_window_check`；IntegrityError 回滚终态转换并
+  被生成器 GC 路径吞掉），且后续 invoke 全部 500 `WorkspaceConflict`
+  （interactive run 槽位被占）。修复：`finish_attempt` 将 heartbeat 收敛到
+  `min(now, lease.expires_at)`；断开场景现在收敛为 run
+  `stopped/failed + agent_alpha_sse_disconnected`、task `blocked_unknown`
+  + open reconciliation（INV-046 语义），workspace 恢复可用。
+- **F-3a（F-3 的一部分）**：`invocationId` 在 invoke 开始不重置，Stop 会用
+  过期 id 调 cancel。修复：invoke 开始时置空。
+- **F-4（接受为未实现项）**：刷新后工作台会话上下文丢失（ledger 仍保留
+  task/run；"Run / Session" tab 可见）。
+
+验收后全量验证：backend `2402 passed / 20 skipped / 15 deselected`；
+focused `253 passed`；`mypy src` 196 files 0 issues；Ruff/Prettier 干净；
+frontend typecheck/lint/test(51)/production build 干净；maintainer map +
+benchmark validators 通过；P5.2A/P5.2C/P5.4A/P5.4C verifiers 静态契约有效；
+P34.7 保持 `candidate/valid_not_approved`（未批准）。两个 forward-fix commit：
+`583f7df`（task-ledger 收敛）与 `e7e911f`（SSE 流式代理 + cancel 清理）。
+evidence：`docs/evidence/p5-4d/product-acceptance-r1-decision.md`。
+
+正式状态：
+
+```text
+P5_4D_ENGINEERING_PRODUCT_ACCEPTANCE_PASSED_PENDING_MASTER_REVIEW
+PRODUCTION_RUNTIME_NOT_ACTIVATED
+P34_7_BLOCKED_NOT_PROVEN
+AGENT_LITE_ENGINEERING_ENABLED=true (controlled dev only)
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+migration head=0012
+migration 0013=absent
+```
+
+---
+
 ### P5.6A first-party native Skill contract admission（2026-08-05）
 
 用户批准开始产品 Skill 与下一步路线规划。本轮建立了 compile-only、
