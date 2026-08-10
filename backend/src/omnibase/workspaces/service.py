@@ -1615,6 +1615,39 @@ def submit_run_state(
     return run
 
 
+def _require_historical_holder_eligibility(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    node_id: str,
+    node_fencing_token: int,
+    lease: RunLease,
+) -> None:
+    try:
+        node = get_active_attested_node(
+            session,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            node_id=node_id,
+            lock=True,
+        )
+    except WorkspaceNotFound as exc:
+        raise LeaseRejected("run lease holder is unavailable") from exc
+    if node.fencing_token != node_fencing_token:
+        raise LeaseRejected("run lease is expired, stale, revoked, or incorrectly fenced")
+    now = session.scalar(select(func.clock_timestamp()))
+    if not isinstance(now, datetime):
+        raise LeaseRejected("run lease database clock is unavailable")
+    if lease.state == "active":
+        if lease.expires_at > now:
+            raise LeaseRejected("run lease is still active")
+        lease.state = "revoked"
+        lease.revoked_at = now
+    elif lease.state not in {"expired", "revoked"}:
+        raise LeaseRejected("run lease is not eligible for historical close")
+
+
 def close_historical_run_holder(
     session: Session,
     *,
@@ -1708,19 +1741,18 @@ def close_historical_run_holder(
         or run.next_fencing_token - 1 != run_fencing_token
     ):
         raise LeaseRejected("run lease is expired, stale, revoked, or incorrectly fenced")
-    node = session.execute(
-        select(WorkspaceNode).where(
-            WorkspaceNode.id == node_id,
-            WorkspaceNode.tenant_id == tenant_id,
-            WorkspaceNode.workspace_id == workspace_id,
-        )
-    ).scalar_one_or_none()
-    if node is None:
-        raise LeaseRejected("run lease holder is unavailable")
-    # The lease is closed, never renewed or revived: an active-but-lapsed
-    # lease is revoked; an already-terminal lease is left untouched.
-    if lease.state == "active":
-        lease.state = "revoked"
+    # Historical recovery is not a generic LeaseRejected fallback.  It may
+    # close an already revoked/expired exact holder, or an active holder only
+    # after its server-owned expiry.  A live active lease remains exclusively
+    # governed by submit_run_state and can never be terminalized here.
+    _require_historical_holder_eligibility(
+        session,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        node_id=node_id,
+        node_fencing_token=node_fencing_token,
+        lease=lease,
+    )
     run.observed_state = observed_state
     run.desired_state = "cancelled" if observed_state == "cancelled" else "stopped"
     run.runtime_instance_id = None

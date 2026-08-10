@@ -20,6 +20,9 @@ Covered scenarios:
 * G — a follow-on write failure rolls the whole terminal transition back.
 * H — immediately after a successful close, the next invocation succeeds
   (no active interactive run occupies the slot).
+* I — an active, unexpired Run Lease is never eligible for the historical
+  close, even when every holder identifier is exact.
+* J — a revoked or unattested current Node cannot authorize historical close.
 
 The assertions in each test read the FULL persisted row matrix: TaskLease,
 Attempt, Effect, Task, AgentRun, WorkspaceRun, RunLease, Reconciliation
@@ -308,6 +311,45 @@ def _revoke_run_lease(db_engine, identity) -> None:  # type: ignore[no-untyped-d
         )
 
 
+def _advance_node_fencing(db_engine, identity) -> None:  # type: ignore[no-untyped-def]
+    run_lease = _run_lease_row(db_engine, identity)
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.workspace_nodes "
+                "SET fencing_token = fencing_token + 1, version = version + 1 "
+                "WHERE id = :node"
+            ),
+            {"node": str(run_lease["node_id"])},
+        )
+
+
+def _advance_workspace_generation(db_engine, workspace_id: str) -> None:  # type: ignore[no-untyped-def]
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.workspaces "
+                "SET generation = generation + 1, version = version + 1 "
+                "WHERE id = :workspace"
+            ),
+            {"workspace": workspace_id},
+        )
+
+
+def _revoke_current_node(db_engine, identity) -> None:  # type: ignore[no-untyped-def]
+    run_lease = _run_lease_row(db_engine, identity)
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE omnibase_meta.workspace_nodes "
+                "SET state = 'revoked', attestation_state = 'rejected', "
+                "revoked_at = clock_timestamp(), fencing_token = fencing_token + 1, "
+                "version = version + 1 WHERE id = :node"
+            ),
+            {"node": str(run_lease["node_id"])},
+        )
+
+
 def _usage():  # type: ignore[no-untyped-def]
     from omnibase.model_gateway import ModelUsage
 
@@ -473,7 +515,7 @@ def test_c_run_lease_revoked_is_not_revived_and_holder_closes_failed(
 
 
 def test_d_advanced_node_fencing_stale_holder_fails_closed(db_engine, run_owned_resources) -> None:  # type: ignore[no-untyped-def]
-    from omnibase.workspaces.service import LeaseRejected, close_historical_run_holder
+    from omnibase.workspaces.service import LeaseRejected
 
     tenant_id, workspace_id, version, binding = _setup(
         db_engine, run_owned_resources, "d-node-fencing"
@@ -481,25 +523,13 @@ def test_d_advanced_node_fencing_stale_holder_fails_closed(db_engine, run_owned_
     adapter, identity = _begin_invocation(
         db_engine, tenant_id, workspace_id, version, binding, "d-node-fencing"
     )
-    del adapter
-    agent_run = _agent_run_row(db_engine, identity)
-    run_lease = _run_lease_row(db_engine, identity)
-    with _session(db_engine, tenant_id) as session:
-        with pytest.raises(LeaseRejected):
-            close_historical_run_holder(
-                session,
-                tenant_id=tenant_id,
-                workspace_id=workspace_id,
-                workspace_run_id=str(agent_run["workspace_run_id"]),
-                run_lease_id=str(run_lease["id"]),
-                node_id=str(run_lease["node_id"]),
-                generation=int(run_lease["generation"]),
-                run_fencing_token=int(run_lease["fencing_token"]),
-                node_fencing_token=int(run_lease["node_fencing_token"]) + 1,  # advanced
-                observed_state="failed",
-                error_code="agent_alpha_task_lease_expired",
-            )
-        session.rollback()
+    _advance_node_fencing(db_engine, identity)
+    with pytest.raises(LeaseRejected):
+        adapter.fail(
+            identity=identity,
+            outcome="unknown",
+            error_code="agent_alpha_sse_disconnected",
+        )
     # Nothing was modified: run/lease untouched, slot still occupied.
     assert _workspace_run_row(db_engine, identity)["observed_state"] == "running"
     assert _run_lease_row(db_engine, identity)["state"] == "active"
@@ -524,6 +554,7 @@ def test_e_workspace_generation_drift_stale_invocation_fails_closed(
     del adapter
     agent_run = _agent_run_row(db_engine, identity)
     run_lease = _run_lease_row(db_engine, identity)
+    _advance_workspace_generation(db_engine, workspace_id)
     with _session(db_engine, tenant_id) as session:
         with pytest.raises(LeaseRejected):
             close_historical_run_holder(
@@ -533,7 +564,7 @@ def test_e_workspace_generation_drift_stale_invocation_fails_closed(
                 workspace_run_id=str(agent_run["workspace_run_id"]),
                 run_lease_id=str(run_lease["id"]),
                 node_id=str(run_lease["node_id"]),
-                generation=int(run_lease["generation"]) + 1,  # drift
+                generation=int(run_lease["generation"]),
                 run_fencing_token=int(run_lease["fencing_token"]),
                 node_fencing_token=int(run_lease["node_fencing_token"]),
                 observed_state="failed",
@@ -733,3 +764,72 @@ def test_h_slot_released_next_invocation_starts_immediately(db_engine, run_owned
         usage=_usage(),
     )
     assert _task_row(db_engine, identity2)["state"] == "succeeded"
+
+
+# ---------------------------------------------------------------------------
+# Scenario I — a live active lease is not a historical holder.
+# ---------------------------------------------------------------------------
+
+
+def test_i_active_unexpired_run_lease_cannot_use_historical_close(
+    db_engine, run_owned_resources
+) -> None:  # type: ignore[no-untyped-def]
+    from omnibase.workspaces.service import LeaseRejected, close_historical_run_holder
+
+    tenant_id, workspace_id, version, binding = _setup(
+        db_engine, run_owned_resources, "i-live-holder"
+    )
+    adapter, identity = _begin_invocation(
+        db_engine, tenant_id, workspace_id, version, binding, "i-live-holder"
+    )
+    del adapter
+    agent_run = _agent_run_row(db_engine, identity)
+    run_lease = _run_lease_row(db_engine, identity)
+    with _session(db_engine, tenant_id) as session:
+        with pytest.raises(LeaseRejected, match="still active"):
+            close_historical_run_holder(
+                session,
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                workspace_run_id=str(agent_run["workspace_run_id"]),
+                run_lease_id=str(run_lease["id"]),
+                node_id=str(run_lease["node_id"]),
+                generation=int(run_lease["generation"]),
+                run_fencing_token=int(run_lease["fencing_token"]),
+                node_fencing_token=int(run_lease["node_fencing_token"]),
+                observed_state="failed",
+                error_code="agent_alpha_sse_disconnected",
+            )
+        session.rollback()
+    assert _workspace_run_row(db_engine, identity)["observed_state"] == "running"
+    assert _run_lease_row(db_engine, identity)["state"] == "active"
+    assert _task_row(db_engine, identity)["state"] == "running"
+
+
+# ---------------------------------------------------------------------------
+# Scenario J — a revoked current Node cannot authorize historical close.
+# ---------------------------------------------------------------------------
+
+
+def test_j_revoked_current_node_rejects_historical_close(db_engine, run_owned_resources) -> None:  # type: ignore[no-untyped-def]
+    from omnibase.workspaces.service import LeaseRejected
+
+    tenant_id, workspace_id, version, binding = _setup(
+        db_engine, run_owned_resources, "j-revoked-node"
+    )
+    adapter, identity = _begin_invocation(
+        db_engine, tenant_id, workspace_id, version, binding, "j-revoked-node"
+    )
+    _expire_task_lease(db_engine, identity)
+    _expire_run_lease(db_engine, identity)
+    _revoke_current_node(db_engine, identity)
+    with pytest.raises(LeaseRejected, match="holder is unavailable"):
+        adapter.fail(
+            identity=identity,
+            outcome="unknown",
+            error_code="agent_alpha_sse_disconnected",
+        )
+    assert _workspace_run_row(db_engine, identity)["observed_state"] == "running"
+    assert _run_lease_row(db_engine, identity)["state"] == "active"
+    assert _task_lease_row(db_engine, identity)["state"] == "active"
+    assert _task_row(db_engine, identity)["state"] == "running"
