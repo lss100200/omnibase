@@ -362,3 +362,11 @@ R1 (trust-policy approval design) requires, as a minimum:
    `_APPROVED_TRUST_POLICY_SHA256`, as an audited code change.
 5. All P34.7 production blockers still explicitly not_proven until real
    production evidence exists.
+
+The approved preparation path is documented in
+[`docs/p34-7-trust-policy-r1-preparation-plan.md`](../p34-7-trust-policy-r1-preparation-plan.md).
+The target-environment and eleven-blocker evidence inventory is documented in
+[`docs/p34-7-target-environment-evidence-plan.md`](../p34-7-target-environment-evidence-plan.md).
+Both documents are planning-only: they do not authorize a key ceremony, approve
+a digest, collect production evidence, activate Runtime, or create migration
+`0013`.

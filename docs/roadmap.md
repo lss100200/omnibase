@@ -1,7 +1,7 @@
 # OmniBase 分阶段路线图
 
-> **日期**：2026-07-31
-> **基于**：Phase 1.6 工程与 CPU benchmark 完成后的代码状态（`4a3655c`）
+> **状态同步日期**：2026-08-09
+> **基于**：`main` `6a869bc`（PR #18 P5 Consolidation、PR #19 P34.7 joint Gate、PR #20 Trust Policy Candidate R0、PR #21 repository introduction 均已合并）
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
 本文档覆盖从当前状态到产品远景规划的完整路径。每个阶段都列出了前置条件、关键任务和预估复杂度。
@@ -18,9 +18,9 @@
 | P0 安全加固 | ✅ 100% | 端口 loopback, 原始 SQL 移除, 破坏性测试隔离 |
 | 前端性能 + 认证 | ✅ 100% | Bootstrap singleton, 节流, 分页, 生产镜像 |
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
-| API 基础设施 | ✅ 100%（待提交） | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC、离线模型边界；工程验收已通过，尚待原子提交 |
-| Phase 3-4 安全 AI 工作空间与能力平台 | 🚧 P34.6 工程封板 | P34.1–P34.4 已封板；P34.5A0-A4/B/C/D 已通过独立 Runner、Network Broker、Headscale control-plane 与 split-process mTLS disposable Gates；P34.6 Workspace-private/derived data、controlled write seam、promotion、lineage、snapshot inventory 与 restore-new-identity metadata foundation 已通过工程 Gate。Production 联合装配、真实 provider/object transfer、non-disposable tenant/RAG、成员数据面/DERP/节点失陷、容量/SLA 和 Agent Runtime 仍冻结 |
-| Agent 编排 | 🟡 Fast Track engineering | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、用户 Agent Builder 已实现；P5.3A 待合入，P5.4 Executor 与 production activation 未完成 |
+| API 基础设施 | ✅ 已进入 `main` | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC 与离线模型边界持续由 CI 验证 |
+| Phase 3-4 安全 AI 工作空间与能力平台 | 🟡 P34.7 工程 Gate 已集成，生产总 Gate 未通过 | P34.1–P34.6 工程边界已建立；P34.7 hardened joint Gate 与 Trust Policy Candidate R0 已进入 `main`。approved policy digest 仍为空，真实 provider/non-disposable tenant/RAG、current-source Runner 12/12、四组件 roundtrip、双成员 Overlay/DERP/node-compromise、双签名和容量/SLA 证据仍缺失，production total Gate=`blocked/not_proven` |
+| Agent 编排 | 🟡 P5.4C engineering on `main` | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、Agent Builder、P5.3A Planner Proposal、P5.4 typed Executor/Formal Builder/Lite product loop 已通过统一工程验收；production Runtime/Planner/Multi-Agent 仍关闭 |
 | Skill/MCP 扩展 | 🟡 合同起步 | P5.6A 第一方原生 Skill compile-only 合同已建立；无 persistence/API/install/runtime，第三方 Marketplace 与 MCP 仍关闭 |
 
 ---
@@ -103,8 +103,8 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.4 Workspace 控制面** | HIGH | ✅ 工程 Gate：17 张 global metadata 表；Workspace aggregate 串行化 membership/last-owner；模板事务内实时 admin 重验与 PostgreSQL 自然幂等；Run Lease 绑定 Node fencing 和实时 attestation；终态 Run 不可复活；Network Lease 仅签逻辑授权且不调用 provider；Node/Peer/Service/Authority 统一锁序与撤销；不执行代码、不接真实网络或数据 |
 | **P34.5 沙箱隔离后接只读网关** | HIGH | ✅ A0-A3/B/C/D 工程 Gate；A4 current-source target-host 12/12 `pending/not_proven`：Network Broker 两轮 26/26、真实 Headscale control-plane + mTLS Node-Daemon test-double、split-process mTLS Gateway disposable Gate 已通过；旧 11/11 不适用于 UID/GID-hardened launcher。production Core↔Runner/Broker/Gateway 联合装配、真实成员数据面、DERP、节点失陷、容量和 SLA 留给 P34.7 |
 | **P34.6 私有写入、promotion 与 snapshot 基础** | HIGH | ✅ Foundation / Contracts / Fail-closed primitives：final `cc48baa` ordinary clone 的 Overlay/Gateway source-built Gates、164 related tests、Mypy、OpenAPI 与 Ruff clean-checkout Gate 通过；Workspace-private/derived 逻辑写入、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Approval/Publication metadata 与 server-generated snapshot inventory 已通过隔离 Gate。Promotion/Restore `COMMITTED`、`controlled_shared` 成功可见性、真实 provider copy/restore 和 production snapshot barrier 继续拒绝，禁止原地修改 source 或创建/改写 `canonical_readonly` |
-| **P34.7 生产总验收** | HIGH | 🟡 A–G 工程实现/本地 Gate 已落地，production total Gate=`BLOCKED / NOT_PROVEN`：clean-checkout/composition、provider committed visibility、Workspace UI、Python/TS SDK、真实成员 Overlay/DERP/node-compromise/SLA 验证器已完成；真实 provider、non-disposable tenant/RAG、current-source Runner 12/12、四组件 production roundtrip、双真实成员/独立 DERP/双签名与 SLA 样本仍待目标环境直接证据。任何 canonical cutover 需独立审批；P34.7 PASS 前不得启动 Agent |
-| **P5 Fast Track engineering slice** | MEDIUM | 🟢 用户已批准 engineering-only Fast Track：P5.2B durable ledger + migration 0011、内部 Model Gateway 与无工具单 Agent Alpha/API/Workbench 已实现；P5.2C engineering Agent Alpha runtime（严格 seam + DB-backed adapters + exact replay + 进程内取消 signal）已通过 `omnibase-p52c-*` disposable Gate 封存（evidence 见 `docs/evidence/p5-2/`）。生产依赖仍默认 503，三 gate 保持 false；Planner/Executor/scheduler/worker、真实工具/MCP/Skill、多 Agent、migration 0012 与生产 Runtime 激活未授权 |
+| **P34.7 生产总验收** | HIGH | 🟡 PR #19 已将 hardened joint Gate 合入 `main`，PR #20 已将 Trust Policy Candidate R0 合入 `main`；production total Gate 仍为 `BLOCKED / NOT_PROVEN`。R0 最高状态仅 `candidate/valid_not_approved`，`_APPROVED_TRUST_POLICY_SHA256` 为空。下一阶段是独立 Trust Policy R1 设计/审批、真实 key ceremony/custody attestation 和目标环境 11 类生产证据；任何 canonical cutover 与 Runtime activation 都需独立批准 |
+| **P5 Fast Track engineering slice** | MEDIUM | 🟢 PR #18 已统一 P5.3A–P5.4C：durable ledger、Model Gateway、tool-free Alpha、compile-only Planner Proposal、typed single-Agent Executor、Formal Engineering Composition 与 Lite product loop 均在 `main`；P5.6A first-party Skill 仍为 compile-only。migration head 为 `0012`、`0013` absent，三项 production Feature Gate 保持 false；生产 Runtime、Planner、Multi-Agent、真实 Skill/MCP 与高风险工具未授权 |
 
 **不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。真实 provider/object transfer、non-disposable tenant/RAG、成员 Overlay/DERP、生产恢复、容量/SLA 与 Phase 5 Agent 编排继续冻结；P34.7 未通过前，不得启动 Agent 编排。
 
@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C 与 P5.2A 已建立 fail-closed 合同链。用户已批准 engineering-only Fast Track，P5.2B migration 0011/持久化地基、内部 Model Gateway、无工具单 Agent Alpha 与 P5.2C engineering Agent Alpha runtime（DB-backed adapters、严格 seam、exact replay、disposable Gate）已实现；生产 Runtime 仍默认 unavailable，三个 Feature Gate 保持 `false`，Planner/Executor/scheduler/worker、真实工具/MCP/Skill、多 Agent 与生产激活仍冻结。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.5 Memory、P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成或未授权。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -141,8 +141,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > rollback Gate、示例 `Workspace Librarian` 与离线 validator。正式状态保持
 > `blocked/not_proven`；最多接受 `tested` manifest，不接受无真实 sealed
 > evidence 的 `approved/published`，不创建 migration `0013`，不暴露
-> `/api/v1/skills`，不安装或执行 Skill。下一条产品主链是 P5.3A 合入 →
-> P5.4 typed single-Agent Executor → 经单独授权的 P5.6B persistence。
+> `/api/v1/skills`，不安装或执行 Skill。P5.3A–P5.4C 工程链已经合入；下一条正式主链是 Trust Policy R1 与 P34.7 真实证据 → P34.7 total Gate → 单独批准的 P5 production admission。P5.6B persistence 与 migration `0013` 仍需另行明确授权。
 
 ---
 
