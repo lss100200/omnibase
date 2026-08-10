@@ -29,7 +29,11 @@ TEMP_ROOT = (REPO_ROOT / ".tmp" / "p5-2b-task-ledger-gate").resolve()
 EVIDENCE_JSON = REPO_ROOT / "docs/evidence/p5-2/phase5-task-ledger-disposable-gate.json"
 EVIDENCE_MD = REPO_ROOT / "docs/evidence/p5-2/phase5-task-ledger-disposable-gate.md"
 GATE_NAME = "P5.2B Task ledger persistence disposable Gate"
-INTEGRATION_TEST = "tests/integration/test_p5_2b_task_ledger_foundation.py"
+INTEGRATION_TESTS = (
+    "tests/integration/test_p5_2b_task_ledger_foundation.py",
+    "tests/integration/test_p5_2b_task_ledger_lease_gate.py",
+)
+INTEGRATION_TEST = INTEGRATION_TESTS[0]  # canonical foundation suite name
 _SOURCE_PATHS = (
     "AGENTS.md",
     "backend/alembic.ini",
@@ -42,8 +46,11 @@ _SOURCE_PATHS = (
     "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py",
     "backend/tests/destructive_preflight.py",
     "backend/tests/integration/conftest.py",
+    "backend/src/omnibase/agent_alpha/adapters.py",
+    "backend/src/omnibase/workspaces/service.py",
     "backend/tests/integration/test_p5_1b_agent_registry_foundation.py",
     "backend/tests/integration/test_p5_2b_task_ledger_foundation.py",
+    "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py",
     "backend/tests/test_p5_2b_task_ledger.py",
     "docker-compose.destructive-tests.yml",
     "scripts/production/run_p5_2b_task_ledger_disposable_gate.py",
@@ -221,7 +228,15 @@ def _run_gate_steps(project: str, database_url: str) -> None:
         ("alembic upgrade", ("python", "-m", "alembic", "upgrade", "head")),
         (
             "P5.2B integration suite",
-            ("python", "-m", "pytest", "-m", "integration", INTEGRATION_TEST, "-q"),
+            (
+                "python",
+                "-m",
+                "pytest",
+                "-m",
+                "integration",
+                *INTEGRATION_TESTS,
+                "-q",
+            ),
         ),
     )
     for label, arguments in commands:
@@ -268,7 +283,7 @@ def _record(
         "feature_gates_enabled": False,
         "cleanup": cleanup,
         "source_manifest_sha256": manifest_sha256,
-        "integration_tests": [f"backend/{INTEGRATION_TEST}"],
+        "integration_tests": [f"backend/{path}" for path in INTEGRATION_TESTS],
     }
     _write(run_dir / "evidence.json", json.dumps(report, indent=2, sort_keys=True) + "\n")
     _write(

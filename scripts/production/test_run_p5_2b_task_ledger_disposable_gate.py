@@ -23,6 +23,8 @@ def test_static_manifest_is_closed_and_contains_no_root_env() -> None:
     assert manifest["file_count"] == len(files)
     assert "backend/src/omnibase/migrations/versions/0011_p5_2b_task_ledger.py" in files
     assert "backend/tests/integration/test_p5_2b_task_ledger_foundation.py" in files
+    assert "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py" in files
+    assert "backend/src/omnibase/workspaces/service.py" in files
     assert ".env" not in files
     assert all(not str(path).startswith(".tmp/") for path in files)
 
