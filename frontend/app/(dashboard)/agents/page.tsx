@@ -22,6 +22,7 @@ import {
   type AgentAlphaProfileList,
 } from '@/lib/api'
 import { canInvokeLiteAgent, liteInvokeConditionsMet } from '@/lib/lite-gate'
+import { isUserCancelledError } from '@/lib/cancel-detection'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -328,12 +329,11 @@ export default function AgentAlphaPage() {
       ])
       setStreaming('')
     } catch (error) {
-      // A user-initiated stop aborts the fetch and/or surfaces the backend
-      // "cancelled" event; never leak the raw DOMException text.
-      const isUserCancelled =
-        (error instanceof DOMException && error.name === 'AbortError') ||
-        (error instanceof Error && error.message === 'agent_alpha_cancelled')
-      if (isUserCancelled) {
+      // A user-initiated stop aborts the fetch (AbortError) and/or surfaces
+      // the backend "cancelled" SSE event (whose payload has no code, so the
+      // client raises Error("cancelled")); never leak the raw DOMException
+      // text and never render "Invocation failed: cancelled".
+      if (isUserCancelledError(error)) {
         setMessages((current) => [
           ...current,
           {
