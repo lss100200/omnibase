@@ -4569,19 +4569,32 @@ maintainer benchmark = valid
 P5.4D git cherry = 18 patch-equivalent / 0 unique
 ```
 
-The byte-identical Personal Runtime HEAD retains its clean full-suite and
+The byte-identical Personal Runtime input retains its clean full-suite and
 personal canary PostgreSQL evidence (`2543 passed`; personal canary `1 + 5`
-tests; cleanup `0/0/0`). The older P5.4D P5.2B Task/Run Gate remains truthful
-for its historical source, but is not applicable to this HEAD: Personal
-Runtime changes two files in its sealed source closure, so the canonical
-verifier reports source-manifest drift. A new immutable P5.2B run is required
-before local integration acceptance.
+tests; cleanup `0/0/0`). Local review then detected that the older P5.4D
+P5.2B Task/Run receipt was historical-only for this source: Personal Runtime
+changed two files in its seal, and the canonical verifier correctly reported
+source-manifest drift.
+
+The current-source Gate initially exposed a real Compose regression:
+`postgres-test` referenced `omnibase-net` for the combined personal Gate, but
+the destructive overlay did not declare that network when run standalone.
+Forward fix `626e7bd` added the closed network declaration plus a committed
+regression test. Standalone and combined Compose rendering, 10 runner/control
+unit tests and Ruff check/format passed.
+
+A new immutable canonical P5.2B run `20260811015405` then passed the foundation
+plus double-lease/reconciliation closed set, sealed manifest
+`9a021394c244a14ecd1714e0345588f23e1b19882a0f9061f4b37913bafc2a99`,
+published the new canonical receipt and proved cleanup `0/0/0`.
+`--verify-evidence` passed. The previous manifest `144690413c...` remains
+truthful historical evidence but is superseded for current-source admission.
 
 Current integration posture:
 
 ```text
-P5_PERSONAL_PRODUCT_INTEGRATION_R1_PENDING_CANONICAL_P5_2B_GATE
-P5_PERSONAL_RUNTIME_R0_REMOTE_REVIEW_NOT_YET_PROVEN
+P5_PERSONAL_PRODUCT_INTEGRATION_R1_LOCAL_MASTER_REVIEW_PASSED
+P5_PERSONAL_RUNTIME_R0_READY_FOR_REMOTE_REVIEW
 PRODUCTION_TARGET_NOT_ACTIVATED
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false

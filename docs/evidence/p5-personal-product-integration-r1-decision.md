@@ -5,9 +5,9 @@ Date: 2026-08-11
 ## Decision
 
 ```text
-P5_PERSONAL_PRODUCT_INTEGRATION_R1_PENDING_CANONICAL_P5_2B_GATE
+P5_PERSONAL_PRODUCT_INTEGRATION_R1_LOCAL_MASTER_REVIEW_PASSED
 P5_4D_ALREADY_PATCH_EQUIVALENT_IN_MAIN
-P5_PERSONAL_RUNTIME_R0_REMOTE_REVIEW_NOT_YET_PROVEN
+P5_PERSONAL_RUNTIME_R0_READY_FOR_REMOTE_REVIEW
 PRODUCTION_TARGET_NOT_ACTIVATED
 ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
 ```
@@ -16,9 +16,11 @@ ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
 
 ```text
 base origin/main = 6932e7df6b0bcb63665d94df060c9eb153be2bb4
-reviewed HEAD = cc6de4a7e01b9dcfa589457e4bc661031f012864
-behind/ahead = 0/2
+personal input HEAD = cc6de4a7e01b9dcfa589457e4bc661031f012864
+reviewed integration code HEAD = 626e7bd
+behind/ahead at code review = 0/4
 personal commits = 392b6f4, cc6de4a
+integration commits = 824e02e, 626e7bd
 ```
 
 The historical `external/p5-4d-product-acceptance-r1` branch reports 28 behind
@@ -61,19 +63,55 @@ Maintainer validation:
 benchmark: 3 plans / 8 scenarios / 6 critical scenarios / 9 unsafe vetoes
 ```
 
-The reviewed HEAD is byte-identical to the already verified Personal Runtime
-R0 HEAD. Its existing clean-HEAD and disposable records remain applicable:
+## Integration finding and forward fix
+
+The first local review correctly stopped before acceptance when the current
+source failed verification against the historical P5.4D P5.2B receipt:
+
+```text
+RuntimeError: P5.2B source manifest drifted
+```
+
+Personal Runtime had added `postgres-test` to the shared `omnibase-net` for
+the combined personal Gate, but `docker-compose.destructive-tests.yml` did not
+declare that network when used alone by the canonical P5.2B runner. Standalone
+Compose validation failed before PostgreSQL startup with `undefined network
+omnibase-net`.
+
+Forward fix `626e7bd` declares the shared network in the overlay itself while
+preserving the default network. A committed unit test asserts both bindings
+and the declaration. Verification passed:
+
+```text
+runner/control unit tests = 10 passed
+standalone destructive Compose config = passed
+base + destructive Compose config = passed
+Ruff check/format = passed
+```
+
+The Personal Runtime implementation input at `cc6de4a` is byte-identical to
+the already verified R0 HEAD, so its existing clean-HEAD and personal canary
+records remain applicable. The reviewed integration HEAD additionally contains
+the preflight record `824e02e` and standalone destructive-Compose/test forward
+fix `626e7bd`; the latter is covered by the new current-source P5.2B Gate:
 
 - backend non-integration: `2543 passed / 22 skipped / 15 deselected`;
 - disposable PostgreSQL personal canary:
   `omnibase-p5personal-r0final8`, one persisted Runtime integration test plus
   five filesystem-only control CLI tests, cleanup `0/0/0`;
-- the accepted P5.4D canonical disposable Task/Run double-lease Gate remains
-  truthful historical evidence for its recorded mainline source. It is not
-  source-applicable to this reviewed HEAD because Personal Runtime changes
-  `task_ledger/service.py` and `agent_alpha/adapters.py`; verification reports
-  `P5.2B source manifest drifted`. A new immutable current-source Gate is
-  required before local master review can pass.
+- the accepted P5.4D canonical Task/Run evidence with source manifest
+  `144690413cb4ebf59c4470e2b0da8ec0d86924f80fccd6e2a2a1549b4163d848`
+  remains truthful historical evidence for its recorded source, but is
+  superseded for current-source admission;
+- a new immutable current-source P5.2B run was built at
+  `.tmp/p5-2b-task-ledger-gate/20260811015405` and published to the canonical
+  evidence files. It passed the foundation plus double-lease/reconciliation
+  integration closed set, sealed source manifest
+  `9a021394c244a14ecd1714e0345588f23e1b19882a0f9061f4b37913bafc2a99`,
+  and proved cleanup `containers/networks/volumes = 0/0/0`;
+- `--verify-evidence` passed against the newly published receipt. The P5.2B
+  Gate intentionally proves its migration-0011-owned ledger schema; the
+  repository and personal Runtime admission head remain 0012.
 
 ## Safety boundary
 
@@ -87,8 +125,7 @@ R0 HEAD. Its existing clean-HEAD and disposable records remain applicable:
 - `_APPROVED_TRUST_POLICY_SHA256` remains empty;
 - no push, PR, merge, deploy or real target activation occurred.
 
-This preflight proves the Git topology and focused cross-product behavior, but
-does not yet prove local integration readiness. The current-source canonical
-P5.2B disposable Gate remains mandatory. Remote required CI and PR
-mergeability are also unproven until the branch is explicitly pushed and a PR
-is created under separate authorization.
+This decision proves local integration readiness, including current-source
+canonical P5.2B disposable evidence. Remote required CI and PR mergeability
+remain unproven until the branch is explicitly pushed and a PR is created
+under separate authorization.
