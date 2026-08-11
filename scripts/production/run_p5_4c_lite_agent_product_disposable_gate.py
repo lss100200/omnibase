@@ -36,7 +36,7 @@ The run directory is **preserved** on success and on failure and can be
 independently re-verified later with ``--verify-evidence``; the Gate never
 deletes its own evidence.  It never activates production Runtime, never reads
   the root ``.env``, never touches a business database, and never opens any
-  Phase 5 production Feature Gate. Migration ``0013`` is the current repository
+  Phase 5 production Feature Gate. Migration ``0014`` is the current repository
   baseline and is only measured as a source fact.
 
 **Integrity scope.**  The sealed evidence is a **self-contained integrity
@@ -75,7 +75,7 @@ LITE_UNIT_TESTS = (
     "tests/test_p5_4b_engineering_composition.py",
 )
 BACKEND_IMAGE = "omnibase-backend:latest"
-EXPECTED_MIGRATION_HEAD = "0013"
+EXPECTED_MIGRATION_HEAD = "0014"
 EXPECTED_RUNTIME_GATES = {
     "P5_4B_ENGINEERING_ENABLED": "false",
     "AGENT_RUNTIME_ENABLED": "false",
@@ -214,7 +214,9 @@ def _write_bytes(path: Path, raw: bytes) -> str:
 
 
 def _write_json(path: Path, value: object) -> str:
-    return _write_bytes(path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode())
+    return _write_bytes(
+        path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+    )
 
 
 def _manifest() -> dict[str, object]:
@@ -229,7 +231,9 @@ def _manifest() -> dict[str, object]:
 
 
 def _manifest_digest(manifest: dict[str, object]) -> str:
-    return _sha256_bytes(json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode())
+    return _sha256_bytes(
+        json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
+    )
 
 
 def _tree_manifest(root: Path) -> dict[str, dict[str, object]]:
@@ -278,19 +282,19 @@ def _discover_migration_head() -> str:
         for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
         if path.is_file() and not path.is_symlink()
     }
-    if 13 not in numeric or any(value >= 14 for value in numeric):
-        raise RuntimeError("P5.4C migration filename boundary is not exactly 0013")
-    return "0013"
+    if 14 not in numeric or any(value >= 15 for value in numeric):
+        raise RuntimeError("P5.4C migration filename boundary is not exactly 0014")
+    return "0014"
 
 
 def _validate_config() -> None:
     config = json.loads(
-        (REPO_ROOT / "deployment/production/phase5-typed-executor.example.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
+        ).read_text(encoding="utf-8")
     )
     if config.get("migration_baseline") != EXPECTED_MIGRATION_HEAD:
-        raise RuntimeError("P5.4C Gate requires migration baseline 0013")
+        raise RuntimeError("P5.4C Gate requires migration baseline 0014")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4C activation must remain false")
     if config.get("feature_gates") != {
@@ -405,7 +409,9 @@ def _parse_exitcode_sidecar(raw: str) -> int:
     are all rejected rather than guessed at.
     """
     if _EXITCODE_SIDECAR_RE.fullmatch(raw) is None:
-        raise RuntimeError("command exitcode sidecar must contain exactly one decimal exit code")
+        raise RuntimeError(
+            "command exitcode sidecar must contain exactly one decimal exit code"
+        )
     return int(raw.rstrip("\n"))
 
 
@@ -440,7 +446,9 @@ def _container_command(*arguments: str) -> list[str]:
 # probe source are all part
 # of the closed set and cannot drift while still verifying.
 _EXPECTED_COMMAND_TEMPLATES: dict[str, list[str]] = {
-    "lite-unit-suite": _container_command("python", "-m", "pytest", *LITE_UNIT_TESTS, "-q"),
+    "lite-unit-suite": _container_command(
+        "python", "-m", "pytest", *LITE_UNIT_TESTS, "-q"
+    ),
     "lite-gate-probes": _container_command("python", "-c", _PROBE_SOURCE),
 }
 
@@ -457,7 +465,9 @@ def _command_arguments(
     vectors: list[tuple[str, ...]] = []
     for item in commands:
         command = item.get("command")
-        if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
+        if not isinstance(command, list) or not all(
+            isinstance(part, str) for part in command
+        ):
             raise RuntimeError("command receipt has an invalid command vector")
         vectors.append(tuple(command))
     return tuple(vectors)
@@ -465,7 +475,10 @@ def _command_arguments(
 
 def _receipt_root_env_accessed(commands: list[dict[str, object]]) -> bool:
     """The Gate never passes the root ``.env`` as an exact command argument."""
-    return any(any(part == ".env" for part in vector) for vector in _command_arguments(commands))
+    return any(
+        any(part == ".env" for part in vector)
+        for vector in _command_arguments(commands)
+    )
 
 
 def _receipt_business_database_accessed(commands: list[dict[str, object]]) -> bool:
@@ -502,12 +515,18 @@ def _parse_probe(stdout: str) -> dict[str, object]:
     ):
         if not isinstance(probe.get(key), bool):
             raise RuntimeError(f"P5.4C gate probe receipt field {key} is invalid")
-    if not isinstance(probe.get("modes"), list) or not isinstance(probe.get("formal_builder"), str):
+    if not isinstance(probe.get("modes"), list) or not isinstance(
+        probe.get("formal_builder"), str
+    ):
         raise RuntimeError("P5.4C gate probe receipt disclosure fields are invalid")
     if not isinstance(probe.get("formal_builder_integration"), str):
-        raise RuntimeError("P5.4C gate probe receipt formal_builder_integration is invalid")
+        raise RuntimeError(
+            "P5.4C gate probe receipt formal_builder_integration is invalid"
+        )
     if not isinstance(probe.get("engineering_composition_ready"), bool):
-        raise RuntimeError("P5.4C gate probe receipt engineering_composition_ready is invalid")
+        raise RuntimeError(
+            "P5.4C gate probe receipt engineering_composition_ready is invalid"
+        )
     if not isinstance(probe.get("activation_allowed"), bool):
         raise RuntimeError("P5.4C gate probe receipt activation_allowed is invalid")
     return probe
@@ -537,14 +556,17 @@ def _derive_claims(
     modes = tuple(str(item) for item in raw_modes)
     probe_integration = probe["formal_builder_integration"]
     if not isinstance(probe_integration, str):
-        raise RuntimeError("P5.4C gate probe receipt formal_builder_integration is invalid")
+        raise RuntimeError(
+            "P5.4C gate probe receipt formal_builder_integration is invalid"
+        )
     posture_not_integrated = probe_integration == "not_integrated"
     return {
         "lite_gate_default_off": probe["absent_off"] is True,
         "runtime_env_resolver_absent_off": probe["absent_off"] is True,
         "runtime_env_resolver_false_off": probe["false_off"] is True,
         "runtime_env_resolver_true_on": probe["true_on"] is True,
-        "runtime_env_resolver_invalid_fail_closed": probe["invalid_fail_closed"] is True,
+        "runtime_env_resolver_invalid_fail_closed": probe["invalid_fail_closed"]
+        is True,
         "live_posture_reflects_env": probe["live_posture_reflects_env"] is True,
         "knowledge_search_read_only_not_supported": (
             modes == ("no_tool",) and "knowledge_search_read_only" not in modes
@@ -562,7 +584,8 @@ def _derive_claims(
         "formal_builder_posture_not_integrated": posture_not_integrated,
         # New engineering-only proof claims: the composition is ready but
         # production activation is never allowed.
-        "engineering_composition_ready": probe.get("engineering_composition_ready") is True,
+        "engineering_composition_ready": probe.get("engineering_composition_ready")
+        is True,
         "activation_allowed": probe.get("activation_allowed"),
         "root_env_accessed": _receipt_root_env_accessed(commands),
         "business_database_accessed": _receipt_business_database_accessed(commands),
@@ -662,7 +685,9 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("evidence artifact raw-byte digest field mismatch")
     source_manifest = json.loads(source_path.read_bytes())
     artifact_manifest = json.loads(artifact_path.read_bytes())
-    if _manifest_digest(source_manifest) != report.get("source_manifest_canonical_sha256"):
+    if _manifest_digest(source_manifest) != report.get(
+        "source_manifest_canonical_sha256"
+    ):
         raise RuntimeError("source manifest canonical digest mismatch")
     if _manifest() != source_manifest:
         raise RuntimeError("current source bytes differ from sealed source manifest")
@@ -697,7 +722,9 @@ def _verify(path: Path) -> None:  # noqa: C901
     if len(keys) != len(COMMAND_KEYS) or set(keys) != set(COMMAND_KEYS):
         raise RuntimeError("command receipt set is not the closed P5.4C step set")
     if tuple(keys) != COMMAND_KEYS:
-        raise RuntimeError("command receipt set does not match the closed P5.4C step order")
+        raise RuntimeError(
+            "command receipt set does not match the closed P5.4C step order"
+        )
     stdout_literals: list[str] = []
     exitcode_literals: list[str] = []
     resolved_sidecars: list[Path] = []
@@ -722,14 +749,18 @@ def _verify(path: Path) -> None:  # noqa: C901
         key = item["key"]
         template = _EXPECTED_COMMAND_TEMPLATES.get(key)
         if template is None:
-            raise RuntimeError(f"command receipt key is not in the closed step set: {key!r}")
+            raise RuntimeError(
+                f"command receipt key is not in the closed step set: {key!r}"
+            )
         command_vector = item.get("command")
         if not isinstance(command_vector, list) or not all(
             isinstance(part, str) for part in command_vector
         ):
             raise RuntimeError("command vector is invalid")
         if tuple(command_vector) != tuple(template):
-            raise RuntimeError(f"command vector for {key} does not match the exact closed template")
+            raise RuntimeError(
+                f"command vector for {key} does not match the exact closed template"
+            )
         if any(Path(part).name == ".env" for part in command_vector):
             raise RuntimeError("recorded command must not reference the root .env")
         # Fix-3 (sidecar precise binding): the receipt's stdout path LITERAL
@@ -783,9 +814,13 @@ def _verify(path: Path) -> None:  # noqa: C901
                 exitcode_path.read_text(encoding="utf-8", errors="strict")
             )
         except (OSError, ValueError) as exc:
-            raise RuntimeError("command exitcode sidecar is missing or undecodable") from exc
+            raise RuntimeError(
+                "command exitcode sidecar is missing or undecodable"
+            ) from exc
         if sidecar_exit != item["returncode"]:
-            raise RuntimeError("command exitcode sidecar drift: sidecar does not equal returncode")
+            raise RuntimeError(
+                "command exitcode sidecar drift: sidecar does not equal returncode"
+            )
     # Fix-4 (cross-binding rejection): no two commands may share the same
     # stdout or exitcode sidecar literal, and the resolved artefacts must be
     # distinct.  The exact-literal binding above already forces each key to its
@@ -793,9 +828,13 @@ def _verify(path: Path) -> None:  # noqa: C901
     # bind two commands to the same file (e.g. both pointing at the unit
     # stdout) and any same-inode sharing where the platform exposes inodes.
     if len(set(stdout_literals)) != len(stdout_literals):
-        raise RuntimeError("command stdout sidecars must not be shared between commands")
+        raise RuntimeError(
+            "command stdout sidecars must not be shared between commands"
+        )
     if len(set(exitcode_literals)) != len(exitcode_literals):
-        raise RuntimeError("command exitcode sidecars must not be shared between commands")
+        raise RuntimeError(
+            "command exitcode sidecars must not be shared between commands"
+        )
     seen_inodes: set[tuple[object, object]] = set()
     for resolved in resolved_sidecars:
         stat = resolved.stat()
@@ -853,7 +892,9 @@ def _verify(path: Path) -> None:  # noqa: C901
     # ``formal_builder_posture_not_integrated`` stay two independent claims
     # (proven_engineering_only recorded verbatim; not_integrated rewritten to
     # not_proven as defence-in-depth and rejected).
-    probe_stdout_path = run_dir / _expected_sidecar_literal("lite-gate-probes", "stdout")
+    probe_stdout_path = run_dir / _expected_sidecar_literal(
+        "lite-gate-probes", "stdout"
+    )
     if not probe_stdout_path.is_file() or probe_stdout_path.is_symlink():
         raise RuntimeError("probe command receipt is missing")
     probe = _parse_probe(probe_stdout_path.read_text(encoding="utf-8"))
@@ -883,7 +924,9 @@ def _verify(path: Path) -> None:  # noqa: C901
     if integrity.get("external_authenticity") is not False:
         raise RuntimeError("integrity receipt must not claim external authenticity")
     if integrity.get("trust_anchor") is not None:
-        raise RuntimeError("integrity receipt must not name an independent trust anchor")
+        raise RuntimeError(
+            "integrity receipt must not name an independent trust anchor"
+        )
     # The migration head is re-measured from the repository files.
     if _discover_migration_head() != EXPECTED_MIGRATION_HEAD:
         raise RuntimeError("migration head re-measurement mismatch")
@@ -915,7 +958,9 @@ def _parse_test_summary(stdout: str) -> dict[str, object]:
     return summary
 
 
-def _assert_unit_summary_matches(derived: dict[str, object], stored: object, *, where: str) -> None:
+def _assert_unit_summary_matches(
+    derived: dict[str, object], stored: object, *, where: str
+) -> None:
     """Field-by-field strict comparison of a re-derived unit summary.
 
     ``derived`` is re-parsed from the precisely-bound
@@ -995,7 +1040,9 @@ def _write_report(
         ],
         "formal_builder_named": claims["formal_builder_named"],
         "formal_builder_integration": claims["formal_builder_integration"],
-        "formal_builder_posture_not_integrated": claims["formal_builder_posture_not_integrated"],
+        "formal_builder_posture_not_integrated": claims[
+            "formal_builder_posture_not_integrated"
+        ],
         "engineering_composition_ready": claims["engineering_composition_ready"],
         "activation_allowed": claims["activation_allowed"],
         "integrity_receipt": {
@@ -1091,7 +1138,9 @@ def _write_report(
         "artifact-manifest.sha256",
     }
     artifact_manifest = _artifacts(run_dir, exclude=excluded)
-    artifact_raw_sha = _write_json(run_dir / "artifact-manifest.json", artifact_manifest)
+    artifact_raw_sha = _write_json(
+        run_dir / "artifact-manifest.json", artifact_manifest
+    )
     _write_bytes(run_dir / "artifact-manifest.sha256", f"{artifact_raw_sha}\n".encode())
     report["artifact_manifest_raw_sha256"] = artifact_raw_sha
     report["artifacts"] = artifact_manifest
@@ -1164,7 +1213,9 @@ def main() -> int:
         if isinstance(probe_value, dict):
             measured_probe = probe_value
         else:
-            errors.append("probe measurements are missing after a successful probe step")
+            errors.append(
+                "probe measurements are missing after a successful probe step"
+            )
             steps_passed = False
     claims: dict[str, object] = {}
     if steps_passed:
@@ -1176,7 +1227,9 @@ def main() -> int:
         # formal_builder_named all true; root_env/business-database/
         # production_runtime negatives all false; formal_builder_integration
         # stays not_proven).  A single mismatch -> passed=false.
-        admission_mismatch = _admission_mismatch(claims, production_runtime_activated=False)
+        admission_mismatch = _admission_mismatch(
+            claims, production_runtime_activated=False
+        )
         if admission_mismatch is not None:
             errors.append(f"admission expectation mismatch: {admission_mismatch}")
             steps_passed = False
@@ -1201,7 +1254,8 @@ def main() -> int:
     passed = (
         steps_passed
         and not errors
-        and tuple(item.get("key") for item in commands) == ("lite-unit-suite", "lite-gate-probes")
+        and tuple(item.get("key") for item in commands)
+        == ("lite-unit-suite", "lite-gate-probes")
     )
     report = _write_report(
         run_dir,

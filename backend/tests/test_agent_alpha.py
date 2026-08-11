@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterator
 from types import SimpleNamespace
 
@@ -18,6 +20,7 @@ from omnibase.agent_alpha.contracts import (
 )
 from omnibase.agent_alpha.router import get_agent_alpha, router
 from omnibase.agent_alpha.service import AgentAlphaError, AgentAlphaService
+from omnibase.agent_skills.resolver import SkillInstruction, SkillInstructionBundle
 from omnibase.model_gateway import (
     ModelGateway,
     ModelRequest,
@@ -108,6 +111,60 @@ class _MemoryCompiler:
         )
 
 
+def _skill_bundle(*instructions: str) -> SkillInstructionBundle:
+    items = tuple(
+        SkillInstruction(
+            skill_definition_id=f"00000000-0000-0000-0000-0000000001{index:02d}",
+            skill_version_id=f"00000000-0000-0000-0000-0000000002{index:02d}",
+            stable_logical_key=f"skill-{index}",
+            version="1.0.0",
+            manifest_digest=hashlib.sha256(f"manifest-{index}".encode()).hexdigest(),
+            instructions_digest=hashlib.sha256(value.encode("utf-8")).hexdigest(),
+            instructions=value,
+        )
+        for index, value in enumerate(instructions, start=1)
+    )
+    payload = [
+        {
+            "skill_definition_id": item.skill_definition_id,
+            "skill_version_id": item.skill_version_id,
+            "stable_logical_key": item.stable_logical_key,
+            "version": item.version,
+            "manifest_digest": item.manifest_digest,
+            "instructions_digest": item.instructions_digest,
+            "instructions": item.instructions,
+        }
+        for item in items
+    ]
+    canonical_digest = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return SkillInstructionBundle(canonical_digest=canonical_digest, items=items)
+
+
+class _SkillResolver:
+    def __init__(
+        self,
+        bundle: SkillInstructionBundle | None = None,
+        *,
+        fail: bool = False,
+    ) -> None:
+        self.bundle = bundle or _skill_bundle()
+        self.fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    def resolve(self, **kwargs: object) -> SkillInstructionBundle:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("private skill persistence detail")
+        return self.bundle
+
+
 class _CapturingProvider(_Provider):
     def __init__(self) -> None:
         self.requests: list[ModelRequest] = []
@@ -192,11 +249,49 @@ def test_single_agent_stream_is_tool_free_and_persisted() -> None:
         "done",
     ]
     assert events[0].payload["tools_enabled"] is False
+    assert "skill_bundle_digest" not in events[0].payload
+    assert "skill_count" not in events[0].payload
     assert events[-1].payload["answer"] == "grounded answer [1]"
     assert events[-1].payload["actual_model_id"] == "model-alpha"
     assert ledger.completed is not None
     assert ledger.completed[1].total_tokens == 13
     assert ledger.failed is None
+
+
+def test_empty_personal_skill_bundle_preserves_historical_no_skill_intent() -> None:
+    baseline_ledger = _Ledger()
+    empty_bundle_ledger = _Ledger()
+    invocations = (
+        _service(ledger=baseline_ledger),
+        AgentAlphaService(
+            profiles=_Profiles(),
+            knowledge=_Knowledge(),
+            ledger=empty_bundle_ledger,
+            gateway=ModelGateway(provider=_Provider(), model_id="model-alpha"),
+            skill_resolver=_SkillResolver(_skill_bundle()),
+        ),
+    )
+    event_sets = []
+    for service in invocations:
+        event_sets.append(
+            list(
+                service.invoke(
+                    tenant_id="tenant",
+                    tenant_schema="tenant_schema",
+                    workspace_id="workspace",
+                    actor_user_id="user",
+                    agent_version_id="version",
+                    message="What is verified?",
+                    top_k=5,
+                    idempotency_key="key",
+                    retry_of=None,
+                )
+            )
+        )
+
+    assert baseline_ledger.begin_request_hash == empty_bundle_ledger.begin_request_hash
+    assert "skill_bundle_digest" not in event_sets[1][0].payload
+    assert "skill_count" not in event_sets[1][0].payload
 
 
 class _GatewayResolver:
@@ -286,6 +381,155 @@ def test_memory_policy_digest_is_bound_to_invocation_intent() -> None:
             )
         )
     assert ledgers[0].begin_request_hash != ledgers[1].begin_request_hash
+
+
+def test_skill_bundle_digest_is_bound_to_invocation_intent() -> None:
+    ledgers = (_Ledger(), _Ledger())
+    for ledger, instruction in zip(ledgers, ("Be concise.", "Be detailed."), strict=True):
+        service = AgentAlphaService(
+            profiles=_Profiles(),
+            knowledge=_Knowledge(),
+            ledger=ledger,
+            gateway=ModelGateway(provider=_Provider(), model_id="model-alpha"),
+            skill_resolver=_SkillResolver(_skill_bundle(instruction)),
+        )
+        list(
+            service.invoke(
+                tenant_id="tenant",
+                tenant_schema="tenant_schema",
+                workspace_id="workspace",
+                actor_user_id="user",
+                agent_version_id="version",
+                message="hello",
+                top_k=1,
+                idempotency_key="key",
+                retry_of=None,
+            )
+        )
+    assert ledgers[0].begin_request_hash != ledgers[1].begin_request_hash
+
+
+def test_sealed_instruction_skills_precede_rag_and_memory_without_granting_authority() -> None:
+    provider = _CapturingProvider()
+    bundle = _skill_bundle("Use short paragraphs.", "End with a concrete next action.")
+    resolver = _SkillResolver(bundle)
+    events = list(
+        AgentAlphaService(
+            profiles=_Profiles(),
+            knowledge=_Knowledge(),
+            ledger=_Ledger(),
+            gateway=ModelGateway(provider=provider, model_id="model-alpha"),
+            memory_compiler=_MemoryCompiler(),
+            skill_resolver=resolver,
+        ).invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+    )
+
+    messages = provider.requests[0].messages
+    assert [item.role for item in messages] == ["system", "system", "system", "system", "user"]
+    assert "Answer using the workspace context" in messages[0].content
+    assert "Use short paragraphs" in messages[1].content
+    assert "concrete next action" in messages[1].content
+    assert messages[1].content.index("Use short paragraphs") < messages[1].content.index(
+        "concrete next action"
+    )
+    for forbidden_authority in (
+        "cannot grant or expand tools",
+        "network access",
+        "permissions or capabilities",
+        "Memory scope",
+        "Planner",
+        "Multi-Agent",
+    ):
+        assert forbidden_authority in messages[1].content
+    assert "Workspace knowledge context" in messages[2].content
+    assert "untrusted reference data" in messages[3].content
+    assert messages[4].content == "hello"
+    meta = events[0].payload
+    assert meta["skill_bundle_digest"] == bundle.canonical_digest
+    assert meta["skill_count"] == 2
+    assert "Use short paragraphs" not in repr(meta)
+    assert meta["tools_enabled"] is False
+    assert resolver.calls == [
+        {
+            "tenant_id": "tenant",
+            "tenant_schema": "tenant_schema",
+            "owner_user_id": "user",
+            "workspace_id": "workspace",
+            "agent_version_id": "00000000-0000-0000-0000-000000000002",
+        }
+    ]
+
+
+def test_skill_resolver_failure_is_fail_closed_before_ledger_or_provider() -> None:
+    ledger = _Ledger()
+    provider = _CapturingProvider()
+    resolver = _SkillResolver(fail=True)
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=ModelGateway(provider=provider, model_id="model-alpha"),
+        skill_resolver=resolver,
+    )
+
+    with pytest.raises(AgentAlphaError, match="agent_alpha_skill_resolve_failed"):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert len(resolver.calls) == 1
+    assert ledger.begin_request_hash is None
+    assert ledger.failed is None
+    assert provider.requests == []
+
+
+def test_skill_bundle_drift_is_fail_closed_before_ledger_or_provider() -> None:
+    ledger = _Ledger()
+    provider = _CapturingProvider()
+    bundle = _skill_bundle("Do not drift.")
+    drifted = SkillInstructionBundle(canonical_digest="0" * 64, items=bundle.items)
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=ModelGateway(provider=provider, model_id="model-alpha"),
+        skill_resolver=_SkillResolver(drifted),
+    )
+
+    with pytest.raises(AgentAlphaError, match="agent_alpha_skill_bundle_drifted"):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert ledger.begin_request_hash is None
+    assert ledger.failed is None
+    assert provider.requests == []
 
 
 def test_compiled_memory_is_untrusted_separate_prompt_and_safe_meta() -> None:
@@ -394,6 +638,48 @@ def test_terminal_exact_replay_never_recompiles_memory() -> None:
     )
 
     assert compiler.calls == []
+    assert provider.requests == []
+    assert [event.kind for event in events] == ["meta", "error"]
+
+
+def test_terminal_exact_replay_never_dispatches_provider_or_mutates_skill_state() -> None:
+    class _ReplayLedger(_Ledger):
+        def begin(self, **kwargs: object) -> AlphaInvocationIdentity:
+            identity = super().begin(**kwargs)
+            return AlphaInvocationIdentity(
+                invocation_id=identity.invocation_id,
+                task_id=identity.task_id,
+                attempt_id=identity.attempt_id,
+                effect_id=identity.effect_id,
+                tenant_id=identity.tenant_id,
+                workspace_id=identity.workspace_id,
+                actor_user_id=identity.actor_user_id,
+                replayed_state="succeeded",
+            )
+
+    resolver = _SkillResolver(_skill_bundle("Stay sealed."))
+    provider = _CapturingProvider()
+    events = list(
+        AgentAlphaService(
+            profiles=_Profiles(),
+            knowledge=_Knowledge(),
+            ledger=_ReplayLedger(),
+            gateway=ModelGateway(provider=provider, model_id="model-alpha"),
+            skill_resolver=resolver,
+        ).invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+    )
+
+    assert len(resolver.calls) == 1
     assert provider.requests == []
     assert [event.kind for event in events] == ["meta", "error"]
 

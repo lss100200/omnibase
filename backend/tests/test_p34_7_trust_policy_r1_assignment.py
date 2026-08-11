@@ -78,7 +78,7 @@ def test_example_is_valid_but_explicitly_incomplete() -> None:
     assert report.trust_policy_approved is False
     assert report.approved_digest_written is False
     assert report.activation_allowed is False
-    assert report.migration_head == "0013"
+    assert report.migration_head == "0014"
     assert report.migration_0013_created is True
     assert report.feature_gates == {
         "agent_runtime_enabled": False,
@@ -505,7 +505,7 @@ def test_file_entry_rejects_noncanonical_and_outside_repo(tmp_path: Path) -> Non
         inside.unlink(missing_ok=True)
 
 
-def test_migration_0014_is_rejected(tmp_path: Path) -> None:
+def test_migration_0015_is_rejected(tmp_path: Path) -> None:
     versions = tmp_path / "backend" / "src" / "omnibase" / "migrations" / "versions"
     versions.mkdir(parents=True)
     (versions / "0012_base.py").write_text(
@@ -514,10 +514,13 @@ def test_migration_0014_is_rejected(tmp_path: Path) -> None:
     (versions / "0013_current.py").write_text(
         'revision: str = "0013"\ndown_revision: str | None = "0012"\n', encoding="utf-8"
     )
-    (versions / "0014_forbidden.py").write_text(
+    (versions / "0014_current.py").write_text(
         'revision: str = "0014"\ndown_revision: str | None = "0013"\n', encoding="utf-8"
     )
-    with pytest.raises(ConfigurationError, match="migration head must remain 0013"):
+    (versions / "0015_forbidden.py").write_text(
+        'revision: str = "0015"\ndown_revision: str | None = "0014"\n', encoding="utf-8"
+    )
+    with pytest.raises(ConfigurationError, match="migration head must remain 0014"):
         validate_trust_policy_r1_assignment(_payload(), tmp_path)
 
 

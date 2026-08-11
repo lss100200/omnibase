@@ -845,11 +845,13 @@ def _verify_repository_posture(repo_root: Path) -> str:
     versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
     if not any(path.name.startswith("0013_") for path in versions.glob("*.py")):
         raise ConfigurationError("migration 0013 must exist at the current repository head")
+    if not any(path.name.startswith("0014_") for path in versions.glob("*.py")):
+        raise ConfigurationError("migration 0014 must exist at the current repository head")
     if any(
-        path.name[:4].isdigit() and int(path.name[:4]) >= 14
+        path.name[:4].isdigit() and int(path.name[:4]) >= 15
         for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
     ):
-        raise ConfigurationError("migration 0014 or higher must not exist")
+        raise ConfigurationError("migration 0015 or higher must not exist")
     return migration_head
 
 

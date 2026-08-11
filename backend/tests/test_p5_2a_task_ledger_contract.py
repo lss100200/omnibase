@@ -863,6 +863,7 @@ def _contract_mapping() -> dict[str, object]:
             "0011",
             "0012",
             "0013",
+            "0014",
         ],
         "sealed_contracts": [
             {
@@ -988,6 +989,7 @@ def _build_synthetic_repo(tmp_path: Path) -> Path:
         ("0011", "0010"),
         ("0012", "0011"),
         ("0013", "0012"),
+        ("0014", "0013"),
     ):
         _write_file(
             repo,
@@ -2015,12 +2017,12 @@ def test_remote_origin_mismatch_is_rejected(tmp_path: Path) -> None:
         TaskLedgerContractGate(repo).verify(config)
 
 
-def test_attempted_migration_0014_is_a_veto(tmp_path: Path) -> None:
+def test_attempted_migration_0015_is_a_veto(tmp_path: Path) -> None:
     repo = _build_synthetic_repo(tmp_path)
     _write_file(
         repo,
-        "backend/src/omnibase/migrations/versions/0014_unapproved_runtime.py",
-        'revision: str = "0014"\ndown_revision: str | None = "0013"\n',
+        "backend/src/omnibase/migrations/versions/0015_unapproved_runtime.py",
+        'revision: str = "0015"\ndown_revision: str | None = "0014"\n',
     )
     config = _synthetic_config(tmp_path, repo=repo)
 
@@ -2028,7 +2030,7 @@ def test_attempted_migration_0014_is_a_veto(tmp_path: Path) -> None:
 
     assert report.state is AdmissionState.INVALID
     assert any(
-        "migration head is 0014" in veto or "migration revision set drifted" in veto
+        "migration head is 0015" in veto or "migration revision set drifted" in veto
         for veto in report.vetoes
     )
 

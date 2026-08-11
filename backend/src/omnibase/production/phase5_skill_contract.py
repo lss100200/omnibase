@@ -990,8 +990,8 @@ class SkillContractConfig:
         )
         if not config.source.require_clean_checkout:
             raise SkillContractError("P5.6A source provenance must require a clean checkout")
-        if config.migration_baseline != "0013":
-            raise SkillContractError("P5.6A migration_baseline must remain exactly 0013")
+        if config.migration_baseline != "0014":
+            raise SkillContractError("P5.6A migration_baseline must remain exactly 0014")
         config._validate_references()
         return config
 
@@ -1101,7 +1101,7 @@ class SkillContractGate:
             blockers=(
                 "formal P5.6A verification was not executed",
                 "P5.4 typed single-Agent executor Gate is not proven",
-                "Skill persistence, Browser API, Workspace installation and runtime are absent",
+                "P5.6A remains compile-only and does not itself authorize the P5.6P personal successor",
             ),
             vetoes=(),
         )
@@ -1156,7 +1156,7 @@ class SkillContractGate:
         blockers = [
             "P34.7 production total Gate remains blocked/not_proven",
             "P5.4 typed single-Agent executor Gate is not proven",
-            "Skill persistence, Browser API, Workspace installation and runtime are absent",
+            "P5.6A remains compile-only and does not itself authorize the P5.6P personal successor",
         ]
         vetoes: list[str] = []
         provenance = self._resolve_provenance(config, source, vetoes)

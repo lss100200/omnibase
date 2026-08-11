@@ -11,7 +11,7 @@ The Alpha composition stays ``UnavailableAgentAlpha`` (HTTP 503
 - all three Phase 5 Feature Gates remain exactly ``false`` (an enabled Alpha
   must never flip or imply any other gate);
 - a provider-configured Model Gateway is available;
-- the database reports migration head ``0013``.
+- the database reports migration head ``0014``.
 
 The seam performs no work at module import time: no database connection, no
 provider connection, no migration, no background thread, no event-loop task,
@@ -41,7 +41,7 @@ from omnibase.user_settings.gateway import UserModelGatewayResolver
 
 AGENT_ALPHA_ENGINEERING_FLAG = "AGENT_ALPHA_ENGINEERING_ENABLED"
 _ALLOWED_ENGINEERING_ENVIRONMENTS = frozenset({"development"})
-_EXPECTED_MIGRATION_HEAD = "0013"
+_EXPECTED_MIGRATION_HEAD = "0014"
 _PHASE5_GATE_ENV_NAMES = (
     "AGENT_RUNTIME_ENABLED",
     "AGENT_PLANNER_ENABLED",

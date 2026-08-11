@@ -213,7 +213,7 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
         tenant_revision = conn.execute(
             text(f'SELECT version_num FROM "{schema}".alembic_version')
         ).scalar_one()
-        assert tenant_revision == "0013"
+        assert tenant_revision == "0014"
 
         tables = set(
             conn.execute(
@@ -278,17 +278,21 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
     downgrade = _downgrade_0011()
     assert downgrade.returncode != 0
     output = downgrade.stdout + downgrade.stderr
-    assert "0012 downgrade refused" in output or "0013 populated downgrade is forbidden" in output
+    assert (
+        "0012 downgrade refused" in output
+        or "0013 populated downgrade is forbidden" in output
+        or "0014 populated downgrade is forbidden" in output
+    )
 
     with db_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
-            == "0013"
+            == "0014"
         )
         for schema in schemas:
             assert (
                 conn.execute(
                     text(f'SELECT version_num FROM "{schema}".alembic_version')
                 ).scalar_one()
-                == "0013"
+                == "0014"
             )

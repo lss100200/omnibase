@@ -1444,7 +1444,7 @@ Agent Runtime 的生产编排继续冻结在这些基础设施之后。Agent 只
   `UnavailableEngineeringSingleAgentExecutor`; no Browser route, SDK, queue,
   worker, scheduler or production Runtime is installed by this module.
 - `build_engineering_single_agent_executor()` admits only an explicit
-  engineering flag, migration head exactly `0012`, all three Phase 5 Feature
+  engineering flag, the current reviewed migration head, all three Phase 5 Feature
   Gates false, and explicitly injected Gateway/session/server-owned workload
   credential dependencies. It never migrates or connects merely to inspect the
   head. Production activation is disabled and migration `0013` is not created.
@@ -1632,8 +1632,9 @@ python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --veri
   `$ref`. Rollback targets the same Definition and a strictly older reviewed
   release.
 - Verification requires clean Git provenance, all three Phase 5 gates false
-  and migration head exactly `0012`. Migration `0013`, Browser `/skills`, ORM,
-  installation and runtime remain absent and require later authorization.
+  and migration head exactly `0014`. P5.6A itself remains compile-only; the
+  separately authorized P5.6P successor owns the Skill ORM, installation and
+  personal runtime projection. Browser `/skills` remains absent.
 
 Focused commands:
 
@@ -1709,7 +1710,7 @@ superseded|revoked`；最高正向状态 `candidate/valid_not_approved`，valida
   ```
 - 正式状态：`CANDIDATE_CONTRACT_ONLY_NOT_APPROVED`；不生成生产私钥、不批准
   digest、不采集 production evidence、不激活 Runtime；P34.7 仍
-  blocked/not_proven；migration head 0012、0013 absent；Feature Gates
+  blocked/not_proven；current migration head `0014`，`0015+` absent；Feature Gates
   false/false/false。
 
 ### 12.12 P34.7 Trust Policy R1-A assignment
@@ -1810,8 +1811,8 @@ read-only into the backend.
 
 R0 knowledge retrieval remains the Core-owned read-only RAG path. Do not claim
 formal P5.4B Gateway composition, Sandbox/high-risk Capability admission or
-enterprise P34.7 PASS. Keep migration 0013 absent, Planner/Multi-Agent disabled
-and the enterprise approved digest empty.
+enterprise P34.7 PASS. Keep the current reviewed migration head exact,
+Planner/Multi-Agent disabled and the enterprise approved digest empty.
 
 The Axios authentication interceptor is also a product boundary. Login,
 register and refresh 401 responses never trigger auto-refresh, stale Bearer
@@ -1946,8 +1947,9 @@ runbook and the `agent-memory-runtime` machine-map entry before changing the
 compiler, Memory encryption, Agent Alpha prompt composition or personal canary
 wiring.
 
-P5.5C uses the existing reviewed migration `0013`; migration `0014+` is not
-authorized. Only `build_personal_agent_alpha()` injects the real SQL-backed
+P5.5C Memory tables remain owned by reviewed migration `0013`; the separately
+authorized P5.6P Skill successor advances the repository head to `0014` without
+changing the Memory schema. Only `build_personal_agent_alpha()` injects the real SQL-backed
 compiler, and only after the exact INV-056 personal canary posture is live.
 Default and engineering Agent Alpha compositions do not receive it. Runtime is
 false by default and Planner/Multi-Agent stay false.
@@ -1974,3 +1976,39 @@ authority. On ambiguity, disable compiler composition, preserve Capsule/ledger/
 Audit evidence and use forward-fix or restore-new recovery. Never create a
 public Memory search endpoint, compile on replay, expose plaintext, or turn
 Memory into tool, Skill, MCP, HTTP, SQL, Planner or Multi-Agent authority.
+
+## P5.6P personal instruction Skill maintenance boundary
+
+Read INV-061, the historical P5.6A contract, the P5.6P architecture note and
+the `personal-instruction-skills` machine-map entry before changing migration
+`0014`, Skill persistence, resolution or Agent Alpha prompt composition.
+
+P5.6P is intentionally smaller than an enterprise Skill platform. It stores
+only first-party sealed instruction packages and exact Workspace/AgentVersion
+installations for the sole live Owner. There is no Browser Skill catalog,
+Marketplace, MCP, workflow/script executor, tool grant, Capability expansion,
+network access or secret surface. Planner and Multi-Agent remain false, and
+Runtime remains false outside the exact personal canary.
+
+Treat service, resolver and database triggers as one binding boundary. Every
+mutation and resolution must revalidate the active Tenant and server-owned
+schema, tenant-admin Owner, Workspace ownership and active Owner membership,
+sealed AgentVersion, and the exact installed Workspace Agent binding with a
+matching digest. SkillVersion content is immutable; installation history is
+forward-only. Disable/revoke/rollback affect new resolutions. A concurrent
+invocation that already passed Skill resolution keeps its sealed request-hash
+snapshot and is not rewritten in place.
+
+The Agent Alpha bundle must be deterministically sorted and independently
+rehash both instructions and the canonical projection before ledger
+reservation or Provider dispatch. Non-empty bundle digest participates in the
+request hash; an empty bundle preserves the historical no-Skill identity.
+Exact replay resolves nothing and calls neither RAG, Memory nor Provider. Prompt
+order is AgentVersion, Skill, RAG, Memory, user. SSE reveals only digest/count.
+
+Use focused tests and one random `omnibase_test_*` disposable PostgreSQL
+journey locally. Do not repeat the full repository regression merely to close
+this personal increment; GitHub required CI is authoritative. On ambiguity,
+keep Runtime false, disable or revoke the affected installation, preserve
+immutable history and use a forward fix or restore-new recovery. Never
+downgrade a populated `0014` database.

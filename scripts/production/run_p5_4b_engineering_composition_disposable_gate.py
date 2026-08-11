@@ -27,7 +27,7 @@ LEGACY_ROOT = (REPO_ROOT / ".tmp" / "p5-4b-engineering-composition-gate").resolv
 EVIDENCE_ROOT = (REPO_ROOT / ".tmp" / "p5-4b-engineering-composition-gate-v2").resolve()
 GATE_NAME = "P5.4B engineering composition disposable Gate v2"
 INTEGRATION_TEST = "tests/integration/test_p5_4b_engineering_composition_foundation.py"
-EXPECTED_HEAD = "0013"
+EXPECTED_HEAD = "0014"
 BACKEND_IMAGE = "omnibase-backend:latest"
 POSTGRES_IMAGE = "pgvector/pgvector:0.8.5-pg15-bookworm"
 BACKEND_VENV_VOLUME = "omnibase_backend_venv"
@@ -130,7 +130,9 @@ def _write_bytes(path: Path, raw: bytes) -> str:
 
 
 def _write_json(path: Path, value: object) -> str:
-    return _write_bytes(path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode())
+    return _write_bytes(
+        path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+    )
 
 
 def _source_paths() -> tuple[str, ...]:
@@ -159,7 +161,9 @@ def _manifest() -> dict[str, object]:
 
 
 def _manifest_digest(manifest: dict[str, object]) -> str:
-    return _sha256_bytes(json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode())
+    return _sha256_bytes(
+        json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
+    )
 
 
 def _artifact(path: Path, *, root: Path) -> dict[str, object]:
@@ -205,9 +209,9 @@ def _artifacts(run_dir: Path, *, exclude: set[str]) -> dict[str, dict[str, objec
 
 def _validate_config() -> None:
     config = json.loads(
-        (REPO_ROOT / "deployment/production/phase5-typed-executor.example.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
+        ).read_text(encoding="utf-8")
     )
     if config.get("migration_baseline") != EXPECTED_HEAD:
         raise RuntimeError("P5.4B Gate requires migration baseline 0013")
@@ -220,7 +224,9 @@ def _validate_config() -> None:
     }:
         raise RuntimeError("P5.4B feature gates must remain false")
     revision_files = tuple(
-        (REPO_ROOT / "backend/src/omnibase/migrations/versions").glob("[0-9][0-9][0-9][0-9]_*.py")
+        (REPO_ROOT / "backend/src/omnibase/migrations/versions").glob(
+            "[0-9][0-9][0-9][0-9]_*.py"
+        )
     )
     numeric = {int(path.name[:4]) for path in revision_files}
     if 13 not in numeric or any(value >= 14 for value in numeric):
@@ -246,7 +252,10 @@ def _redact_command(command: list[str]) -> list[str]:
 
 
 def _record_command(
-    run_dir: Path, key: str, command: list[str], result: subprocess.CompletedProcess[str]
+    run_dir: Path,
+    key: str,
+    command: list[str],
+    result: subprocess.CompletedProcess[str],
 ) -> dict[str, object]:
     raw = result.stdout.encode("utf-8", errors="replace")
     stdout_path = f"commands/{key}.stdout"
@@ -340,13 +349,23 @@ def _container_command(project: str, database_url: str, *arguments: str) -> list
 
 
 def _expected_commands(project: str, override: Path) -> dict[str, list[str]]:
-    dummy_url = "postgresql+psycopg://runner:secret@localhost:55434/omnibase_test_p54b_dummy"
+    dummy_url = (
+        "postgresql+psycopg://runner:secret@localhost:55434/omnibase_test_p54b_dummy"
+    )
     container = lambda *args: _redact_command(  # noqa: E731
         _container_command(project, dummy_url, *args)
     )
     return {
-        "preflight-images": ["docker", "image", "inspect", BACKEND_IMAGE, POSTGRES_IMAGE],
-        "compose-up": _compose_command(project, override, "up", "-d", "--wait", "postgres-test"),
+        "preflight-images": [
+            "docker",
+            "image",
+            "inspect",
+            BACKEND_IMAGE,
+            POSTGRES_IMAGE,
+        ],
+        "compose-up": _compose_command(
+            project, override, "up", "-d", "--wait", "postgres-test"
+        ),
         "destructive-preflight": container("python", "tests/destructive_preflight.py"),
         "alembic-upgrade-head": container("python", "-m", "alembic", "upgrade", "head"),
         "integration": container(
@@ -404,7 +423,9 @@ def _expected_commands(project: str, override: Path) -> dict[str, list[str]]:
             "-c",
             "import importlib.metadata as m,json; print(json.dumps(sorted((d.metadata['Name'] or '',d.version) for d in m.distributions()),separators=(',',':')))",
         ),
-        "compose-down": _compose_command(project, override, "down", "-v", "--remove-orphans"),
+        "compose-down": _compose_command(
+            project, override, "down", "-v", "--remove-orphans"
+        ),
         "cleanup-containers": [
             "docker",
             "ps",
@@ -440,26 +461,31 @@ def _command_stdout(run_dir: Path, record: dict[str, object]) -> str:
 
 def _parse_graph(stdout: str) -> dict[str, object]:
     marker = "P54B_GRAPH="
-    line = next((item for item in reversed(stdout.splitlines()) if item.startswith(marker)), None)
+    line = next(
+        (item for item in reversed(stdout.splitlines()) if item.startswith(marker)),
+        None,
+    )
     if line is None:
         raise RuntimeError("Alembic graph measurement is missing")
     graph = json.loads(line[len(marker) :])
     heads = graph.get("heads")
     revisions = graph.get("revisions")
     if heads != [EXPECTED_HEAD] or not isinstance(revisions, list):
-        raise RuntimeError("Alembic graph is not single-head 0013")
+        raise RuntimeError("Alembic graph is not single-head 0014")
     numeric = []
     for revision in revisions:
         if not isinstance(revision, str) or re.fullmatch(r"[0-9]{4}", revision) is None:
-            raise RuntimeError("Alembic revision identifier is outside the closed numeric set")
+            raise RuntimeError(
+                "Alembic revision identifier is outside the closed numeric set"
+            )
         numeric.append(int(revision))
-    if 13 not in numeric or any(value >= 14 for value in numeric):
-        raise RuntimeError("Alembic graph contains migration 0014 or higher")
+    if 14 not in numeric or any(value >= 15 for value in numeric):
+        raise RuntimeError("Alembic graph contains migration 0015 or higher")
     return {
         "heads": heads,
         "revisions": revisions,
-        "migration_0013_created": True,
-        "migration_0014_or_higher_present": False,
+        "migration_0014_created": True,
+        "migration_0015_or_higher_present": False,
     }
 
 
@@ -470,7 +496,10 @@ def _parse_image_measurement(stdout: str) -> dict[str, object]:
         repo_digests = json.loads(repo_digests_raw)
     except (ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError("Docker image measurement is malformed") from exc
-    if not isinstance(image_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+    if (
+        not isinstance(image_id, str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None
+    ):
         raise RuntimeError("Docker image ID is not a SHA-256 identity")
     if repo_digests is None:
         repo_digests = []
@@ -515,7 +544,9 @@ def _run_gate(
         ),
     ):
         commands.append(
-            _run_step(run_dir, key, _container_command(project, database_url, *arguments))
+            _run_step(
+                run_dir, key, _container_command(project, database_url, *arguments)
+            )
         )
     head = _run_step(
         run_dir,
@@ -556,7 +587,14 @@ def _run_gate(
     network = _run_step(
         run_dir,
         "measured-network",
-        ["docker", "network", "inspect", "--format", "{{json .Internal}}", f"{project}_default"],
+        [
+            "docker",
+            "network",
+            "inspect",
+            "--format",
+            "{{json .Internal}}",
+            f"{project}_default",
+        ],
     )
     commands.append(network)
     backend_image = _run_step(
@@ -578,7 +616,14 @@ def _run_gate(
     volume = _run_step(
         run_dir,
         "measured-venv-volume",
-        ["docker", "volume", "inspect", "--format", "{{json .Name}}", BACKEND_VENV_VOLUME],
+        [
+            "docker",
+            "volume",
+            "inspect",
+            "--format",
+            "{{json .Name}}",
+            BACKEND_VENV_VOLUME,
+        ],
     )
     commands.append(volume)
     python_environment = _run_step(
@@ -598,8 +643,12 @@ def _run_gate(
         raise RuntimeError("runtime or Phase 5 Gate environment is not closed")
     if _command_stdout(run_dir, network) != "true":
         raise RuntimeError("P5.4B disposable network is not internal-only")
-    backend_image_value = _parse_image_measurement(_command_stdout(run_dir, backend_image))
-    postgres_image_value = _parse_image_measurement(_command_stdout(run_dir, postgres_image))
+    backend_image_value = _parse_image_measurement(
+        _command_stdout(run_dir, backend_image)
+    )
+    postgres_image_value = _parse_image_measurement(
+        _command_stdout(run_dir, postgres_image)
+    )
     if json.loads(_command_stdout(run_dir, volume)) != BACKEND_VENV_VOLUME:
         raise RuntimeError("P5.4B backend venv volume identity drifted")
     python_environment_value = _parse_python_environment(
@@ -744,7 +793,9 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("evidence artifact raw-byte digest field mismatch")
     source_manifest = json.loads(source_path.read_bytes())
     artifact_manifest = json.loads(artifact_path.read_bytes())
-    if _manifest_digest(source_manifest) != report.get("source_manifest_canonical_sha256"):
+    if _manifest_digest(source_manifest) != report.get(
+        "source_manifest_canonical_sha256"
+    ):
         raise RuntimeError("source manifest canonical digest mismatch")
     if _manifest() != source_manifest:
         raise RuntimeError("current source bytes differ from sealed source manifest")
@@ -777,9 +828,9 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("evidence is not a successful schema-v3 run")
     if report.get("migration_head") != EXPECTED_HEAD:
         raise RuntimeError("migration head evidence mismatch")
-    if report.get("migration_0013_created") is not True:
-        raise RuntimeError("migration 0013 evidence mismatch")
-    if report.get("migration_0014_or_higher_present") is not False:
+    if report.get("migration_0014_created") is not True:
+        raise RuntimeError("migration 0014 evidence mismatch")
+    if report.get("migration_0015_or_higher_present") is not False:
         raise RuntimeError("migration graph evidence mismatch")
     if report.get("production_runtime_activated") is not False:
         raise RuntimeError("production Runtime evidence mismatch")
@@ -811,8 +862,12 @@ def _verify(path: Path) -> None:  # noqa: C901
     if not isinstance(measurements, dict):
         raise RuntimeError("measurement index is invalid")
     measured_head = _command_stdout(run_dir, records["measured-alembic-head"])
-    measured_graph = _parse_graph(_command_stdout(run_dir, records["measured-alembic-graph"]))
-    measured_gates = json.loads(_command_stdout(run_dir, records["measured-runtime-gates"]))
+    measured_graph = _parse_graph(
+        _command_stdout(run_dir, records["measured-alembic-graph"])
+    )
+    measured_gates = json.loads(
+        _command_stdout(run_dir, records["measured-runtime-gates"])
+    )
     measured_network = _command_stdout(run_dir, records["measured-network"])
     measured_backend_image = _parse_image_measurement(
         _command_stdout(run_dir, records["measured-backend-image"])
@@ -820,11 +875,16 @@ def _verify(path: Path) -> None:  # noqa: C901
     measured_postgres_image = _parse_image_measurement(
         _command_stdout(run_dir, records["measured-postgres-image"])
     )
-    measured_volume = json.loads(_command_stdout(run_dir, records["measured-venv-volume"]))
+    measured_volume = json.loads(
+        _command_stdout(run_dir, records["measured-venv-volume"])
+    )
     measured_python = _parse_python_environment(
         _command_stdout(run_dir, records["measured-python-environment"])
     )
-    if measured_head != EXPECTED_HEAD or measurements.get("measured_alembic_head") != measured_head:
+    if (
+        measured_head != EXPECTED_HEAD
+        or measurements.get("measured_alembic_head") != measured_head
+    ):
         raise RuntimeError("measured Alembic head mismatch")
     if measurements.get("alembic_graph") != measured_graph:
         raise RuntimeError("measured Alembic graph mismatch")
@@ -833,7 +893,10 @@ def _verify(path: Path) -> None:  # noqa: C901
         or measurements.get("runtime_gates") != measured_gates
     ):
         raise RuntimeError("measured Runtime Gate mismatch")
-    if measured_network != "true" or measurements.get("docker_network_internal") is not True:
+    if (
+        measured_network != "true"
+        or measurements.get("docker_network_internal") is not True
+    ):
         raise RuntimeError("measured Docker network is not internal")
     if measurements.get("backend_image") != measured_backend_image:
         raise RuntimeError("measured backend image mismatch")
@@ -876,13 +939,13 @@ def _write_report(
         "finished_at": datetime.now(UTC).isoformat(),
         "sentinel_database": sentinel_database,
         "migration_head": measurements.get("measured_alembic_head"),
-        "migration_0013_created": measurements.get("alembic_graph", {}).get(
-            "migration_0013_created"
+        "migration_0014_created": measurements.get("alembic_graph", {}).get(
+            "migration_0014_created"
         )
         if isinstance(measurements.get("alembic_graph"), dict)
         else None,
-        "migration_0014_or_higher_present": measurements.get("alembic_graph", {}).get(
-            "migration_0014_or_higher_present"
+        "migration_0015_or_higher_present": measurements.get("alembic_graph", {}).get(
+            "migration_0015_or_higher_present"
         )
         if isinstance(measurements.get("alembic_graph"), dict)
         else None,
@@ -892,9 +955,12 @@ def _write_report(
             "multi_agent_enabled": False,
         },
         "production_runtime_activated": False,
-        "workload_container_external_network_denied": measurements.get("docker_network_internal")
+        "workload_container_external_network_denied": measurements.get(
+            "docker_network_internal"
+        )
         is True,
-        "ambient_runtime_dependent": measurements.get("ambient_runtime_dependent") is True,
+        "ambient_runtime_dependent": measurements.get("ambient_runtime_dependent")
+        is True,
         "legacy_evidence_preserved": legacy_evidence_preserved,
         "root_env_accessed": False,
         "business_database_accessed": False,
@@ -915,8 +981,8 @@ def _write_report(
             f"- Run ID: `{run_id}`",
             f"- Passed: `{passed}`",
             f"- Migration head: `{report['migration_head']}`",
-            f"- Migration 0013 created: `{report['migration_0013_created']}`",
-            f"- Migration 0014 or higher: `{report['migration_0014_or_higher_present']}`",
+            f"- Migration 0014 created: `{report['migration_0014_created']}`",
+            f"- Migration 0015 or higher: `{report['migration_0015_or_higher_present']}`",
             "- Production Runtime activated: `false`",
             "- Feature gates: `false / false / false`",
             "- Workload-container external network denied: "
@@ -936,7 +1002,9 @@ def _write_report(
         "artifact-manifest.sha256",
     }
     artifact_manifest = _artifacts(run_dir, exclude=excluded)
-    artifact_raw_sha = _write_json(run_dir / "artifact-manifest.json", artifact_manifest)
+    artifact_raw_sha = _write_json(
+        run_dir / "artifact-manifest.json", artifact_manifest
+    )
     _write_bytes(run_dir / "artifact-manifest.sha256", f"{artifact_raw_sha}\n".encode())
     report["artifact_manifest_raw_sha256"] = artifact_raw_sha
     report["artifacts"] = artifact_manifest
@@ -983,9 +1051,7 @@ def main() -> int:
     role_name = f"omnibase_test_p54b_{token}"
     role_password = secrets.token_hex(24)
     owner_password = secrets.token_hex(24)
-    database_url = (
-        f"postgresql+psycopg://{role_name}:{role_password}@localhost:55434/{database_name}"
-    )
+    database_url = f"postgresql+psycopg://{role_name}:{role_password}@localhost:55434/{database_name}"
     env = dict(os.environ)
     env.update(
         {
@@ -1006,7 +1072,9 @@ def main() -> int:
     try:
         preflight_command = _expected_commands(project, override)["preflight-images"]
         commands.append(_run_step(run_dir, "preflight-images", preflight_command))
-        up_command = _compose_command(project, override, "up", "-d", "--wait", "postgres-test")
+        up_command = _compose_command(
+            project, override, "up", "-d", "--wait", "postgres-test"
+        )
         commands.append(_run_step(run_dir, "compose-up", up_command, env=env))
         gate_commands, measurements = _run_gate(run_dir, project, database_url)
         commands.extend(gate_commands)

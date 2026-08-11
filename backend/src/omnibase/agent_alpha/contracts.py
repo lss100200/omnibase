@@ -1,10 +1,11 @@
-"""Closed logical contracts for the tool-free single-Agent Alpha."""
+"""Closed logical contracts for the no-tool single-Agent Alpha."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from omnibase.agent_skills.resolver import SkillInstructionBundle
 from omnibase.model_gateway import ModelGateway, ModelUsage
 
 
@@ -120,6 +121,20 @@ class AlphaMemoryCompiler(Protocol):
     ) -> AlphaMemoryCapsule | None: ...
 
 
+class AlphaSkillResolver(Protocol):
+    """Read-only resolver for the exact personal instruction-Skill bundle."""
+
+    def resolve(
+        self,
+        *,
+        tenant_id: str,
+        tenant_schema: str,
+        owner_user_id: str,
+        workspace_id: str,
+        agent_version_id: str,
+    ) -> SkillInstructionBundle: ...
+
+
 @dataclass(frozen=True, slots=True)
 class AlphaGatewaySelection:
     gateway: ModelGateway
@@ -195,6 +210,7 @@ __all__ = [
     "AlphaMemoryCapsule",
     "AlphaMemoryCompiler",
     "AlphaProfileResolver",
+    "AlphaSkillResolver",
     "AlphaStreamEvent",
     "AlphaUserPreferences",
     "AlphaUserPreferencesResolver",
