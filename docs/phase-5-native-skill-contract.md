@@ -1,6 +1,6 @@
 # P5.6A First-Party Native Skill Contract
 
-Status: **engineering-only, compile-only, blocked/not_proven**.
+Status: **P5.6A historical compile-only predecessor; P5.6P personal successor in progress**.
 
 P5.6A freezes the first product-level OmniBase Skill contract without adding a
 Skill runtime or claiming production readiness. The contract exists so later
@@ -70,26 +70,25 @@ python scripts/production/validate_p5_6a_skill_contract.py --verify
 environment values.
 
 `--verify` requires a clean checkout, the exact public remote, migration head
-`0012`, all three Phase 5 Feature Gates false, and absence of Skill runtime,
-Browser API or migration `0013`. A valid result still returns
-`blocked/not_proven` with exit `2` because P34.7, P5.4 and Skill persistence/API
-proof are absent. A safety veto returns `invalid/veto` with exit `1`.
+`0014` and all three Phase 5 Feature Gates false. It validates only the P5.6A
+manifest contract and never authorizes or starts the P5.6P successor. A valid
+result still returns `blocked/not_proven` with exit `2`; that historical result
+is not a veto against the separately reviewed personal persistence/runtime
+increment. A safety veto returns `invalid/veto` with exit `1`.
 
 Neither mode reads the root `.env`, connects to PostgreSQL/Redis/MinIO, calls a
 model provider, installs a Skill, executes a declared verification command, or
 starts Agent/Planner/Executor/Scheduler/Worker processes.
 
-## Next admission sequence
+## Personal successor
 
-1. Merge and independently verify the P5.3 compile-only Planner contract.
-2. Implement and gate P5.4 typed single-Agent Executor with logical Capability
-   Tool Gateway only; no shell, SQL or arbitrary HTTP.
-3. P5.6B may add persistence and migration `0013` only after explicit user
-   authorization and a disposable PostgreSQL Gate.
-4. P5.6C may add Browser catalog/install/disable/rollback API and UI after the
-   persistence contract is frozen.
-5. P5.6D may pin an approved instruction Skill into Agent Alpha by exact
-   SkillVersion/digest. The Skill cannot add tools or capability.
-6. Workflow Skills wait for P5.3/P5.4 proof. Script Skills wait for production
-   P34.5/P34.7 Runner/Sandbox proof. MCP and third-party Marketplace wait for
-   Phase 6.
+The explicitly authorized P5.6P successor combines the smallest useful parts
+of the former B/C/D sequence for the personal edition: migration `0014`,
+internal first-party instruction persistence, exact Workspace/AgentVersion
+installation, disable/revoke/rollback and personal Agent Alpha prompt
+projection. It adds no Browser Skill catalog in R0 and grants no tools,
+capabilities or network authority.
+
+Workflow/script Skills, MCP, third-party Marketplace and enterprise publication
+review remain frozen. See
+`docs/architecture/p5-6p-personal-instruction-skills-r0.md`.

@@ -4876,3 +4876,76 @@ instruction-only Skill, restart/unknown/no-replay recovery, personal target
 acceptance, then a bounded P6.0 personal admission record. P5.7 Multi-Agent DAG,
 workflow/script Skills, enterprise authority separation and the P34.7 total Gate
 remain frozen and are not personal P6 blockers.
+
+### P5.6P personal instruction Skill implementation (2026-08-12)
+
+P5.5C was merged through PR #30 and advanced `main` to
+`5e1b1cb2613ab617a8ffc44dcaf70cdb0512e2cc`. Work then moved forward on
+`codex/p5-6p-personal-instruction-skills-r0` from that exact baseline. This
+increment follows the personal-edition shortest path and does not reopen the
+enterprise P34.7 evidence campaign.
+
+Migration `0014_p5_6p_personal_instruction_skills.py` adds first-party Skill
+definitions, immutable instruction SkillVersions and exact
+Workspace/AgentVersion installation history in the global control plane. The
+internal caller-owned transaction service supports register, seal, install,
+disable, revoke and rollback. Service checks and PostgreSQL triggers both
+require the sole active tenant-admin Owner, exact Workspace ownership and
+membership, a sealed AgentVersion and its exact live Workspace installation
+with a matching digest. Cross-Tenant, cross-Workspace, cross-Owner and
+uninstalled Agent references fail closed. Populated downgrade is forbidden.
+
+Only the exact personal canary composition receives the SQL-backed resolver.
+Default and engineering compositions stay Skill-free. A non-empty deterministic
+bundle is independently rehashed, included in the invocation request hash and
+inserted between sealed AgentVersion instructions and RAG/Memory/user input.
+SSE exposes only `skill_bundle_digest` and `skill_count`. Empty resolution keeps
+the historical no-Skill request hash and SSE shape, and exact terminal replay
+does not resolve Skills or call the Provider again.
+
+The personal scope is intentionally narrow: no Browser Skill CRUD, workflow or
+script execution, tools, Capability expansion, network access, secrets, MCP,
+Marketplace, Planner, Multi-Agent or enterprise approval ceremony. Installation
+by the sole live Owner is the personal behavior decision for that exact
+Workspace/AgentVersion; it does not create a global published Skill authority.
+
+Current local evidence:
+
+```text
+P5.6P persistence/resolver + Agent Alpha focused = 99 passed
+P5 contract migration ripple = 457 passed
+P34.7 frozen-contract compatibility = 307 passed / 1 Windows-only skip
+candidate focused after refactor = 171 passed
+random disposable PostgreSQL migration/install/resolve/lifecycle/cross-wire journey = 1 passed
+disposable cleanup = containers 0 / networks 0 / volumes 0
+changed-path Ruff/Mypy/git diff check = passed in the completed component runs
+P5 sealed migration chain mismatch = 0 before final maintainer-document reseal
+```
+
+The disposable database used an `omnibase_test_p56p_*` identity and was removed
+with its Compose project, network and volume. It did not use a real Provider or
+any API key. The root `.env` was not read and no business database was accessed
+or migrated.
+
+Current posture:
+
+```text
+P5_6P_IMPLEMENTED_PENDING_FINAL_RESEAL_AND_REMOTE_CI
+migration head=0014
+migration 0015+ absent
+AGENT_RUNTIME_ENABLED=false by default
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen / blocked_not_proven
+approved enterprise trust-policy digest empty
+not committed
+not pushed
+not merged
+not deployed
+```
+
+After P5.6P merge, the remaining personal path is P5.8P
+restart/expired-lease/unknown-outcome/no-replay recovery, followed by P5.9P
+production-like localhost Agent/SSE/Memory/Skill/cancel/kill-switch/restore-new
+acceptance and then the bounded P6.0 Personal Admission record. P5.7
+Multi-Agent remains outside the personal admission path.

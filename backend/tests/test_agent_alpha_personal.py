@@ -96,7 +96,7 @@ def _mapping() -> dict[str, object]:
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0013",
+        "migration_head": "0014",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -129,7 +129,7 @@ def _current_readiness_fixture(root: Path) -> tuple[dict[str, object], Path]:
         "enterprise_production_approved": False,
         "enterprise_track_frozen": True,
         "migration_0013_created": True,
-        "migration_head": "0013",
+        "migration_head": "0014",
         "passed": True,
         "personal_owner_activation_ready": True,
         "production_runtime_activated": False,
@@ -242,7 +242,7 @@ def test_posture_assembles_only_with_active_exact_scope(
     fake_session = SimpleNamespace(rollback=lambda: None, close=lambda: None)
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._migration_head",
-        lambda _: "0013",
+        lambda _: "0014",
     )
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
@@ -356,7 +356,7 @@ def test_posture_turns_database_failure_into_stable_unavailable(
         confirmed_plan_sha256=config.activation_plan().canonical_digest(),
         now=NOW,
     )
-    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0013")
+    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0014")
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -423,6 +423,16 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
         lambda **_: active_posture,
     )
     factory = _FakeFactory()
+    captured: dict[str, object] = {}
+
+    class _FakeSkillResolver:
+        def __init__(self, resolver_factory: object) -> None:
+            captured["factory"] = resolver_factory
+
+    monkeypatch.setattr(
+        "omnibase.agent_alpha.personal.SqlAlchemySkillResolver",
+        _FakeSkillResolver,
+    )
     result = build_personal_agent_alpha(
         tenant_id=config.tenant_id,
         workspace_id=config.workspace_id,
@@ -441,6 +451,8 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
         gateway=_gateway(),
     )
     assert isinstance(result, PersonalCanaryAgentAlpha)
+    assert captured["factory"] is factory
+    assert isinstance(result._delegate._skill_resolver, _FakeSkillResolver)
 
 
 def test_scoped_facade_filters_agent_and_rejects_scope_or_top_k() -> None:

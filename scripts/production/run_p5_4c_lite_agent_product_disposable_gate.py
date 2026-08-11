@@ -75,7 +75,7 @@ LITE_UNIT_TESTS = (
     "tests/test_p5_4b_engineering_composition.py",
 )
 BACKEND_IMAGE = "omnibase-backend:latest"
-EXPECTED_MIGRATION_HEAD = "0013"
+EXPECTED_MIGRATION_HEAD = "0014"
 EXPECTED_RUNTIME_GATES = {
     "P5_4B_ENGINEERING_ENABLED": "false",
     "AGENT_RUNTIME_ENABLED": "false",

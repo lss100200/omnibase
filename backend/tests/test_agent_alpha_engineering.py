@@ -206,6 +206,7 @@ def test_missing_database_returns_unavailable() -> None:
 def test_valid_engineering_configuration_assembles_service() -> None:
     result = build_engineering_agent_alpha(**_valid_kwargs())
     assert isinstance(result, AgentAlphaService)
+    assert result._skill_resolver is None
 
 
 def test_production_never_assembles_even_with_all_other_conditions() -> None:

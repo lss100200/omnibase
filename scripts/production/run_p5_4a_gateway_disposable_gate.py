@@ -92,7 +92,7 @@ def _validate_config() -> None:
             REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
         ).read_text(encoding="utf-8")
     )
-    if config.get("migration_baseline") != "0013":
+    if config.get("migration_baseline") != "0014":
         raise RuntimeError("P5.4A Gate requires migration baseline 0013")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4A activation must remain false")

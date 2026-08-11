@@ -87,7 +87,7 @@ def _config_mapping(tmp_path: Path) -> dict[str, object]:
                 "root_env_accessed": False,
             },
         },
-        "migration_head": "0013",
+        "migration_head": "0014",
         "migration_0013_created": True,
         "agent_runtime_enabled": False,
         "agent_planner_enabled": False,

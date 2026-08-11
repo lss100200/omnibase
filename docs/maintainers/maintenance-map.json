@@ -5,11 +5,11 @@
     "Production hostile-code execution on any Runner that has not passed the P34.5 Linux isolation and attack matrix Gate",
     "Real member Overlay deployment, physical Overlay endpoint exposure to Sandbox, and direct Sandbox/Runner access to PostgreSQL, Redis or MinIO",
     "Production Workspace-data adapter/provider activation, canonical mutation, and any direct Sandbox/Runner data-store access outside the P34.6 controlled Gateway contracts",
-    "Agent Runtime orchestration beyond the existing control/capability/data/workspace foundation"
+    "Agent Runtime orchestration beyond the exact personal single-Agent canary; Planner, Multi-Agent and enterprise Runtime remain frozen"
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0012",
+    "Alembic migrations 0001 through 0014",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -857,6 +857,31 @@
         "backend/tests/test_agent_alpha_personal.py",
         "backend/tests/test_agent_alpha_personal_router.py",
         "backend/tests/integration/test_p5_5c_memory_runtime.py"
+      ]
+    },
+    {
+      "id": "INV-061",
+      "title": "P5.6P personal instruction Skills are first-party, immutable, exact-installation-bound, non-escalating and digest-projected",
+      "document": "docs/maintainers/security-invariants.md#inv-061-p56p-personal-instruction-skill-runtime-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/models.py",
+        "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/agent_skills/resolver.py",
+        "backend/src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py",
+        "backend/src/omnibase/agent_alpha/contracts.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "docs/architecture/p5-6p-personal-instruction-skills-r0.md",
+        "docs/runbooks/skill-review-revoke-rollback.md",
+        "docs/evidence/p5-6/personal-instruction-skills-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "backend/tests/test_p5_6p_instruction_skills_migration_contract.py",
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_6p_personal_instruction_skill_runtime.py"
       ]
     }
   ],
@@ -2247,8 +2272,8 @@
         "scripts/production/run_p5_2c_agent_alpha_disposable_gate.py:main"
       ],
       "public_interfaces": [
-        "AGENT_ALPHA_ENGINEERING_ENABLED strict true/false seam; build fails closed to UnavailableAgentAlpha unless ENV=development, all Phase 5 gates false, gateway configured and migration head 0012",
-        "Migration 0011 owns the durable Task/Run/Step/Attempt/Lease/Budget/Effect lifecycle; repository/admission head is 0012, with transaction A reservation and transaction B revalidate+terminalize",
+        "AGENT_ALPHA_ENGINEERING_ENABLED strict true/false seam; build fails closed to UnavailableAgentAlpha unless ENV=development, all Phase 5 gates false, gateway configured and the current reviewed migration head matches",
+        "Migration 0011 owns the durable Task/Run/Step/Attempt/Lease/Budget/Effect lifecycle; the repository/admission head advances independently, with transaction A reservation and transaction B revalidate+terminalize",
         "Exact replay binds stable Browser caller intent and the non-secret selected Provider configuration digest inside the task_create canonical payload, returns before mutable RAG retrieval or WorkspaceRun creation, and conflicts on payload drift; unknown outcomes never auto-replay",
         "Fresh invocation creates one short-lived P34 WorkspaceRun/RunLease on a deployment-bound server-owned Model Gateway Node, binds the same non-placeholder runtime/workload identity to P34 and P5, and terminalizes both ledgers together",
         "RAG reads only ready P34.6 derived-index generations bound to the current tenant and Workspace; tenant-wide canonical RAG is forbidden for Alpha",
@@ -2503,8 +2528,8 @@
         "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
       ],
       "recovery": [
-        "Keep P5.4B unavailable unless the explicit engineering flag, migration head 0012, all-false Phase 5 gates and every injected dependency pass strict checks.",
-        "Keep production Runtime activation false and migration 0013 absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "Keep P5.4B unavailable unless the explicit engineering flag, current reviewed migration head, all-false Phase 5 gates and every injected dependency pass strict checks.",
+        "Keep production Runtime activation false and unauthorized migration 0015+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
         "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
         "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
       ]
@@ -2730,8 +2755,8 @@
       ],
       "recovery": [
         "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
-        "Reject migration head drift beyond 0012, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
-        "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A has no database or runtime to roll back."
+        "Reject migration head drift beyond reviewed 0014, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A owns no database or runtime; the separately reviewed P5.6P module owns migration 0014 and personal instruction projection."
       ]
     },
     {
@@ -2884,7 +2909,7 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py"
       ],
       "recovery": [
-        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, keep migration head 0012, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
+        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0014, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
       ]
     },
@@ -2929,7 +2954,7 @@
       ],
       "recovery": [
         "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
-        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0012, migration 0013 absent and all three Phase 5 Feature Gates false.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0014, migration 0015+ absent and all three Phase 5 Feature Gates false.",
         "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     },
@@ -3022,7 +3047,7 @@
       "recovery": [
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
-        "Never edit an event, delete a kill marker, reuse a terminal state directory, create migration 0014+, bypass the reviewed migration 0013 Memory lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0015+, bypass reviewed migration 0013 Memory or migration 0014 Skill lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     },
     {
@@ -3266,6 +3291,76 @@
         "Disable the personal Memory compiler composition and keep Runtime=false outside the exact personal canary; Planner and Multi-Agent remain false.",
         "Preserve append-only Capsule, ledger and Audit evidence; an ambiguous compiler/decrypt/scope result fails the invocation and never falls back to unscoped or plaintext Memory.",
         "Do not replay unknown provider outcomes, restore erased Memory content, expose Memory plaintext in SSE/logs or turn Memory into a tool, Skill, MCP, HTTP, SQL or Planner authority."
+      ]
+    },
+    {
+      "id": "personal-instruction-skills",
+      "name": "P5.6P personal first-party sealed instruction Skill persistence and Agent Alpha projection",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/__init__.py",
+        "backend/src/omnibase/agent_skills/models.py",
+        "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/agent_skills/resolver.py",
+        "backend/src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py",
+        "backend/src/omnibase/agent_alpha/contracts.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "backend/tests/test_p5_6p_instruction_skills_migration_contract.py",
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_6p_personal_instruction_skill_runtime.py",
+        "Makefile",
+        "docs/phase-5-native-skill-contract.md",
+        "docs/architecture/p5-6p-personal-instruction-skills-r0.md",
+        "docs/runbooks/skill-review-revoke-rollback.md",
+        "docs/evidence/p5-6/personal-instruction-skills-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_skills/service.py:SkillPersistenceService",
+        "backend/src/omnibase/agent_skills/resolver.py:SqlAlchemySkillResolver",
+        "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
+        "backend/src/omnibase/agent_alpha/personal.py:build_personal_agent_alpha"
+      ],
+      "public_interfaces": [
+        "Internal caller-owned transaction service for register, seal, install, disable, revoke and rollback",
+        "Deterministic read-only instruction bundle resolver bound to one live Owner, Workspace and installed AgentVersion",
+        "Personal Agent Alpha prompt projection with request-hash binding and SSE digest/count metadata only"
+      ],
+      "depends_on": [
+        "native-skill-contract-preflight",
+        "agent-registry-persistence",
+        "workspace-control-plane",
+        "agent-alpha-workbench",
+        "personal-runtime-canary",
+        "p5-task-ledger-persistence"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-005",
+        "INV-010",
+        "INV-041",
+        "INV-044",
+        "INV-045",
+        "INV-048",
+        "INV-049",
+        "INV-056",
+        "INV-061"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_6p_instruction_skills.py tests/test_p5_6p_instruction_skills_migration_contract.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/test_p5_6a_skill_contract.py -q",
+        "TEST_COMPOSE_PROJECT=omnibase-p56p-<random> TEST_DATABASE_NAME=omnibase_test_p56p_<random> TEST_DATABASE_ROLE=omnibase_test_p56p_<random> TEST_DATABASE_PORT=<random> TEST_DATABASE_OWNER_PASSWORD=<random> TEST_DATABASE_PASSWORD=<random> make test-p5-6p-skills",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/agent_skills src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_skills src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py tests/test_p5_6p_instruction_skills.py tests/test_p5_6p_instruction_skills_migration_contract.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_6p_personal_instruction_skill_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_skills src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py tests/test_p5_6p_instruction_skills.py tests/test_p5_6p_instruction_skills_migration_contract.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_6p_personal_instruction_skill_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep Runtime=false outside the exact personal canary and keep Planner/Multi-Agent false; disable or revoke an ambiguous installation.",
+        "Preserve immutable SkillVersion and installation history; never edit a sealed version, revive a revoked installation or reuse an old idempotency key across bundle drift.",
+        "Use a forward fix or restore into a new omnibase_restore_* database; populated migration 0014 cannot be destructively downgraded."
       ]
     }
   ]

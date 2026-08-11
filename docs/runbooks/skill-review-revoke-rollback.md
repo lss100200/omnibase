@@ -1,8 +1,15 @@
 # Skill Review, Revoke and Rollback Runbook
 
 This runbook describes the fail-closed operator posture for first-party native
-OmniBase Skills. P5.6A is compile-only; the operational actions below become
-available only in later explicitly authorized phases.
+OmniBase Skills. P5.6A remains compile-only. P5.6P authorizes only internal
+personal-edition install/disable/revoke/rollback for sealed first-party
+instruction Skills; Browser catalog operations, workflow/script execution,
+MCP, Marketplace and enterprise publication remain unavailable.
+
+For the personal edition, the sole live Owner's exact installation transaction
+is the behavior-level approval for that Workspace and AgentVersion. It does not
+promote a Skill to globally `approved|published`, does not create a transferable
+authority token and cannot add capability.
 
 ## Review admission
 

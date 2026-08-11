@@ -9,7 +9,7 @@ builder.  It assembles only when all of the following independently hold:
 * a canonical, exact-scope canary config and an ACTIVE, unexpired activation
   ledger are mounted at explicit absolute paths;
 * the application environment is production, the Model Gateway is configured
-  and the database migration head is exactly ``0013``;
+  and the database migration head is exactly ``0014``;
 * the current request is the configured Tenant/Workspace/Owner and the live
   tenant schema still contains exactly that one active Owner, who is also an
   active tenant administrator.
@@ -47,6 +47,7 @@ from omnibase.agent_alpha.service import (
 )
 from omnibase.agent_memory.compiler import SqlAlchemyMemoryCompiler
 from omnibase.agent_memory.crypto import MemoryContentCipher, MemoryCryptoUnavailable
+from omnibase.agent_skills.resolver import SqlAlchemySkillResolver
 from omnibase.core.config import Environment, Settings, get_settings
 from omnibase.core.db import get_session_factory
 from omnibase.db.models import Tenant
@@ -75,7 +76,7 @@ PERSONAL_RUNTIME_CONFIG_ENV = "PERSONAL_RUNTIME_CANARY_CONFIG"
 PERSONAL_RUNTIME_STATE_DIR_ENV = "PERSONAL_RUNTIME_STATE_DIR"
 PERSONAL_RUNTIME_READINESS_ROOT_ENV = "PERSONAL_RUNTIME_READINESS_ROOT"
 PERSONAL_RUNTIME_PROFILE = "personal_single_owner"
-_EXPECTED_MIGRATION_HEAD = "0013"
+_EXPECTED_MIGRATION_HEAD = "0014"
 _ACTIVE_WORKSPACE_RUN_STATES = frozenset(
     {"queued", "leased", "starting", "running", "pausing", "paused", "stopping"}
 )
@@ -691,7 +692,7 @@ def personal_alpha_posture(
         factory = factory or get_session_factory(settings)
         migration_ready = _migration_head(factory) == _EXPECTED_MIGRATION_HEAD
         if not migration_ready:
-            blockers.append("migration head is not 0013")
+            blockers.append("migration head is not 0014")
         if scope_matches:
             session = _open_tenant_session(factory, tenant_id)
             try:
@@ -840,6 +841,7 @@ def build_personal_agent_alpha(
         gateway_resolver=personal_gateway,
         preferences_resolver=personal_gateway,
         memory_compiler=memory_compiler,
+        skill_resolver=SqlAlchemySkillResolver(factory),
         runtime_guard=_runtime_checkpoint(
             config=config,
             config_path=config_file,

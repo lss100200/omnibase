@@ -1084,8 +1084,8 @@ class MemoryContractConfig:
         )
         if not config.source.require_clean_checkout:
             raise MemoryContractError("P5.5A source provenance must require a clean checkout")
-        if config.migration_baseline != "0013":
-            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0013")
+        if config.migration_baseline != "0014":
+            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0014")
         if not config.policies or not config.capsules or not config.candidates:
             raise MemoryContractError("P5.5A requires policy, capsule and candidate examples")
         config._validate_references()

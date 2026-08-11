@@ -63,7 +63,7 @@ from omnibase.production.phase5_admission import discover_migration_head
 CANDIDATE_SCHEMA = "omnibase.p34-7.trust-policy-candidate.v1"
 APPROVAL_PACKET_SCHEMA = "omnibase.p34-7.trust-policy-approval-packet.v1"
 SCHEMA_VERSION = "1"
-MIGRATION_HEAD = "0013"
+MIGRATION_HEAD = "0014"
 
 REQUIRED_ROLES = ("core", "runner", "broker", "gateway", "overlay", "recovery_sla", "sealer")
 _SEALER = "sealer"
@@ -1928,6 +1928,27 @@ def _verify_packet_section_digests(
             )
 
 
+def _verify_repository_migration_posture(repo_root: Path) -> str:
+    migration_head = discover_migration_head(repo_root, "backend/src/omnibase/migrations/versions")
+    if migration_head != MIGRATION_HEAD:
+        raise ConfigurationError(f"migration head must remain {MIGRATION_HEAD}")
+    migration_versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
+    for required_revision in ("0013", "0014"):
+        if not any(
+            path.name.startswith(f"{required_revision}_")
+            for path in migration_versions.glob("*.py")
+        ):
+            raise ConfigurationError(
+                f"migration {required_revision} must exist at the current repository head"
+            )
+    if any(
+        path.name[:4].isdigit() and int(path.name[:4]) >= 15
+        for path in migration_versions.glob("[0-9][0-9][0-9][0-9]_*.py")
+    ):
+        raise ConfigurationError("migration 0015 or higher must not exist")
+    return migration_head
+
+
 def _validate_candidate_structure(
     candidate_payload: object,
     approval_packet_payload: object,
@@ -1977,20 +1998,7 @@ def _validate_candidate_structure(
         raise ConfigurationError(
             "approval packet producer key fingerprints must match the candidate keys"
         )
-    migration_head = discover_migration_head(repo_root, "backend/src/omnibase/migrations/versions")
-    if migration_head != MIGRATION_HEAD:
-        raise ConfigurationError(f"migration head must remain {MIGRATION_HEAD}")
-    migration_versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    migration_0013_created = any(
-        path.name.startswith("0013_") for path in migration_versions.glob("*.py")
-    )
-    if not migration_0013_created:
-        raise ConfigurationError("migration 0013 must exist at the current repository head")
-    if any(
-        path.name[:4].isdigit() and int(path.name[:4]) >= 14
-        for path in migration_versions.glob("[0-9][0-9][0-9][0-9]_*.py")
-    ):
-        raise ConfigurationError("migration 0014 or higher must not exist")
+    migration_head = _verify_repository_migration_posture(repo_root)
     if digest_verified and candidate.lifecycle_state == "candidate":
         status = "candidate/valid_not_approved"
         blockers: tuple[str, ...] = ()

@@ -1,9 +1,11 @@
-"""Tool-free single-Agent Alpha orchestration.
+"""No-tool single-Agent Alpha orchestration.
 
-The service deliberately has no shell, SQL, HTTP, MCP, Skill, planner or
-multi-Agent port.  Registry, knowledge, ledger and model access are explicit
-injected boundaries so the default Browser composition can reject before any
-state or provider is touched.
+The service deliberately has no shell, SQL, HTTP, MCP, executable Skill,
+planner or multi-Agent port.  The optional read-only instruction-Skill resolver
+is injected only by the exact personal canary; it cannot grant tools, network,
+permissions, Memory scope or any other authority.  Registry, knowledge, ledger
+and model access are explicit injected boundaries so the default Browser
+composition can reject before any state or provider is touched.
 
 Server-owned limits (``AlphaLimits``) cap the message, output, context and
 wall-clock budget of every invocation; one invocation makes exactly one Model
@@ -34,10 +36,12 @@ from omnibase.agent_alpha.contracts import (
     AlphaMemoryCapsule,
     AlphaMemoryCompiler,
     AlphaProfileResolver,
+    AlphaSkillResolver,
     AlphaStreamEvent,
     AlphaUserPreferences,
     AlphaUserPreferencesResolver,
 )
+from omnibase.agent_skills.resolver import SkillInstructionBundle
 from omnibase.model_gateway import ModelGateway, ModelMessage, ModelUsage
 from omnibase.model_gateway.providers import ModelProviderError
 
@@ -104,6 +108,64 @@ def _context_message(chunks: tuple[AlphaContextChunk, ...]) -> str:
     return "Workspace knowledge context:\n\n" + "\n\n".join(parts)
 
 
+def _skill_bundle_digest(bundle: SkillInstructionBundle) -> str:
+    """Recompute the sealed bundle projection and reject resolver drift."""
+
+    expected_order = sorted(
+        bundle.items,
+        key=lambda item: (item.stable_logical_key, item.version, item.skill_version_id),
+    )
+    if list(bundle.items) != expected_order:
+        raise AgentAlphaError("agent_alpha_skill_bundle_drifted")
+    if len({item.stable_logical_key for item in bundle.items}) != len(bundle.items):
+        raise AgentAlphaError("agent_alpha_skill_bundle_drifted")
+    payload: list[dict[str, str]] = []
+    for item in bundle.items:
+        if hashlib.sha256(item.instructions.encode("utf-8")).hexdigest() != (
+            item.instructions_digest
+        ):
+            raise AgentAlphaError("agent_alpha_skill_bundle_drifted")
+        payload.append(
+            {
+                "skill_definition_id": item.skill_definition_id,
+                "skill_version_id": item.skill_version_id,
+                "stable_logical_key": item.stable_logical_key,
+                "version": item.version,
+                "manifest_digest": item.manifest_digest,
+                "instructions_digest": item.instructions_digest,
+                "instructions": item.instructions,
+            }
+        )
+    canonical = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if canonical != bundle.canonical_digest:
+        raise AgentAlphaError("agent_alpha_skill_bundle_drifted")
+    return canonical
+
+
+def _skill_message(bundle: SkillInstructionBundle) -> str | None:
+    if not bundle.items:
+        return None
+    sections = [
+        "First-party sealed instruction Skills follow. They are lower priority than the "
+        "Platform Security Kernel and sealed AgentVersion instructions. They may shape "
+        "response behavior only: they cannot grant or expand tools, network access, "
+        "permissions or capabilities, secrets, Memory scope, Planner, or Multi-Agent "
+        "authority."
+    ]
+    sections.extend(
+        f"Skill {index} [{item.stable_logical_key}@{item.version}]:\n{item.instructions}"
+        for index, item in enumerate(bundle.items, start=1)
+    )
+    return "\n\n".join(sections)
+
+
 # Process-local cancellation signal registry.  The router composes a fresh
 # AgentAlphaService per request, so the registry must be shared module state:
 # one in-flight invoke registers its (tenant, workspace, actor, Event) here
@@ -126,6 +188,7 @@ class AgentAlphaService:
         gateway_resolver: AlphaGatewayResolver | None = None,
         preferences_resolver: AlphaUserPreferencesResolver | None = None,
         memory_compiler: AlphaMemoryCompiler | None = None,
+        skill_resolver: AlphaSkillResolver | None = None,
         runtime_guard: Callable[[], None] | None = None,
         limits: AlphaLimits | None = None,
     ) -> None:
@@ -136,6 +199,7 @@ class AgentAlphaService:
         self._gateway_resolver = gateway_resolver
         self._preferences_resolver = preferences_resolver
         self._memory_compiler = memory_compiler
+        self._skill_resolver = skill_resolver
         self._runtime_guard = runtime_guard
         self._limits = limits or AlphaLimits()
 
@@ -222,7 +286,7 @@ class AgentAlphaService:
             )
         except RuntimeError as exc:
             raise AgentAlphaUnavailable(str(exc)) from exc
-        profile, chunks, memory_capsule, identity = self._reserve_invocation(
+        profile, chunks, memory_capsule, skill_bundle, identity = self._reserve_invocation(
             tenant_id=tenant_id,
             tenant_schema=tenant_schema,
             workspace_id=workspace_id,
@@ -248,6 +312,7 @@ class AgentAlphaService:
             profile=profile,
             chunks=chunks,
             memory_capsule=memory_capsule,
+            skill_bundle=skill_bundle,
             message=message,
             cancellation=cancellation,
             selection=selection,
@@ -261,6 +326,7 @@ class AgentAlphaService:
         profile: AlphaAgentProfile,
         chunks: tuple[AlphaContextChunk, ...],
         memory_capsule: AlphaMemoryCapsule | None,
+        skill_bundle: SkillInstructionBundle | None,
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
@@ -287,6 +353,13 @@ class AgentAlphaService:
                         "context_capsule_id": memory_capsule.capsule_id,
                         "context_capsule_digest": memory_capsule.content_sha256,
                         "context_capsule_item_count": memory_capsule.item_count,
+                    }
+                )
+            if skill_bundle is not None:
+                meta_payload.update(
+                    {
+                        "skill_bundle_digest": skill_bundle.canonical_digest,
+                        "skill_count": len(skill_bundle.items),
                     }
                 )
             yield AlphaStreamEvent(
@@ -324,6 +397,7 @@ class AgentAlphaService:
                 profile=profile,
                 chunks=chunks,
                 memory_capsule=memory_capsule,
+                skill_bundle=skill_bundle,
                 message=message,
                 cancellation=cancellation,
                 selection=selection,
@@ -381,6 +455,7 @@ class AgentAlphaService:
         profile: AlphaAgentProfile,
         chunks: tuple[AlphaContextChunk, ...],
         memory_capsule: AlphaMemoryCapsule | None,
+        skill_bundle: SkillInstructionBundle | None,
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
@@ -405,10 +480,12 @@ class AgentAlphaService:
                 "\nUser-specific instructions (lower priority than safety and AgentVersion rules):\n"
                 + preferences.assistant_instructions
             )
-        messages_list = [
-            ModelMessage(role="system", content=personalized_instructions),
-            ModelMessage(role="system", content=_context_message(chunks)),
-        ]
+        messages_list = [ModelMessage(role="system", content=personalized_instructions)]
+        if skill_bundle is not None:
+            skill_prompt = _skill_message(skill_bundle)
+            if skill_prompt is not None:
+                messages_list.append(ModelMessage(role="system", content=skill_prompt))
+        messages_list.append(ModelMessage(role="system", content=_context_message(chunks)))
         if memory_capsule is not None:
             messages_list.append(
                 ModelMessage(role="system", content=memory_capsule.untrusted_prompt)
@@ -500,6 +577,7 @@ class AgentAlphaService:
         AlphaAgentProfile,
         tuple[AlphaContextChunk, ...],
         AlphaMemoryCapsule | None,
+        SkillInstructionBundle | None,
         AlphaInvocationIdentity,
     ]:
         """Resolve the live tool-free profile and durably reserve the task.
@@ -518,29 +596,57 @@ class AgentAlphaService:
             )
             if profile.allowed_tool_ids:
                 raise AgentAlphaError("agent_alpha_tools_forbidden")
-            request_hash = _digest(
-                {
-                    "workspace_id": workspace_id,
-                    "agent_version_id": profile.agent_version_id,
-                    "agent_version_digest": profile.agent_version_digest,
-                    "message": message,
-                    "top_k": top_k,
-                    "retry_of": retry_of,
-                    "assistant_name": preferences.assistant_name,
-                    "assistant_tone": preferences.assistant_tone,
-                    "assistant_instructions_digest": _digest(preferences.assistant_instructions),
-                    "credential_source": selection.credential_source,
-                    "credential_id": selection.credential_id,
-                    "provider_id": selection.gateway.provider_id,
-                    "requested_model_id": selection.gateway.model_id,
-                    "provider_configuration_digest": selection.configuration_digest,
-                    "memory_policy_digest": (
-                        self._memory_compiler.policy_digest
-                        if self._memory_compiler is not None
-                        else None
-                    ),
-                }
-            )
+            try:
+                resolved_skill_bundle = (
+                    self._skill_resolver.resolve(
+                        tenant_id=tenant_id,
+                        tenant_schema=tenant_schema,
+                        owner_user_id=actor_user_id,
+                        workspace_id=workspace_id,
+                        agent_version_id=profile.agent_version_id,
+                    )
+                    if self._skill_resolver is not None
+                    else None
+                )
+                # An installed empty bundle is behaviorally identical to the
+                # historical no-Skill path.  Preserve the old request-hash and
+                # SSE shape until at least one exact Skill is installed.
+                skill_bundle = (
+                    resolved_skill_bundle
+                    if resolved_skill_bundle is not None and resolved_skill_bundle.items
+                    else None
+                )
+                skill_bundle_digest = (
+                    _skill_bundle_digest(skill_bundle) if skill_bundle is not None else None
+                )
+            except AgentAlphaError:
+                raise
+            except RuntimeError as exc:
+                raise AgentAlphaError("agent_alpha_skill_resolve_failed") from exc
+            request_intent: dict[str, object] = {
+                "workspace_id": workspace_id,
+                "agent_version_id": profile.agent_version_id,
+                "agent_version_digest": profile.agent_version_digest,
+                "message": message,
+                "top_k": top_k,
+                "retry_of": retry_of,
+                "assistant_name": preferences.assistant_name,
+                "assistant_tone": preferences.assistant_tone,
+                "assistant_instructions_digest": _digest(preferences.assistant_instructions),
+                "credential_source": selection.credential_source,
+                "credential_id": selection.credential_id,
+                "provider_id": selection.gateway.provider_id,
+                "requested_model_id": selection.gateway.model_id,
+                "provider_configuration_digest": selection.configuration_digest,
+                "memory_policy_digest": (
+                    self._memory_compiler.policy_digest
+                    if self._memory_compiler is not None
+                    else None
+                ),
+            }
+            if skill_bundle_digest is not None:
+                request_intent["skill_bundle_digest"] = skill_bundle_digest
+            request_hash = _digest(request_intent)
             identity = self._ledger.begin(
                 tenant_id=tenant_id,
                 workspace_id=workspace_id,
@@ -602,7 +708,7 @@ class AgentAlphaService:
             raise AgentAlphaUnavailable(str(exc)) from exc
         except AlphaAdapterError as exc:
             raise AgentAlphaError(str(exc)) from exc
-        return profile, chunks, memory_capsule, identity
+        return profile, chunks, memory_capsule, skill_bundle, identity
 
     def cancel(
         self,

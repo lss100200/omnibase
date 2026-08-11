@@ -3242,8 +3242,9 @@ physical locators or internal provenance.
   commit, compile-on-replay, a second Capsule on exact replay, or leaving a
   compiler failure in a running ledger state.
 - Enabling Runtime outside the exact personal canary, enabling Planner or
-  Multi-Agent, creating migration `0014+`, or smuggling tool/Skill/MCP/HTTP/SQL
-  authority through Memory content.
+  Multi-Agent, modifying the separately owned Skill migration `0014`, creating
+  unauthorized migration `0015+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
+  through Memory content.
 
 **Required verification**
 
@@ -3263,6 +3264,62 @@ evidence and block the affected Memory scope. Never replay an unknown provider
 outcome, restore erased plaintext, edit an old Capsule, relax exact scope or
 fall back to unencrypted/unreviewed Memory. Use a forward fix or restore-new
 database and keep Planner/Multi-Agent false.
+
+## INV-061 p56p-personal-instruction-skill-runtime-boundary
+
+**Authoritative source**
+
+- `backend/src/omnibase/agent_skills/models.py`
+- `backend/src/omnibase/agent_skills/service.py`
+- `backend/src/omnibase/agent_skills/resolver.py`
+- `backend/src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py`
+- `backend/src/omnibase/agent_alpha/contracts.py`
+- `backend/src/omnibase/agent_alpha/service.py`
+- `backend/src/omnibase/agent_alpha/personal.py`
+- `backend/tests/test_p5_6p_instruction_skills.py`
+- `backend/tests/test_p5_6p_instruction_skills_migration_contract.py`
+- `backend/tests/test_agent_alpha.py`
+- `backend/tests/test_agent_alpha_personal.py`
+- `backend/tests/test_agent_alpha_personal_router.py`
+- `backend/tests/integration/test_p5_6p_personal_instruction_skill_runtime.py`
+- `docs/architecture/p5-6p-personal-instruction-skills-r0.md`
+- `docs/runbooks/skill-review-revoke-rollback.md`
+- `docs/evidence/p5-6/personal-instruction-skills-r0-decision.md`
+
+P5.6P is the personal-edition successor to the historical P5.6A compile-only
+contract. It authorizes only first-party, sealed, instruction-only Skills for
+one live human Owner and one exact installed Workspace/AgentVersion binding.
+It does not authorize Browser Skill CRUD, workflow/script execution, tools,
+Capability expansion, network access, secrets, MCP, Marketplace, Planner,
+Multi-Agent or enterprise P34.7 activation.
+
+Migration `0014` stores global-control-plane Skill definitions, immutable
+versions and installation history. The service and database trigger must both
+revalidate the active Tenant and server-owned tenant schema, active
+tenant-admin Owner, Workspace ownership and active Owner membership, sealed
+AgentVersion, and the exact live Workspace Agent binding with a matching
+manifest digest. Cross-Tenant, cross-Workspace, cross-Owner, uninstalled Agent
+and digest-drifted references fail closed. A populated `0014` downgrade is
+forbidden; recovery is a forward fix or restore into a new
+`omnibase_restore_*` database.
+
+Only the exact INV-056 personal canary composition receives the SQL-backed
+Skill resolver. Default and engineering compositions remain Skill-free.
+Resolution is a deterministic snapshot admission point for a fresh invocation:
+disable, revoke and rollback affect subsequent resolutions and do not rewrite
+an already reserved invocation. The canonical non-empty bundle digest is part
+of the invocation request hash. An empty bundle preserves the historical
+no-Skill request hash and SSE shape. Exact replay does not resolve Skills or
+call the Provider again.
+
+Prompt precedence remains Platform Security Kernel and sealed AgentVersion,
+then sealed instruction Skills, Workspace RAG, untrusted Memory ContextCapsule
+and current user input. SSE may expose only the bundle digest and item count;
+it must not expose instructions, Skill identifiers, database locators or
+review material. Runtime remains false by default, while Planner and
+Multi-Agent remain false. Local evidence is intentionally bounded to focused
+tests, changed-path static checks and one random `omnibase_test_*` disposable
+PostgreSQL journey; GitHub required CI is the full regression authority.
 
 ## INV-055 personal-single-owner-admission
 

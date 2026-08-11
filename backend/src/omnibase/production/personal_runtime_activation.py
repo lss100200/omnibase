@@ -72,7 +72,7 @@ _READINESS_ASSERTIONS = {
     "enterprise_production_approved": False,
     "enterprise_track_frozen": True,
     "migration_0013_created": True,
-    "migration_head": "0013",
+    "migration_head": "0014",
     "passed": True,
     "personal_owner_activation_ready": True,
     "production_runtime_activated": False,
@@ -306,8 +306,8 @@ class PersonalRuntimeCanaryConfig:
                 "or enterprise approval"
             )
         migration_head = _string(data, "migration_head")
-        if migration_head != "0013":
-            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0013")
+        if migration_head != "0014":
+            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0014")
         max_concurrent = _integer(
             data,
             "max_concurrent_invocations",

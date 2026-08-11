@@ -52,6 +52,7 @@ from omnibase.production.composition import ConfigurationError
 
 _SCHEMA = "omnibase.p34-7.hardened-joint-evidence.v2"
 _SCHEMA_VERSIONS = frozenset({"2"})
+_CURRENT_MIGRATION_HEAD = "0014"
 _HEX = set("0123456789abcdef")
 _GIT_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
 _REQUIRED_COMMANDS = (
@@ -430,8 +431,10 @@ def _parse_trust_policy(value: object) -> TrustPolicy:
             "trust policy.max_evidence_age_seconds must be a bounded positive window"
         )
     migration_head = _string(data.get("migration_head"), "trust policy.migration_head")
-    if migration_head != "0013":
-        raise ConfigurationError("trust policy.migration_head must remain 0013")
+    if migration_head != _CURRENT_MIGRATION_HEAD:
+        raise ConfigurationError(
+            f"trust policy.migration_head must remain {_CURRENT_MIGRATION_HEAD}"
+        )
     return TrustPolicy(
         producers=producers,
         repository=repository,
@@ -1343,8 +1346,8 @@ def _verify_repository_invariants(data: dict[str, Any]) -> tuple[dict[str, str],
     safety: dict[str, str] = {}
     gates: dict[str, bool] = {}
     migration_head = _string(data.get("migration_head"), "migration_head")
-    if migration_head != "0013":
-        raise ConfigurationError("migration head must remain 0013")
+    if migration_head != _CURRENT_MIGRATION_HEAD:
+        raise ConfigurationError(f"migration head must remain {_CURRENT_MIGRATION_HEAD}")
     safety["migration_head"] = migration_head
     feature_gates = _object(data.get("feature_gates"), "feature_gates")
     if set(feature_gates) != set(_REQUIRED_FEATURE_GATES):
@@ -1730,7 +1733,7 @@ def _seal_binding(
         "posture_measurement": posture_digest,
         "attack_matrix": attack_digest,
         "cleanup": cleanup_digest,
-        "migration_head": "0013",
+        "migration_head": _CURRENT_MIGRATION_HEAD,
         "feature_gates": dict(sorted(gates.items())),
         "safety": dict(sorted(safety.items())),
     }

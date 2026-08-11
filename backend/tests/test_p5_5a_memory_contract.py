@@ -105,7 +105,7 @@ def test_example_contract_is_valid_but_compile_only() -> None:
     assert report.state is AdmissionState.BLOCKED
     assert report.contract_valid is True
     assert report.activation_allowed is False
-    assert config.migration_baseline == "0013"
+    assert config.migration_baseline == "0014"
     assert config.memory_persistence_authorized is False
     assert config.memory_runtime_authorized is False
     assert config.memory_browser_api_exposed is False
@@ -175,8 +175,8 @@ def test_source_and_migration_baseline_are_closed() -> None:
         MemoryContractConfig.from_mapping(mapping)
 
     mapping = _mapping()
-    mapping["migration_baseline"] = "0014"
-    with pytest.raises(MemoryContractError, match="exactly 0013"):
+    mapping["migration_baseline"] = "0013"
+    with pytest.raises(MemoryContractError, match="exactly 0014"):
         MemoryContractConfig.from_mapping(mapping)
 
 
