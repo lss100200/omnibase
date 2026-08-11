@@ -1,0 +1,45 @@
+ARG PYTHON_VERSION=3.11
+ARG UV_VERSION=0.4.27
+
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/omnibase/.venv
+
+WORKDIR /opt/omnibase
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+
+FROM python:${PYTHON_VERSION}-slim-bookworm AS production
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    PATH=/opt/omnibase/.venv/bin:$PATH
+
+# libgomp1 is a runtime library used by the pinned numerical/model wheels. The
+# final image deliberately contains no compiler, package VCS client or download
+# utility.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 omnibase \
+    && useradd --system --uid 10001 --gid omnibase --home-dir /nonexistent omnibase
+
+WORKDIR /app
+
+COPY --from=builder --chown=omnibase:omnibase /opt/omnibase/.venv /opt/omnibase/.venv
+COPY --chown=omnibase:omnibase alembic.ini ./alembic.ini
+COPY --chown=omnibase:omnibase src ./src
+
+USER omnibase:omnibase
+
+EXPOSE 8000
+
+CMD ["uvicorn", "omnibase.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

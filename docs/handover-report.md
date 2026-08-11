@@ -4610,3 +4610,68 @@ not deployed
 Canonical decision:
 
 - `docs/evidence/p5-personal-product-integration-r1-decision.md`
+### P5 Personal Production Target R1 implementation start (2026-08-11)
+
+PR #25 merged the current personal product integration into `main` at
+`632f705171bc493ac154a249a39d6855a917ebbc`. A fresh worktree/branch was then
+created from that exact merge for the real operational target:
+
+```text
+worktree = OmniBase Worktrees/Active/p5-personal-production-target-r1
+branch = codex/p5-personal-production-target-r1
+base = 632f705171bc493ac154a249a39d6855a917ebbc
+```
+
+R1 now implements the first production packaging and recovery boundary:
+
+- non-root, reload-free multi-stage backend production image;
+- standalone frontend production image;
+- separate full-stack Compose with only loopback frontend ingress and internal
+  PostgreSQL/Redis/MinIO/backend;
+- one-shot migration, MinIO initialization and Redis volume-ownership jobs;
+- hard base posture Runtime=false, Planner=false, Multi-Agent=false;
+- offline target doctor and canonical release receipt bound to the production
+  packaging/controllers;
+- exact operator-env/ACL/service-coordinate checks without secret output;
+- offline cold-backup manifest for release receipt, PostgreSQL, MinIO and
+  personal Runtime assets, with Redis explicitly non-authoritative;
+- restore-new database/MinIO planning and A-to-B upgrade boundary.
+
+Master execution advanced beyond the initial source-only result. Focused
+packaging/controller verification is now 29 passed and frontend tests are 95
+passed. Both production images built; the isolated source target completed
+first boot, migration `0012`, initialization, registration/login,
+Runtime-off posture and stop/restart persistence. Real first boot drove four
+forward fixes: Redis volume ownership, migration Settings closure, single-user
+worker startup serialization and stripping unsupported `Expect: 100-continue`
+at the Next.js proxy boundary.
+
+A verified cold backup was then sealed with manifest
+`9be464a46ffc520fab8ffb9b23df1a694a9f892eaf2a85374c02b16faacf0ca1`.
+Restore-new preserved 6 tenant schemas/users, 18 audit rows, migration `0012`
+and all 36 application triggers. A separate B Compose project with new data
+volumes, deployment identity and secrets restored PostgreSQL/MinIO and passed
+production-proxy registration/login plus the locked Runtime posture on
+`127.0.0.1:3122`; A and the backup remain intact.
+
+Current honest posture:
+
+```text
+P5_PERSONAL_PRODUCTION_TARGET_R1_REHEARSAL_PASSED_PENDING_CLEAN_HEAD_REVIEW
+PERSONAL_BASE_TARGET_STARTABLE_STOPPABLE_RECOVERABLE_UPGRADEABLE
+PERSONAL_RUNTIME_DEFAULT_OFF
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+PROVIDER_BACKED_PRODUCTION_JOURNEY_NOT_PROVEN
+ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
+migration head=0012
+migration 0013=absent
+```
+
+The repository root `.env` was not read. No business database was accessed or
+migrated; only explicit disposable `omnibase_test_*`/`omnibase_restore_*`
+identities were used. No previously exposed Provider credential was reused.
+The existing `omnibase-p54d-acceptance` stack was not stopped, mutated or
+relabeled. Remaining closure items are final clean-HEAD full verification,
+remote CI/review, a fresh Provider-backed no-tool journey and explicit Owner
+acceptance of the durable target.

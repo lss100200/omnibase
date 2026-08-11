@@ -207,3 +207,22 @@ Phase 7: 开源准备
 | 普通 Docker 不是敌对代码安全声明 | Docker 可用于开发和空沙箱生命周期基线；连接真实数据前必须以 P34.0 威胁模型通过 P34.5 隔离 Gate |
 | P5 Fast Track 与生产激活分离 | 允许 engineering-only P5.2B ledger、Model Gateway 和无工具单 Agent Alpha；P34.7 未通过且未获单独批准前，仍不得启用生产 Runtime、自主 Planner、多 Agent 长循环或宿主级工具 |
 | MCP 在工作空间和 Agent 之后 | 工作空间提供隔离边界，Agent 框架定义工具协议，MCP 是扩展实现之一 |
+## 2026-08-11 personal production target update
+
+PR #25 merged the bounded personal Runtime product path into `main` at
+`632f705`. The active next increment is P5 Personal Production Target R1:
+non-root immutable images, a loopback-only full-stack Compose target, exact
+operator preflight/release receipts, cold PostgreSQL+MinIO+Runtime-asset backup,
+restore-to-new and A-to-B upgrade rehearsal.
+
+This increment does not reopen the frozen enterprise P34.7 evidence campaign.
+Base Runtime remains false; Planner and Multi-Agent remain false. The
+disposable production rehearsal has now passed build, first boot,
+authenticated product smoke, stop/restart, cold backup, restore-new and a
+separate A-to-B project/volume upgrade. Final closure still requires clean-HEAD
+full verification and remote review, a fresh Provider-backed no-tool journey
+and explicit Owner acceptance of the durable target. After the personal
+no-tool production closure, the active Phase 5 sequence is P5.5
+Memory/ContextCapsule, P5.6B-D first-party Skill
+persistence/install/execution, P5.7 bounded Multi-Agent DAG, P5.8 recovery and
+P5.9 attack/capacity/production Gate before Phase 6.

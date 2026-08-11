@@ -2915,6 +2915,67 @@ marker, reuse a terminal directory, create migration 0013, enable Planner or
 Multi-Agent, install an enterprise approved digest or convert unknown to
 success. Reactivation requires a new reviewed config/plan and state directory.
 
+## INV-057 personal-production-target-recovery
+
+**Authority sources**
+
+- `backend/Dockerfile.production`
+- `frontend/Dockerfile`
+- `deployment/personal-production/compose.yml`
+- `deployment/personal-production/operator.env.example`
+- `scripts/production/manage_p5_personal_target.py`
+- `scripts/production/manage_p5_personal_backup.py`
+- `docs/architecture/p5-personal-production-target-r1.md`
+- `docs/runbooks/p5-personal-production-target.md`
+
+The personal production target has exactly one loopback host entrypoint: the
+frontend. PostgreSQL, Redis, MinIO and the backend have no host-published port.
+There are no source bind mounts. Production application images run non-root,
+without reload, and the final backend image contains no compiler, Git or
+download tool. Runtime is false in the base target; Planner and Multi-Agent are
+false in every personal-target base state.
+
+Operator secrets and writable state live outside Git. The target doctor must
+validate an exact env key set, secret posture without echoing values, host path
+and ACL/permission boundaries, PostgreSQL/Redis service-coordinate binding,
+loopback CORS binding, migration `0012`, absence of `0013`, clean public Git
+provenance and byte digests of the production packaging/controllers. A release
+receipt is not valid if it binds the development Compose or Dockerfile instead.
+
+A recoverable release treats PostgreSQL and MinIO as authoritative and Redis as
+transient. Cold backup happens after admission/writer stop and binds the release
+receipt, PostgreSQL custom dump, complete MinIO inventory and personal Runtime
+config/state/readiness assets. Restore creates a new `omnibase_restore_*`
+database and a new MinIO root. It never overwrites the source, restores Redis as
+authority, replays ambiguous work, or activates Runtime on the restored target.
+
+An upgrade is A-to-B with a verified cold-backup barrier. B uses new target
+identities, starts with Runtime=false, runs migration/structural verification and
+authenticated product smoke, and requires an explicit Owner cutover. A and its
+backup remain recoverable until B is accepted.
+
+**Required tests**
+
+- packaging source tests and rendered Compose exposure/gate assertions;
+- target controller attacks for path/link/ACL, secret/env binding, dirty or
+  non-public Git provenance and receipt drift;
+- backup controller attacks for path escape, symlink/junction, duplicate or
+  unknown inventory, unrecorded files, digest drift, Redis archive and
+  restore-in-place;
+- final production image inspection, first-boot health, stop/restart,
+  cold-backup/restore-new and A-to-B upgrade rehearsals before a production
+  closure claim;
+- explicit Ruff, Mypy where applicable, maintainer map/benchmark, frontend
+  production build and wider backend regression.
+
+**Failure recovery**
+
+Restore Runtime=false and keep Planner/Multi-Agent false. Preserve release,
+image, lifecycle, backup and failure receipts. Do not edit a manifest into a
+passing state, overwrite the old database/MinIO root, delete unknown effects or
+reuse a terminal Runtime state directory. Recover with a forward fix or a new
+verified restore target.
+
 ## INV-055 personal-single-owner-admission
 
 **权威源码**
