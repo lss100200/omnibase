@@ -20,8 +20,8 @@ invocation_mode = no_tool
 AGENT_RUNTIME_ENABLED = true
 AGENT_PLANNER_ENABLED = false
 MULTI_AGENT_ENABLED = false
-migration head = 0012
-migration 0013 absent
+migration head = 0013
+migration 0014 absent
 default-deny workload network, destinations = []
 bounded activation lifetime
 append-only rollback receipt
@@ -57,7 +57,7 @@ The canonical canary config binds:
 - production/no-tool posture;
 - exact concurrency and `top_k` ceilings;
 - Runtime=true, Planner=false and Multi-Agent=false plan requirements;
-- migration 0012 and migration-0013 absence;
+- migration 0013 and migration-0014 absence;
 - default-deny/no-destination workload network posture;
 - the raw SHA-256 of the sealed Personal Owner readiness config.
 
@@ -121,7 +121,7 @@ exactly `personal_single_owner`. The builder then independently verifies:
   their raw-byte SHA-256 bindings;
 - the ledger is active and unexpired and binds the same config/plan/canary;
 - the current request matches the configured Tenant/Workspace/Owner;
-- the tenant is live and migration head is exactly 0012;
+- the tenant is live and migration head is exactly 0013;
 - the Workspace has exactly one active membership, role Owner;
 - that Owner is the current actor and a live tenant administrator;
 - a Model Gateway is configured.
@@ -130,7 +130,7 @@ Task Ledger transaction A acquires its canonical Tenant -> actor -> Workspace
 -> actor membership -> Binding -> Definition -> Version lock order before the
 personal guard runs. The guard then reloads the server-owned config/readiness
 bytes, derives time from the same PostgreSQL session, rechecks the active
-ledger, exact gates, production environment and migration 0012, and evaluates
+ledger, exact gates, production environment and migration 0013, and evaluates
 the one-Owner invariant under the already locked Workspace aggregate. It also
 requires zero non-terminal WorkspaceRuns before any fresh Task insert. A
 second invocation therefore cannot use a membership phantom or rely on a
@@ -144,12 +144,18 @@ identity, budget/effect and reconciliation lifecycle remains authoritative.
 
 ## Knowledge boundary
 
-R0 uses the existing Core-owned read-only `RagKnowledgeRetriever` and the
-tool-free Model Gateway. It does not route Browser knowledge retrieval through
-the formal P5.4B Capability Gateway composition. Consequently this R0 must not
-be described as proving Sandbox execution, high-risk Capability consumption,
-formal Gateway production composition or workload access to PostgreSQL,
-Redis, MinIO or member Overlay endpoints.
+R0 uses the existing Core-owned read-only `RagKnowledgeRetriever`, the bounded
+P5.5C Memory compiler and the tool-free Model Gateway. The Memory compiler is
+available only in this exact personal composition, selects committed migration-
+0013 Memory under the sealed policy and persists a short-lived ContextCapsule
+before provider dispatch. The prompt marks that projection as untrusted
+reference data; it cannot override the Security Kernel or AgentVersion.
+
+This lane does not route Browser knowledge retrieval through the formal P5.4B
+Capability Gateway composition. Consequently it must not be described as
+proving Sandbox execution, high-risk Capability consumption, formal Gateway
+production composition or workload access to PostgreSQL, Redis, MinIO or
+member Overlay endpoints. There is still no Browser Memory CRUD surface.
 
 The full Personal Owner Gate remains required before a future personal
 Sandbox/high-risk operation. That future path must preserve exact Approval,

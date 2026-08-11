@@ -1,10 +1,22 @@
-"""Tenant-scoped P5.5B Memory persistence primitives.
+"""Tenant-scoped Memory persistence and personal P5.5C compiler primitives.
 
-This package owns persistence and governed lifecycle transitions only. It does
-not expose a Browser API, compile a ContextCapsule, search vectors, inject
-Memory into a prompt, or enable Runtime/Planner/Multi-Agent feature gates.
+The compiler is an internal, bounded lexical retrieval path for the exact
+personal single-Owner Runtime. It exposes no Browser Memory API, tool port,
+Planner or Multi-Agent activation.
 """
 
+from omnibase.agent_memory.compiler import (
+    MemoryCompileError,
+    MemoryCompileRequest,
+    SqlAlchemyMemoryCompiler,
+    personal_default_memory_policy,
+)
+from omnibase.agent_memory.crypto import (
+    EncryptedMemoryContent,
+    MemoryContentCipher,
+    MemoryCryptoUnavailable,
+    MemoryDecryptionError,
+)
 from omnibase.agent_memory.models import (
     ContextCapsuleItemModel,
     ContextCapsuleModel,
@@ -21,7 +33,13 @@ from omnibase.agent_memory.models import (
 __all__ = [
     "ContextCapsuleItemModel",
     "ContextCapsuleModel",
+    "EncryptedMemoryContent",
     "MemoryCandidateModel",
+    "MemoryCompileError",
+    "MemoryCompileRequest",
+    "MemoryContentCipher",
+    "MemoryCryptoUnavailable",
+    "MemoryDecryptionError",
     "MemoryEffectModel",
     "MemoryEmbeddingV1Model",
     "MemoryEmbeddingV2Model",
@@ -29,4 +47,6 @@ __all__ = [
     "MemoryReviewEvidenceModel",
     "MemoryTombstoneModel",
     "MemoryVersionModel",
+    "SqlAlchemyMemoryCompiler",
+    "personal_default_memory_policy",
 ]

@@ -276,9 +276,9 @@ test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engi
 		cd "$$repo_root"; \
 		uv run pytest scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py -q
 
-test-p5-5b-memory: ## Guarded disposable PostgreSQL Gate for P5.5B migration 0013
-	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p55b-*|omnibase-test-*) ;; \
-		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated P5.5B prefix$(RESET)"; exit 1 ;; \
+test-p5-5b-memory: ## Guarded disposable PostgreSQL Gate for P5.5B/P5.5C migration 0013
+	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p55b-*|omnibase-p55c-*|omnibase-test-*) ;; \
+		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated P5.5B/P5.5C prefix$(RESET)"; exit 1 ;; \
 	esac
 	@case "$(TEST_DATABASE_NAME)" in omnibase_test_p55b_*) ;; \
 		*) echo "$(YELLOW)TEST_DATABASE_NAME must use the omnibase_test_p55b_ prefix$(RESET)"; exit 1 ;; \
@@ -302,9 +302,10 @@ test-p5-5b-memory: ## Guarded disposable PostgreSQL Gate for P5.5B migration 001
 		export JWT_SECRET=test_secret_at_least_32_characters_long_for_validation; \
 		cd backend; \
 		uv run python tests/destructive_preflight.py; \
-		uv run pytest -m integration tests/integration/test_p5_5b_memory_persistence_foundation.py -q
+		uv run pytest -m integration tests/integration/test_p5_5b_memory_persistence_foundation.py \
+			tests/integration/test_p5_5c_memory_runtime.py -q
 
-test-p5-personal-runtime: ## Disposable migration-0012 personal single-Owner no-tool Runtime Gate
+test-p5-personal-runtime: ## Disposable migration-0013 personal single-Owner no-tool Runtime Gate
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p5personal-*) ;; \
 		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use the omnibase-p5personal- prefix$(RESET)"; exit 1 ;; \
 	esac

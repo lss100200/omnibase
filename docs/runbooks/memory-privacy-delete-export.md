@@ -5,8 +5,10 @@
 P5.5A remains the historical compile-only contract. P5.5B adds tenant migration
 `0013`, ORM models, an internal transaction service, independent vector lanes,
 Owner confirmation, logical export, deletion/crypto-erasure and cold-backup
-inventory capture. There is still no Browser Memory API, compiler/search
-worker or production prompt-injection path. P5.5C has not started.
+inventory capture. P5.5C adds the bounded compiler and prompt projection only
+inside the exact personal single-Owner canary. There is still no Browser Memory
+API or public Memory search endpoint; Runtime is false by default and Planner/
+Multi-Agent remain false.
 
 ## Privacy rules
 
@@ -27,6 +29,27 @@ worker or production prompt-injection path. P5.5C has not started.
    is independently present and its canonical digest binds the same Tenant,
    Workspace, Memory ID/version and content digest. A review UUID by itself is
    not approval evidence.
+
+## Compile and inject procedure
+
+1. Reserve the exact Agent invocation first; include the sealed Memory policy
+   digest in its request hash. Exact terminal replay returns before Memory, RAG
+   or provider work and must not create another Capsule.
+2. Revalidate the live Tenant/schema, tenant-admin Owner, Workspace/Owner
+   membership, sealed AgentVersion and running Task/Invocation. Select only
+   active, non-deleted current Memory versions under the four closed scope
+   shapes and current controlled-shared review evidence.
+3. Apply the fixed candidate ceiling, Candidate TTL, deterministic ordering and
+   item/token/sensitive budgets. Decrypt with the independent Memory key and
+   authenticated scope/provenance data; verify UTF-8, size and plaintext digest.
+4. Persist the exact ContextCapsule and contiguous items before provider
+   dispatch. A compile/decrypt/scope failure terminalizes the reserved
+   invocation as `agent_alpha_memory_compile_failed`; it never falls back to
+   unverified Memory.
+5. Inject plaintext only in memory as a separate message labelled untrusted
+   reference data below the Security Kernel and AgentVersion. SSE may expose
+   only Capsule ID/digest/item count and never Memory plaintext or internal
+   provenance.
 
 ## Candidate creation and Owner confirmation
 

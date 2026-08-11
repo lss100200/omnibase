@@ -221,6 +221,13 @@ class Settings(BaseSettings):
             "Production and staging require an independent key."
         ),
     )
+    memory_content_encryption_key: str = Field(
+        default="",
+        description=(
+            "Base64url-encoded 32-byte AES-GCM key for persisted Memory content. "
+            "It must be independent from provider credential and JWT keys in production."
+        ),
+    )
     provider_endpoint_allowlist: tuple[str, ...] = Field(
         default=(
             "api.deepseek.com",

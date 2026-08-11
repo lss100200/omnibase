@@ -13,7 +13,9 @@ Before starting, verify that the intended target has:
 - that same Owner as an active tenant administrator;
 - one sealed tool-free AgentVersion;
 - a configured Model Gateway/provider posture;
-- migration head 0012 and no migration 0013;
+- migration head 0013 and no migration 0014;
+- a separately generated `MEMORY_CONTENT_ENCRYPTION_KEY` for production that is
+  not reused as the JWT or Provider-credential key;
 - a private operator-controlled location for one canonical config and one new
   empty activation state directory;
 - a minimal immutable readiness root preserving the relative paths for
@@ -53,7 +55,7 @@ python scripts/production/manage_p5_personal_runtime.py plan `
 
 Verify the exact scope, `no_tool`, Runtime=true, Planner=false,
 Multi-Agent=false, max lifetime, concurrency=1, `top_k` ceiling and migration
-0012. Record the printed `plan_sha256` out of band.
+0013. Record the printed `plan_sha256` out of band.
 
 ## 3. Create one new run-scoped directory and activate
 
@@ -134,6 +136,13 @@ supported_invocation_modes=[no_tool]
 
 These fields are scoped to that exact request; they contain no credential,
 Approval, Capability, lease, fencing, locator or workload identity material.
+
+For one test invocation with a matching committed Memory, verify that SSE
+arrives incrementally and its `meta` exposes at most `context_capsule_id`,
+`context_capsule_digest` and `context_capsule_item_count`. Memory plaintext,
+Memory/version/review identifiers and encryption material must not appear in
+SSE or logs. Stop the invocation once and verify the durable Task converges to
+`cancelled`; exact terminal replay must not create a second Capsule.
 
 ## 6. Roll back normally
 

@@ -4811,3 +4811,68 @@ Remaining work is ordinary push, required remote CI, PR review/merge and
 post-merge main verification. No amend, rebase, reset, stash or clean was used.
 The root `.env` was not read and no previously exposed Provider credential was
 reused.
+
+### P5.5C bounded personal Memory Runtime implementation (2026-08-12)
+
+Work continues in
+`OmniBase Worktrees/Active/p5-5c-memory-context-runtime-r0` on branch
+`codex/p5-5c-memory-context-runtime-r0`, based on the merged P5.5B tree. This is
+a forward personal-product increment and does not rewrite the historical P5.5A
+or P5.5B snapshots above.
+
+P5.5C now connects committed migration-0013 Memory to the exact personal
+single-Owner Agent Alpha canary. The new SQL-backed compiler revalidates the
+live Tenant/schema, tenant-admin Owner, Workspace membership, sealed
+AgentVersion and current Task/Invocation; enforces the four Memory scope shapes,
+current controlled-shared Owner review, Candidate TTL and deterministic
+item/token/sensitive budgets; and decrypts content with a separate authenticated
+Memory key. Migration `0014` was not created.
+
+The sealed Memory policy digest is included in the invocation request hash.
+Fresh calls reserve the ledger before compilation and commit the exact
+ContextCapsule/items before provider dispatch. Exact terminal replay performs
+no compiler, RAG or provider work and creates no second Capsule. Memory text is
+projected only as a separate explicitly untrusted reference-data message below
+the Security Kernel and AgentVersion. SSE exposes only Capsule ID/digest/item
+count. Compiler failure terminalizes the reserved invocation instead of leaving
+a running Task.
+
+Current local evidence:
+
+```text
+focused compiler + Agent Alpha + personal composition tests = 43 passed
+changed-path Mypy = passed
+changed-path Ruff check/format = passed
+Compose config + git diff --check = passed
+disposable migration-0013 compile/persist/inject/incremental-SSE/cancel = 1 passed
+```
+
+The disposable journey used only a random `omnibase_test_*` PostgreSQL identity
+and removed its containers, network and volumes. It proves durable Task
+convergence through a database-backed test ledger; the complete production
+Task/Run/Attempt/Lease crash/restart no-replay matrix remains assigned to the
+personal recovery increment rather than being expanded into this Memory change.
+
+Current posture:
+
+```text
+P5_5C_CORE_IMPLEMENTED_PENDING_REMOTE_REVIEW
+migration head=0013
+migration 0014 absent
+Browser Memory API absent
+AGENT_RUNTIME_ENABLED=false by default
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 track frozen
+root .env not read
+business database not accessed or migrated
+not pushed
+not merged
+not deployed
+```
+
+The shortest personal-edition path after P5.5C is: first-party sealed
+instruction-only Skill, restart/unknown/no-replay recovery, personal target
+acceptance, then a bounded P6.0 personal admission record. P5.7 Multi-Agent DAG,
+workflow/script Skills, enterprise authority separation and the P34.7 total Gate
+remain frozen and are not personal P6 blockers.
