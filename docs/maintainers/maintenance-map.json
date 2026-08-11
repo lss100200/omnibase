@@ -2215,7 +2215,7 @@
       "public_interfaces": [
         "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
         "create_task may receive a validated caller-intent hash which is nested into the canonical task payload so exact replay binds caller intent without discarding immutable task fields",
-        "Migration 0011 owns the durable task ledger; the repository and admission head is 0012 after the separately authorized user-profile/provider-credential migration, while production activation remains blocked",
+        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0014 after the separately authorized provider, Memory and instruction-Skill migrations, while production activation remains blocked",
         "No Browser runtime DTO exposes physical locators, credentials, provider handles or database identities"
       ],
       "depends_on": [
@@ -2242,6 +2242,7 @@
         "All three Phase 5 Feature Gates remain false. Migration 0011 is engineering admission only and does not authorize production Runtime composition.",
         "A populated 0011 downgrade must fail with SQLSTATE 55000. Recover by forward-fix or restore into a new omnibase_restore_* database.",
         "TaskLease history is append-only; Attempt and active Lease are bidirectionally checked at deferred commit, fencing chronology is allocated from the locked per-Task cursor using the database clock, and unknown Effects are never replayed automatically.",
+        "On the next same-scope personal invocation or exact replay, an expired active holder may converge atomically to Attempt/Effect unknown, Task blocked_unknown, terminal Runs and exactly one reconciliation. Never call the Provider or revive the old Lease/fencing/runtime identity; explicit retry creates all-new ledger/runtime identities and preserves the old evidence.",
         "Double lease expiry (Task Lease AND Workspace Run Lease lapsed) is closed through close_historical_run_holder: failed/unknown/cancelled only, exact historical holder, never committed/succeeded. Revalidate the current active/live-attested WorkspaceNode and current Node fencing under lock; only revoked/expired or database-clock-expired active RunLeases are eligible. A live active lease, advanced/revoked Node, stale attestation, stale generation or replaced identity must fail closed with zero terminal writes. RunLease is never renewed/revived, the interactive slot is released only for an eligible exact holder, and reconciliation stays in the same transaction. Never relax submit_run_state._validated_run_lease for this path."
       ]
     },
@@ -2260,7 +2261,9 @@
         "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
         "scripts/production/run_p5_2c_agent_alpha_disposable_gate.py",
         "scripts/production/test_run_p5_2c_agent_alpha_disposable_gate.py",
-        "docs/maintainers/security-invariants.md"
+        "docs/maintainers/security-invariants.md",
+        "docs/architecture/p5-8p-personal-restart-recovery-r0.md",
+        "docs/evidence/p5-8/personal-recovery-r0-decision.md"
       ],
       "entrypoints": [
         "backend/src/omnibase/agent_alpha/engineering.py:build_engineering_agent_alpha",
@@ -2275,6 +2278,7 @@
         "AGENT_ALPHA_ENGINEERING_ENABLED strict true/false seam; build fails closed to UnavailableAgentAlpha unless ENV=development, all Phase 5 gates false, gateway configured and the current reviewed migration head matches",
         "Migration 0011 owns the durable Task/Run/Step/Attempt/Lease/Budget/Effect lifecycle; the repository/admission head advances independently, with transaction A reservation and transaction B revalidate+terminalize",
         "Exact replay binds stable Browser caller intent and the non-secret selected Provider configuration digest inside the task_create canonical payload, returns before mutable RAG retrieval or WorkspaceRun creation, and conflicts on payload drift; unknown outcomes never auto-replay",
+        "Expired exact replay returns the original identity only after atomic unknown/blocked_unknown convergence; explicit same-scope retry is a new invocation with new Task, Attempt, TaskLease, AgentRun, WorkspaceRun, RunLease, runtime/workload identity, Effect and Operation",
         "Fresh invocation creates one short-lived P34 WorkspaceRun/RunLease on a deployment-bound server-owned Model Gateway Node, binds the same non-placeholder runtime/workload identity to P34 and P5, and terminalizes both ledgers together",
         "RAG reads only ready P34.6 derived-index generations bound to the current tenant and Workspace; tenant-wide canonical RAG is forbidden for Alpha",
         "Disposable Gate uses omnibase-p52c-* project and omnibase_test_p52c_* database/role"
@@ -2305,7 +2309,7 @@
       "recovery": [
         "The engineering seam must never activate the production Agent Runtime: AGENT_RUNTIME_ENABLED/AGENT_PLANNER_ENABLED/MULTI_AGENT_ENABLED stay false and no tools/planner/executor/scheduler/worker/MCP/Skill/memory port exists.",
         "Guard transitions are enforced per UPDATE (task created->scheduled->running, run leased->running, attempt leased->dispatching, effect reserved->dispatching); never jump a state machine straight to a terminal state.",
-        "Exact replay is anchored to the committed idempotency record and the immutable task deadline; in-flight attempts reject a second dispatch and unknown effects require explicit reconciliation before any replay."
+        "Exact replay is anchored to the committed idempotency record and the immutable task deadline; a live in-flight attempt rejects second dispatch, an expired exact holder converges without Provider replay, and unknown effects require preserved reconciliation before an explicit all-new retry."
       ]
     },
     {
@@ -3075,7 +3079,7 @@
         "Loopback-only full-stack Compose with internal PostgreSQL/Redis/MinIO/backend and one frontend ingress",
         "Non-root reload-free backend production image and standalone frontend production image",
         "Offline doctor, canonical release-manifest and verify-release CLI",
-        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI"
+        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including migration 0014 Skill table/trigger binding and the closed 0013-to-0014 compatibility entry"
       ],
       "depends_on": [
         "personal-runtime-canary",
@@ -3103,6 +3107,7 @@
       "recovery": [
         "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
         "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
+        "Backup and restore evidence for the current head must bind migration 0014 raw bytes plus the exact Skill table and trigger inventory; arbitrary 0015+ forward restore remains rejected.",
         "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
       ]
     },

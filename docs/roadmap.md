@@ -20,8 +20,8 @@
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 已进入 `main` | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC 与离线模型边界持续由 CI 验证 |
 | Phase 3-4 安全 AI 工作空间与能力平台 | 🟡 企业 P34.7 轨道冻结保留；个人版审批轨道启动 | P34.1–P34.6、P34.7 hardened joint Gate、Trust Policy R0 和 R1-A assignment 均作为长期安全资产保留。企业多人 authority/key ceremony/15-resource/11-blocker evidence campaign 在个人版完成前冻结；个人版参考主流 AI IDE 的 Sandbox/Approval/Network 模型，并叠加 OmniBase Capability、Workload Identity、Lease/fencing、预算、审计和多 AI 空间隔离。当前 production Gate 仍为 `blocked/not_proven`，Feature Gates 仍关闭 |
-| Agent 编排 | 🟡 P5.6P personal instruction Skill 收口中 | P5.5C 已通过 PR #30 合并；Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、Agent Builder、个人单 Owner canary、加密 Memory 与 ContextCapsule 已形成。Runtime 默认关闭，仅 exact personal canary 可启用，Planner/Multi-Agent 仍关闭 |
-| Skill/MCP 扩展 | 🟡 P5.6P first-party instruction Skill | migration `0014`、sealed instruction-only persistence、Workspace/AgentVersion 精确安装和 personal Agent Alpha 投影已实现，正在做 bounded integration/PR 收口；workflow/script、第三方 Marketplace 与 MCP 继续冻结 |
+| Agent 编排 | 🟡 P5.8P personal restart recovery 等待 PR CI | P5.5C 已通过 PR #30 合并；P5.6P 已通过 PR #31 合并到 `main@9809c3e`；过期 invocation 的 next-request/exact-replay 收口与显式 all-new retry 已实现，本地 73 项 focused 全绿，等待 P5.8P PostgreSQL sentinel 验收。Runtime 默认关闭，仅 exact personal canary 可启用，Planner/Multi-Agent 仍关闭 |
+| Skill/MCP 扩展 | ✅ P5.6P first-party instruction Skill 已合并 | migration `0014`、sealed instruction-only persistence、Workspace/AgentVersion 精确安装和 personal Agent Alpha 投影已通过 PR #31 required CI；workflow/script、第三方 Marketplace 与 MCP 继续冻结 |
 
 ---
 
@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C/D 已形成 fail-closed 工程与产品链。P5.5A Memory 合同、P5.5B migration `0013` persistence/delete/export/backup inventory 与 P5.5C bounded compiler/ContextCapsule injection 已通过 PR #30 进入 `main@5e1b1cb`。P5.6A 保留为历史 compile-only 合同；P5.6P 以 migration `0014` 实现个人版 sealed instruction-only Skill。个人 P6 的剩余最短链是 P5.6P 收口、P5.8P restart/no-replay recovery 和 P5.9P personal target acceptance；P5.7 Multi-Agent、workflow/script Skill、MCP 与企业 P34.7 继续冻结。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C/D 已形成 fail-closed 工程与产品链。P5.5A Memory 合同、P5.5B migration `0013` persistence/delete/export/backup inventory 与 P5.5C bounded compiler/ContextCapsule injection 已通过 PR #30 进入主线；P5.6P migration `0014` sealed instruction-only Skill 已通过 PR #31 进入 `main@9809c3e`。个人 P6 的剩余最短链是 P5.8P restart/no-replay recovery、P5.9P personal target acceptance 与 P6.0 admission；P5.7 Multi-Agent、workflow/script Skill、MCP 与企业 P34.7 继续冻结。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -145,6 +145,14 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > internal install/disable/revoke/rollback，并只在 exact personal canary 中投影到
 > Agent Alpha。仍不暴露 `/api/v1/skills`，不执行 script/workflow，不增加工具、
 > Capability、网络或秘密。Trust Policy R1-B–R1-F 与 P34.7 企业证据轨道冻结保留。
+
+> **P5.8P 当前状态（2026-08-12）**：个人版只增加 next-request/exact-replay
+> recovery，不建设 scheduler/worker/企业 recovery coordinator。数据库时钟确认
+> TaskLease 过期后，旧 Attempt/Effect 收敛为 `unknown`、Task 为
+> `blocked_unknown`，保留一条 reconciliation 且不自动重放 Provider。Owner 的
+> `retry_of` 只能指向同范围的 retryable 终态，并创建全新的 ledger/runtime
+> identity。个人 target/backup 同步到 migration `0014`，restore-new 仅增加闭集
+> `0013 -> 0014` Skill compatibility。GitHub PostgreSQL sentinel 通过后进入 P5.9P。
 
 ---
 

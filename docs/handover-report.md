@@ -4930,8 +4930,9 @@ or migrated.
 Current posture:
 
 ```text
-P5_6P_ENGINEERING_ACCEPTED_PENDING_REMOTE_CI
-local implementation commit=745645baad32191593acc7eaffe0c5fcb8a9b926
+P5_6P_MERGED_REQUIRED_CI_GREEN
+final branch head=b1a1ab854ad6a03f2593ba9d844f2512999c3c5a
+main merge commit=9809c3ebe12d86b3c66c9bdbff588e5d116b1b7b
 migration head=0014
 migration 0015+ absent
 AGENT_RUNTIME_ENABLED=false by default
@@ -4939,14 +4940,78 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 enterprise P34.7 frozen / blocked_not_proven
 approved enterprise trust-policy digest empty
-committed locally
-not pushed
-not merged
+required backend/frontend/compose/PostgreSQL CI green
+pushed
+merged through PR #31
 not deployed
 ```
 
-After P5.6P merge, the remaining personal path is P5.8P
-restart/expired-lease/unknown-outcome/no-replay recovery, followed by P5.9P
+With P5.6P merged, the remaining personal path is the already-implemented P5.8P
+restart/expired-lease/unknown-outcome/no-replay recovery PR, followed by P5.9P
 production-like localhost Agent/SSE/Memory/Skill/cancel/kill-switch/restore-new
 acceptance and then the bounded P6.0 Personal Admission record. P5.7
 Multi-Agent remains outside the personal admission path.
+
+### P5.8P personal next-request restart recovery (2026-08-12)
+
+P5.8P is implemented on `codex/p5-8p-personal-recovery-r0` as the next personal
+increment. It does not reopen enterprise P34.7 and does not introduce a queue,
+worker, scheduler, startup-wide scanner or migration `0015`.
+
+`LedgerInvocationAdapter` now uses the database clock to recognize an expired
+active TaskLease when the Owner makes the next same-Workspace invocation or an
+exact idempotency replay. It locks and revalidates the old Attempt, Lease, Task,
+Effect, AgentRun and WorkspaceRun holder, then atomically converges the old
+invocation to Attempt/Effect `unknown`, Task `blocked_unknown`, terminal Runs
+and one `agent_alpha_restart_lease_expired` reconciliation. It never calls the
+Provider, re-resolves RAG/Memory/Skills, creates another Effect, revives old
+fencing/runtime identity, or records success.
+
+`retry_of` is no longer discarded. The target must be the same Tenant,
+Workspace, Owner, Agent Definition/Version/binding, scope and budget policy and
+must be `blocked_unknown`, `failed` or `cancelled`; unknown work keeps its open
+reconciliation. A valid retry creates a completely new Task, Attempt,
+TaskLease, AgentRun, WorkspaceRun, RunLease, runtime/workload identity, Effect,
+Operation and idempotency identity. The old ledger remains immutable.
+
+Personal target and backup controllers now bind migration `0014`, reject
+`0015+`, include the three Skill tables and guard triggers in PostgreSQL
+inventory, and add one canonical restore-new compatibility entry for
+`0013 -> 0014`. Arbitrary forward restore and restore-in-place remain rejected.
+
+Current local evidence:
+
+```text
+backup/target + Agent Alpha focused = 73 passed
+personal target controller = 49 passed
+Agent Alpha core unit tests = 24 passed
+changed-path Ruff check/format, targeted Mypy, compileall and diff check = passed
+guarded PostgreSQL scenarios K/L/M = authored, not locally executed
+```
+
+Docker Desktop is currently unresponsive and this session cannot restart its
+daemon. No normal or unknown PostgreSQL instance was used as a substitute.
+GitHub required `postgres-sentinel-integration` from a clean Linux checkout is
+therefore the remaining P5.8P database authority.
+
+P5.6P PR #31 merged as `main@9809c3e` after all required backend, frontend,
+Compose and two PostgreSQL sentinel runs passed. P5.8P now includes the final
+P5.6P branch through ordinary merge commit `be29faa`; its 73 focused
+backup/target/Agent Alpha tests pass. P5.8P has not yet been pushed or opened
+as a PR, and its committed PostgreSQL scenarios K/L/M still require remote CI.
+
+Current posture:
+
+```text
+P5_8P_IMPLEMENTED_PENDING_REMOTE_POSTGRESQL_CI
+PERSONAL_RESTART_RECOVERY_NO_AUTOMATIC_PROVIDER_REPLAY
+migration head=0014
+migration 0015 absent
+AGENT_RUNTIME_ENABLED=false by default
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen / blocked_not_proven
+root .env not read
+business database not accessed or migrated
+not deployed
+```

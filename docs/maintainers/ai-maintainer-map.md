@@ -2012,3 +2012,27 @@ this personal increment; GitHub required CI is authoritative. On ambiguity,
 keep Runtime false, disable or revoke the affected installation, preserve
 immutable history and use a forward fix or restore-new recovery. Never
 downgrade a populated `0014` database.
+
+## P5.8P personal restart recovery maintenance boundary
+
+Read INV-044, INV-046 and
+`docs/architecture/p5-8p-personal-restart-recovery-r0.md` before changing
+expired invocation recovery, explicit `retry_of`, or the migration `0014`
+personal backup inventory.
+
+P5.8P recovers on the next same-scope invocation or exact replay; it is not a
+startup scanner, queue, worker or general scheduler. Use the database clock and
+the existing locked Task/Attempt/TaskLease/Effect/AgentRun/WorkspaceRun holder.
+An expired holder converges to unknown/blocked_unknown with exactly one
+reconciliation and no Provider replay. A live holder remains in-flight.
+
+An explicit retry is always a new invocation. Validate the old Tenant,
+Workspace, Owner, AgentVersion/binding, scope and budget digests, and require a
+retryable terminal state. Never mutate or revive the old ledger, Lease,
+fencing, runtime/workload identity or Effect. Preserve unknown evidence.
+
+Personal target and backup controllers use migration head `0014`, reject
+`0015+`, bind the Skill tables and guard triggers, and restore only into new
+identities. The only new forward compatibility entry is the canonical
+`0013 -> 0014` Skill upgrade. GitHub PostgreSQL sentinel CI is authoritative
+when local Docker is unavailable; do not substitute a normal database.

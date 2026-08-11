@@ -46,6 +46,7 @@ _REVISION = re.compile(r"^[0-9]{4}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MIGRATION_DIRECTORY = Path("backend/src/omnibase/migrations/versions")
 _MEMORY_SCHEMA_REVISION = "0013"
+_SKILL_SCHEMA_REVISION = "0014"
 _REQUIRED_MEMORY_VECTOR_LANES = ("v1", "v2")
 _LEGACY_V1_SOURCE_HEAD = "0012"
 _REQUIRED_MEMORY_TABLES = (
@@ -85,6 +86,16 @@ _REQUIRED_MEMORY_TRIGGERS = tuple(
         )
     )
 )
+_REQUIRED_SKILL_TABLES = (
+    "skill_definitions",
+    "skill_versions",
+    "workspace_agent_skill_installations",
+)
+_REQUIRED_SKILL_TRIGGERS = (
+    "skill_definitions_state_guard",
+    "skill_versions_seal_guard",
+    "workspace_agent_skill_installations_state_guard",
+)
 
 
 class BackupError(ValueError):
@@ -93,7 +104,8 @@ class BackupError(ValueError):
 
 def _canonical(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n"
+        json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        + "\n"
     ).encode()
 
 
@@ -280,24 +292,30 @@ def _repository_migration_facts(
     chain = _migration_chain(records, selected_head)
     if through_head is None and len(chain) != len(records):
         raise BackupError("migration graph is branched or disconnected")
-    if _MEMORY_SCHEMA_REVISION not in {str(item["revision"]) for item in chain}:
-        return {
-            "memory_table_names": [],
-            "memory_vector_inventory": [],
-            "memory_vector_lane_versions": [],
-            "migration_0013_schema_sha256": None,
-            "migration_revision_list_sha256": _sha256_bytes(_canonical(chain)),
-            "repository_migration_head": repository_head,
-            "source_migration_head": selected_head,
-        }
-    schema_record = records[_MEMORY_SCHEMA_REVISION]
-    schema_path = repo.joinpath(*PurePosixPath(str(schema_record["path"])).parts)
-    schema_raw = schema_path.read_bytes()
+    selected_revisions = {str(item["revision"]) for item in chain}
+    memory_table_names: list[str] = []
+    memory_vector_inventory: list[dict[str, object]] = []
+    memory_vector_lane_versions: list[str] = []
+    migration_0013_schema_sha256: str | None = None
+    if _MEMORY_SCHEMA_REVISION in selected_revisions:
+        memory_record = records[_MEMORY_SCHEMA_REVISION]
+        memory_path = repo.joinpath(*PurePosixPath(str(memory_record["path"])).parts)
+        memory_raw = memory_path.read_bytes()
+        memory_table_names = list(_memory_table_names(memory_raw))
+        memory_vector_inventory = list(_memory_vector_inventory(memory_raw))
+        memory_vector_lane_versions = list(_vector_lane_versions(memory_raw))
+        migration_0013_schema_sha256 = _sha256_bytes(memory_raw)
+    migration_0014_schema_sha256: str | None = None
+    if _SKILL_SCHEMA_REVISION in selected_revisions:
+        skill_record = records[_SKILL_SCHEMA_REVISION]
+        skill_path = repo.joinpath(*PurePosixPath(str(skill_record["path"])).parts)
+        migration_0014_schema_sha256 = _sha256_file(skill_path)
     return {
-        "memory_table_names": list(_memory_table_names(schema_raw)),
-        "memory_vector_inventory": list(_memory_vector_inventory(schema_raw)),
-        "memory_vector_lane_versions": list(_vector_lane_versions(schema_raw)),
-        "migration_0013_schema_sha256": _sha256_bytes(schema_raw),
+        "memory_table_names": memory_table_names,
+        "memory_vector_inventory": memory_vector_inventory,
+        "memory_vector_lane_versions": memory_vector_lane_versions,
+        "migration_0013_schema_sha256": migration_0013_schema_sha256,
+        "migration_0014_schema_sha256": migration_0014_schema_sha256,
         "migration_revision_list_sha256": _sha256_bytes(_canonical(chain)),
         "repository_migration_head": repository_head,
         "source_migration_head": selected_head,
@@ -310,6 +328,7 @@ def _migration_binding(value: dict[str, object]) -> dict[str, object]:
         "memory_vector_inventory": value["memory_vector_inventory"],
         "memory_vector_lane_versions": value["memory_vector_lane_versions"],
         "migration_0013_schema_sha256": value["migration_0013_schema_sha256"],
+        "migration_0014_schema_sha256": value["migration_0014_schema_sha256"],
         "migration_revision_list_sha256": value["migration_revision_list_sha256"],
         "source_migration_head": value["source_migration_head"],
     }
@@ -386,7 +405,9 @@ def _reject_symlink_components(path: Path, *, stop: Path | None = None) -> None:
 
 def _relative(value: str) -> PurePosixPath:
     if not isinstance(value, str) or not value or "\\" in value:
-        raise BackupError("manifest path must be a non-empty canonical POSIX relative path")
+        raise BackupError(
+            "manifest path must be a non-empty canonical POSIX relative path"
+        )
     path = PurePosixPath(value)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise BackupError(f"unsafe manifest path: {value}")
@@ -476,14 +497,23 @@ def _logical_id(value: object, *, where: str) -> str:
 def _validate_migration_binding(value: dict[str, Any], *, where: str) -> None:
     head = value.get("source_migration_head")
     if not isinstance(head, str) or not _REVISION.fullmatch(head):
-        raise BackupError(f"{where}.source_migration_head must be a four-digit revision")
-    for field in (
-        "migration_revision_list_sha256",
-        "migration_0013_schema_sha256",
-    ):
+        raise BackupError(
+            f"{where}.source_migration_head must be a four-digit revision"
+        )
+    for field in ("migration_revision_list_sha256", "migration_0013_schema_sha256"):
         digest = value.get(field)
         if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             raise BackupError(f"{where}.{field} must be lowercase SHA-256")
+    skill_digest = value.get("migration_0014_schema_sha256")
+    if int(head) >= int(_SKILL_SCHEMA_REVISION):
+        if not isinstance(skill_digest, str) or not _SHA256.fullmatch(skill_digest):
+            raise BackupError(
+                f"{where}.migration_0014_schema_sha256 must be lowercase SHA-256"
+            )
+    elif skill_digest is not None:
+        raise BackupError(
+            f"{where}.migration_0014_schema_sha256 must be null before 0014"
+        )
     lanes = value.get("memory_vector_lane_versions")
     if lanes != list(_REQUIRED_MEMORY_VECTOR_LANES):
         raise BackupError(f"{where}.memory_vector_lane_versions must be exactly v1/v2")
@@ -524,6 +554,7 @@ def _validate_plan_v2(plan: dict[str, Any]) -> None:
             "memory_vector_inventory",
             "memory_vector_lane_versions",
             "migration_0013_schema_sha256",
+            "migration_0014_schema_sha256",
             "migration_revision_list_sha256",
             "redis",
             "schema",
@@ -574,7 +605,11 @@ def _validate_entry(value: Any, *, where: str) -> dict[str, Any]:
         raise BackupError(f"{where} must be an object")
     _exact(value, {"path", "sha256", "size"}, where=where)
     _relative(value["path"])
-    if not isinstance(value["size"], int) or isinstance(value["size"], bool) or value["size"] <= 0:
+    if (
+        not isinstance(value["size"], int)
+        or isinstance(value["size"], bool)
+        or value["size"] <= 0
+    ):
         raise BackupError(f"{where}.size must be a positive integer")
     if not isinstance(value["sha256"], str) or not _SHA256.fullmatch(value["sha256"]):
         raise BackupError(f"{where}.sha256 must be lowercase SHA-256")
@@ -589,7 +624,9 @@ def _validate_tenant_heads(value: Any, *, expected_head: str) -> None:
         if not isinstance(item, dict):
             raise BackupError(f"tenant_alembic_heads[{index}] must be an object")
         _exact(item, {"head", "tenant_id"}, where=f"tenant_alembic_heads[{index}]")
-        tenant_id = _logical_id(item["tenant_id"], where=f"tenant_alembic_heads[{index}].tenant_id")
+        tenant_id = _logical_id(
+            item["tenant_id"], where=f"tenant_alembic_heads[{index}].tenant_id"
+        )
         if item["head"] != expected_head:
             raise BackupError("PostgreSQL inventory tenant migration head drifted")
         tenant_ids.append(tenant_id)
@@ -614,13 +651,17 @@ def _validate_tenant_registry(value: Any) -> dict[str, str]:
         registry[tenant_id] = schema_name
         schema_names.append(schema_name)
     if list(registry) != sorted(registry) or len(registry) != len(value):
-        raise BackupError("PostgreSQL inventory tenant registry must be sorted and unique")
+        raise BackupError(
+            "PostgreSQL inventory tenant registry must be sorted and unique"
+        )
     if len(schema_names) != len(set(schema_names)):
         raise BackupError("PostgreSQL inventory tenant schemas must be unique")
     return registry
 
 
-def _validate_tenant_memory_inventories(value: Any, *, registry: dict[str, str]) -> None:
+def _validate_tenant_memory_inventories(
+    value: Any, *, registry: dict[str, str]
+) -> None:
     if not isinstance(value, list) or not value:
         raise BackupError("PostgreSQL tenant Memory inventories must be non-empty")
     tenant_ids: list[str] = []
@@ -642,7 +683,9 @@ def _validate_tenant_memory_inventories(value: Any, *, registry: dict[str, str])
         tenant_id = _logical_id(item["tenant_id"], where=f"{where}.tenant_id")
         schema_name = _identifier(item["schema_name"], where=f"{where}.schema_name")
         if registry.get(tenant_id) != schema_name:
-            raise BackupError("PostgreSQL tenant Memory inventory registry binding drifted")
+            raise BackupError(
+                "PostgreSQL tenant Memory inventory registry binding drifted"
+            )
         if item["memory_table_names"] != list(_REQUIRED_MEMORY_TABLES):
             raise BackupError("PostgreSQL tenant Memory table set drifted")
         if item["memory_trigger_names"] != list(_REQUIRED_MEMORY_TRIGGERS):
@@ -651,7 +694,9 @@ def _validate_tenant_memory_inventories(value: Any, *, registry: dict[str, str])
             raise BackupError("PostgreSQL tenant Memory vector lanes drifted")
         tenant_ids.append(tenant_id)
     if tenant_ids != sorted(registry) or len(tenant_ids) != len(set(tenant_ids)):
-        raise BackupError("PostgreSQL tenant Memory inventories must cover the registry exactly")
+        raise BackupError(
+            "PostgreSQL tenant Memory inventories must cover the registry exactly"
+        )
 
 
 def _validate_postgres_inventory(
@@ -662,6 +707,7 @@ def _validate_postgres_inventory(
     expected_dump_sha256: str,
     expected_head: str,
     memory_present: bool,
+    skill_present: bool,
 ) -> None:
     _exact(
         value,
@@ -675,6 +721,8 @@ def _validate_postgres_inventory(
             "schema",
             "schema_version",
             "source_database",
+            "skill_table_names",
+            "skill_trigger_names",
             "tenant_alembic_heads",
             "tenant_memory_inventories",
             "tenant_registry",
@@ -690,7 +738,9 @@ def _validate_postgres_inventory(
     database = _identifier(value["source_database"], where="inventory source database")
     if expected_database is not None and database != expected_database:
         raise BackupError("PostgreSQL inventory source database drifted")
-    if capture_mode == "restore_new_evidence" and not database.startswith("omnibase_restore_"):
+    if capture_mode == "restore_new_evidence" and not database.startswith(
+        "omnibase_restore_"
+    ):
         raise BackupError("legacy inventory must come from a restore-new database")
     if value["postgres_dump_sha256"] != expected_dump_sha256:
         raise BackupError("PostgreSQL inventory is not bound to the selected dump")
@@ -702,7 +752,9 @@ def _validate_postgres_inventory(
     if head_ids != sorted(registry):
         raise BackupError("PostgreSQL tenant heads must cover the registry exactly")
     expected_tables: list[str] = list(_REQUIRED_MEMORY_TABLES) if memory_present else []
-    expected_triggers: list[str] = list(_REQUIRED_MEMORY_TRIGGERS) if memory_present else []
+    expected_triggers: list[str] = (
+        list(_REQUIRED_MEMORY_TRIGGERS) if memory_present else []
+    )
     expected_vectors: list[dict[str, object]] = (
         list(_REQUIRED_MEMORY_VECTOR_INVENTORY) if memory_present else []
     )
@@ -712,10 +764,20 @@ def _validate_postgres_inventory(
         raise BackupError("PostgreSQL inventory memory trigger set drifted")
     if value["memory_vector_inventory"] != expected_vectors:
         raise BackupError("PostgreSQL inventory memory vector lanes drifted")
+    expected_skill_tables = list(_REQUIRED_SKILL_TABLES) if skill_present else []
+    expected_skill_triggers = list(_REQUIRED_SKILL_TRIGGERS) if skill_present else []
+    if value["skill_table_names"] != expected_skill_tables:
+        raise BackupError("PostgreSQL inventory Skill table set drifted")
+    if value["skill_trigger_names"] != expected_skill_triggers:
+        raise BackupError("PostgreSQL inventory Skill trigger set drifted")
     if memory_present:
-        _validate_tenant_memory_inventories(value["tenant_memory_inventories"], registry=registry)
+        _validate_tenant_memory_inventories(
+            value["tenant_memory_inventories"], registry=registry
+        )
     elif value["tenant_memory_inventories"] != []:
-        raise BackupError("legacy PostgreSQL inventory must not claim Memory tenant evidence")
+        raise BackupError(
+            "legacy PostgreSQL inventory must not claim Memory tenant evidence"
+        )
 
 
 def _load_postgres_inventory(
@@ -726,6 +788,7 @@ def _load_postgres_inventory(
     expected_dump_sha256: str,
     expected_head: str,
     memory_present: bool,
+    skill_present: bool,
 ) -> tuple[dict[str, Any], bytes]:
     value, raw = _load_canonical(path)
     _validate_postgres_inventory(
@@ -735,6 +798,7 @@ def _load_postgres_inventory(
         expected_dump_sha256=expected_dump_sha256,
         expected_head=expected_head,
         memory_present=memory_present,
+        skill_present=skill_present,
     )
     return value, raw
 
@@ -746,7 +810,9 @@ def _one_revision(values: list[object], *, where: str) -> str:
     return revisions[0]
 
 
-def _observed_vector_inventory(rows: list[tuple[object, object]]) -> list[dict[str, object]]:
+def _observed_vector_inventory(
+    rows: list[tuple[object, object]],
+) -> list[dict[str, object]]:
     inventory: list[dict[str, object]] = []
     for raw_table, raw_type in rows:
         table = str(raw_table)
@@ -773,14 +839,20 @@ def _capture_postgres_inventory_value(
 ) -> dict[str, Any]:
     from sqlalchemy import text
 
-    connection.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+    connection.exec_driver_sql(
+        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+    )
     database = str(connection.execute(text("SELECT current_database()")).scalar_one())
     if database != expected_database:
-        raise BackupError("connected PostgreSQL database does not match --source-database")
+        raise BackupError(
+            "connected PostgreSQL database does not match --source-database"
+        )
     global_head = _one_revision(
         list(
             connection.execute(
-                text("SELECT version_num FROM omnibase_meta.alembic_version ORDER BY version_num")
+                text(
+                    "SELECT version_num FROM omnibase_meta.alembic_version ORDER BY version_num"
+                )
             ).scalars()
         ),
         where="global alembic_version",
@@ -795,7 +867,33 @@ def _capture_postgres_inventory_value(
         ).all()
     ]
     if not tenants:
-        raise BackupError("PostgreSQL inventory requires at least one registered tenant")
+        raise BackupError(
+            "PostgreSQL inventory requires at least one registered tenant"
+        )
+    skill_table_names = sorted(
+        str(value)
+        for value in connection.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'omnibase_meta' AND table_name = ANY(:tables) "
+                "ORDER BY table_name"
+            ),
+            {"tables": list(_REQUIRED_SKILL_TABLES)},
+        ).scalars()
+    )
+    skill_trigger_names = sorted(
+        str(value)
+        for value in connection.execute(
+            text(
+                "SELECT t.tgname FROM pg_trigger t "
+                "JOIN pg_class c ON c.oid = t.tgrelid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'omnibase_meta' AND NOT t.tgisinternal "
+                "AND c.relname = ANY(:tables) ORDER BY t.tgname"
+            ),
+            {"tables": list(_REQUIRED_SKILL_TABLES)},
+        ).scalars()
+    )
 
     tenant_heads: list[dict[str, object]] = []
     tenant_memory: list[dict[str, object]] = []
@@ -882,6 +980,8 @@ def _capture_postgres_inventory_value(
         "schema": SCHEMA_POSTGRES_BACKUP_INVENTORY,
         "schema_version": 1,
         "source_database": database,
+        "skill_table_names": skill_table_names,
+        "skill_trigger_names": skill_trigger_names,
         "tenant_alembic_heads": tenant_heads,
         "tenant_memory_inventories": tenant_memory,
         "tenant_registry": tenant_registry,
@@ -893,6 +993,7 @@ def _capture_postgres_inventory_value(
         expected_dump_sha256=postgres_dump_sha256,
         expected_head=expected_head,
         memory_present=expected_head >= _MEMORY_SCHEMA_REVISION,
+        skill_present=expected_head >= _SKILL_SCHEMA_REVISION,
     )
     return inventory
 
@@ -916,7 +1017,9 @@ def capture_postgres_inventory(args: argparse.Namespace) -> dict[str, Any]:
         raise BackupError("restore-new capture requires an omnibase_restore_* database")
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
-        raise BackupError("DATABASE_URL must be injected explicitly for inventory capture")
+        raise BackupError(
+            "DATABASE_URL must be injected explicitly for inventory capture"
+        )
     migration = _repository_migration_facts(repo)
     expected_head = str(migration["repository_migration_head"])
     dump_sha256 = _sha256_file(dump)
@@ -1053,6 +1156,7 @@ def _validate_manifest_v2(manifest: dict[str, Any]) -> None:
             "memory_vector_inventory",
             "memory_vector_lane_versions",
             "migration_0013_schema_sha256",
+            "migration_0014_schema_sha256",
             "migration_revision_list_sha256",
             "minio",
             "personal_runtime",
@@ -1077,7 +1181,10 @@ def _validate_manifest_v2(manifest: dict[str, Any]) -> None:
 
 
 def _validate_manifest_shape(manifest: dict[str, Any]) -> None:
-    legacy = manifest.get("schema") == SCHEMA_MANIFEST_V1 and manifest.get("schema_version") == 1
+    legacy = (
+        manifest.get("schema") == SCHEMA_MANIFEST_V1
+        and manifest.get("schema_version") == 1
+    )
     if legacy:
         _validate_manifest_v1(manifest)
     else:
@@ -1154,7 +1261,9 @@ def _load_root(repo_root: str, backup_target: str, *, new: bool) -> tuple[Path, 
     repo = _absolute(repo_root, where="repo root", must_exist=True)
     root = _absolute(backup_target, where="backup target", must_exist=not new)
     if _overlaps(root, repo):
-        raise BackupError("backup target must be outside and non-overlapping with the repository")
+        raise BackupError(
+            "backup target must be outside and non-overlapping with the repository"
+        )
     _reject_symlink_components(root)
     if new and root.exists():
         raise BackupError("backup target must be a new directory")
@@ -1193,7 +1302,9 @@ def plan_backup(args: argparse.Namespace) -> dict[str, Any]:
         RUNTIME_STATE_ROOT,
         READINESS_ROOT,
     ):
-        root.joinpath(*PurePosixPath(directory).parts).mkdir(parents=True, exist_ok=True)
+        root.joinpath(*PurePosixPath(directory).parts).mkdir(
+            parents=True, exist_ok=True
+        )
     (root / PLAN_NAME).write_bytes(_canonical(plan))
     return plan
 
@@ -1214,7 +1325,9 @@ def _postgres_inventory_for_seal(
     raw_path = getattr(args, "postgres_inventory", None)
     if not isinstance(raw_path, str) or not raw_path:
         raise BackupError("seal-assets requires --postgres-inventory")
-    inventory_path = _absolute(raw_path, where="PostgreSQL backup inventory", must_exist=True)
+    inventory_path = _absolute(
+        raw_path, where="PostgreSQL backup inventory", must_exist=True
+    )
     _, inventory_raw = _load_postgres_inventory(
         inventory_path,
         capture_mode="source_backup",
@@ -1222,6 +1335,7 @@ def _postgres_inventory_for_seal(
         expected_dump_sha256=str(dump_entry["sha256"]),
         expected_head=str(plan["source_migration_head"]),
         memory_present=True,
+        skill_present=str(plan["source_migration_head"]) >= _SKILL_SCHEMA_REVISION,
     )
     staged = root.joinpath(*PurePosixPath(POSTGRES_INVENTORY).parts)
     _reject_symlink_components(staged, stop=root)
@@ -1294,7 +1408,10 @@ def seal_assets(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _is_legacy_manifest(manifest: dict[str, Any]) -> bool:
-    return manifest.get("schema") == SCHEMA_MANIFEST_V1 and manifest.get("schema_version") == 1
+    return (
+        manifest.get("schema") == SCHEMA_MANIFEST_V1
+        and manifest.get("schema_version") == 1
+    )
 
 
 def _verify_embedded_postgres_inventory(root: Path, manifest: dict[str, Any]) -> None:
@@ -1308,10 +1425,13 @@ def _verify_embedded_postgres_inventory(root: Path, manifest: dict[str, Any]) ->
         expected_dump_sha256=str(manifest["postgres"]["artifact"]["sha256"]),
         expected_head=str(manifest["source_migration_head"]),
         memory_present=True,
+        skill_present=str(manifest["source_migration_head"]) >= _SKILL_SCHEMA_REVISION,
     )
 
 
-def _verify_backup_loaded(repo: Path, root: Path) -> tuple[dict[str, Any], dict[str, Any], bytes]:
+def _verify_backup_loaded(
+    repo: Path, root: Path
+) -> tuple[dict[str, Any], dict[str, Any], bytes]:
     plan, plan_raw = _load_plan(root)
     manifest, manifest_raw = _load_canonical(root / MANIFEST_NAME)
     _validate_manifest_shape(manifest)
@@ -1327,13 +1447,17 @@ def _verify_backup_loaded(repo: Path, root: Path) -> tuple[dict[str, Any], dict[
         if _migration_binding(manifest) != _migration_binding(plan):
             raise BackupError("backup manifest is not bound to the selected plan")
         repository_binding = _migration_binding(
-            _repository_migration_facts(repo, through_head=str(manifest["source_migration_head"]))
+            _repository_migration_facts(
+                repo, through_head=str(manifest["source_migration_head"])
+            )
         )
         if repository_binding != _migration_binding(manifest):
             raise BackupError("backup migration binding drifted from repository bytes")
     _verify_embedded_postgres_inventory(root, manifest)
     _verify_assets(root, manifest)
-    source_head = _LEGACY_V1_SOURCE_HEAD if legacy else str(manifest["source_migration_head"])
+    source_head = (
+        _LEGACY_V1_SOURCE_HEAD if legacy else str(manifest["source_migration_head"])
+    )
     verification = {
         "backup_manifest_sha256": _sha256_bytes(manifest_raw),
         "backup_verified": True,
@@ -1356,36 +1480,89 @@ def verify_backup(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
-    source = _repository_migration_facts(repo, through_head="0012")
-    target = _repository_migration_facts(repo, through_head="0013")
-    matrix = {
-        "entries": [
+    source_0012 = _repository_migration_facts(repo, through_head="0012")
+    target_0013 = _repository_migration_facts(repo, through_head="0013")
+    entries: list[dict[str, Any]] = [
+        {
+            "entry_id": "p5-memory-0012-to-0013",
+            "migration_0013_schema_sha256": target_0013["migration_0013_schema_sha256"],
+            "migration_0014_schema_sha256": None,
+            "required_commands": [
+                "restore_dump_into_new_database",
+                "capture_restore_new_postgresql_inventory",
+                "verify_global_and_tenant_heads_at_0012",
+                "upgrade_global_then_each_tenant_to_0013",
+                "verify_0013_memory_tables_and_vector_lanes",
+            ],
+            "required_evidence": [
+                "postgres_dump_sha256",
+                "restore_new_inventory_sha256",
+                "global_alembic_head",
+                "tenant_alembic_heads",
+                "memory_table_names",
+                "memory_vector_inventory",
+            ],
+            "source_head": "0012",
+            "source_revision_list_sha256": source_0012[
+                "migration_revision_list_sha256"
+            ],
+            "target_head": "0013",
+            "target_memory_table_names": target_0013["memory_table_names"],
+            "target_memory_vector_inventory": target_0013["memory_vector_inventory"],
+            "target_revision_list_sha256": target_0013[
+                "migration_revision_list_sha256"
+            ],
+            "target_skill_table_names": [],
+            "target_skill_trigger_names": [],
+        }
+    ]
+    repository_head = str(
+        _repository_migration_facts(repo)["repository_migration_head"]
+    )
+    if int(repository_head) >= int(_SKILL_SCHEMA_REVISION):
+        target_0014 = _repository_migration_facts(repo, through_head="0014")
+        entries.append(
             {
-                "entry_id": "p5-memory-0012-to-0013",
-                "migration_0013_schema_sha256": target["migration_0013_schema_sha256"],
+                "entry_id": "p5-skills-0013-to-0014",
+                "migration_0013_schema_sha256": target_0014[
+                    "migration_0013_schema_sha256"
+                ],
+                "migration_0014_schema_sha256": target_0014[
+                    "migration_0014_schema_sha256"
+                ],
                 "required_commands": [
                     "restore_dump_into_new_database",
                     "capture_restore_new_postgresql_inventory",
-                    "verify_global_and_tenant_heads_at_0012",
-                    "upgrade_global_then_each_tenant_to_0013",
-                    "verify_0013_memory_tables_and_vector_lanes",
+                    "verify_global_and_tenant_heads_at_0013",
+                    "upgrade_global_then_each_tenant_to_0014",
+                    "verify_0014_skill_tables_and_triggers",
                 ],
                 "required_evidence": [
                     "postgres_dump_sha256",
                     "restore_new_inventory_sha256",
                     "global_alembic_head",
                     "tenant_alembic_heads",
-                    "memory_table_names",
-                    "memory_vector_inventory",
+                    "skill_table_names",
+                    "skill_trigger_names",
                 ],
-                "source_head": "0012",
-                "source_revision_list_sha256": source["migration_revision_list_sha256"],
-                "target_head": "0013",
-                "target_memory_table_names": target["memory_table_names"],
-                "target_memory_vector_inventory": target["memory_vector_inventory"],
-                "target_revision_list_sha256": target["migration_revision_list_sha256"],
+                "source_head": "0013",
+                "source_revision_list_sha256": target_0013[
+                    "migration_revision_list_sha256"
+                ],
+                "target_head": "0014",
+                "target_memory_table_names": target_0014["memory_table_names"],
+                "target_memory_vector_inventory": target_0014[
+                    "memory_vector_inventory"
+                ],
+                "target_revision_list_sha256": target_0014[
+                    "migration_revision_list_sha256"
+                ],
+                "target_skill_table_names": list(_REQUIRED_SKILL_TABLES),
+                "target_skill_trigger_names": list(_REQUIRED_SKILL_TRIGGERS),
             }
-        ],
+        )
+    matrix = {
+        "entries": entries,
         "schema": "omnibase.p5-personal-restore-compatibility-matrix.v1",
         "schema_version": 1,
     }
@@ -1414,8 +1591,12 @@ def _legacy_restore_inventory(
 ) -> tuple[dict[str, Any], bytes]:
     raw_path = getattr(args, "postgres_inventory", None)
     if not isinstance(raw_path, str) or not raw_path:
-        raise BackupError("legacy v1 restore requires restore-new --postgres-inventory evidence")
-    path = _absolute(raw_path, where="legacy restore-new PostgreSQL inventory", must_exist=True)
+        raise BackupError(
+            "legacy v1 restore requires restore-new --postgres-inventory evidence"
+        )
+    path = _absolute(
+        raw_path, where="legacy restore-new PostgreSQL inventory", must_exist=True
+    )
     return _load_postgres_inventory(
         path,
         capture_mode="restore_new_evidence",
@@ -1423,6 +1604,7 @@ def _legacy_restore_inventory(
         expected_dump_sha256=str(manifest["postgres"]["artifact"]["sha256"]),
         expected_head=_LEGACY_V1_SOURCE_HEAD,
         memory_present=False,
+        skill_present=False,
     )
 
 
@@ -1451,7 +1633,9 @@ def _restore_migration_selection(
         _, legacy_inventory_raw = _legacy_restore_inventory(args, manifest)
         legacy_inventory_sha256 = _sha256_bytes(legacy_inventory_raw)
     source_binding = (
-        _repository_migration_facts(repo, through_head=source_head) if legacy else manifest
+        _repository_migration_facts(repo, through_head=source_head)
+        if legacy
+        else manifest
     )
     return {
         "compatibility_entry": compatibility_entry,
@@ -1470,12 +1654,22 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
     verification, manifest, manifest_raw = _verify_backup_loaded(repo, root)
     migration = _restore_migration_selection(repo, args, verification, manifest)
     target = _identifier(args.target_database, where="target database")
-    if not target.startswith("omnibase_restore_") or target == manifest["source_database"]:
+    if (
+        not target.startswith("omnibase_restore_")
+        or target == manifest["source_database"]
+    ):
         raise BackupError("restore target must be a new omnibase_restore_* database")
-    inventory_path = _absolute(args.database_inventory, where="database inventory", must_exist=True)
+    inventory_path = _absolute(
+        args.database_inventory, where="database inventory", must_exist=True
+    )
     inventory, inventory_raw = _load_canonical(inventory_path)
-    _exact(inventory, {"databases", "schema", "schema_version"}, where="database inventory")
-    if inventory["schema"] != SCHEMA_DATABASE_INVENTORY or inventory["schema_version"] != 1:
+    _exact(
+        inventory, {"databases", "schema", "schema_version"}, where="database inventory"
+    )
+    if (
+        inventory["schema"] != SCHEMA_DATABASE_INVENTORY
+        or inventory["schema_version"] != 1
+    ):
         raise BackupError("unsupported database inventory")
     databases = inventory["databases"]
     if (
@@ -1484,7 +1678,9 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
         or any(not isinstance(item, str) for item in databases)
     ):
         raise BackupError("database inventory must contain a non-empty string list")
-    normalized = [_identifier(item, where="database inventory item") for item in databases]
+    normalized = [
+        _identifier(item, where="database inventory item") for item in databases
+    ]
     if normalized != sorted(set(normalized)):
         raise BackupError("database inventory must be sorted and unique")
     if target in normalized:
@@ -1493,7 +1689,9 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
     if minio_root.exists():
         raise BackupError("MinIO restore root must be a new path")
     if _overlaps(minio_root, repo) or _overlaps(minio_root, root):
-        raise BackupError("MinIO restore root must be outside the repository and backup")
+        raise BackupError(
+            "MinIO restore root must be outside the repository and backup"
+        )
     _reject_symlink_components(minio_root)
     source_binding = migration["source_binding"]
     compatibility_entry = migration["compatibility_entry"]
@@ -1514,8 +1712,15 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
             if compatibility_entry is not None
             else source_binding["migration_0013_schema_sha256"]
         ),
+        "migration_0014_schema_sha256": (
+            compatibility_entry["migration_0014_schema_sha256"]
+            if compatibility_entry is not None
+            else source_binding["migration_0014_schema_sha256"]
+        ),
         "migration_mode": migration["migration_mode"],
-        "migration_revision_list_sha256": source_binding["migration_revision_list_sha256"],
+        "migration_revision_list_sha256": source_binding[
+            "migration_revision_list_sha256"
+        ],
         "minio_restore_root": str(minio_root),
         "personal_runtime_assets_verified": True,
         "redis": {"archived": False, "authoritative": False, "rebuild_required": True},
