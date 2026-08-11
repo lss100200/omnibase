@@ -3157,6 +3157,113 @@ request and use a forward fix or restore-new database. Never repair by editing
 append-only history, restoring erased content into the old identity, marking
 unknown deletion as committed or downgrading a populated business database.
 
+## INV-060 p55c-memory-compiler-runtime-boundary
+
+**Authoritative source**
+
+- `backend/src/omnibase/agent_memory/compiler.py`
+- `backend/src/omnibase/agent_memory/crypto.py`
+- `backend/src/omnibase/agent_alpha/contracts.py`
+- `backend/src/omnibase/agent_alpha/service.py`
+- `backend/src/omnibase/agent_alpha/personal.py`
+- `backend/src/omnibase/core/config.py`
+- `backend/tests/test_p5_5c_memory_compiler.py`
+- `backend/tests/test_agent_alpha.py`
+- `backend/tests/test_agent_alpha_personal.py`
+- `backend/tests/test_agent_alpha_personal_router.py`
+- `backend/tests/integration/test_p5_5c_memory_runtime.py`
+- `docs/phase-5-memory-context-capsule-contract.md`
+- `docs/runbooks/memory-privacy-delete-export.md`
+- `docs/evidence/p5-5/memory-runtime-r0-decision.md`
+
+P5.5C enables bounded Memory compilation only inside the exact INV-056 personal
+single-Owner canary composition. Runtime remains false by default, Planner and
+Multi-Agent remain false everywhere, and migration `0013` is the only reviewed
+head. Migration `0014+`, Browser Memory CRUD, tools, shell, SQL, arbitrary HTTP,
+MCP, workflow/script Skill execution and enterprise Runtime authority are not
+created by this increment.
+
+The compiler may select only committed, active, non-deleted Memory at its exact
+current version. Every read revalidates the live Tenant and server-owned tenant
+schema, the same active tenant-admin Owner, the exact Workspace and Owner
+membership, the sealed AgentVersion, and the current running Task/Invocation.
+The four scope shapes remain closed: `user_private` is Owner-wide with no
+Workspace or AgentVersion, `workspace_private` and `controlled_shared` bind the
+exact Workspace with no AgentVersion, and `agent_private` binds the exact
+Workspace and AgentVersion. Controlled-shared selection additionally requires
+current approved Owner review evidence bound to the same Memory/version/content
+digest.
+
+Selection is deterministic and bounded before decryption or prompt projection.
+The database candidate set is capped, Candidate retention/TTL and current
+version are rechecked, ordering is stable, and the P5.5A item/token/sensitive
+budgets are enforced. Memory content uses an independent AES-256-GCM key and
+domain-separated authenticated data bound to Tenant, Owner, Workspace,
+AgentVersion, historical Task/Invocation, policy, source Resource/version,
+content digest and key version. Decryption, UTF-8, plaintext-size or SHA-256
+ambiguity fails the whole compilation; it never falls back to unverified text.
+
+For a fresh invocation, `ledger.begin()` reserves the exact request hash,
+including the Memory policy digest, before compilation. The exact
+ContextCapsule and contiguous item rows are persisted and committed before the
+provider boundary. Exact terminal replay calls neither compiler, RAG nor
+provider and creates no second Capsule. A compiler failure terminalizes the
+reserved invocation as `failed/agent_alpha_memory_compile_failed`; provider or
+disconnect ambiguity continues to use the existing unknown/reconciliation
+lifecycle and must never be replayed as success.
+
+Memory plaintext exists only in the in-process prompt projection. It is a
+separate system message explicitly labelled untrusted reference data below the
+Platform Security Kernel and AgentVersion instructions; text inside it can
+never grant authority or become executable instructions. SSE metadata may
+expose only Capsule ID, canonical digest and item count. It must not expose
+plaintext, Memory/version/source/review identities, encryption material,
+physical locators or internal provenance.
+
+**Allowed changes**
+
+- Tighten exact-scope selection, cryptographic binding, deterministic ranking,
+  policy budgets, transaction ordering, replay handling and safe prompt
+  projection.
+- Add focused attacks or disposable migration-0013 journeys without widening
+  Runtime, Planner, Multi-Agent, tool or network authority.
+- Add a Browser governance surface only as a separately reviewed Owner-scoped
+  increment; the compiler itself never becomes a public search endpoint.
+
+**Forbidden changes**
+
+- Cross-Tenant/Owner/Workspace/AgentVersion selection, stale/deleted/non-current
+  Memory, uncontrolled shared Memory, missing live review evidence or caller-
+  supplied physical locators.
+- Using Provider/JWT keys as the production Memory key, unauthenticated
+  decryption, plaintext persistence/logging/SSE, or treating Memory as trusted
+  instructions.
+- Compilation before durable reservation, provider dispatch before Capsule
+  commit, compile-on-replay, a second Capsule on exact replay, or leaving a
+  compiler failure in a running ledger state.
+- Enabling Runtime outside the exact personal canary, enabling Planner or
+  Multi-Agent, creating migration `0014+`, or smuggling tool/Skill/MCP/HTTP/SQL
+  authority through Memory content.
+
+**Required verification**
+
+- focused compiler attacks and Agent Alpha request-hash/replay/failure/meta tests
+- personal composition tests for exact canary-only compiler injection
+- one guarded disposable PostgreSQL migration-0013 journey proving encrypted
+  Memory selection, Capsule/item persistence, untrusted prompt injection,
+  incremental SSE and cancellation convergence
+- changed-path Ruff/format, Mypy, Compose config, maintainer map/benchmark and
+  `git diff --check`; required GitHub CI is the full regression authority
+
+**Failure recovery**
+
+Disable the personal Memory compiler composition and restore Runtime=false
+outside the disposable canary. Preserve append-only Capsule, ledger and Audit
+evidence and block the affected Memory scope. Never replay an unknown provider
+outcome, restore erased plaintext, edit an old Capsule, relax exact scope or
+fall back to unencrypted/unreviewed Memory. Use a forward fix or restore-new
+database and keep Planner/Multi-Agent false.
+
 ## INV-055 personal-single-owner-admission
 
 **权威源码**

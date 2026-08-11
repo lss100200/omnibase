@@ -67,6 +67,46 @@ remain offline. The inventory format is first introduced by P5.5B as
 `omnibase.postgresql-backup-inventory.v1`; no earlier released inventory
 consumer exists.
 
+## P5.5C current bounded Runtime increment
+
+P5.5C consumes the P5.5A contract and P5.5B migration-0013 persistence without
+adding a new migration or widening the personal product's authority.
+
+```text
+P5_5C_BOUNDED_PERSONAL_MEMORY_RUNTIME_IMPLEMENTED_PENDING_REVIEW
+MIGRATION_HEAD_0013
+MIGRATION_0014_ABSENT
+MEMORY_COMPILER_EXACT_SCOPE_AND_BUDGET_BOUND
+CONTEXT_CAPSULE_PERSISTED_BEFORE_PROVIDER
+MEMORY_PROMPT_PROJECTION_UNTRUSTED_DATA_ONLY
+EXACT_TERMINAL_REPLAY_COMPILE_COUNT_ZERO
+MEMORY_BROWSER_API_ABSENT
+AGENT_RUNTIME_ENABLED_FALSE_BY_DEFAULT
+AGENT_PLANNER_ENABLED_FALSE
+MULTI_AGENT_ENABLED_FALSE
+```
+
+Only the exact personal single-Owner canary builder injects the SQL-backed
+compiler. It revalidates the live Tenant/schema, human Owner, Workspace,
+membership, sealed AgentVersion and current Task/Invocation; applies the closed
+Memory scope shapes, current controlled-shared review evidence, Candidate TTL,
+fixed candidate ceiling and deterministic item/token/sensitive budgets; then
+decrypts with an independent authenticated Memory key and verifies plaintext
+SHA-256.
+
+The invocation request hash includes the sealed Memory policy digest. A fresh
+invocation is reserved before compilation, and the exact ContextCapsule/items
+commit before provider dispatch. Exact terminal replay does not compile,
+retrieve or create another Capsule. Compiler failure terminalizes the ledger as
+`failed/agent_alpha_memory_compile_failed`.
+
+Memory text is projected only in process as a separate system message labelled
+untrusted reference data below the Platform Security Kernel and AgentVersion.
+It cannot grant tools or override instructions. SSE exposes only Capsule ID,
+canonical digest and item count. There is no Browser Memory CRUD/search API,
+Planner, Multi-Agent, shell, SQL, arbitrary HTTP, MCP or Skill execution in this
+increment.
+
 ## Identity and scope
 
 Every ContextCapsule is bound to one exact Tenant, human Owner, Workspace,

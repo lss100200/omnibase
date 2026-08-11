@@ -45,6 +45,8 @@ from omnibase.agent_alpha.service import (
     AgentAlphaUnavailable,
     UnavailableAgentAlpha,
 )
+from omnibase.agent_memory.compiler import SqlAlchemyMemoryCompiler
+from omnibase.agent_memory.crypto import MemoryContentCipher, MemoryCryptoUnavailable
 from omnibase.core.config import Environment, Settings, get_settings
 from omnibase.core.db import get_session_factory
 from omnibase.db.models import Tenant
@@ -98,6 +100,7 @@ class PersonalAlphaPosture:
     live_owner_verified: bool
     environment_allowed: bool
     gateway_configured: bool
+    memory_crypto_configured: bool
     migration_ready: bool
     assembled: bool
     blockers: tuple[str, ...]
@@ -113,6 +116,7 @@ class PersonalAlphaPosture:
             "environment_allowed": self.environment_allowed,
             "feature_gates_valid": self.feature_gates_valid,
             "gateway_configured": self.gateway_configured,
+            "memory_crypto_configured": self.memory_crypto_configured,
             "live_owner_verified": self.live_owner_verified,
             "migration_ready": self.migration_ready,
             "multi_agent_gate_enabled": self.multi_agent_gate_enabled,
@@ -550,6 +554,62 @@ def _record_configuration_failure(
         blockers.append(message)
 
 
+def _memory_crypto_available(settings: Settings) -> bool:
+    try:
+        MemoryContentCipher.from_settings(settings)
+    except MemoryCryptoUnavailable:
+        return False
+    return True
+
+
+def _personal_posture_assembled(
+    *,
+    profile_selected: bool,
+    feature_gates_valid: bool,
+    runtime_gate: bool,
+    planner_gate: bool,
+    multi_gate: bool,
+    canary_active: bool,
+    scope_matches: bool,
+    live_owner_verified: bool,
+    environment_allowed: bool,
+    gateway_configured: bool,
+    memory_crypto_configured: bool,
+    migration_ready: bool,
+    blockers: list[str],
+) -> bool:
+    return bool(
+        profile_selected
+        and feature_gates_valid
+        and runtime_gate
+        and not planner_gate
+        and not multi_gate
+        and canary_active
+        and scope_matches
+        and live_owner_verified
+        and environment_allowed
+        and gateway_configured
+        and memory_crypto_configured
+        and migration_ready
+        and not blockers
+    )
+
+
+def _append_external_posture_blockers(
+    blockers: list[str],
+    *,
+    environment_allowed: bool,
+    gateway_configured: bool,
+    memory_crypto_configured: bool,
+) -> None:
+    if not environment_allowed:
+        blockers.append("personal Runtime requires the production environment")
+    if not gateway_configured:
+        blockers.append("Model Gateway is unavailable")
+    if not memory_crypto_configured:
+        blockers.append("Memory content encryption key is unavailable")
+
+
 def personal_alpha_posture(
     *,
     tenant_id: str,
@@ -581,6 +641,7 @@ def personal_alpha_posture(
     environment_allowed = settings.env is Environment.PRODUCTION
     gateway = gateway or configured_model_gateway()
     gateway_configured = not isinstance(gateway, UnavailableModelGateway)
+    memory_crypto_configured = _memory_crypto_available(settings)
     factory: sessionmaker[Any] | None = session_factory
     try:
         selected_profile = (
@@ -652,23 +713,26 @@ def personal_alpha_posture(
         blockers.append("personal_runtime_filesystem_unavailable")
     except SQLAlchemyError:
         blockers.append("personal_runtime_database_unavailable")
-    if not environment_allowed:
-        blockers.append("personal Runtime requires the production environment")
-    if not gateway_configured:
-        blockers.append("Model Gateway is unavailable")
-    assembled = bool(
-        profile_selected
-        and feature_gates_valid
-        and runtime_gate
-        and not planner_gate
-        and not multi_gate
-        and canary_active
-        and scope_matches
-        and live_owner_verified
-        and environment_allowed
-        and gateway_configured
-        and migration_ready
-        and not blockers
+    _append_external_posture_blockers(
+        blockers,
+        environment_allowed=environment_allowed,
+        gateway_configured=gateway_configured,
+        memory_crypto_configured=memory_crypto_configured,
+    )
+    assembled = _personal_posture_assembled(
+        profile_selected=profile_selected,
+        feature_gates_valid=feature_gates_valid,
+        runtime_gate=runtime_gate,
+        planner_gate=planner_gate,
+        multi_gate=multi_gate,
+        canary_active=canary_active,
+        scope_matches=scope_matches,
+        live_owner_verified=live_owner_verified,
+        environment_allowed=environment_allowed,
+        gateway_configured=gateway_configured,
+        memory_crypto_configured=memory_crypto_configured,
+        migration_ready=migration_ready,
+        blockers=blockers,
     )
     return PersonalAlphaPosture(
         profile_selected=profile_selected,
@@ -684,6 +748,7 @@ def personal_alpha_posture(
         live_owner_verified=live_owner_verified,
         environment_allowed=environment_allowed,
         gateway_configured=gateway_configured,
+        memory_crypto_configured=memory_crypto_configured,
         migration_ready=migration_ready,
         assembled=assembled,
         blockers=tuple(dict.fromkeys(blockers)),
@@ -750,6 +815,13 @@ def build_personal_agent_alpha(
         settings=settings,
         operator_gateway=gateway,
     )
+    try:
+        memory_compiler = SqlAlchemyMemoryCompiler(
+            factory,
+            cipher=MemoryContentCipher.from_settings(settings),
+        )
+    except MemoryCryptoUnavailable:
+        return UnavailableAgentAlpha()
     delegate = AgentAlphaService(
         profiles=RegistryProfileResolver(factory),
         knowledge=RagKnowledgeRetriever(factory),
@@ -767,6 +839,7 @@ def build_personal_agent_alpha(
         gateway=gateway,
         gateway_resolver=personal_gateway,
         preferences_resolver=personal_gateway,
+        memory_compiler=memory_compiler,
         runtime_guard=_runtime_checkpoint(
             config=config,
             config_path=config_file,

@@ -1938,3 +1938,39 @@ P5.5B does not expose a Browser Memory API and does not compile, search or
 inject Memory into prompts. Keep Runtime/Planner/Multi-Agent false. P5.5C must
 arrive as a separate reviewed module and may consume only committed,
 non-deleted, exact-scope Memory under the P5.5A budgets and precedence rules.
+
+## P5.5C bounded personal Memory Runtime maintenance boundary
+
+Read INV-060, INV-058, INV-059, the P5.5 Memory contract, the Memory privacy
+runbook and the `agent-memory-runtime` machine-map entry before changing the
+compiler, Memory encryption, Agent Alpha prompt composition or personal canary
+wiring.
+
+P5.5C uses the existing reviewed migration `0013`; migration `0014+` is not
+authorized. Only `build_personal_agent_alpha()` injects the real SQL-backed
+compiler, and only after the exact INV-056 personal canary posture is live.
+Default and engineering Agent Alpha compositions do not receive it. Runtime is
+false by default and Planner/Multi-Agent stay false.
+
+The compiler owns a fixed candidate ceiling, deterministic lexical selection,
+the P5.5A item/token/sensitive budgets and exact live Tenant/Owner/Workspace/
+AgentVersion/Task/Invocation checks. Select only active, non-deleted current
+Memory versions. Preserve all four scope shapes and require current exact Owner
+review evidence for controlled-shared Memory. Memory content uses the separate
+`MEMORY_CONTENT_ENCRYPTION_KEY`; production must never derive it from a Provider
+credential or JWT secret.
+
+`AgentAlphaService` includes the Memory policy digest in the invocation request
+hash, reserves the ledger before compilation and crosses the provider boundary
+only after Capsule/item persistence commits. Exact terminal replay does not
+compile, retrieve or call the provider. Compiler failure terminalizes the
+reserved invocation. Memory enters the prompt only as a separate explicitly
+untrusted reference-data message below the Security Kernel and AgentVersion;
+SSE exposes only Capsule ID/digest/item count.
+
+Use the focused compiler/Alpha tests plus one random `omnibase_test_*`
+PostgreSQL journey for local evidence. GitHub required CI is the full regression
+authority. On ambiguity, disable compiler composition, preserve Capsule/ledger/
+Audit evidence and use forward-fix or restore-new recovery. Never create a
+public Memory search endpoint, compile on replay, expose plaintext, or turn
+Memory into tool, Skill, MCP, HTTP, SQL, Planner or Multi-Agent authority.

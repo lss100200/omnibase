@@ -92,6 +92,35 @@ class AlphaKnowledgeRetriever(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class AlphaMemoryCapsule:
+    """Safe Runtime projection of one persisted, untrusted ContextCapsule."""
+
+    capsule_id: str
+    content_sha256: str
+    item_count: int
+    total_tokens: int
+    untrusted_prompt: str
+
+
+class AlphaMemoryCompiler(Protocol):
+    @property
+    def policy_digest(self) -> str: ...
+
+    def compile(
+        self,
+        *,
+        tenant_id: str,
+        tenant_schema: str,
+        owner_user_id: str,
+        workspace_id: str,
+        agent_version_id: str,
+        task_id: str,
+        invocation_id: str,
+        query: str,
+    ) -> AlphaMemoryCapsule | None: ...
+
+
+@dataclass(frozen=True, slots=True)
 class AlphaGatewaySelection:
     gateway: ModelGateway
     credential_source: Literal["personal", "operator_default"]
@@ -163,6 +192,8 @@ __all__ = [
     "AlphaInvocationIdentity",
     "AlphaInvocationLedger",
     "AlphaKnowledgeRetriever",
+    "AlphaMemoryCapsule",
+    "AlphaMemoryCompiler",
     "AlphaProfileResolver",
     "AlphaStreamEvent",
     "AlphaUserPreferences",

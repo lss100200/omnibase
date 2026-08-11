@@ -20,8 +20,8 @@
 | Phase 1.6 双索引工程 | ✅ 100% | 工程与 CPU benchmark 完成；V1 权威，生产 V2 回填/cutover 冻结 |
 | API 基础设施 | ✅ 已进入 `main` | `/api/v1`、Request ID/访问日志、显式 CORS、请求边界、Redis 限流、实时主体/RBAC 与离线模型边界持续由 CI 验证 |
 | Phase 3-4 安全 AI 工作空间与能力平台 | 🟡 企业 P34.7 轨道冻结保留；个人版审批轨道启动 | P34.1–P34.6、P34.7 hardened joint Gate、Trust Policy R0 和 R1-A assignment 均作为长期安全资产保留。企业多人 authority/key ceremony/15-resource/11-blocker evidence campaign 在个人版完成前冻结；个人版参考主流 AI IDE 的 Sandbox/Approval/Network 模型，并叠加 OmniBase Capability、Workload Identity、Lease/fencing、预算、审计和多 AI 空间隔离。当前 production Gate 仍为 `blocked/not_proven`，Feature Gates 仍关闭 |
-| Agent 编排 | 🟡 P5.4C engineering on `main` | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、Agent Builder、P5.3A Planner Proposal、P5.4 typed Executor/Formal Builder/Lite product loop 已通过统一工程验收；production Runtime/Planner/Multi-Agent 仍关闭 |
-| Skill/MCP 扩展 | 🟡 合同起步 | P5.6A 第一方原生 Skill compile-only 合同已建立；无 persistence/API/install/runtime，第三方 Marketplace 与 MCP 仍关闭 |
+| Agent 编排 | 🟡 P5.5C personal Memory Runtime 收口中 | Registry、durable Task ledger、Model Gateway、tool-free Agent Alpha、Agent Builder、产品验收、个人单 Owner canary、Memory migration `0013` 与 bounded compiler/prompt injection 已形成；Runtime 默认关闭，仅 exact personal canary 可启用，Planner/Multi-Agent 仍关闭 |
+| Skill/MCP 扩展 | 🟡 第一方 instruction Skill 下一步 | P5.6A 第一方原生 Skill compile-only 合同已建立；个人 P6 只先实现 sealed instruction-only Skill，workflow/script、第三方 Marketplace 与 MCP 继续冻结 |
 
 ---
 
@@ -104,7 +104,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 | **P34.5 沙箱隔离后接只读网关** | HIGH | ✅ A0-A3/B/C/D 工程 Gate；A4 current-source target-host 12/12 `pending/not_proven`：Network Broker 两轮 26/26、真实 Headscale control-plane + mTLS Node-Daemon test-double、split-process mTLS Gateway disposable Gate 已通过；旧 11/11 不适用于 UID/GID-hardened launcher。production Core↔Runner/Broker/Gateway 联合装配、真实成员数据面、DERP、节点失陷、容量和 SLA 留给 P34.7 |
 | **P34.6 私有写入、promotion 与 snapshot 基础** | HIGH | ✅ Foundation / Contracts / Fail-closed primitives：final `cc48baa` ordinary clone 的 Overlay/Gateway source-built Gates、164 related tests、Mypy、OpenAPI 与 Ruff clean-checkout Gate 通过；Workspace-private/derived 逻辑写入、独立 Artifact/Derived RAG、lineage、`pending|unknown` no-replay、Approval/Publication metadata 与 server-generated snapshot inventory 已通过隔离 Gate。Promotion/Restore `COMMITTED`、`controlled_shared` 成功可见性、真实 provider copy/restore 和 production snapshot barrier 继续拒绝，禁止原地修改 source 或创建/改写 `canonical_readonly` |
 | **P34.7 生产总验收** | HIGH | 🟡 企业轨道冻结保留：PR #19 hardened joint Gate、PR #20 Trust Policy R0 与当前 R1-A assignment 均保留，canonical example 仍为 `UNASSIGNED / NOT_ASSESSED`，R0 最高 `candidate/valid_not_approved`，R1-A 最高能力 `complete_not_authenticated`，approved digest 为空。独立 authority registry、key ceremony/custody、15-resource/11-blocker、双成员 Overlay/DERP 和 SLA campaign 等企业工作暂停，待个人版稳定后从冻结文档恢复。当前活动方向是 Personal Owner Approval Gate，不改变现有 production `BLOCKED / NOT_PROVEN` |
-| **P5 Fast Track engineering slice** | MEDIUM | 🟢 PR #18 已统一 P5.3A–P5.4C：durable ledger、Model Gateway、tool-free Alpha、compile-only Planner Proposal、typed single-Agent Executor、Formal Engineering Composition 与 Lite product loop 均在 `main`；P5.6A first-party Skill 仍为 compile-only。migration head 为 `0012`、`0013` absent，三项 production Feature Gate 保持 false；生产 Runtime、Planner、Multi-Agent、真实 Skill/MCP 与高风险工具未授权 |
+| **P5 personal product slice** | MEDIUM | 🟢 P5.3A–P5.5B 已进入主线；P5.5C bounded Memory compiler/ContextCapsule injection 正在收口。migration head 为 `0013`、`0014` absent；Runtime 默认 false，仅 exact personal canary 可开启，Planner/Multi-Agent false；真实工具、workflow/script Skill、MCP 与企业高风险 authority 未授权 |
 
 **不可跳过 Gate**：P34.0–P34.6 的工程契约和隔离验证已经依次完成，但这些证据不等于 production 联合激活。团队版/企业版继续使用完整 P34.7 total Gate。个人版不再等待多人 authority、双成员 Overlay/DERP 和企业 SLA，但必须先实现并独立验证 Personal Owner Approval Gate；该 Gate 仍需绑定 Sandbox、Capability Gateway、Workload Identity、Lease/fencing、预算、审计、网络 allowlist 和 kill switch。在新 Gate 完成前，不得启动 production Agent 编排。
 
@@ -116,13 +116,13 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 
 ## Phase 5: Agent 编排基础
 
-> **前置条件**：团队版/企业版必须通过完整 P34.7 总 Gate；个人版必须通过另行实现的 Personal Owner Approval Gate（Sandbox、Capability Gateway、Workload Identity、Lease/fencing、预算、审计、网络 allowlist 和 kill switch）。当前两条 production admission 均未通过，因此 Runtime/Planner/Multi-Agent 继续关闭
+> **前置条件**：团队版/企业版必须通过完整 P34.7 总 Gate。个人版使用已经实现的单 Owner Gate 与 exact no-tool canary；Runtime 默认关闭，只能在该 canary 中临时开启，Planner/Multi-Agent 继续关闭。企业 P34.7 不阻塞个人产品推进
 > **预估工期**：3-4 周
 > **目标**：让 Agent 作为工作空间内的受约束负载执行复杂任务
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.5A Memory Policy/ContextCapsule/MemoryCandidate 离线合同已合并；P5.5B 已实现 migration `0013`、Owner-governed persistence/delete/export、crypto-erasure 与 dump-bound PostgreSQL inventory，正在最终回归与 PR 收口。P5.5C compiler/search/injection 尚未开始。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C/D 已形成 fail-closed 工程与产品链。P5.5A Memory 合同、P5.5B migration `0013` persistence/delete/export/backup inventory 已合并；P5.5C bounded compiler/search/ContextCapsule injection 已实现，正在 PR 前收口。P5.6A first-party Skill 仍为 compile-only。个人 P6 的剩余最短链是 instruction-only Skill、restart/no-replay recovery 和 personal target acceptance；P5.7 Multi-Agent、workflow/script Skill、MCP 与企业 P34.7 继续冻结。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -140,8 +140,11 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > `SkillDefinition/SkillVersion` compile-only 合同、严格 schema/digest/budget/
 > rollback Gate、示例 `Workspace Librarian` 与离线 validator。正式状态保持
 > `blocked/not_proven`；最多接受 `tested` manifest，不接受无真实 sealed
-> evidence 的 `approved/published`，不创建 migration `0013`，不暴露
-> `/api/v1/skills`，不安装或执行 Skill。P5.3A–P5.4C 工程链已经合入；当前正式主链改为 P5.4D 产品收口 → Personal Owner Approval Gate → 个人版受限 Canary。Trust Policy R1-B–R1-F 与 P34.7 企业真实证据轨道冻结保留，待个人版稳定后恢复。P5.6B persistence 与 migration `0013` 仍需另行明确授权。
+> evidence 的 `approved/published`，不暴露 `/api/v1/skills`，不安装或执行
+> Skill。Migration `0013` 现由 P5.5B Memory 使用，Skill 不得复用或改写该
+> schema；个人下一步只实现 first-party sealed instruction 类型的最小持久化/
+> 安装/禁用/回滚，不执行 script/workflow。Trust Policy R1-B–R1-F 与 P34.7
+> 企业证据轨道冻结保留，待个人版稳定后恢复。
 
 ---
 
@@ -222,12 +225,21 @@ P34.7 evidence campaign. A fresh Provider-backed no-tool journey and explicit
 Owner acceptance/cutover of a durable non-disposable target are still required
 before the final personal production-acceptance claim.
 
-The active Phase 5 sequence is P5.5 Memory/ContextCapsule, P5.6B-D first-party
-Skill persistence/install/execution, P5.7 bounded Multi-Agent DAG, P5.8
-recovery and P5.9 attack/capacity/production Gate before Phase 6. P5.5A froze
-the compile-only contract on migration `0012`. P5.5B now advances the reviewed
-repository/personal target head to `0013` and adds internal persistence,
-Owner-governed publication, delete/export/crypto-erasure and dump-bound backup
-inventory. It still exposes no Browser Memory API and performs no compiler,
-search or prompt injection. P5.5C is the next Memory increment. All three Phase
-5 Feature Gates remain false.
+The active personal sequence is P5.5C Memory Runtime, P5.6P first-party sealed
+instruction Skill, P5.8P restart/unknown/no-replay recovery and P5.9P personal
+target acceptance before the bounded P6.0 personal admission record. P5.7
+Multi-Agent DAG, workflow/script Skills, Marketplace/MCP and enterprise P34.7
+are not personal admission prerequisites. P5.5B advanced the reviewed head to
+`0013`; P5.5C now compiles committed exact-scope Memory, persists a short-lived
+ContextCapsule and injects it as untrusted prompt data only inside the exact
+personal canary. Browser Memory CRUD remains absent; Runtime defaults false and
+Planner/Multi-Agent remain false.
+
+## Personal P6.0 admission profile
+
+Personal P6.0 means the single human Owner can operate a bounded, no-tool Agent
+with durable identity/ledger, encrypted scoped Memory, one sealed first-party
+instruction Skill, restart-safe no-replay recovery, incremental SSE/cancel,
+kill switch and restore-new recovery. It does not mean the Phase 6 Marketplace/
+MCP ecosystem or enterprise P34.7 has been activated. Those remain later
+expansions after the personal product is stable.

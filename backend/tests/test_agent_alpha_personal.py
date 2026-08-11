@@ -57,6 +57,7 @@ def _settings(env: str = "production") -> Settings:
         minio_secret_key="s",  # noqa: S106 - synthetic non-secret test value
         redis_url="redis://localhost:6379/0",
         jwt_secret="x" * 40,
+        memory_content_encryption_key="11" * 32,
     )
 
 
@@ -412,6 +413,7 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
         live_owner_verified=True,
         environment_allowed=True,
         gateway_configured=True,
+        memory_crypto_configured=True,
         migration_ready=True,
         assembled=True,
         blockers=(),

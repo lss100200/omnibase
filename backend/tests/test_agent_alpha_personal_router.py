@@ -55,6 +55,7 @@ def _personal_posture(*, assembled: bool = True) -> PersonalAlphaPosture:
         live_owner_verified=assembled,
         environment_allowed=True,
         gateway_configured=True,
+        memory_crypto_configured=True,
         migration_ready=True,
         assembled=assembled,
         blockers=() if assembled else ("canary has not been activated",),

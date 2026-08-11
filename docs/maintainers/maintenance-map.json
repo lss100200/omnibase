@@ -831,6 +831,33 @@
         "backend/tests/integration/test_p5_5b_memory_persistence_foundation.py",
         "scripts/production/test_manage_p5_personal_backup.py"
       ]
+    },
+    {
+      "id": "INV-060",
+      "title": "P5.5C personal Memory compiler is exact-scope, bounded, persisted-before-provider and untrusted-prompt-only",
+      "document": "docs/maintainers/security-invariants.md#inv-060-p55c-memory-compiler-runtime-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_memory/compiler.py",
+        "backend/src/omnibase/agent_memory/crypto.py",
+        "backend/src/omnibase/agent_alpha/contracts.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/src/omnibase/core/config.py",
+        ".env.example",
+        "docker-compose.yml",
+        "deployment/personal-production/compose.yml",
+        "deployment/personal-production/operator.env.example",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/evidence/p5-5/memory-runtime-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_5c_memory_compiler.py",
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_5c_memory_runtime.py"
+      ]
     }
   ],
   "modules": [
@@ -2360,7 +2387,8 @@
         "INV-045",
         "INV-047",
         "INV-048",
-        "INV-056"
+        "INV-056",
+        "INV-060"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
@@ -2977,7 +3005,8 @@
         "INV-045",
         "INV-048",
         "INV-055",
-        "INV-056"
+        "INV-056",
+        "INV-060"
       ],
       "verification": [
         "TEST_COMPOSE_PROJECT=omnibase-p5personal-${RUN_ID} TEST_DATABASE_NAME=omnibase_test_p5personal_${RUN_ID} TEST_DATABASE_ROLE=omnibase_test_p5personal_${RUN_ID} TEST_DATABASE_OWNER_PASSWORD=${DISPOSABLE_OWNER_PASSWORD} TEST_DATABASE_PASSWORD=${DISPOSABLE_ROLE_PASSWORD} make test-p5-personal-runtime",
@@ -2993,7 +3022,7 @@
       "recovery": [
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
-        "Never edit an event, delete a kill marker, reuse a terminal state directory, create migration 0013, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create migration 0014+, bypass the reviewed migration 0013 Memory lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     },
     {
@@ -3168,6 +3197,75 @@
         "Keep Runtime, Planner and Multi-Agent false; block affected Memory selection and preserve Candidate, Operation, Approval, Effect, Audit and tombstone evidence.",
         "Do not edit append-only history, restore erased content into the old identity, replay unknown deletion or destructively downgrade populated migration 0013 data.",
         "Use a forward fix or restore into a new omnibase_restore_* database and capture new restore_new_evidence inventory before cutover."
+      ]
+    },
+    {
+      "id": "agent-memory-runtime",
+      "name": "P5.5C bounded personal Memory compiler, ContextCapsule persistence and untrusted prompt injection",
+      "source_paths": [
+        "backend/src/omnibase/agent_memory/compiler.py",
+        "backend/src/omnibase/agent_memory/crypto.py",
+        "backend/src/omnibase/agent_memory/models.py",
+        "backend/src/omnibase/agent_alpha/contracts.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/src/omnibase/core/config.py",
+        "backend/tests/test_p5_5c_memory_compiler.py",
+        "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_5c_memory_runtime.py",
+        ".env.example",
+        "docker-compose.yml",
+        "Makefile",
+        "deployment/personal-production/compose.yml",
+        "deployment/personal-production/operator.env.example",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/evidence/p5-5/memory-runtime-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_memory/compiler.py:SqlAlchemyMemoryCompiler",
+        "backend/src/omnibase/agent_memory/crypto.py:MemoryContentCipher",
+        "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
+        "backend/src/omnibase/agent_alpha/personal.py:build_personal_agent_alpha"
+      ],
+      "public_interfaces": [
+        "Internal bounded Memory compiler over committed migration-0013 rows",
+        "Personal Agent Alpha ContextCapsule prompt projection marked as untrusted reference data",
+        "SSE metadata limited to ContextCapsule identity, digest and item count"
+      ],
+      "depends_on": [
+        "agent-memory-contract",
+        "agent-memory-persistence",
+        "agent-alpha-workbench",
+        "personal-runtime-canary",
+        "p5-task-ledger-persistence"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-007",
+        "INV-010",
+        "INV-044",
+        "INV-045",
+        "INV-056",
+        "INV-058",
+        "INV-059",
+        "INV-060"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_5c_memory_compiler.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py -q",
+        "TEST_COMPOSE_PROJECT=omnibase-p55c-<random> TEST_DATABASE_NAME=omnibase_test_p55c_<random> TEST_DATABASE_ROLE=omnibase_test_p55c_<random> TEST_DATABASE_PORT=<random> TEST_DATABASE_OWNER_PASSWORD=<random> TEST_DATABASE_PASSWORD=<random> make test-p5-5b-memory",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src/omnibase/agent_memory/crypto.py src/omnibase/agent_memory/compiler.py src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py src/omnibase/core/config.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_memory/crypto.py src/omnibase/agent_memory/compiler.py src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py tests/test_p5_5c_memory_compiler.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_5c_memory_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_memory/crypto.py src/omnibase/agent_memory/compiler.py src/omnibase/agent_alpha/contracts.py src/omnibase/agent_alpha/service.py src/omnibase/agent_alpha/personal.py tests/test_p5_5c_memory_compiler.py tests/test_agent_alpha.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_5c_memory_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable the personal Memory compiler composition and keep Runtime=false outside the exact personal canary; Planner and Multi-Agent remain false.",
+        "Preserve append-only Capsule, ledger and Audit evidence; an ambiguous compiler/decrypt/scope result fails the invocation and never falls back to unscoped or plaintext Memory.",
+        "Do not replay unknown provider outcomes, restore erased Memory content, expose Memory plaintext in SSE/logs or turn Memory into a tool, Skill, MCP, HTTP, SQL or Planner authority."
       ]
     }
   ]

@@ -31,6 +31,8 @@ from omnibase.agent_alpha.contracts import (
     AlphaInvocationIdentity,
     AlphaInvocationLedger,
     AlphaKnowledgeRetriever,
+    AlphaMemoryCapsule,
+    AlphaMemoryCompiler,
     AlphaProfileResolver,
     AlphaStreamEvent,
     AlphaUserPreferences,
@@ -123,6 +125,7 @@ class AgentAlphaService:
         gateway: ModelGateway,
         gateway_resolver: AlphaGatewayResolver | None = None,
         preferences_resolver: AlphaUserPreferencesResolver | None = None,
+        memory_compiler: AlphaMemoryCompiler | None = None,
         runtime_guard: Callable[[], None] | None = None,
         limits: AlphaLimits | None = None,
     ) -> None:
@@ -132,6 +135,7 @@ class AgentAlphaService:
         self._gateway = gateway
         self._gateway_resolver = gateway_resolver
         self._preferences_resolver = preferences_resolver
+        self._memory_compiler = memory_compiler
         self._runtime_guard = runtime_guard
         self._limits = limits or AlphaLimits()
 
@@ -218,7 +222,7 @@ class AgentAlphaService:
             )
         except RuntimeError as exc:
             raise AgentAlphaUnavailable(str(exc)) from exc
-        profile, chunks, identity = self._reserve_invocation(
+        profile, chunks, memory_capsule, identity = self._reserve_invocation(
             tenant_id=tenant_id,
             tenant_schema=tenant_schema,
             workspace_id=workspace_id,
@@ -243,6 +247,7 @@ class AgentAlphaService:
             identity=identity,
             profile=profile,
             chunks=chunks,
+            memory_capsule=memory_capsule,
             message=message,
             cancellation=cancellation,
             selection=selection,
@@ -255,6 +260,7 @@ class AgentAlphaService:
         identity: AlphaInvocationIdentity,
         profile: AlphaAgentProfile,
         chunks: tuple[AlphaContextChunk, ...],
+        memory_capsule: AlphaMemoryCapsule | None,
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
@@ -263,20 +269,29 @@ class AgentAlphaService:
         """SSE event stream for one durable invocation (or its exact replay)."""
         try:
             self._verify_runtime_guard()
+            meta_payload: dict[str, object] = {
+                "invocation_id": identity.invocation_id,
+                "task_id": identity.task_id,
+                "agent_definition_id": profile.agent_definition_id,
+                "agent_version_id": profile.agent_version_id,
+                "agent_name": profile.display_name,
+                "assistant_name": preferences.assistant_name,
+                "provider_id": selection.gateway.provider_id,
+                "requested_model_id": selection.gateway.model_id,
+                "credential_source": selection.credential_source,
+                "tools_enabled": False,
+            }
+            if memory_capsule is not None:
+                meta_payload.update(
+                    {
+                        "context_capsule_id": memory_capsule.capsule_id,
+                        "context_capsule_digest": memory_capsule.content_sha256,
+                        "context_capsule_item_count": memory_capsule.item_count,
+                    }
+                )
             yield AlphaStreamEvent(
                 kind="meta",
-                payload={
-                    "invocation_id": identity.invocation_id,
-                    "task_id": identity.task_id,
-                    "agent_definition_id": profile.agent_definition_id,
-                    "agent_version_id": profile.agent_version_id,
-                    "agent_name": profile.display_name,
-                    "assistant_name": preferences.assistant_name,
-                    "provider_id": selection.gateway.provider_id,
-                    "requested_model_id": selection.gateway.model_id,
-                    "credential_source": selection.credential_source,
-                    "tools_enabled": False,
-                },
+                payload=meta_payload,
             )
             if identity.replayed_state is not None:
                 # Exact replay of a terminal invocation: re-expose the
@@ -308,6 +323,7 @@ class AgentAlphaService:
                 identity=identity,
                 profile=profile,
                 chunks=chunks,
+                memory_capsule=memory_capsule,
                 message=message,
                 cancellation=cancellation,
                 selection=selection,
@@ -364,6 +380,7 @@ class AgentAlphaService:
         identity: AlphaInvocationIdentity,
         profile: AlphaAgentProfile,
         chunks: tuple[AlphaContextChunk, ...],
+        memory_capsule: AlphaMemoryCapsule | None,
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
@@ -388,11 +405,16 @@ class AgentAlphaService:
                 "\nUser-specific instructions (lower priority than safety and AgentVersion rules):\n"
                 + preferences.assistant_instructions
             )
-        messages = (
+        messages_list = [
             ModelMessage(role="system", content=personalized_instructions),
             ModelMessage(role="system", content=_context_message(chunks)),
-            ModelMessage(role="user", content=message),
-        )
+        ]
+        if memory_capsule is not None:
+            messages_list.append(
+                ModelMessage(role="system", content=memory_capsule.untrusted_prompt)
+            )
+        messages_list.append(ModelMessage(role="user", content=message))
+        messages = tuple(messages_list)
         self._verify_runtime_guard()
         for chunk in selection.gateway.stream(
             messages,
@@ -474,7 +496,12 @@ class AgentAlphaService:
         retry_of: str | None,
         preferences: AlphaUserPreferences,
         selection: AlphaGatewaySelection,
-    ) -> tuple[AlphaAgentProfile, tuple[AlphaContextChunk, ...], AlphaInvocationIdentity]:
+    ) -> tuple[
+        AlphaAgentProfile,
+        tuple[AlphaContextChunk, ...],
+        AlphaMemoryCapsule | None,
+        AlphaInvocationIdentity,
+    ]:
         """Resolve the live tool-free profile and durably reserve the task.
 
         Runs entirely before the provider boundary: the caller-owned ledger
@@ -507,6 +534,11 @@ class AgentAlphaService:
                     "provider_id": selection.gateway.provider_id,
                     "requested_model_id": selection.gateway.model_id,
                     "provider_configuration_digest": selection.configuration_digest,
+                    "memory_policy_digest": (
+                        self._memory_compiler.policy_digest
+                        if self._memory_compiler is not None
+                        else None
+                    ),
                 }
             )
             identity = self._ledger.begin(
@@ -520,19 +552,57 @@ class AgentAlphaService:
             )
             if identity.replayed_state is not None:
                 chunks: tuple[AlphaContextChunk, ...] = ()
+                memory_capsule = None
             else:
-                chunks = self._knowledge.retrieve(
-                    tenant_id=tenant_id,
-                    tenant_schema=tenant_schema,
-                    workspace_id=workspace_id,
-                    query=message,
-                    top_k=top_k,
-                )
+                try:
+                    memory_capsule = (
+                        self._memory_compiler.compile(
+                            tenant_id=tenant_id,
+                            tenant_schema=tenant_schema,
+                            owner_user_id=actor_user_id,
+                            workspace_id=workspace_id,
+                            agent_version_id=profile.agent_version_id,
+                            task_id=identity.task_id,
+                            invocation_id=identity.invocation_id,
+                            query=message,
+                        )
+                        if self._memory_compiler is not None
+                        else None
+                    )
+                except RuntimeError as exc:
+                    self._ledger.fail(
+                        identity=identity,
+                        outcome="failed",
+                        error_code="agent_alpha_memory_compile_failed",
+                    )
+                    raise AgentAlphaError("agent_alpha_memory_compile_failed") from exc
+                try:
+                    chunks = self._knowledge.retrieve(
+                        tenant_id=tenant_id,
+                        tenant_schema=tenant_schema,
+                        workspace_id=workspace_id,
+                        query=message,
+                        top_k=top_k,
+                    )
+                except AlphaAdapterUnavailable as exc:
+                    self._ledger.fail(
+                        identity=identity,
+                        outcome="failed",
+                        error_code="agent_alpha_context_unavailable",
+                    )
+                    raise AgentAlphaUnavailable(str(exc)) from exc
+                except AlphaAdapterError as exc:
+                    self._ledger.fail(
+                        identity=identity,
+                        outcome="failed",
+                        error_code="agent_alpha_context_failed",
+                    )
+                    raise AgentAlphaError(str(exc)) from exc
         except AlphaAdapterUnavailable as exc:
             raise AgentAlphaUnavailable(str(exc)) from exc
         except AlphaAdapterError as exc:
             raise AgentAlphaError(str(exc)) from exc
-        return profile, chunks, identity
+        return profile, chunks, memory_capsule, identity
 
     def cancel(
         self,
