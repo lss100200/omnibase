@@ -8,7 +8,7 @@
       "enterprise_production_approved": false,
       "enterprise_track_frozen": true,
       "migration_0013_created": true,
-      "migration_head": "0014",
+      "migration_head": "0013",
       "passed": true,
       "personal_owner_activation_ready": true,
       "production_runtime_activated": false,

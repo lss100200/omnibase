@@ -861,7 +861,7 @@ def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
             "path": "deployment/production/personal-single-owner.example.json",
-            "sha256": "dc7c4b2ac6bdf062336c545ee49310959c5145cf8893e55e1bd0cb08eaeedeeb",
+            "sha256": "e4c386068ac28431f040a65d9264329badf034dee808c38a190d970689147f41",
         },
         "owner_user_id": ACTOR_ID,
         "profile": "personal_single_owner",

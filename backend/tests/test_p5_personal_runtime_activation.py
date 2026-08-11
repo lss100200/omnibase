@@ -90,6 +90,29 @@ def test_personal_canary_contract_and_plan_are_exact_and_deterministic() -> None
     assert plan.canonical_digest() == config.activation_plan().canonical_digest()
 
 
+def test_repository_canary_keeps_historical_owner_evidence_separate_from_current_head() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    config = load_personal_runtime_canary_config(
+        (repo_root / "deployment/production/personal-runtime-canary.example.json").resolve(),
+        repo_root=repo_root,
+    )
+    readiness = json.loads(
+        (repo_root / "deployment/production/personal-single-owner.example.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    evidence = json.loads(
+        (repo_root / "docs/evidence/p34-7/personal-owner-disposable-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert config.migration_head == "0014"
+    assert readiness["migration_head"] == "0014"
+    assert readiness["engineering_evidence"]["assertions"]["migration_head"] == "0013"
+    assert evidence["migration_head"] == "0013"
+
+
 def test_compose_personal_runtime_defaults_and_overlay_are_exact() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     base_compose = (repo_root / "docker-compose.yml").read_text(encoding="utf-8")

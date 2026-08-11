@@ -72,7 +72,10 @@ _READINESS_ASSERTIONS = {
     "enterprise_production_approved": False,
     "enterprise_track_frozen": True,
     "migration_0013_created": True,
-    "migration_head": "0014",
+    # This sealed artifact is the historical Personal Owner admission proof.
+    # The live canary config and database are checked independently at 0014;
+    # rewriting the older evidence to claim 0014 would manufacture evidence.
+    "migration_head": "0013",
     "passed": True,
     "personal_owner_activation_ready": True,
     "production_runtime_activated": False,
