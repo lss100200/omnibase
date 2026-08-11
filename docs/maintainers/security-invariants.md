@@ -1702,6 +1702,15 @@ active；WorkspaceRun 终态化并清空 runtime/workload binding，释放 inter
 slot；TaskLedger、WorkspaceRun 与 reconciliation 在同一事务原子提交，任一
 后续失败整体回滚。
 
+个人版重启恢复只能在下一次同 Tenant/Workspace/Owner 调用或 exact replay 中
+处理数据库时钟已经过期的旧 active TaskLease。它必须复用上述原子收口路径：
+Attempt/Effect -> `unknown`、Task -> `blocked_unknown`、Run 终态化并打开恰好一个
+reconciliation；不得调用 Provider、重新读取可变 RAG/Memory/Skill、创建第二个
+Effect、复活旧 Lease/fencing/runtime identity 或把不确定结果改写为成功。显式
+`retry_of` 是一个全新调用，只能指向同范围且处于
+`blocked_unknown|failed|cancelled` 的旧 Task；新调用必须获得全新的
+Task/Attempt/Lease/Run/Effect/Operation/identity，旧账本永久保留。
+
 所有 Phase 5 Feature Gates 必须继续为 false；migration `0011` 与 disposable
 Gate 通过都不授权生产 Runtime。验证只能使用 `omnibase_test_p52b_*` sentinel
 数据库，先运行 destructive preflight，最后证明容器/网络/卷 `0/0/0`，并对
@@ -1735,7 +1744,7 @@ Engineering-only Agent Alpha 只能通过 `AGENT_ALPHA_ENGINEERING_ENABLED`
 三个 Phase 5 Feature Gate 均通过同样的严格闭集解析且全 false（缺失/空值/
 精确 `false` 为关闭，精确 `true` 为开启，任何其他拼写都是配置错误）+
 Model Gateway 已装配 + migration head
-`0012` 才能通过 `build_engineering_agent_alpha()` 装配 DB-backed service；
+`0014` 才能通过 `build_engineering_agent_alpha()` 装配 DB-backed service；
 任何一步不满足都返回 `UnavailableAgentAlpha`（fail closed，且不触碰
 registry/ledger/RAG/provider）。该 seam 不激活生产 Agent Runtime，不开启
 `AGENT_RUNTIME_ENABLED`/`AGENT_PLANNER_ENABLED`/`MULTI_AGENT_ENABLED`。
@@ -1761,6 +1770,13 @@ payload 是 stable conflict。RAG 命中 ID 不得进入调用意图哈希，否
 会破坏合法 exact replay。
 In-flight 重复（attempt 仍在 active 状态）必须拒绝二次 dispatch。`unknown`
 outcome 只进入 reconciliation，绝不自动重放。
+
+若 in-flight Attempt 的精确 TaskLease 已按数据库时钟过期，exact replay 可以在
+同一事务内把原 invocation 收敛为 `blocked_unknown` 并返回原 identity，但不能
+再次 dispatch。新 invocation 在占用 Workspace slot 前可以收口同
+Tenant/Workspace/Owner 的过期旧 holder。`retry_of` 必须精确绑定旧 Task 的
+Owner、Workspace、AgentVersion/binding、scope 与 budget digest；live Task、
+跨范围 Task 或缺少 open reconciliation 的 `blocked_unknown` Task 都不可重试。
 
 取消注册表是进程内 signal（module-level），cancel endpoint 通过
 tenant/workspace/actor/invocation 四元组匹配；durable 终态永远来自 ledger，

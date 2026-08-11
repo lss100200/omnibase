@@ -40,7 +40,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from omnibase.agent_alpha.adapters import LedgerInvocationAdapter, canonical_digest
+from omnibase.agent_alpha.adapters import (
+    AlphaAdapterError,
+    LedgerInvocationAdapter,
+    canonical_digest,
+)
 from omnibase.agent_alpha.contracts import AlphaAgentProfile
 from omnibase.agent_registry.service import RegistryPersistenceService
 from tests.integration.test_p5_1b_agent_registry_foundation import (
@@ -141,24 +145,37 @@ def _setup(db_engine, run_owned_resources, label: str):  # type: ignore[no-untyp
     return tenant_id, workspace_id, version, binding
 
 
-def _begin_invocation(db_engine, tenant_id, workspace_id, version, binding, label):  # type: ignore[no-untyped-def]
+def _begin_invocation(  # type: ignore[no-untyped-def]
+    db_engine,
+    tenant_id,
+    workspace_id,
+    version,
+    binding,
+    label,
+    *,
+    idempotency_key=None,
+    request_hash=None,
+    retry_of=None,
+):
     factory = sessionmaker(db_engine)
     adapter = LedgerInvocationAdapter(factory)
+    resolved_request_hash = request_hash or canonical_digest(
+        {
+            "workspace_id": workspace_id,
+            "agent_version_id": version.agent_version_id,
+            "message": "probe",
+            "top_k": 1,
+            "retry_of": retry_of,
+        }
+    )
     identity = adapter.begin(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         actor_user_id=ACTOR_ID,
         profile=_profile(binding, version),
-        idempotency_key=f"{label}-{uuid.uuid4().hex}",
-        request_hash=canonical_digest(
-            {
-                "workspace_id": workspace_id,
-                "agent_version_id": version.agent_version_id,
-                "message": "probe",
-                "top_k": 1,
-            }
-        ),
-        retry_of=None,
+        idempotency_key=idempotency_key or f"{label}-{uuid.uuid4().hex}",
+        request_hash=resolved_request_hash,
+        retry_of=retry_of,
     )
     return adapter, identity
 
@@ -832,4 +849,224 @@ def test_j_revoked_current_node_rejects_historical_close(db_engine, run_owned_re
     assert _workspace_run_row(db_engine, identity)["observed_state"] == "running"
     assert _run_lease_row(db_engine, identity)["state"] == "active"
     assert _task_lease_row(db_engine, identity)["state"] == "active"
+    assert _task_row(db_engine, identity)["state"] == "running"
+
+
+# ---------------------------------------------------------------------------
+# Scenario K - a restarted adapter closes an expired exact replay once.
+# ---------------------------------------------------------------------------
+
+
+def test_k_restart_exact_replay_closes_expired_invocation_without_redispatch(
+    db_engine, run_owned_resources
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id, workspace_id, version, binding = _setup(
+        db_engine, run_owned_resources, "k-restart-exact-replay"
+    )
+    idempotency_key = f"k-restart-{uuid.uuid4().hex}"
+    request_hash = canonical_digest(
+        {
+            "workspace_id": workspace_id,
+            "agent_version_id": version.agent_version_id,
+            "message": "crash before transaction B",
+            "top_k": 1,
+            "retry_of": None,
+        }
+    )
+    _, identity = _begin_invocation(
+        db_engine,
+        tenant_id,
+        workspace_id,
+        version,
+        binding,
+        "k-restart-exact-replay",
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+    )
+    _expire_task_lease(db_engine, identity)
+
+    restarted = LedgerInvocationAdapter(sessionmaker(db_engine))
+    recovered = restarted.begin(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        actor_user_id=ACTOR_ID,
+        profile=_profile(binding, version),
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        retry_of=None,
+    )
+    assert recovered.invocation_id == identity.invocation_id
+    assert recovered.attempt_id == identity.attempt_id
+    assert recovered.effect_id == identity.effect_id
+    assert recovered.replayed_state == "blocked_unknown"
+    _assert_failed_unknown_matrix(
+        db_engine,
+        identity,
+        reason="agent_alpha_restart_lease_expired",
+    )
+
+    replay = LedgerInvocationAdapter(sessionmaker(db_engine)).begin(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        actor_user_id=ACTOR_ID,
+        profile=_profile(binding, version),
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        retry_of=None,
+    )
+    assert replay.invocation_id == identity.invocation_id
+    assert replay.replayed_state == "blocked_unknown"
+    assert len(_reconciliation_rows(db_engine, identity)) == 1
+    assert (
+        int(
+            _scalar(
+                db_engine,
+                "SELECT count(*) FROM omnibase_meta.agent_attempts WHERE task_id = :task",
+                task=identity.task_id,
+            )
+        )
+        == 1
+    )
+    assert (
+        int(
+            _scalar(
+                db_engine,
+                "SELECT count(*) FROM omnibase_meta.agent_task_effects WHERE task_id = :task",
+                task=identity.task_id,
+            )
+        )
+        == 1
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scenario L - explicit retry recovers the old task and creates all-new rows.
+# ---------------------------------------------------------------------------
+
+
+def test_l_explicit_retry_after_restart_uses_new_ledger_and_runtime_identity(
+    db_engine, run_owned_resources
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id, workspace_id, version, binding = _setup(
+        db_engine, run_owned_resources, "l-explicit-retry"
+    )
+    old_key = f"l-old-{uuid.uuid4().hex}"
+    old_hash = canonical_digest(
+        {
+            "workspace_id": workspace_id,
+            "agent_version_id": version.agent_version_id,
+            "message": "ambiguous old request",
+            "top_k": 1,
+            "retry_of": None,
+        }
+    )
+    _, old_identity = _begin_invocation(
+        db_engine,
+        tenant_id,
+        workspace_id,
+        version,
+        binding,
+        "l-explicit-retry",
+        idempotency_key=old_key,
+        request_hash=old_hash,
+    )
+    old_agent_run = _agent_run_row(db_engine, old_identity)
+    old_task_lease = _task_lease_row(db_engine, old_identity)
+    _expire_task_lease(db_engine, old_identity)
+
+    retry_key = f"l-retry-{uuid.uuid4().hex}"
+    retry_hash = canonical_digest(
+        {
+            "workspace_id": workspace_id,
+            "agent_version_id": version.agent_version_id,
+            "message": "explicit owner retry",
+            "top_k": 1,
+            "retry_of": old_identity.task_id,
+        }
+    )
+    restarted, retry_identity = _begin_invocation(
+        db_engine,
+        tenant_id,
+        workspace_id,
+        version,
+        binding,
+        "l-explicit-retry",
+        idempotency_key=retry_key,
+        request_hash=retry_hash,
+        retry_of=old_identity.task_id,
+    )
+    _assert_failed_unknown_matrix(
+        db_engine,
+        old_identity,
+        reason="agent_alpha_restart_lease_expired",
+    )
+    retry_agent_run = _agent_run_row(db_engine, retry_identity)
+    retry_task_lease = _task_lease_row(db_engine, retry_identity)
+    assert retry_identity.task_id != old_identity.task_id
+    assert retry_identity.attempt_id != old_identity.attempt_id
+    assert retry_identity.effect_id != old_identity.effect_id
+    assert retry_agent_run["id"] != old_agent_run["id"]
+    assert retry_agent_run["workspace_run_id"] != old_agent_run["workspace_run_id"]
+    assert retry_agent_run["runtime_instance_id"] != old_agent_run["runtime_instance_id"]
+    assert retry_agent_run["workload_identity_digest"] != old_agent_run["workload_identity_digest"]
+    assert retry_task_lease["id"] != old_task_lease["id"]
+    assert retry_task_lease["task_fencing_token"] >= 1
+
+    with pytest.raises(AlphaAdapterError, match="task_replay_input_mismatch"):
+        LedgerInvocationAdapter(sessionmaker(db_engine)).begin(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            actor_user_id=ACTOR_ID,
+            profile=_profile(binding, version),
+            idempotency_key=old_key,
+            request_hash=retry_hash,
+            retry_of=old_identity.task_id,
+        )
+    restarted.fail(
+        identity=retry_identity,
+        outcome="cancelled",
+        error_code="agent_alpha_owner_cancelled_retry",
+    )
+    assert _task_row(db_engine, retry_identity)["state"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Scenario M - a live invocation cannot be guessed into an explicit retry.
+# ---------------------------------------------------------------------------
+
+
+def test_m_live_invocation_is_not_retryable_and_creates_no_second_task(
+    db_engine, run_owned_resources
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id, workspace_id, version, binding = _setup(
+        db_engine, run_owned_resources, "m-live-retry"
+    )
+    _, identity = _begin_invocation(
+        db_engine, tenant_id, workspace_id, version, binding, "m-live-retry"
+    )
+    before = int(
+        _scalar(
+            db_engine,
+            "SELECT count(*) FROM omnibase_meta.agent_tasks WHERE tenant_id = :tenant",
+            tenant=tenant_id,
+        )
+    )
+    with pytest.raises(AlphaAdapterError, match="agent_alpha_retry_target_not_retryable"):
+        _begin_invocation(
+            db_engine,
+            tenant_id,
+            workspace_id,
+            version,
+            binding,
+            "m-live-retry-second",
+            retry_of=identity.task_id,
+        )
+    after = int(
+        _scalar(
+            db_engine,
+            "SELECT count(*) FROM omnibase_meta.agent_tasks WHERE tenant_id = :tenant",
+            tenant=tenant_id,
+        )
+    )
+    assert after == before
     assert _task_row(db_engine, identity)["state"] == "running"

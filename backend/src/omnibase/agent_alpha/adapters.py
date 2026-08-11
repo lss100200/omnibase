@@ -44,8 +44,10 @@ from omnibase.model_gateway import ModelUsage
 from omnibase.onboarding import ensure_local_model_runtime_anchor
 from omnibase.task_ledger.models import (
     AgentAttemptModel,
+    AgentReconciliationCaseModel,
     AgentRunModel,
     AgentTaskEffectModel,
+    AgentTaskLeaseModel,
     AgentTaskModel,
 )
 from omnibase.task_ledger.service import (
@@ -81,6 +83,8 @@ _ALPHA_INVOCATION_DEADLINE = timedelta(seconds=110)
 _ALPHA_LEASE_TTL_SECONDS = 90
 _ALPHA_WORKSPACE_RUN_LEASE_SECONDS = 120
 _ALPHA_MODEL_OPERATION = "agent.model.invoke"
+_ALPHA_RESTART_RECOVERY_REASON = "agent_alpha_restart_lease_expired"
+_ALPHA_RETRYABLE_TASK_STATES = frozenset({"blocked_unknown", "failed", "cancelled"})
 _ALPHA_BUDGET_LIMITS = {
     "input_tokens": 64_000,
     "output_tokens": 8_192,
@@ -567,6 +571,234 @@ class LedgerInvocationAdapter:
             return None, datetime.now(UTC) + _ALPHA_INVOCATION_DEADLINE
         return task.id, task.deadline
 
+    @staticmethod
+    def _validate_retry_target(
+        session: Session,
+        *,
+        tenant_id: str,
+        workspace_id: str,
+        actor_user_id: str,
+        profile: AlphaAgentProfile,
+        retry_of: str | None,
+    ) -> None:
+        """Bind an explicit personal retry to one exact terminal invocation.
+
+        A retry is a new invocation, never another Attempt on the old Task.
+        The old Task and its reconciliation evidence remain immutable while
+        the new idempotency key receives completely new ledger/runtime rows.
+        """
+        if retry_of is None:
+            return
+        target = session.execute(
+            select(AgentTaskModel)
+            .where(
+                AgentTaskModel.id == retry_of,
+                AgentTaskModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if target is None:
+            raise AlphaAdapterError("agent_alpha_retry_target_missing")
+        if target.actor_user_id != actor_user_id or target.workspace_id != workspace_id:
+            raise AlphaAdapterError("agent_alpha_retry_target_scope_mismatch")
+        if (
+            target.agent_definition_id != profile.agent_definition_id
+            or target.agent_version_id != profile.agent_version_id
+            or target.agent_version_digest != profile.agent_version_digest
+            or target.workspace_agent_binding_id != profile.workspace_agent_binding_id
+            or target.resource_scope_digest != profile.resource_scope_digest
+            or target.budget_policy_digest != profile.budget_policy_digest
+        ):
+            raise AlphaAdapterError("agent_alpha_retry_target_agent_mismatch")
+        if target.state not in _ALPHA_RETRYABLE_TASK_STATES:
+            raise AlphaAdapterError("agent_alpha_retry_target_not_retryable")
+        attempt = session.execute(
+            select(AgentAttemptModel)
+            .where(
+                AgentAttemptModel.task_id == target.id,
+                AgentAttemptModel.tenant_id == tenant_id,
+            )
+            .order_by(AgentAttemptModel.attempt_number.desc())
+            .with_for_update()
+        ).scalar_one_or_none()
+        expected_attempt_state = {
+            "blocked_unknown": "unknown",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }[target.state]
+        if attempt is None or attempt.state != expected_attempt_state:
+            raise AlphaAdapterError("agent_alpha_retry_target_inconsistent")
+        if target.state == "blocked_unknown":
+            open_case = session.execute(
+                select(AgentReconciliationCaseModel).where(
+                    AgentReconciliationCaseModel.tenant_id == tenant_id,
+                    AgentReconciliationCaseModel.task_id == target.id,
+                    AgentReconciliationCaseModel.attempt_id == attempt.id,
+                    AgentReconciliationCaseModel.state == "open",
+                )
+            ).scalar_one_or_none()
+            if open_case is None:
+                raise AlphaAdapterError("agent_alpha_retry_reconciliation_missing")
+
+    @staticmethod
+    def _recover_expired_attempt(
+        session: Session,
+        *,
+        tenant_id: str,
+        workspace_id: str,
+        actor_user_id: str,
+        attempt_id: str,
+    ) -> AlphaInvocationIdentity | None:
+        """Atomically close one expired active invocation without replaying it."""
+        attempt = session.execute(
+            select(AgentAttemptModel)
+            .where(
+                AgentAttemptModel.id == attempt_id,
+                AgentAttemptModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if attempt is None or attempt.state not in _ALPHA_ACTIVE_ATTEMPT_STATES:
+            return None
+        if attempt.task_lease_id is None or attempt.task_fencing_token is None:
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_lease_binding_missing")
+        lease = session.execute(
+            select(AgentTaskLeaseModel)
+            .where(
+                AgentTaskLeaseModel.id == attempt.task_lease_id,
+                AgentTaskLeaseModel.tenant_id == tenant_id,
+                AgentTaskLeaseModel.attempt_id == attempt.id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if lease is None or lease.state != "active":
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_lease_stale")
+        now = session.scalar(select(func.clock_timestamp()))
+        if not isinstance(now, datetime):
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_clock_unavailable")
+        if now < lease.expires_at:
+            return None
+        task = session.execute(
+            select(AgentTaskModel)
+            .where(
+                AgentTaskModel.id == attempt.task_id,
+                AgentTaskModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            task is None
+            or task.workspace_id != workspace_id
+            or task.actor_user_id != actor_user_id
+            or task.state not in {"scheduled", "running"}
+        ):
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_task_scope_mismatch")
+        effect = session.execute(
+            select(AgentTaskEffectModel)
+            .where(
+                AgentTaskEffectModel.task_id == task.id,
+                AgentTaskEffectModel.attempt_id == attempt.id,
+                AgentTaskEffectModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if effect is None or effect.state not in {"reserved", "dispatching"}:
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_effect_missing")
+        run = session.execute(
+            select(AgentRunModel)
+            .where(
+                AgentRunModel.id == attempt.agent_run_id,
+                AgentRunModel.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        svc = TaskLedgerPersistenceService(session)
+        settled = svc.finish_attempt(
+            tenant_id=tenant_id,
+            attempt_id=attempt.id,
+            task_lease_id=lease.id,
+            task_fencing_token=lease.task_fencing_token,
+            outcome="unknown",
+        )
+        if settled != "unknown":
+            raise AlphaAdapterUnavailable("agent_alpha_recovery_outcome_invalid")
+        svc.finish_effect(
+            tenant_id=tenant_id,
+            effect_id=effect.id,
+            outcome="unknown",
+        )
+        svc.open_reconciliation(
+            tenant_id=tenant_id,
+            attempt_id=attempt.id,
+            reason_code=_ALPHA_RESTART_RECOVERY_REASON,
+            effect_id=effect.id,
+        )
+        task.state = "blocked_unknown"
+        try:
+            _terminalize_workspace_run(
+                session,
+                tenant_id=tenant_id,
+                run=run,
+                outcome="unknown",
+                result_digest=None,
+                error_code=_ALPHA_RESTART_RECOVERY_REASON,
+            )
+        except (LeaseRejected, WorkspaceError) as exc:
+            raise AlphaAdapterUnavailable("agent_alpha_restart_recovery_rejected") from exc
+        session.flush()
+        return AlphaInvocationIdentity(
+            invocation_id=task.id,
+            task_id=task.id,
+            attempt_id=attempt.id,
+            effect_id=effect.id,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            actor_user_id=actor_user_id,
+            replayed_state="blocked_unknown",
+        )
+
+    @classmethod
+    def _recover_expired_workspace_attempts(
+        cls,
+        session: Session,
+        *,
+        tenant_id: str,
+        workspace_id: str,
+        actor_user_id: str,
+        exclude_task_id: str,
+    ) -> None:
+        attempt_ids = session.execute(
+            select(AgentAttemptModel.id)
+            .join(
+                AgentTaskModel,
+                (AgentTaskModel.id == AgentAttemptModel.task_id)
+                & (AgentTaskModel.tenant_id == AgentAttemptModel.tenant_id),
+            )
+            .join(
+                AgentTaskLeaseModel,
+                (AgentTaskLeaseModel.id == AgentAttemptModel.task_lease_id)
+                & (AgentTaskLeaseModel.tenant_id == AgentAttemptModel.tenant_id),
+            )
+            .where(
+                AgentAttemptModel.tenant_id == tenant_id,
+                AgentAttemptModel.state.in_(_ALPHA_ACTIVE_ATTEMPT_STATES),
+                AgentTaskModel.workspace_id == workspace_id,
+                AgentTaskModel.actor_user_id == actor_user_id,
+                AgentTaskModel.id != exclude_task_id,
+                AgentTaskLeaseModel.state == "active",
+                AgentTaskLeaseModel.expires_at <= func.clock_timestamp(),
+            )
+            .order_by(AgentAttemptModel.created_at)
+        ).scalars()
+        for attempt_id in tuple(attempt_ids):
+            cls._recover_expired_attempt(
+                session,
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                attempt_id=attempt_id,
+            )
+
     def begin(
         self,
         *,
@@ -578,7 +810,6 @@ class LedgerInvocationAdapter:
         request_hash: str,
         retry_of: str | None,
     ) -> AlphaInvocationIdentity:
-        del retry_of
         session = _tenant_session(self._factory, tenant_id)
         try:
             # Exact replay identity: the task_create canonical payload includes
@@ -632,6 +863,22 @@ class LedgerInvocationAdapter:
                 request_hash_override=request_hash,
                 admission_guard=(admission_guard if self._invocation_guard is not None else None),
             )
+            if replay_task_id is None:
+                self._recover_expired_workspace_attempts(
+                    session,
+                    tenant_id=tenant_id,
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    exclude_task_id=task.id,
+                )
+                self._validate_retry_target(
+                    session,
+                    tenant_id=tenant_id,
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    profile=profile,
+                    retry_of=retry_of,
+                )
             existing_attempt = session.execute(
                 select(AgentAttemptModel)
                 .where(
@@ -647,8 +894,18 @@ class LedgerInvocationAdapter:
                 # re-exposed without creating any new rows or calling any
                 # provider.
                 if existing_attempt.state in _ALPHA_ACTIVE_ATTEMPT_STATES:
-                    session.rollback()
-                    raise AlphaAdapterError("agent_alpha_replay_in_flight")
+                    recovered = self._recover_expired_attempt(
+                        session,
+                        tenant_id=tenant_id,
+                        workspace_id=workspace_id,
+                        actor_user_id=actor_user_id,
+                        attempt_id=existing_attempt.id,
+                    )
+                    if recovered is None:
+                        session.rollback()
+                        raise AlphaAdapterError("agent_alpha_replay_in_flight")
+                    session.commit()
+                    return recovered
                 existing_effect = session.execute(
                     select(AgentTaskEffectModel).where(
                         AgentTaskEffectModel.task_id == task.id,

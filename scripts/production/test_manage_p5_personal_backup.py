@@ -20,7 +20,8 @@ SPEC.loader.exec_module(backup)
 
 def _canonical(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n"
+        json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        + "\n"
     ).encode()
 
 
@@ -61,7 +62,7 @@ def _write_migration(
     return path
 
 
-def _repo_fixture(repo: Path, *, head: str = "0013") -> None:
+def _repo_fixture(repo: Path, *, head: str = "0014") -> None:
     previous: str | None = None
     for number in range(1, int(head) + 1):
         revision = f"{number:04d}"
@@ -74,13 +75,15 @@ def _repo_fixture(repo: Path, *, head: str = "0013") -> None:
         previous = revision
 
 
-def _prepare_backup(tmp_path: Path, *, head: str = "0013") -> tuple[Path, Path]:
+def _prepare_backup(tmp_path: Path, *, head: str = "0014") -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _repo_fixture(repo, head=head)
     target = tmp_path / "cold" / "backup-1"
     backup.plan_backup(
-        Namespace(repo_root=str(repo), backup_target=str(target), source_database="omnibase")
+        Namespace(
+            repo_root=str(repo), backup_target=str(target), source_database="omnibase"
+        )
     )
     files = {
         backup.RELEASE_RECEIPT: b'{"release":"abc"}\n',
@@ -97,7 +100,7 @@ def _prepare_backup(tmp_path: Path, *, head: str = "0013") -> tuple[Path, Path]:
     return repo, target
 
 
-def _stage(tmp_path: Path, *, head: str = "0013") -> tuple[Path, Path]:
+def _stage(tmp_path: Path, *, head: str = "0014") -> tuple[Path, Path]:
     repo, target = _prepare_backup(tmp_path, head=head)
     postgres_inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
@@ -116,7 +119,7 @@ def _stage(tmp_path: Path, *, head: str = "0013") -> tuple[Path, Path]:
 
 
 def _stage_v1(tmp_path: Path) -> tuple[Path, Path]:
-    repo, target = _stage(tmp_path)
+    repo, target = _stage(tmp_path, head="0013")
     plan_path = target / backup.PLAN_NAME
     plan = json.loads(plan_path.read_bytes())
     for field in (
@@ -124,6 +127,7 @@ def _stage_v1(tmp_path: Path) -> tuple[Path, Path]:
         "memory_vector_inventory",
         "memory_vector_lane_versions",
         "migration_0013_schema_sha256",
+        "migration_0014_schema_sha256",
         "migration_revision_list_sha256",
         "source_migration_head",
     ):
@@ -141,6 +145,7 @@ def _stage_v1(tmp_path: Path) -> tuple[Path, Path]:
         "memory_vector_inventory",
         "memory_vector_lane_versions",
         "migration_0013_schema_sha256",
+        "migration_0014_schema_sha256",
         "migration_revision_list_sha256",
         "source_migration_head",
     ):
@@ -166,8 +171,12 @@ def _postgres_backup_inventory(
     payload = {
         "capture_mode": capture_mode,
         "global_alembic_head": head,
-        "memory_table_names": (list(backup._REQUIRED_MEMORY_TABLES) if memory_present else []),
-        "memory_trigger_names": (list(backup._REQUIRED_MEMORY_TRIGGERS) if memory_present else []),
+        "memory_table_names": (
+            list(backup._REQUIRED_MEMORY_TABLES) if memory_present else []
+        ),
+        "memory_trigger_names": (
+            list(backup._REQUIRED_MEMORY_TRIGGERS) if memory_present else []
+        ),
         "memory_vector_inventory": (
             list(backup._REQUIRED_MEMORY_VECTOR_INVENTORY) if memory_present else []
         ),
@@ -175,13 +184,21 @@ def _postgres_backup_inventory(
         "schema": backup.SCHEMA_POSTGRES_BACKUP_INVENTORY,
         "schema_version": 1,
         "source_database": source_database,
+        "skill_table_names": (
+            list(backup._REQUIRED_SKILL_TABLES) if head >= "0014" else []
+        ),
+        "skill_trigger_names": (
+            list(backup._REQUIRED_SKILL_TRIGGERS) if head >= "0014" else []
+        ),
         "tenant_alembic_heads": [{"head": head, "tenant_id": "tenant-1"}],
         "tenant_memory_inventories": (
             [
                 {
                     "memory_table_names": list(backup._REQUIRED_MEMORY_TABLES),
                     "memory_trigger_names": list(backup._REQUIRED_MEMORY_TRIGGERS),
-                    "memory_vector_inventory": list(backup._REQUIRED_MEMORY_VECTOR_INVENTORY),
+                    "memory_vector_inventory": list(
+                        backup._REQUIRED_MEMORY_VECTOR_INVENTORY
+                    ),
                     "schema_name": "tenant_1",
                     "tenant_id": "tenant-1",
                 }
@@ -202,7 +219,9 @@ def _postgres_backup_inventory(
 
 
 def _verify(repo: Path, target: Path) -> dict[str, object]:
-    return backup.verify_backup(Namespace(repo_root=str(repo), backup_target=str(target)))
+    return backup.verify_backup(
+        Namespace(repo_root=str(repo), backup_target=str(target))
+    )
 
 
 def _inventory(path: Path, databases: list[str] | None = None) -> Path:
@@ -222,7 +241,7 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
     assert verified["backup_verified"] is True
     assert verified["execution_authorized"] is False
     assert verified["postgres_inventory_verified"] is True
-    assert verified["source_migration_head"] == "0013"
+    assert verified["source_migration_head"] == "0014"
     assert verified["memory_vector_lane_versions"] == ["v1", "v2"]
     inventory = _inventory(tmp_path / "databases.json")
     restore = backup.plan_restore(
@@ -237,8 +256,8 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
     assert restore["execution_authorized"] is False
     assert restore["target_database"] == "omnibase_restore_20260811"
     assert restore["migration_mode"] == "same_revision"
-    assert restore["source_migration_head"] == "0013"
-    assert restore["target_migration_head"] == "0013"
+    assert restore["source_migration_head"] == "0014"
+    assert restore["target_migration_head"] == "0014"
     assert restore["redis"] == {
         "archived": False,
         "authoritative": False,
@@ -247,12 +266,50 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
     manifest = json.loads((target / backup.MANIFEST_NAME).read_bytes())
     assert manifest["release_receipt"]["path"] == backup.RELEASE_RECEIPT
     assert manifest["postgres"]["artifact"]["path"] == backup.POSTGRES_DUMP
-    assert manifest["minio"]["files"][0]["path"] == f"{backup.MINIO_ROOT}/bucket/object.bin"
+    assert (
+        manifest["minio"]["files"][0]["path"]
+        == f"{backup.MINIO_ROOT}/bucket/object.bin"
+    )
     assert manifest["personal_runtime"]["config"]["path"] == backup.RUNTIME_CONFIG
-    assert manifest["source_migration_head"] == "0013"
+    assert manifest["source_migration_head"] == "0014"
     assert manifest["memory_vector_lane_versions"] == ["v1", "v2"]
     assert len(manifest["migration_revision_list_sha256"]) == 64
     assert len(manifest["migration_0013_schema_sha256"]) == 64
+    assert len(manifest["migration_0014_schema_sha256"]) == 64
+
+
+def test_0013_backup_requires_canonical_0014_skill_upgrade_entry(
+    tmp_path: Path,
+) -> None:
+    repo, target = _stage(tmp_path, head="0013")
+    _write_migration(repo, "0014", "0013")
+    inventory = _inventory(tmp_path / "databases.json")
+    arguments = {
+        "repo_root": str(repo),
+        "backup_target": str(target),
+        "target_database": "omnibase_restore_skills_upgrade",
+        "database_inventory": str(inventory),
+        "minio_restore_root": str(tmp_path / "restored-skills-minio"),
+    }
+    with pytest.raises(backup.BackupError, match="canonical compatibility entry"):
+        backup.plan_restore(Namespace(**arguments))
+    restore = backup.plan_restore(
+        Namespace(
+            **arguments,
+            compatibility_entry="p5-skills-0013-to-0014",
+        )
+    )
+    assert restore["migration_mode"] == "canonical_compatibility_upgrade"
+    assert restore["source_migration_head"] == "0013"
+    assert restore["target_migration_head"] == "0014"
+    assert restore["compatibility_entry"]["entry_id"] == "p5-skills-0013-to-0014"
+    assert restore["compatibility_entry"]["target_skill_table_names"] == list(
+        backup._REQUIRED_SKILL_TABLES
+    )
+    assert restore["compatibility_entry"]["target_skill_trigger_names"] == list(
+        backup._REQUIRED_SKILL_TRIGGERS
+    )
+    assert len(restore["migration_0014_schema_sha256"]) == 64
 
 
 def test_seal_rejects_a_dump_inventory_observed_at_0012_as_0013(
@@ -282,7 +339,7 @@ def test_postgres_inventory_must_be_canonical_and_dump_bound(tmp_path: Path) -> 
     inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
         dump=target / backup.POSTGRES_DUMP,
-        head="0013",
+        head="0014",
         source_database="omnibase",
     )
     value = json.loads(inventory.read_bytes())
@@ -311,16 +368,30 @@ def test_postgres_inventory_must_be_canonical_and_dump_bound(tmp_path: Path) -> 
     ("mutation", "message"),
     [
         (
-            lambda value: value["tenant_registry"][0].update(schema_name="tenant_drift"),
+            lambda value: value["tenant_registry"][0].update(
+                schema_name="tenant_drift"
+            ),
             "registry binding drifted",
         ),
         (
-            lambda value: value["tenant_memory_inventories"][0]["memory_trigger_names"].pop(),
+            lambda value: value["tenant_memory_inventories"][0][
+                "memory_trigger_names"
+            ].pop(),
             "trigger set drifted",
         ),
         (
-            lambda value: value["tenant_memory_inventories"][0]["memory_table_names"].pop(),
+            lambda value: value["tenant_memory_inventories"][0][
+                "memory_table_names"
+            ].pop(),
             "Memory table set drifted",
+        ),
+        (
+            lambda value: value["skill_trigger_names"].pop(),
+            "Skill trigger set drifted",
+        ),
+        (
+            lambda value: value["skill_table_names"].pop(),
+            "Skill table set drifted",
         ),
     ],
 )
@@ -333,7 +404,7 @@ def test_postgres_inventory_binds_tenant_registry_tables_and_triggers(
     inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
         dump=target / backup.POSTGRES_DUMP,
-        head="0013",
+        head="0014",
         source_database="omnibase",
     )
     value = json.loads(inventory.read_bytes())
@@ -418,10 +489,15 @@ def test_legacy_v1_backup_requires_restore_new_evidence_for_0012_to_0013(
     assert restore["migration_mode"] == "canonical_compatibility_upgrade"
     assert restore["source_migration_head"] == "0012"
     assert restore["target_migration_head"] == "0013"
-    assert restore["legacy_restore_new_inventory_sha256"] == backup._sha256_file(restored_inventory)
+    assert restore["legacy_restore_new_inventory_sha256"] == backup._sha256_file(
+        restored_inventory
+    )
     assert len(restore["compatibility_matrix_sha256"]) == 64
     assert restore["compatibility_entry"]["entry_id"] == ("p5-memory-0012-to-0013")
-    assert "restore_dump_into_new_database" in restore["compatibility_entry"]["required_commands"]
+    assert (
+        "restore_dump_into_new_database"
+        in restore["compatibility_entry"]["required_commands"]
+    )
     _, expected_matrix_sha256 = backup._compatibility_matrix(repo)
     assert restore["compatibility_matrix_sha256"] == expected_matrix_sha256
 
@@ -547,10 +623,14 @@ def test_digest_drift_is_rejected(tmp_path: Path) -> None:
         _verify(repo, target)
 
 
-@pytest.mark.parametrize("revision", ["0007", "0013"])
-def test_repository_migration_byte_drift_is_rejected(tmp_path: Path, revision: str) -> None:
+@pytest.mark.parametrize("revision", ["0007", "0013", "0014"])
+def test_repository_migration_byte_drift_is_rejected(
+    tmp_path: Path, revision: str
+) -> None:
     repo, target = _stage(tmp_path)
-    migration = next((repo / "backend/src/omnibase/migrations/versions").glob(f"{revision}_*.py"))
+    migration = next(
+        (repo / "backend/src/omnibase/migrations/versions").glob(f"{revision}_*.py")
+    )
     migration.write_bytes(migration.read_bytes() + b"# byte drift\n")
     with pytest.raises(backup.BackupError, match="migration binding drifted"):
         _verify(repo, target)
@@ -578,7 +658,7 @@ def test_seal_rejects_repository_advancing_after_plan(tmp_path: Path) -> None:
             source_database="omnibase",
         )
     )
-    _write_migration(repo, "0014", "0013")
+    _write_migration(repo, "0015", "0014")
     with pytest.raises(backup.BackupError, match="drifted after backup planning"):
         backup.seal_assets(
             Namespace(
@@ -661,7 +741,7 @@ def test_arbitrary_forward_restore_is_not_in_the_canonical_matrix(
     tmp_path: Path,
 ) -> None:
     repo, target = _stage(tmp_path)
-    _write_migration(repo, "0014", "0013")
+    _write_migration(repo, "0015", "0014")
     inventory = _inventory(tmp_path / "databases.json")
     arguments = {
         "repo_root": str(repo),
@@ -701,7 +781,9 @@ def test_newer_backup_is_rejected_by_an_older_repository(tmp_path: Path) -> None
     repo, target = _stage(tmp_path, head="0014")
     next((repo / "backend/src/omnibase/migrations/versions").glob("0014_*.py")).unlink()
     inventory = _inventory(tmp_path / "databases.json")
-    with pytest.raises(backup.BackupError, match="source migration head is unavailable"):
+    with pytest.raises(
+        backup.BackupError, match="source migration head is unavailable"
+    ):
         backup.plan_restore(
             Namespace(
                 repo_root=str(repo),
@@ -716,8 +798,8 @@ def test_newer_backup_is_rejected_by_an_older_repository(tmp_path: Path) -> None
 
 def test_branched_target_migration_graph_is_rejected(tmp_path: Path) -> None:
     repo, target = _stage(tmp_path)
-    _write_migration(repo, "0014", "0013")
-    _write_migration(repo, "0015", "0013")
+    _write_migration(repo, "0015", "0014")
+    _write_migration(repo, "0016", "0014")
     inventory = _inventory(tmp_path / "databases.json")
     with pytest.raises(backup.BackupError, match="exactly one head"):
         backup.plan_restore(
