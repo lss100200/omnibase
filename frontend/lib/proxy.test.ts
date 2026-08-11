@@ -90,11 +90,13 @@ test('method and body are forwarded; hop-by-hop headers are stripped', async () 
   let seenAuth = ''
   let seenIdem = ''
   let seenHop = ''
+  let seenExpect = ''
   const upstream = await startUpstream((req, res) => {
     seenMethod = req.method ?? ''
     seenAuth = String(req.headers.authorization ?? '')
     seenIdem = String(req.headers['idempotency-key'] ?? '')
     seenHop = String(req.headers['transfer-encoding'] ?? '')
+    seenExpect = String(req.headers.expect ?? '')
     let body = ''
     req.on('data', (chunk) => {
       body += chunk
@@ -111,6 +113,7 @@ test('method and body are forwarded; hop-by-hop headers are stripped', async () 
       'Idempotency-Key': 'key-123',
       'Content-Type': 'application/json',
       'Transfer-Encoding': 'chunked',
+      Expect: '100-continue',
       Connection: 'keep-alive, te',
       TE: 'trailers',
     })
@@ -128,6 +131,7 @@ test('method and body are forwarded; hop-by-hop headers are stripped', async () 
     assert.equal(seenAuth, 'Bearer secret-token')
     assert.equal(seenIdem, 'key-123')
     assert.equal(seenHop, '', 'transfer-encoding must be stripped from the forwarded request')
+    assert.equal(seenExpect, '')
   } finally {
     await upstream.close()
   }

@@ -47,6 +47,17 @@ function upstreamUnavailable(): Response {
   })
 }
 
+function logUpstreamFailure(error: unknown): void {
+  const name = error instanceof Error ? error.name : 'UnknownError'
+  const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined) : undefined
+  const rawCode = cause?.code
+  const code =
+    typeof rawCode === 'string' && /^[A-Z0-9_]{1,40}$/.test(rawCode) ? rawCode : 'UNCLASSIFIED'
+  // Keep diagnostics useful without logging the target URL, request headers,
+  // body, credentials or the provider/network error message.
+  console.error(JSON.stringify({ event: 'proxy.upstream_failed', name, code }))
+}
+
 export async function proxyRequest(target: string, request: Request): Promise<Response> {
   if (!FORWARDED_METHODS.has(request.method)) {
     return new Response(JSON.stringify({ error: { code: 'method_not_allowed' } }), {
@@ -63,6 +74,11 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
   stripHopByHopHeaders(headers)
   headers.delete('host')
   headers.delete('content-length')
+  // Node/undici deliberately rejects Expect: 100-continue with
+  // UND_ERR_NOT_SUPPORTED. Some desktop HTTP clients add it automatically;
+  // the proxy buffers the small request body first, so forwarding Expect is
+  // unnecessary and would turn otherwise valid POSTs into a 502.
+  headers.delete('expect')
   // Compression contract (P5.4D Round 2 P2-1): we force `identity` so the
   // undici fetch never auto-decompresses the body.  A body that arrives
   // decompressed under a stale Content-Encoding/Content-Length pair would
@@ -88,6 +104,7 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
       // instead of a misleading 502.
       throw error
     }
+    logUpstreamFailure(error)
     return upstreamUnavailable()
   }
   const responseHeaders = new Headers(upstream.headers)
