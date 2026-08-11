@@ -1980,9 +1980,7 @@ def _validate_candidate_structure(
     migration_head = discover_migration_head(repo_root, "backend/src/omnibase/migrations/versions")
     if migration_head != MIGRATION_HEAD:
         raise ConfigurationError(f"migration head must remain {MIGRATION_HEAD}")
-    migration_versions = (
-        repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    )
+    migration_versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
     migration_0013_created = any(
         path.name.startswith("0013_") for path in migration_versions.glob("*.py")
     )
