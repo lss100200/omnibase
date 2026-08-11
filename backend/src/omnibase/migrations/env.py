@@ -136,32 +136,23 @@ def run_migrations_offline() -> None:
     )
 
 
-def run_migrations_online() -> None:
-    """Apply migrations: global first, then loop over each tenant schema."""
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-
-    # ---- Phase 1: global schema ----
+def _run_global_migrations(connection: Any) -> None:
+    """Run the requested revision transition for the global schema."""
     config.attributes["migration_schema_scope"] = "global"
     log.info("migrations.online.global_start", schema=GLOBAL_SCHEMA_NAME)
-    with connectable.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{GLOBAL_SCHEMA_NAME}"'))
-
-    with connectable.connect() as connection:
-        _configure_context(
-            connection=connection,
-            target_metadata=TARGET_METADATA_GLOBAL,
-            version_table_schema=GLOBAL_SCHEMA_NAME,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+    connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{GLOBAL_SCHEMA_NAME}"'))
+    _configure_context(
+        connection=connection,
+        target_metadata=TARGET_METADATA_GLOBAL,
+        version_table_schema=GLOBAL_SCHEMA_NAME,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
     log.info("migrations.online.global_complete", schema=GLOBAL_SCHEMA_NAME)
 
-    # ---- Phase 2: per-tenant schemas ----
-    tenant_schemas = _get_all_tenant_schemas(connectable)
+
+def _run_tenant_migrations(connection: Any, tenant_schemas: list[str]) -> None:
+    """Run the requested revision transition for every retained tenant."""
     if not tenant_schemas:
         log.info("migrations.online.tenant_none", reason="no retained tenants yet")
         return
@@ -170,30 +161,66 @@ def run_migrations_online() -> None:
     config.attributes["migration_schema_scope"] = "tenant"
     for schema_name in tenant_schemas:
         # Existing runtime-bootstrapped schemas may have no tenant-local
-        # alembic_version table. Use one physical connection for bootstrap and
-        # Alembic setup; each phase retains its own explicit transaction.
-        with connectable.connect() as connection:
-            with connection.begin():
-                _initialize_tenant_schema(connection, schema_name)
-
-            connection.execute(
-                text(f'SET search_path TO "{schema_name}", {GLOBAL_SCHEMA_NAME}, public')
-            )
-            connection.commit()
-
-            _configure_context(
-                connection=connection,
-                target_metadata=TARGET_METADATA_TENANT,
-                version_table_schema=schema_name,
-            )
-            with context.begin_transaction():
-                context.run_migrations()
+        # alembic_version table. Bootstrap and Alembic remain on the caller's
+        # physical connection so a downgrade can be atomic across all scopes.
+        _initialize_tenant_schema(connection, schema_name)
+        connection.execute(
+            text(f'SET LOCAL search_path TO "{schema_name}", {GLOBAL_SCHEMA_NAME}, public')
+        )
+        _configure_context(
+            connection=connection,
+            target_metadata=TARGET_METADATA_TENANT,
+            version_table_schema=schema_name,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
         log.info("migrations.online.tenant_one_complete", schema=schema_name)
 
     log.info(
         "migrations.online.tenant_all_complete",
         count=len(tenant_schemas),
     )
+
+
+def _is_downgrade_command() -> bool:
+    """Return whether Alembic is executing its downgrade revision function."""
+    command_options = getattr(config, "cmd_opts", None)
+    command = getattr(command_options, "cmd", None)
+    migration_fn = command[0] if isinstance(command, tuple) and command else None
+    if migration_fn is None:
+        environment = getattr(context, "_proxy", None)
+        context_options = getattr(environment, "context_opts", {})
+        migration_fn = context_options.get("fn")
+    return getattr(migration_fn, "__name__", None) == "downgrade"
+
+
+def run_migrations_online() -> None:
+    """Apply upgrades global-first and downgrades tenant-first atomically."""
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    if _is_downgrade_command():
+        # Tenant migrations may reference global tables from later revisions.
+        # Remove those dependencies first, but keep every schema transition in
+        # one PostgreSQL transaction so any populated-data hard lock rolls back
+        # all tenant/global DDL and version-table movement together.
+        tenant_schemas = _get_all_tenant_schemas(connectable)
+        with connectable.connect() as connection, connection.begin():
+            _run_tenant_migrations(connection, tenant_schemas)
+            _run_global_migrations(connection)
+        return
+
+    # Upgrades create global authority tables before tenant tables reference
+    # them. Commit the global phase before discovering and upgrading tenants.
+    with connectable.connect() as connection, connection.begin():
+        _run_global_migrations(connection)
+    tenant_schemas = _get_all_tenant_schemas(connectable)
+    for schema_name in tenant_schemas:
+        with connectable.connect() as connection, connection.begin():
+            _run_tenant_migrations(connection, [schema_name])
 
 
 if context.is_offline_mode():

@@ -1507,8 +1507,12 @@ def _assert_global_downgrade_safe() -> None:
                 {"schema": schema, "tables": list(_MEMORY_TABLES)},
             ).scalars()
         )
-        if present != set(_MEMORY_TABLES):
+        if present and present != set(_MEMORY_TABLES):
             raise RuntimeError("0013 downgrade refused: tenant memory table set is incomplete")
+        if not present:
+            # Tenant-first downgrade may already have removed the complete set
+            # in the same outer transaction. A partial set remains forbidden.
+            continue
         union = " UNION ALL ".join(
             f'(SELECT 1 FROM "{schema}"."{table}" LIMIT 1)'  # noqa: S608 -- validated registry schema and closed table set
             for table in _MEMORY_TABLES

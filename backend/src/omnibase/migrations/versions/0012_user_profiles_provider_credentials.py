@@ -163,10 +163,14 @@ def _assert_global_downgrade_safe() -> None:
             ).scalars()
         )
         expected_tables = {"user_profiles", "model_provider_credentials"}
-        if table_names != expected_tables:
+        if table_names and table_names != expected_tables:
             raise RuntimeError(
                 "0012 downgrade refused: tenant profile/provider table set is incomplete"
             )
+        if not table_names:
+            # Tenant-first downgrade may already have removed the complete set
+            # in the same outer transaction. A partial set remains forbidden.
+            continue
         populated = bind.execute(
             sa.text(
                 f'SELECT EXISTS (SELECT 1 FROM "{schema_name}".user_profiles) '  # noqa: S608 -- strict server-owned identifier

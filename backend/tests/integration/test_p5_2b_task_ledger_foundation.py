@@ -144,7 +144,7 @@ def _insert_minimal_task(
 
 def test_migration_head_and_exact_table_set(db_engine) -> None:  # type: ignore[no-untyped-def]
     with db_engine.connect() as connection:
-        assert _head(connection) == "0012"
+        assert _head(connection) == "0013"
         tables = {
             str(row[0])
             for row in connection.execute(
@@ -191,7 +191,7 @@ def test_deferred_attempt_lease_fk_and_database_triggers_exist(db_engine) -> Non
     } <= trigger_names
 
 
-def test_tenant_schema_advances_to_0012_without_ledger_tables(
+def test_tenant_schema_advances_to_0013_without_ledger_tables(
     db_engine, run_owned_resources
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id, _, _, _ = _installed_binding(
@@ -222,7 +222,7 @@ def test_tenant_schema_advances_to_0012_without_ledger_tables(
                 {"schema": schema, "tables": sorted(_TABLES)},
             ).scalar_one()
         )
-    assert tenant_head == "0012"
+    assert tenant_head == "0013"
     assert ledger_table_count == 0
 
 
@@ -233,7 +233,7 @@ def test_empty_downgrade_and_reupgrade_are_safe(db_engine) -> None:  # type: ign
         assert _head(connection) == "0010"
     _upgrade_head()
     with db_engine.connect() as connection:
-        assert _head(connection) == "0012"
+        assert _head(connection) == "0013"
 
 
 def test_cross_tenant_workspace_reference_is_rejected(db_engine, run_owned_resources) -> None:  # type: ignore[no-untyped-def]
@@ -275,7 +275,7 @@ def test_populated_0011_downgrade_fails_closed(db_engine, run_owned_resources) -
     assert downgrade.returncode != 0
     assert "P5.2B populated downgrade is forbidden" in (downgrade.stdout + downgrade.stderr)
     with db_engine.connect() as connection:
-        assert _head(connection) == "0012"
+        assert _head(connection) == "0013"
         assert (
             str(
                 connection.execute(
