@@ -129,7 +129,7 @@ def _current_readiness_fixture(root: Path) -> tuple[dict[str, object], Path]:
         "enterprise_production_approved": False,
         "enterprise_track_frozen": True,
         "migration_0013_created": True,
-        "migration_head": "0014",
+        "migration_head": "0013",
         "passed": True,
         "personal_owner_activation_ready": True,
         "production_runtime_activated": False,
