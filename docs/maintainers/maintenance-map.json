@@ -792,6 +792,22 @@
         "scripts/production/test_manage_p5_personal_target.py",
         "scripts/production/test_manage_p5_personal_backup.py"
       ]
+    },
+    {
+      "id": "INV-058",
+      "title": "P5.5A Memory capsules and candidates remain exact-scope, provenance-bound, budgeted, non-delegable and non-persistent",
+      "document": "docs/maintainers/security-invariants.md#inv-058-p55a-memory-scope-provenance-budget-contract",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_memory_contract.py",
+        "deployment/production/phase5-memory-contract.example.json",
+        "scripts/production/validate_p5_5a_memory_contract.py",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/evidence/p5-5/context-capsule-contract-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_5a_memory_contract.py"
+      ]
     }
   ],
   "modules": [
@@ -3011,6 +3027,56 @@
         "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
         "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
         "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
+      ]
+    },
+    {
+      "id": "agent-memory-contract",
+      "name": "P5.5A compile-only Memory Policy, Review Evidence, ContextCapsule and MemoryCandidate contract",
+      "source_paths": [
+        "backend/src/omnibase/production/phase5_memory_contract.py",
+        "backend/tests/test_p5_5a_memory_contract.py",
+        "deployment/production/phase5-memory-contract.example.json",
+        "scripts/production/validate_p5_5a_memory_contract.py",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/evidence/p5-5/context-capsule-contract-r0-decision.md"
+      ],
+      "entrypoints": [
+        "scripts/production/validate_p5_5a_memory_contract.py:main"
+      ],
+      "public_interfaces": [
+        "Offline P5.5A Memory / ContextCapsule contract validator and JSON report",
+        "Compile-only Memory Policy, MemoryReviewEvidence, ContextCapsule, MemorySelection and MemoryCandidate DTO vocabulary"
+      ],
+      "depends_on": [
+        "typed-single-agent-executor",
+        "agent-alpha-workbench",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-041",
+        "INV-043",
+        "INV-044",
+        "INV-045",
+        "INV-048",
+        "INV-058"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_5a_memory_contract.py -q",
+        "python scripts/production/validate_p5_5a_memory_contract.py --validate-only",
+        "python scripts/production/validate_p5_5a_memory_contract.py --verify",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/phase5_memory_contract.py tests/test_p5_5a_memory_contract.py ../scripts/production/validate_p5_5a_memory_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/phase5_memory_contract.py tests/test_p5_5a_memory_contract.py ../scripts/production/validate_p5_5a_memory_contract.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep Runtime, Planner and Multi-Agent false and preserve the invalid config/report whenever scope, provenance, digest, timestamp or budget is ambiguous.",
+        "Do not create migration 0013, persistence, Browser API or Runtime injection under the P5.5A contract-only label.",
+        "Future ambiguous deletion or export must block selection and use append-only evidence plus forward-fix or restore-new recovery."
       ]
     }
   ]

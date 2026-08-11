@@ -2976,6 +2976,84 @@ passing state, overwrite the old database/MinIO root, delete unknown effects or
 reuse a terminal Runtime state directory. Recover with a forward fix or a new
 verified restore target.
 
+## INV-058 p55a-memory-scope-provenance-budget-contract
+
+**Authoritative source**
+
+- `backend/src/omnibase/production/phase5_memory_contract.py`
+- `deployment/production/phase5-memory-contract.example.json`
+- `scripts/production/validate_p5_5a_memory_contract.py`
+- `backend/tests/test_p5_5a_memory_contract.py`
+- `docs/phase-5-memory-context-capsule-contract.md`
+- `docs/runbooks/memory-privacy-delete-export.md`
+
+P5.5A is the compile-only contract for Memory Policy, ContextCapsule and
+MemoryCandidate. It creates no migration, ORM, database table, Browser API,
+vector lane, worker or Runtime injection. Migration head stays `0012`, migration
+`0013` stays absent and Runtime/Planner/Multi-Agent stay false.
+
+Every Capsule is bound to one exact Tenant, human Owner, Workspace,
+AgentVersion, Task and Invocation. Selected Memory identities and versions are
+unique and ordered by continuous server-owned positions. Each item binds the
+same Tenant/Owner, a logical source Resource/version, evidence references,
+content digest, scope, sensitivity, selection reason and token count.
+`user_private` carries no Workspace or AgentVersion; `workspace_private` and
+`controlled_shared` bind the Capsule Workspace without an AgentVersion;
+`agent_private` binds both. A controlled-shared item additionally binds a
+canonical Owner approval record by ID and digest to the exact Tenant,
+Workspace, Memory ID/version and content digest. Capsule TTL,
+token/item/sensitive-item totals and compiler policy digest are independently
+recomputed. Capsules are non-delegable and untrusted data and cannot override
+the Security Kernel.
+
+An Agent may create a Candidate but may not activate a long-term memory.
+Secrets, active-memory IDs and inferred biometric/financial/health/political/
+religious/sexual-orientation attributes are rejected. Sensitive and
+`controlled_shared` candidates require explicit Owner confirmation. Every
+Candidate carries source Resource/version, evidence references, retention,
+confidence, scope and sensitivity, and must bind the exact same Tenant, Owner,
+Workspace, AgentVersion, Task, Invocation and policy as an existing Capsule.
+
+**Allowed changes**
+
+- Tighten closed scopes, sensitivity vocabulary, identity/provenance binding,
+  timestamp rules or server-owned budget ceilings.
+- Add attack fixtures or example Capsules/Candidates that remain digest-only,
+  contract-only and non-authoritative.
+- Implement P5.5B persistence only as a separately reviewed migration/service
+  increment that also updates every migration-pinned personal/Phase-5 Gate and
+  proves delete/export/restore-new behavior.
+
+**Forbidden changes**
+
+- Cross-Tenant, cross-User, cross-Workspace or cross-Agent private selection;
+  unsealed or mismatched controlled-shared review evidence; tenant-wide
+  fallback; physical locator, Provider credential or Authorization material.
+- Treating Memory/RAG/user content as system instructions, delegable authority
+  or a way to expand AgentVersion/Skill/tool capability.
+- Silent full-history injection, caller-expanded budget, missing source/version,
+  duplicate identities, digest/accounting drift or renewable expired Capsule.
+- Agent self-publication of a Candidate, automatic sensitive profiling, hidden
+  deletion failure or converting `pending|unknown` into success/replay.
+- Creating migration `0013`, Memory persistence/API/runtime or enabling any
+  Phase 5 Feature Gate under the P5.5A contract-only label.
+
+**Required verification**
+
+- `backend/tests/test_p5_5a_memory_contract.py`
+- `python scripts/production/validate_p5_5a_memory_contract.py --validate-only`
+- clean-checkout `--verify`, expected `blocked/not_proven` and exit 2
+- explicit Ruff and Mypy for the module/test/CLI
+- maintainer map/benchmark and P5.1A/P5.2A/P5.3A sealed-contract regression
+
+**Failure recovery**
+
+Keep all Phase 5 Feature Gates false, preserve the invalid config/report and
+forward-fix from a new clean checkout. If a future persistence or deletion
+operation is ambiguous, immediately block selection and injection, preserve
+append-only Audit/tombstone evidence and use restore-new; never edit old
+Capsules or destructively downgrade a populated database.
+
 ## INV-055 personal-single-owner-admission
 
 **权威源码**

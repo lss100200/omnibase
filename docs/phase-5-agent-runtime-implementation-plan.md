@@ -275,6 +275,16 @@ Planner、Executor、Aggregator 和 Reviewer 必须使用不同 capability 模�
 
 ## 8. P5.5 Memory Compiler 与长期用户智能库
 
+> **P5.5A implementation status (2026-08-11):** the compile-only Memory Policy,
+> ContextCapsule, MemorySelection and MemoryCandidate contract is implemented
+> with an offline validator and attack matrix. It binds Tenant/Owner/Workspace/
+> AgentVersion/Task/Invocation, source/version/evidence, deterministic order,
+> compiler-policy digest, TTL and token/item/sensitive budgets. It creates no
+> persistence, Browser API, vector lane, worker, migration or Runtime injection;
+> migration remains `0012`, `0013` is absent and all Phase 5 Feature Gates stay
+> false. P5.5B persistence/delete/export and P5.5C compiler/search/injection are
+> separate reviewed increments.
+
 长期记忆采用数据库治理 + RAG 的分层模型：
 
 1. `user_private`：用户偏好、代码风格、审美、语言习惯；只对该用户和明确授权的 Agent 可见。
