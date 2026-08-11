@@ -4930,8 +4930,9 @@ or migrated.
 Current posture:
 
 ```text
-P5_6P_ENGINEERING_ACCEPTED_PENDING_REMOTE_CI
-local implementation commit=745645baad32191593acc7eaffe0c5fcb8a9b926
+P5_6P_MERGED_REQUIRED_CI_GREEN
+final branch head=b1a1ab854ad6a03f2593ba9d844f2512999c3c5a
+main merge commit=9809c3ebe12d86b3c66c9bdbff588e5d116b1b7b
 migration head=0014
 migration 0015+ absent
 AGENT_RUNTIME_ENABLED=false by default
@@ -4939,14 +4940,14 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 enterprise P34.7 frozen / blocked_not_proven
 approved enterprise trust-policy digest empty
-committed locally
-not pushed
-not merged
+required backend/frontend/compose/PostgreSQL CI green
+pushed
+merged through PR #31
 not deployed
 ```
 
-After P5.6P merge, the remaining personal path is P5.8P
-restart/expired-lease/unknown-outcome/no-replay recovery, followed by P5.9P
+With P5.6P merged, the remaining personal path is the already-implemented P5.8P
+restart/expired-lease/unknown-outcome/no-replay recovery PR, followed by P5.9P
 production-like localhost Agent/SSE/Memory/Skill/cancel/kill-switch/restore-new
 acceptance and then the bounded P6.0 Personal Admission record. P5.7
 Multi-Agent remains outside the personal admission path.
@@ -4993,11 +4994,11 @@ daemon. No normal or unknown PostgreSQL instance was used as a substitute.
 GitHub required `postgres-sentinel-integration` from a clean Linux checkout is
 therefore the remaining P5.8P database authority.
 
-P5.6P PR #31 currently points to `9412f6a` after migration-head
-forward-fixes; backend/frontend/compose focused CI has passed in prior runs and
-the newest PostgreSQL required run is pending. P5.8P is ready for one ordinary
-local commit after the minimal documentation/reseal and focused verification;
-it has not been pushed or opened as a PR.
+P5.6P PR #31 merged as `main@9809c3e` after all required backend, frontend,
+Compose and two PostgreSQL sentinel runs passed. P5.8P now includes the final
+P5.6P branch through ordinary merge commit `be29faa`; its 73 focused
+backup/target/Agent Alpha tests pass. P5.8P has not yet been pushed or opened
+as a PR, and its committed PostgreSQL scenarios K/L/M still require remote CI.
 
 Current posture:
 

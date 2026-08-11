@@ -39,11 +39,12 @@ targeted Mypy with missing third-party imports ignored: passed
 compileall and git diff --check: passed
 ```
 
-The guarded PostgreSQL restart/retry scenarios K/L/M are committed as tests but
-have not yet been run locally because Docker Desktop is unresponsive and this
-session cannot restart its daemon. No unknown local PostgreSQL instance was
-used as a substitute. GitHub required PostgreSQL sentinel CI remains pending
-and is the acceptance authority for these scenarios.
+The P5.6P predecessor merged through PR #31 as `main@9809c3e` with all required
+checks green. The guarded P5.8P PostgreSQL restart/retry scenarios K/L/M are
+committed as tests but have not yet been run locally because Docker Desktop is
+unresponsive and this session cannot restart its daemon. No unknown local
+PostgreSQL instance was used as a substitute. The P5.8P pull request's required
+PostgreSQL sentinel CI remains the acceptance authority for these scenarios.
 
 ## Safety posture
 
