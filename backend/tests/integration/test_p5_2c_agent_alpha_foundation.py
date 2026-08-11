@@ -53,6 +53,19 @@ pytestmark = pytest.mark.integration
 _MODEL_ID = "deterministic-alpha-1"
 
 
+@pytest.fixture(autouse=True)
+def _restore_engineering_gateway_seam() -> Iterator[None]:
+    """Keep direct test seam overrides from leaking into later cases."""
+
+    from omnibase.agent_alpha import engineering as engineering_module
+
+    original = engineering_module.configured_model_gateway
+    try:
+        yield
+    finally:
+        engineering_module.configured_model_gateway = original
+
+
 class DeterministicFakeProvider:
     """Tool-free deterministic provider implementing the Model Gateway interface."""
 
