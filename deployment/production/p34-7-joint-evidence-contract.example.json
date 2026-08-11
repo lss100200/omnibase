@@ -57,7 +57,7 @@
       "signature": null
     }
   },
-  "migration_head": "0012",
+  "migration_head": "0013",
   "feature_gates": {"agent_runtime_enabled": false, "agent_planner_enabled": false, "multi_agent_enabled": false},
   "attack_matrix": {
     "evidence": {"path": "attack/attack-matrix.json", "size": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},

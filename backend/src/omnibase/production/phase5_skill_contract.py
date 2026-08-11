@@ -990,8 +990,8 @@ class SkillContractConfig:
         )
         if not config.source.require_clean_checkout:
             raise SkillContractError("P5.6A source provenance must require a clean checkout")
-        if config.migration_baseline != "0012":
-            raise SkillContractError("P5.6A migration_baseline must remain exactly 0012")
+        if config.migration_baseline != "0013":
+            raise SkillContractError("P5.6A migration_baseline must remain exactly 0013")
         config._validate_references()
         return config
 

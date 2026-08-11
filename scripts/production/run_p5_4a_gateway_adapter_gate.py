@@ -82,7 +82,7 @@ def _validate_config() -> None:
             REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
         ).read_text(encoding="utf-8")
     )
-    if config.get("migration_baseline") != "0012":
+    if config.get("migration_baseline") != "0013":
         raise RuntimeError("P5.4A migration baseline drifted")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4A activation must remain false")
@@ -166,8 +166,8 @@ def _record(
         "docker_gate_executed": False,
         "production_runtime_activated": False,
         "feature_gates_enabled": False,
-        "migration_head": "0012",
-        "migration_0013_created": False,
+        "migration_head": "0013",
+        "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
         "external_network_accessed": False,
@@ -185,7 +185,7 @@ def _record(
         "- Database sentinel Gate: `not_run` (Docker availability is a separate admission)\n"
         "- Production Runtime: `false`\n"
         "- Feature Gates: `false / false / false`\n"
-        "- Migration head: `0012`; migration `0013`: not created\n"
+        "- Migration head: `0013`; migration `0013`: created\n"
         f"- Source manifest SHA-256: `{manifest_digest}`\n",
         encoding="utf-8",
     )
@@ -214,8 +214,8 @@ def _verify(path: Path) -> None:
     if report.get("feature_gates_enabled") is not False:
         raise RuntimeError("Feature Gates must remain disabled")
     if (
-        report.get("migration_head") != "0012"
-        or report.get("migration_0013_created") is not False
+        report.get("migration_head") != "0013"
+        or report.get("migration_0013_created") is not True
     ):
         raise RuntimeError("P5.4A migration boundary drifted")
     if report.get("cleanup") != {"containers": 0, "networks": 0, "volumes": 0}:

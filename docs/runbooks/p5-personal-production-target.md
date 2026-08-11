@@ -107,8 +107,26 @@ was replayed.
 Stop application admission and writers before exporting. Use
 `manage_p5_personal_backup.py plan-backup` to create a new backup root. Place
 the verified release receipt, PostgreSQL custom dump, complete MinIO export and
-Runtime config/state/readiness assets in its fixed layout. Then run
-`seal-assets` and `verify-backup`.
+Runtime config/state/readiness assets in its fixed layout. While the same cold
+writer barrier remains active, run `capture-postgres-inventory` with an
+explicit operator-controlled `DATABASE_URL`. It records a read-only repeatable
+snapshot bound to the exact dump, migration head, tenant registry/schemas and,
+from migration `0013`, the Memory table/trigger/vector inventory. Then run
+offline `seal-assets` and `verify-backup`.
+
+```powershell
+$env:DATABASE_URL='<explicit source database URL>'
+python scripts/production/manage_p5_personal_backup.py capture-postgres-inventory `
+  --repo-root <absolute-clean-checkout> `
+  --postgres-dump <absolute-backup-root>\postgres\database.dump `
+  --output <absolute-backup-root>\postgres\inventory.json `
+  --source-database <exact-source-database> `
+  --capture-mode source_backup
+```
+
+This is the controller's only online subcommand. It must not load the root
+`.env`, print connection material or run after writers resume. Plan, seal,
+verify and restore planning remain offline.
 
 On Windows, do not create a custom PostgreSQL dump through PowerShell binary
 redirection. Write the dump inside the PostgreSQL container, copy it through a
@@ -124,7 +142,10 @@ verification fails.
 
 Create a canonical PostgreSQL database inventory and run `plan-restore`. The
 target database must be a previously absent `omnibase_restore_*` name and the
-MinIO restore root must be new and outside both repository and backup.
+MinIO restore root must be new and outside both repository and backup. After
+restoring, capture a second PostgreSQL inventory from that new database with
+`--capture-mode restore_new_evidence`; it must independently prove the same
+tenant/migration/Memory structure and must not reuse the source inventory.
 
 Restore into a separate Compose project/volume set. Keep Runtime=false. Verify
 migration revision, tenant schemas, append-only triggers, object inventory and

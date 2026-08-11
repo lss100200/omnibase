@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.5A Memory Policy/ContextCapsule/MemoryCandidate 离线合同已进入实现与独立验证，P5.5B persistence/delete/export 和 P5.5C compiler/search/injection 仍待后续增量。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.5A Memory Policy/ContextCapsule/MemoryCandidate 离线合同已合并；P5.5B 已实现 migration `0013`、Owner-governed persistence/delete/export、crypto-erasure 与 dump-bound PostgreSQL inventory，正在最终回归与 PR 收口。P5.5C compiler/search/injection 尚未开始。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -224,6 +224,10 @@ before the final personal production-acceptance claim.
 
 The active Phase 5 sequence is P5.5 Memory/ContextCapsule, P5.6B-D first-party
 Skill persistence/install/execution, P5.7 bounded Multi-Agent DAG, P5.8
-recovery and P5.9 attack/capacity/production Gate before Phase 6. P5.5A freezes
-the compile-only contract first; it intentionally keeps migration `0012`,
-`0013` absent and all three Phase 5 Feature Gates false.
+recovery and P5.9 attack/capacity/production Gate before Phase 6. P5.5A froze
+the compile-only contract on migration `0012`. P5.5B now advances the reviewed
+repository/personal target head to `0013` and adds internal persistence,
+Owner-governed publication, delete/export/crypto-erasure and dump-bound backup
+inventory. It still exposes no Browser Memory API and performs no compiler,
+search or prompt injection. P5.5C is the next Memory increment. All three Phase
+5 Feature Gates remain false.

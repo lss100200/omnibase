@@ -808,6 +808,29 @@
       "test_paths": [
         "backend/tests/test_p5_5a_memory_contract.py"
       ]
+    },
+    {
+      "id": "INV-059",
+      "title": "P5.5B Memory persistence is Owner-approved, transactionally published, deletion/export closed and dump-inventory bound",
+      "document": "docs/maintainers/security-invariants.md#inv-059-p55b-memory-persistence-delete-export-contract",
+      "source_paths": [
+        "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
+        "backend/src/omnibase/agent_memory/models.py",
+        "backend/src/omnibase/agent_memory/service.py",
+        "backend/src/omnibase/control_plane/service.py",
+        "scripts/production/manage_p5_personal_backup.py",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-5/memory-persistence-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_5b_memory_migration_contract.py",
+        "backend/tests/test_p5_5b_memory_service.py",
+        "backend/tests/test_p34_1_control_plane_service.py",
+        "backend/tests/integration/test_p5_5b_memory_persistence_foundation.py",
+        "scripts/production/test_manage_p5_personal_backup.py"
+      ]
     }
   ],
   "modules": [
@@ -3077,6 +3100,74 @@
         "Keep Runtime, Planner and Multi-Agent false and preserve the invalid config/report whenever scope, provenance, digest, timestamp or budget is ambiguous.",
         "Do not create migration 0013, persistence, Browser API or Runtime injection under the P5.5A contract-only label.",
         "Future ambiguous deletion or export must block selection and use append-only evidence plus forward-fix or restore-new recovery."
+      ]
+    },
+    {
+      "id": "agent-memory-persistence",
+      "name": "P5.5B tenant Memory persistence, Owner confirmation, delete/export and PostgreSQL backup inventory",
+      "source_paths": [
+        "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
+        "backend/src/omnibase/agent_memory/__init__.py",
+        "backend/src/omnibase/agent_memory/models.py",
+        "backend/src/omnibase/agent_memory/service.py",
+        "backend/src/omnibase/control_plane/service.py",
+        "backend/tests/test_p5_5b_memory_migration_contract.py",
+        "backend/tests/test_p5_5b_memory_service.py",
+        "backend/tests/test_p34_1_control_plane_service.py",
+        "backend/tests/integration/test_p5_5b_memory_persistence_foundation.py",
+        "scripts/production/manage_p5_personal_backup.py",
+        "scripts/production/test_manage_p5_personal_backup.py",
+        "docs/phase-5-memory-context-capsule-contract.md",
+        "docs/runbooks/memory-privacy-delete-export.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-5/memory-persistence-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_memory/service.py:create_candidate",
+        "backend/src/omnibase/agent_memory/service.py:confirm_candidate",
+        "backend/src/omnibase/agent_memory/service.py:export_memory",
+        "backend/src/omnibase/agent_memory/service.py:delete_memory",
+        "scripts/production/manage_p5_personal_backup.py:capture_postgres_inventory"
+      ],
+      "public_interfaces": [
+        "Internal tenant-scoped P5.5B Memory ORM and caller-owned transaction service",
+        "Owner-governed logical Memory export and atomic delete/crypto-erasure lifecycle",
+        "Canonical dump-bound PostgreSQL tenant/table/trigger/vector inventory CLI"
+      ],
+      "depends_on": [
+        "control-plane",
+        "agent-registry-persistence",
+        "p5-task-ledger-persistence",
+        "workspace-control-plane",
+        "migrations",
+        "personal-production-target-r1",
+        "agent-memory-contract"
+      ],
+      "invariants": [
+        "INV-002",
+        "INV-003",
+        "INV-006",
+        "INV-007",
+        "INV-008",
+        "INV-010",
+        "INV-044",
+        "INV-058",
+        "INV-059"
+      ],
+      "verification": [
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_5b_memory_migration_contract.py tests/test_p5_5b_memory_service.py tests/test_p34_1_control_plane_service.py -q",
+        "python -m pytest scripts/production/test_manage_p5_personal_backup.py -q",
+        "TEST_COMPOSE_PROJECT=omnibase-p55b-<random> TEST_DATABASE_NAME=omnibase_test_p55b_<random> TEST_DATABASE_ROLE=omnibase_test_p55b_<random> TEST_DATABASE_PORT=<random> TEST_DATABASE_OWNER_PASSWORD=<random> TEST_DATABASE_PASSWORD=<random> make test-p5-5b-memory",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/agent_memory src/omnibase/control_plane/service.py src/omnibase/migrations/versions/0013_memory_context_capsules.py tests/test_p5_5b_memory_migration_contract.py tests/test_p5_5b_memory_service.py tests/test_p34_1_control_plane_service.py tests/integration/test_p5_5b_memory_persistence_foundation.py ../scripts/production/manage_p5_personal_backup.py ../scripts/production/test_manage_p5_personal_backup.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/agent_memory src/omnibase/control_plane/service.py src/omnibase/migrations/versions/0013_memory_context_capsules.py tests/test_p5_5b_memory_migration_contract.py tests/test_p5_5b_memory_service.py tests/test_p34_1_control_plane_service.py tests/integration/test_p5_5b_memory_persistence_foundation.py ../scripts/production/manage_p5_personal_backup.py ../scripts/production/test_manage_p5_personal_backup.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep Runtime, Planner and Multi-Agent false; block affected Memory selection and preserve Candidate, Operation, Approval, Effect, Audit and tombstone evidence.",
+        "Do not edit append-only history, restore erased content into the old identity, replay unknown deletion or destructively downgrade populated migration 0013 data.",
+        "Use a forward fix or restore into a new omnibase_restore_* database and capture new restore_new_evidence inventory before cutover."
       ]
     }
   ]

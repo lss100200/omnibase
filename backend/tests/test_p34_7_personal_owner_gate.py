@@ -87,8 +87,8 @@ def _config_mapping(tmp_path: Path) -> dict[str, object]:
                 "root_env_accessed": False,
             },
         },
-        "migration_head": "0012",
-        "migration_0013_created": False,
+        "migration_head": "0013",
+        "migration_0013_created": True,
         "agent_runtime_enabled": False,
         "agent_planner_enabled": False,
         "multi_agent_enabled": False,
@@ -310,8 +310,8 @@ def test_network_policy_rejects_non_logical_or_direct_infrastructure_destination
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("migration_head", "0013"),
-        ("migration_0013_created", True),
+        ("migration_head", "0014"),
+        ("migration_0013_created", False),
         ("agent_runtime_enabled", True),
         ("agent_planner_enabled", True),
         ("multi_agent_enabled", True),

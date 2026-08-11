@@ -1,7 +1,7 @@
 """Run the current-baseline P5.4A Capability Gateway disposable Gate.
 
 Unlike the historical P5.2C runner, this Gate is pinned to migration head
-``0012`` and exercises the real PostgreSQL capability/Gateway integration
+``0013`` and exercises the real PostgreSQL capability/Gateway integration
 tests. It never reads the root ``.env`` and always uses a disposable
 ``omnibase_test_p54a_*`` database with mandatory cleanup.
 """
@@ -43,6 +43,7 @@ SOURCE_PATHS = (
     "backend/src/omnibase/capability_gateway/service.py",
     "backend/src/omnibase/capability_gateway/security.py",
     "backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py",
+    "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
     "backend/tests/destructive_preflight.py",
     "backend/tests/integration/conftest.py",
     "backend/tests/integration/test_p34_2_capability_foundation.py",
@@ -91,8 +92,8 @@ def _validate_config() -> None:
             REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
         ).read_text(encoding="utf-8")
     )
-    if config.get("migration_baseline") != "0012":
-        raise RuntimeError("P5.4A Gate requires migration baseline 0012")
+    if config.get("migration_baseline") != "0013":
+        raise RuntimeError("P5.4A Gate requires migration baseline 0013")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4A activation must remain false")
     if config.get("feature_gates") != {
@@ -138,7 +139,7 @@ def _record(
         "passed": passed,
         "started_at": started_at,
         "finished_at": datetime.now(UTC).isoformat(),
-        "migration_head": "0012" if passed else None,
+        "migration_head": "0013" if passed else None,
         "database_sentinel_verified": passed,
         "capability_scope_verified": passed,
         "gateway_budget_audit_verified": passed,
@@ -146,7 +147,7 @@ def _record(
         "workspace_scope_verified": passed,
         "production_runtime_activated": False,
         "feature_gates_enabled": False,
-        "migration_0013_created": False,
+        "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
         "business_database_migrated": False,
@@ -168,7 +169,7 @@ def _record(
                 f"- Cleanup: `{json.dumps(cleanup, sort_keys=True)}`",
                 "- Production Runtime activated: `false`",
                 "- Feature Gates enabled: `false / false / false`",
-                "- Migration `0013`: not created",
+                "- Migration `0013`: created",
                 "- Root `.env`: not accessed",
                 "- Business database: not accessed",
                 "",
@@ -183,7 +184,7 @@ def _verify(path: Path) -> None:
     expected = {
         "gate": GATE_NAME,
         "passed": True,
-        "migration_head": "0012",
+        "migration_head": "0013",
         "database_sentinel_verified": True,
         "capability_scope_verified": True,
         "gateway_budget_audit_verified": True,
@@ -191,7 +192,7 @@ def _verify(path: Path) -> None:
         "workspace_scope_verified": True,
         "production_runtime_activated": False,
         "feature_gates_enabled": False,
-        "migration_0013_created": False,
+        "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
         "business_database_migrated": False,

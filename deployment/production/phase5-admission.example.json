@@ -113,7 +113,7 @@
   ],
   "migration_head": {
     "directory": "backend/src/omnibase/migrations/versions",
-    "expected_revision": "0012"
+    "expected_revision": "0013"
   },
   "openapi_snapshot": {
     "path": "sdk/contracts/p34-2-openapi.snapshot.json",

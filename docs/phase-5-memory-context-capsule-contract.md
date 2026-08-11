@@ -23,6 +23,50 @@ The authoritative files are:
 - `scripts/production/validate_p5_5a_memory_contract.py`;
 - `backend/tests/test_p5_5a_memory_contract.py`.
 
+## P5.5B current persistence increment
+
+P5.5A remains the historical compile-only contract. P5.5B is a separately
+reviewed forward increment that implements the tenant persistence and privacy
+lifecycle without creating a Browser Memory API or Runtime injection path.
+
+```text
+P5_5B_MEMORY_PERSISTENCE_IMPLEMENTED_PENDING_FINAL_REVIEW
+MIGRATION_HEAD_0013
+ORM_AND_TRANSACTION_SERVICE_IMPLEMENTED
+REAL_POSTGRESQL_SERVICE_JOURNEY_PASSED
+DELETE_EXPORT_CRYPTO_ERASURE_IMPLEMENTED
+POSTGRES_BACKUP_INVENTORY_CAPTURE_IMPLEMENTED
+MEMORY_BROWSER_API_NOT_CREATED
+MEMORY_COMPILER_RUNTIME_NOT_CREATED
+P5_5C_NOT_STARTED
+PHASE5_FEATURE_GATES_FALSE_FALSE_FALSE
+```
+
+Migration `0013_memory_context_capsules.py` creates the tenant-scoped Memory
+tables, append-only and lifecycle triggers, independent vector lanes and exact
+Candidate publication bindings. The internal service permits an Agent to
+create only a Candidate. Acceptance requires an exact
+`memory.candidate.accept` Operation, a live Owner decision, one consumed
+Approval and the same Tenant/Workspace/AgentDefinition/Task/Capsule identities.
+Publication closes Candidate, Memory and first MemoryVersion inside the same
+caller-owned transaction before the service returns.
+
+Owner export contains only logical identity, state, scope, provenance,
+retention, evidence and content digests. Owner deletion atomically blocks
+selection, records the committed effect and code-only tombstone, erases
+Candidate ciphertext/nonce, removes MemoryVersion content and both vector
+lanes, then leaves the Memory identity in `deleted` state. Ambiguous outcomes
+remain blocked for reconciliation.
+
+The personal cold-backup controller now has one explicitly online, read-only
+`capture-postgres-inventory` command. Under the same cold writer barrier as the
+selected dump it binds the dump digest, global and tenant migration heads,
+server-owned tenant registry, ten Memory tables, required trigger set and both
+vector dimensions. Planning, sealing, verification and restore-new planning
+remain offline. The inventory format is first introduced by P5.5B as
+`omnibase.postgresql-backup-inventory.v1`; no earlier released inventory
+consumer exists.
+
 ## Identity and scope
 
 Every ContextCapsule is bound to one exact Tenant, human Owner, Workspace,
@@ -85,14 +129,16 @@ financial, health, political, religious and sexual-orientation attributes. It
 also requires source evidence, treats all memory as untrusted content and keeps
 the Security Kernel above Memory in prompt precedence.
 
-## What is not implemented
+## P5.5A historical boundary and remaining work
 
 P5.5A creates no migration, ORM, database table, vector lane, Browser API,
 worker, Runtime compiler or prompt injection path. `--validate-only` returning
 exit 0 means only that the static contract is valid. Formal `--verify` remains
 `blocked/not_proven` with exit 2 from a clean checkout.
 
-P5.5B must separately implement persistence, deletion/export, tombstones,
-independent vector storage, restore-new and migration compatibility. P5.5C must
-then implement the bounded compiler/search/injection path. Neither increment
-may silently enable Runtime, Planner or Multi-Agent.
+P5.5B supplies persistence, deletion/export, tombstones, independent vector
+storage and dump-bound restore-new inventory evidence. It still creates no
+Browser Memory governance endpoint, compiler worker, search endpoint or prompt
+injection path. P5.5C must separately implement and attack-test that bounded
+compiler/search/injection path. Neither increment may silently enable Runtime,
+Planner or Multi-Agent.

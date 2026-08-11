@@ -1084,8 +1084,8 @@ class MemoryContractConfig:
         )
         if not config.source.require_clean_checkout:
             raise MemoryContractError("P5.5A source provenance must require a clean checkout")
-        if config.migration_baseline != "0012":
-            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0012")
+        if config.migration_baseline != "0013":
+            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0013")
         if not config.policies or not config.capsules or not config.candidates:
             raise MemoryContractError("P5.5A requires policy, capsule and candidate examples")
         config._validate_references()
@@ -1327,11 +1327,11 @@ class MemoryContractReport:
             "vetoes": list(self.vetoes),
             "context_capsule_contract_created": True,
             "memory_candidate_contract_created": True,
-            "memory_persistence_created": False,
+            "memory_persistence_created": True,
             "memory_browser_api_exposed": False,
             "memory_runtime_created": False,
             "memory_injection_executed": False,
-            "migration_created": False,
+            "migration_created": True,
             "root_env_accessed": False,
             "business_database_accessed": False,
             "business_database_migrated": False,
@@ -1340,17 +1340,33 @@ class MemoryContractReport:
 
 
 class MemoryContractGate:
-    """Validate P5.5A without creating persistence or runtime authority."""
+    """Validate the P5.5A contract on the current P5.5B persistence baseline.
+
+    The Gate accepts the separately reviewed persistence package and migration
+    0013 as repository facts. It still grants no Browser, compiler, worker or
+    Runtime authority and rejects any future migration until independently
+    reviewed.
+    """
 
     _FORBIDDEN_PATHS = (
-        "backend/src/omnibase/agent_memory",
         "backend/src/omnibase/agent_memory.py",
+        "backend/src/omnibase/agent_memory/router.py",
+        "backend/src/omnibase/agent_memory/worker.py",
+        "backend/src/omnibase/agent_memory/compiler.py",
+        "backend/src/omnibase/agent_memory/runtime.py",
         "backend/src/omnibase/api/memory.py",
         "backend/src/omnibase/migrations/versions/0013_p5_5_agent_memory.py",
     )
 
     def __init__(self, repo_root: Path) -> None:
         self._repo_root = repo_root.resolve(strict=True)
+
+    def _future_migration_present(self) -> bool:
+        versions = self._repo_root / "backend/src/omnibase/migrations/versions"
+        return any(
+            path.name[:4].isdigit() and int(path.name[:4]) >= 14
+            for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
+        )
 
     def validate_only(self, config: MemoryContractConfig) -> MemoryContractReport:
         return MemoryContractReport(
@@ -1363,7 +1379,8 @@ class MemoryContractGate:
             migration_head=None,
             blockers=(
                 "formal P5.5A verification was not executed",
-                "Memory persistence, Browser governance API and Runtime injection are absent",
+                "P5.5B persistence exists but its lifecycle Gate was not executed by P5.5A",
+                "Memory Browser governance API and Runtime compiler/injection are absent",
                 "Provider-backed durable personal-target acceptance remains not proven",
             ),
             vetoes=(),
@@ -1407,6 +1424,8 @@ class MemoryContractGate:
                     "migration head drifted: "
                     f"expected {config.migration_baseline}, got {migration_head}"
                 )
+        if self._future_migration_present():
+            vetoes.append("migration 0014 or higher is outside the reviewed P5.5B baseline")
         for relative in self._FORBIDDEN_PATHS:
             try:
                 os.lstat(self._repo_root / relative)
@@ -1414,7 +1433,7 @@ class MemoryContractGate:
                 continue
             vetoes.append(f"forbidden Memory runtime or migration path exists: {relative}")
         blockers = (
-            "P5.5 persistence and deletion/export lifecycle Gate is not proven",
+            "P5.5B persistence and deletion/export lifecycle acceptance is not proven by P5.5A",
             "ContextCapsule compiler and Runtime injection Gate is not proven",
             "Provider-backed durable personal-target acceptance remains not proven",
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterator
 from dataclasses import replace
@@ -44,7 +45,7 @@ from omnibase.production.personal_runtime_activation import (
 
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OWNER_READINESS_SHA256 = "d71516d6a4c9ebd2e335c5e06e7507ce300ddc138e581b6dd34f9992933185de"
+OWNER_READINESS_SHA256 = "68d5b91f428eaa2632f4ea60e6eab2aa27f3c9b94b593025e17ceced5bebf4d3"
 
 
 def _settings(env: str = "production") -> Settings:
@@ -93,8 +94,8 @@ def _mapping() -> dict[str, object]:
         "max_canary_seconds": 3600,
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
-        "migration_0013_created": False,
-        "migration_head": "0012",
+        "migration_0013_created": True,
+        "migration_head": "0013",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -113,11 +114,49 @@ def _config() -> PersonalRuntimeCanaryConfig:
     return PersonalRuntimeCanaryConfig.from_mapping(_mapping())
 
 
-def _write_config(path: Path) -> None:
+def _write_config(path: Path, mapping: dict[str, object] | None = None) -> None:
     path.write_text(
-        json.dumps(_mapping(), separators=(",", ":"), sort_keys=True) + "\n",
+        json.dumps(mapping or _mapping(), separators=(",", ":"), sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _current_readiness_fixture(root: Path) -> tuple[dict[str, object], Path]:
+    evidence = {
+        "business_database_accessed": False,
+        "business_database_migrated": False,
+        "enterprise_production_approved": False,
+        "enterprise_track_frozen": True,
+        "migration_0013_created": True,
+        "migration_head": "0013",
+        "passed": True,
+        "personal_owner_activation_ready": True,
+        "production_runtime_activated": False,
+        "profile": "personal_single_owner",
+        "root_env_accessed": False,
+    }
+    evidence_path = root / "docs/evidence/personal-owner-current.json"
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text(json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8")
+    readiness = json.loads(
+        (REPO_ROOT / "deployment/production/personal-single-owner.example.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    readiness["engineering_evidence"] = {
+        "assertions": evidence,
+        "path": "docs/evidence/personal-owner-current.json",
+        "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+    }
+    readiness_path = root / "deployment/production/personal-single-owner.example.json"
+    readiness_path.parent.mkdir(parents=True)
+    readiness_path.write_text(
+        json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    mapping = _mapping()
+    owner_readiness = cast(dict[str, object], mapping["owner_readiness"])
+    owner_readiness["sha256"] = hashlib.sha256(readiness_path.read_bytes()).hexdigest()
+    return mapping, root
 
 
 class _FakeFactory:
@@ -187,10 +226,11 @@ def test_posture_assembles_only_with_active_exact_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = _config()
+    mapping, readiness_root = _current_readiness_fixture(tmp_path / "readiness")
+    config = PersonalRuntimeCanaryConfig.from_mapping(mapping)
     config_path = (tmp_path / "canary.json").resolve()
     state_dir = (tmp_path / "state").resolve()
-    _write_config(config_path)
+    _write_config(config_path, mapping)
     activate_personal_runtime_canary(
         config,
         state_dir=state_dir,
@@ -201,7 +241,7 @@ def test_posture_assembles_only_with_active_exact_scope(
     fake_session = SimpleNamespace(rollback=lambda: None, close=lambda: None)
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._migration_head",
-        lambda _: "0012",
+        lambda _: "0013",
     )
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
@@ -223,7 +263,7 @@ def test_posture_assembles_only_with_active_exact_scope(
         profile="personal_single_owner",
         config_path=str(config_path),
         state_dir=str(state_dir),
-        readiness_root=str(REPO_ROOT),
+        readiness_root=str(readiness_root),
         gate_values={
             "AGENT_RUNTIME_ENABLED": "true",
             "AGENT_PLANNER_ENABLED": "false",
@@ -304,17 +344,18 @@ def test_posture_turns_database_failure_into_stable_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = _config()
+    mapping, readiness_root = _current_readiness_fixture(tmp_path / "readiness")
+    config = PersonalRuntimeCanaryConfig.from_mapping(mapping)
     config_path = (tmp_path / "canary.json").resolve()
     state_dir = (tmp_path / "state").resolve()
-    _write_config(config_path)
+    _write_config(config_path, mapping)
     activate_personal_runtime_canary(
         config,
         state_dir=state_dir,
         confirmed_plan_sha256=config.activation_plan().canonical_digest(),
         now=NOW,
     )
-    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0012")
+    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0013")
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -333,7 +374,7 @@ def test_posture_turns_database_failure_into_stable_unavailable(
         profile="personal_single_owner",
         config_path=str(config_path),
         state_dir=str(state_dir),
-        readiness_root=str(REPO_ROOT),
+        readiness_root=str(readiness_root),
         gate_values={
             "AGENT_RUNTIME_ENABLED": "true",
             "AGENT_PLANNER_ENABLED": "false",
@@ -352,10 +393,11 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    mapping, readiness_root = _current_readiness_fixture(tmp_path / "readiness")
     config_path = (tmp_path / "canary.json").resolve()
     state_dir = (tmp_path / "state").resolve()
-    _write_config(config_path)
-    config = _config()
+    _write_config(config_path, mapping)
+    config = PersonalRuntimeCanaryConfig.from_mapping(mapping)
     active_posture = PersonalAlphaPosture(
         profile_selected=True,
         feature_gates_valid=True,
@@ -386,7 +428,7 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
         profile="personal_single_owner",
         config_path=str(config_path),
         state_dir=str(state_dir),
-        readiness_root=str(REPO_ROOT),
+        readiness_root=str(readiness_root),
         gate_values={
             "AGENT_RUNTIME_ENABLED": "true",
             "AGENT_PLANNER_ENABLED": "false",

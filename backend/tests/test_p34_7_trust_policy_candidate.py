@@ -213,13 +213,15 @@ def _valid_pair() -> tuple[dict[str, object], dict[str, object]]:
 
 
 def _fake_repo_root(tmp_path: Path) -> Path:
-    """A disposable repository scaffold whose migration head is 0012 (the R0
-    contract requires the head to stay 0012 and forbids migration 0013)."""
+    """A disposable repository scaffold whose migration head is current 0013."""
     root = tmp_path / "fake-repo"
     versions = root / "backend" / "src" / "omnibase" / "migrations" / "versions"
     versions.mkdir(parents=True)
     (versions / "0012_user_profiles_provider_credentials.py").write_text(
         "revision = '0012'\ndown_revision = None\n", encoding="utf-8"
+    )
+    (versions / "0013_memory_context_capsules.py").write_text(
+        "revision = '0013'\ndown_revision = '0012'\n", encoding="utf-8"
     )
     return root
 
@@ -278,8 +280,8 @@ def test_example_files_validate() -> None:
     assert report.production_approved is False
     assert report.approved_digest_written is False
     assert report.activation_allowed is False
-    assert report.migration_head == "0012"
-    assert report.migration_0013_created is False
+    assert report.migration_head == "0013"
+    assert report.migration_0013_created is True
     assert report.feature_gates == {
         "agent_runtime_enabled": False,
         "agent_planner_enabled": False,
@@ -424,7 +426,7 @@ def test_production_gate_stays_blocked_with_candidate_round(tmp_path: Path) -> N
             "validity_seconds": 3153600000,
         },
         "max_evidence_age_seconds": 604800,
-        "migration_head": "0012",
+        "migration_head": "0013",
     }
     policy_path = tmp_path / "gate-policy.json"
     _write_canonical(policy_path, policy)
@@ -802,15 +804,15 @@ def test_root_env_named_field_is_rejected() -> None:
         _validate(candidate, packet)
 
 
-def test_migration_head_0013_is_rejected(tmp_path: Path) -> None:
-    """A repository whose migration head is 0013 must veto the candidate."""
+def test_migration_head_0014_is_rejected(tmp_path: Path) -> None:
+    """A repository whose migration head is 0014 must veto the candidate."""
     candidate, packet = _valid_pair()
     fake_repo = _fake_repo_root(tmp_path)
     versions = fake_repo / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    (versions / "0013_bad_migration.py").write_text(
-        "revision = '0013'\ndown_revision = '0012'\n", encoding="utf-8"
+    (versions / "0014_bad_migration.py").write_text(
+        "revision = '0014'\ndown_revision = '0013'\n", encoding="utf-8"
     )
-    with pytest.raises(ConfigurationError, match="migration head must remain 0012|0013"):
+    with pytest.raises(ConfigurationError, match="migration head must remain 0013|0014"):
         validate_trust_policy_candidate(candidate, packet, fake_repo)
 
 

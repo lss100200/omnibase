@@ -2,11 +2,13 @@
 
 ## Current authority
 
-P5.5A is contract-only. There is currently no Memory database, Browser Memory
-API, Memory vector index, compiler worker or production injection path. Do not
-interpret the example Capsule or Candidate as persisted user data.
+P5.5A remains the historical compile-only contract. P5.5B adds tenant migration
+`0013`, ORM models, an internal transaction service, independent vector lanes,
+Owner confirmation, logical export, deletion/crypto-erasure and cold-backup
+inventory capture. There is still no Browser Memory API, compiler/search
+worker or production prompt-injection path. P5.5C has not started.
 
-## Privacy rules for later increments
+## Privacy rules
 
 1. Revalidate the live Tenant, live Owner, Workspace membership and exact
    AgentVersion before every read, compilation, correction, deletion or export.
@@ -26,7 +28,21 @@ interpret the example Capsule or Candidate as persisted user data.
    Workspace, Memory ID/version and content digest. A review UUID by itself is
    not approval evidence.
 
-## Deletion contract for P5.5B
+## Candidate creation and Owner confirmation
+
+`create_candidate` may be requested by the exact Agent Definition bound to the
+source Task and Capsule. It may create only `candidate` or
+`awaiting_confirmation`; it may not create an accepted Memory.
+
+`confirm_candidate` must run in one caller-owned transaction and revalidate the
+live Tenant, live tenant-admin Owner, active Workspace Owner membership, exact
+Agent Definition, Task, Capsule and source Resource/version. It must bind one
+high-risk `memory.candidate.accept` Operation, one matching Owner-decided and
+consumed Approval, and the canonical request hash. The service flushes the
+Memory and first version before publishing effects and forces the two deferred
+Candidate/Memory publication constraints to close before returning.
+
+## Deletion procedure
 
 Deletion must be one governed lifecycle across the structured record, the
 independent Memory vector lane, summaries and caches. New Capsules must stop
@@ -38,13 +54,53 @@ If any layer returns `pending` or `unknown`, block re-selection and open
 reconciliation. Never convert an ambiguous delete to success, replay it
 automatically or edit an old Capsule into a passing state.
 
-## Export contract for P5.5B
+The implemented transaction moves the Memory through `deletion_pending`, binds
+the exact committed delete effect, creates a pending code-only tombstone,
+erases accepted Candidate ciphertext and nonce, removes both embedding lanes
+and every MemoryVersion content row, completes the tombstone, then sets the
+Memory to `deleted` with `current_version=NULL`. Audit remains append-only.
+Rollback preserves the pre-transaction state; an uncertain external outcome
+must be recorded as unknown and must not be retried automatically.
+
+## Export procedure
 
 Export is Owner-initiated and scope-bound. The export must contain logical
 identity, version, state, scope, provenance, sensitivity, retention, evidence
 references and content digest. Physical locators, secrets, internal keys and
 other users' data are forbidden. The export receipt must bind exact bytes and
 the live authorization decision.
+
+Use `export_memory` only after the same live Owner and exact Workspace scope are
+revalidated. Treat the canonical returned object as the export payload. Do not
+add plaintext Memory content, ciphertext, nonce, vector values, schema names,
+table names or database/object-store locators to that payload or to logs.
+
+## Cold backup inventory
+
+Stop application admission and all writers. Create and validate the PostgreSQL
+custom-format dump first, then, without releasing the cold barrier, capture the
+database inventory:
+
+```powershell
+$env:DATABASE_URL='<explicit operator-controlled connection URL>'
+python scripts/production/manage_p5_personal_backup.py capture-postgres-inventory `
+  --repo-root <absolute-clean-checkout> `
+  --postgres-dump <absolute-backup-root>\postgres\database.dump `
+  --output <absolute-backup-root>\postgres\inventory.json `
+  --source-database <exact-source-database> `
+  --capture-mode source_backup
+```
+
+The command is read-only and requires an explicit `DATABASE_URL`; it never
+loads the repository root `.env`. The canonical inventory must bind the exact
+dump SHA-256, global and every tenant migration head `0013`, active tenant
+registry/schema mapping, all ten Memory tables, all required semantic and
+tenant-schema triggers, and vector lanes `vector(1024)`/`vector(1536)`.
+
+For restore verification, capture again from the new `omnibase_restore_*`
+database with `--capture-mode restore_new_evidence`. Do not reuse or edit the
+source inventory. `seal-assets` remains offline and accepts only canonical
+inventory bytes matching the selected dump and migration/source facts.
 
 ## Recovery
 

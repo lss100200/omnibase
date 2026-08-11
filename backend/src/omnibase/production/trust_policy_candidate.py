@@ -63,7 +63,7 @@ from omnibase.production.phase5_admission import discover_migration_head
 CANDIDATE_SCHEMA = "omnibase.p34-7.trust-policy-candidate.v1"
 APPROVAL_PACKET_SCHEMA = "omnibase.p34-7.trust-policy-approval-packet.v1"
 SCHEMA_VERSION = "1"
-MIGRATION_HEAD = "0012"
+MIGRATION_HEAD = "0013"
 
 REQUIRED_ROLES = ("core", "runner", "broker", "gateway", "overlay", "recovery_sla", "sealer")
 _SEALER = "sealer"
@@ -1980,12 +1980,17 @@ def _validate_candidate_structure(
     migration_head = discover_migration_head(repo_root, "backend/src/omnibase/migrations/versions")
     if migration_head != MIGRATION_HEAD:
         raise ConfigurationError(f"migration head must remain {MIGRATION_HEAD}")
-    migration_0013 = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
+    migration_versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
     migration_0013_created = any(
-        path.name.startswith("0013_") for path in migration_0013.glob("*.py")
+        path.name.startswith("0013_") for path in migration_versions.glob("*.py")
     )
-    if migration_0013_created:
-        raise ConfigurationError("migration 0013 must not exist")
+    if not migration_0013_created:
+        raise ConfigurationError("migration 0013 must exist at the current repository head")
+    if any(
+        path.name[:4].isdigit() and int(path.name[:4]) >= 14
+        for path in migration_versions.glob("[0-9][0-9][0-9][0-9]_*.py")
+    ):
+        raise ConfigurationError("migration 0014 or higher must not exist")
     if digest_verified and candidate.lifecycle_state == "candidate":
         status = "candidate/valid_not_approved"
         blockers: tuple[str, ...] = ()
@@ -2014,7 +2019,7 @@ def _validate_candidate_structure(
         business_database_migrated=False,
         runtime_activated=False,
         migration_head=migration_head,
-        migration_0013_created=False,
+        migration_0013_created=True,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,

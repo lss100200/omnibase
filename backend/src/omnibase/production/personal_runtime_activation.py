@@ -71,8 +71,8 @@ _READINESS_ASSERTIONS = {
     "business_database_migrated": False,
     "enterprise_production_approved": False,
     "enterprise_track_frozen": True,
-    "migration_0013_created": False,
-    "migration_head": "0012",
+    "migration_0013_created": True,
+    "migration_head": "0013",
     "passed": True,
     "personal_owner_activation_ready": True,
     "production_runtime_activated": False,
@@ -287,10 +287,14 @@ class PersonalRuntimeCanaryConfig:
                 "no_tool personal canary requires default-deny with no workload destinations"
             )
         external_side_effects = _boolean(data, "external_side_effects")
+        migration_0013_created = _boolean(data, "migration_0013_created")
+        if not migration_0013_created:
+            raise PersonalRuntimeConfigurationError(
+                "personal canary requires the current migration 0013 to exist"
+            )
         safety_flags = {
             name: _boolean(data, name)
             for name in (
-                "migration_0013_created",
                 "agent_planner_enabled",
                 "multi_agent_enabled",
                 "enterprise_approved_digest_present",
@@ -299,11 +303,11 @@ class PersonalRuntimeCanaryConfig:
         if external_side_effects or any(safety_flags.values()):
             raise PersonalRuntimeConfigurationError(
                 "personal no_tool canary cannot carry side effects, Planner, multi-Agent, "
-                "migration 0013 or enterprise approval"
+                "or enterprise approval"
             )
         migration_head = _string(data, "migration_head")
-        if migration_head != "0012":
-            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0012")
+        if migration_head != "0013":
+            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0013")
         max_concurrent = _integer(
             data,
             "max_concurrent_invocations",
@@ -332,6 +336,7 @@ class PersonalRuntimeCanaryConfig:
             network_destinations=(),
             external_side_effects=False,
             migration_head=migration_head,
+            migration_0013_created=migration_0013_created,
             owner_readiness=SealedReadinessRef.from_mapping(data.get("owner_readiness")),
             **safety_flags,
         )
