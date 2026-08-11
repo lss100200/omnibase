@@ -87,7 +87,7 @@ def test_0004_creates_only_global_control_plane_tables_and_trigger(db_engine) ->
             )
         ).scalar_one_or_none()
 
-    assert revision == "0012"
+        assert revision == "0013"
     assert {
         "resource_registry",
         "resource_lineage",
