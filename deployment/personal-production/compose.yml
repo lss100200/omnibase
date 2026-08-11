@@ -1,0 +1,271 @@
+name: omnibase-personal-production
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg15-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in the operator env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the operator env file}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in the operator env file}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/run/postgresql:size=16m,uid=999,gid=999,mode=0770
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - data
+
+  redis-init:
+    image: redis:7.4-alpine
+    restart: "no"
+    user: "0:0"
+    command: ["sh", "-ec", "chown redis:redis /data"]
+    volumes:
+      - redis-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    user: redis
+    depends_on:
+      redis-init:
+        condition: service_completed_successfully
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in the operator env file}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - data
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+    volumes:
+      - minio-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - data
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-02T08-27-28Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET in the operator env file}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set none "local/$$MINIO_BUCKET"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /root/.mc:size=8m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+
+  migrate:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.production
+      target: production
+    image: omnibase-backend:personal-production
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in the operator env file}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET in the operator env file}
+      MINIO_SECURE: "false"
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL in the operator env file}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the operator env file}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:?set PROVIDER_CREDENTIAL_ENCRYPTION_KEY in the operator env file}
+    command: ["alembic", "upgrade", "head"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.production
+      target: production
+    image: omnibase-backend:personal-production
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ENV: production
+      LOG_LEVEL: INFO
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in the operator env file}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET in the operator env file}
+      MINIO_SECURE: "false"
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL in the operator env file}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the operator env file}
+      JWT_ALGORITHM: HS256
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS in the operator env file}
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_FAIL_CLOSED: "true"
+      TENANT_MANAGEMENT_API_ENABLED: "false"
+      MODEL_DOWNLOAD_ENABLED: "false"
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:?set PROVIDER_CREDENTIAL_ENCRYPTION_KEY in the operator env file}
+      PROVIDER_ENDPOINT_ALLOWLIST: ${PROVIDER_ENDPOINT_ALLOWLIST:?set PROVIDER_ENDPOINT_ALLOWLIST in the operator env file}
+      OMNIBASE_DEPLOYMENT_INSTANCE_ID: ${OMNIBASE_DEPLOYMENT_INSTANCE_ID:?set OMNIBASE_DEPLOYMENT_INSTANCE_ID in the operator env file}
+      AGENT_ALPHA_ENGINEERING_ENABLED: "false"
+      AGENT_RUNTIME_ENABLED: "false"
+      AGENT_PLANNER_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
+      PERSONAL_RUNTIME_PROFILE: ""
+      PERSONAL_RUNTIME_CANARY_CONFIG: ""
+      PERSONAL_RUNTIME_STATE_DIR: ""
+      PERSONAL_RUNTIME_READINESS_ROOT: ""
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - data
+      - edge
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        API_PROXY_URL: http://backend:8000
+    image: omnibase-frontend:personal-production
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_PROXY_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:${OMNIBASE_FRONTEND_PORT:?set OMNIBASE_FRONTEND_PORT in the operator env file}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=64m,uid=1001,gid=1001,mode=0750
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - edge
+
+networks:
+  data:
+    internal: true
+  edge:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

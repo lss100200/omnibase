@@ -771,6 +771,27 @@
         "scripts/production/test_manage_p5_personal_runtime.py",
         "frontend/lib/personal-runtime-gate.test.ts"
       ]
+    },
+    {
+      "id": "INV-057",
+      "title": "Personal production target is loopback-only, immutable, default-off, cold-backup bound and restore/upgrade-to-new",
+      "document": "docs/maintainers/security-invariants.md#inv-057-personal-production-target-recovery",
+      "source_paths": [
+        "backend/Dockerfile.production",
+        "frontend/Dockerfile",
+        "deployment/personal-production/compose.yml",
+        "deployment/personal-production/operator.env.example",
+        "scripts/production/manage_p5_personal_target.py",
+        "scripts/production/manage_p5_personal_backup.py",
+        "docs/architecture/p5-personal-production-target-r1.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-personal-production-target-r1-decision.md"
+      ],
+      "test_paths": [
+        "scripts/production/test_personal_target_packaging.py",
+        "scripts/production/test_manage_p5_personal_target.py",
+        "scripts/production/test_manage_p5_personal_backup.py"
+      ]
     }
   ],
   "modules": [
@@ -2934,6 +2955,62 @@
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
         "Never edit an event, delete a kill marker, reuse a terminal state directory, create migration 0013, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+      ]
+    },
+    {
+      "id": "personal-production-target-r1",
+      "name": "P5 loopback personal production target packaging, release, cold backup and restore-new boundary",
+      "source_paths": [
+        "backend/Dockerfile.production",
+        "frontend/Dockerfile",
+        "deployment/personal-production/compose.yml",
+        "deployment/personal-production/operator.env.example",
+        "scripts/production/manage_p5_personal_target.py",
+        "scripts/production/manage_p5_personal_backup.py",
+        "scripts/production/test_personal_target_packaging.py",
+        "scripts/production/test_manage_p5_personal_target.py",
+        "scripts/production/test_manage_p5_personal_backup.py",
+        "docs/architecture/p5-personal-production-target-r1.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-personal-production-target-r1-decision.md"
+      ],
+      "entrypoints": [
+        "scripts/production/manage_p5_personal_target.py:main",
+        "scripts/production/manage_p5_personal_backup.py:main"
+      ],
+      "public_interfaces": [
+        "Loopback-only full-stack Compose with internal PostgreSQL/Redis/MinIO/backend and one frontend ingress",
+        "Non-root reload-free backend production image and standalone frontend production image",
+        "Offline doctor, canonical release-manifest and verify-release CLI",
+        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI"
+      ],
+      "depends_on": [
+        "personal-runtime-canary",
+        "runtime-composition",
+        "user-settings-provider-control"
+      ],
+      "invariants": [
+        "INV-008",
+        "INV-009",
+        "INV-010",
+        "INV-044",
+        "INV-055",
+        "INV-056",
+        "INV-057"
+      ],
+      "verification": [
+        "python -m pytest scripts/production/test_personal_target_packaging.py scripts/production/test_manage_p5_personal_target.py scripts/production/test_manage_p5_personal_backup.py -q",
+        "python -m ruff check scripts/production/manage_p5_personal_target.py scripts/production/manage_p5_personal_backup.py scripts/production/test_manage_p5_personal_target.py scripts/production/test_manage_p5_personal_backup.py scripts/production/test_personal_target_packaging.py",
+        "python -m ruff format --check scripts/production/manage_p5_personal_target.py scripts/production/manage_p5_personal_backup.py scripts/production/test_manage_p5_personal_target.py scripts/production/test_manage_p5_personal_backup.py scripts/production/test_personal_target_packaging.py",
+        "docker compose --env-file deployment/personal-production/operator.env.example -f deployment/personal-production/compose.yml config --quiet",
+        "docker build --check -f backend/Dockerfile.production backend",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
+        "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
+        "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
       ]
     }
   ]

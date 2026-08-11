@@ -1848,3 +1848,22 @@ docker compose --env-file .env.example run --rm --no-deps backend pytest `
 
 恢复时撤销 Grant/Lease 并创建新的精确批准，禁止改写旧 approval/audit、重置 budget、
 写入 enterprise approved digest、创建 0013 或自动打开任一 Feature Gate。
+## P5 Personal Production Target R1 maintenance boundary
+
+Read INV-057, `docs/architecture/p5-personal-production-target-r1.md` and
+`docs/runbooks/p5-personal-production-target.md` before changing the personal
+production Dockerfile, Compose, operator controller or backup/restore planner.
+
+The target is a product-operations boundary, not a second Runtime authority.
+Only the frontend may publish a loopback host port. PostgreSQL, Redis, MinIO and
+backend stay internal; there are no source mounts. Base Runtime is false and
+Planner/Multi-Agent are false. The release receipt must bind the production
+packaging and all three lifecycle controllers, never the development Compose
+as a substitute.
+
+The populated operator env stays outside Git and its values are never printed.
+Redis is transient. Backup binds PostgreSQL, MinIO and Runtime activation assets
+after a cold barrier. Restore/upgrade always use new database, MinIO and Runtime
+identities, start Runtime=false, and require structural plus product smoke
+before Owner cutover. Pending/unknown work is preserved for reconciliation and
+never auto-replayed.
