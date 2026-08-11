@@ -4545,3 +4545,55 @@ Canonical sources:
 - `docs/architecture/p5-personal-runtime-activation-r0.md`
 - `docs/runbooks/p5-personal-runtime-canary.md`
 - `docs/evidence/p5-personal-runtime-activation-r0-decision.md`
+
+### P5 Personal Product Integration R1 local master review（2026-08-11）
+
+The Personal Runtime R0 line was reviewed against the latest fetched
+`origin/main` (`6932e7d`) before any further product work. The historical
+P5.4D branch was not merged: all 18 of its commits are patch-equivalent to
+commits already in main, so replaying that branch would risk reverting newer
+Personal Owner readiness and sealed-contract changes.
+
+The dedicated local integration branch was created from exact `origin/main`
+and fast-forwarded only to Personal Runtime commits `392b6f4` and `cc6de4a`.
+It is `0 behind / 2 ahead` and contains both the accepted P5.4D lease/SSE/proxy
+behavior already in main and the new personal Runtime/login behavior.
+
+Cross-product verification passed:
+
+```text
+backend focused = 519 passed
+frontend = 95 passed + typecheck + lint + production build
+maintainer map = valid (46 invariants / 39 modules / 672 path specs)
+maintainer benchmark = valid
+P5.4D git cherry = 18 patch-equivalent / 0 unique
+```
+
+The byte-identical Personal Runtime HEAD retains its clean full-suite and
+personal canary PostgreSQL evidence (`2543 passed`; personal canary `1 + 5`
+tests; cleanup `0/0/0`). The older P5.4D P5.2B Task/Run Gate remains truthful
+for its historical source, but is not applicable to this HEAD: Personal
+Runtime changes two files in its sealed source closure, so the canonical
+verifier reports source-manifest drift. A new immutable P5.2B run is required
+before local integration acceptance.
+
+Current integration posture:
+
+```text
+P5_PERSONAL_PRODUCT_INTEGRATION_R1_PENDING_CANONICAL_P5_2B_GATE
+P5_PERSONAL_RUNTIME_R0_REMOTE_REVIEW_NOT_YET_PROVEN
+PRODUCTION_TARGET_NOT_ACTIVATED
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+SANDBOX_AND_TOOLS_NOT_AUTHORIZED
+ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
+migration head=0012
+migration 0013=absent
+not pushed
+not merged
+not deployed
+```
+
+Canonical decision:
+
+- `docs/evidence/p5-personal-product-integration-r1-decision.md`
