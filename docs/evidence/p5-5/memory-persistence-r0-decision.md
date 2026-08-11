@@ -5,7 +5,7 @@ Date: 2026-08-11
 ## Decision
 
 ```text
-P5_5B_MEMORY_PERSISTENCE_IMPLEMENTED_PENDING_FINAL_REVIEW
+P5_5B_MEMORY_PERSISTENCE_COMMITTED_PENDING_FULL_REGRESSION_AND_REMOTE_REVIEW
 MIGRATION_HEAD_0013
 OWNER_GOVERNED_CANDIDATE_PUBLICATION_IMPLEMENTED
 DELETE_EXPORT_CRYPTO_ERASURE_IMPLEMENTED
@@ -14,7 +14,8 @@ MEMORY_BROWSER_API_NOT_CREATED
 MEMORY_COMPILER_SEARCH_INJECTION_NOT_CREATED
 P5_5C_NOT_STARTED
 RUNTIME_PLANNER_MULTI_AGENT_DISABLED
-NOT_COMMITTED_NOT_PUSHED_NOT_MERGED_NOT_DEPLOYED
+IMPLEMENTATION_COMMIT_E8209EF
+NOT_PUSHED_NOT_MERGED_NOT_DEPLOYED
 ```
 
 ## Implemented
@@ -73,6 +74,10 @@ service journey. No production hardlock was relaxed. The clean rerun passed all
 - recalculate every affected P5/P34 raw-byte seal from final bytes;
 - create forward-only commits, push a PR, pass remote CI and merge only after
   independent final review.
+
+The atomic implementation/migration-hardlock/documentation/seal change was
+committed forward-only as `e8209ef` (`feat(p5.5b): persist governed memory and
+backup evidence`). No amend, rebase, reset, stash or clean was used.
 
 No root `.env` or previously exposed Provider credential was read. No business
 database was accessed or migrated. Runtime, Planner and Multi-Agent remain

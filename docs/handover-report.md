@@ -4774,7 +4774,7 @@ Current honest posture:
 
 ```text
 P5_5A_MERGED
-P5_5B_ENGINEERING_IMPLEMENTED_PENDING_FINAL_REVIEW
+P5_5B_ENGINEERING_COMMITTED_PENDING_FULL_REGRESSION_AND_REMOTE_REVIEW
 migration head=0013
 Browser Memory API absent
 Memory compiler/search/injection absent
@@ -4784,7 +4784,7 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 enterprise P34.7 track frozen/blocked
 no business database accessed or migrated
-not committed
+implementation commit=e8209ef
 not pushed
 not merged
 not deployed
@@ -4796,5 +4796,7 @@ service journey, so immutable audit data cannot correctly trigger the
 production populated-downgrade hardlock during that proof. The hardlock itself
 was not relaxed. Remaining work is wider Control Plane and backup/restore
 regression, final-byte P5/P34 reseal, full repository regression, forward-only
-commits, remote CI and PR merge. The root `.env` was not read and no previously
-exposed Provider credential was reused.
+commits, remote CI and PR merge. The atomic implementation, migration-hardlock,
+documentation and seal update is forward-only commit `e8209ef`; no amend,
+rebase, reset, stash or clean was used. The root `.env` was not read and no
+previously exposed Provider credential was reused.
