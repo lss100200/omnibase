@@ -404,13 +404,22 @@ def test_tombstone_identity_is_immutable() -> None:
 def test_populated_tenant_and_global_downgrade_fail_closed() -> None:
     downgrade = ast.get_source_segment(SOURCE, _function("downgrade"))
     global_guard = ast.get_source_segment(SOURCE, _function("_assert_global_downgrade_safe"))
+    dependency_drop = ast.get_source_segment(
+        SOURCE, _function("_drop_empty_tenant_global_dependencies")
+    )
     assert downgrade is not None
     assert global_guard is not None
+    assert dependency_drop is not None
     assert "_assert_global_downgrade_safe()" in downgrade
+    assert "_drop_empty_tenant_global_dependencies()" in downgrade
     assert "0013 populated tenant downgrade is forbidden" in downgrade
     assert "schema_name FROM omnibase_meta.tenants" in global_guard
     assert "tenant memory table set is incomplete" in global_guard
     assert "0013 populated downgrade is forbidden" in global_guard
+    assert "constraint_row.contype = 'f'" in dependency_drop
+    assert "target_schema.nspname = :global_schema" in dependency_drop
+    assert "DROP CONSTRAINT" in dependency_drop
+    assert "op.drop_table" not in dependency_drop
     assert "omnibase_restore_*" in downgrade
     assert "omnibase_restore_*" in global_guard
 
