@@ -265,7 +265,7 @@ def _record(
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0013" if passed else None,
+        "migration_head": "0014" if passed else None,
         "migration_0013_created": True,
         "feature_gates": {
             "agent_runtime_enabled": False,
@@ -323,7 +323,7 @@ def _verify_evidence(path: Path) -> None:
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0013",
+        "migration_head": "0014",
         "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
