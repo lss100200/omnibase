@@ -14,11 +14,11 @@
     "agent_runtime_enabled": false,
     "multi_agent_enabled": false
   },
-  "finished_at": "2026-08-10T10:59:11.760351+00:00",
+  "finished_at": "2026-08-11T17:01:37.382801+00:00",
   "gate": "P34.7 personal single-Owner disposable Gate",
   "integration_tests": 3,
-  "migration_0013_created": false,
-  "migration_head": "0012",
+  "migration_0013_created": true,
+  "migration_head": "0013",
   "passed": true,
   "personal_engineering_complete": true,
   "personal_owner_activation_ready": true,
@@ -26,7 +26,7 @@
   "profile": "personal_single_owner",
   "root_env_accessed": false,
   "schema_version": 1,
-  "source_manifest_sha256": "f2d998a50f173c5500b899dcaad323ebb1d5cd9cf94153181047ce846155e2b9",
-  "started_at": "2026-08-10T10:58:29.970960+00:00",
+  "source_manifest_sha256": "a3be47cedaa9e5c7d40bee590cdf872874b805578527c2800ff60b1e465ff01f",
+  "started_at": "2026-08-11T17:00:51.284683+00:00",
   "unit_tests": 46
 }
