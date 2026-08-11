@@ -4758,23 +4758,30 @@ Memory tables, all required triggers and both vector dimensions. Offline seal
 and restore planning remain non-connecting; restore evidence must come from a
 new `omnibase_restore_*` database.
 
-Checkpoint verification completed before final documentation/reseal:
+Final local verification:
 
 ```text
-migration contract = 49 passed
-service/control-plane/backup focused = 134 passed
+P5.5B migration/service/Control Plane focused = 157 passed
+backup/restore attack tests = 29 passed
 P5.1A/P5.2A/P5.3A focused = 407 passed
-formal service PostgreSQL lifecycle and inventory = 1 passed
+P5.0/P5.5A/P5.6A compatibility focused = 161 passed
 complete disposable PostgreSQL Gate = 20 passed
-focused Ruff = passed
-focused Mypy = passed
+P34.1 Control Plane + Personal Owner disposable integration = 7 passed
+backend non-integration = 2670 passed / 23 skipped / 15 deselected
+frontend = typecheck + lint + 95 tests + production build passed
+Mypy = 204 source files / 0 issues
+explicit Ruff check/format = passed
+maintainer map = 49 invariants / 42 modules / 739 path specs / 287 entrypoints
+maintainer benchmark + Compose config + git diff --check = passed
+clean-HEAD P5 verifiers = blocked/not_proven / exit 2 / vetoes=[]
+P34 enterprise posture = blocked/not_proven / approved digest empty
 ```
 
 Current honest posture:
 
 ```text
 P5_5A_MERGED
-P5_5B_ENGINEERING_COMMITTED_PENDING_FULL_REGRESSION_AND_REMOTE_REVIEW
+P5_5B_ENGINEERING_ACCEPTED_READY_FOR_REMOTE_REVIEW
 migration head=0013
 Browser Memory API absent
 Memory compiler/search/injection absent
@@ -4785,6 +4792,8 @@ MULTI_AGENT_ENABLED=false
 enterprise P34.7 track frozen/blocked
 no business database accessed or migrated
 implementation commit=e8209ef
+documentation checkpoint=82e3243
+Control Plane integration head sync=364a353
 not pushed
 not merged
 not deployed
@@ -4794,9 +4803,11 @@ The final 20-case disposable PostgreSQL Gate passed after one test-only
 ordering fix: the empty-downgrade proof now runs before the audited formal
 service journey, so immutable audit data cannot correctly trigger the
 production populated-downgrade hardlock during that proof. The hardlock itself
-was not relaxed. Remaining work is wider Control Plane and backup/restore
-regression, final-byte P5/P34 reseal, full repository regression, forward-only
-commits, remote CI and PR merge. The atomic implementation, migration-hardlock,
-documentation and seal update is forward-only commit `e8209ef`; no amend,
-rebase, reset, stash or clean was used. The root `.env` was not read and no
-previously exposed Provider credential was reused.
+was not relaxed. The wider integration run then found one P34.1 test-only
+current-head assertion still pinned to `0012`; `364a353` advances only that
+assertion to reviewed head `0013`, and the clean rerun passed 7/7. Final-byte
+P5 seals, full repository regression and local master review are complete.
+Remaining work is ordinary push, required remote CI, PR review/merge and
+post-merge main verification. No amend, rebase, reset, stash or clean was used.
+The root `.env` was not read and no previously exposed Provider credential was
+reused.
