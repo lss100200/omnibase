@@ -33,6 +33,15 @@ _SCOPES = "('user_private', 'workspace_private', 'agent_private', 'controlled_sh
 _SENSITIVITY = "('standard', 'personal', 'sensitive', 'restricted')"
 _MEMORY_VECTOR_LANE_VERSIONS = (1, 2)
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+_GLOBAL_DEPENDENCY_REVISIONS = {
+    "tenants": "0001",
+    "resource_registry": "0007",
+    "workspaces": "0007",
+    "operations": "0009",
+    "approval_requests": "0009",
+    "agent_versions": "0010",
+    "agent_tasks": "0011",
+}
 _MEMORY_TABLES = (
     "memory_candidates",
     "memories",
@@ -1532,6 +1541,14 @@ def _drop_empty_tenant_global_dependencies() -> None:
     lower revision refuses the downgrade.
     """
     bind = op.get_bind()
+    config = op.get_context().config
+    command_options = getattr(config, "cmd_opts", None) if config is not None else None
+    raw_target = getattr(command_options, "revision", None)
+    target_revision = (
+        raw_target
+        if isinstance(raw_target, str) and re.fullmatch(r"[0-9]{4}", raw_target)
+        else None
+    )
     for raw_schema in bind.execute(
         sa.text("SELECT schema_name FROM omnibase_meta.tenants ORDER BY schema_name")
     ).scalars():
@@ -1555,7 +1572,7 @@ def _drop_empty_tenant_global_dependencies() -> None:
 
         dependencies = bind.execute(
             sa.text(
-                "SELECT source_table.relname, constraint_row.conname "
+                "SELECT source_table.relname, constraint_row.conname, target_table.relname "
                 "FROM pg_constraint constraint_row "
                 "JOIN pg_class source_table ON source_table.oid = constraint_row.conrelid "
                 "JOIN pg_namespace source_schema ON source_schema.oid = source_table.relnamespace "
@@ -1573,11 +1590,17 @@ def _drop_empty_tenant_global_dependencies() -> None:
                 "global_schema": _GLOBAL_SCHEMA,
             },
         ).tuples()
-        for raw_table, raw_constraint in dependencies:
+        for raw_table, raw_constraint, raw_target_table in dependencies:
             table = str(raw_table)
             constraint = str(raw_constraint)
+            target_table = str(raw_target_table)
             if table not in _MEMORY_TABLES or _IDENTIFIER_PATTERN.fullmatch(constraint) is None:
                 raise RuntimeError("0013 downgrade refused: invalid global dependency identifier")
+            introduced_revision = _GLOBAL_DEPENDENCY_REVISIONS.get(target_table)
+            if introduced_revision is None:
+                raise RuntimeError("0013 downgrade refused: unknown global dependency table")
+            if target_revision is not None and introduced_revision <= target_revision:
+                continue
             op.execute(sa.text(f'ALTER TABLE "{schema}"."{table}" DROP CONSTRAINT "{constraint}"'))
 
 

@@ -418,6 +418,8 @@ def test_populated_tenant_and_global_downgrade_fail_closed() -> None:
     assert "0013 populated downgrade is forbidden" in global_guard
     assert "constraint_row.contype = 'f'" in dependency_drop
     assert "target_schema.nspname = :global_schema" in dependency_drop
+    assert "_GLOBAL_DEPENDENCY_REVISIONS" in dependency_drop
+    assert "introduced_revision <= target_revision" in dependency_drop
     assert "DROP CONSTRAINT" in dependency_drop
     assert "op.drop_table" not in dependency_drop
     assert "omnibase_restore_*" in downgrade
