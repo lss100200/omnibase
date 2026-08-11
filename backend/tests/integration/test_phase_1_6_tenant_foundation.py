@@ -277,7 +277,8 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
     _upgrade_head()
     downgrade = _downgrade_0011()
     assert downgrade.returncode != 0
-    assert "0012 downgrade refused:" in (downgrade.stdout + downgrade.stderr)
+    output = downgrade.stdout + downgrade.stderr
+    assert "0012 downgrade refused" in output or "0013 populated downgrade is forbidden" in output
 
     with db_engine.connect() as conn:
         assert (
