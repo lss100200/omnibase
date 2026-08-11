@@ -4,7 +4,7 @@ The composition seam must fail closed on every non-engineering condition:
 missing/exact-false flag, truthy drift, production or unknown environment,
 any Phase 5 Feature Gate true, missing gateway, missing/incorrect migration
 head.  Only an exactly-enabled development environment with a configured
-gateway and head 0012 may assemble the DB-backed service.
+gateway and head 0013 may assemble the DB-backed service.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _settings(env: str) -> Settings:
 
 class _HeadRow:
     def scalar_one_or_none(self) -> str:
-        return "0012"
+        return "0013"
 
 
 class _MissingHeadRow:
@@ -64,14 +64,14 @@ class _FakeSession:
 
 
 class _FakeFactory:
-    def __init__(self, *, head: str | None = "0012", raise_on_call: bool = False) -> None:
+    def __init__(self, *, head: str | None = "0013", raise_on_call: bool = False) -> None:
         self._head = head
         self._raise_on_call = raise_on_call
 
     def __call__(self) -> _FakeSession:
         if self._raise_on_call:
             raise RuntimeError("database unavailable")
-        return _FakeSession(_HeadRow() if self._head == "0012" else _MissingHeadRow())
+        return _FakeSession(_HeadRow() if self._head == "0013" else _MissingHeadRow())
 
 
 class _Provider:
@@ -183,7 +183,7 @@ def test_missing_gateway_returns_unavailable() -> None:
     assert isinstance(result, UnavailableAgentAlpha)
 
 
-def test_migration_head_not_0012_returns_unavailable() -> None:
+def test_migration_head_not_0013_returns_unavailable() -> None:
     result = build_engineering_agent_alpha(
         flag="true",
         settings=_settings("development"),

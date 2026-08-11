@@ -198,6 +198,9 @@ _AUDIT_DETAIL_KEYS = frozenset(
         "error_code",
         "approval_state",
         "idempotency_state",
+        "candidate_id",
+        "memory_id",
+        "result_sha256",
         "retryable",
         "limit",
         "offset",
@@ -355,13 +358,22 @@ def _validate_resource_actor(
     if actor_type == "user":
         assert actor_id is not None
         _validate_tenant_user(session, user_id=actor_id, field="actor_id")
-    elif actor_type in {"workspace", "agent"}:
+    elif actor_type == "workspace":
         assert actor_id is not None
         _get_resource_of_kind(
             session,
             tenant_id=tenant_id,
             resource_id=actor_id,
-            kinds=frozenset({actor_type}),
+            kinds=frozenset({"workspace"}),
+            field="actor_id",
+        )
+    elif actor_type == "agent":
+        assert actor_id is not None
+        _get_resource_of_kind(
+            session,
+            tenant_id=tenant_id,
+            resource_id=actor_id,
+            kinds=frozenset({"agent", "agent_definition"}),
             field="actor_id",
         )
     elif actor_type == "run":

@@ -21,10 +21,10 @@ import shutil
 import stat
 import subprocess
 import sys
-from urllib.parse import unquote, urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_VERSION = 1
@@ -515,11 +515,18 @@ def _migration_facts(repo_root: Path) -> dict[str, object]:
     heads = sorted(
         set(revisions) - {value for value in revisions.values() if value is not None}
     )
-    if heads != ["0012"] or "0013" in revisions:
+    numeric_revisions = {int(revision) for revision in revisions if revision.isdigit()}
+    if heads != ["0013"] or "0013" not in revisions or any(
+        revision >= 14 for revision in numeric_revisions
+    ):
         raise TargetConfigurationError(
-            "migration head must be 0012 and migration 0013 must be absent"
+            "migration head must be 0013 and migration 0014 or higher must be absent"
         )
-    return {"head": "0012", "migration_0013_absent": True}
+    return {
+        "head": "0013",
+        "migration_0013_created": True,
+        "migration_0014_or_higher_absent": True,
+    }
 
 
 def _parse_simple_env(path: Path) -> dict[str, str]:

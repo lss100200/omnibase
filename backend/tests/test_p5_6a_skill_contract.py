@@ -108,7 +108,7 @@ def test_example_contract_is_valid_but_compile_only() -> None:
     assert report.contract_valid is True
     assert report.activation_allowed is False
     assert report.source is None
-    assert config.migration_baseline == "0012"
+    assert config.migration_baseline == "0013"
     assert config.versions[0].kind.value == "instruction"
     assert config.versions[0].budget.max_tool_calls == 0
 
@@ -162,7 +162,7 @@ def test_same_definition_strictly_older_rollback_is_valid() -> None:
         ("skill_runtime_authorized", True, "cannot authorize"),
         ("mcp_enabled", True, "cannot authorize"),
         ("third_party_marketplace_enabled", True, "cannot authorize"),
-        ("migration_baseline", "0013", "exactly 0012"),
+        ("migration_baseline", "0014", "exactly 0013"),
     ],
 )
 def test_top_level_activation_and_migration_drift_are_rejected(
@@ -453,7 +453,7 @@ def test_verify_remains_blocked_and_reports_dirty_source_as_veto() -> None:
     assert clean.state is AdmissionState.BLOCKED
     assert clean.contract_valid is True
     assert clean.activation_allowed is False
-    assert clean.migration_head == "0012"
+    assert clean.migration_head == "0013"
     assert dirty.state is AdmissionState.INVALID
     assert dirty.contract_valid is False
     assert any("clean checkout" in veto for veto in dirty.vetoes)
@@ -466,8 +466,8 @@ def test_verify_rejects_migration_head_drift(tmp_path: Path) -> None:
     source = REPO_ROOT / "backend" / "src" / "omnibase" / "migrations" / "versions"
     for path in source.glob("*.py"):
         shutil.copy2(path, versions_dir / path.name)
-    (versions_dir / "0013_unapproved.py").write_text(
-        'revision = "0013"\ndown_revision = "0012"\n', encoding="utf-8"
+    (versions_dir / "0014_unapproved.py").write_text(
+        'revision = "0014"\ndown_revision = "0013"\n', encoding="utf-8"
     )
 
     report = SkillContractGate(repo).verify(

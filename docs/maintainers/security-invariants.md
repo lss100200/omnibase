@@ -3054,6 +3054,109 @@ operation is ambiguous, immediately block selection and injection, preserve
 append-only Audit/tombstone evidence and use restore-new; never edit old
 Capsules or destructively downgrade a populated database.
 
+## INV-059 p55b-memory-persistence-delete-export-contract
+
+**Authoritative source**
+
+- `backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py`
+- `backend/src/omnibase/agent_memory/models.py`
+- `backend/src/omnibase/agent_memory/service.py`
+- `backend/src/omnibase/control_plane/service.py`
+- `scripts/production/manage_p5_personal_backup.py`
+- `backend/tests/test_p5_5b_memory_migration_contract.py`
+- `backend/tests/test_p5_5b_memory_service.py`
+- `backend/tests/integration/test_p5_5b_memory_persistence_foundation.py`
+- `scripts/production/test_manage_p5_personal_backup.py`
+- `docs/phase-5-memory-context-capsule-contract.md`
+- `docs/runbooks/memory-privacy-delete-export.md`
+- `docs/evidence/p5-5/memory-persistence-r0-decision.md`
+
+P5.5B advances the reviewed repository and personal production migration head
+to `0013_memory_context_capsules.py`; migration `0014` or higher remains
+unreviewed and must fail closed. Runtime, Planner and Multi-Agent remain false.
+P5.5B creates no Browser Memory endpoint, compiler/search worker, prompt
+injection path or production Runtime authority. P5.5C is a separate increment.
+
+An Agent may create only a Candidate. Candidate acceptance must bind the exact
+source Capsule, Task, Agent Definition, Tenant, Workspace, logical Resource and
+version. The high-risk `memory.candidate.accept` Operation requester is the
+exact `task.agent_definition_id`; the sole live human Owner, who is also the
+live tenant administrator and active Workspace Owner, is the only decider. The
+Approval must bind the same Operation/request hash, be decided by that Owner
+and be atomically consumed through the existing Control Plane lifecycle.
+
+Publication is a caller-owned atomic transition. Candidate acceptance,
+Memory/first-version insertion, publication Effect and append-only Audit must
+close together, and the Candidate-to-Memory-to-Version deferred constraints
+must be forced to immediate verification before the service returns. A
+controlled-shared Memory or Capsule item additionally requires exact current
+Owner Review evidence bound to the same Tenant, Workspace, Memory, version and
+content digest; an arbitrary review identifier is never sufficient.
+
+Deletion is an atomic privacy lifecycle. It blocks selection, binds one
+committed delete Effect, creates a code-only tombstone, erases accepted
+Candidate ciphertext/nonce, deletes every MemoryVersion and both vector lanes,
+then leaves only a deleted Memory identity with `current_version=NULL` plus
+append-only Audit. Pending or unknown outcomes stay blocked for reconciliation
+and are never silently converted to success or automatically replayed. Export
+is Owner-initiated and contains logical metadata and digests only; plaintext,
+ciphertext, nonce, vector values, physical schema/table/column/object locators,
+database URLs and Provider credentials are forbidden.
+
+Cold backup is one barrier-bound evidence system. The dump must be created
+first while writers are stopped. `capture-postgres-inventory` is the only
+online backup-controller command, requires an explicitly injected
+`DATABASE_URL`, executes a repeatable-read read-only transaction and must never
+load or print the root `.env`. Its canonical inventory binds the exact dump
+SHA-256, global and tenant migration heads, server-owned tenant registry/schema
+mapping, ten Memory tables, required semantic and tenant-schema triggers, and
+the `vector(1024)`/`vector(1536)` lanes. Offline sealing binds those inventory
+bytes. Restore verification uses a distinct `omnibase_restore_*` database and a
+new `restore_new_evidence` inventory; source evidence is never edited or
+relabelled.
+
+**Allowed changes**
+
+- Tighten migration triggers, ORM checks, transaction ordering, live Owner or
+  requester binding, logical export vocabulary and backup inventory closure.
+- Add attack cases, restore-new evidence or vector-lane versions through a new
+  reviewed migration and versioned evidence format.
+- Implement P5.5C compiler/search/injection only as a separate bounded change
+  that preserves this persistence and privacy lifecycle.
+
+**Forbidden changes**
+
+- Agent self-acceptance, inactive/non-Owner approval, Operation/Approval/
+  requester/request-hash cross-wiring or publication that escapes the same
+  transaction.
+- Mutable accepted content without a new version/effect/audit, uncontrolled
+  shared selection, content-bearing tombstones, hidden deletion failure or
+  physical locators/secrets in export, logs or errors.
+- Caller-provided tenant schemas, partial tenant inventory, dump/inventory
+  drift, online sealing, reuse of source inventory as restore evidence, or
+  destructive in-place downgrade of populated `0013` data.
+- Browser API, compiler, search, injection, Runtime/Planner/Multi-Agent
+  activation or migration `0014+` under the P5.5B label.
+
+**Required verification**
+
+- migration/service/control-plane/backup focused tests and explicit Ruff/Mypy
+- guarded disposable PostgreSQL P5.5B Gate, including formal service journey,
+  cross-wire attacks, delete rollback and live inventory capture
+- personal backup source/restore-new attacks and canonical inventory checks
+- full non-integration backend regression, frontend production checks, Compose,
+  maintainer map/benchmark and `git diff --check`
+- final-byte P5.1A/P5.2A/P5.3A reseal and clean-HEAD Phase 5/P34 regressions
+
+**Failure recovery**
+
+Keep Runtime, Planner and Multi-Agent false. Preserve Candidate, Operation,
+Approval, Effect, Audit, tombstone, backup and restore evidence. Revoke or block
+the affected Memory surface, require a new exact Owner decision for a new
+request and use a forward fix or restore-new database. Never repair by editing
+append-only history, restoring erased content into the old identity, marking
+unknown deletion as committed or downgrading a populated business database.
+
 ## INV-055 personal-single-owner-admission
 
 **权威源码**

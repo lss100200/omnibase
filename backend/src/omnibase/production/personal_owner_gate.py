@@ -304,12 +304,16 @@ class PersonalOwnerGateConfig:
         if not isinstance(raw_policy, Mapping) or not isinstance(raw_evidence, Mapping):
             raise PersonalGateConfigurationError("policy and engineering_evidence must be objects")
         migration_head = _require_string(mapping, "migration_head")
-        if migration_head != "0012":
-            raise PersonalGateConfigurationError("personal Gate requires migration head 0012")
+        if migration_head != "0013":
+            raise PersonalGateConfigurationError("personal Gate requires migration head 0013")
+        migration_0013_created = _require_bool(mapping, "migration_0013_created")
+        if not migration_0013_created:
+            raise PersonalGateConfigurationError(
+                "personal Gate requires the current migration 0013 to exist"
+            )
         safety_flags = {
             name: _require_bool(mapping, name)
             for name in (
-                "migration_0013_created",
                 "agent_runtime_enabled",
                 "agent_planner_enabled",
                 "multi_agent_enabled",
@@ -325,6 +329,7 @@ class PersonalOwnerGateConfig:
             policy=PersonalOwnerPolicy.from_mapping(raw_policy),
             evidence=PersonalEngineeringEvidence.from_mapping(raw_evidence),
             migration_head=migration_head,
+            migration_0013_created=migration_0013_created,
             **safety_flags,
         )
 
@@ -464,8 +469,8 @@ class PersonalOwnerGateReport:
             "root_env_accessed": False,
             "business_database_accessed": False,
             "business_database_migrated": False,
-            "migration_head": "0012",
-            "migration_0013_created": False,
+            "migration_head": "0013",
+            "migration_0013_created": True,
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,
             "multi_agent_enabled": False,

@@ -7,8 +7,8 @@
       "business_database_migrated": false,
       "enterprise_production_approved": false,
       "enterprise_track_frozen": true,
-      "migration_0013_created": false,
-      "migration_head": "0012",
+      "migration_0013_created": true,
+      "migration_head": "0013",
       "passed": true,
       "personal_owner_activation_ready": true,
       "production_runtime_activated": false,
@@ -19,8 +19,8 @@
     "sha256": "4b75926cb16e0eb51f2a206ddba0b6c747d227faf1583e9ec9996455740bdf82"
   },
   "enterprise_approved_digest_present": false,
-  "migration_0013_created": false,
-  "migration_head": "0012",
+  "migration_0013_created": true,
+  "migration_head": "0013",
   "multi_agent_enabled": false,
   "policy": {
     "approval_policy": "owner_preapproved_exact_scope",

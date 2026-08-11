@@ -1897,3 +1897,44 @@ Owner, Workspace, AgentVersion, Task, Invocation and policy. Future P5.5B
 persistence must add delete/export/tombstone and
 restore-new evidence while updating every Gate currently pinned to migration
 `0012`; do not advance only one validator and leave the rest silently stale.
+
+## P5.5B Memory persistence maintenance boundary
+
+Read INV-059, the P5.5 Memory contract, the Memory privacy/delete/export
+runbook and the `agent-memory-persistence` machine-map entry before changing
+migration `0013`, the Memory ORM/service, Control Plane requester/audit support
+or PostgreSQL backup inventory.
+
+Migration `0013_memory_context_capsules.py` is tenant-scoped and is now the
+only reviewed repository/personal target head. Keep its table set, two vector
+lanes, append-only rules, tenant-schema guards and Candidate/Memory publication
+constraints as one boundary. A future migration `0014+` is not implied by this
+increment. Do not run downgrade against populated data.
+
+The internal service owns no independent approval system. Agent Candidate
+creation is bound to the exact Task/Capsule/Agent Definition. Acceptance,
+export and deletion revalidate the live Tenant, tenant-admin Owner and active
+Workspace Owner membership. Acceptance consumes the existing exact
+`memory.candidate.accept` Operation/Approval; the requester is
+`task.agent_definition_id`. Keep the Control Plane's `agent_definition`
+resource actor support and Memory audit attributes closed and logical.
+
+Review publication and deletion as atomic lifecycles. Memory/version rows must
+exist before publication effects/audit are validated, and the two deferred
+publication constraints close before return. Delete blocks selection, records
+the exact effect/tombstone, erases Candidate ciphertext/nonce, removes all
+versions and both vector lanes, then leaves only the deleted identity and
+append-only evidence. Export never includes content-bearing or physical
+storage fields.
+
+`manage_p5_personal_backup.py capture-postgres-inventory` is the single online
+controller path. It uses only an explicitly injected `DATABASE_URL`, a
+repeatable-read read-only transaction and the same cold writer barrier as the
+dump. Tenant schemas come only from the server-owned registry and pass strict
+identifier validation. The remaining backup commands stay offline. Restore
+evidence must come from a new `omnibase_restore_*` database.
+
+P5.5B does not expose a Browser Memory API and does not compile, search or
+inject Memory into prompts. Keep Runtime/Planner/Multi-Agent false. P5.5C must
+arrive as a separate reviewed module and may consume only committed,
+non-deleted, exact-scope Memory under the P5.5A budgets and precedence rules.

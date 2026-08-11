@@ -35,8 +35,9 @@ sealed file measurement; nothing is hardcoded as a measurement:
 The run directory is **preserved** on success and on failure and can be
 independently re-verified later with ``--verify-evidence``; the Gate never
 deletes its own evidence.  It never activates production Runtime, never reads
-the root ``.env``, never touches a business database, never creates migration
-``0013`` and never opens any Phase 5 production Feature Gate.
+  the root ``.env``, never touches a business database, and never opens any
+  Phase 5 production Feature Gate. Migration ``0013`` is the current repository
+  baseline and is only measured as a source fact.
 
 **Integrity scope.**  The sealed evidence is a **self-contained integrity
 receipt**: it proves run-scoped byte integrity of the recorded source
@@ -74,7 +75,7 @@ LITE_UNIT_TESTS = (
     "tests/test_p5_4b_engineering_composition.py",
 )
 BACKEND_IMAGE = "omnibase-backend:latest"
-EXPECTED_MIGRATION_HEAD = "0012"
+EXPECTED_MIGRATION_HEAD = "0013"
 EXPECTED_RUNTIME_GATES = {
     "P5_4B_ENGINEERING_ENABLED": "false",
     "AGENT_RUNTIME_ENABLED": "false",
@@ -277,9 +278,9 @@ def _discover_migration_head() -> str:
         for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
         if path.is_file() and not path.is_symlink()
     }
-    if 12 not in numeric or any(value >= 13 for value in numeric):
-        raise RuntimeError("P5.4C migration filename boundary is not exactly 0012")
-    return "0012"
+    if 13 not in numeric or any(value >= 14 for value in numeric):
+        raise RuntimeError("P5.4C migration filename boundary is not exactly 0013")
+    return "0013"
 
 
 def _validate_config() -> None:
@@ -289,7 +290,7 @@ def _validate_config() -> None:
         )
     )
     if config.get("migration_baseline") != EXPECTED_MIGRATION_HEAD:
-        raise RuntimeError("P5.4C Gate requires migration baseline 0012")
+        raise RuntimeError("P5.4C Gate requires migration baseline 0013")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4C activation must remain false")
     if config.get("feature_gates") != {

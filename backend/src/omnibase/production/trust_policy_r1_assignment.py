@@ -820,10 +820,11 @@ def _verify_frozen_false_fields(item: dict[str, object]) -> None:
         "key_ceremony_authorized",
         "production_evidence_authorized",
         "activation_allowed",
-        "migration_0013_created",
     ):
         if _bool(item.get(field), field):
             raise ConfigurationError(f"R1-A cannot set {field}=true")
+    if not _bool(item.get("migration_0013_created"), "migration_0013_created"):
+        raise ConfigurationError("R1-A must report current migration 0013 as created")
 
 
 def _verify_feature_gates(value: object) -> None:
@@ -842,8 +843,13 @@ def _verify_repository_posture(repo_root: Path) -> str:
     if migration_head != MIGRATION_HEAD:
         raise ConfigurationError(f"repository migration head must remain {MIGRATION_HEAD}")
     versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    if any(path.name.startswith("0013_") for path in versions.glob("*.py")):
-        raise ConfigurationError("migration 0013 must not exist")
+    if not any(path.name.startswith("0013_") for path in versions.glob("*.py")):
+        raise ConfigurationError("migration 0013 must exist at the current repository head")
+    if any(
+        path.name[:4].isdigit() and int(path.name[:4]) >= 14
+        for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
+    ):
+        raise ConfigurationError("migration 0014 or higher must not exist")
     return migration_head
 
 
@@ -906,7 +912,7 @@ def validate_trust_policy_r1_assignment(payload: object, repo_root: Path) -> R1A
         production_evidence_authorized=False,
         activation_allowed=False,
         migration_head=migration_head,
-        migration_0013_created=False,
+        migration_0013_created=True,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,

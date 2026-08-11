@@ -275,7 +275,7 @@ def _self_policy(
             "validity_seconds": 100 * 365 * 86400,
         },
         "max_evidence_age_seconds": max_evidence_age_seconds,
-        "migration_head": "0012",
+        "migration_head": "0013",
     }
 
 
@@ -571,7 +571,7 @@ def forge_bundle(
         "commands": receipts,
         "components": components,
         "measurements": {"posture": posture_entry},
-        "migration_head": "0012",
+        "migration_head": "0013",
         "feature_gates": gates,
         "attack_matrix": attack_entry,
         "cleanup": cleanup_entry,

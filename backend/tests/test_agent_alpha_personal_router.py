@@ -25,7 +25,7 @@ def _lite(*, enabled: bool = False) -> dict[str, object]:
     return {
         "activation_allowed": False,
         "engineering_composition_ready": enabled,
-        "expected_migration_head": "0012",
+        "expected_migration_head": "0013",
         "formal_builder_integration": "proven_engineering_only",
         "lite_gate_enabled": enabled,
     }

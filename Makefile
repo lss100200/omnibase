@@ -276,6 +276,34 @@ test-p5-2b-task-ledger: ## 一次性隔离数据库上的 P5.2B Task ledger engi
 		cd "$$repo_root"; \
 		uv run pytest scripts/production/test_run_p5_2b_task_ledger_disposable_gate.py -q
 
+test-p5-5b-memory: ## Guarded disposable PostgreSQL Gate for P5.5B migration 0013
+	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p55b-*|omnibase-test-*) ;; \
+		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use an isolated P5.5B prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_NAME)" in omnibase_test_p55b_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_NAME must use the omnibase_test_p55b_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@case "$(TEST_DATABASE_ROLE)" in omnibase_test_p55b_*) ;; \
+		*) echo "$(YELLOW)TEST_DATABASE_ROLE must use the omnibase_test_p55b_ prefix$(RESET)"; exit 1 ;; \
+	esac
+	@if [ -z "$(TEST_DATABASE_PORT)" ] || [ -z "$(TEST_DATABASE_OWNER_PASSWORD)" ] || [ -z "$(TEST_DATABASE_PASSWORD)" ]; then \
+		echo "$(YELLOW)Explicit P5.5B disposable database port and passwords are required$(RESET)"; exit 1; \
+	fi
+	@set -eu; \
+		repo_root="$$(pwd)"; \
+		compose_file="$$(pwd)/docker-compose.destructive-tests.yml"; \
+		trap 'cd "$$repo_root"; $(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" down -v --remove-orphans' EXIT INT TERM; \
+		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$compose_file" up -d --wait postgres-test; \
+		export OMNIBASE_INTEGRATION_TESTS=1; \
+		export TEST_DATABASE_URL="postgresql+psycopg://$${TEST_DATABASE_ROLE}:$${TEST_DATABASE_PASSWORD}@localhost:$${TEST_DATABASE_PORT}/$${TEST_DATABASE_NAME}"; \
+		export DATABASE_URL="$$TEST_DATABASE_URL"; \
+		export MINIO_ENDPOINT=localhost:9000 MINIO_ACCESS_KEY=test_access MINIO_SECRET_KEY=test_secret; \
+		export REDIS_URL=redis://localhost:6379/15; \
+		export JWT_SECRET=test_secret_at_least_32_characters_long_for_validation; \
+		cd backend; \
+		uv run python tests/destructive_preflight.py; \
+		uv run pytest -m integration tests/integration/test_p5_5b_memory_persistence_foundation.py -q
+
 test-p5-personal-runtime: ## Disposable migration-0012 personal single-Owner no-tool Runtime Gate
 	@case "$(TEST_COMPOSE_PROJECT)" in omnibase-p5personal-*) ;; \
 		*) echo "$(YELLOW)TEST_COMPOSE_PROJECT must use the omnibase-p5personal- prefix$(RESET)"; exit 1 ;; \

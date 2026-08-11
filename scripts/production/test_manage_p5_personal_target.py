@@ -8,9 +8,8 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
-
 import manage_p5_personal_target as manager
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +92,11 @@ def test_secret_env_rejects_missing_and_placeholder_without_leaking_value(
     repo = tmp_path / "repo"
     repo.mkdir()
     secret = tmp_path / "target.env"
-    secret.write_bytes(_secret_bytes(POSTGRES_PASSWORD="changeme_super_secret_value"))
+    secret.write_bytes(
+        _secret_bytes(
+            POSTGRES_PASSWORD="changeme_super_secret_value"  # noqa: S106 - synthetic test value
+        )
+    )
     if os.name != "nt":
         secret.chmod(0o600)
 
@@ -200,7 +203,11 @@ def test_release_manifest_round_trip_and_digest_drift(
             {"path": "docker-compose.yml", "sha256": "a" * 64, "size_bytes": 1}
         ],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
-        "migration": {"head": "0012", "migration_0013_absent": True},
+        "migration": {
+            "head": "0013",
+            "migration_0013_created": True,
+            "migration_0014_or_higher_absent": True,
+        },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),
             "release_dir": str(release.resolve()),
@@ -247,7 +254,11 @@ def test_verify_release_detects_artifact_fact_drift(
             {"path": "backend/Dockerfile", "sha256": "a" * 64, "size_bytes": 2}
         ],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
-        "migration": {"head": "0012", "migration_0013_absent": True},
+        "migration": {
+            "head": "0013",
+            "migration_0013_created": True,
+            "migration_0014_or_higher_absent": True,
+        },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),
             "release_dir": str(release.resolve()),
@@ -294,7 +305,11 @@ def test_verify_release_accepts_public_remote_ref_movement(
     recorded = {
         "artifacts": [],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
-        "migration": {"head": "0012", "migration_0013_absent": True},
+        "migration": {
+            "head": "0013",
+            "migration_0013_created": True,
+            "migration_0014_or_higher_absent": True,
+        },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),
             "release_dir": str(release.resolve()),

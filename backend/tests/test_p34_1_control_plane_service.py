@@ -205,6 +205,29 @@ def test_append_audit_event_accepts_only_classified_code_like_details() -> None:
     session.add.assert_called_once_with(event)
 
 
+def test_append_audit_event_accepts_memory_logical_ids_and_result_digest() -> None:
+    session = MagicMock()
+    details = {
+        "candidate_id": "00000000-0000-4000-8000-000000000001",
+        "memory_id": "00000000-0000-4000-8000-000000000002",
+        "result_sha256": "a" * 64,
+    }
+
+    event = service.append_audit_event(
+        session,
+        tenant_id="tenant-a",
+        request_id="req-1",
+        actor_type="system",
+        action="memory.delete",
+        decision="allowed",
+        risk_level="R1",
+        details=details,
+    )
+
+    assert event.details == details
+    session.add.assert_called_once_with(event)
+
+
 def test_metadata_redaction_recursively_removes_sensitive_keys() -> None:
     session = MagicMock()
     service.register_resource(
@@ -594,6 +617,35 @@ def test_operation_resource_references_require_exact_same_tenant_kind(
         service.create_operation(MagicMock(), **parameters)  # type: ignore[arg-type]
 
     assert seen_tenants == ["tenant-a"]
+
+
+@pytest.mark.parametrize("resource_kind", ["agent", "agent_definition"])
+def test_agent_actor_accepts_runtime_or_registry_definition_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    resource_kind: str,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_resource",
+        lambda *args, **kwargs: SimpleNamespace(
+            id=kwargs["resource_id"], kind=resource_kind, parent_id=None
+        ),
+    )
+    session = MagicMock()
+
+    operation = service.create_operation(
+        session,
+        tenant_id="tenant-a",
+        kind="memory.candidate.create",
+        risk_level="R1",
+        actor_type="agent",
+        actor_id="agent-1",
+        request_hash="a" * 64,
+    )
+
+    assert operation.actor_type == "agent"
+    assert operation.actor_id == "agent-1"
+    session.add.assert_called_once_with(operation)
 
 
 def _pending_approval(**overrides: object) -> SimpleNamespace:

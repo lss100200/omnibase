@@ -67,7 +67,7 @@ def get_agent_alpha(
     environment, so setting the flag genuinely enables the route. When the
     gate is open this factory delegates to the Alpha engineering seam, which
     itself remains fail-closed until every P5.2C dependency (environment,
-    Phase 5 gates, provider gateway, migration head 0012) holds.
+    Phase 5 gates, provider gateway, migration head 0013) holds.
     ``lite_agent_posture`` exposes the honest single-mode posture to the
     status endpoint without authorizing anything.
     """

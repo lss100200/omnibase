@@ -4711,3 +4711,90 @@ P5.5A creates no database, vector lane, Browser API, worker, compiler Runtime or
 migration. Migration remains `0012`, `0013` is absent and Runtime/Planner/
 Multi-Agent remain false. P5.5B persistence/delete/export and P5.5C bounded
 compiler/search/injection are separate forward increments.
+
+### P5.5B Memory persistence/delete/export implementation (2026-08-11)
+
+Work continues in
+`OmniBase Worktrees/Active/p5-5-memory-persistence-r0` on branch
+`codex/p5-5-memory-persistence-r0`, based on exact merged P5.5A main
+`d845f1453e445484c639e79efe71b9dc7a3f2d26`. This section records the current
+forward increment; it does not rewrite the historical P5.5A `0012/0013 absent`
+state above.
+
+P5.5B advances the reviewed repository and personal production hardlock to
+migration `0013_memory_context_capsules.py`. The tenant migration creates ten
+Memory tables, independent 1024/1536-dimensional vector lanes, append-only and
+lifecycle triggers, tenant-schema guards and deferred Candidate/Memory/
+MemoryVersion publication closure. Migration `0014+` remains rejected.
+
+The new internal ORM/service path implements:
+
+- Agent Candidate creation bound to an exact Capsule, Task and Agent Definition;
+- live tenant-admin/Workspace Owner confirmation through the existing exact
+  `memory.candidate.accept` Operation and consumed Approval lifecycle;
+- atomic Candidate -> Memory/first-version publication with immediate closure
+  of the two publication constraint triggers before return;
+- exact controlled-shared Owner Review evidence;
+- logical metadata-only Owner export;
+- atomic deletion with committed Effect, code-only tombstone, Candidate
+  ciphertext/nonce erasure, MemoryVersion removal and both vector lanes removed.
+
+A formal ORM/service journey passed against randomly named disposable
+PostgreSQL. It executed Candidate creation, Operation/Approval, confirmation,
+export, deletion, commit and post-commit database checks. The journey exposed
+and fixed three integration defects: the Control Plane did not accept the exact
+Agent Definition requester kind, Memory audit identifiers were absent from the
+closed classification, and ORM/deferred-trigger flush ordering allowed Effects
+or later deletion to outrun publication closure. The disposable project,
+network and volume were removed.
+
+The personal backup controller now uses plan/manifest v2 while reading legacy
+v1, and introduces first-release
+`omnibase.postgresql-backup-inventory.v1`. Its only online command,
+`capture-postgres-inventory`, requires explicit `DATABASE_URL`, uses a
+repeatable-read read-only transaction under the same cold barrier as the dump,
+and binds dump SHA-256, global/tenant head, tenant registry/schema mapping,
+Memory tables, all required triggers and both vector dimensions. Offline seal
+and restore planning remain non-connecting; restore evidence must come from a
+new `omnibase_restore_*` database.
+
+Checkpoint verification completed before final documentation/reseal:
+
+```text
+migration contract = 49 passed
+service/control-plane/backup focused = 134 passed
+P5.1A/P5.2A/P5.3A focused = 407 passed
+formal service PostgreSQL lifecycle and inventory = 1 passed
+complete disposable PostgreSQL Gate = 20 passed
+focused Ruff = passed
+focused Mypy = passed
+```
+
+Current honest posture:
+
+```text
+P5_5A_MERGED
+P5_5B_ENGINEERING_IMPLEMENTED_PENDING_FINAL_REVIEW
+migration head=0013
+Browser Memory API absent
+Memory compiler/search/injection absent
+P5.5C not started
+AGENT_RUNTIME_ENABLED=false
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 track frozen/blocked
+no business database accessed or migrated
+not committed
+not pushed
+not merged
+not deployed
+```
+
+The final 20-case disposable PostgreSQL Gate passed after one test-only
+ordering fix: the empty-downgrade proof now runs before the audited formal
+service journey, so immutable audit data cannot correctly trigger the
+production populated-downgrade hardlock during that proof. The hardlock itself
+was not relaxed. Remaining work is wider Control Plane and backup/restore
+regression, final-byte P5/P34 reseal, full repository regression, forward-only
+commits, remote CI and PR merge. The root `.env` was not read and no previously
+exposed Provider credential was reused.

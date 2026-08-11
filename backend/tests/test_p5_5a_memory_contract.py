@@ -105,7 +105,7 @@ def test_example_contract_is_valid_but_compile_only() -> None:
     assert report.state is AdmissionState.BLOCKED
     assert report.contract_valid is True
     assert report.activation_allowed is False
-    assert config.migration_baseline == "0012"
+    assert config.migration_baseline == "0013"
     assert config.memory_persistence_authorized is False
     assert config.memory_runtime_authorized is False
     assert config.memory_browser_api_exposed is False
@@ -175,8 +175,8 @@ def test_source_and_migration_baseline_are_closed() -> None:
         MemoryContractConfig.from_mapping(mapping)
 
     mapping = _mapping()
-    mapping["migration_baseline"] = "0013"
-    with pytest.raises(MemoryContractError, match="exactly 0012"):
+    mapping["migration_baseline"] = "0014"
+    with pytest.raises(MemoryContractError, match="exactly 0013"):
         MemoryContractConfig.from_mapping(mapping)
 
 
@@ -504,7 +504,7 @@ def test_verify_reports_dirty_source_gate_and_migration_drift(
 
     monkeypatch.setattr(
         "omnibase.production.phase5_memory_contract.discover_migration_head",
-        lambda *_args: "0013",
+        lambda *_args: "0014",
     )
     report = gate.verify(config, source=_provenance())
     assert report.state is AdmissionState.INVALID
@@ -513,8 +513,9 @@ def test_verify_reports_dirty_source_gate_and_migration_drift(
 
 def test_verify_rejects_runtime_path_and_enabled_gate(tmp_path: Path) -> None:
     config = load_memory_contract_config(CONFIG_PATH)
-    forbidden = tmp_path / "backend" / "src" / "omnibase" / "agent_memory"
-    forbidden.mkdir(parents=True)
+    forbidden = tmp_path / "backend" / "src" / "omnibase" / "agent_memory" / "runtime.py"
+    forbidden.parent.mkdir(parents=True)
+    forbidden.write_text("runtime = True\n", encoding="utf-8")
     gate = MemoryContractGate(tmp_path)
     report = gate.verify(
         config,
@@ -575,7 +576,7 @@ def test_validator_validate_only_is_blocked_but_exits_zero() -> None:
     payload = json.loads(completed.stdout)
     assert payload["state"] == "blocked/not_proven"
     assert payload["contract_valid"] is True
-    assert payload["memory_persistence_created"] is False
+    assert payload["memory_persistence_created"] is True
     assert payload["memory_runtime_created"] is False
     assert payload["root_env_accessed"] is False
 

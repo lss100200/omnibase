@@ -38,6 +38,7 @@ SOURCE_PATHS = (
     "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
     "backend/src/omnibase/migrations/versions/0007_p34_4_workspace_control_plane.py",
     "backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py",
+    "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
     "backend/tests/destructive_preflight.py",
     "backend/tests/integration/conftest.py",
     "backend/tests/test_p34_7_personal_owner_gate.py",
@@ -222,7 +223,7 @@ def _publish(source: Path, destination: Path) -> None:
 def _run_steps(project: str, database_url: str) -> None:
     commands = (
         ("destructive preflight", ("python", "tests/destructive_preflight.py")),
-        ("alembic 0012", ("python", "-m", "alembic", "upgrade", "head")),
+        ("alembic 0013", ("python", "-m", "alembic", "upgrade", "head")),
         (
             "focused personal Gate",
             ("python", "-m", "pytest", "tests/test_p34_7_personal_owner_gate.py", "-q"),
@@ -264,8 +265,8 @@ def _record(
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0012" if passed else None,
-        "migration_0013_created": False,
+        "migration_head": "0013" if passed else None,
+        "migration_0013_created": True,
         "feature_gates": {
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,
@@ -294,7 +295,7 @@ def _record(
                 "- Personal Owner activation ready: true",
                 "- Production Runtime activated: false",
                 "- Enterprise track frozen: true",
-                "- Migration head: 0012; migration 0013 absent",
+                "- Migration head: 0013; migration 0013 created",
                 f"- Source manifest SHA-256: {manifest_sha256}",
                 f"- Cleanup: {json.dumps(cleanup, sort_keys=True)}",
                 "",
@@ -322,8 +323,8 @@ def _verify_evidence(path: Path) -> None:
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0012",
-        "migration_0013_created": False,
+        "migration_head": "0013",
+        "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
         "business_database_migrated": False,

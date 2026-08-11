@@ -28,7 +28,7 @@
     ],
     "require_clean_checkout": true
   },
-  "migration_baseline": "0012",
+  "migration_baseline": "0013",
   "skill_runtime_authorized": false,
   "mcp_enabled": false,
   "third_party_marketplace_enabled": false,
