@@ -28,3 +28,7 @@ services:
     networks:
       - default
       - omnibase-net
+
+networks:
+  omnibase-net:
+    driver: bridge
