@@ -45,7 +45,7 @@ from omnibase.production.personal_runtime_activation import (
 
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OWNER_READINESS_SHA256 = "9703728e5908dc170dd71c75a288a73b45f8e3d9af667aed9db508c71f919972"
+OWNER_READINESS_SHA256 = "68d5b91f428eaa2632f4ea60e6eab2aa27f3c9b94b593025e17ceced5bebf4d3"
 
 
 def _settings(env: str = "production") -> Settings:
@@ -150,7 +150,9 @@ def _current_readiness_fixture(root: Path) -> tuple[dict[str, object], Path]:
     }
     readiness_path = root / "deployment/production/personal-single-owner.example.json"
     readiness_path.parent.mkdir(parents=True)
-    readiness_path.write_text(json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    readiness_path.write_text(
+        json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     mapping = _mapping()
     owner_readiness = cast(dict[str, object], mapping["owner_readiness"])
     owner_readiness["sha256"] = hashlib.sha256(readiness_path.read_bytes()).hexdigest()
