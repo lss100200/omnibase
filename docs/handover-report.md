@@ -4930,7 +4930,8 @@ or migrated.
 Current posture:
 
 ```text
-P5_6P_IMPLEMENTED_PENDING_FINAL_RESEAL_AND_REMOTE_CI
+P5_6P_ENGINEERING_ACCEPTED_PENDING_REMOTE_CI
+local implementation commit=745645baad32191593acc7eaffe0c5fcb8a9b926
 migration head=0014
 migration 0015+ absent
 AGENT_RUNTIME_ENABLED=false by default
@@ -4938,7 +4939,7 @@ AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
 enterprise P34.7 frozen / blocked_not_proven
 approved enterprise trust-policy digest empty
-not committed
+committed locally
 not pushed
 not merged
 not deployed
