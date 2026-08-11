@@ -11,6 +11,7 @@ import pytest
 
 from omnibase.agent_executor.contracts import KnowledgeSearchRequest
 from omnibase.agent_executor.engineering import (
+    EXPECTED_MIGRATION_HEAD,
     EngineeringCompositionError,
     EngineeringCompositionUnavailable,
     EngineeringSingleAgentExecutor,
@@ -252,7 +253,7 @@ def test_composition_uses_live_authority_server_credential_and_one_gateway_searc
     session_factory = _SessionFactory(authority_session, gateway_session)
     executor = build_engineering_single_agent_executor(
         enabled=True,
-        migration_head="0013",
+        migration_head=EXPECTED_MIGRATION_HEAD,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,
@@ -410,7 +411,7 @@ def test_formal_p5_4b_builder_rejects_executor_authority_expansion(
     session_factory = Mock(side_effect=AssertionError("authority session must not open"))
     executor = build_engineering_single_agent_executor(
         enabled=True,
-        migration_head="0013",
+        migration_head=EXPECTED_MIGRATION_HEAD,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,
@@ -444,7 +445,7 @@ def test_formal_p5_4b_builder_rejects_executor_authority_expansion(
             },
         ),
         (
-            "0014",
+            "0015",
             {
                 "agent_runtime_enabled": False,
                 "agent_planner_enabled": False,
@@ -501,7 +502,7 @@ def test_composition_rejects_migration_and_gate_drift_without_dependencies(
 def test_composition_rejects_missing_dependencies() -> None:
     executor = build_engineering_single_agent_executor(
         enabled=True,
-        migration_head="0013",
+        migration_head=EXPECTED_MIGRATION_HEAD,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,
@@ -720,7 +721,7 @@ def test_formal_builder_integration_uses_real_persisted_authority_chain() -> Non
     session_factory = _SessionFactory(authority_session, gateway_session)
     executor = build_engineering_single_agent_executor(
         enabled=True,
-        migration_head="0013",
+        migration_head=EXPECTED_MIGRATION_HEAD,
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,

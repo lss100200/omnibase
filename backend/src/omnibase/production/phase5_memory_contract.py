@@ -1343,7 +1343,7 @@ class MemoryContractGate:
     """Validate the P5.5A contract on the current P5.5B persistence baseline.
 
     The Gate accepts the separately reviewed persistence package and migration
-    0013 as repository facts. It still grants no Browser, compiler, worker or
+    0014 as repository facts. It still grants no Browser, compiler, worker or
     Runtime authority and rejects any future migration until independently
     reviewed.
     """
@@ -1364,7 +1364,7 @@ class MemoryContractGate:
     def _future_migration_present(self) -> bool:
         versions = self._repo_root / "backend/src/omnibase/migrations/versions"
         return any(
-            path.name[:4].isdigit() and int(path.name[:4]) >= 14
+            path.name[:4].isdigit() and int(path.name[:4]) >= 15
             for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
         )
 
@@ -1425,7 +1425,7 @@ class MemoryContractGate:
                     f"expected {config.migration_baseline}, got {migration_head}"
                 )
         if self._future_migration_present():
-            vetoes.append("migration 0014 or higher is outside the reviewed P5.5B baseline")
+            vetoes.append("migration 0015 or higher is outside the reviewed P5.5B baseline")
         for relative in self._FORBIDDEN_PATHS:
             try:
                 os.lstat(self._repo_root / relative)

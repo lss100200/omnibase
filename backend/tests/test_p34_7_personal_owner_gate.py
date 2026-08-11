@@ -310,7 +310,7 @@ def test_network_policy_rejects_non_logical_or_direct_infrastructure_destination
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("migration_head", "0014"),
+        ("migration_head", "0015"),
         ("migration_0013_created", False),
         ("agent_runtime_enabled", True),
         ("agent_planner_enabled", True),

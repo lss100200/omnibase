@@ -504,7 +504,7 @@ def test_verify_reports_dirty_source_gate_and_migration_drift(
 
     monkeypatch.setattr(
         "omnibase.production.phase5_memory_contract.discover_migration_head",
-        lambda *_args: "0014",
+        lambda *_args: "0015",
     )
     report = gate.verify(config, source=_provenance())
     assert report.state is AdmissionState.INVALID
