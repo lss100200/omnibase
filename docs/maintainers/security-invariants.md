@@ -2833,6 +2833,88 @@ head 保持 `0012`，`0013` 不存在，三个 Phase 5 Feature Gate 保持 false
 posture 漂移时，保留原 proposal 取证，从新 clean checkout 建立 forward-fix；
 不得通过改写历史、删除 blocker、伪造 reviewer 或启用 Runtime 来获得 ready。
 
+## INV-056 personal-runtime-canary-activation
+
+**Authority sources**
+
+- `backend/src/omnibase/production/personal_runtime_activation.py`
+- `backend/src/omnibase/production/personal_owner_gate.py`
+- `backend/src/omnibase/production/__init__.py`
+- `backend/src/omnibase/agent_alpha/personal.py`
+- `backend/src/omnibase/agent_alpha/adapters.py`
+- `backend/src/omnibase/agent_alpha/router.py`
+- `backend/src/omnibase/agent_alpha/schemas.py`
+- `backend/src/omnibase/agent_alpha/service.py`
+- `backend/src/omnibase/task_ledger/service.py`
+- `scripts/production/manage_p5_personal_runtime.py`
+- `Makefile`
+- `docker-compose.yml`
+- `docker-compose.destructive-tests.yml`
+- `.env.example`
+- `deployment/production/personal-runtime-canary.example.json`
+- `deployment/production/personal-runtime-canary.compose.example.yml`
+- `frontend/app/(dashboard)/agents/page.tsx`
+- `frontend/lib/api.ts`
+- `frontend/lib/personal-runtime-gate.ts`
+- `docs/architecture/p5-personal-runtime-activation-r0.md`
+- `docs/runbooks/p5-personal-runtime-canary.md`
+
+The personal edition production canary is an exact closed scope: one live
+Tenant, one Workspace, exactly one active Owner who is also tenant
+administrator, one AgentVersion and one interactive no-tool invocation. It
+requires production environment, Runtime=true, Planner=false,
+Multi-Agent=false, migration 0012 and no migration 0013.
+
+The canonical config binds all scope UUIDs, concurrency=1, a bounded lifetime,
+the `top_k` ceiling, default-deny network with no destinations, no external
+side effects and the raw digest of the Personal Owner readiness config.
+Unknown fields, non-canonical bytes, unsafe flags, path escape or readiness
+drift fail closed. Activation requires exact confirmation of the deterministic
+plan SHA-256.
+
+Every activation uses a new absolute run-scoped directory. Activate and
+rollback events form a canonical append-only hash chain. Rollback and expiry
+never reopen the directory. `KILL_SWITCH.json` is independent, irreversible
+and wins before ledger parsing, including when the marker or ledger is corrupt.
+The chain is an integrity/lifecycle receipt, not an external signature or
+separate authenticity root.
+
+Every Browser request independently binds config/plan/ledger, feature gates,
+migration, Tenant/Workspace/Owner/AgentVersion and Model Gateway. The exact
+live Owner, tenant-admin and AgentVersion scope is rechecked inside Task Ledger
+transaction A before reservation. Invalid profile tokens may not fall back to
+engineering Lite. Public status exposes no credentials, Approval/Capability,
+lease/fencing, physical locator or workload identity material.
+
+This R0 authorizes no tools, Planner, Multi-Agent, Sandbox hostile code, shell,
+SQL, arbitrary HTTP, MCP, Skills or workload network destination. It uses the
+Core-owned read-only RAG adapter, not formal P5.4B Capability Gateway Browser
+composition. The full Personal Owner Approval/Capability Gate remains required
+for future high-risk or Sandbox execution.
+
+**Required tests**
+
+- config/plan closed set, canonical bytes, readiness seal and unsafe
+  gate/network/side-effect attacks;
+- activation, expiry, rollback, event tamper, unknown artifact, path attacks
+  and corrupt-ledger kill behavior;
+- exact/empty/invalid Router profile selection, inactive/wrong-scope/active
+  posture and feature-gate drift;
+- disposable PostgreSQL verification of migration 0012, one Owner,
+  transaction-A revalidation and durable no-tool convergence before any
+  production claim;
+- frontend exact-conjunction and login-401 preservation, Mypy, explicit Ruff,
+  full non-integration, maintainer validators, Compose default-off rendering
+  and sealed P5 contract regression.
+
+**Failure recovery**
+
+Write the kill marker, remove the operator overlay or restore Runtime=false,
+and preserve all config/event/kill bytes. Never edit an event, delete a kill
+marker, reuse a terminal directory, create migration 0013, enable Planner or
+Multi-Agent, install an enterprise approved digest or convert unknown to
+success. Reactivation requires a new reviewed config/plan and state directory.
+
 ## INV-055 personal-single-owner-admission
 
 **权威源码**

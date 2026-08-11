@@ -21,7 +21,11 @@ import {
   type AgentAlphaProfile,
   type AgentAlphaProfileList,
 } from '@/lib/api'
-import { canInvokeLiteAgent, liteInvokeConditionsMet } from '@/lib/lite-gate'
+import {
+  agentInvokeConditionsMet,
+  canInvokeAgent,
+  personalRuntimeInvokeConditionsMet,
+} from '@/lib/personal-runtime-gate'
 import { isUserCancelledError } from '@/lib/cancel-detection'
 import { consumeAgentAlphaStream } from '@/lib/agent-alpha-stream'
 import { InvocationGuard, type InvocationPhase } from '@/lib/invocation-state'
@@ -92,6 +96,11 @@ export default function AgentAlphaPage() {
     engineering_composition_ready: boolean
     activation_allowed: boolean
     expected_migration_head: string
+    runtime_profile: string
+    personal_runtime_state: string
+    personal_runtime_active: boolean
+    personal_canary_id: string | null
+    personal_canary_expires_at: string | null
   } | null>(null)
   const [postureLoading, setPostureLoading] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -200,7 +209,7 @@ export default function AgentAlphaPage() {
 
   const invoke = async () => {
     const userMessage = input.trim()
-    if (!canInvokeLiteAgent(posture, userMessage, workspaceId, bindingId)) return
+    if (!canInvokeAgent(posture, userMessage, workspaceId, bindingId)) return
     // P1-5: a unique generation owns each invocation; begin() is refused
     // while the previous promise is still running or cancelling.
     const guard = guardRef.current!
@@ -346,7 +355,9 @@ export default function AgentAlphaPage() {
   const postureBadges = (
     <div className="flex flex-wrap items-center gap-2">
       <Badge className="shrink-0" variant="outline">
-        LITE GATE {posture?.lite_gate_enabled ? 'ON' : 'OFF'}
+        {personalRuntimeInvokeConditionsMet(posture)
+          ? 'PERSONAL CANARY ACTIVE'
+          : `LITE GATE ${posture?.lite_gate_enabled ? 'ON' : 'OFF'}`}
       </Badge>
 
       <Badge className="shrink-0" variant="outline">
@@ -354,7 +365,9 @@ export default function AgentAlphaPage() {
         TOOLS DISABLED
       </Badge>
       <Badge className="shrink-0" variant="outline">
-        PRODUCTION RUNTIME OFF
+        {personalRuntimeInvokeConditionsMet(posture)
+          ? 'PERSONAL RUNTIME ON · NO TOOL'
+          : 'PRODUCTION RUNTIME OFF'}
       </Badge>
     </div>
   )
@@ -396,7 +409,7 @@ export default function AgentAlphaPage() {
               <h2 className="text-lg font-medium">
                 {!workspaceId
                   ? 'Select a Workspace to begin'
-                  : !liteInvokeConditionsMet(posture)
+                  : !agentInvokeConditionsMet(posture)
                     ? 'Invocation is locked until every condition holds'
                     : installations.length === 0
                       ? 'No sealed AgentVersion installed'
@@ -405,7 +418,7 @@ export default function AgentAlphaPage() {
               <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
                 {!workspaceId
                   ? 'Choose an existing Workspace from the right panel. Creating a Workspace uses the Workspace governance API; this engineering surface never bypasses membership or scope.'
-                  : !liteInvokeConditionsMet(posture)
+                  : !agentInvokeConditionsMet(posture)
                     ? 'Invoke requires the Lite gate enabled, the tool-free Alpha assembled in this environment, an allowed engineering environment and all Phase 5 production gates false — simultaneously. Production Runtime, Planner, multi-Agent and arbitrary tools remain locked.'
                     : installations.length === 0
                       ? 'Create an Agent with "New employee", or ask your operator to seal and install an AgentVersion. Alpha can reason over read-only workspace knowledge only.'
@@ -468,7 +481,7 @@ export default function AgentAlphaPage() {
               <Button
                 size="icon"
                 onClick={invoke}
-                disabled={!canInvokeLiteAgent(posture, input, workspaceId, bindingId)}
+                disabled={!canInvokeAgent(posture, input, workspaceId, bindingId)}
                 aria-label="Invoke Agent"
               >
                 <Send className="h-4 w-4" />
@@ -594,8 +607,10 @@ export default function AgentAlphaPage() {
                   {postureLoading
                     ? 'Reading live posture…'
                     : (statusError ??
-                      (!liteInvokeConditionsMet(posture)
-                        ? 'Invoke is locked: the Lite gate, the assembled engineering Alpha, the allowed environment and all-Phase-5-gates-false must hold simultaneously. Production Runtime remains locked.'
+                      (!agentInvokeConditionsMet(posture)
+                        ? 'Invoke is locked: either the complete engineering Lite posture or an exact active personal single-Owner canary must hold.'
+                        : personalRuntimeInvokeConditionsMet(posture)
+                          ? `Personal canary active${posture?.personal_canary_expires_at ? ` until ${posture.personal_canary_expires_at}` : ''}. Tool-free, one Workspace and one AgentVersion only.`
                         : posture?.engineering_assembled
                           ? 'Tool-free Alpha assembled in this environment.'
                           : 'Not assembled; check Provider, environment, Phase 5 gates and migration head 0012.'))}

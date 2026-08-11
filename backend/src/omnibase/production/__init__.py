@@ -1,8 +1,8 @@
 """P34.7 production admission contracts.
 
-The package deliberately contains no service launcher.  Production components
-remain unavailable until :mod:`omnibase.production.composition` admits a clean
-checkout with every required external proof.
+The package deliberately contains no service launcher. The personal Runtime
+module records bounded operator intent and verifies an append-only canary
+ledger; it does not start a process or bypass live request authorization.
 """
 
 from omnibase.production.composition import (
@@ -32,6 +32,19 @@ from omnibase.production.personal_owner_gate import (
     PersonalOwnerGateRequest,
     load_personal_owner_gate_config,
 )
+from omnibase.production.personal_runtime_activation import (
+    PersonalRuntimeActivationPlan,
+    PersonalRuntimeCanaryConfig,
+    PersonalRuntimeConfigurationError,
+    PersonalRuntimeState,
+    PersonalRuntimeStatus,
+    activate_personal_runtime_canary,
+    kill_personal_runtime_canary,
+    load_personal_runtime_canary_config,
+    personal_runtime_status_binding_valid,
+    read_personal_runtime_status,
+    rollback_personal_runtime_canary,
+)
 
 __all__ = [
     "AdmissionReport",
@@ -45,13 +58,24 @@ __all__ = [
     "PersonalOwnerGateConfig",
     "PersonalOwnerGateReport",
     "PersonalOwnerGateRequest",
+    "PersonalRuntimeActivationPlan",
+    "PersonalRuntimeCanaryConfig",
+    "PersonalRuntimeConfigurationError",
+    "PersonalRuntimeState",
+    "PersonalRuntimeStatus",
     "ProductionCompositionConfig",
     "ProductionCompositionGate",
     "TrustPolicy",
+    "activate_personal_runtime_canary",
     "build_git_source_provenance",
-    "load_production_composition_config",
+    "kill_personal_runtime_canary",
     "load_personal_owner_gate_config",
+    "load_personal_runtime_canary_config",
+    "load_production_composition_config",
     "load_trust_policy",
+    "personal_runtime_status_binding_valid",
+    "read_personal_runtime_status",
+    "rollback_personal_runtime_canary",
     "validate_joint_evidence",
     "validate_joint_evidence_contract",
     "verify_joint_evidence",

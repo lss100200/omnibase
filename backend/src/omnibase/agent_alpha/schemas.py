@@ -1,4 +1,4 @@
-"""Browser DTOs for the engineering-only Agent Alpha surface."""
+"""Browser DTOs for the fail-closed tool-free Agent Alpha surface."""
 
 from __future__ import annotations
 
@@ -58,6 +58,14 @@ class AlphaStatusResponse(AlphaApiModel):
     engineering_composition_ready: bool = True
     activation_allowed: bool = False
     expected_migration_head: str = "0012"
+    # P5 personal Runtime canary disclosure. These fields describe only the
+    # exact current request scope; they contain no credential, locator,
+    # approval, lease, fencing or workload-identity material.
+    runtime_profile: str = "locked"
+    personal_runtime_state: str = "inactive"
+    personal_runtime_active: bool = False
+    personal_canary_id: str | None = Field(default=None, pattern=_UUID)
+    personal_canary_expires_at: str | None = None
 
 
 __all__ = [

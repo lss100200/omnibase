@@ -1788,6 +1788,36 @@ blocked/not_proven 不是测试失败。
 必须满足冻结文档列出的产品、人员和目标环境条件，并从当时的 current main
 重新收集证据。
 
+### 12.13A P5 personal Runtime canary activation
+
+Read INV-056 and `docs/architecture/p5-personal-runtime-activation-r0.md`
+before changing the personal production lane. Engineering Lite, personal
+single-Owner and frozen enterprise governance are separate paths. An unknown
+non-empty profile locks the Browser route and cannot fall back to Lite.
+
+The personal builder accepts only production + Runtime=true + Planner=false +
+Multi-Agent=false, a canonical config, an ACTIVE unexpired run-scoped ledger,
+migration 0012, one exact live Owner/tenant-admin and one AgentVersion. Recheck
+Owner and AgentVersion inside transaction A. Keep the facade exact-scope and
+no-tool; do not add shell, SQL, arbitrary HTTP, MCP, Skill, Planner,
+Multi-Agent or Sandbox ports.
+
+The filesystem-only controller requires the plan digest for activation,
+appends one terminal rollback and keeps kill independent of both config and
+ledger. Any kill marker wins. Base Compose values remain empty/false and mount
+nothing; only an explicit operator overlay mounts canonical config/state
+read-only into the backend.
+
+R0 knowledge retrieval remains the Core-owned read-only RAG path. Do not claim
+formal P5.4B Gateway composition, Sandbox/high-risk Capability admission or
+enterprise P34.7 PASS. Keep migration 0013 absent, Planner/Multi-Agent disabled
+and the enterprise approved digest empty.
+
+The Axios authentication interceptor is also a product boundary. Login,
+register and refresh 401 responses never trigger auto-refresh, stale Bearer
+headers are not attached to those calls, and the UI must not replace backend
+errors with the internal `No refresh token available` signal.
+
 ### 12.14 Personal single-Owner production admission
 
 个人版生产准入入口是 `PersonalOwnerGate`。它复用既有 P34.1 Approval/Operation、

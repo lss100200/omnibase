@@ -861,22 +861,37 @@ class PersonalOwnerGate:
             vetoes.append("Capability budget is insufficient")
 
     def _verify_evidence(self, evidence: PersonalEngineeringEvidence) -> None:
-        path = (self._repo_root / evidence.path).resolve()
-        try:
-            path.relative_to(self._repo_root)
-        except ValueError as exc:
-            raise PersonalGateConfigurationError("evidence escaped the repository") from exc
-        metadata = os.lstat(path)
-        is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
-        if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
-            raise PersonalGateConfigurationError("evidence must be a regular non-link file")
-        content = path.read_bytes()
-        if hashlib.sha256(content).hexdigest() != evidence.sha256:
-            raise PersonalGateConfigurationError("sealed evidence SHA-256 drifted")
-        payload = json.loads(content.decode("utf-8"))
-        for name, expected in evidence.assertions:
-            if payload.get(name) != expected:
-                raise PersonalGateConfigurationError(f"evidence assertion failed: {name}")
+        verify_personal_engineering_evidence(self._repo_root, evidence)
+
+
+def verify_personal_engineering_evidence(
+    repo_root: Path,
+    evidence: PersonalEngineeringEvidence,
+) -> None:
+    """Verify the sealed personal-readiness evidence without activating anything.
+
+    The helper is intentionally filesystem-only so the later personal Runtime
+    activation controller can reuse the exact byte/path checks while keeping
+    live Owner, Approval, Capability and RunLease validation in their existing
+    database-backed services.
+    """
+    root = repo_root.resolve(strict=True)
+    path = (root / evidence.path).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise PersonalGateConfigurationError("evidence escaped the repository") from exc
+    metadata = os.lstat(path)
+    is_reparse = bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+    if stat.S_ISLNK(metadata.st_mode) or is_reparse or not stat.S_ISREG(metadata.st_mode):
+        raise PersonalGateConfigurationError("evidence must be a regular non-link file")
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != evidence.sha256:
+        raise PersonalGateConfigurationError("sealed evidence SHA-256 drifted")
+    payload = json.loads(content.decode("utf-8"))
+    for name, expected in evidence.assertions:
+        if payload.get(name) != expected:
+            raise PersonalGateConfigurationError(f"evidence assertion failed: {name}")
 
 
 def load_personal_owner_gate_config(path: Path) -> PersonalOwnerGateConfig:

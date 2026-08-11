@@ -10,6 +10,7 @@ import {
   databaseApi,
   documentsApi,
   healthApi,
+  isPublicAuthRequest,
   ragApi,
   workspacesApi,
 } from './api'
@@ -48,15 +49,28 @@ const originalFetch = globalThis.fetch
 const originalAxiosPost = axios.post
 const originalAxiosGet = axios.get
 const originalApiAdapter = api.defaults.adapter
+let assignedLocation = ''
 
 Object.defineProperty(globalThis, 'window', {
   configurable: true,
-  value: { localStorage, location: { pathname: '/', href: '' } },
+  value: {
+    localStorage,
+    location: {
+      pathname: '/',
+      search: '',
+      hash: '',
+      href: '',
+      assign: (value: string) => {
+        assignedLocation = value
+      },
+    },
+  },
 })
 
 beforeEach(() => {
   clearTokens()
   localStorage.clear()
+  assignedLocation = ''
 })
 
 afterEach(() => {
@@ -109,6 +123,115 @@ test('REST clients resolve resource paths under the versioned API prefix', async
     '/api/v1/rag/playground',
     '/api/v1/rag/ask',
   ])
+})
+
+test('public auth endpoint classification is exact and accepts prefixed URLs', () => {
+  assert.equal(isPublicAuthRequest('/auth/login'), true)
+  assert.equal(isPublicAuthRequest('/api/v1/auth/register'), true)
+  assert.equal(isPublicAuthRequest('http://localhost/api/v1/auth/refresh?attempt=1'), true)
+  assert.equal(isPublicAuthRequest('/auth/me'), false)
+  assert.equal(isPublicAuthRequest('/auth/login-history'), false)
+  assert.equal(isPublicAuthRequest(undefined), false)
+})
+
+test('anonymous login 401 preserves the backend error and never attempts refresh', async () => {
+  let refreshCount = 0
+  axios.post = (async () => {
+    refreshCount += 1
+    throw new Error('refresh must not run')
+  }) as typeof axios.post
+  api.defaults.adapter = async (config) => {
+    throw new axios.AxiosError(
+      'Request failed with status code 401',
+      axios.AxiosError.ERR_BAD_REQUEST,
+      config,
+      undefined,
+      {
+        data: { error: { code: 'invalid_credentials', message: 'Invalid email or password' } },
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {},
+        config,
+      },
+    )
+  }
+
+  await assert.rejects(
+    authApi.login({ email: 'user@example.com', password: 'wrong-password' }),
+    (error: unknown) => {
+      assert.equal(axios.isAxiosError(error), true)
+      if (!axios.isAxiosError(error)) return false
+      assert.equal(error.response?.status, 401)
+      assert.deepEqual(error.response?.data, {
+        error: { code: 'invalid_credentials', message: 'Invalid email or password' },
+      })
+      return true
+    },
+  )
+
+  assert.equal(refreshCount, 0)
+  assert.equal(assignedLocation, '')
+})
+
+test('public auth requests neither attach stale bearer tokens nor refresh stale sessions', async () => {
+  setTokens('stale-access', 'stale-refresh', Date.now() + 60_000)
+  let requestAuthorization: unknown = null
+  let refreshCount = 0
+  axios.post = (async () => {
+    refreshCount += 1
+    throw new Error('refresh must not run')
+  }) as typeof axios.post
+  api.defaults.adapter = async (config) => {
+    requestAuthorization = config.headers.get('Authorization')
+    throw new axios.AxiosError(
+      'Request failed with status code 401',
+      axios.AxiosError.ERR_BAD_REQUEST,
+      config,
+      undefined,
+      {
+        data: { error: { code: 'invalid_credentials', message: 'Invalid email or password' } },
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {},
+        config,
+      },
+    )
+  }
+
+  await assert.rejects(authApi.login({ email: 'user@example.com', password: 'wrong-password' }))
+
+  assert.equal(requestAuthorization ?? null, null)
+  assert.equal(refreshCount, 0)
+  assert.equal(assignedLocation, '')
+})
+
+test('protected 401 without a refresh token preserves the original response', async () => {
+  setTokens('stale-access', '', Date.now() + 60_000)
+  api.defaults.adapter = async (config) => {
+    throw new axios.AxiosError(
+      'Request failed with status code 401',
+      axios.AxiosError.ERR_BAD_REQUEST,
+      config,
+      undefined,
+      {
+        data: { error: { code: 'invalid_access_token', message: 'Access token is invalid' } },
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {},
+        config,
+      },
+    )
+  }
+
+  await assert.rejects(authApi.me(), (error: unknown) => {
+    assert.equal(axios.isAxiosError(error), true)
+    if (!axios.isAxiosError(error)) return false
+    assert.equal(error.response?.data.error.message, 'Access token is invalid')
+    assert.notEqual(error.message, 'No refresh token available')
+    return true
+  })
+
+  assert.equal(assignedLocation, '/login?from=%2F')
 })
 
 test('health probes remain on unversioned root paths', async () => {

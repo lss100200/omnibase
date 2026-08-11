@@ -727,6 +727,50 @@
         "backend/tests/test_p34_7_personal_owner_gate.py",
         "backend/tests/integration/test_p34_7_personal_owner_gate.py"
       ]
+    },
+    {
+      "id": "INV-056",
+      "title": "Personal Runtime activation is exact-scope, bounded, append-only, independently killable and no-tool",
+      "document": "docs/maintainers/security-invariants.md#inv-056-personal-runtime-canary-activation",
+      "source_paths": [
+        "backend/src/omnibase/production/personal_runtime_activation.py",
+        "backend/src/omnibase/production/personal_owner_gate.py",
+        "backend/src/omnibase/production/__init__.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/task_ledger/service.py",
+        "backend/tests/test_p5_personal_runtime_activation.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
+        "scripts/production/manage_p5_personal_runtime.py",
+        "scripts/production/test_manage_p5_personal_runtime.py",
+        "Makefile",
+        "docker-compose.yml",
+        "docker-compose.destructive-tests.yml",
+        ".env.example",
+        "deployment/production/personal-runtime-canary.example.json",
+        "deployment/production/personal-runtime-canary.compose.example.yml",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "frontend/lib/api.test.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "frontend/lib/personal-runtime-gate.test.ts",
+        "docs/architecture/p5-personal-runtime-activation-r0.md",
+        "docs/runbooks/p5-personal-runtime-canary.md",
+        "docs/evidence/p5-personal-runtime-activation-r0-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p5_personal_runtime_activation.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
+        "scripts/production/test_manage_p5_personal_runtime.py",
+        "frontend/lib/personal-runtime-gate.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -1713,7 +1757,8 @@
         "INV-036",
         "INV-037",
         "INV-038",
-        "INV-055"
+        "INV-055",
+        "INV-056"
       ],
       "verification": [
         "python scripts/production/validate_p34_7_composition.py --validate-only",
@@ -1736,7 +1781,7 @@
         "If Owner membership, approval, operation, resource version, Capability budget, workload identity, attestation, Run Lease or fencing is ambiguous, revoke the affected grant/lease and require a new exact Owner approval rather than repairing rows in place.",
         "Do not replay pending or unknown provider effects; retain journals, receipts, signatures and source manifests for reconciliation.",
         "Revoke affected Run, Network Lease, workload certificate and node credentials before re-admitting a compromised component.",
-        "Phase 5 remains frozen until the clean-checkout P34.7 total Gate is independently PASS."
+        "Enterprise Phase 5 remains frozen until the P34.7 total Gate independently passes; the separately named personal canary may enable Runtime only under INV-056 while Planner/Multi-Agent stay false and enterprise approval stays absent."
       ]
     },
     {
@@ -2198,6 +2243,9 @@
         "backend/src/omnibase/user_settings/**",
         "backend/src/omnibase/main.py",
         "backend/tests/test_agent_alpha.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/test_p5_personal_runtime_activation.py",
         "frontend/app/(dashboard)/agents/page.tsx",
         "frontend/components/layout/sidebar.tsx",
         "frontend/lib/api.ts",
@@ -2211,6 +2259,8 @@
         "frontend/lib/agent-alpha-stream.test.ts",
         "frontend/lib/invocation-state.ts",
         "frontend/lib/invocation-state.test.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "frontend/lib/personal-runtime-gate.test.ts",
         "backend/tests/integration/test_p5_2b_task_ledger_lease_gate.py"
       ],
       "entrypoints": [
@@ -2234,7 +2284,7 @@
       "public_interfaces": [
         "Authenticated /api/v1/workspaces/{workspace_id}/agent-alpha status, invoke SSE and cancel routes",
         "One installed sealed AgentVersion, read-only workspace knowledge, one request-scoped personal-or-operator Model Gateway stream and durable invocation callbacks",
-        "Frontend AI Employee Workbench; production calls still return 503 agent_alpha_unavailable until separately authorized",
+        "Frontend AI Employee Workbench; production calls return 503 unless the exact bounded personal_single_owner canary composition is live for the current request",
         "SSE invoke/cancel flows reach the backend through the streaming route-handler proxy frontend/app/api/v1/[...path]/route.ts (Next.js rewrites buffer the body and break live streaming); /health probes still use rewrites"
       ],
       "depends_on": [
@@ -2249,7 +2299,8 @@
         "INV-044",
         "INV-045",
         "INV-047",
-        "INV-048"
+        "INV-048",
+        "INV-056"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_agent_alpha.py tests/test_model_gateway.py -q",
@@ -2259,7 +2310,7 @@
         "cd frontend && pnpm test (agent-alpha-stream incomplete/terminal contract, invocation-state Stop/reinvoke ownership, proxy streaming/abort/compression)"
       ],
       "recovery": [
-        "Do not override get_agent_alpha in production without a separate activation decision. The checked-in dependency must remain UnavailableAgentAlpha.",
+        "Do not override get_agent_alpha in production. Empty/invalid personal profile and incomplete config/ledger/live scope must resolve to UnavailableAgentAlpha; only the exact INV-056 personal canary composition may assemble.",
         "Alpha rejects any AgentVersion with allowed_tool_ids. It has no shell, SQL, arbitrary HTTP, MCP, Skill, Planner or multi-Agent port.",
         "Provider ambiguity records an unknown outcome through the ledger port; cancellation is a new terminal outcome and retry is a new invocation identity.",
         "A configured personal default must have a passed strict identity test; decryption/test failure never silently falls back to the operator provider.",
@@ -2792,6 +2843,97 @@
         "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
         "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0012, migration 0013 absent and all three Phase 5 Feature Gates false.",
         "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
+      ]
+    },
+    {
+      "id": "personal-runtime-canary",
+      "name": "P5 bounded personal single-Owner no-tool production Runtime canary",
+      "source_paths": [
+        "backend/src/omnibase/production/personal_runtime_activation.py",
+        "backend/src/omnibase/production/personal_owner_gate.py",
+        "backend/src/omnibase/production/__init__.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/src/omnibase/agent_alpha/adapters.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/task_ledger/service.py",
+        "backend/tests/test_p5_personal_runtime_activation.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "backend/tests/test_agent_alpha_personal_router.py",
+        "backend/tests/integration/test_p5_2c_agent_alpha_foundation.py",
+        "scripts/production/manage_p5_personal_runtime.py",
+        "scripts/production/test_manage_p5_personal_runtime.py",
+        "deployment/production/personal-runtime-canary.example.json",
+        "deployment/production/personal-runtime-canary.compose.example.yml",
+        "Makefile",
+        "docker-compose.yml",
+        "docker-compose.destructive-tests.yml",
+        ".env.example",
+        "frontend/app/(dashboard)/agents/page.tsx",
+        "frontend/lib/api.ts",
+        "frontend/lib/api.test.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "frontend/lib/personal-runtime-gate.test.ts",
+        "docs/architecture/p5-personal-runtime-activation-r0.md",
+        "docs/runbooks/p5-personal-runtime-canary.md",
+        "docs/evidence/p5-personal-runtime-activation-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/production/personal_runtime_activation.py:load_personal_runtime_canary_config",
+        "backend/src/omnibase/production/personal_runtime_activation.py:activate_personal_runtime_canary",
+        "backend/src/omnibase/production/personal_runtime_activation.py:read_personal_runtime_status",
+        "backend/src/omnibase/production/personal_runtime_activation.py:rollback_personal_runtime_canary",
+        "backend/src/omnibase/production/personal_runtime_activation.py:kill_personal_runtime_canary",
+        "backend/src/omnibase/production/personal_runtime_activation.py:personal_runtime_status_binding_valid",
+        "backend/src/omnibase/agent_alpha/personal.py:build_personal_agent_alpha",
+        "backend/src/omnibase/agent_alpha/personal.py:personal_alpha_posture",
+        "backend/src/omnibase/agent_alpha/router.py:get_agent_alpha",
+        "backend/src/omnibase/agent_alpha/router.py:alpha_status",
+        "backend/src/omnibase/task_ledger/service.py:TaskLedgerPersistenceService",
+        "backend/src/omnibase/agent_alpha/service.py:AgentAlphaService",
+        "scripts/production/manage_p5_personal_runtime.py:main",
+        "frontend/lib/personal-runtime-gate.ts:canInvokeAgent",
+        "frontend/lib/personal-runtime-gate.ts:personalRuntimeInvokeConditionsMet"
+      ],
+      "public_interfaces": [
+        "Canonical personal canary config and deterministic plan digest for one Tenant/Workspace/Owner/AgentVersion no-tool scope",
+        "Run-scoped activate/rollback hash chain plus independent irreversible KILL_SWITCH.json",
+        "PERSONAL_RUNTIME_PROFILE / PERSONAL_RUNTIME_CANARY_CONFIG / PERSONAL_RUNTIME_STATE_DIR server-owned composition selectors",
+        "Authenticated Agent Alpha status fields scoped to the current personal canary request",
+        "Filesystem-only validate, plan, activate-canary, status, rollback and kill CLI"
+      ],
+      "depends_on": [
+        "production-readiness",
+        "phase5-admission",
+        "agent-alpha-workbench",
+        "p5-task-ledger-persistence",
+        "agent-model-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-045",
+        "INV-048",
+        "INV-055",
+        "INV-056"
+      ],
+      "verification": [
+        "TEST_COMPOSE_PROJECT=omnibase-p5personal-${RUN_ID} TEST_DATABASE_NAME=omnibase_test_p5personal_${RUN_ID} TEST_DATABASE_ROLE=omnibase_test_p5personal_${RUN_ID} TEST_DATABASE_OWNER_PASSWORD=${DISPOSABLE_OWNER_PASSWORD} TEST_DATABASE_PASSWORD=${DISPOSABLE_ROLE_PASSWORD} make test-p5-personal-runtime",
+        "python scripts/production/manage_p5_personal_runtime.py validate --config <absolute-canonical-config> --repo-root <absolute-repo-root>",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_personal_runtime_activation.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend pytest scripts/production/test_manage_p5_personal_runtime.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps backend mypy src",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff check src/omnibase/production/personal_runtime_activation.py src/omnibase/production/personal_owner_gate.py src/omnibase/production/__init__.py src/omnibase/agent_alpha/personal.py src/omnibase/agent_alpha/adapters.py src/omnibase/agent_alpha/router.py src/omnibase/agent_alpha/schemas.py src/omnibase/agent_alpha/service.py src/omnibase/task_ledger/service.py tests/test_p5_personal_runtime_activation.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_2c_agent_alpha_foundation.py ../scripts/production/manage_p5_personal_runtime.py ../scripts/production/test_manage_p5_personal_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/personal_runtime_activation.py src/omnibase/production/personal_owner_gate.py src/omnibase/production/__init__.py src/omnibase/agent_alpha/personal.py src/omnibase/agent_alpha/adapters.py src/omnibase/agent_alpha/router.py src/omnibase/agent_alpha/schemas.py src/omnibase/agent_alpha/service.py src/omnibase/task_ledger/service.py tests/test_p5_personal_runtime_activation.py tests/test_agent_alpha_personal.py tests/test_agent_alpha_personal_router.py tests/integration/test_p5_2c_agent_alpha_foundation.py ../scripts/production/manage_p5_personal_runtime.py ../scripts/production/test_manage_p5_personal_runtime.py",
+        "docker compose --env-file .env.example run --rm --no-deps frontend sh -lc 'pnpm test && pnpm typecheck && pnpm lint && NODE_ENV=production pnpm build'",
+        "docker compose --env-file .env.example config --quiet"
+      ],
+      "recovery": [
+        "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
+        "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create migration 0013, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     }
   ]

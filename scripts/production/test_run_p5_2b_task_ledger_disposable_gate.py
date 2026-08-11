@@ -37,6 +37,12 @@ def test_manifest_digest_is_deterministic() -> None:
     assert len(gate._manifest_digest(manifest)) == 64
 
 
+def test_destructive_compose_declares_the_shared_network_for_standalone_use() -> None:
+    compose = gate.COMPOSE_FILE.read_text(encoding="utf-8")
+    assert "      - default\n      - omnibase-net\n" in compose
+    assert "\nnetworks:\n  omnibase-net:\n    driver: bridge\n" in compose
+
+
 def test_recorded_evidence_rejects_production_activation(tmp_path: Path) -> None:
     report = {
         "schema_version": 1,

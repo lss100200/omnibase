@@ -25,3 +25,10 @@ services:
       timeout: 5s
       retries: 30
     restart: "no"
+    networks:
+      - default
+      - omnibase-net
+
+networks:
+  omnibase-net:
+    driver: bridge

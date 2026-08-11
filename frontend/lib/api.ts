@@ -42,8 +42,28 @@ let refreshPromise: Promise<string> | null = null
 
 export const API_PREFIX = '/api/v1'
 
+const PUBLIC_AUTH_PATHS = new Set([
+  `${API_PREFIX}/auth/login`,
+  `${API_PREFIX}/auth/register`,
+  `${API_PREFIX}/auth/refresh`,
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+])
+
 function apiUrl(path: string): string {
   return `${API_PREFIX}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+export function isPublicAuthRequest(url: string | undefined): boolean {
+  if (!url) return false
+
+  try {
+    const pathname = new URL(url, 'http://localhost').pathname.replace(/\/+$/, '') || '/'
+    return PUBLIC_AUTH_PATHS.has(pathname)
+  } catch {
+    return false
+  }
 }
 
 export const api: AxiosInstance = axios.create({
@@ -59,7 +79,7 @@ export const api: AxiosInstance = axios.create({
 // -----------------------------------------------------------
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAccessToken()
-  if (token) {
+  if (token && !isPublicAuthRequest(config.url)) {
     config.headers.set('Authorization', `Bearer ${token}`)
   }
   return config
@@ -75,12 +95,20 @@ api.interceptors.response.use(
       _retried?: boolean
     }
 
-    // Skip refresh attempt for the refresh endpoint itself (avoid loop)
-    const isRefreshCall = originalRequest?.url?.includes('/auth/refresh')
+    // Session-establishment endpoints own their authentication errors. Treating
+    // a login/register 401 as an expired access token can revive a stale session
+    // and replaces the backend error with an internal refresh failure.
+    const isPublicAuthCall = isPublicAuthRequest(originalRequest?.url)
     // Skip if we've already retried this request
     const alreadyRetried = originalRequest?._retried === true
 
-    if (error.response?.status === 401 && !isRefreshCall && !alreadyRetried) {
+    if (error.response?.status === 401 && !isPublicAuthCall && !alreadyRetried) {
+      if (!getRefreshToken()) {
+        invalidateAuthSession()
+        redirectToLogin()
+        return Promise.reject(error)
+      }
+
       originalRequest._retried = true
       try {
         const newAccessToken = await refreshAccessToken()
@@ -414,6 +442,11 @@ export const agentAlphaApi = {
         engineering_composition_ready: boolean
         activation_allowed: boolean
         expected_migration_head: string
+        runtime_profile: string
+        personal_runtime_state: string
+        personal_runtime_active: boolean
+        personal_canary_id: string | null
+        personal_canary_expires_at: string | null
       }>(`/workspaces/${workspaceId}/agent-alpha/status`)
       .then((response) => response.data),
 

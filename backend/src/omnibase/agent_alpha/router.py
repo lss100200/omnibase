@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Iterator
 from typing import Never
@@ -18,6 +19,14 @@ from omnibase.agent_alpha.lite import (
     SUPPORTED_INVOCATION_MODES,
     lite_agent_posture,
     runtime_lite_agent_enabled,
+)
+from omnibase.agent_alpha.personal import (
+    PERSONAL_RUNTIME_PROFILE_ENV,
+    PersonalAlphaConfigurationError,
+    PersonalCanaryAgentAlpha,
+    build_personal_agent_alpha,
+    personal_alpha_posture,
+    resolve_personal_runtime_profile,
 )
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
@@ -38,7 +47,10 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/agent-alpha", tags=["agent
 _SAFE_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
-def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
+def get_agent_alpha(
+    workspace_id: str,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> AgentAlphaService | PersonalCanaryAgentAlpha | UnavailableAgentAlpha:
     """Keep the Lite product entry point independently fail-closed.
 
     The Lite gate is a *product* entry guard, never an authorization fact. The
@@ -59,6 +71,17 @@ def get_agent_alpha() -> AgentAlphaService | UnavailableAgentAlpha:
     ``lite_agent_posture`` exposes the honest single-mode posture to the
     status endpoint without authorizing anything.
     """
+    selected_profile = os.environ.get(PERSONAL_RUNTIME_PROFILE_ENV)
+    try:
+        personal_selected = resolve_personal_runtime_profile(selected_profile)
+    except PersonalAlphaConfigurationError:
+        return UnavailableAgentAlpha()
+    if personal_selected:
+        return build_personal_agent_alpha(
+            tenant_id=ctx.tenant_id,
+            workspace_id=_logical_uuid(workspace_id),
+            actor_user_id=ctx.user_id,
+        )
     if not runtime_lite_agent_enabled():
         return UnavailableAgentAlpha()
     return build_engineering_agent_alpha()
@@ -90,11 +113,26 @@ def _raise_alpha(exc: Exception) -> Never:
 
 @router.get("/status", response_model=AlphaStatusResponse)
 def alpha_status(
+    workspace_id: str,
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> AlphaStatusResponse:
-    del ctx
     posture = engineering_alpha_status()
     lite = lite_agent_posture()
+    selected_profile = os.environ.get(PERSONAL_RUNTIME_PROFILE_ENV)
+    try:
+        personal_profile_selected = resolve_personal_runtime_profile(selected_profile)
+        personal_profile_invalid = False
+    except PersonalAlphaConfigurationError:
+        personal_profile_selected = False
+        personal_profile_invalid = True
+    personal = None
+    if personal_profile_selected or personal_profile_invalid:
+        personal = personal_alpha_posture(
+            tenant_id=ctx.tenant_id,
+            workspace_id=_logical_uuid(workspace_id),
+            actor_user_id=ctx.user_id,
+            profile=selected_profile,
+        )
     return AlphaStatusResponse(
         engineering_implemented=True,
         lite_gate_enabled=bool(lite["lite_gate_enabled"]),
@@ -102,7 +140,7 @@ def alpha_status(
         engineering_flag_enabled=posture["engineering_flag_enabled"],
         environment_allowed=posture["environment_allowed"],
         phase5_gates_all_false=posture["phase5_gates_all_false"],
-        production_activation_allowed=False,
+        production_activation_allowed=bool(personal and personal.assembled),
         tools_enabled=False,
         multi_agent_enabled=False,
         formal_builder=FORMAL_BUILDER_NAME,
@@ -112,13 +150,32 @@ def alpha_status(
         engineering_composition_ready=bool(lite["engineering_composition_ready"]),
         activation_allowed=bool(lite["activation_allowed"]),
         expected_migration_head=str(lite["expected_migration_head"]),
+        runtime_profile=(
+            "personal_single_owner"
+            if personal_profile_selected
+            else "engineering_lite"
+            if bool(lite["lite_gate_enabled"]) and not personal_profile_invalid
+            else "locked"
+        ),
+        personal_runtime_state=(
+            "invalid/veto"
+            if personal_profile_invalid
+            else personal.canary_state
+            if personal is not None
+            else "inactive"
+        ),
+        personal_runtime_active=bool(personal and personal.assembled),
+        personal_canary_id=personal.canary_id if personal is not None else None,
+        personal_canary_expires_at=(personal.canary_expires_at if personal is not None else None),
     )
 
 
 @router.get("/profiles", response_model=AlphaProfileList)
 def list_alpha_profiles(
     workspace_id: str,
-    alpha: AgentAlphaService | UnavailableAgentAlpha = Depends(get_agent_alpha),
+    alpha: AgentAlphaService | PersonalCanaryAgentAlpha | UnavailableAgentAlpha = Depends(
+        get_agent_alpha
+    ),
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> AlphaProfileList:
     try:
@@ -147,7 +204,9 @@ def invoke_alpha(
     workspace_id: str,
     payload: AlphaInvokeRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    alpha: AgentAlphaService | UnavailableAgentAlpha = Depends(get_agent_alpha),
+    alpha: AgentAlphaService | PersonalCanaryAgentAlpha | UnavailableAgentAlpha = Depends(
+        get_agent_alpha
+    ),
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> StreamingResponse:
     key = idempotency_key or uuid4().hex
@@ -188,7 +247,9 @@ def invoke_alpha(
 def cancel_alpha(
     workspace_id: str,
     invocation_id: str,
-    alpha: AgentAlphaService | UnavailableAgentAlpha = Depends(get_agent_alpha),
+    alpha: AgentAlphaService | PersonalCanaryAgentAlpha | UnavailableAgentAlpha = Depends(
+        get_agent_alpha
+    ),
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> AlphaCancelResponse:
     try:
