@@ -29,7 +29,9 @@ ENTERPRISE_P34_7_TRACK_FROZEN_BLOCKED_NOT_PROVEN
 ## Forward fixes found by real first boot
 
 The disposable target was built and started from the production files rather
-than inferred from source tests. That exposed and fixed four real defects:
+than inferred from source tests. Post-merge release verification then exercised
+the preserved receipt after the temporary feature ref was deleted. Together
+those checks exposed and fixed five real defects:
 
 - the Redis AOF volume initially rejected the non-root Redis process, so a
   capability-restricted one-shot ownership job now prepares the named volume;
@@ -41,7 +43,11 @@ than inferred from source tests. That exposed and fixed four real defects:
   concurrency;
 - Windows clients may send `Expect: 100-continue`, which Node/undici refuses to
   forward. The frontend proxy now strips that header after buffering the small
-  request body and logs only a bounded error name/code on upstream failure.
+  request body and logs only a bounded error name/code on upstream failure;
+- the release receipt originally required the temporary remote-tracking ref
+  name to remain byte-for-byte identical. Verification now keeps the immutable
+  commit/tree binding and still requires current public-remote containment,
+  while allowing containment to move from a merged feature ref to `origin/main`.
 
 ## Verification completed in the disposable production rehearsal
 

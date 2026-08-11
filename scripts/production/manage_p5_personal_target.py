@@ -71,6 +71,9 @@ SECRET_KEYS = (
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PUBLIC_REMOTE_REF = re.compile(
+    r"^refs/remotes/[^\x00-\x20\x7f~^:?*\[\\/]+/[^\x00-\x20\x7f~^:?*\[\\]+$"
+)
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:[\\/]")
 _PLACEHOLDER_PARTS = (
     "changeme",
@@ -435,6 +438,48 @@ def _repo_facts(repo_root: Path) -> dict[str, object]:
     return {"commit_sha256": commit, "tree_sha256": tree, "public_remote_refs": refs}
 
 
+def _verify_repo_facts(recorded: object, current: object) -> None:
+    expected_keys = {"commit_sha256", "tree_sha256", "public_remote_refs"}
+    if (
+        not isinstance(recorded, dict)
+        or not isinstance(current, dict)
+        or set(recorded) != expected_keys
+        or set(current) != expected_keys
+    ):
+        raise TargetConfigurationError("release repository fact set is invalid")
+
+    for name, facts in (("recorded", recorded), ("current", current)):
+        commit = facts.get("commit_sha256")
+        tree = facts.get("tree_sha256")
+        refs = facts.get("public_remote_refs")
+        if (
+            not isinstance(commit, str)
+            or not _OBJECT_ID.fullmatch(commit)
+            or not isinstance(tree, str)
+            or not _OBJECT_ID.fullmatch(tree)
+        ):
+            raise TargetConfigurationError(
+                f"release {name} repository object ids are invalid"
+            )
+        if (
+            not isinstance(refs, list)
+            or not refs
+            or any(
+                not isinstance(ref, str) or not _PUBLIC_REMOTE_REF.fullmatch(ref)
+                for ref in refs
+            )
+            or refs != sorted(set(refs))
+        ):
+            raise TargetConfigurationError(
+                f"release {name} public remote refs are invalid"
+            )
+
+    if recorded["commit_sha256"] != current["commit_sha256"]:
+        raise TargetConfigurationError("release target fact drifted: repo commit")
+    if recorded["tree_sha256"] != current["tree_sha256"]:
+        raise TargetConfigurationError("release target fact drifted: repo tree")
+
+
 def _migration_facts(repo_root: Path) -> dict[str, object]:
     versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
     revisions: dict[str, str | None] = {}
@@ -705,12 +750,12 @@ def _verify_release(args: argparse.Namespace) -> dict[str, object]:
         "migration",
         "operator_paths",
         "platform",
-        "repo",
         "secret_posture",
         "tools",
     ):
         if target.get(key) != current.get(key):
             raise TargetConfigurationError(f"release target fact drifted: {key}")
+    _verify_repo_facts(target.get("repo"), current.get("repo"))
     return {
         "manifest_sha256": _sha256(raw),
         "operation": "verify-release",

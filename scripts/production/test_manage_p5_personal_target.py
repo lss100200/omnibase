@@ -284,3 +284,133 @@ def test_verify_release_detects_artifact_fact_drift(
     )
     with pytest.raises(manager.TargetConfigurationError, match="artifacts"):
         manager._verify_release(args)
+
+
+def test_verify_release_accepts_public_remote_ref_movement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release, state, backup, secret = _paths(tmp_path)
+    recorded = {
+        "artifacts": [],
+        "feature_gates": {name: False for name in manager.GATE_NAMES},
+        "migration": {"head": "0012", "migration_0013_absent": True},
+        "operator_paths": {
+            "backup_dir": str(backup.resolve()),
+            "release_dir": str(release.resolve()),
+            "secret_env": str(secret.resolve()),
+            "state_dir": str(state.resolve()),
+        },
+        "platform": {"machine": "test", "system": "test"},
+        "repo": {
+            "commit_sha256": "b" * 40,
+            "tree_sha256": "c" * 40,
+            "public_remote_refs": ["refs/remotes/origin/codex/feature"],
+        },
+        "secret_posture": {
+            "permissions_valid": True,
+            "required_keys": list(manager.REQUIRED_ENV_KEYS),
+            "values_redacted": True,
+            "values_valid": True,
+        },
+        "storage": {"minimum_free_bytes": 1, "observed_free_bytes": {}},
+        "tools": {"docker": "Docker version 1", "compose": "Docker Compose version 1"},
+    }
+    manifest = release / "release.json"
+    manager._write_manifest(manager.argparse.Namespace(output=str(manifest)), recorded)
+    current = {
+        **recorded,
+        "repo": {
+            **recorded["repo"],
+            "public_remote_refs": ["refs/remotes/origin/main"],
+        },
+    }
+    monkeypatch.setattr(manager, "_doctor", lambda _args: current)
+
+    result = manager._verify_release(
+        manager.argparse.Namespace(
+            repo_root=str(manager.REPO_ROOT), manifest=str(manifest)
+        )
+    )
+
+    assert result["verified"] is True
+    assert result["status"] == "release/verified_not_started"
+
+
+@pytest.mark.parametrize(
+    ("recorded", "current", "message"),
+    [
+        (
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/feature"],
+            },
+            {
+                "commit_sha256": "c" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/main"],
+            },
+            "repo commit",
+        ),
+        (
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/feature"],
+            },
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "c" * 40,
+                "public_remote_refs": ["refs/remotes/origin/main"],
+            },
+            "repo tree",
+        ),
+        (
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/feature"],
+            },
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": [],
+            },
+            "current public remote refs",
+        ),
+        (
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/feature"],
+            },
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["origin/main"],
+            },
+            "current public remote refs",
+        ),
+        (
+            {
+                "commit_sha256": "not-an-object-id",
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/feature"],
+            },
+            {
+                "commit_sha256": "a" * 40,
+                "tree_sha256": "b" * 40,
+                "public_remote_refs": ["refs/remotes/origin/main"],
+            },
+            "recorded repository object ids",
+        ),
+    ],
+)
+def test_verify_repo_facts_rejects_provenance_drift(
+    recorded: object,
+    current: object,
+    message: str,
+) -> None:
+    with pytest.raises(manager.TargetConfigurationError, match=message):
+        manager._verify_repo_facts(recorded, current)
