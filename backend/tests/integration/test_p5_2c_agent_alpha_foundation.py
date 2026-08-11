@@ -891,6 +891,7 @@ def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
     monkeypatch.setenv("PERSONAL_RUNTIME_CANARY_CONFIG", str(config_path))
     monkeypatch.setenv("PERSONAL_RUNTIME_STATE_DIR", str(state_dir))
     monkeypatch.setenv("PERSONAL_RUNTIME_READINESS_ROOT", str(repo_root))
+    monkeypatch.setenv("MEMORY_CONTENT_ENCRYPTION_KEY", "6b" * 32)
     get_settings.cache_clear()
     calls = [0]
     gateway = ModelGateway(
