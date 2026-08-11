@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.5 Memory、P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成或未授权。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C 已在统一主线形成 fail-closed 工程链；Formal Builder 的真实持久化 authority chain 与只读 `knowledge_search` 组合已证明为 engineering-only。P5.5A Memory Policy/ContextCapsule/MemoryCandidate 离线合同已进入实现与独立验证，P5.5B persistence/delete/export 和 P5.5C compiler/search/injection 仍待后续增量。P5.6A first-party Skill 仍为 compile-only。生产 Runtime 默认 unavailable，三个 Feature Gate 保持 `false`；P5.6B–D persistence/install/execution、P5.7 Multi-Agent、P5.8 recovery 与 P5.9 production Gate 尚未完成。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -209,20 +209,21 @@ Phase 7: 开源准备
 | MCP 在工作空间和 Agent 之后 | 工作空间提供隔离边界，Agent 框架定义工具协议，MCP 是扩展实现之一 |
 ## 2026-08-11 personal production target update
 
-PR #25 merged the bounded personal Runtime product path into `main` at
-`632f705`. The active next increment is P5 Personal Production Target R1:
-non-root immutable images, a loopback-only full-stack Compose target, exact
-operator preflight/release receipts, cold PostgreSQL+MinIO+Runtime-asset backup,
-restore-to-new and A-to-B upgrade rehearsal.
+PR #25 merged the bounded personal Runtime product path. PR #26 then merged the
+recoverable personal production target and PR #27 fixed release-receipt
+durability across post-merge remote-ref deletion. `main@f4b77a1` has passed the
+required remote CI and the preserved release receipt verified again after both
+temporary feature refs were removed.
 
-This increment does not reopen the frozen enterprise P34.7 evidence campaign.
-Base Runtime remains false; Planner and Multi-Agent remain false. The
-disposable production rehearsal has now passed build, first boot,
-authenticated product smoke, stop/restart, cold backup, restore-new and a
-separate A-to-B project/volume upgrade. Final closure still requires clean-HEAD
-full verification and remote review, a fresh Provider-backed no-tool journey
-and explicit Owner acceptance of the durable target. After the personal
-no-tool production closure, the active Phase 5 sequence is P5.5
-Memory/ContextCapsule, P5.6B-D first-party Skill
-persistence/install/execution, P5.7 bounded Multi-Agent DAG, P5.8 recovery and
-P5.9 attack/capacity/production Gate before Phase 6.
+The personal base target is now startable, stoppable, cold-backup capable,
+restore-new capable and A-to-B upgradeable while Runtime defaults false and
+Planner/Multi-Agent remain false. This does not reopen the frozen enterprise
+P34.7 evidence campaign. A fresh Provider-backed no-tool journey and explicit
+Owner acceptance/cutover of a durable non-disposable target are still required
+before the final personal production-acceptance claim.
+
+The active Phase 5 sequence is P5.5 Memory/ContextCapsule, P5.6B-D first-party
+Skill persistence/install/execution, P5.7 bounded Multi-Agent DAG, P5.8
+recovery and P5.9 attack/capacity/production Gate before Phase 6. P5.5A freezes
+the compile-only contract first; it intentionally keeps migration `0012`,
+`0013` absent and all three Phase 5 Feature Gates false.

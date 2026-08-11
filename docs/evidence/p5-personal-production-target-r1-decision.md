@@ -5,8 +5,10 @@ Date: 2026-08-11
 ## Decision
 
 ```text
-P5_PERSONAL_PRODUCTION_TARGET_R1_REHEARSAL_PASSED_PENDING_CLEAN_HEAD_REVIEW
+P5_PERSONAL_PRODUCTION_BASE_R1_ACCEPTED
 PERSONAL_BASE_TARGET_STARTABLE_STOPPABLE_RECOVERABLE_UPGRADEABLE
+REMOTE_REQUIRED_CI_PASSED
+POST_MERGE_RELEASE_RECEIPT_VERIFIED
 PERSONAL_RUNTIME_DEFAULT_OFF
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
@@ -87,11 +89,24 @@ The source rehearsal used project `omnibase-test-p5prod-r1-precommit`; B used
 `omnibase-test-p5prod-r1-upgrade-b`. Neither is relabeled as the accepted Owner
 production deployment.
 
+## Clean-HEAD and post-merge verification
+
+- PR #26 merged the production target; PR #27 merged the remote-ref durability
+  forward fix into `main@f4b77a1`;
+- both PR-triggered required CI matrices passed Backend, Frontend/TypeScript,
+  Compose and PostgreSQL sentinel integration;
+- clean-HEAD target/backup/packaging tests passed with 35 tests after the
+  durability attack matrix was added;
+- the focused P5.0/P5.1A/P5.2A/P5.3A/P34.7 contract combination passed 478
+  tests;
+- the original release receipt was not edited or regenerated and verified
+  after merge with manifest SHA-256
+  `98039f93a0739a5fb7422a0214f8a1cd84a0667e15a04d1593f4c32acf485254`;
+- Runtime, Planner and Multi-Agent remained false; approved enterprise Trust
+  Policy digest remained empty; migration remained `0012` with no `0013`.
+
 ## Still not proven by this decision
 
-- the final clean committed/pushed HEAD and required remote CI;
-- `doctor`, canonical release manifest and `verify-release` from that clean
-  public remote-tracked HEAD (the controller correctly vetoes a dirty tree);
 - a fresh real Provider credential and Provider-backed no-tool invocation;
 - explicit Owner acceptance/cutover of a non-disposable target;
 - Runtime canary activation, which is intentionally outside the base-target

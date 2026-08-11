@@ -4641,10 +4641,11 @@ Master execution advanced beyond the initial source-only result. Focused
 packaging/controller verification is now 29 passed and frontend tests are 95
 passed. Both production images built; the isolated source target completed
 first boot, migration `0012`, initialization, registration/login,
-Runtime-off posture and stop/restart persistence. Real first boot drove four
-forward fixes: Redis volume ownership, migration Settings closure, single-user
-worker startup serialization and stripping unsupported `Expect: 100-continue`
-at the Next.js proxy boundary.
+Runtime-off posture and stop/restart persistence. Real first boot and post-merge
+receipt verification drove five forward fixes: Redis volume ownership,
+migration Settings closure, single-user worker startup serialization, stripping
+unsupported `Expect: 100-continue` at the Next.js proxy boundary and preserving
+release validity when a merged feature ref moves to `origin/main`.
 
 A verified cold backup was then sealed with manifest
 `9be464a46ffc520fab8ffb9b23df1a694a9f892eaf2a85374c02b16faacf0ca1`.
@@ -4657,8 +4658,10 @@ production-proxy registration/login plus the locked Runtime posture on
 Current honest posture:
 
 ```text
-P5_PERSONAL_PRODUCTION_TARGET_R1_REHEARSAL_PASSED_PENDING_CLEAN_HEAD_REVIEW
+P5_PERSONAL_PRODUCTION_BASE_R1_ACCEPTED
 PERSONAL_BASE_TARGET_STARTABLE_STOPPABLE_RECOVERABLE_UPGRADEABLE
+REMOTE_REQUIRED_CI_PASSED
+POST_MERGE_RELEASE_RECEIPT_VERIFIED
 PERSONAL_RUNTIME_DEFAULT_OFF
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
@@ -4672,6 +4675,39 @@ The repository root `.env` was not read. No business database was accessed or
 migrated; only explicit disposable `omnibase_test_*`/`omnibase_restore_*`
 identities were used. No previously exposed Provider credential was reused.
 The existing `omnibase-p54d-acceptance` stack was not stopped, mutated or
-relabeled. Remaining closure items are final clean-HEAD full verification,
-remote CI/review, a fresh Provider-backed no-tool journey and explicit Owner
-acceptance of the durable target.
+relabeled. PR #26 and PR #27 passed required remote CI and merged; the preserved
+release receipt verified again after the feature refs were deleted. Remaining
+acceptance items are a fresh Provider-backed no-tool journey and explicit Owner
+acceptance/cutover of the durable target.
+
+### P5.5A Memory / ContextCapsule contract start (2026-08-11)
+
+A fresh worktree `p5-5-context-capsule-r0` was created from exact
+`main@f4b77a196b8d51bf7e1bbaf2da2f30c0c74d550f`. P5.5A now introduces a
+compile-only Memory Policy, MemoryReviewEvidence, ContextCapsule,
+MemorySelection and MemoryCandidate contract plus offline validator and attack
+tests.
+
+The contract binds each Capsule to one Tenant, human Owner, Workspace,
+AgentVersion, Task and Invocation. Selected items bind logical source
+Resource/version, evidence, digest, deterministic position, scope, sensitivity
+and token count. TTL, compiler-policy digest, token/item/sensitive budgets and
+scope identity are recomputed. Capsules are non-delegable untrusted data and
+cannot override the Security Kernel.
+
+Scope shape is now explicit: Owner-wide `user_private` carries no Workspace or
+AgentVersion; workspace-private/controlled-shared bind Workspace; agent-private
+also binds AgentVersion. Controlled-shared selection requires a canonical Owner
+approval record sealed to the exact Tenant, Workspace, Memory ID/version and
+content digest. Candidate records must bind the same Capsule invocation and all
+of its Tenant/Owner/Workspace/AgentVersion/Policy identities.
+
+Agents may only propose Candidates. Candidate self-activation, secrets,
+inferred protected traits and unconfirmed sensitive/shared candidates are
+rejected. The focused matrix is 65 passed and explicit Ruff check/format
+is clean before maintainer-map integration.
+
+P5.5A creates no database, vector lane, Browser API, worker, compiler Runtime or
+migration. Migration remains `0012`, `0013` is absent and Runtime/Planner/
+Multi-Agent remain false. P5.5B persistence/delete/export and P5.5C bounded
+compiler/search/injection are separate forward increments.

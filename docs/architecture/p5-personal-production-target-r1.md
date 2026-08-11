@@ -12,11 +12,15 @@ or Provider-backed production invocation.
 The exact status of this change is:
 
 ```text
-P5_PERSONAL_PRODUCTION_TARGET_R1_REHEARSAL_PASSED_PENDING_CLEAN_HEAD_REVIEW
+P5_PERSONAL_PRODUCTION_BASE_R1_ACCEPTED
 PERSONAL_BASE_TARGET_STARTABLE_STOPPABLE_RECOVERABLE_UPGRADEABLE
+REMOTE_REQUIRED_CI_PASSED
+POST_MERGE_RELEASE_RECEIPT_VERIFIED
 PERSONAL_RUNTIME_DEFAULT_OFF
 PLANNER_DISABLED
 MULTI_AGENT_DISABLED
+PROVIDER_BACKED_PRODUCTION_JOURNEY_NOT_PROVEN
+OWNER_DURABLE_TARGET_CUTOVER_NOT_ACCEPTED
 ```
 
 ## Product scope
@@ -106,7 +110,10 @@ stop admission -> converge/record work -> cold backup -> verify backup
 The disposable execution recorded in
 `docs/evidence/p5-personal-production-target-r1-decision.md` proves that the
 current target can build, first-boot, stop/restart, cold-backup, restore-new and
-start a separate B project while keeping all Runtime gates off. It does not
-prove final clean-HEAD remote CI, Owner cutover, a durable non-disposable host,
-a fresh Provider-backed invocation or Runtime activation. Previously shared
-Provider credentials are not valid production inputs and must not be reused.
+start a separate B project while keeping all Runtime gates off. PR #26 and the
+release-receipt durability forward-fix PR #27 passed required remote CI; the
+preserved receipt verified again after GitHub deleted the temporary feature
+refs and `origin/main` became the public containment ref. The evidence still
+does not prove Owner cutover of a durable non-disposable host, a fresh
+Provider-backed invocation or Runtime activation. Previously shared Provider
+credentials are not valid production inputs and must not be reused.

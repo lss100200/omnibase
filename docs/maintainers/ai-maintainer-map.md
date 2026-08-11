@@ -1867,3 +1867,33 @@ after a cold barrier. Restore/upgrade always use new database, MinIO and Runtime
 identities, start Runtime=false, and require structural plus product smoke
 before Owner cutover. Pending/unknown work is preserved for reconciliation and
 never auto-replayed.
+
+## P5.5A Memory contract maintenance boundary
+
+Read INV-058, `docs/phase-5-memory-context-capsule-contract.md` and
+`docs/runbooks/memory-privacy-delete-export.md` before changing the P5.5A
+contract, example or validator.
+
+P5.5A is deliberately offline and compile-only. Its source may parse and hash
+Memory Policy, MemoryReviewEvidence, ContextCapsule, MemorySelection and
+MemoryCandidate metadata, but must not import the database, RAG, storage, Agent
+Runtime or network stack. It
+does not create migration `0013`, an ORM, Browser endpoint, vector lane, worker
+or prompt injection path.
+
+Review Capsule changes as one security boundary: exact Tenant/Owner/Workspace/
+AgentVersion/Task/Invocation identity, source Resource/version, evidence,
+compiler-policy digest, deterministic positions, TTL, token/item/sensitive
+budgets, non-delegability and untrusted-data precedence. User-private is
+Owner-wide; workspace-private and controlled-shared bind the Workspace;
+agent-private also binds AgentVersion. Controlled-shared selection requires a
+canonical Owner approval record whose digest and fields bind the exact Memory.
+
+Review Candidate changes for self-promotion and sensitive profiling. An Agent
+can only propose a Candidate. Secrets and inferred protected traits are
+rejected, and sensitive or controlled-shared Candidates require explicit Owner
+confirmation. The Candidate must bind an existing Capsule's exact Tenant,
+Owner, Workspace, AgentVersion, Task, Invocation and policy. Future P5.5B
+persistence must add delete/export/tombstone and
+restore-new evidence while updating every Gate currently pinned to migration
+`0012`; do not advance only one validator and leave the rest silently stale.

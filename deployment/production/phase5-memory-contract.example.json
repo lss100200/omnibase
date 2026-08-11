@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "phase": "P5.5A",
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false
+  },
+  "source": {
+    "expected_repository": "https://github.com/lss100200/omnibase.git",
+    "tracked_pathspecs": [
+      ".gitattributes",
+      ".github/workflows/infrastructure-gates.yml",
+      "AGENTS.md",
+      "Makefile",
+      "backend/pyproject.toml",
+      "backend/uv.lock",
+      "backend/src/omnibase/production",
+      "backend/tests/test_p5_5a_memory_contract.py",
+      "deployment/production",
+      "docs/maintainers",
+      "docs/phase-5-agent-runtime-implementation-plan.md",
+      "docs/phase-5-memory-context-capsule-contract.md",
+      "docs/phase-5-threat-model.md",
+      "docs/roadmap.md",
+      "docs/runbooks/memory-privacy-delete-export.md",
+      "scripts/production"
+    ],
+    "require_clean_checkout": true
+  },
+  "migration_baseline": "0012",
+  "memory_persistence_authorized": false,
+  "memory_runtime_authorized": false,
+  "memory_browser_api_exposed": false,
+  "memory_policies": [
+    {
+      "memory_policy_id": "55000000-0000-0000-0000-000000000001",
+      "stable_logical_key": "omnibase.personal-default-memory",
+      "allowed_scopes": [
+        "agent_private",
+        "controlled_shared",
+        "user_private",
+        "workspace_private"
+      ],
+      "budget": {
+        "initial_budget_tokens": 1024,
+        "retrieval_budget_tokens": 2048,
+        "max_memory_calls": 4,
+        "max_memory_result_tokens": 1024,
+        "max_memory_items": 16,
+        "max_sensitive_items": 2,
+        "memory_deadline_ms": 1500,
+        "default_capsule_ttl_seconds": 1800,
+        "max_capsule_ttl_seconds": 3600
+      },
+      "auto_activate_candidates": false,
+      "high_sensitivity_requires_confirmation": true,
+      "secret_storage_allowed": false,
+      "inferred_sensitive_attributes_allowed": false,
+      "treat_memory_as_untrusted_data": true,
+      "security_kernel_precedence": true,
+      "source_evidence_required": true,
+      "forbidden_inference_categories": [
+        "biometric",
+        "financial",
+        "health",
+        "political",
+        "religious",
+        "sexual_orientation"
+      ]
+    }
+  ],
+  "memory_review_evidence_examples": [
+    {
+      "review_evidence_id": "55000000-0000-0000-0000-000000000301",
+      "tenant_id": "11111111-1111-1111-1111-111111111111",
+      "reviewer_user_id": "22222222-2222-2222-2222-222222222222",
+      "workspace_id": "33333333-3333-3333-3333-333333333333",
+      "memory_id": "77777777-7777-7777-7777-777777777703",
+      "memory_version": 1,
+      "content_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "decision": "approved",
+      "reviewed_at": "2026-08-11T05:55:00Z"
+    }
+  ],
+  "context_capsule_examples": [
+    {
+      "capsule_id": "55000000-0000-0000-0000-000000000101",
+      "tenant_id": "11111111-1111-1111-1111-111111111111",
+      "owner_user_id": "22222222-2222-2222-2222-222222222222",
+      "workspace_id": "33333333-3333-3333-3333-333333333333",
+      "agent_version_id": "44444444-4444-4444-4444-444444444444",
+      "task_id": "55555555-5555-5555-5555-555555555555",
+      "invocation_id": "66666666-6666-6666-6666-666666666666",
+      "memory_policy_id": "55000000-0000-0000-0000-000000000001",
+      "compiler_policy_sha256": "d09a608f1f2f1b81c089681119a6a0010e30abd65ee52c44eaf8e431b5da7de5",
+      "issued_at": "2026-08-11T06:00:00Z",
+      "expires_at": "2026-08-11T06:30:00Z",
+      "max_tokens": 512,
+      "total_tokens": 500,
+      "delegable": false,
+      "trusted_instructions": false,
+      "sensitivity_summary": {
+        "standard": 2,
+        "personal": 1,
+        "sensitive": 0,
+        "restricted": 0
+      },
+      "selected_memories": [
+        {
+          "position": 1,
+          "memory_id": "77777777-7777-7777-7777-777777777701",
+          "memory_version": 3,
+          "scope": "user_private",
+          "tenant_id": "11111111-1111-1111-1111-111111111111",
+          "owner_user_id": "22222222-2222-2222-2222-222222222222",
+          "workspace_id": null,
+          "agent_version_id": null,
+          "review_evidence_id": null,
+          "review_evidence_sha256": null,
+          "source_resource_id": "88888888-8888-8888-8888-888888888801",
+          "source_resource_version": 5,
+          "evidence_reference_ids": [
+            "99999999-9999-9999-9999-999999999901"
+          ],
+          "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "selection_reason": "explicit_user",
+          "sensitivity": "standard",
+          "token_count": 220
+        },
+        {
+          "position": 2,
+          "memory_id": "77777777-7777-7777-7777-777777777702",
+          "memory_version": 1,
+          "scope": "agent_private",
+          "tenant_id": "11111111-1111-1111-1111-111111111111",
+          "owner_user_id": "22222222-2222-2222-2222-222222222222",
+          "workspace_id": "33333333-3333-3333-3333-333333333333",
+          "agent_version_id": "44444444-4444-4444-4444-444444444444",
+          "review_evidence_id": null,
+          "review_evidence_sha256": null,
+          "source_resource_id": "88888888-8888-8888-8888-888888888802",
+          "source_resource_version": 2,
+          "evidence_reference_ids": [
+            "99999999-9999-9999-9999-999999999902"
+          ],
+          "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "selection_reason": "current_task",
+          "sensitivity": "personal",
+          "token_count": 180
+        },
+        {
+          "position": 3,
+          "memory_id": "77777777-7777-7777-7777-777777777703",
+          "memory_version": 1,
+          "scope": "controlled_shared",
+          "tenant_id": "11111111-1111-1111-1111-111111111111",
+          "owner_user_id": "22222222-2222-2222-2222-222222222222",
+          "workspace_id": "33333333-3333-3333-3333-333333333333",
+          "agent_version_id": null,
+          "review_evidence_id": "55000000-0000-0000-0000-000000000301",
+          "review_evidence_sha256": "aa3bfbac189d2f8bfa83cc48511b95196fc4a87df9de02f60e6e3b22a98acd17",
+          "source_resource_id": "88888888-8888-8888-8888-888888888804",
+          "source_resource_version": 1,
+          "evidence_reference_ids": [
+            "55000000-0000-0000-0000-000000000301",
+            "99999999-9999-9999-9999-999999999904"
+          ],
+          "content_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "selection_reason": "workspace_policy",
+          "sensitivity": "standard",
+          "token_count": 100
+        }
+      ]
+    }
+  ],
+  "memory_candidate_examples": [
+    {
+      "candidate_id": "55000000-0000-0000-0000-000000000201",
+      "tenant_id": "11111111-1111-1111-1111-111111111111",
+      "owner_user_id": "22222222-2222-2222-2222-222222222222",
+      "workspace_id": "33333333-3333-3333-3333-333333333333",
+      "agent_version_id": "44444444-4444-4444-4444-444444444444",
+      "task_id": "55555555-5555-5555-5555-555555555555",
+      "invocation_id": "66666666-6666-6666-6666-666666666666",
+      "memory_policy_id": "55000000-0000-0000-0000-000000000001",
+      "requested_scope": "workspace_private",
+      "sensitivity": "sensitive",
+      "lifecycle_state": "awaiting_confirmation",
+      "content_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "source_resource_id": "88888888-8888-8888-8888-888888888803",
+      "source_resource_version": 4,
+      "evidence_reference_ids": [
+        "99999999-9999-9999-9999-999999999903"
+      ],
+      "confidence_millis": 780,
+      "retention_days": 180,
+      "requires_user_confirmation": true,
+      "contains_secret": false,
+      "inferred_sensitive_categories": [],
+      "active_memory_id": null,
+      "candidate_created_by": "agent"
+    }
+  ]
+}
