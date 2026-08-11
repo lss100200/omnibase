@@ -32,6 +32,7 @@ _TENANT_SCHEMA_PATTERN = re.compile(r"^tenant_[a-z0-9]{8,12}$")
 _SCOPES = "('user_private', 'workspace_private', 'agent_private', 'controlled_shared')"
 _SENSITIVITY = "('standard', 'personal', 'sensitive', 'restricted')"
 _MEMORY_VECTOR_LANE_VERSIONS = (1, 2)
+_IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _MEMORY_TABLES = (
     "memory_candidates",
     "memories",
@@ -1510,8 +1511,6 @@ def _assert_global_downgrade_safe() -> None:
         if present and present != set(_MEMORY_TABLES):
             raise RuntimeError("0013 downgrade refused: tenant memory table set is incomplete")
         if not present:
-            # Tenant-first downgrade may already have removed the complete set
-            # in the same outer transaction. A partial set remains forbidden.
             continue
         union = " UNION ALL ".join(
             f'(SELECT 1 FROM "{schema}"."{table}" LIMIT 1)'  # noqa: S608 -- validated registry schema and closed table set
@@ -1521,6 +1520,65 @@ def _assert_global_downgrade_safe() -> None:
             raise RuntimeError(
                 "0013 populated downgrade is forbidden; use a forward fix or restore into a new omnibase_restore_* database"
             )
+
+
+def _drop_empty_tenant_global_dependencies() -> None:
+    """Remove only empty 0013 tables' foreign keys into the global schema.
+
+    Global revisions downgrade before tenant revisions. The safety check above
+    proves that every retained 0013 table is empty; removing only cross-schema
+    foreign keys lets historical global hard locks run in their original order.
+    The surrounding Alembic transaction restores these constraints if any
+    lower revision refuses the downgrade.
+    """
+    bind = op.get_bind()
+    for raw_schema in bind.execute(
+        sa.text("SELECT schema_name FROM omnibase_meta.tenants ORDER BY schema_name")
+    ).scalars():
+        schema = str(raw_schema)
+        if _TENANT_SCHEMA_PATTERN.fullmatch(schema) is None:
+            raise RuntimeError("0013 downgrade refused: invalid tenant schema name")
+        present = set(
+            bind.execute(
+                sa.text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = :schema "
+                    "AND table_name = ANY(CAST(:tables AS text[]))"
+                ),
+                {"schema": schema, "tables": list(_MEMORY_TABLES)},
+            ).scalars()
+        )
+        if not present:
+            continue
+        if present != set(_MEMORY_TABLES):
+            raise RuntimeError("0013 downgrade refused: tenant memory table set is incomplete")
+
+        dependencies = bind.execute(
+            sa.text(
+                "SELECT source_table.relname, constraint_row.conname "
+                "FROM pg_constraint constraint_row "
+                "JOIN pg_class source_table ON source_table.oid = constraint_row.conrelid "
+                "JOIN pg_namespace source_schema ON source_schema.oid = source_table.relnamespace "
+                "JOIN pg_class target_table ON target_table.oid = constraint_row.confrelid "
+                "JOIN pg_namespace target_schema ON target_schema.oid = target_table.relnamespace "
+                "WHERE constraint_row.contype = 'f' "
+                "AND source_schema.nspname = :schema "
+                "AND source_table.relname = ANY(CAST(:tables AS text[])) "
+                "AND target_schema.nspname = :global_schema "
+                "ORDER BY source_table.relname, constraint_row.conname"
+            ),
+            {
+                "schema": schema,
+                "tables": list(_MEMORY_TABLES),
+                "global_schema": _GLOBAL_SCHEMA,
+            },
+        ).tuples()
+        for raw_table, raw_constraint in dependencies:
+            table = str(raw_table)
+            constraint = str(raw_constraint)
+            if table not in _MEMORY_TABLES or _IDENTIFIER_PATTERN.fullmatch(constraint) is None:
+                raise RuntimeError("0013 downgrade refused: invalid global dependency identifier")
+            op.execute(sa.text(f'ALTER TABLE "{schema}"."{table}" DROP CONSTRAINT "{constraint}"'))
 
 
 def upgrade() -> None:
@@ -1538,6 +1596,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     if _migration_schema_scope() == "global":
         _assert_global_downgrade_safe()
+        _drop_empty_tenant_global_dependencies()
         return
     bind = op.get_bind()
     populated = " OR ".join(

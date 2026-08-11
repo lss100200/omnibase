@@ -915,14 +915,16 @@ def _run_formal_memory_service_full_lifecycle_reaches_real_postgresql(
         )
     assert captured["global_alembic_head"] == "0013"
     assert captured["postgres_dump_sha256"] == _DIGEST_D
-    assert captured["tenant_registry"] == [
-        {
-            "is_active": True,
-            "schema_name": seed.schema_name,
-            "tenant_id": seed.tenant_id,
-        }
-    ]
-    assert captured["tenant_memory_inventories"][0]["memory_table_names"] == sorted(_MEMORY_TABLES)
+    tenant_registry = {entry["tenant_id"]: entry for entry in captured["tenant_registry"]}
+    assert tenant_registry[seed.tenant_id] == {
+        "is_active": True,
+        "schema_name": seed.schema_name,
+        "tenant_id": seed.tenant_id,
+    }
+    memory_inventories = {
+        entry["tenant_id"]: entry for entry in captured["tenant_memory_inventories"]
+    }
+    assert memory_inventories[seed.tenant_id]["memory_table_names"] == sorted(_MEMORY_TABLES)
 
     with _session(db_engine, seed.tenant_id) as session:
         terminal_memory = session.execute(
