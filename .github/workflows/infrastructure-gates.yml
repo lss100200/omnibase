@@ -276,8 +276,6 @@ jobs:
       - frontend-and-typescript-sdk
       - compose-config
       - postgres-sentinel-integration
-    env:
-      P5_ACCEPTANCE_WORK_ROOT: ${{ runner.temp }}/omnibase-p5-9p-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -291,13 +289,13 @@ jobs:
         run: >-
           python scripts/production/run_p5_9p_personal_acceptance.py
           --repo-root "$GITHUB_WORKSPACE"
-          --work-root "$P5_ACCEPTANCE_WORK_ROOT"
+          --work-root "$RUNNER_TEMP/omnibase-p5-9p-${{ github.run_id }}-${{ github.run_attempt }}"
       - name: Upload the redacted P5.9P receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: p5-9p-personal-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.P5_ACCEPTANCE_WORK_ROOT }}/p5-9p-acceptance-receipt.json
+          path: ${{ runner.temp }}/omnibase-p5-9p-${{ github.run_id }}-${{ github.run_attempt }}/p5-9p-acceptance-receipt.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Assert disposable P5.9P resources are gone
