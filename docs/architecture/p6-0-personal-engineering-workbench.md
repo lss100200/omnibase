@@ -1,6 +1,6 @@
 # P6.0 Personal Engineering Workbench
 
-Status: **P6.0-A implementation in progress; local frontend verification passed**
+Status: **P6.0-A-D implemented; local engineering acceptance passed, browser product review pending**
 
 P6.0 turns the P5 personal Runtime into a visible engineering workbench for
 one human Owner. It does not revive the enterprise P34.7 lane and does not
@@ -8,12 +8,12 @@ enable Planner, autonomous Multi-Agent, MCP or arbitrary tools.
 
 ## Product sequence
 
-| Increment | Product boundary |
-| --- | --- |
-| P6.0-A | Workbench shell, conversations, timeline, parent Agent and dormant specialist employees |
-| P6.0-B | Authorized file tree, file opening and explicit context states |
-| P6.0-C | Task ChangeSets, diff review and safe three-way rollback |
-| P6.0-D | Five-provider adaptation, gears, context/cost controls and end-to-end acceptance |
+| Increment | Product boundary                                                                        |
+| --------- | --------------------------------------------------------------------------------------- |
+| P6.0-A    | Workbench shell, conversations, timeline, parent Agent and dormant specialist employees |
+| P6.0-B    | Authorized file tree, file opening and explicit context states                          |
+| P6.0-C    | Task ChangeSets, diff review and safe three-way rollback                                |
+| P6.0-D    | Five-provider adaptation, gears, context/cost controls and end-to-end acceptance        |
 
 Skills, MCP, SQL visualization, CLI adapters, Email/remote messaging and
 browser/desktop control belong to later P6.x work.
@@ -77,3 +77,87 @@ If P6.0-A becomes unsafe or corrupt, remove only the scoped
 `omnibase.p6.workbench.v1:<tenant>:<user>` browser record and fall back to the
 existing `/agents` diagnostic surface. Do not edit Task, Run, Memory or audit
 rows to reconstruct a conversation.
+
+## P6.0-B authorized local files
+
+The file surface is browser-first and starts only from an Owner click on
+`showDirectoryPicker`. OmniBase does not scan the computer, home directory or
+an unselected Workspace. Handles live only in page memory and are cleared on
+tenant or Workspace change; neither handles, file bodies nor physical absolute
+paths enter localStorage or public DTOs.
+
+Directories enumerate lazily when expanded. Logical names are normalized and
+reject traversal, `.git`, `.ssh`, cloud credential directories, `.env*` and
+private-key names. A bounded tree budget limits depth, nodes, files,
+directories and declared bytes. Type detection prefers magic bytes and strict
+text probes; misleading extensions cannot grant an image, PDF or text
+capability.
+
+`OPEN`, `CONTEXT` and `PINNED` are separate states. Opening only previews.
+Context and pinned text are re-read immediately before invocation and size,
+mtime, type and request budgets are revalidated. Selected text is appended as
+JSON `untrusted_workspace_file_context`; it is data, never executable
+authority. Images and PDFs can be previewed through revocable object URLs but
+never enter the text prompt. Other binaries expose metadata only. A browser
+cannot reliably invoke the operating-system default application, so that
+control is visibly disabled until a separately reviewed native bridge exists.
+
+## P6.0-C local ChangeSets and rollback
+
+The current Runtime has no file tool and does not write local files. P6.0-C
+therefore records only an Owner-reviewed local text edit after a successful
+Task. Each ChangeSet binds the live tenant, Workspace, Task ID and invocation
+ID, seals the exact task-start state `B` and reviewed after-state `A`, and
+computes a canonical SHA-256 manifest. The UI never infers file edits from an
+Agent's natural-language answer.
+
+Before writing, the selected file is re-read and compared with its displayed
+snapshot. After writing, the result digest is independently re-read. The
+ChangeSet exposes Before/After audit content. Rollback observes current state
+`C`, validates the owner and manifest, and performs bounded three-way text
+merge with `A` as base and `B` as the rollback target. Non-overlapping user
+changes survive; overlap, binary input, path drift, digest drift or owner drift
+fail closed. A final compare-and-swap re-read happens immediately before the
+rollback write.
+
+The File System Access API has no multi-file transaction and cannot eliminate
+the last write-time race or guarantee recovery from browser crash, permission
+loss or disk exhaustion. P6.0 labels this honestly: an interrupted write is
+`recovery_required`, keeps the sealed before-state in memory and offers a
+conditional restore only when the live digest still matches. This is personal
+local recovery, not enterprise atomic mutation.
+
+## P6.0-D model profiles and four gears
+
+The product recognizes DeepSeek, GLM, Kimi, GPT and Claude after receiving
+server-owned SSE identity evidence; unknown providers use the generic profile.
+The selected `economy`, `standard`, `deep` or `audit` gear actually controls
+the allowed Agent Alpha `top_k`, local file-context budget and a concise prompt
+guidance block. It does not claim a native provider reasoning API.
+
+Provider and actual model identity can be known only after dispatch. To avoid
+binding a request to the previous invocation's model, the current request uses
+the generic adaptation and the UI updates the observed family when SSE metadata
+or the terminal actual model arrives. The target output token value is an
+interface budget only because Agent Alpha does not expose a corresponding
+request field. Tools, MCP, CLI, Vision and autonomous delegation remain false.
+
+The exact employee role message, generic adaptation and compiled file context
+are counted together and must remain at or below 32,000 characters before any
+network request. Usage accepts only finite, non-negative input/output/total and
+optional reasoning token values. Monetary cost stays `rate_not_configured`
+unless an explicit rate table is supplied; OmniBase never guesses vendor
+pricing.
+
+## Maintainer boundary and current state
+
+`frontend/lib/p6-files.ts`, `p6-file-handles.ts`, `p6-changesets.ts` and
+`p6-model-profiles.ts` are the executable B/C/D contracts. Secret-name
+rejection occurs before `getFile()`. Shared tree admission is serialized in a
+monotonic budget. A selected text file binds its reviewed SHA-256 digest in
+addition to size and mtime, and async request preparation revalidates the live
+tenant/user, session, Workspace, Agent and gear scope before dispatch.
+
+Local engineering acceptance does not activate P6.x, migration `0016`,
+Planner, Multi-Agent, MCP, CLI or automatic Agent filesystem mutation. Owner
+browser review, push, merge and deployment remain separate decisions.

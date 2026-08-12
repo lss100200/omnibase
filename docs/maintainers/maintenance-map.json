@@ -943,6 +943,42 @@
       "test_paths": [
         "scripts/maintenance/validate_maintainer_map.py"
       ]
+    },
+    {
+      "id": "INV-065",
+      "title": "P6 local files require volatile Owner authorization, secret-name precheck and digest-bound context",
+      "document": "docs/maintainers/security-invariants.md#inv-065-p60-authorized-file-and-context-boundary",
+      "source_paths": [
+        "frontend/lib/p6-files.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/components/workbench/workspace-file-panel.tsx"
+      ],
+      "test_paths": ["frontend/lib/p6-files.test.ts"]
+    },
+    {
+      "id": "INV-066",
+      "title": "P6 local ChangeSets stay Task-owned, digest-verified and conflict-safe",
+      "document": "docs/maintainers/security-invariants.md#inv-066-p60-local-changeset-and-rollback-boundary",
+      "source_paths": [
+        "frontend/lib/p6-changesets.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/components/workbench/workspace-file-panel.tsx"
+      ],
+      "test_paths": ["frontend/lib/p6-changesets.test.ts"]
+    },
+    {
+      "id": "INV-067",
+      "title": "P6 model gears never overstate provider identity, native controls or cost",
+      "document": "docs/maintainers/security-invariants.md#inv-067-p60-model-adaptation-and-cost-honesty-boundary",
+      "source_paths": [
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/components/workbench/personal-engineering-workbench.tsx"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/agent-alpha-stream.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -3497,21 +3533,34 @@
     },
     {
       "id": "p6-personal-engineering-workbench",
-      "name": "P6.0-A personal engineering workbench, browser session projection and explicit single-employee routing",
+      "name": "P6.0-A-D personal engineering workbench, authorized files, local ChangeSets and honest model gears",
       "source_paths": [
         "frontend/app/(dashboard)/dashboard/page.tsx",
         "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-files.ts",
+        "frontend/lib/p6-files.test.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/lib/p6-changesets.ts",
+        "frontend/lib/p6-changesets.test.ts",
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/p6-model-profiles.test.ts",
         "frontend/lib/p6-workbench.ts",
         "frontend/lib/p6-workbench.test.ts",
         "frontend/lib/agent-alpha-stream.ts",
         "frontend/lib/invocation-state.ts",
         "frontend/lib/personal-runtime-gate.ts",
         "docs/architecture/p6-0-personal-engineering-workbench.md",
-        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md"
+        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md",
+        "docs/evidence/p6-0/personal-workbench-r0-decision.md"
       ],
       "entrypoints": [
         "frontend/app/(dashboard)/dashboard/page.tsx:DashboardPage",
         "frontend/components/workbench/personal-engineering-workbench.tsx:PersonalEngineeringWorkbench",
+        "frontend/components/workbench/workspace-file-panel.tsx:WorkspaceFilePanel",
+        "frontend/lib/p6-files.ts:compileP6FileContext",
+        "frontend/lib/p6-changesets.ts:preflightTaskChangeSetRollback",
+        "frontend/lib/p6-model-profiles.ts:buildP6AdaptationInstruction",
         "frontend/lib/p6-workbench.ts:parseEmployeeInvocation",
         "frontend/lib/p6-workbench.ts:parseWorkbenchState"
       ],
@@ -3519,6 +3568,9 @@
         "Authenticated /dashboard Personal Engineering Workbench",
         "Tenant/user-scoped versioned browser session projection with create/search/pin/archive/restore and timeline",
         "One default-active parent Agent plus nine dormant specialist role contexts selected by exactly one Owner-authored @ mention",
+        "Owner-authorized lazy file tree with OPEN/CONTEXT/PINNED and internal text/image/PDF preview",
+        "Task/invocation-bound Owner-reviewed text ChangeSets with Before/After audit and three-way rollback",
+        "Observed five-provider profiles plus economy/standard/deep/audit top-k and context gears",
         "Existing Agent Alpha Workspace/profile/SSE/cancel/usage interfaces without Planner or Multi-Agent activation"
       ],
       "depends_on": [
@@ -3534,7 +3586,10 @@
         "INV-044",
         "INV-056",
         "INV-060",
-        "INV-063"
+        "INV-063",
+        "INV-065",
+        "INV-066",
+        "INV-067"
       ],
       "verification": [
         "cd frontend && pnpm test",
@@ -3547,6 +3602,9 @@
       "recovery": [
         "Remove only the exact scoped omnibase.p6.workbench.v1:<tenant>:<user> browser record or fall back to /agents; preserve Task, Run, Memory and Audit rows.",
         "Never replay a Provider request from recovered browser history, persist partial SSE as success, or enable Planner/Multi-Agent to repair a UI projection.",
+        "Forget volatile file handles on scope change and require a new Owner gesture after permission loss.",
+        "Treat interrupted local writes as recovery_required and restore only under exact digest comparison.",
+        "Fall back to generic adaptation and rate_not_configured; never infer provider identity or pricing before server evidence.",
         "Keep migration 0016 absent until a separately reviewed tenant/user/workspace-bound conversation service is authorized."
       ]
     }

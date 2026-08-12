@@ -3584,3 +3584,33 @@ pre-change backup to the canonical path, restore its VM service ACL/SID,
 restart the WSL/virtualization service, and verify engine plus volume inventory.
 Do not troubleshoot a virtual-disk failure by mutating OmniBase source, database
 migrations or business data.
+
+## INV-065 p60-authorized-file-and-context-boundary
+
+Local files require a direct Owner directory-picker gesture. Handles stay in
+memory and are cleared on tenant or Workspace change. Secret/traversal names
+must be rejected before `getFile()`, enumeration is lazy under one monotonic
+tree budget, and no absolute path or file body is persisted. OPEN is preview;
+CONTEXT/PINNED text binds a reviewed SHA-256 digest, is re-read before dispatch,
+and enters only as bounded untrusted JSON data. Image/PDF is preview-only and
+other binary content is metadata-only. System-default opening remains disabled
+without a native bridge.
+
+## INV-066 p60-local-changeset-and-rollback-boundary
+
+Agent Alpha has no local file tool. A P6 ChangeSet records only an
+Owner-reviewed text edit after a successful Task/invocation, binds tenant,
+Workspace, Task and invocation, and seals Before/After content. Writes require
+snapshot CAS and post-write digest verification. Rollback validates owner,
+manifest and current content, performs bounded three-way merge, and refuses
+overlap or drift. Browser writes are not cross-file atomic; interrupted writes
+are recovery-required and may restore only under exact digest comparison.
+
+## INV-067 p60-model-adaptation-and-cost-honesty-boundary
+
+Provider identity is post-dispatch SSE evidence, so the active request uses
+generic adaptation. Gears control only real Agent Alpha top-k, local context
+budget and prompt guidance. Native reasoning, target output control, Tools,
+MCP, CLI, Vision and autonomous delegation remain unavailable and visibly
+disclosed. The final assembled request must fit 32,000 characters. Usage must
+be finite/non-negative and cost remains unknown without explicit rates.

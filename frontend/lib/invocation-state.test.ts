@@ -70,3 +70,17 @@ test('isCurrent tracks the live invocation only', () => {
   assert.equal(guard.isCurrent(a.generation), false, 'old generation is stale')
   assert.equal(guard.isCurrent(b.generation), true)
 })
+
+test('invalidate aborts and permanently rejects callbacks from the old identity scope', () => {
+  const guard = new InvocationGuard()
+  const started = guard.begin()
+  assert.ok(started)
+  const oldGeneration = started.generation
+  guard.invalidate()
+  assert.equal(started.controller.signal.aborted, true)
+  assert.equal(guard.phase, 'idle')
+  assert.equal(guard.isCurrent(oldGeneration), false)
+  const next = guard.begin()
+  assert.ok(next)
+  assert.notEqual(next.generation, oldGeneration)
+})

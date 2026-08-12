@@ -59,6 +59,19 @@ import {
   type WorkbenchSession,
   type WorkbenchState,
 } from '@/lib/p6-workbench'
+import {
+  P6_GEAR_PROFILES,
+  buildP6AdaptationInstruction,
+  estimateP6Cost,
+  getP6ProviderProfile,
+  type P6ModelIdentity,
+  type P6ReasoningGear,
+} from '@/lib/p6-model-profiles'
+import {
+  WorkspaceFilePanel,
+  type P6TaskBinding,
+  type WorkspaceFilePanelHandle,
+} from '@/components/workbench/workspace-file-panel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,7 +86,10 @@ interface InvocationContext {
   readonly workspaceId: string
   readonly agentVersionId: string
   invocationId: string | null
+  taskId: string | null
 }
+
+type WorkbenchInvocationPhase = InvocationPhase | 'preparing'
 
 function localKey(tenantId?: string, userId?: string): string {
   return `${P6_WORKBENCH_STORAGE_KEY}:${tenantId ?? 'anonymous'}:${userId ?? 'anonymous'}`
@@ -101,6 +117,7 @@ export function PersonalEngineeringWorkbench() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState('')
   const [phase, setPhase] = useState<InvocationPhase>('idle')
+  const [preparing, setPreparing] = useState(false)
   const [activeEmployeeId, setActiveEmployeeId] = useState<EmployeeId>('parent')
   const [workspaceId, setWorkspaceId] = useState('')
   const [profiles, setProfiles] = useState<AgentAlphaProfile[]>([])
@@ -108,11 +125,27 @@ export function PersonalEngineeringWorkbench() {
   const [posture, setPosture] = useState<RuntimePosture | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [identity, setIdentity] = useState('尚未调用模型')
+  const [modelIdentity, setModelIdentity] = useState<P6ModelIdentity>({
+    providerId: null,
+    modelId: null,
+  })
+  const [gear, setGear] = useState<P6ReasoningGear>('standard')
   const [usage, setUsage] = useState<AgentAlphaUsage | null>(null)
+  const [taskBinding, setTaskBinding] = useState<P6TaskBinding | null>(null)
+  const [fileMutating, setFileMutating] = useState(false)
   const guardRef = useRef(new InvocationGuard())
+  const submitInFlightRef = useRef(false)
+  const filePanelRef = useRef<WorkspaceFilePanelHandle>(null)
   const invocationContextRef = useRef<InvocationContext | null>(null)
   const runtimeRequestGenerationRef = useRef(0)
   const persistenceWarningKeyRef = useRef<string | null>(null)
+  const preparationScopeRef = useRef({
+    storageKey,
+    sessionId: '',
+    workspaceId,
+    agentVersionId,
+    gear,
+  })
   const identityReady =
     bootstrapStatus === 'ready' && isAuthenticated && Boolean(tenant?.id && user?.id)
 
@@ -127,14 +160,31 @@ export function PersonalEngineeringWorkbench() {
 
   const activeSession =
     state.sessions.find((session) => session.id === state.activeSessionId) ?? state.sessions[0]
+  preparationScopeRef.current = {
+    storageKey,
+    sessionId: activeSession?.id ?? '',
+    workspaceId,
+    agentVersionId,
+    gear,
+  }
 
   useEffect(() => {
+    guardRef.current.invalidate()
+    invocationContextRef.current = null
+    submitInFlightRef.current = false
+    setPreparing(false)
+    setPhase('idle')
+    setStreaming('')
+    setUsage(null)
     runtimeRequestGenerationRef.current += 1
     setWorkspaceId('')
     setProfiles([])
     setAgentVersionId('')
     setPosture(null)
     setRuntimeError(null)
+    setTaskBinding(null)
+    setModelIdentity({ providerId: null, modelId: null })
+    setIdentity('尚未调用模型')
   }, [storageKey])
 
   useEffect(() => {
@@ -223,13 +273,28 @@ export function PersonalEngineeringWorkbench() {
   const workspace = workspaces?.items.find((candidate) => candidate.id === workspaceId)
   const activeEmployee = employeeById(activeEmployeeId)
 
+  useEffect(() => {
+    setTaskBinding(null)
+  }, [activeSession?.id])
+
   const mutate = (updater: (current: WorkbenchState) => WorkbenchState) => setState(updater)
 
   async function submit(): Promise<void> {
-    if (!activeSession || phase !== 'idle') return
+    if (!activeSession || phase !== 'idle' || fileMutating || submitInFlightRef.current) return
+    submitInFlightRef.current = true
+    setPreparing(true)
+    const preparationScope = {
+      storageKey,
+      sessionId: activeSession.id,
+      workspaceId: activeSession.workspaceId ?? '',
+      agentVersionId,
+      gear,
+    }
     const route = parseEmployeeInvocation(input)
     if (!route.ok) {
       toast.error('无法发送任务', { description: route.message })
+      submitInFlightRef.current = false
+      setPreparing(false)
       return
     }
     const preparedRoleMessage = prepareEmployeeRoleMessage(route.employee, route.message)
@@ -237,35 +302,99 @@ export function PersonalEngineeringWorkbench() {
       toast.error('任务内容过长', {
         description: `加入员工职责边界后共有 ${preparedRoleMessage.actualCharacters.toLocaleString()} 个字符，超过 ${preparedRoleMessage.maximumCharacters.toLocaleString()} 字符上限；任务未发出。`,
       })
+      submitInFlightRef.current = false
+      setPreparing(false)
       return
     }
-    const invocationWorkspaceId = activeSession.workspaceId ?? ''
+    const selectedGear = P6_GEAR_PROFILES[preparationScope.gear]
+    const adaptation = buildP6AdaptationInstruction(
+      { providerId: null, modelId: null },
+      preparationScope.gear,
+    )
+    const adaptedRoleMessage = `${preparedRoleMessage.roleMessage}\n\n${adaptation}`
+    let fileCompilation
+    try {
+      fileCompilation = await filePanelRef.current?.compileContext(
+        adaptedRoleMessage,
+        selectedGear.contextCharacterBudget,
+      )
+    } catch (error) {
+      submitInFlightRef.current = false
+      setPreparing(false)
+      toast.error('文件上下文读取失败', {
+        description: getApiErrorMessage(error, 'p6_file_context_failed'),
+      })
+      return
+    }
+    if (fileCompilation && !fileCompilation.ok) {
+      toast.error('文件上下文未通过校验', {
+        description: `${fileCompilation.code}${fileCompilation.entryId ? ` · ${fileCompilation.entryId}` : ''}；任务未发出。`,
+      })
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
+    const finalMessage = `${adaptedRoleMessage}${fileCompilation?.ok ? fileCompilation.context.promptFragment : ''}`
+    if (finalMessage.length > P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS) {
+      toast.error('最终请求超过安全上限', {
+        description: `员工职责、模型适配与文件上下文合计 ${finalMessage.length.toLocaleString()} 个字符；任务未发出。`,
+      })
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
+    const currentScope = preparationScopeRef.current
+    if (
+      currentScope.storageKey !== preparationScope.storageKey ||
+      currentScope.sessionId !== preparationScope.sessionId ||
+      currentScope.workspaceId !== preparationScope.workspaceId ||
+      currentScope.agentVersionId !== preparationScope.agentVersionId ||
+      currentScope.gear !== preparationScope.gear
+    ) {
+      submitInFlightRef.current = false
+      setPreparing(false)
+      toast.error('任务准备期间上下文发生变化', {
+        description: '会话、Workspace、Agent 或挡位已变化；旧文件上下文未发送，请重新提交。',
+      })
+      return
+    }
+    const invocationWorkspaceId = preparationScope.workspaceId
     if (workspaceId !== invocationWorkspaceId) {
       toast.error('会话与 Workspace 不一致', {
         description: '请重新选择当前会话的 Workspace 后再发送；任务未发出。',
       })
+      submitInFlightRef.current = false
+      setPreparing(false)
       return
     }
     if (!canInvokeAgent(posture, route.message, invocationWorkspaceId, agentVersionId)) {
       toast.error('Agent Runtime 尚未就绪', {
         description: runtimeError ?? '请选择 Workspace 与已安装 Agent，并确认个人运行时可用。',
       })
+      submitInFlightRef.current = false
+      setPreparing(false)
       return
     }
 
     const guard = guardRef.current
     const started = guard.begin()
-    if (!started) return
+    if (!started) {
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
     const { generation, controller } = started
-    const sessionId = activeSession.id
+    setPreparing(false)
+    const sessionId = preparationScope.sessionId
     const employee = route.employee
-    const invocationAgentVersionId = agentVersionId
+    const invocationAgentVersionId = preparationScope.agentVersionId
     invocationContextRef.current = {
       generation,
       sessionId,
       workspaceId: invocationWorkspaceId,
       agentVersionId: invocationAgentVersionId,
       invocationId: null,
+      taskId: null,
     }
     const visibleMessage = route.explicitMention
       ? `@${employee.displayName} ${route.message}`
@@ -297,6 +426,7 @@ export function PersonalEngineeringWorkbench() {
     setInput('')
     setStreaming('')
     setUsage(null)
+    setTaskBinding(null)
 
     setPhase('running')
     try {
@@ -304,8 +434,8 @@ export function PersonalEngineeringWorkbench() {
         invocationWorkspaceId,
         {
           agent_version_id: invocationAgentVersionId,
-          message: preparedRoleMessage.roleMessage,
-          top_k: 5,
+          message: finalMessage,
+          top_k: selectedGear.topK,
         },
         { signal: controller.signal },
       )
@@ -315,8 +445,13 @@ export function PersonalEngineeringWorkbench() {
           if (!guard.isCurrent(generation)) return
           if (invocationContextRef.current?.generation === generation) {
             invocationContextRef.current.invocationId = meta.invocationId
+            invocationContextRef.current.taskId = meta.taskId
           }
           if (meta.identity) setIdentity(meta.identity)
+          setModelIdentity({
+            providerId: meta.providerId,
+            modelId: meta.actualModelId ?? meta.requestedModelId,
+          })
         },
         onChunk: (chunk) => {
           if (guard.isCurrent(generation)) setStreaming((current) => current + chunk)
@@ -326,6 +461,15 @@ export function PersonalEngineeringWorkbench() {
         },
       })
       if (!guard.isCurrent(generation)) return
+      if (
+        terminal.kind === 'done' &&
+        terminal.taskId &&
+        terminal.invocationId &&
+        invocationContextRef.current?.taskId === terminal.taskId &&
+        invocationContextRef.current.invocationId === terminal.invocationId
+      ) {
+        setTaskBinding({ taskId: terminal.taskId, invocationId: terminal.invocationId })
+      }
       const content =
         terminal.kind === 'done'
           ? terminal.answer
@@ -402,6 +546,7 @@ export function PersonalEngineeringWorkbench() {
       }
       setPhase(guard.phase)
       setActiveEmployeeId('parent')
+      submitInFlightRef.current = false
     }
   }
 
@@ -425,7 +570,8 @@ export function PersonalEngineeringWorkbench() {
         workspaces={workspaces?.items ?? []}
         workspaceError={Boolean(workspaceError)}
         onWorkspaceChange={(value) => {
-          if (phase !== 'idle') return
+          if (phase !== 'idle' || preparing || fileMutating) return
+          setTaskBinding(null)
           setWorkspaceId(value)
           mutate((current) => ({
             ...current,
@@ -437,11 +583,13 @@ export function PersonalEngineeringWorkbench() {
         profiles={profiles}
         agentVersionId={agentVersionId}
         onAgentChange={(value) => {
-          if (phase === 'idle') setAgentVersionId(value)
+          if (phase === 'idle' && !preparing && !fileMutating) setAgentVersionId(value)
         }}
         posture={posture}
         tokens={estimateSessionTokens(activeSession)}
-        locked={phase !== 'idle'}
+        locked={phase !== 'idle' || preparing || fileMutating}
+        gear={gear}
+        onGearChange={setGear}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.5rem_minmax(0,1fr)_19rem]">
         <SessionRail
@@ -451,9 +599,9 @@ export function PersonalEngineeringWorkbench() {
           archiveMode={archiveMode}
           onQuery={setQuery}
           onArchiveMode={setArchiveMode}
-          locked={phase !== 'idle'}
+          locked={phase !== 'idle' || preparing || fileMutating}
           onCreate={() => {
-            if (phase !== 'idle') return
+            if (phase !== 'idle' || preparing || fileMutating) return
             const result = tryAddSession(state, '新会话', undefined, workspaceId || null)
             if (!result.ok) {
               toast.error('无法新建会话', {
@@ -464,18 +612,19 @@ export function PersonalEngineeringWorkbench() {
             setState(result.state)
           }}
           onSelect={(id) => {
-            if (phase !== 'idle') return
+            if (phase !== 'idle' || preparing || fileMutating) return
+            setTaskBinding(null)
             const target = state.sessions.find((session) => session.id === id)
             setWorkspaceId(target?.workspaceId ?? '')
             mutate((current) => setActiveSession(current, id))
           }}
           onPin={(session) => {
-            if (phase === 'idle') {
+            if (phase === 'idle' && !preparing && !fileMutating) {
               mutate((current) => setSessionPinned(current, session.id, !session.pinned))
             }
           }}
           onArchive={(session) => {
-            if (phase === 'idle') {
+            if (phase === 'idle' && !preparing && !fileMutating) {
               mutate((current) =>
                 setSessionArchived(current, session.id, session.archivedAt === null),
               )
@@ -487,13 +636,15 @@ export function PersonalEngineeringWorkbench() {
           employee={activeEmployee}
           input={input}
           streaming={streaming}
-          phase={phase}
-          ready={canInvokeAgent(posture, input, workspaceId, agentVersionId)}
+          phase={preparing ? 'preparing' : phase}
+          interactionLocked={fileMutating}
+          ready={!fileMutating && canInvokeAgent(posture, input, workspaceId, agentVersionId)}
           maximumCharacters={P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS}
           onInput={setInput}
           onSubmit={() => void submit()}
           onStop={() => void stop()}
           onMention={(employee) => {
+            if (fileMutating) return
             setInput((current) => `@${employee.displayName} ${current.replace(/^@\S+\s*/, '')}`)
           }}
         />
@@ -502,10 +653,23 @@ export function PersonalEngineeringWorkbench() {
           documents={documents?.items ?? []}
           employee={activeEmployee}
           identity={identity}
+          modelIdentity={modelIdentity}
+          gear={gear}
           usage={usage}
           timelineOpen={timelineOpen}
           session={activeSession}
           onTimeline={() => setTimelineOpen((current) => !current)}
+          filePanel={
+            <WorkspaceFilePanel
+              ref={filePanelRef}
+              tenantId={tenant?.id ?? ''}
+              workspaceId={workspaceId}
+              sessionId={activeSession.id}
+              taskBinding={taskBinding}
+              locked={phase !== 'idle' || preparing || fileMutating}
+              onMutationChange={setFileMutating}
+            />
+          }
         />
       </div>
     </div>
@@ -523,6 +687,8 @@ function TopBar({
   posture,
   tokens,
   locked,
+  gear,
+  onGearChange,
 }: {
   workspaceId: string
   workspaces: WorkspaceRead[]
@@ -534,6 +700,8 @@ function TopBar({
   posture: RuntimePosture | null
   tokens: number
   locked: boolean
+  gear: P6ReasoningGear
+  onGearChange: (value: P6ReasoningGear) => void
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
@@ -568,7 +736,21 @@ function TopBar({
           </option>
         ))}
       </select>
-      <Status label="标准挡 · P6.0-D 接入中" muted />
+      <select
+        value={gear}
+        onChange={(event) => onGearChange(event.target.value as P6ReasoningGear)}
+        disabled={locked}
+        className="h-8 rounded-md border border-border bg-card px-2 text-[9px] outline-none"
+        aria-label="选择推理挡位"
+      >
+        {(Object.values(P6_GEAR_PROFILES) as Array<(typeof P6_GEAR_PROFILES)[P6ReasoningGear]>).map(
+          (profile) => (
+            <option key={profile.id} value={profile.id}>
+              {profile.displayName}
+            </option>
+          ),
+        )}
+      </select>
       <div className="ml-auto hidden gap-2 md:flex">
         <Status label={`Context ~${tokens} tok`} />
         <Status
@@ -726,6 +908,7 @@ function ConversationPane({
   input,
   streaming,
   phase,
+  interactionLocked,
   ready,
   maximumCharacters,
   onInput,
@@ -737,7 +920,8 @@ function ConversationPane({
   employee: EmployeeDefinition
   input: string
   streaming: string
-  phase: InvocationPhase
+  phase: WorkbenchInvocationPhase
+  interactionLocked: boolean
   ready: boolean
   maximumCharacters: number
   onInput: (value: string) => void
@@ -854,12 +1038,12 @@ function ConversationPane({
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                if (phase === 'idle') onSubmit()
+                if (phase === 'idle' && !interactionLocked) onSubmit()
               }
             }}
             rows={3}
             maxLength={maximumCharacters}
-            disabled={phase !== 'idle'}
+            disabled={phase !== 'idle' || interactionLocked}
             placeholder="交给父 Agent，或输入 @前端工程师 / @安全架构师 唤醒一名员工…"
             className="w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60"
           />
@@ -878,9 +1062,18 @@ function ConversationPane({
               </span>
             </div>
             {phase === 'idle' ? (
-              <Button size="sm" onClick={onSubmit} disabled={!input.trim() || !ready}>
+              <Button
+                size="sm"
+                onClick={onSubmit}
+                disabled={interactionLocked || !input.trim() || !ready}
+              >
                 发送
                 <Send className="h-3.5 w-3.5" />
+              </Button>
+            ) : phase === 'preparing' ? (
+              <Button size="sm" disabled>
+                准备上下文
+                <CircleDot className="h-3.5 w-3.5 animate-pulse" />
               </Button>
             ) : (
               <Button size="sm" variant="destructive" onClick={onStop}>
@@ -900,20 +1093,33 @@ function ContextRail({
   documents,
   employee,
   identity,
+  modelIdentity,
+  gear,
   usage,
   timelineOpen,
   session,
   onTimeline,
+  filePanel,
 }: {
   workspace?: WorkspaceRead
   documents: Array<{ id: string; filename: string; status: string }>
   employee: EmployeeDefinition
   identity: string
+  modelIdentity: P6ModelIdentity
+  gear: P6ReasoningGear
   usage: AgentAlphaUsage | null
   timelineOpen: boolean
   session: WorkbenchSession
   onTimeline: () => void
+  filePanel: React.ReactNode
 }) {
+  const provider = getP6ProviderProfile(modelIdentity)
+  const selectedGear = P6_GEAR_PROFILES[gear]
+  const cost = estimateP6Cost({
+    inputTokens: usage?.input_tokens ?? 0,
+    outputTokens: usage?.output_tokens ?? 0,
+    reasoningTokens: usage?.reasoning_tokens,
+  })
   return (
     <aside className="hidden min-h-0 flex-col border-l bg-muted/10 lg:flex">
       <div className="flex h-12 items-center justify-between border-b px-3">
@@ -966,9 +1172,7 @@ function ContextRail({
                   </span>
                 </div>
               ))}
-              <div className="rounded-lg border border-dashed p-2.5 text-[8px] text-muted-foreground">
-                文件树与 OPEN / CONTEXT / PINNED 将在 P6.0-B 接入；当前不扫描未授权目录。
-              </div>
+              {filePanel}
             </RailSection>
             <RailSection icon={Users} title="预制员工">
               <div className="space-y-1">
@@ -999,11 +1203,24 @@ function ContextRail({
             </RailSection>
             <RailSection icon={CircleDot} title="模型与成本">
               <p className="break-words text-[8px] leading-4 text-muted-foreground">{identity}</p>
+              <p className="mt-1 text-[8px] font-medium">
+                最近观测：{provider.displayName} · {selectedGear.displayName}
+              </p>
+              <p className="mt-1 text-[7px] leading-3 text-muted-foreground">
+                本轮请求在 Provider 确定前使用通用适配。原生思考参数未接入；Tools / MCP / CLI /
+                Vision / 自主委派均关闭。目标输出 {selectedGear.targetOutputTokens.toLocaleString()}{' '}
+                tokens 仅作界面预算，当前 API 未下发该参数。
+              </p>
               <div className="mt-2 grid grid-cols-3 gap-1">
                 <Metric label="Input" value={usage?.input_tokens ?? 0} />
                 <Metric label="Output" value={usage?.output_tokens ?? 0} />
                 <Metric label="Total" value={usage?.total_tokens ?? 0} />
               </div>
+              <p className="mt-2 text-[7px] text-muted-foreground">
+                {cost.known
+                  ? `${cost.currency} ${cost.amount.toFixed(6)}`
+                  : '费用未知（未配置费率）'}
+              </p>
             </RailSection>
             <div className="rounded-lg border p-2.5 text-[8px] leading-4 text-muted-foreground">
               <ShieldCheck className="mb-1 h-3.5 w-3.5" />

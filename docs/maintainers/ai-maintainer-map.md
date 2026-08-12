@@ -2125,3 +2125,15 @@ unmounted image, a length-checked backup on another disk and a tested recovery
 path. `compact` is host-space reclamation, not a capacity limit. Never force a
 shrink when the guest filesystem or container format cannot prove the minimum
 safe size, and preserve the VM service SID ACL when restoring a copied image.
+
+## P6.0 authorized files, local ChangeSets and model gears
+
+Read INV-065 through INV-067 and
+`docs/architecture/p6-0-personal-engineering-workbench.md`. Preserve
+Owner-gesture permission, pre-read secret-name rejection, memory-only handles,
+logical paths, one monotonic lazy-tree budget, reviewed content digests and the
+exact final request budget. Agent Alpha still has no file tool: local edits are
+Owner-reviewed and Task-bound, with CAS/digest checks and conflict-safe
+three-way rollback. Browser writes are not atomic transactions. Provider
+identity arrives after dispatch; gears must not overstate native reasoning,
+output controls, tools, MCP, CLI or current pricing.

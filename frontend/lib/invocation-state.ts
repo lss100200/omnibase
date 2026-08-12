@@ -53,6 +53,21 @@ export class InvocationGuard {
   }
 
   /**
+   * Abort and invalidate the current generation immediately. Used when the
+   * authenticated tenant/user scope changes and no old callback may render in
+   * the new scope. A later stale finally is harmless because its generation
+   * and controller no longer match.
+   */
+  invalidate(): AbortController | null {
+    const controller = this._controller
+    controller?.abort()
+    this._generation += 1
+    this._controller = null
+    this._phase = 'idle'
+    return controller
+  }
+
+  /**
    * Idempotent settle: only the current generation AND the exact controller
    * that began that generation may clear the guard.  A stale finally (old
    * generation or a replaced controller) is ignored.

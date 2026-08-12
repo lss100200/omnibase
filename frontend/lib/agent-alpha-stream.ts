@@ -25,6 +25,9 @@ export interface AgentAlphaStreamCallbacks {
     invocationId: string | null
     taskId: string | null
     identity: string | null
+    providerId: string | null
+    requestedModelId: string | null
+    actualModelId: string | null
   }) => void
   onCitations?: (citations: Citation[]) => void
   onChunk?: (content: string) => void
@@ -35,6 +38,7 @@ export interface AgentAlphaUsage {
   input_tokens: number
   output_tokens: number
   total_tokens: number
+  reasoning_tokens?: number
 }
 
 export type AgentAlphaStreamTerminal =
@@ -167,10 +171,28 @@ function parseUsage(value: unknown): AgentAlphaUsage | null {
   const input = value.input_tokens
   const output = value.output_tokens
   const total = value.total_tokens
-  if (typeof input !== 'number' || typeof output !== 'number' || typeof total !== 'number') {
+  const reasoning = value.reasoning_tokens
+  if (
+    typeof input !== 'number' ||
+    typeof output !== 'number' ||
+    typeof total !== 'number' ||
+    !Number.isFinite(input) ||
+    !Number.isFinite(output) ||
+    !Number.isFinite(total) ||
+    input < 0 ||
+    output < 0 ||
+    total < 0 ||
+    (reasoning !== undefined &&
+      (typeof reasoning !== 'number' || !Number.isFinite(reasoning) || reasoning < 0))
+  ) {
     return null
   }
-  return { input_tokens: input, output_tokens: output, total_tokens: total }
+  return {
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total,
+    ...(typeof reasoning === 'number' ? { reasoning_tokens: reasoning } : {}),
+  }
 }
 
 export async function consumeAgentAlphaStream(
@@ -182,6 +204,10 @@ export async function consumeAgentAlphaStream(
   let invocationId: string | null = null
   let taskId: string | null = null
   let identity: string | null = null
+  let providerId: string | null = null
+  let requestedModelId: string | null = null
+  let actualModelId: string | null = null
+  let credentialSource: string | null = null
   let citations: Citation[] = []
   let usage: AgentAlphaUsage | null = null
   let terminal: AgentAlphaStreamTerminal | null = null
@@ -208,8 +234,29 @@ export async function consumeAgentAlphaStream(
             invocationId =
               typeof event.payload.invocation_id === 'string' ? event.payload.invocation_id : null
             taskId = typeof event.payload.task_id === 'string' ? event.payload.task_id : null
+            providerId =
+              typeof event.payload.provider_id === 'string' ? event.payload.provider_id : null
+            requestedModelId =
+              typeof event.payload.requested_model_id === 'string'
+                ? event.payload.requested_model_id
+                : null
+            actualModelId =
+              typeof event.payload.actual_model_id === 'string'
+                ? event.payload.actual_model_id
+                : null
+            credentialSource =
+              typeof event.payload.credential_source === 'string'
+                ? event.payload.credential_source
+                : null
             identity = formatAgentIdentity(event.payload)
-            callbacks.onMeta?.({ invocationId, taskId, identity })
+            callbacks.onMeta?.({
+              invocationId,
+              taskId,
+              identity,
+              providerId,
+              requestedModelId,
+              actualModelId,
+            })
             break
           }
           case 'citations':
@@ -237,6 +284,29 @@ export async function consumeAgentAlphaStream(
                 : parseCitations(event.payload.citations)
             const doneUsage =
               event.payload.usage === undefined ? usage : parseUsage(event.payload.usage)
+            actualModelId =
+              typeof event.payload.actual_model_id === 'string'
+                ? event.payload.actual_model_id
+                : actualModelId
+            if (actualModelId !== null) {
+              identity = formatAgentIdentity({
+                provider_id: providerId,
+                requested_model_id: requestedModelId,
+                actual_model_id: actualModelId,
+                credential_source:
+                  typeof event.payload.credential_source === 'string'
+                    ? event.payload.credential_source
+                    : credentialSource,
+              })
+              callbacks.onMeta?.({
+                invocationId,
+                taskId,
+                identity,
+                providerId,
+                requestedModelId,
+                actualModelId,
+              })
+            }
             terminal = {
               kind: 'done',
               answer: event.payload.answer,
