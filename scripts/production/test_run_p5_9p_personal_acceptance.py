@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import http.client
+import hashlib
 import json
+import sys
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +36,71 @@ class _MissingTerminalSSEHandler(BaseHTTPRequestHandler):
 class P59PAcceptanceHarnessTests(unittest.TestCase):
     def test_canonical_json_is_sorted_and_newline_terminated(self) -> None:
         self.assertEqual(acceptance._canonical({"z": 1, "a": 2}), b'{"a":2,"z":1}\n')
+
+    def test_binary_command_output_is_sealed_as_a_regular_nonempty_file(self) -> None:
+        payload = b"PGDMP\x00p5-9p-custom-format"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "database.dump"
+            acceptance._run_stdout_to_file(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys;sys.stdout.buffer.write(%r)" % payload,
+                ],
+                output_path=output,
+                cwd=root,
+            )
+            self.assertEqual(output.read_bytes(), payload)
+            acceptance._require_regular_nonempty_file(output)
+
+    def test_failed_binary_command_removes_partial_output(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "database.dump"
+            with self.assertRaisesRegex(
+                acceptance.AcceptanceError, r"command failed \(7\)"
+            ):
+                acceptance._run_stdout_to_file(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys;sys.stdout.buffer.write(b'partial');sys.exit(7)",
+                    ],
+                    output_path=output,
+                    cwd=root,
+                )
+            self.assertFalse(output.exists())
+
+    def test_regular_dump_is_streamed_to_command_stdin_without_text_conversion(
+        self,
+    ) -> None:
+        payload = b"PGDMP\x00binary\r\ncontent"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            dump = root / "database.dump"
+            dump.write_bytes(payload)
+            result = acceptance._run_file_stdin(
+                [
+                    sys.executable,
+                    "-c",
+                    "import hashlib,sys;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())",
+                ],
+                input_path=dump,
+                cwd=root,
+            )
+            self.assertEqual(result.stdout.strip(), hashlib.sha256(payload).hexdigest())
+
+    def test_empty_dump_is_rejected_before_subprocess_dispatch(self) -> None:
+        with TemporaryDirectory() as directory:
+            dump = Path(directory) / "database.dump"
+            dump.write_bytes(b"")
+            with self.assertRaisesRegex(acceptance.AcceptanceError, "is empty"):
+                acceptance._run_file_stdin(
+                    [sys.executable, "-c", "raise SystemExit(99)"],
+                    input_path=dump,
+                    cwd=Path(directory),
+                )
 
     def test_operator_env_uses_the_closed_key_shape(self) -> None:
         with TemporaryDirectory() as directory:

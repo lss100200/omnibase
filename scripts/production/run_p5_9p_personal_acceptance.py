@@ -18,6 +18,7 @@ import os
 import secrets
 import shutil
 import socket
+import stat
 import subprocess
 import tempfile
 import threading
@@ -88,6 +89,80 @@ def _run(
         timeout=timeout,
     )
     if check and result.returncode != 0:
+        raise AcceptanceError(
+            f"command failed ({result.returncode}): {' '.join(command)}\n"
+            f"stdout:\n{result.stdout[-4000:]}\nstderr:\n{result.stderr[-4000:]}"
+        )
+    return result
+
+
+def _require_regular_nonempty_file(path: Path) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise AcceptanceError(
+            f"required run-scoped file is unavailable: {path.name}"
+        ) from exc
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+        raise AcceptanceError(f"required run-scoped file is not regular: {path.name}")
+    if metadata.st_size <= 0:
+        raise AcceptanceError(f"required run-scoped file is empty: {path.name}")
+
+
+def _run_stdout_to_file(
+    command: list[str],
+    *,
+    output_path: Path,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: float = 900,
+) -> None:
+    try:
+        with output_path.open("xb") as output:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                env=env,
+                check=False,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+            )
+    except OSError as exc:
+        raise AcceptanceError(
+            f"failed to create run-scoped output file: {output_path.name}"
+        ) from exc
+    if result.returncode != 0:
+        output_path.unlink(missing_ok=True)
+        stderr = result.stderr.decode(errors="replace") if result.stderr else ""
+        raise AcceptanceError(
+            f"command failed ({result.returncode}): {' '.join(command)}\n"
+            f"stderr:\n{stderr[-4000:]}"
+        )
+    _require_regular_nonempty_file(output_path)
+
+
+def _run_file_stdin(
+    command: list[str],
+    *,
+    input_path: Path,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: float = 900,
+) -> subprocess.CompletedProcess[str]:
+    _require_regular_nonempty_file(input_path)
+    with input_path.open("rb") as source:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=False,
+            stdin=source,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    if result.returncode != 0:
         raise AcceptanceError(
             f"command failed ({result.returncode}): {' '.join(command)}\n"
             f"stdout:\n{result.stdout[-4000:]}\nstderr:\n{result.stderr[-4000:]}"
@@ -235,21 +310,30 @@ class Journey:
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         return _run(
-            [
-                "docker",
-                "compose",
-                "--env-file",
-                str(target.env_file),
-                "-p",
-                target.project,
-                *self._compose_files(runtime=runtime),
-                *arguments,
-            ],
+            self.compose_command(target, arguments, runtime=runtime),
             cwd=self.repo,
             env=self.compose_env,
             timeout=timeout,
             check=check,
         )
+
+    def compose_command(
+        self,
+        target: Target,
+        arguments: list[str],
+        *,
+        runtime: bool = False,
+    ) -> list[str]:
+        return [
+            "docker",
+            "compose",
+            "--env-file",
+            str(target.env_file),
+            "-p",
+            target.project,
+            *self._compose_files(runtime=runtime),
+            *arguments,
+        ]
 
     def base_compose_only(
         self,
@@ -260,22 +344,25 @@ class Journey:
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         return _run(
-            [
-                "docker",
-                "compose",
-                "--env-file",
-                str(target.env_file),
-                "-p",
-                target.project,
-                "-f",
-                str(self.base_compose),
-                *arguments,
-            ],
+            self.base_compose_command(target, arguments),
             cwd=self.repo,
             env=self.compose_env,
             timeout=timeout,
             check=check,
         )
+
+    def base_compose_command(self, target: Target, arguments: list[str]) -> list[str]:
+        return [
+            "docker",
+            "compose",
+            "--env-file",
+            str(target.env_file),
+            "-p",
+            target.project,
+            "-f",
+            str(self.base_compose),
+            *arguments,
+        ]
 
     def fixture_command(self, target: Target, arguments: list[str]) -> dict[str, Any]:
         result = self.compose(
@@ -717,44 +804,46 @@ class Journey:
 
     def _cold_dump(self, target: Target) -> tuple[Path, str]:
         self.compose(target, ["stop", "frontend", "backend"], timeout=120)
-        self.compose(
-            target,
-            [
-                "exec",
-                "-T",
-                "postgres",
-                "pg_dump",
-                "-U",
-                target.database_user,
-                "-d",
-                target.database,
-                "--format=custom",
-                "--file=/tmp/p5-9p.dump",
-            ],
-            timeout=300,
-        )
-        self.compose(
-            target,
-            ["exec", "-T", "postgres", "pg_restore", "--list", "/tmp/p5-9p.dump"],
-            timeout=120,
-        )
-        container = self.compose(
-            target, ["ps", "-q", "postgres"], timeout=30
-        ).stdout.strip()
-        if not container:
-            raise AcceptanceError("source PostgreSQL container is unavailable")
         self.backup_root.mkdir(parents=True, exist_ok=False)
         dump_path = self.backup_root / "database.dump"
-        _run(
-            ["docker", "cp", f"{container}:/tmp/p5-9p.dump", str(dump_path)],
+        _run_stdout_to_file(
+            self.compose_command(
+                target,
+                [
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_dump",
+                    "-U",
+                    target.database_user,
+                    "-d",
+                    target.database,
+                    "--format=custom",
+                ],
+            ),
+            output_path=dump_path,
             cwd=self.repo,
+            env=self.compose_env,
+            timeout=300,
+        )
+        listing = _run_file_stdin(
+            self.compose_command(
+                target,
+                [
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_restore",
+                    "--list",
+                ],
+            ),
+            input_path=dump_path,
+            cwd=self.repo,
+            env=self.compose_env,
             timeout=120,
         )
-        self.compose(
-            target,
-            ["exec", "-T", "postgres", "rm", "-f", "/tmp/p5-9p.dump"],
-            timeout=30,
-        )
+        if not listing.stdout.strip():
+            raise AcceptanceError("custom-format dump has an empty pg_restore listing")
         digest = hashlib.sha256(dump_path.read_bytes()).hexdigest()
         (self.backup_root / "manifest.json").write_bytes(
             _canonical(
@@ -829,38 +918,27 @@ class Journey:
         self.base_compose_only(
             restored, ["up", "-d", "--wait", "postgres"], timeout=300
         )
-        container = self.base_compose_only(
-            restored, ["ps", "-q", "postgres"], timeout=30
-        ).stdout.strip()
-        if not container:
-            raise AcceptanceError("restore PostgreSQL container is unavailable")
-        _run(
-            ["docker", "cp", str(dump_path), f"{container}:/tmp/p5-9p-restore.dump"],
+        _run_file_stdin(
+            self.base_compose_command(
+                restored,
+                [
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_restore",
+                    "-U",
+                    restored.database_user,
+                    "-d",
+                    restored.database,
+                    "--no-owner",
+                    "--no-privileges",
+                    "--exit-on-error",
+                ],
+            ),
+            input_path=dump_path,
             cwd=self.repo,
-            timeout=120,
-        )
-        self.base_compose_only(
-            restored,
-            [
-                "exec",
-                "-T",
-                "postgres",
-                "pg_restore",
-                "-U",
-                restored.database_user,
-                "-d",
-                restored.database,
-                "--no-owner",
-                "--no-privileges",
-                "--exit-on-error",
-                "/tmp/p5-9p-restore.dump",
-            ],
+            env=self.compose_env,
             timeout=300,
-        )
-        self.base_compose_only(
-            restored,
-            ["exec", "-T", "postgres", "rm", "-f", "/tmp/p5-9p-restore.dump"],
-            timeout=30,
         )
         self.base_compose_only(
             restored,
