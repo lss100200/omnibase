@@ -119,6 +119,7 @@
       "document": "docs/maintainers/security-invariants.md#inv-008-migration-scope-closed-set",
       "source_paths": [
         "backend/src/omnibase/migrations/env.py",
+        "backend/src/omnibase/tenants/migrations.py",
         "backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py",
         "backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py",
         "backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py",
@@ -126,6 +127,7 @@
       ],
       "test_paths": [
         "backend/tests/test_migration_scope_fail_closed.py",
+        "backend/tests/integration/test_phase_1_6_tenant_foundation.py",
         "backend/tests/integration/test_p34_4_workspace_foundation.py",
         "backend/tests/test_destructive_test_safety.py"
       ]
@@ -953,7 +955,8 @@
       "entrypoints": [
         "backend/src/omnibase/auth/router.py:router",
         "backend/src/omnibase/tenants/router.py:router",
-        "backend/src/omnibase/tenants/dependencies.py:get_current_principal"
+        "backend/src/omnibase/tenants/dependencies.py:get_current_principal",
+        "backend/src/omnibase/tenants/migrations.py:upgrade_new_tenant_schema"
       ],
       "public_interfaces": [
         "HTTP /api/v1/auth/*",
@@ -967,7 +970,8 @@
       "invariants": [
         "INV-001",
         "INV-002",
-        "INV-005"
+        "INV-005",
+        "INV-008"
       ],
       "verification": [
         "docker compose --env-file .env.example run --rm --no-deps backend pytest tests/test_tenants.py tests/test_p0_exposure_lockdown.py -q",

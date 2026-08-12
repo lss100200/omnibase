@@ -291,6 +291,7 @@ Capability 必须同时绑定 issuer/audience、Tenant、Workspace、Runtime、w
 **权威源码**
 
 - `backend/src/omnibase/migrations/env.py`
+- `backend/src/omnibase/tenants/migrations.py`
 - `backend/src/omnibase/migrations/versions/0004_p34_1_control_plane_foundation.py`
 - `backend/src/omnibase/migrations/versions/0005_p34_2_capability_ledger.py`
 - `backend/src/omnibase/migrations/versions/0006_p34_3_controlled_data.py`
@@ -305,6 +306,7 @@ OmniBase 同时迁移 global registry 和 tenant schema。迁移若猜测 scope�
 - 通过 `env.py` 显式设置 scope，并在每个双 scope migration 中使用同一闭集验证。
 - 在 fresh sentinel 数据库执行 global/tenant upgrade、downgrade、re-upgrade。
 - 为新 scope 先设计全仓迁移契约和测试，再一次性扩展闭集。
+- 新 Tenant 必须在创建 Tenant registry row 和物理 schema 的同一事务内，仅对该 registry 绑定 schema 执行 tenant-scope Alembic 到当前 head；任何 revision 失败必须回滚 registry row、schema 与 bootstrap DDL，不能留下低于当前 head 的可登录 Tenant。
 
 **禁止的改法**
 
@@ -316,6 +318,7 @@ OmniBase 同时迁移 global registry 和 tenant schema。迁移若猜测 scope�
 **必须运行的测试**
 
 - `backend/tests/test_migration_scope_fail_closed.py`
+- `backend/tests/integration/test_phase_1_6_tenant_foundation.py`
 - `backend/tests/test_p34_3_controlled_data_foundation.py`
 - `backend/tests/integration/test_p34_1_control_plane_foundation.py`
 - `backend/tests/integration/test_p34_2_capability_foundation.py`

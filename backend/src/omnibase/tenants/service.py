@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from omnibase.core.db import get_engine, get_session_factory
 from omnibase.core.logging import get_logger
 from omnibase.db.models import Tenant
+from omnibase.tenants.migrations import upgrade_new_tenant_schema
 from omnibase.tenants.schema_manager import (
     create_schema,
     list_tenant_schemas,
@@ -160,6 +161,7 @@ def create_tenant(
         connection = session.connection()
         create_schema(connection, schema_name, if_not_exists=False)
         _initialize_tenant_schema(connection, schema_name)
+        upgrade_new_tenant_schema(connection, schema_name)
 
         if owns_session:
             session.commit()
@@ -271,7 +273,7 @@ def _initialize_tenant_schema(connection: Connection, schema_name: str) -> None:
         # Documents status lifecycle constraint.  Drop/recreate makes this a
         # convergent repair for legacy schemas that still allow ``parsed``.
         f'ALTER TABLE "{schema_name}".documents DROP CONSTRAINT IF EXISTS documents_status_check',
-        f'UPDATE "{schema_name}".documents SET status = \'queued\' WHERE status = \'parsed\'',  # noqa: S608 - validated identifier
+        f"UPDATE \"{schema_name}\".documents SET status = 'queued' WHERE status = 'parsed'",  # noqa: S608 - validated identifier
         f"""
         ALTER TABLE "{schema_name}".documents
             ADD CONSTRAINT documents_status_check

@@ -402,6 +402,7 @@ class TestTenantProvisioning:
             patch("omnibase.tenants.service.make_schema_name", return_value="tenant_deadbeef"),
             patch("omnibase.tenants.service.create_schema") as create_schema_mock,
             patch("omnibase.tenants.service._initialize_tenant_schema") as initialize_mock,
+            patch("omnibase.tenants.service.upgrade_new_tenant_schema") as upgrade_mock,
         ):
             tenant = create_tenant(name="Acme", slug="acme", session=session)
 
@@ -411,6 +412,7 @@ class TestTenantProvisioning:
             if_not_exists=False,
         )
         initialize_mock.assert_called_once_with(connection, "tenant_deadbeef")
+        upgrade_mock.assert_called_once_with(connection, "tenant_deadbeef")
         session.commit.assert_not_called()
         assert tenant.schema_name == "tenant_deadbeef"
 
