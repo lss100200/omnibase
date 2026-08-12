@@ -220,7 +220,7 @@ class P59PAcceptanceHarnessTests(unittest.TestCase):
             thread.start()
             coordinates = acceptance.ProductCoordinates(
                 access_token="synthetic-access",
-                email="owner@example.invalid",
+                email="owner@example.com",
                 password="synthetic-password",  # noqa: S106
                 tenant_id="00000000-0000-4000-8000-000000000001",
                 owner_user_id="00000000-0000-4000-8000-000000000002",

@@ -388,7 +388,7 @@ class Journey:
         return target
 
     def _register_product(self, target: Target) -> ProductCoordinates:
-        email = f"p59p-{uuid.uuid4().hex[:10]}@example.invalid"
+        email = f"p59p-{uuid.uuid4().hex[:10]}@example.com"
         password = f"P5p!{secrets.token_hex(12)}"
         _, registration = self.request(
             target,
