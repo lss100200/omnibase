@@ -5163,3 +5163,81 @@ MULTI_AGENT_ENABLED=false
 P6_0_PERSONAL_ADMISSION_PENDING_P5_9P_CI
 not deployed
 ```
+
+### P5.9P final GitHub acceptance and receipt verification (2026-08-12)
+
+The preceding pending checkpoint is superseded by authoritative remote
+evidence. PR #33 exact branch head
+`9eb7238c164a0dbf380d406104f65f7823a89bbc` completed GitHub Actions run
+`31608502738` successfully:
+
+```text
+backend = success
+frontend-and-typescript-sdk = success
+compose-config = success
+postgres-sentinel-integration = success (15m22s)
+personal-production-acceptance = success (6m31s)
+workflow cleanup assertion = success
+```
+
+Two issues found by the preceding remote runs were repaired forward-only
+without weakening a safety boundary. First, the true empty migration-0013
+downgrade/re-upgrade proof now runs in its own initial pytest invocation before
+the shared sentinel retains audited Memory data; the populated-downgrade veto
+remains unchanged. Second, the cold custom-format dump now streams binary
+`pg_dump` stdout into an exclusive run-scoped host file and requires a regular,
+non-symlink, positive-size file before `pg_restore --list` and restore-new read
+the exact bytes through stdin. No container `/tmp` archive copy is trusted.
+
+GitHub uploaded exactly one artifact, ID `9147061833`, named
+`p5-9p-personal-acceptance-31608502738-1`. Its downloaded ZIP SHA-256
+`fe3e4822ce2eff58c832f158dd328e980d47ac16425f286777664ae8013c745f`
+exactly matches the GitHub artifact digest. The 1852-byte JSON receipt SHA-256
+is `1174f6dac2be15bd97a49d83d9a59fd7e3282e3e029137fa900309303895cc57`.
+Independent parsing verified the exact 20-field top-level closed set and the
+following facts:
+
+```text
+acceptance = P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED
+incremental SSE chunks = 3
+durable cancel = cancelled / cancelled terminal event
+restart recovery = blocked_unknown / one reconciliation / no Provider replay
+retry = new Task identity / succeeded
+kill switch = killed / later Provider call blocked
+Memory items = 1
+sealed Skills = 1
+cold dump writers stopped = true
+restore database prefix = omnibase_restore_*
+restore migration head = 0015
+restore Runtime = false
+source database unchanged = true
+Runtime after acceptance = false
+Planner = false
+Multi-Agent = false
+root .env accessed = false
+business database accessed or migrated = false
+real Provider credential used = false
+```
+
+The receipt contains no Authorization/JWT/API-key/password field, database or
+Redis locator, prompt text, Memory plaintext or Skill instruction content.
+Run-scoped operator env, canary state and database dump were deleted; both
+Compose projects, containers, networks and volumes were removed.
+
+Current P5.9P posture before the final evidence-only CI and merge:
+
+```text
+P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED
+required exact-head CI green at 9eb7238c164a0dbf380d406104f65f7823a89bbc
+migration head=0015
+migration 0016 absent
+AGENT_RUNTIME_ENABLED=false by default and after acceptance
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen / blocked_not_proven
+approved enterprise trust-policy digest empty
+root .env not read
+business database not accessed or migrated
+not deployed
+P6.0 not started
+```

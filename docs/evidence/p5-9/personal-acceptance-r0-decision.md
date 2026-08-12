@@ -5,51 +5,75 @@ Date: 2026-08-12
 ## Current decision
 
 ```text
-P5_9P_IMPLEMENTED_PENDING_GITHUB_LINUX_ACCEPTANCE
-P6_0_PERSONAL_ADMISSION_PENDING
+P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED
+P5_9P_REQUIRED_CI_GREEN
+P6_0_NOT_STARTED
 PRODUCTION_RUNTIME_NOT_ACTIVATED
 ```
 
-## Implemented evidence path
+The authoritative clean-checkout evidence is GitHub Actions workflow run
+[`31608502738`](https://github.com/lss100200/omnibase/actions/runs/31608502738)
+at exact branch head `9eb7238c164a0dbf380d406104f65f7823a89bbc`.
+The required backend, frontend/TypeScript SDK, Compose, guarded disposable
+PostgreSQL sentinel and `personal-production-acceptance` jobs all completed
+successfully. The personal job completed in 6 minutes 31 seconds and its
+workflow cleanup assertion also passed.
 
-- a disposable production Compose overlay with an internal deterministic fake
-  Provider and a one-shot acceptance fixture;
-- a host runner that drives the real loopback frontend/API/SSE product path;
-- sealed first-party instruction Skill and encrypted scoped Memory projection;
-- zero-item/zero-token first-invocation audit Capsule followed by publication
-  and retrieval of the first real Memory, without an empty prompt layer;
-- durable cancellation;
-- Core SIGKILL, real TaskLease expiry, restart recovery and no automatic
-  Provider replay;
-- explicit Owner `retry_of` with all-new execution identities;
-- kill switch and deployment-layer Runtime disablement;
-- cold custom-format dump, restore-new, authenticated smoke and source database
-  fingerprint comparison;
-- exact Compose/volume cleanup and removal of run-scoped secret material;
-- a redacted receipt that rejects secret-shaped fields and locators.
+## Verified receipt
 
-## Current local evidence
+GitHub uploaded exactly one artifact:
 
 ```text
-Python syntax compilation: passed
-offline acceptance harness tests: 9 passed
-locked OpenAI SDK 1.109.1 fake-Provider stream smoke: passed (5 chunks)
-base Compose posture: Runtime/Planner/Multi-Agent false; Provider has no host port
-canary Compose posture: Runtime true only in overlay; Planner/Multi-Agent false
-GitHub production-like acceptance: not run yet
+artifact id = 9147061833
+artifact name = p5-9p-personal-acceptance-31608502738-1
+artifact ZIP SHA-256 = fe3e4822ce2eff58c832f158dd328e980d47ac16425f286777664ae8013c745f
+receipt JSON SHA-256 = 1174f6dac2be15bd97a49d83d9a59fd7e3282e3e029137fa900309303895cc57
+receipt bytes = 1852
+receipt top-level field count = 20
 ```
 
-Docker Desktop on the Windows host did not answer `docker version` within the
-bounded timeout. No unknown local PostgreSQL service, root `.env`, business
-database or real Provider credential was used as a substitute. The journey is
-therefore deliberately pending the clean Ubuntu GitHub job.
+The downloaded ZIP digest exactly matched GitHub's artifact digest. The JSON
+was parsed independently and passed an exact top-level field closed set,
+schema/version checks, nested acceptance assertions and a forbidden secret-key
+and locator scan.
 
-## Required promotion evidence
+Verified receipt facts:
 
-Promotion to `P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED` requires the
-`personal-production-acceptance` job to finish successfully and upload a
-receipt whose acceptance field is exactly that value. Required repository CI
-must also be green. Until then this file must not be interpreted as a PASS.
+- acceptance is exactly
+  `P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED`;
+- incremental frontend SSE emitted three chunks with bounded positive gaps;
+- durable cancellation ended as Task `cancelled` with terminal event
+  `cancelled`;
+- Core interruption converged the old Task to `blocked_unknown`, created one
+  reconciliation, made no automatic Provider replay and allowed only an
+  explicit Owner retry with a different Task identity;
+- the kill switch reached `killed` and blocked a later Provider call;
+- one sealed instruction Skill and one scoped Memory item were exercised;
+- writers were stopped before the non-empty custom-format PostgreSQL dump;
+- restore-new used an `omnibase_restore_*` database, authenticated the restored
+  Owner, preserved Workspace/Skill/Memory, kept Runtime false, reported
+  migration head `0015` and proved the source database fingerprint unchanged;
+- Runtime was false after acceptance; Planner and Multi-Agent were false
+  throughout;
+- root `.env` was not read, no business database was accessed or migrated, and
+  no real Provider credential was used.
+
+The receipt contained no Authorization/JWT/API-key/password field, database or
+Redis locator, prompt text, Memory plaintext or Skill instruction content.
+
+## Forward fixes proven by the final run
+
+The final run also proves two fail-closed forward fixes found by earlier CI:
+
+1. The guarded PostgreSQL sentinel now runs the real empty migration-0013
+   downgrade/re-upgrade proof before the shared suite creates retained audited
+   Memory data. The populated downgrade veto remains unchanged. The final
+   sentinel passed in 15 minutes 22 seconds.
+2. Cold backup no longer relies on `docker cp` reading a PostgreSQL `/tmp`
+   tmpfs file. Binary custom-format `pg_dump` stdout is written exclusively to
+   a run-scoped host file, which must be a non-symlink regular file with
+   positive size. `pg_restore --list` and restore-new consume those exact bytes
+   through stdin and check their return codes.
 
 ## Preserved posture
 
@@ -59,12 +83,14 @@ migration 0016 absent
 AGENT_RUNTIME_ENABLED=false by default and after acceptance
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
-enterprise P34.7 frozen
+enterprise P34.7 frozen; approved trust-policy digest empty
 root .env not read
 business database not accessed or migrated
+no real Provider credential
 no deployment or cutover
+P6 work not started
 ```
 
-The acceptance receipt self-reports durable cancellation as
-`task_state=cancelled` and `terminal_event=cancelled`; it still contains no
-prompt text, Memory plaintext, Skill instructions or secret locator.
+This PASS is a disposable personal-edition engineering acceptance. It is not a
+public deployment, production Runtime activation, enterprise P34.7 approval,
+Planner/Multi-Agent admission, Marketplace/MCP admission or a P6.0 record.
