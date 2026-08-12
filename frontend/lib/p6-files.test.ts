@@ -15,6 +15,32 @@ import {
   validateP6FileName,
   type P6FileMetadata,
 } from './p6-files'
+import { createP6AsyncScopeFence } from './p6-file-handles'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
+
+async function staleScopeCannotCommit(label: string): Promise<void> {
+  let liveScope = `tenant-a:workspace-a:session-a:${label}`
+  const fence = createP6AsyncScopeFence(() => liveScope)
+  const waiting = deferred<string>()
+  let committed: string | null = null
+  const completion = waiting.promise.then((value) => {
+    fence.commit(() => {
+      committed = value
+    })
+  })
+  liveScope = `tenant-b:workspace-b:session-b:${label}`
+  waiting.resolve('old-scope-result')
+  await completion
+  assert.equal(fence.isCurrent(), false)
+  assert.equal(committed, null)
+}
 
 function textFile(overrides: Partial<P6FileMetadata> = {}): P6FileMetadata {
   return {
@@ -34,6 +60,18 @@ function textFile(overrides: Partial<P6FileMetadata> = {}): P6FileMetadata {
     ...overrides,
   }
 }
+
+test('directory picker completion cannot install handles after a scope switch', async () => {
+  await staleScopeCannotCommit('picker')
+})
+
+test('directory enumeration completion cannot install entries after a scope switch', async () => {
+  await staleScopeCannotCommit('enumeration')
+})
+
+test('file read completion cannot install preview after a scope switch', async () => {
+  await staleScopeCannotCommit('file-read')
+})
 
 test('logical names reject traversal, physical paths, aliases, controls and secret names', () => {
   for (const name of [

@@ -40,7 +40,7 @@ without explicit rates.
 ## Local verification
 
 ```text
-frontend unit/contract tests = 146 passed
+frontend unit/contract tests = 149 passed
 frontend typecheck = passed
 frontend lint = passed
 changed-path Prettier = passed

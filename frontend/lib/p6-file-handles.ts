@@ -49,6 +49,25 @@ export interface P6ReadSnapshot {
 export const P6_TEXT_EDIT_MAX_BYTES = 1024 * 1024
 export const P6_INTERNAL_PREVIEW_MAX_BYTES = 20 * 1024 * 1024
 
+export interface P6AsyncScopeFence {
+  readonly capturedScope: string
+  isCurrent(): boolean
+  commit(action: () => void): boolean
+}
+
+export function createP6AsyncScopeFence(getCurrentScope: () => string): P6AsyncScopeFence {
+  const capturedScope = getCurrentScope()
+  return {
+    capturedScope,
+    isCurrent: () => getCurrentScope() === capturedScope,
+    commit(action) {
+      if (getCurrentScope() !== capturedScope) return false
+      action()
+      return true
+    },
+  }
+}
+
 function opaqueId(): string {
   return crypto.randomUUID().replaceAll('-', '_')
 }
