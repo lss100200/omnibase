@@ -166,3 +166,38 @@ one-shot job exits, health/product smoke, stop/restart behavior, backup
 manifest, restore verification and upgrade/cutover decision. Report failed or
 unexecuted steps explicitly. Do not label a disposable or fake-Provider run as
 real Provider production evidence.
+
+## 10. P5.9P disposable personal acceptance
+
+The final personal engineering acceptance is intentionally automated on a
+clean GitHub Ubuntu runner:
+
+```bash
+python scripts/production/run_p5_9p_personal_acceptance.py \
+  --repo-root "$GITHUB_WORKSPACE" \
+  --work-root "$RUNNER_TEMP/omnibase-p5-9p-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+```
+
+It creates random `omnibase_test_p59_*` and `omnibase_restore_p59_*` database
+names and two unique Compose projects. It never reads the root `.env` or uses a
+real Provider credential. The internal fake Provider is not reachable from the
+host.
+
+The journey deliberately SIGKILLs Core during an active SSE stream. The
+acceptance overlay sets `backend.restart=no`; the runner verifies that Core
+remains stopped, waits longer than the real 90-second TaskLease TTL, then
+restarts it. Exact replay must close the old invocation without another
+Provider call. Only the Owner's explicit `retry_of` may create a new execution,
+and every execution and fencing identity must differ from the old one.
+
+After kill-switch verification, recreate the backend without the Runtime
+overlay before cold backup. Restore into Project B with a new database and
+volumes, authenticate, verify the Workspace and migration `0014`, and confirm
+Runtime remains false. Compare the stopped source database fingerprint before
+and after restore.
+
+Successful cleanup removes both Compose projects, networks and volumes plus
+operator env, canary state and dump. Retain and upload only
+`p5-9p-acceptance-receipt.json`. A cleanup leak changes the job result to
+failure. This acceptance is production-like engineering evidence for P6.0
+Personal Admission, not a deployment or real-Provider cutover.

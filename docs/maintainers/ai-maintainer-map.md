@@ -2036,3 +2036,35 @@ Personal target and backup controllers use migration head `0014`, reject
 identities. The only new forward compatibility entry is the canonical
 `0013 -> 0014` Skill upgrade. GitHub PostgreSQL sentinel CI is authoritative
 when local Docker is unavailable; do not substitute a normal database.
+
+## P5.9P personal production-like acceptance maintenance boundary
+
+Read INV-062, `docs/architecture/p5-9p-personal-acceptance-r0.md` and the
+`personal-production-acceptance` machine-map entry before changing the final
+personal product journey, its fake Provider, acceptance fixture, Compose
+overlay, receipt or GitHub job.
+
+Keep this acceptance personal and product-shaped. It proves one human Owner,
+multiple isolated AI Workspaces, one sealed no-tool Agent, first-party
+instruction Skill, encrypted scoped Memory, incremental frontend SSE, durable
+cancel, Core interruption, no-auto-replay recovery, explicit `retry_of`, kill
+switch and cold restore-new. It does not require or authorize enterprise
+P34.7, multi-person approval, Planner, Multi-Agent, Runner/Broker, DERP, MCP,
+Marketplace or workflow/script Skills.
+
+The deterministic Provider stays internal and must never retain prompt or
+credential material. Memory setup must use the real Candidate/Operation/Owner
+Approval/Grant/Effect/Audit service lifecycle rather than SQL-forged terminal
+rows. TaskLease and RunLease evidence must join through the exact historical
+binding. SIGKILL must not be defeated by a container restart policy.
+
+Treat EOF without an SSE terminal event, any Provider call-count increase on
+restart/exact replay, reused retry identity, failed kill switch, in-place
+restore, source database fingerprint drift or leaked Compose resource as a
+veto. Remove operator env, canary state and dump after the run; upload only the
+redacted receipt.
+
+Local offline tests are intentionally small. The authoritative P5.9P evidence
+is the clean GitHub Ubuntu `personal-production-acceptance` job. Do not claim
+P5.9P PASS or create the P6.0 Admission record until that job and required CI
+are green and the receipt is inspected.

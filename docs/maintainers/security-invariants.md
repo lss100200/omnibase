@@ -3399,3 +3399,60 @@ Gate 的 `personal/ready_for_activation` 只表示 Owner 授权的个人 canary 
 记录，撤销受影响的 Grant/Lease，要求 Owner 对新的 exact request 重新批准；不得直接
 改行、复活 Lease、重置预算、把 unknown 写成 success、写 enterprise approved digest
 或自动打开 Runtime。企业轨道继续依照冻结文档保存并保持 blocked/not_proven。
+
+## INV-062 p59p-personal-production-like-acceptance
+
+**Authoritative source**
+
+- `deployment/personal-production/acceptance.compose.yml`
+- `scripts/production/p5_9p_fake_provider.py`
+- `scripts/production/p5_9p_acceptance_fixture.py`
+- `scripts/production/run_p5_9p_personal_acceptance.py`
+- `scripts/production/test_run_p5_9p_personal_acceptance.py`
+- `.github/workflows/infrastructure-gates.yml`
+- `docs/architecture/p5-9p-personal-acceptance-r0.md`
+- `docs/evidence/p5-9/personal-acceptance-r0-decision.md`
+
+P5.9P is the final production-like engineering acceptance for the single-human
+Owner personal edition. It exercises the loopback frontend Route Handler, API,
+ledger, internal model adapter and disposable PostgreSQL/Redis/MinIO
+composition. The Provider is an internal deterministic test double with no
+host port and no real credential. The fixture is bind-mounted only for the
+disposable run and is never copied into a production image.
+
+The journey must prove sealed no-tool Agent installation, first-party sealed
+instruction Skill projection, encrypted exact-scope Memory publication through
+the real Candidate/Operation/Owner Approval/Grant/Effect/Audit lifecycle,
+incremental SSE, durable cancellation, Core SIGKILL, a real TaskLease expiry,
+restart convergence to `blocked_unknown`, no automatic Provider replay and an
+explicit same-scope Owner `retry_of` with all-new execution and fencing
+identities. A missing terminal SSE event or EOF is a veto.
+
+The Core container must not restart itself during the interruption window. The
+Provider call counter must remain unchanged across restart and exact replay.
+The old Task, Attempt, Effect, Lease, Run and runtime/workload identities remain
+historical and cannot be revived. The retry receives new identities and may
+finish only as a new invocation.
+
+The kill switch must prevent any later Provider call. The deployment is then
+recreated without the Runtime overlay, and Runtime must report false. Planner
+and Multi-Agent remain false throughout.
+
+Cold recovery must stop writers, create and list a custom-format dump, and
+restore with `--no-owner --no-privileges` into a distinct Compose project and a
+new `omnibase_restore_*` database. The restored Owner must authenticate and see
+the Workspace while Runtime remains unavailable. A stable source-database
+fingerprint must be equal before and after restore; name comparison alone is
+not proof of restore-new isolation.
+
+Both disposable projects, containers, networks and volumes must be removed.
+Run-scoped operator env files, canary state and database dumps must be deleted.
+Only a redacted receipt may remain or be uploaded. The receipt must not contain
+credentials, Authorization, JWT, database/Redis locators, prompt text, Memory
+plaintext or Skill instructions.
+
+P5.9P PASS requires the GitHub Ubuntu production-like job from a clean checkout.
+Local syntax or protocol tests cannot substitute for that evidence when Docker
+is unavailable. A PASS permits the small P6.0 Personal Admission record; it is
+not a public deployment, enterprise P34.7 activation, Marketplace, MCP,
+workflow/script Skill, Planner or Multi-Agent admission.

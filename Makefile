@@ -173,7 +173,7 @@ shell: backend-shell ## 别名：后端 shell
 # 测试与质量
 # ------------------------------------------------------------
 
-.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-personal-runtime test-p5-3a-planner-contract test-p5-4a-typed-executor test-p5-6a-skill-contract test-p5-6p-skills lint lint-backend lint-frontend typecheck format format-check
+.PHONY: test test-backend test-frontend test-destructive test-destructive-down test-p5-1b-registry test-p5-1c-registry-api test-p5-2a-task-ledger-contract test-p5-2b-task-ledger test-p5-personal-runtime test-p5-3a-planner-contract test-p5-4a-typed-executor test-p5-6a-skill-contract test-p5-6p-skills test-p5-9p-personal-acceptance lint lint-backend lint-frontend typecheck format format-check
 
 test: test-backend test-frontend ## 运行所有测试
 
@@ -364,6 +364,11 @@ test-p5-personal-runtime: ## Disposable current-head personal single-Owner no-to
 		$(COMPOSE) -p "$(TEST_COMPOSE_PROJECT)" -f "$$base_file" -f "$$compose_file" run --rm --no-deps \
 		  -v "$$repo_root:/workspace" -w /workspace backend \
 		  /app/.venv/bin/python -m pytest scripts/production/test_manage_p5_personal_runtime.py -q
+
+test-p5-9p-personal-acceptance: ## Disposable personal Agent/SSE/restart/restore acceptance
+	python scripts/production/run_p5_9p_personal_acceptance.py \
+	  --repo-root "$(CURDIR)" \
+	  --work-root "$(CURDIR)/.tmp/p5-9p-personal-acceptance"
 
 test-p5-3a-planner-contract: ## 离线 P5.3A Planner Proposal 合同预检（validate-only，只读，不碰数据库）
 	$(COMPOSE) run --rm --no-deps -v .:/workspace -w /workspace backend \

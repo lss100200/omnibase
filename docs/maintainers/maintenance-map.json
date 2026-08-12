@@ -883,6 +883,26 @@
         "backend/tests/test_agent_alpha_personal_router.py",
         "backend/tests/integration/test_p5_6p_personal_instruction_skill_runtime.py"
       ]
+    },
+    {
+      "id": "INV-062",
+      "title": "P5.9P personal production-like acceptance proves the complete single-Owner Agent lifecycle and restores every production feature gate to false",
+      "document": "docs/maintainers/security-invariants.md#inv-062-p59p-personal-production-like-acceptance",
+      "source_paths": [
+        "deployment/personal-production/acceptance.compose.yml",
+        "scripts/production/p5_9p_fake_provider.py",
+        "scripts/production/p5_9p_acceptance_fixture.py",
+        "scripts/production/run_p5_9p_personal_acceptance.py",
+        "scripts/production/test_run_p5_9p_personal_acceptance.py",
+        ".github/workflows/infrastructure-gates.yml",
+        "Makefile",
+        "docs/architecture/p5-9p-personal-acceptance-r0.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-9/personal-acceptance-r0-decision.md"
+      ],
+      "test_paths": [
+        "scripts/production/test_run_p5_9p_personal_acceptance.py"
+      ]
     }
   ],
   "modules": [
@@ -3366,6 +3386,65 @@
         "Keep Runtime=false outside the exact personal canary and keep Planner/Multi-Agent false; disable or revoke an ambiguous installation.",
         "Preserve immutable SkillVersion and installation history; never edit a sealed version, revive a revoked installation or reuse an old idempotency key across bundle drift.",
         "Use a forward fix or restore into a new omnibase_restore_* database; populated migration 0014 cannot be destructively downgraded."
+      ]
+    },
+    {
+      "id": "personal-production-acceptance",
+      "name": "P5.9P disposable personal production-like product, interruption, retry and restore-new acceptance",
+      "source_paths": [
+        "deployment/personal-production/compose.yml",
+        "deployment/personal-production/acceptance.compose.yml",
+        "deployment/production/personal-runtime-canary.compose.example.yml",
+        "scripts/production/p5_9p_fake_provider.py",
+        "scripts/production/p5_9p_acceptance_fixture.py",
+        "scripts/production/run_p5_9p_personal_acceptance.py",
+        "scripts/production/test_run_p5_9p_personal_acceptance.py",
+        ".github/workflows/infrastructure-gates.yml",
+        "Makefile",
+        "docs/architecture/p5-9p-personal-acceptance-r0.md",
+        "docs/runbooks/p5-personal-production-target.md",
+        "docs/evidence/p5-9/personal-acceptance-r0-decision.md"
+      ],
+      "entrypoints": [
+        "scripts/production/run_p5_9p_personal_acceptance.py:main",
+        "scripts/production/p5_9p_fake_provider.py:main",
+        "scripts/production/p5_9p_acceptance_fixture.py:main",
+        "Makefile:test-p5-9p-personal-acceptance"
+      ],
+      "public_interfaces": [
+        "GitHub Linux disposable production-like acceptance with no real Provider credential",
+        "Loopback frontend product journey through the streaming Route Handler",
+        "Single-Owner explicit retry_of after restart recovery without automatic Provider replay",
+        "Cold pg_dump and restore into a new omnibase_restore_* database with Runtime disabled"
+      ],
+      "depends_on": [
+        "personal-production-target-r1",
+        "personal-runtime-canary",
+        "agent-alpha-workbench",
+        "p5-task-ledger-persistence",
+        "agent-memory-runtime",
+        "personal-instruction-skills"
+      ],
+      "invariants": [
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-057",
+        "INV-059",
+        "INV-060",
+        "INV-061",
+        "INV-062"
+      ],
+      "verification": [
+        "python scripts/production/test_run_p5_9p_personal_acceptance.py",
+        "python scripts/production/run_p5_9p_personal_acceptance.py --repo-root . --work-root <disposable-path>",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Treat any missing terminal SSE event, automatic Provider replay, reused execution identity, failed kill switch, cleanup leak or in-place restore as a veto.",
+        "Keep Runtime=false after acceptance and on the restored target; Planner and Multi-Agent remain false throughout.",
+        "Delete run-scoped operator env, canary state and database dump after exact Compose project and volume cleanup; retain only the redacted receipt."
       ]
     }
   ]

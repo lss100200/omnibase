@@ -5015,3 +5015,92 @@ root .env not read
 business database not accessed or migrated
 not deployed
 ```
+
+### P5.8P merge and P5.9P personal production-like acceptance (2026-08-12)
+
+The preceding P5.8P checkpoint is superseded by remote evidence. PR #32 merged
+the recovery increment into GitHub `main`:
+
+```text
+P5.8P PR = #32
+P5.8P merge commit = 559febda88019c790d7363db95304632bbdbb39a
+main tree = c79eb7663cffbbeb575c7116cf248b4b8c4492e7
+required CI = green
+```
+
+The active worktree is now
+`OmniBase Worktrees/Active/p5-9p-personal-acceptance-r0` on branch
+`codex/p5-9p-personal-acceptance-r0`. Its local base commit differs from the
+GitHub merge commit but has the exact same tree, so P5.9P starts from the
+authoritative merged product bytes.
+
+P5.9P is the last engineering Gate before the small P6.0 Personal Admission
+record. The implementation creates two isolated production-shape Compose
+projects. Project A runs the loopback frontend, backend, PostgreSQL, Redis,
+MinIO and an internal deterministic OpenAI-compatible Provider. Project B uses
+a new `omnibase_restore_*` database and new volumes for cold restore-new.
+
+The journey exercises the real product path:
+
+```text
+Owner register/login
+-> Workspace + sealed no-tool Agent
+-> first-party sealed instruction Skill
+-> exact personal Runtime canary
+-> incremental frontend SSE
+-> encrypted scoped Memory through real Candidate/Owner approval lifecycle
+-> durable cancel
+-> Core SIGKILL with restart policy disabled
+-> wait beyond real TaskLease TTL
+-> restart / blocked_unknown / one reconciliation / no Provider replay
+-> explicit Owner retry_of with all-new execution identities
+-> kill switch
+-> Runtime=false recreation
+-> cold pg_dump / pg_restore --list
+-> restore-new authenticated smoke
+-> exact project/volume and secret-artifact cleanup
+```
+
+The fake Provider has no host port and stores only a call count and two marker
+booleans. It never stores prompt or Authorization material. The acceptance
+fixture is bind-mounted and is not part of the production image. The redacted
+receipt rejects secret-shaped keys and database/Redis secret locators.
+
+Two initial draft defects were fixed before CI wiring: Memory no longer forges
+accepted rows with direct SQL and instead uses the existing
+`create_candidate()` / Owner `confirm_candidate()` Operation, Approval, Grant,
+Effect and Audit lifecycle; historical RunLease evidence now joins through the
+exact TaskLease rather than selecting an arbitrary latest Workspace Run lease.
+The Core service also overrides `restart: no`, SSE EOF without a terminal event
+is a veto, source restore isolation uses a stable database fingerprint, and a
+cleanup leak changes the result to failure.
+
+Current evidence:
+
+```text
+Python syntax compilation = passed
+offline acceptance harness = 9 passed
+locked OpenAI SDK 1.109.1 fake-Provider SSE smoke = 5 chunks / passed
+base and canary Compose postures = exact / passed
+local production-like Compose journey = not run (Docker daemon unavailable)
+GitHub personal-production-acceptance = pending branch push/PR
+```
+
+No unknown local PostgreSQL instance was used as a substitute. The root `.env`
+was not read, no business database was accessed or migrated, and no real
+Provider credential was used. Migration head remains `0014`; migration `0015`
+is absent. Runtime defaults false, and Planner/Multi-Agent remain false.
+
+Current posture:
+
+```text
+P5_6P_MERGED
+P5_8P_MERGED
+P5_9P_IMPLEMENTED_PENDING_GITHUB_LINUX_ACCEPTANCE
+P6_0_PERSONAL_ADMISSION_PENDING
+AGENT_RUNTIME_ENABLED=false outside the exact disposable canary
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen and not a personal P6 blocker
+not deployed
+```

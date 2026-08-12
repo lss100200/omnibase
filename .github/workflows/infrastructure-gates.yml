@@ -268,6 +268,54 @@ jobs:
       - name: Fresh migration and isolated integration gate
         run: make test-destructive
 
+  personal-production-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    needs:
+      - backend
+      - frontend-and-typescript-sdk
+      - compose-config
+      - postgres-sentinel-integration
+    env:
+      P5_ACCEPTANCE_WORK_ROOT: ${{ runner.temp }}/omnibase-p5-9p-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate the offline P5.9P harness
+        run: python scripts/production/test_run_p5_9p_personal_acceptance.py
+      - name: Run the disposable personal production acceptance
+        run: >-
+          python scripts/production/run_p5_9p_personal_acceptance.py
+          --repo-root "$GITHUB_WORKSPACE"
+          --work-root "$P5_ACCEPTANCE_WORK_ROOT"
+      - name: Upload the redacted P5.9P receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-9p-personal-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.P5_ACCEPTANCE_WORK_ROOT }}/p5-9p-acceptance-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Assert disposable P5.9P resources are gone
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          containers="$(docker ps -aq --filter 'name=omnibase-p59p-' || true)"
+          networks="$(docker network ls --format '{{.Name}}' | grep -E '^omnibase-p59p-[ab]-[0-9a-f]{8}_' || true)"
+          volumes="$(docker volume ls --format '{{.Name}}' | grep -E '^omnibase-p59p-[ab]-[0-9a-f]{8}_' || true)"
+          if [ -n "$containers$networks$volumes" ]; then
+            [ -z "$containers" ] || docker rm -f $containers
+            [ -z "$networks" ] || docker network rm $networks
+            [ -z "$volumes" ] || docker volume rm $volumes
+            echo "P5.9P resources required workflow fallback cleanup" >&2
+            exit 1
+          fi
+
   frontend-production-smoke:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
