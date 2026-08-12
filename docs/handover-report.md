@@ -5241,3 +5241,111 @@ business database not accessed or migrated
 not deployed
 P6.0 not started
 ```
+
+### P6.0-A Personal Engineering Workbench implementation start (2026-08-13)
+
+User approval moved P6.0 from planning to implementation. A new isolated
+worktree and branch were created from merged `origin/main@46bc894`:
+
+```text
+worktree = E:\Agent IDE\OmniBase Worktrees\Active\p6-0-personal-engineering-workbench
+branch = codex/p6-0-personal-engineering-workbench
+pre-HEAD = 46bc8948fb600c8cc174393064b7d2877c351594
+```
+
+The repository root was not reused because it remains on an old dirty branch.
+No existing worktree was modified.
+
+The first P6.0-A slice replaces the `/dashboard` RAG shell with the Personal
+Engineering Workbench and delivers an IDE-shaped top bar, session rail,
+conversation pane and context/employee rail. Sessions can be created,
+searched, pinned, archived, restored and inspected through an append-only local
+timeline. The versioned browser projection is tenant/user scoped and capped at
+80 sessions and 400 terminal messages per session.
+
+The employee contract contains one default-active parent Agent plus nine
+dormant specialists. No `@` routes to the parent. One recognized `@` routes a
+request-scoped role context to one specialist. Unicode NFKC normalization is
+applied; unknown, empty and multiple mentions fail before dispatch. Specialists
+cannot wake one another and return to dormant after success, failure or cancel.
+This uses the existing single Agent Alpha Runtime and does not enable
+Multi-Agent.
+
+Existing Workspace/profile status, same-origin streaming Route Handler,
+Agent Alpha SSE parser, cancellation and InvocationGuard are reused. The first
+repository is browser-local because Task/Run is an execution ledger and Memory
+is curated context, not transcript persistence. Migration `0016` remains
+absent.
+
+The first independent review then found session/Workspace ownership,
+double-submit, browser quota, sensitive local text, malformed `@`, stale
+Workspace response and missing-refresh-token UX gaps. The forward-only
+review-fix binds every invocation to immutable session/Workspace/generation
+context, disables session and Workspace mutation while running, drops stale
+runtime responses, aborts on unmount, performs the exact 32,000-character
+specialist-wrapper preflight, validates a strict closed-set local schema, caps
+the store at 4 MiB, preserves active/pinned sessions, redacts secret/locator
+categories before they enter the durable projection and maps missing refresh
+credentials to stable `auth_session_expired` handling.
+
+Local verification after the review-fix:
+
+```text
+frontend tests = 114 passed
+frontend typecheck = passed
+frontend lint = passed
+frontend NODE_ENV=production build = passed
+docker compose --env-file .env.example config --quiet = passed
+maintainer map = valid (54 invariants / 46 modules / 872 path specs)
+maintainer benchmark = valid (3 plans / 8 scenarios / 9 unsafe vetoes)
+```
+
+Current posture:
+
+```text
+P6_0_A_ENGINEERING_ACCEPTED_PENDING_PRODUCT_BROWSER_REVIEW
+P6_0_B_NOT_STARTED
+P6_0_C_NOT_STARTED
+P6_0_D_NOT_STARTED
+migration head = 0015
+migration 0016 absent
+Planner disabled
+Multi-Agent disabled
+root .env not read
+business database not accessed or migrated
+not pushed / not merged / not deployed
+```
+
+Independent review Round 1 identified two P1 issues: an identity scope change
+could issue one Runtime request using the previous Workspace ID, and the local
+redactor missed Basic Authorization, an un-delimited GitHub token and URI
+userinfo credentials. The forward fix clears Workspace/Runtime selection on
+scope change and requires the selected Workspace to exist in the newly scoped
+authorized list before profiles/status are fetched. The redactor and attack
+suite cover all three credential forms. Independent Round 2 reported no
+remaining P0/P1/P2. The final 114-test, typecheck, lint, production build,
+Prettier, maintainer-map, benchmark and `git diff --check` matrix passed.
+
+### Docker/WSL virtual-disk recovery and permanent guardrail (2026-08-13)
+
+The C: incident was infrastructure pressure, not repository corruption. After
+rebuildable BuildKit/image/dependency caches were removed and the stopped data
+disk was compacted, `docker_data.vhdx` decreased from 244.92 GiB to 28.90 GiB.
+An attempted 100-GiB capacity cap was abandoned because the platform did not
+offer a verified filesystem-aware in-place shrink for the Docker data disk.
+No 100-GiB cap is claimed.
+
+Restoring the preserved data-disk backup exposed a WSL VM-SID ACL requirement;
+after restoring that ACL the remaining startup error was traced to
+`WSL_E_USER_VHD_ALREADY_ATTACHED`. A normal Docker Desktop shutdown released
+the stale attachment and a clean restart passed Docker Engine 29.6.2, direct
+`docker-desktop` WSL execution, an isolated no-network container smoke and
+named-volume discovery. Existing OmniBase containers and data volumes remain
+present and stopped; no business database was opened or migrated.
+
+`INV-064 virtual-disk-ownership-backup-and-offline-maintenance` now permanently
+requires owner/system-vs-data discovery, stopped writers, exact paths, mount
+verification, cross-disk backup, filesystem-aware supported operations and VM
+service ACL/SID-preserving restore. It forbids deleting, truncating, replacing
+or shrinking a mounted or unknown virtual disk and records that compaction is
+not a capacity limit. P6 work resumed without further VHD/VHDX operations.

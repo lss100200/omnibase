@@ -909,6 +909,40 @@
       "test_paths": [
         "scripts/production/test_run_p5_9p_personal_acceptance.py"
       ]
+    },
+    {
+      "id": "INV-063",
+      "title": "P6.0 personal workbench sessions stay scoped and bounded while specialist employees require one explicit Owner mention",
+      "document": "docs/maintainers/security-invariants.md#inv-063-p60-personal-workbench-session-and-employee-boundary",
+      "source_paths": [
+        "frontend/app/(dashboard)/dashboard/page.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/invocation-state.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "docs/architecture/p6-0-personal-engineering-workbench.md",
+        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/agent-alpha-stream.test.ts",
+        "frontend/lib/invocation-state.test.ts",
+        "frontend/lib/personal-runtime-gate.test.ts"
+      ]
+    },
+    {
+      "id": "INV-064",
+      "title": "Virtual disks require ownership discovery, stopped writers, cross-disk backup, filesystem-aware offline maintenance and VM ACL-preserving recovery",
+      "document": "docs/maintainers/security-invariants.md#inv-064-virtual-disk-ownership-backup-and-offline-maintenance",
+      "source_paths": [
+        "AGENTS.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "test_paths": [
+        "scripts/maintenance/validate_maintainer_map.py"
+      ]
     }
   ],
   "modules": [
@@ -3459,6 +3493,61 @@
         "Treat any missing terminal SSE event, automatic Provider replay, reused execution identity, failed kill switch, cleanup leak or in-place restore as a veto.",
         "Keep Runtime=false after acceptance and on the restored target; Planner and Multi-Agent remain false throughout.",
         "Delete run-scoped operator env, canary state and database dump after exact Compose project and volume cleanup; retain only the redacted receipt."
+      ]
+    },
+    {
+      "id": "p6-personal-engineering-workbench",
+      "name": "P6.0-A personal engineering workbench, browser session projection and explicit single-employee routing",
+      "source_paths": [
+        "frontend/app/(dashboard)/dashboard/page.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/invocation-state.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "docs/architecture/p6-0-personal-engineering-workbench.md",
+        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md"
+      ],
+      "entrypoints": [
+        "frontend/app/(dashboard)/dashboard/page.tsx:DashboardPage",
+        "frontend/components/workbench/personal-engineering-workbench.tsx:PersonalEngineeringWorkbench",
+        "frontend/lib/p6-workbench.ts:parseEmployeeInvocation",
+        "frontend/lib/p6-workbench.ts:parseWorkbenchState"
+      ],
+      "public_interfaces": [
+        "Authenticated /dashboard Personal Engineering Workbench",
+        "Tenant/user-scoped versioned browser session projection with create/search/pin/archive/restore and timeline",
+        "One default-active parent Agent plus nine dormant specialist role contexts selected by exactly one Owner-authored @ mention",
+        "Existing Agent Alpha Workspace/profile/SSE/cancel/usage interfaces without Planner or Multi-Agent activation"
+      ],
+      "depends_on": [
+        "frontend",
+        "agent-alpha-workbench",
+        "workspace-control-plane",
+        "personal-runtime-canary"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-060",
+        "INV-063"
+      ],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Remove only the exact scoped omnibase.p6.workbench.v1:<tenant>:<user> browser record or fall back to /agents; preserve Task, Run, Memory and Audit rows.",
+        "Never replay a Provider request from recovered browser history, persist partial SSE as success, or enable Planner/Multi-Agent to repair a UI projection.",
+        "Keep migration 0016 absent until a separately reviewed tenant/user/workspace-bound conversation service is authorized."
       ]
     }
   ]

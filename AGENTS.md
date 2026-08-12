@@ -232,6 +232,16 @@ runtime evidence; then correct the stale documentation in the same change.
 - Do not use `git add .`. Stage explicit paths and inspect the cached diff.
 - Do not run destructive database tests against a normal database. Use the
   sentinel Compose project and `omnibase_test_*` names enforced by the Makefile.
+- Treat Docker Desktop, WSL, Hyper-V and other VM disk images as stateful
+  infrastructure, not disposable cache files. Before any VHD/VHDX/VDI/VMDK
+  maintenance, identify the owner, distinguish system and data disks, stop all
+  writers, verify the exact absolute path and mount state, inventory referenced
+  containers/volumes, and create a length-checked backup with a tested restore
+  path. Never delete, truncate, replace or shrink a mounted or unknown virtual
+  disk. `compact` reclaims host blocks but does not impose a capacity limit;
+  capacity changes must use a platform-supported filesystem-aware operation and
+  be verified at the guest filesystem and container-format layers. A restored
+  disk must preserve or explicitly restore the VM service ACL/SID before boot.
 - Do not push, publish, deploy, rotate credentials, or migrate a business
   database unless the user explicitly authorizes that external state change.
 

@@ -2085,3 +2085,43 @@ Local offline tests are intentionally small. The authoritative P5.9P evidence
 is the clean GitHub Ubuntu `personal-production-acceptance` job. Do not claim
 P5.9P PASS or create the P6.0 Admission record until that job and required CI
 are green and the receipt is inspected.
+
+## P6.0 personal engineering workbench maintenance boundary
+
+Read INV-063 and `docs/architecture/p6-0-personal-engineering-workbench.md`
+before changing `/dashboard`, session persistence or employee routing.
+
+The P6.0-A workbench is a product projection over one existing personal Agent
+Runtime. The parent Agent is the only default-active actor. Specialists are
+request-scoped role contexts, not separate autonomous agents. Do not introduce
+background wake, Agent-to-Agent wake, broadcasts, multi-target `@` routing or
+any shortcut around the existing personal Runtime gate.
+
+Conversation state is currently browser-local because Task/Run is an execution
+ledger and Memory is curated context. Keep the store tenant/user scoped,
+versioned, bounded and free of tokens, credentials, Capability material and
+physical locators. Persist only terminal messages. A later cross-device model
+must use dedicated tenant/user/workspace-bound session tables; do not overload
+Task, Run, Memory or Audit rows and do not create migration `0016` merely to
+hide the current product boundary.
+
+The workbench must continue to use `agentAlphaApi`, the streaming Route
+Handler, `consumeAgentAlphaStream`, `InvocationGuard` and the personal Runtime
+gate. Unknown outcomes never replay from local history. On failure, discard
+only the scoped local projection or fall back to `/agents`; preserve all server
+evidence and keep Planner/Multi-Agent disabled.
+
+## Virtual-disk maintenance boundary
+
+Read INV-064 before touching Docker Desktop, WSL, Hyper-V, VirtualBox or other
+VM disk images. A VHDX that mostly contains rebuildable cache is still the
+stateful owner of images, containers and named volumes. Distinguish Docker's
+system distribution disk from its container-data disk; never infer ownership
+from size or filename alone.
+
+Clean from inside the engine first and preserve unknown or data-bearing volumes.
+Any offline disk work requires stopped writers, an exact resolved path, an
+unmounted image, a length-checked backup on another disk and a tested recovery
+path. `compact` is host-space reclamation, not a capacity limit. Never force a
+shrink when the guest filesystem or container format cannot prove the minimum
+safe size, and preserve the VM service SID ACL when restoring a copied image.

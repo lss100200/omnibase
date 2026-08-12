@@ -166,6 +166,24 @@ export async function refreshAccessToken(): Promise<string> {
   return refreshPromise
 }
 
+async function refreshStreamAfterUnauthorized(
+  response: Response,
+  retry: (accessToken: string) => Promise<Response>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  if (response.status !== 401) return response
+
+  if (!getRefreshToken()) {
+    invalidateAuthSession()
+    redirectToLogin()
+    throw new Error('auth_session_expired')
+  }
+
+  const accessToken = await refreshAccessToken()
+  signal?.throwIfAborted()
+  return retry(accessToken)
+}
+
 // -----------------------------------------------------------
 // Typed API surface (one function per endpoint)
 // -----------------------------------------------------------
@@ -325,11 +343,11 @@ export const ragApi = {
     }
 
     const initialResponse = await requestStream(getAccessToken())
-    if (initialResponse.status !== 401) return initialResponse
-
-    const accessToken = await refreshAccessToken()
-    options.signal?.throwIfAborted()
-    return requestStream(accessToken)
+    return refreshStreamAfterUnauthorized(
+      initialResponse,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
   },
 }
 
@@ -470,10 +488,11 @@ export const agentAlphaApi = {
       })
     }
     const response = await requestStream(getAccessToken())
-    if (response.status !== 401) return response
-    const accessToken = await refreshAccessToken()
-    options.signal?.throwIfAborted()
-    return requestStream(accessToken)
+    return refreshStreamAfterUnauthorized(
+      response,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
   },
 
   cancel: (workspaceId: string, invocationId: string) =>

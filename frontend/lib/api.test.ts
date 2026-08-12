@@ -450,6 +450,26 @@ test('Agent Alpha stream preserves idempotency and abort signal across a 401 ret
   assert.equal(new Headers(requests[1]?.headers).get('Authorization'), 'Bearer new-access')
 })
 
+test('Agent Alpha 401 without a refresh token never exposes the internal refresh error', async () => {
+  setTokens('stale-access', '', Date.now() + 60_000)
+  let fetchCount = 0
+  globalThis.fetch = async () => {
+    fetchCount += 1
+    return new Response(null, { status: 401 })
+  }
+
+  await assert.rejects(
+    agentAlphaApi.invokeStream(
+      'workspace-1',
+      { agent_version_id: 'version-1', message: 'hello' },
+      { idempotencyKey: 'stable-alpha-key' },
+    ),
+    (error: unknown) => error instanceof Error && error.message === 'auth_session_expired',
+  )
+
+  assert.equal(fetchCount, 1)
+})
+
 test('Agent Alpha cancel uses the versioned workspace invocation path', async () => {
   let requestUrl = ''
   api.defaults.adapter = async (config) => {

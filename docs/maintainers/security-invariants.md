@@ -3488,3 +3488,99 @@ Local syntax or protocol tests cannot substitute for that evidence when Docker
 is unavailable. A PASS permits the small P6.0 Personal Admission record; it is
 not a public deployment, enterprise P34.7 activation, Marketplace, MCP,
 workflow/script Skill, Planner or Multi-Agent admission.
+
+## INV-063 p60-personal-workbench-session-and-employee-boundary
+
+**Authoritative source**
+
+- `frontend/lib/p6-workbench.ts`
+- `frontend/lib/p6-workbench.test.ts`
+- `frontend/components/workbench/personal-engineering-workbench.tsx`
+- `frontend/lib/agent-alpha-stream.ts`
+- `frontend/lib/invocation-state.ts`
+- `frontend/lib/personal-runtime-gate.ts`
+- `docs/architecture/p6-0-personal-engineering-workbench.md`
+
+P6.0-A is a single-human Owner workbench over the existing bounded personal
+Agent Runtime. It is not Multi-Agent orchestration. Exactly one parent Agent is
+active by default. Nine specialist role definitions are dormant until an
+Owner-authored message explicitly names exactly one of them. Unknown,
+duplicate, broadcast or multiple employee mentions fail before any network
+request. Agent output is display data and can never wake another employee.
+
+The initial session projection is browser-local and must be scoped by the live
+tenant and user identity. It may store terminal conversation text and local
+timeline events, but must never store auth tokens, Provider secrets,
+Capability material, physical infrastructure locators or partial SSE chunks as
+successful messages. Corrupt or unsupported schema versions fail safe. The
+projection is bounded and does not reconstruct, edit or infer Task, Run,
+Attempt, Lease, Memory, ContextCapsule or append-only audit history.
+
+P6.0-A reuses the existing Agent Alpha Runtime status, profile, SSE and cancel
+boundaries. InvocationGuard still owns one in-flight request, EOF without a
+terminal stays an error, and browser history never automatically replays a
+Provider call. Planner and Multi-Agent remain false. Migration `0016` is absent
+because Task/Run and Memory are not conversation persistence substitutes.
+
+**Required verification**
+
+- `cd frontend && pnpm test`
+- `cd frontend && pnpm typecheck`
+- `cd frontend && pnpm lint`
+- `cd frontend && NODE_ENV=production pnpm build`
+- maintainer map and benchmark validators
+
+**Failure recovery**
+
+Disable the `/dashboard` P6 projection or remove only the exact scoped
+`omnibase.p6.workbench.v1:<tenant>:<user>` browser record. Keep the existing
+`/agents` diagnostic surface and server ledgers intact. Never repair local
+conversation history by mutating execution, Memory or audit records, enabling
+Planner/Multi-Agent, or replaying an unknown Provider outcome.
+
+## INV-064 virtual-disk-ownership-backup-and-offline-maintenance
+
+**Authoritative source**
+
+- `AGENTS.md`
+- `docs/maintainers/ai-maintainer-map.md`
+- platform documentation for Docker Desktop, WSL and Hyper-V disk maintenance
+
+Virtual disks are stateful infrastructure even when most allocated space is
+rebuildable cache. A maintainer must distinguish a Docker Desktop system disk
+from its container-data disk and inventory running containers, referenced
+images, named volumes and business-data risk before changing either. A large
+host VHDX is not evidence that its contents are unused, and deleting the image
+is never a substitute for inspecting the engine object graph.
+
+Cleanup proceeds inside-out: remove only proven rebuildable BuildKit cache,
+unreferenced images and explicitly named unreferenced dependency-cache volumes;
+preserve PostgreSQL, Redis, MinIO and unknown volumes. Stop all writers, shut
+down the owning engine and WSL distribution, verify the exact resolved path and
+mount state, create a length-checked backup on a different disk, and prove a
+rollback path before offline maintenance. Compacting a dynamic disk can return
+sparse blocks to the host but does not impose a hard capacity limit.
+
+Never shrink, truncate, convert, replace or delete a mounted or unidentified
+VHD/VHDX/VDI/VMDK. A capacity change is allowed only when a supported tool can
+first validate and resize the guest filesystem and then validate the container
+format. If any layer cannot prove a minimum safe size, stop instead of forcing
+a container-level shrink. Restoring a copied VHDX must also restore the owning
+VM service ACL/SID; administrator access alone does not prove WSL or Hyper-V can
+attach it.
+
+**Required verification**
+
+- guest filesystem check reports clean before and after an offline resize;
+- container-format inspection reports the intended logical and physical size;
+- the owning engine starts and enumerates the expected containers and volumes;
+- application worktrees remain unchanged except for the intended patch;
+- recovery artifacts are reported explicitly and are not silently deleted.
+
+**Failure recovery**
+
+Stop repeated boot attempts, keep the failed image, restore the length-checked
+pre-change backup to the canonical path, restore its VM service ACL/SID,
+restart the WSL/virtualization service, and verify engine plus volume inventory.
+Do not troubleshoot a virtual-disk failure by mutating OmniBase source, database
+migrations or business data.

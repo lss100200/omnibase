@@ -166,7 +166,45 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 
 ---
 
-## Phase 6: Skill + MCP 扩展生态
+## Phase 6: Personal Engineering Workbench
+
+P6 has been redirected from an extension-ecosystem-first plan to a
+front-end-first personal engineering workbench. The single human Owner remains
+the only approver. Enterprise P34.7, Planner and autonomous Multi-Agent remain
+frozen and are not P6.0 prerequisites.
+
+P6.0 is split into four bounded product increments:
+
+- **P6.0-A — workbench, conversations and employees**: IDE-style workbench,
+  browser-local session create/search/pin/archive/restore, append-only session
+  timeline, one active parent Agent and nine dormant specialist employees. A
+  user message may explicitly `@` exactly one specialist. Employees cannot
+  self-trigger, wake one another or run in the background.
+- **P6.0-B — file tree, open modes and context**: authorized Workspace tree,
+  internal viewers, system opening, and distinct `OPEN` / `CONTEXT` / `PINNED`
+  states with visible context cost. No whole-home or secret-directory scan.
+- **P6.0-C — Agent changes, diff and rollback**: task-owned ChangeSets,
+  file/hunk review and three-way rollback that preserves pre-existing user
+  dirty changes and fails closed on conflict.
+- **P6.0-D — provider adaptation, gears and product acceptance**: DeepSeek,
+  GLM, Kimi, GPT and Claude capability profiles, economic/standard/deep/audit
+  gears, provider-specific context compilation, unified streaming/cancel/usage
+  and visible token/cost budgets.
+
+P6.1+ owns Skills, MCP, SQL visualization, AI CLI adapters, Email/remote
+messaging, browser/desktop control and controlled self-modification. Those are
+not silently included in P6.0.
+
+> **P6.0-A implementation start (2026-08-13)**: branch
+> `codex/p6-0-personal-engineering-workbench` starts from merged P5.9P
+> `main@46bc894`. `/dashboard` now mounts the first Personal Engineering
+> Workbench implementation. The initial slice uses a versioned tenant/user
+> scoped browser store because Task/Run is an execution ledger and Memory is
+> curated context, not a conversation database. Migration `0016` remains
+> absent. The work is implemented and locally verified but has not yet been
+> independently reviewed, pushed, merged or deployed.
+
+## Phase 6.x: Skills + MCP extension ecosystem
 
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
