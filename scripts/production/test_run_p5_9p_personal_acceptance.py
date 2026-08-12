@@ -9,6 +9,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import p5_9p_fake_provider as fake_provider
 import run_p5_9p_personal_acceptance as acceptance
@@ -148,6 +149,37 @@ class P59PAcceptanceHarnessTests(unittest.TestCase):
         self.assertIn('AGENT_PLANNER_ENABLED: "false"', base)
         self.assertIn('MULTI_AGENT_ENABLED: "false"', base)
         self.assertIn("P5_ACCEPTANCE_FIXTURE_PATH", overlay)
+
+    def test_fixture_command_preserves_the_python_entrypoint(self) -> None:
+        with TemporaryDirectory() as repo_dir, TemporaryDirectory() as work_dir:
+            journey = acceptance.Journey(
+                repo=Path(repo_dir),
+                work_root=Path(work_dir),
+                lease_wait_seconds=95,
+            )
+            target = journey._create_target(suffix="a1b2c3d4")
+            completed = acceptance.subprocess.CompletedProcess(
+                args=[], returncode=0, stdout='{"ok":true}\n', stderr=""
+            )
+            with patch.object(journey, "compose", return_value=completed) as compose:
+                self.assertEqual(
+                    journey.fixture_command(target, ["install-skill", "--bounded"]),
+                    {"ok": True},
+                )
+            compose.assert_called_once_with(
+                target,
+                [
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "acceptance-fixture",
+                    "python",
+                    "/acceptance/p5_9p_acceptance_fixture.py",
+                    "install-skill",
+                    "--bounded",
+                ],
+                timeout=120,
+            )
 
     def test_fake_provider_stream_and_stats_are_bounded(self) -> None:
         with fake_provider._LOCK:

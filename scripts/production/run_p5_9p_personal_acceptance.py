@@ -280,7 +280,15 @@ class Journey:
     def fixture_command(self, target: Target, arguments: list[str]) -> dict[str, Any]:
         result = self.compose(
             target,
-            ["run", "--rm", "--no-deps", "acceptance-fixture", *arguments],
+            [
+                "run",
+                "--rm",
+                "--no-deps",
+                "acceptance-fixture",
+                "python",
+                "/acceptance/p5_9p_acceptance_fixture.py",
+                *arguments,
+            ],
             timeout=120,
         )
         lines = [line for line in result.stdout.splitlines() if line.startswith("{")]
