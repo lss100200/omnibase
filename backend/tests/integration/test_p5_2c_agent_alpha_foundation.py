@@ -1,7 +1,7 @@
 """Guarded PostgreSQL acceptance tests for the P5.2C engineering Agent Alpha.
 
 The Gate uses the P5.2C disposable sentinel database and exercises the real
-engineering composition seam: migration head 0014, a seeded live P34.4
+engineering composition seam: migration head 0015, a seeded live P34.4
 run/lease/node chain, a sealed tool-free low-risk AgentVersion with an
 installed binding, the deterministic fake Model Gateway injected at the
 composition seam, and one real HTTP/SSE Alpha invocation.  Durable
@@ -856,12 +856,12 @@ def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0014",
+        "migration_head": "0015",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
             "path": "deployment/production/personal-single-owner.example.json",
-            "sha256": "e4c386068ac28431f040a65d9264329badf034dee808c38a190d970689147f41",
+            "sha256": "a7ceaa82d762584838489c5a3bf2d7e287eaf9e7ad29aa7fe58c078360e9a1ee",
         },
         "owner_user_id": ACTOR_ID,
         "profile": "personal_single_owner",

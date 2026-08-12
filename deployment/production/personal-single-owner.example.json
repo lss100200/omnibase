@@ -20,7 +20,7 @@
   },
   "enterprise_approved_digest_present": false,
   "migration_0013_created": true,
-  "migration_head": "0014",
+  "migration_head": "0015",
   "multi_agent_enabled": false,
   "policy": {
     "approval_policy": "owner_preapproved_exact_scope",

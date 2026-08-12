@@ -5,8 +5,8 @@
 ```text
 P5_5C_ENGINEERING_ACCEPTED_PENDING_REMOTE_REVIEW
 PERSONAL_MEMORY_RUNTIME_CANARY_ONLY
-MIGRATION_HEAD_0013
-MIGRATION_0014_ABSENT
+CURRENT_PERSONAL_MIGRATION_HEAD_0015
+MIGRATION_0016_ABSENT
 DEFAULT_RUNTIME_OFF
 PLANNER_FALSE
 MULTI_AGENT_FALSE
@@ -35,6 +35,10 @@ Multi-Agent execution.
 - The Memory policy digest participates in the invocation request hash. The
   Capsule and contiguous item rows commit before provider dispatch. Exact
   terminal replay performs zero compilation and creates no second Capsule.
+- P5.9P forward migration `0015` permits a zero-item/zero-token audit Capsule
+  for the first invocation when no Memory exists. The compiler still returns
+  no Memory projection, so the Provider prompt and SSE metadata remain
+  unchanged while the first real Candidate gains a valid source Capsule.
 - Memory is injected only as an explicitly untrusted reference-data message.
   SSE metadata is limited to Capsule ID/digest/item count.
 - Compiler failure terminalizes the reserved invocation as

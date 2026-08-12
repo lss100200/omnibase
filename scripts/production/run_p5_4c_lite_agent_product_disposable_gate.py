@@ -36,7 +36,7 @@ The run directory is **preserved** on success and on failure and can be
 independently re-verified later with ``--verify-evidence``; the Gate never
 deletes its own evidence.  It never activates production Runtime, never reads
   the root ``.env``, never touches a business database, and never opens any
-  Phase 5 production Feature Gate. Migration ``0014`` is the current repository
+  Phase 5 production Feature Gate. Migration ``0015`` is the current repository
   baseline and is only measured as a source fact.
 
 **Integrity scope.**  The sealed evidence is a **self-contained integrity
@@ -75,7 +75,7 @@ LITE_UNIT_TESTS = (
     "tests/test_p5_4b_engineering_composition.py",
 )
 BACKEND_IMAGE = "omnibase-backend:latest"
-EXPECTED_MIGRATION_HEAD = "0014"
+EXPECTED_MIGRATION_HEAD = "0015"
 EXPECTED_RUNTIME_GATES = {
     "P5_4B_ENGINEERING_ENABLED": "false",
     "AGENT_RUNTIME_ENABLED": "false",
@@ -282,9 +282,9 @@ def _discover_migration_head() -> str:
         for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
         if path.is_file() and not path.is_symlink()
     }
-    if 14 not in numeric or any(value >= 15 for value in numeric):
-        raise RuntimeError("P5.4C migration filename boundary is not exactly 0014")
-    return "0014"
+    if 15 not in numeric or any(value >= 16 for value in numeric):
+        raise RuntimeError("P5.4C migration filename boundary is not exactly 0015")
+    return "0015"
 
 
 def _validate_config() -> None:
@@ -294,7 +294,7 @@ def _validate_config() -> None:
         ).read_text(encoding="utf-8")
     )
     if config.get("migration_baseline") != EXPECTED_MIGRATION_HEAD:
-        raise RuntimeError("P5.4C Gate requires migration baseline 0014")
+        raise RuntimeError("P5.4C Gate requires migration baseline 0015")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4C activation must remain false")
     if config.get("feature_gates") != {

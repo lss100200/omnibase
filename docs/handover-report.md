@@ -5015,3 +5015,229 @@ root .env not read
 business database not accessed or migrated
 not deployed
 ```
+
+### P5.8P merge and P5.9P personal production-like acceptance (2026-08-12)
+
+The preceding P5.8P checkpoint is superseded by remote evidence. PR #32 merged
+the recovery increment into GitHub `main`:
+
+```text
+P5.8P PR = #32
+P5.8P merge commit = 559febda88019c790d7363db95304632bbdbb39a
+main tree = c79eb7663cffbbeb575c7116cf248b4b8c4492e7
+required CI = green
+```
+
+The active worktree is now
+`OmniBase Worktrees/Active/p5-9p-personal-acceptance-r0` on branch
+`codex/p5-9p-personal-acceptance-r0`. Its local base commit differs from the
+GitHub merge commit but has the exact same tree, so P5.9P starts from the
+authoritative merged product bytes.
+
+P5.9P is the last engineering Gate before the small P6.0 Personal Admission
+record. The implementation creates two isolated production-shape Compose
+projects. Project A runs the loopback frontend, backend, PostgreSQL, Redis,
+MinIO and an internal deterministic OpenAI-compatible Provider. Project B uses
+a new `omnibase_restore_*` database and new volumes for cold restore-new.
+
+The journey exercises the real product path:
+
+```text
+Owner register/login
+-> Workspace + sealed no-tool Agent
+-> first-party sealed instruction Skill
+-> exact personal Runtime canary
+-> incremental frontend SSE
+-> encrypted scoped Memory through real Candidate/Owner approval lifecycle
+-> durable cancel
+-> Core SIGKILL with restart policy disabled
+-> wait beyond real TaskLease TTL
+-> restart / blocked_unknown / one reconciliation / no Provider replay
+-> explicit Owner retry_of with all-new execution identities
+-> kill switch
+-> Runtime=false recreation
+-> cold pg_dump / pg_restore --list
+-> restore-new authenticated smoke
+-> exact project/volume and secret-artifact cleanup
+```
+
+The fake Provider has no host port and stores only a call count and two marker
+booleans. It never stores prompt or Authorization material. The acceptance
+fixture is bind-mounted and is not part of the production image. The redacted
+receipt rejects secret-shaped keys and database/Redis secret locators.
+
+Two initial draft defects were fixed before CI wiring: Memory no longer forges
+accepted rows with direct SQL and instead uses the existing
+`create_candidate()` / Owner `confirm_candidate()` Operation, Approval, Grant,
+Effect and Audit lifecycle; historical RunLease evidence now joins through the
+exact TaskLease rather than selecting an arbitrary latest Workspace Run lease.
+The Core service also overrides `restart: no`, SSE EOF without a terminal event
+is a veto, source restore isolation uses a stable database fingerprint, and a
+cleanup leak changes the result to failure.
+
+Current evidence:
+
+```text
+Python syntax compilation = passed
+offline acceptance harness = 9 passed
+locked OpenAI SDK 1.109.1 fake-Provider SSE smoke = 5 chunks / passed
+base and canary Compose postures = exact / passed
+local production-like Compose journey = not run (Docker daemon unavailable)
+GitHub personal-production-acceptance = pending branch push/PR
+```
+
+No unknown local PostgreSQL instance was used as a substitute. The root `.env`
+was not read, no business database was accessed or migrated, and no real
+Provider credential was used. Migration head remains `0014`; migration `0015`
+is absent. Runtime defaults false, and Planner/Multi-Agent remain false.
+
+Current posture:
+
+```text
+P5_6P_MERGED
+P5_8P_MERGED
+P5_9P_IMPLEMENTED_PENDING_GITHUB_LINUX_ACCEPTANCE
+P6_0_PERSONAL_ADMISSION_PENDING
+AGENT_RUNTIME_ENABLED=false outside the exact disposable canary
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen and not a personal P6 blocker
+not deployed
+```
+
+### P5.9P first-Memory bootstrap forward fix (2026-08-12)
+
+The first two GitHub Linux executions of PR #33 passed backend, frontend,
+Compose and PostgreSQL sentinel checks but both failed the final personal
+acceptance at `publish-memory`: the succeeded source Task had no ContextCapsule.
+This exposed a real personal-product bootstrap deadlock, not an enterprise Gate:
+
+```text
+no existing Memory
+-> compiler selected zero rows and created no Capsule
+-> first MemoryCandidate required an existing exact Capsule
+-> the first Memory could never be published
+```
+
+The forward fix adds tenant migration
+`0015_p5_9p_empty_context_capsules.py`. It changes only
+`context_capsules_tokens_check` from a one-token lower bound to zero while
+keeping `max_tokens >= 1`. A fresh invocation with zero selected Memory now
+commits exactly one zero-item/zero-token Capsule with all-zero sensitivity
+summary, then returns no Memory projection. It therefore adds no empty Provider
+prompt and no Memory SSE metadata. The first real Candidate binds that Capsule;
+the next invocation retrieves the published Memory. Exact replay creates no
+second Capsule. Downgrade fails closed if zero-token Capsules exist.
+
+The personal target, acceptance, static contracts and backup/restore controllers
+now bind migration head `0015` and reject `0016+`. Backup manifests independently
+seal raw migration `0013`, `0014` and `0015` bytes. The compatibility matrix adds
+only `p5-memory-bootstrap-0014-to-0015`; arbitrary forward restore and
+restore-in-place remain rejected. The acceptance receipt now includes durable
+cancel `task_state=cancelled` and `terminal_event=cancelled`.
+
+Current local evidence after the final sealed-contract reseal:
+
+```text
+Memory compiler + migration source contract = 15 passed
+backup/restore controller = 35 passed
+current-head/static contract focused = 796 passed / 1 Windows symlink skip
+sealed P5.1A/P5.2A/P5.3A/P5.0 contract chain = 457 passed
+personal Runtime/Memory focused = 191 passed; 7 Windows-only CRLF canonical-byte failures
+Docker disposable PostgreSQL = not run because Docker Desktop daemon is unresponsive
+```
+
+The seven CRLF failures are host test-fixture writes; canonical JSON rejection is
+correct and was not relaxed. GitHub Ubuntu CI remains the authoritative Linux and
+disposable PostgreSQL evidence. No normal business database or real Provider
+credential was used, the root `.env` was not read, and enterprise P34.7 remains
+frozen.
+
+```text
+P5_9P_MEMORY_BOOTSTRAP_FORWARD_FIX_IN_PROGRESS
+migration head=0015
+migration 0016 absent
+AGENT_RUNTIME_ENABLED=false outside the exact disposable canary
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+P6_0_PERSONAL_ADMISSION_PENDING_P5_9P_CI
+not deployed
+```
+
+### P5.9P final GitHub acceptance and receipt verification (2026-08-12)
+
+The preceding pending checkpoint is superseded by authoritative remote
+evidence. PR #33 exact branch head
+`9eb7238c164a0dbf380d406104f65f7823a89bbc` completed GitHub Actions run
+`31608502738` successfully:
+
+```text
+backend = success
+frontend-and-typescript-sdk = success
+compose-config = success
+postgres-sentinel-integration = success (15m22s)
+personal-production-acceptance = success (6m31s)
+workflow cleanup assertion = success
+```
+
+Two issues found by the preceding remote runs were repaired forward-only
+without weakening a safety boundary. First, the true empty migration-0013
+downgrade/re-upgrade proof now runs in its own initial pytest invocation before
+the shared sentinel retains audited Memory data; the populated-downgrade veto
+remains unchanged. Second, the cold custom-format dump now streams binary
+`pg_dump` stdout into an exclusive run-scoped host file and requires a regular,
+non-symlink, positive-size file before `pg_restore --list` and restore-new read
+the exact bytes through stdin. No container `/tmp` archive copy is trusted.
+
+GitHub uploaded exactly one artifact, ID `9147061833`, named
+`p5-9p-personal-acceptance-31608502738-1`. Its downloaded ZIP SHA-256
+`fe3e4822ce2eff58c832f158dd328e980d47ac16425f286777664ae8013c745f`
+exactly matches the GitHub artifact digest. The 1852-byte JSON receipt SHA-256
+is `1174f6dac2be15bd97a49d83d9a59fd7e3282e3e029137fa900309303895cc57`.
+Independent parsing verified the exact 20-field top-level closed set and the
+following facts:
+
+```text
+acceptance = P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED
+incremental SSE chunks = 3
+durable cancel = cancelled / cancelled terminal event
+restart recovery = blocked_unknown / one reconciliation / no Provider replay
+retry = new Task identity / succeeded
+kill switch = killed / later Provider call blocked
+Memory items = 1
+sealed Skills = 1
+cold dump writers stopped = true
+restore database prefix = omnibase_restore_*
+restore migration head = 0015
+restore Runtime = false
+source database unchanged = true
+Runtime after acceptance = false
+Planner = false
+Multi-Agent = false
+root .env accessed = false
+business database accessed or migrated = false
+real Provider credential used = false
+```
+
+The receipt contains no Authorization/JWT/API-key/password field, database or
+Redis locator, prompt text, Memory plaintext or Skill instruction content.
+Run-scoped operator env, canary state and database dump were deleted; both
+Compose projects, containers, networks and volumes were removed.
+
+Current P5.9P posture before the final evidence-only CI and merge:
+
+```text
+P5_9P_PERSONAL_PRODUCTION_LIKE_ACCEPTANCE_PASSED
+required exact-head CI green at 9eb7238c164a0dbf380d406104f65f7823a89bbc
+migration head=0015
+migration 0016 absent
+AGENT_RUNTIME_ENABLED=false by default and after acceptance
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+enterprise P34.7 frozen / blocked_not_proven
+approved enterprise trust-policy digest empty
+root .env not read
+business database not accessed or migrated
+not deployed
+P6.0 not started
+```

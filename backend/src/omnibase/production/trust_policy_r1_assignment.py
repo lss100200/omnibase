@@ -847,11 +847,13 @@ def _verify_repository_posture(repo_root: Path) -> str:
         raise ConfigurationError("migration 0013 must exist at the current repository head")
     if not any(path.name.startswith("0014_") for path in versions.glob("*.py")):
         raise ConfigurationError("migration 0014 must exist at the current repository head")
+    if not any(path.name.startswith("0015_") for path in versions.glob("*.py")):
+        raise ConfigurationError("migration 0015 must exist at the current repository head")
     if any(
-        path.name[:4].isdigit() and int(path.name[:4]) >= 15
+        path.name[:4].isdigit() and int(path.name[:4]) >= 16
         for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
     ):
-        raise ConfigurationError("migration 0015 or higher must not exist")
+        raise ConfigurationError("migration 0016 or higher must not exist")
     return migration_head
 
 

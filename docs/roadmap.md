@@ -122,7 +122,7 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 >
 > **详细实施契约**：`docs/phase-5-agent-runtime-implementation-plan.md`。该文档将 Phase 5 拆为 P5.0–P5.9：P5.0 只验证 P34.7 Evidence Manifest 和默认关闭的解冻 Gate；其后依次建设 Registry/identity、Task Lease/fencing、compile-only Planner、确定性 Validator、Executor/Model/Tool Gateway、长期 Memory、第一方原生 Skill、有界多 Agent DAG、恢复/reconciliation、UI/SDK 与生产总验收。当前仍为 `PLANNED / FROZEN`；P34.7 PASS 前不得据此提前启动 Agent Runtime。
 >
-> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C/D 已形成 fail-closed 工程与产品链。P5.5A Memory 合同、P5.5B migration `0013` persistence/delete/export/backup inventory 与 P5.5C bounded compiler/ContextCapsule injection 已通过 PR #30 进入主线；P5.6P migration `0014` sealed instruction-only Skill 已通过 PR #31 进入 `main@9809c3e`。个人 P6 的剩余最短链是 P5.8P restart/no-replay recovery、P5.9P personal target acceptance 与 P6.0 admission；P5.7 Multi-Agent、workflow/script Skill、MCP 与企业 P34.7 继续冻结。
+> **合同链进度**：P5.0、P5.1A/B/C、P5.2A/B/C、P5.3A 与 P5.4A/B/C/D 已形成 fail-closed 工程与产品链。P5.5A Memory 合同、P5.5B migration `0013` persistence/delete/export/backup inventory 与 P5.5C bounded compiler/ContextCapsule injection 已通过 PR #30 进入主线；P5.6P migration `0014` sealed instruction-only Skill 已通过 PR #31 进入主线，P5.8P restart/no-replay recovery 已通过 PR #32 进入 `main@559febd`。P5.9P 已在 clean GitHub Ubuntu run `31608502738` 完成 production-like acceptance，receipt 闭集与 artifact digest 已独立复核；本次只收尾 P5.9P，未开始 P6.0。P5.7 Multi-Agent、workflow/script Skill、MCP 与企业 P34.7 继续冻结。
 
 | 任务 | 复杂度 | 说明 |
 |---|---|---|
@@ -152,7 +152,17 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 > `blocked_unknown`，保留一条 reconciliation 且不自动重放 Provider。Owner 的
 > `retry_of` 只能指向同范围的 retryable 终态，并创建全新的 ledger/runtime
 > identity。个人 target/backup 同步到 migration `0014`，restore-new 仅增加闭集
-> `0013 -> 0014` Skill compatibility。GitHub PostgreSQL sentinel 通过后进入 P5.9P。
+> `0013 -> 0014` Skill compatibility。PR #32 已合并，required GitHub CI 全绿。
+
+> **P5.9P 当前状态（2026-08-12）**：最终个人版 production-like engineering
+> acceptance 已通过。PR #33 exact head `9eb7238c` 的 clean GitHub Ubuntu run
+> `31608502738` 中 backend、frontend/TypeScript SDK、Compose、guarded disposable
+> PostgreSQL 与 personal acceptance 全绿。唯一 receipt artifact 的 ZIP SHA-256 为
+> `fe3e4822…745f`，JSON SHA-256 为 `1174f6da…cc57`；闭集复核证明真实 loopback
+> frontend SSE、sealed Agent/Skill、加密 scoped Memory、cancel、Core SIGKILL、真实
+> Lease 过期、no-auto-replay、Owner 显式 `retry_of` 全新身份、kill switch、Runtime
+> 恢复 false、custom-format cold dump 与 `omnibase_restore_*` restore-new 均通过，
+> cleanup 成功。该 PASS 不等于部署或 P6.0；本次未开始任何 P6 工作。
 
 ---
 
@@ -233,15 +243,25 @@ P34.7 evidence campaign. A fresh Provider-backed no-tool journey and explicit
 Owner acceptance/cutover of a durable non-disposable target are still required
 before the final personal production-acceptance claim.
 
-The active personal sequence is P5.6P first-party sealed instruction Skill,
-P5.8P restart/unknown/no-replay recovery and P5.9P personal
-target acceptance before the bounded P6.0 personal admission record. P5.7
-Multi-Agent DAG, workflow/script Skills, Marketplace/MCP and enterprise P34.7
-are not personal admission prerequisites. P5.5B advanced the reviewed head to
-`0013`; P5.5C merged through PR #30 and compiles committed exact-scope Memory, persists a short-lived
+P5.6P and P5.8P are merged through PR #31 and PR #32. The active personal
+sequence is now P5.9P personal production-like acceptance followed by the
+bounded P6.0 personal admission record. P5.7 Multi-Agent DAG, workflow/script
+Skills, Marketplace/MCP and enterprise P34.7 are not personal admission
+prerequisites. P5.5B advanced the reviewed head to `0013`; P5.5C merged through
+PR #30 and compiles committed exact-scope Memory, persists a short-lived
 ContextCapsule and injects it as untrusted prompt data only inside the exact
 personal canary. Browser Memory CRUD remains absent; Runtime defaults false and
 Planner/Multi-Agent remain false.
+
+PR #33 Linux acceptance exposed and fixed the last personal bootstrap defect:
+the first successful invocation had no Capsule, so the first Memory could not
+be published. Migration `0015` permits one zero-item/zero-token audit Capsule
+without an empty prompt or SSE Memory metadata. The first real Memory binds
+that Capsule and is retrieved on the next invocation. The final clean GitHub
+Ubuntu run `31608502738` passed the guarded PostgreSQL and product acceptance
+jobs and uploaded the independently verified receipt. Current personal head is
+`0015`; `0016+`, tools, Planner, Multi-Agent, MCP and enterprise P34.7 remain
+outside this acceptance. No P6 work was started in this PR.
 
 ## Personal P6.0 admission profile
 

@@ -47,6 +47,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MIGRATION_DIRECTORY = Path("backend/src/omnibase/migrations/versions")
 _MEMORY_SCHEMA_REVISION = "0013"
 _SKILL_SCHEMA_REVISION = "0014"
+_MEMORY_BOOTSTRAP_REVISION = "0015"
 _REQUIRED_MEMORY_VECTOR_LANES = ("v1", "v2")
 _LEGACY_V1_SOURCE_HEAD = "0012"
 _REQUIRED_MEMORY_TABLES = (
@@ -310,12 +311,20 @@ def _repository_migration_facts(
         skill_record = records[_SKILL_SCHEMA_REVISION]
         skill_path = repo.joinpath(*PurePosixPath(str(skill_record["path"])).parts)
         migration_0014_schema_sha256 = _sha256_file(skill_path)
+    migration_0015_schema_sha256: str | None = None
+    if _MEMORY_BOOTSTRAP_REVISION in selected_revisions:
+        bootstrap_record = records[_MEMORY_BOOTSTRAP_REVISION]
+        bootstrap_path = repo.joinpath(
+            *PurePosixPath(str(bootstrap_record["path"])).parts
+        )
+        migration_0015_schema_sha256 = _sha256_file(bootstrap_path)
     return {
         "memory_table_names": memory_table_names,
         "memory_vector_inventory": memory_vector_inventory,
         "memory_vector_lane_versions": memory_vector_lane_versions,
         "migration_0013_schema_sha256": migration_0013_schema_sha256,
         "migration_0014_schema_sha256": migration_0014_schema_sha256,
+        "migration_0015_schema_sha256": migration_0015_schema_sha256,
         "migration_revision_list_sha256": _sha256_bytes(_canonical(chain)),
         "repository_migration_head": repository_head,
         "source_migration_head": selected_head,
@@ -329,6 +338,7 @@ def _migration_binding(value: dict[str, object]) -> dict[str, object]:
         "memory_vector_lane_versions": value["memory_vector_lane_versions"],
         "migration_0013_schema_sha256": value["migration_0013_schema_sha256"],
         "migration_0014_schema_sha256": value["migration_0014_schema_sha256"],
+        "migration_0015_schema_sha256": value["migration_0015_schema_sha256"],
         "migration_revision_list_sha256": value["migration_revision_list_sha256"],
         "source_migration_head": value["source_migration_head"],
     }
@@ -514,6 +524,18 @@ def _validate_migration_binding(value: dict[str, Any], *, where: str) -> None:
         raise BackupError(
             f"{where}.migration_0014_schema_sha256 must be null before 0014"
         )
+    bootstrap_digest = value.get("migration_0015_schema_sha256")
+    if int(head) >= int(_MEMORY_BOOTSTRAP_REVISION):
+        if not isinstance(bootstrap_digest, str) or not _SHA256.fullmatch(
+            bootstrap_digest
+        ):
+            raise BackupError(
+                f"{where}.migration_0015_schema_sha256 must be lowercase SHA-256"
+            )
+    elif bootstrap_digest is not None:
+        raise BackupError(
+            f"{where}.migration_0015_schema_sha256 must be null before 0015"
+        )
     lanes = value.get("memory_vector_lane_versions")
     if lanes != list(_REQUIRED_MEMORY_VECTOR_LANES):
         raise BackupError(f"{where}.memory_vector_lane_versions must be exactly v1/v2")
@@ -555,6 +577,7 @@ def _validate_plan_v2(plan: dict[str, Any]) -> None:
             "memory_vector_lane_versions",
             "migration_0013_schema_sha256",
             "migration_0014_schema_sha256",
+            "migration_0015_schema_sha256",
             "migration_revision_list_sha256",
             "redis",
             "schema",
@@ -1157,6 +1180,7 @@ def _validate_manifest_v2(manifest: dict[str, Any]) -> None:
             "memory_vector_lane_versions",
             "migration_0013_schema_sha256",
             "migration_0014_schema_sha256",
+            "migration_0015_schema_sha256",
             "migration_revision_list_sha256",
             "minio",
             "personal_runtime",
@@ -1487,6 +1511,7 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
             "entry_id": "p5-memory-0012-to-0013",
             "migration_0013_schema_sha256": target_0013["migration_0013_schema_sha256"],
             "migration_0014_schema_sha256": None,
+            "migration_0015_schema_sha256": None,
             "required_commands": [
                 "restore_dump_into_new_database",
                 "capture_restore_new_postgresql_inventory",
@@ -1530,6 +1555,7 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
                 "migration_0014_schema_sha256": target_0014[
                     "migration_0014_schema_sha256"
                 ],
+                "migration_0015_schema_sha256": None,
                 "required_commands": [
                     "restore_dump_into_new_database",
                     "capture_restore_new_postgresql_inventory",
@@ -1555,6 +1581,51 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
                     "memory_vector_inventory"
                 ],
                 "target_revision_list_sha256": target_0014[
+                    "migration_revision_list_sha256"
+                ],
+                "target_skill_table_names": list(_REQUIRED_SKILL_TABLES),
+                "target_skill_trigger_names": list(_REQUIRED_SKILL_TRIGGERS),
+            }
+        )
+    if int(repository_head) >= int(_MEMORY_BOOTSTRAP_REVISION):
+        source_0014 = _repository_migration_facts(repo, through_head="0014")
+        target_0015 = _repository_migration_facts(repo, through_head="0015")
+        entries.append(
+            {
+                "entry_id": "p5-memory-bootstrap-0014-to-0015",
+                "migration_0013_schema_sha256": target_0015[
+                    "migration_0013_schema_sha256"
+                ],
+                "migration_0014_schema_sha256": target_0015[
+                    "migration_0014_schema_sha256"
+                ],
+                "migration_0015_schema_sha256": target_0015[
+                    "migration_0015_schema_sha256"
+                ],
+                "required_commands": [
+                    "restore_dump_into_new_database",
+                    "capture_restore_new_postgresql_inventory",
+                    "verify_global_and_tenant_heads_at_0014",
+                    "upgrade_global_then_each_tenant_to_0015",
+                    "verify_context_capsule_zero_token_constraint",
+                ],
+                "required_evidence": [
+                    "postgres_dump_sha256",
+                    "restore_new_inventory_sha256",
+                    "global_alembic_head",
+                    "tenant_alembic_heads",
+                    "context_capsules_tokens_check",
+                ],
+                "source_head": "0014",
+                "source_revision_list_sha256": source_0014[
+                    "migration_revision_list_sha256"
+                ],
+                "target_head": "0015",
+                "target_memory_table_names": target_0015["memory_table_names"],
+                "target_memory_vector_inventory": target_0015[
+                    "memory_vector_inventory"
+                ],
+                "target_revision_list_sha256": target_0015[
                     "migration_revision_list_sha256"
                 ],
                 "target_skill_table_names": list(_REQUIRED_SKILL_TABLES),
@@ -1716,6 +1787,11 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
             compatibility_entry["migration_0014_schema_sha256"]
             if compatibility_entry is not None
             else source_binding["migration_0014_schema_sha256"]
+        ),
+        "migration_0015_schema_sha256": (
+            compatibility_entry["migration_0015_schema_sha256"]
+            if compatibility_entry is not None
+            else source_binding["migration_0015_schema_sha256"]
         ),
         "migration_mode": migration["migration_mode"],
         "migration_revision_list_sha256": source_binding[

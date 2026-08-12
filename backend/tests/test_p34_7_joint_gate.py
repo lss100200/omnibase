@@ -120,7 +120,7 @@ def _policy_dict(
             "validity_seconds": 100 * 365 * 86400,
         },
         "max_evidence_age_seconds": max_evidence_age_seconds,
-        "migration_head": "0014",
+        "migration_head": "0015",
     }
 
 
@@ -203,7 +203,7 @@ def _self_policy_dict(
             "validity_seconds": 100 * 365 * 86400,
         },
         "max_evidence_age_seconds": MAX_EVIDENCE_AGE_SECONDS,
-        "migration_head": "0014",
+        "migration_head": "0015",
     }
 
 
@@ -1062,7 +1062,7 @@ def test_unknown_top_level_field_is_rejected(tmp_path: Path) -> None:
 
 def test_wrong_migration_head_is_rejected(tmp_path: Path) -> None:
     run, payload = _forge(tmp_path)
-    payload["migration_head"] = "0015"
+    payload["migration_head"] = "0016"
     with pytest.raises(ConfigurationError, match="migration head"):
         verify_joint_evidence(run, payload)
 

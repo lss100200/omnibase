@@ -342,6 +342,42 @@ def _invoke(service: AgentAlphaService, seed) -> Iterator:  # type: ignore[no-un
     )
 
 
+def test_empty_memory_compile_persists_zero_item_source_capsule(
+    db_engine, run_owned_resources
+) -> None:  # type: ignore[no-untyped-def]
+    _alembic("upgrade", "head")
+    seed = _seed_memory_target(db_engine, run_owned_resources, "p55c-empty")
+    cipher = MemoryContentCipher(b"m" * 32)
+    with db_engine.begin() as connection:
+        _set_tenant_search_path(connection, seed.schema_name)
+        task_id = _insert_runtime_task(connection, seed)
+
+    provider = _Provider()
+    events = list(_invoke(_service(db_engine, seed, cipher, task_id, provider), seed))
+
+    assert events[-1].kind == "done"
+    assert "context_capsule_id" not in events[0].payload
+    assert all(
+        "untrusted reference data" not in message.content
+        for message in provider.requests[0].messages
+    )
+    with db_engine.connect() as connection:
+        _set_tenant_search_path(connection, seed.schema_name)
+        capsule = connection.execute(
+            text(
+                "SELECT id, total_tokens FROM context_capsules "
+                "WHERE task_id = :task AND invocation_id = :task"
+            ),
+            {"task": task_id},
+        ).one()
+        item_count = connection.execute(
+            text("SELECT count(*) FROM context_capsule_items WHERE capsule_id = :capsule"),
+            {"capsule": capsule.id},
+        ).scalar_one()
+    assert capsule.total_tokens == 0
+    assert item_count == 0
+
+
 def test_compile_persist_inject_incremental_sse_and_cancel_converge(
     db_engine, run_owned_resources
 ) -> None:  # type: ignore[no-untyped-def]

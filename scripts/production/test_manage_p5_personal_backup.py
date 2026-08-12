@@ -62,7 +62,7 @@ def _write_migration(
     return path
 
 
-def _repo_fixture(repo: Path, *, head: str = "0014") -> None:
+def _repo_fixture(repo: Path, *, head: str = "0015") -> None:
     previous: str | None = None
     for number in range(1, int(head) + 1):
         revision = f"{number:04d}"
@@ -75,7 +75,7 @@ def _repo_fixture(repo: Path, *, head: str = "0014") -> None:
         previous = revision
 
 
-def _prepare_backup(tmp_path: Path, *, head: str = "0014") -> tuple[Path, Path]:
+def _prepare_backup(tmp_path: Path, *, head: str = "0015") -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _repo_fixture(repo, head=head)
@@ -100,7 +100,7 @@ def _prepare_backup(tmp_path: Path, *, head: str = "0014") -> tuple[Path, Path]:
     return repo, target
 
 
-def _stage(tmp_path: Path, *, head: str = "0014") -> tuple[Path, Path]:
+def _stage(tmp_path: Path, *, head: str = "0015") -> tuple[Path, Path]:
     repo, target = _prepare_backup(tmp_path, head=head)
     postgres_inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
@@ -128,6 +128,7 @@ def _stage_v1(tmp_path: Path) -> tuple[Path, Path]:
         "memory_vector_lane_versions",
         "migration_0013_schema_sha256",
         "migration_0014_schema_sha256",
+        "migration_0015_schema_sha256",
         "migration_revision_list_sha256",
         "source_migration_head",
     ):
@@ -146,6 +147,7 @@ def _stage_v1(tmp_path: Path) -> tuple[Path, Path]:
         "memory_vector_lane_versions",
         "migration_0013_schema_sha256",
         "migration_0014_schema_sha256",
+        "migration_0015_schema_sha256",
         "migration_revision_list_sha256",
         "source_migration_head",
     ):
@@ -241,7 +243,7 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
     assert verified["backup_verified"] is True
     assert verified["execution_authorized"] is False
     assert verified["postgres_inventory_verified"] is True
-    assert verified["source_migration_head"] == "0014"
+    assert verified["source_migration_head"] == "0015"
     assert verified["memory_vector_lane_versions"] == ["v1", "v2"]
     inventory = _inventory(tmp_path / "databases.json")
     restore = backup.plan_restore(
@@ -256,8 +258,8 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
     assert restore["execution_authorized"] is False
     assert restore["target_database"] == "omnibase_restore_20260811"
     assert restore["migration_mode"] == "same_revision"
-    assert restore["source_migration_head"] == "0014"
-    assert restore["target_migration_head"] == "0014"
+    assert restore["source_migration_head"] == "0015"
+    assert restore["target_migration_head"] == "0015"
     assert restore["redis"] == {
         "archived": False,
         "authoritative": False,
@@ -271,11 +273,12 @@ def test_complete_backup_and_restore_plan_are_offline_and_bound(tmp_path: Path) 
         == f"{backup.MINIO_ROOT}/bucket/object.bin"
     )
     assert manifest["personal_runtime"]["config"]["path"] == backup.RUNTIME_CONFIG
-    assert manifest["source_migration_head"] == "0014"
+    assert manifest["source_migration_head"] == "0015"
     assert manifest["memory_vector_lane_versions"] == ["v1", "v2"]
     assert len(manifest["migration_revision_list_sha256"]) == 64
     assert len(manifest["migration_0013_schema_sha256"]) == 64
     assert len(manifest["migration_0014_schema_sha256"]) == 64
+    assert len(manifest["migration_0015_schema_sha256"]) == 64
 
 
 def test_0013_backup_requires_canonical_0014_skill_upgrade_entry(
@@ -310,6 +313,41 @@ def test_0013_backup_requires_canonical_0014_skill_upgrade_entry(
         backup._REQUIRED_SKILL_TRIGGERS
     )
     assert len(restore["migration_0014_schema_sha256"]) == 64
+    assert restore["migration_0015_schema_sha256"] is None
+
+
+def test_0014_backup_requires_canonical_0015_memory_bootstrap_upgrade_entry(
+    tmp_path: Path,
+) -> None:
+    repo, target = _stage(tmp_path, head="0014")
+    _write_migration(repo, "0015", "0014")
+    inventory = _inventory(tmp_path / "databases.json")
+    arguments = {
+        "repo_root": str(repo),
+        "backup_target": str(target),
+        "target_database": "omnibase_restore_memory_bootstrap_upgrade",
+        "database_inventory": str(inventory),
+        "minio_restore_root": str(tmp_path / "restored-memory-bootstrap-minio"),
+    }
+    with pytest.raises(backup.BackupError, match="canonical compatibility entry"):
+        backup.plan_restore(Namespace(**arguments))
+    restore = backup.plan_restore(
+        Namespace(
+            **arguments,
+            compatibility_entry="p5-memory-bootstrap-0014-to-0015",
+        )
+    )
+    assert restore["migration_mode"] == "canonical_compatibility_upgrade"
+    assert restore["source_migration_head"] == "0014"
+    assert restore["target_migration_head"] == "0015"
+    assert restore["compatibility_entry"]["entry_id"] == (
+        "p5-memory-bootstrap-0014-to-0015"
+    )
+    assert (
+        "verify_context_capsule_zero_token_constraint"
+        in restore["compatibility_entry"]["required_commands"]
+    )
+    assert len(restore["migration_0015_schema_sha256"]) == 64
 
 
 def test_seal_rejects_a_dump_inventory_observed_at_0012_as_0013(
@@ -339,7 +377,7 @@ def test_postgres_inventory_must_be_canonical_and_dump_bound(tmp_path: Path) -> 
     inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
         dump=target / backup.POSTGRES_DUMP,
-        head="0014",
+        head="0015",
         source_database="omnibase",
     )
     value = json.loads(inventory.read_bytes())
@@ -404,7 +442,7 @@ def test_postgres_inventory_binds_tenant_registry_tables_and_triggers(
     inventory = _postgres_backup_inventory(
         tmp_path / "postgres-inventory.json",
         dump=target / backup.POSTGRES_DUMP,
-        head="0014",
+        head="0015",
         source_database="omnibase",
     )
     value = json.loads(inventory.read_bytes())
@@ -623,7 +661,7 @@ def test_digest_drift_is_rejected(tmp_path: Path) -> None:
         _verify(repo, target)
 
 
-@pytest.mark.parametrize("revision", ["0007", "0013", "0014"])
+@pytest.mark.parametrize("revision", ["0007", "0013", "0014", "0015"])
 def test_repository_migration_byte_drift_is_rejected(
     tmp_path: Path, revision: str
 ) -> None:
@@ -658,7 +696,7 @@ def test_seal_rejects_repository_advancing_after_plan(tmp_path: Path) -> None:
             source_database="omnibase",
         )
     )
-    _write_migration(repo, "0015", "0014")
+    _write_migration(repo, "0016", "0015")
     with pytest.raises(backup.BackupError, match="drifted after backup planning"):
         backup.seal_assets(
             Namespace(
@@ -741,7 +779,7 @@ def test_arbitrary_forward_restore_is_not_in_the_canonical_matrix(
     tmp_path: Path,
 ) -> None:
     repo, target = _stage(tmp_path)
-    _write_migration(repo, "0015", "0014")
+    _write_migration(repo, "0016", "0015")
     inventory = _inventory(tmp_path / "databases.json")
     arguments = {
         "repo_root": str(repo),
@@ -798,8 +836,8 @@ def test_newer_backup_is_rejected_by_an_older_repository(tmp_path: Path) -> None
 
 def test_branched_target_migration_graph_is_rejected(tmp_path: Path) -> None:
     repo, target = _stage(tmp_path)
-    _write_migration(repo, "0015", "0014")
-    _write_migration(repo, "0016", "0014")
+    _write_migration(repo, "0016", "0015")
+    _write_migration(repo, "0017", "0015")
     inventory = _inventory(tmp_path / "databases.json")
     with pytest.raises(backup.BackupError, match="exactly one head"):
         backup.plan_restore(

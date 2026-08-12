@@ -224,7 +224,7 @@ def test_0008_schema_is_global_closed_and_append_only(db_engine, p345_state) -> 
                 "'sandbox_operation_transitions', 'capability_usage_reservations')"
             )
         ).scalar_one()
-    assert revision == "0014"
+    assert revision == "0015"
     assert {
         "sandbox_operations",
         "sandbox_operation_transitions",
@@ -406,5 +406,5 @@ def test_zz_0008_populated_downgrade_is_fail_closed(db_engine, p345_state) -> No
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0014"
+            == "0015"
         )

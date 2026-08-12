@@ -43,7 +43,7 @@ from omnibase.workspaces.service import (
 )
 
 ENGINEERING_FLAG = "P5_4B_ENGINEERING_ENABLED"
-EXPECTED_MIGRATION_HEAD = "0014"
+EXPECTED_MIGRATION_HEAD = "0015"
 _PHASE5_GATE_NAMES = (
     "agent_runtime_enabled",
     "agent_planner_enabled",

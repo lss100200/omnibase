@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 
 from omnibase.tenants.schema_manager import create_schema, drop_schema
-from omnibase.tenants.service import _initialize_tenant_schema
+from omnibase.tenants.service import _initialize_tenant_schema, create_tenant
 
 pytestmark = pytest.mark.integration
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -213,8 +213,6 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
         tenant_revision = conn.execute(
             text(f'SELECT version_num FROM "{schema}".alembic_version')
         ).scalar_one()
-        assert tenant_revision == "0014"
-
         tables = set(
             conn.execute(
                 text(
@@ -230,6 +228,35 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
             "user_profiles",
             "model_provider_credentials",
         }.issubset(tables)
+    assert tenant_revision == "0015"
+
+
+def test_new_tenant_is_at_current_head_inside_creation_transaction(
+    db_engine,
+    run_owned_resources,
+) -> None:
+    tenant = create_tenant(
+        name="Dynamic personal tenant",
+        slug=f"dynamic-{uuid.uuid4().hex[:12]}",
+    )
+    run_owned_resources.add(str(tenant.id), tenant.schema_name)
+
+    with db_engine.connect() as connection:
+        revision = connection.execute(
+            text(f'SELECT version_num FROM "{tenant.schema_name}".alembic_version')
+        ).scalar_one()
+        tables = set(
+            connection.execute(
+                text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = :schema"
+                ),
+                {"schema": tenant.schema_name},
+            ).scalars()
+        )
+
+    assert revision == "0015"
+    assert {"memory_candidates", "memories", "context_capsules"}.issubset(tables)
 
 
 def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
@@ -282,17 +309,18 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
         "0012 downgrade refused" in output
         or "0013 populated downgrade is forbidden" in output
         or "0014 populated downgrade is forbidden" in output
+        or "0015 downgrade refused" in output
     )
 
     with db_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
-            == "0014"
+            == "0015"
         )
         for schema in schemas:
             assert (
                 conn.execute(
                     text(f'SELECT version_num FROM "{schema}".alembic_version')
                 ).scalar_one()
-                == "0014"
+                == "0015"
             )

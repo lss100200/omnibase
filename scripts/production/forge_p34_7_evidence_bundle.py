@@ -45,7 +45,7 @@ POSTURE_SCHEMA = "omnibase.p34-7.posture-measurement.v1"
 ATTACK_SCHEMA = "omnibase.p34-7.attack-matrix.v1"
 CLEANUP_SCHEMA = "omnibase.p34-7.cleanup-inventory.v1"
 SEAL_SCHEMA = "omnibase.p34-7.evidence-seal.v1"
-CURRENT_MIGRATION_HEAD = "0014"
+CURRENT_MIGRATION_HEAD = "0015"
 
 REQUIRED_COMMANDS = (
     "core_runner",
@@ -135,7 +135,8 @@ def generate_keypair() -> tuple[str, str]:
 
 def generate_keyfile() -> dict[str, dict[str, str]]:
     return {
-        role: dict(zip(("private", "public"), generate_keypair(), strict=False)) for role in ROLES
+        role: dict(zip(("private", "public"), generate_keypair(), strict=False))
+        for role in ROLES
     }
 
 
@@ -162,7 +163,9 @@ def _signature_ref(
     if forged:
         signature = os.urandom(64)
     else:
-        private = ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(private_hex))
+        private = ed25519.Ed25519PrivateKey.from_private_bytes(
+            bytes.fromhex(private_hex)
+        )
         signature = private.sign(raw)
     relative = f"signatures/{evidence_path.relative_to(run).as_posix()}"
     return _write_raw(run, run / relative, signature)
@@ -225,7 +228,9 @@ def _sign_seal(
             private = ed25519.Ed25519PrivateKey.from_private_bytes(
                 bytes.fromhex(keys["sealer"]["private"])
             )
-            seal_sig = _write_raw(run, run / "signatures/seal.sig", private.sign(binding_bytes))
+            seal_sig = _write_raw(
+                run, run / "signatures/seal.sig", private.sign(binding_bytes)
+            )
     payload["evidence_seal"] = {
         "producer": "sealer",
         "binding_sha256": _digest(binding_bytes),
@@ -260,7 +265,9 @@ def _self_policy(
     return {
         "schema": "omnibase.p34-7.trust-policy.v1",
         "schema_version": "2",
-        "producers": {role: {"ed25519_public_key": keys[role]["public"]} for role in ROLES},
+        "producers": {
+            role: {"ed25519_public_key": keys[role]["public"]} for role in ROLES
+        },
         "source_seal": {
             "repository": repository,
             "git_object_format": git_object_format,
@@ -378,7 +385,9 @@ def forge_bundle(
         stdout_ref = _write_raw(run, run / f"out/{name}.out", f"stdout-{name}".encode())
         stderr_ref = _write_raw(run, run / f"out/{name}.err", b"")
         started_at = _iso_utc(run_started_instant + timedelta(minutes=index * 10))
-        ended_at = _iso_utc(run_started_instant + timedelta(minutes=index * 10, seconds=30))
+        ended_at = _iso_utc(
+            run_started_instant + timedelta(minutes=index * 10, seconds=30)
+        )
         receipt = {
             "schema": RECEIPT_SCHEMA,
             "command": name,
@@ -490,7 +499,9 @@ def forge_bundle(
     components: dict[str, dict[str, object]] = {}
     component_digests: dict[str, str] = {}
     for name in REQUIRED_COMPONENTS:
-        owned = [command for command, owner in COMMAND_PRODUCER.items() if owner == name]
+        owned = [
+            command for command, owner in COMMAND_PRODUCER.items() if owner == name
+        ]
         gateway_field: dict[str, object] = {}
         if name == "gateway":
             certificate = gateway_certificate or {
@@ -515,7 +526,9 @@ def forge_bundle(
             "source_manifest_sha256": source_manifest["raw_sha256"],
             "artifact_manifest_sha256": artifact_manifest["raw_sha256"],
             "component_identity": {"kind": "sha256", "value": _digest(name.encode())},
-            "peer_identities": {peer: _digest(peer.encode()) for peer in REQUIRED_PEERS[name]},
+            "peer_identities": {
+                peer: _digest(peer.encode()) for peer in REQUIRED_PEERS[name]
+            },
             "receipts": {command: receipt_digests[command] for command in owned},
             "executables": [
                 {
@@ -604,7 +617,9 @@ def forge_bundle(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True, help="bundle directory")
-    parser.add_argument("--keyfile", type=Path, help="per-role Ed25519 keyfile (signs the bundle)")
+    parser.add_argument(
+        "--keyfile", type=Path, help="per-role Ed25519 keyfile (signs the bundle)"
+    )
     parser.add_argument(
         "--forged-signatures",
         action="store_true",
@@ -619,7 +634,11 @@ def main() -> int:
         keys=keys,
         forged_signatures=args.forged_signatures,
     )
-    print(json.dumps({"forged": True, "unsigned": keys is None, "payload": payload}, indent=2))
+    print(
+        json.dumps(
+            {"forged": True, "unsigned": keys is None, "payload": payload}, indent=2
+        )
+    )
     return 0
 
 

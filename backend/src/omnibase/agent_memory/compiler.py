@@ -620,9 +620,6 @@ class SqlAlchemyMemoryCompiler:
                 issued_at=issued_at,
             )
             chosen = _apply_budgets(decrypted, self._policy)
-            if not chosen:
-                session.rollback()
-                return None
             capsule = _build_capsule(
                 chosen=chosen,
                 request=request,
@@ -631,6 +628,8 @@ class SqlAlchemyMemoryCompiler:
             )
             _persist_capsule(session, capsule)
             session.commit()
+            if not chosen:
+                return None
             return AlphaMemoryCapsule(
                 capsule_id=capsule.capsule_id,
                 content_sha256=capsule.content_sha256(),
