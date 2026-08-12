@@ -493,7 +493,7 @@ class Journey:
             "max_concurrent_invocations": 1,
             "max_top_k": 5,
             "migration_0013_created": True,
-            "migration_head": "0014",
+            "migration_head": "0015",
             "multi_agent_enabled": False,
             "network": {"default_deny": True, "destinations": []},
             "owner_readiness": {
@@ -761,7 +761,7 @@ class Journey:
                 {
                     "database": target.database,
                     "dump_sha256": digest,
-                    "migration_head": "0014",
+                    "migration_head": "0015",
                     "redis_authoritative": False,
                     "runtime_enabled_at_backup": False,
                     "schema": "omnibase.p5-9p-cold-backup.v1",
@@ -944,9 +944,9 @@ class Journey:
             ],
             timeout=60,
         ).stdout.strip()
-        if head != "0014":
+        if head != "0015":
             raise AcceptanceError(
-                f"restored migration head is {head!r}, expected '0014'"
+                f"restored migration head is {head!r}, expected '0015'"
             )
         source_fingerprint_after = self._database_fingerprint(source)
         source_unchanged = (
@@ -1324,6 +1324,10 @@ class Journey:
                     "redis_archived": False,
                     "runtime_enabled": False,
                     "writers_stopped": True,
+                },
+                "durable_cancel": {
+                    "task_state": cancel_state["task_state"],
+                    "terminal_event": "cancelled",
                 },
                 "incremental_sse": {
                     "chunk_count": len(first_chunks),

@@ -406,5 +406,5 @@ def test_personal_instruction_skill_full_lifecycle_and_cross_wire_attacks(
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0014"
+            == "0015"
         )

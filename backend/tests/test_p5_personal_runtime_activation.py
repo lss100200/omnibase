@@ -36,7 +36,7 @@ def _mapping() -> dict[str, object]:
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0014",
+        "migration_head": "0015",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -107,8 +107,8 @@ def test_repository_canary_keeps_historical_owner_evidence_separate_from_current
         )
     )
 
-    assert config.migration_head == "0014"
-    assert readiness["migration_head"] == "0014"
+    assert config.migration_head == "0015"
+    assert readiness["migration_head"] == "0015"
     assert readiness["engineering_evidence"]["assertions"]["migration_head"] == "0013"
     assert evidence["migration_head"] == "0013"
 

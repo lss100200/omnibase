@@ -96,7 +96,7 @@ def _mapping() -> dict[str, object]:
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0014",
+        "migration_head": "0015",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -242,7 +242,7 @@ def test_posture_assembles_only_with_active_exact_scope(
     fake_session = SimpleNamespace(rollback=lambda: None, close=lambda: None)
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._migration_head",
-        lambda _: "0014",
+        lambda _: "0015",
     )
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
@@ -356,7 +356,7 @@ def test_posture_turns_database_failure_into_stable_unavailable(
         confirmed_plan_sha256=config.activation_plan().canonical_digest(),
         now=NOW,
     )
-    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0014")
+    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0015")
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(

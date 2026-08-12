@@ -74,8 +74,8 @@ adding a new migration or widening the personal product's authority.
 
 ```text
 P5_5C_BOUNDED_PERSONAL_MEMORY_RUNTIME_IMPLEMENTED_PENDING_REVIEW
-MIGRATION_HEAD_0013
-MIGRATION_0014_ABSENT
+CURRENT_PERSONAL_MIGRATION_HEAD_0015
+MIGRATION_0016_ABSENT
 MEMORY_COMPILER_EXACT_SCOPE_AND_BUDGET_BOUND
 CONTEXT_CAPSULE_PERSISTED_BEFORE_PROVIDER
 MEMORY_PROMPT_PROJECTION_UNTRUSTED_DATA_ONLY
@@ -99,6 +99,17 @@ invocation is reserved before compilation, and the exact ContextCapsule/items
 commit before provider dispatch. Exact terminal replay does not compile,
 retrieve or create another Capsule. Compiler failure terminalizes the ledger as
 `failed/agent_alpha_memory_compile_failed`.
+
+Migration `0015_p5_9p_empty_context_capsules.py` closes the first-Memory
+bootstrap cycle. When a fresh invocation has no selectable Memory, the compiler
+persists one zero-item, zero-token ContextCapsule with an all-zero sensitivity
+summary, commits it before Provider dispatch, and returns no projected Memory
+layer. The empty Capsule is an audit/provenance anchor only: it adds no prompt,
+no SSE Memory metadata and no authority. The first real MemoryCandidate may then
+bind that exact successful Task/Capsule. Exact replay still creates no second
+Capsule. Migration `0015` changes only the ContextCapsule token lower bound from
+one to zero; `max_tokens` remains positive and every non-empty Capsule retains
+the existing item/accounting closure.
 
 Memory text is projected only in process as a separate system message labelled
 untrusted reference data below the Platform Security Kernel and AgentVersion.

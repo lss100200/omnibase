@@ -250,6 +250,14 @@ ContextCapsule and injects it as untrusted prompt data only inside the exact
 personal canary. Browser Memory CRUD remains absent; Runtime defaults false and
 Planner/Multi-Agent remain false.
 
+PR #33 Linux acceptance exposed and is now fixing the last personal bootstrap
+defect: the first successful invocation had no Capsule, so the first Memory
+could not be published. Migration `0015` permits one zero-item/zero-token audit
+Capsule without an empty prompt or SSE Memory metadata. The first real Memory
+binds that Capsule and is retrieved on the next invocation. Current personal
+head is `0015`; `0016+`, tools, Planner, Multi-Agent, MCP and enterprise P34.7
+remain outside this admission.
+
 ## Personal P6.0 admission profile
 
 Personal P6.0 means the single human Owner can operate a bounded, no-tool Agent

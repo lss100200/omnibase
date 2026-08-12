@@ -228,6 +228,7 @@ def _contract_mapping() -> dict[str, object]:
             "0012",
             "0013",
             "0014",
+            "0015",
         ],
         "sealed_contracts": [
             {
@@ -346,6 +347,7 @@ def _build_synthetic_repo(tmp_path: Path) -> Path:
         ("0012", "0011"),
         ("0013", "0012"),
         ("0014", "0013"),
+        ("0015", "0014"),
     ):
         _write_file(
             repo,
@@ -1079,12 +1081,12 @@ def test_attempted_runtime_orm_router_packages_are_vetoes(tmp_path: Path) -> Non
         assert any("forbidden source path exists" in veto for veto in report.vetoes), forbidden
 
 
-def test_attempted_migration_0015_is_a_veto(tmp_path: Path) -> None:
+def test_attempted_migration_0016_is_a_veto(tmp_path: Path) -> None:
     repo = _build_synthetic_repo(tmp_path)
     _write_file(
         repo,
-        "backend/src/omnibase/migrations/versions/0015_unapproved_runtime.py",
-        'revision: str = "0015"\ndown_revision: str | None = "0014"\n',
+        "backend/src/omnibase/migrations/versions/0016_unapproved_runtime.py",
+        'revision: str = "0016"\ndown_revision: str | None = "0015"\n',
     )
     config = _synthetic_config(tmp_path, repo=repo)
 
@@ -1268,7 +1270,7 @@ def test_no_agent_runtime_planner_or_executor_packages_exist() -> None:
 def test_migration_revision_discovery_on_synthetic_chain(tmp_path: Path) -> None:
     repo = _build_synthetic_repo(tmp_path)
     revisions = discover_migration_revisions(repo, "backend/src/omnibase/migrations/versions")
-    assert set(revisions) == {f"{i:04d}" for i in range(1, 15)}
+    assert set(revisions) == {f"{i:04d}" for i in range(1, 16)}
 
 
 def test_formal_gate_keeps_missing_proofs_blocked() -> None:

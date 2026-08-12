@@ -70,8 +70,8 @@ def test_0009_global_and_tenant_foundation_guards(db_engine) -> None:
         tenant_revision = connection.execute(
             text(f'SELECT version_num FROM "{tenant_schema}".alembic_version')  # noqa: S608
         ).scalar_one()
-        assert global_revision == "0014"
-        assert tenant_revision == "0014"
+        assert global_revision == "0015"
+        assert tenant_revision == "0015"
         tables = set(
             connection.execute(
                 text(
@@ -416,7 +416,7 @@ def test_0009_global_and_tenant_foundation_guards(db_engine) -> None:
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0014"
+            == "0015"
         )
 
     migration_source = (

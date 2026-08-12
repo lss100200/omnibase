@@ -73,8 +73,8 @@ _READINESS_ASSERTIONS = {
     "enterprise_track_frozen": True,
     "migration_0013_created": True,
     # This sealed artifact is the historical Personal Owner admission proof.
-    # The live canary config and database are checked independently at 0014;
-    # rewriting the older evidence to claim 0014 would manufacture evidence.
+    # The live canary config and database are checked independently at 0015;
+    # rewriting the older evidence to claim the current head would manufacture evidence.
     "migration_head": "0013",
     "passed": True,
     "personal_owner_activation_ready": True,
@@ -309,8 +309,8 @@ class PersonalRuntimeCanaryConfig:
                 "or enterprise approval"
             )
         migration_head = _string(data, "migration_head")
-        if migration_head != "0014":
-            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0014")
+        if migration_head != "0015":
+            raise PersonalRuntimeConfigurationError("personal canary requires migration head 0015")
         max_concurrent = _integer(
             data,
             "max_concurrent_invocations",

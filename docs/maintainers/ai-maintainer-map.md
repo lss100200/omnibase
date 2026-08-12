@@ -1632,7 +1632,7 @@ python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --veri
   `$ref`. Rollback targets the same Definition and a strictly older reviewed
   release.
 - Verification requires clean Git provenance, all three Phase 5 gates false
-  and migration head exactly `0014`. P5.6A itself remains compile-only; the
+  and current repository migration head exactly `0015`. P5.6A itself remains compile-only; the
   separately authorized P5.6P successor owns the Skill ORM, installation and
   personal runtime projection. Browser `/skills` remains absent.
 
@@ -1899,6 +1899,10 @@ persistence must add delete/export/tombstone and
 restore-new evidence while updating every Gate currently pinned to migration
 `0012`; do not advance only one validator and leave the rest silently stale.
 
+The current vocabulary also permits one zero-item/zero-token Capsule as the
+P5.9P first-Memory bootstrap audit anchor. It remains fully identity/provenance
+bound and grants no authority; it is not an empty prompt layer.
+
 ## P5.5B Memory persistence maintenance boundary
 
 Read INV-059, the P5.5 Memory contract, the Memory privacy/delete/export
@@ -1909,8 +1913,9 @@ or PostgreSQL backup inventory.
 Migration `0013_memory_context_capsules.py` is tenant-scoped and is now the
 only reviewed repository/personal target head. Keep its table set, two vector
 lanes, append-only rules, tenant-schema guards and Candidate/Memory publication
-constraints as one boundary. A future migration `0014+` is not implied by this
-increment. Do not run downgrade against populated data.
+constraints as one boundary. P5.5B itself did not authorize its successors;
+the current repository separately contains reviewed migrations `0014` and
+`0015`. Do not run downgrade against populated data.
 
 The internal service owns no independent approval system. Agent Candidate
 creation is bound to the exact Task/Capsule/Agent Definition. Acceptance,
@@ -1969,6 +1974,12 @@ compile, retrieve or call the provider. Compiler failure terminalizes the
 reserved invocation. Memory enters the prompt only as a separate explicitly
 untrusted reference-data message below the Security Kernel and AgentVersion;
 SSE exposes only Capsule ID/digest/item count.
+
+P5.9P forward migration `0015` changes only the ContextCapsule token lower
+bound. A fresh invocation with no selected Memory persists one zero-item audit
+Capsule, then returns no Memory projection: no empty prompt and no Memory SSE
+metadata. The first real Candidate binds that Capsule. Backup/restore must bind
+the raw `0015` bytes; `0016+` remains absent.
 
 Use the focused compiler/Alpha tests plus one random `omnibase_test_*`
 PostgreSQL journey for local evidence. GitHub required CI is the full regression
@@ -2031,10 +2042,11 @@ Workspace, Owner, AgentVersion/binding, scope and budget digests, and require a
 retryable terminal state. Never mutate or revive the old ledger, Lease,
 fencing, runtime/workload identity or Effect. Preserve unknown evidence.
 
-Personal target and backup controllers use migration head `0014`, reject
-`0015+`, bind the Skill tables and guard triggers, and restore only into new
-identities. The only new forward compatibility entry is the canonical
-`0013 -> 0014` Skill upgrade. GitHub PostgreSQL sentinel CI is authoritative
+Personal target and backup controllers now use migration head `0015`, reject
+`0016+`, bind the Skill tables, guard triggers and raw empty-Capsule migration
+bytes, and restore only into new identities. Closed compatibility entries are
+`0013 -> 0014` for Skills and `0014 -> 0015` for Memory bootstrap. GitHub
+PostgreSQL sentinel CI is authoritative
 when local Docker is unavailable; do not substitute a normal database.
 
 ## P5.9P personal production-like acceptance maintenance boundary
@@ -2057,6 +2069,11 @@ credential material. Memory setup must use the real Candidate/Operation/Owner
 Approval/Grant/Effect/Audit service lifecycle rather than SQL-forged terminal
 rows. TaskLease and RunLease evidence must join through the exact historical
 binding. SIGKILL must not be defeated by a container restart policy.
+
+The journey begins with no Memory and must prove one empty audit Capsule, no
+empty prompt/SSE metadata, first real Memory publication bound to that Capsule,
+then one-item retrieval. The redacted receipt carries the durable cancel Task
+state and terminal event. Current head is `0015`; `0016+` remains absent.
 
 Treat EOF without an SSE terminal event, any Provider call-count increase on
 restart/exact replay, reused retry identity, failed kill switch, in-place

@@ -910,10 +910,10 @@ def _run_formal_memory_service_full_lifecycle_reaches_real_postgresql(
             connection,
             capture_mode="source_backup",
             expected_database=str(db_engine.url.database),
-            expected_head="0014",
+            expected_head="0015",
             postgres_dump_sha256=_DIGEST_D,
         )
-    assert captured["global_alembic_head"] == "0014"
+    assert captured["global_alembic_head"] == "0015"
     assert captured["postgres_dump_sha256"] == _DIGEST_D
     tenant_registry = {entry["tenant_id"]: entry for entry in captured["tenant_registry"]}
     assert tenant_registry[seed.tenant_id] == {
@@ -991,8 +991,8 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
     _alembic("upgrade", "head")
 
     with db_engine.begin() as connection:
-        assert _head(connection, "omnibase_meta") == "0014"
-        assert _head(connection, schema_name) == "0014"
+        assert _head(connection, "omnibase_meta") == "0015"
+        assert _head(connection, schema_name) == "0015"
         tables = set(
             connection.execute(
                 text(
@@ -1118,8 +1118,8 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
 
     _alembic("upgrade", "head")
     with db_engine.begin() as connection:
-        assert _head(connection, "omnibase_meta") == "0014"
-        assert _head(connection, schema_name) == "0014"
+        assert _head(connection, "omnibase_meta") == "0015"
+        assert _head(connection, schema_name) == "0015"
         assert connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.tables "
@@ -1873,8 +1873,8 @@ def test_populated_0013_downgrade_fails_closed_without_head_or_data_drift(
     assert "0013 populated downgrade is forbidden" in result.stdout + result.stderr
 
     with db_engine.connect() as connection:
-        assert _head(connection, "omnibase_meta") == "0014"
-        assert _head(connection, seed.schema_name) == "0014"
+        assert _head(connection, "omnibase_meta") == "0015"
+        assert _head(connection, seed.schema_name) == "0015"
         _set_tenant_search_path(connection, seed.schema_name)
         assert connection.execute(
             text(

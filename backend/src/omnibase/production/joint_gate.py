@@ -52,7 +52,7 @@ from omnibase.production.composition import ConfigurationError
 
 _SCHEMA = "omnibase.p34-7.hardened-joint-evidence.v2"
 _SCHEMA_VERSIONS = frozenset({"2"})
-_CURRENT_MIGRATION_HEAD = "0014"
+_CURRENT_MIGRATION_HEAD = "0015"
 _HEX = set("0123456789abcdef")
 _GIT_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
 _REQUIRED_COMMANDS = (

@@ -3011,6 +3011,11 @@ MemoryCandidate. It creates no migration, ORM, database table, Browser API,
 vector lane, worker or Runtime injection. Migration head stays `0012`, migration
 `0013` stays absent and Runtime/Planner/Multi-Agent stay false.
 
+The contract vocabulary permits a zero-item, zero-token Capsule only as the
+P5.9P first-Memory bootstrap audit anchor. Its sensitivity summary is all zero,
+its identity/provenance/TTL bindings remain complete, and it grants no
+authority. A non-empty Capsule keeps the normal item, token and digest closure.
+
 Every Capsule is bound to one exact Tenant, human Owner, Workspace,
 AgentVersion, Task and Invocation. Selected Memory identities and versions are
 unique and ordered by continuous server-owned positions. Each item binds the
@@ -3078,11 +3083,13 @@ Capsules or destructively downgrade a populated database.
 **Authoritative source**
 
 - `backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py`
+- `backend/src/omnibase/migrations/versions/0015_p5_9p_empty_context_capsules.py`
 - `backend/src/omnibase/agent_memory/models.py`
 - `backend/src/omnibase/agent_memory/service.py`
 - `backend/src/omnibase/control_plane/service.py`
 - `scripts/production/manage_p5_personal_backup.py`
 - `backend/tests/test_p5_5b_memory_migration_contract.py`
+- `backend/tests/test_p5_9p_empty_context_capsules_migration_contract.py`
 - `backend/tests/test_p5_5b_memory_service.py`
 - `backend/tests/integration/test_p5_5b_memory_persistence_foundation.py`
 - `scripts/production/test_manage_p5_personal_backup.py`
@@ -3134,6 +3141,13 @@ bytes. Restore verification uses a distinct `omnibase_restore_*` database and a
 new `restore_new_evidence` inventory; source evidence is never edited or
 relabelled.
 
+The current personal head is `0015`. Migration `0015` changes only
+`context_capsules_tokens_check` so `total_tokens=0` is valid while
+`max_tokens>=1` remains mandatory. Backup and restore bind the raw bytes of
+`0013`, `0014` and `0015`; the only new forward compatibility entry is the
+closed `0014 -> 0015` Memory-bootstrap upgrade. Downgrade refuses when any
+zero-token Capsule exists. Migration `0016+` remains absent.
+
 **Allowed changes**
 
 - Tighten migration triggers, ORM checks, transaction ordering, live Owner or
@@ -3155,7 +3169,8 @@ relabelled.
   drift, online sealing, reuse of source inventory as restore evidence, or
   destructive in-place downgrade of populated `0013` data.
 - Browser API, compiler, search, injection, Runtime/Planner/Multi-Agent
-  activation or migration `0014+` under the P5.5B label.
+  activation or any successor migration under the P5.5B label; reviewed
+  `0014` and `0015` remain separately authorized increments.
 
 **Required verification**
 
@@ -3197,10 +3212,11 @@ unknown deletion as committed or downgrading a populated business database.
 
 P5.5C enables bounded Memory compilation only inside the exact INV-056 personal
 single-Owner canary composition. Runtime remains false by default, Planner and
-Multi-Agent remain false everywhere, and migration `0013` is the only reviewed
-head. Migration `0014+`, Browser Memory CRUD, tools, shell, SQL, arbitrary HTTP,
-MCP, workflow/script Skill execution and enterprise Runtime authority are not
-created by this increment.
+Multi-Agent remain false everywhere. The current personal repository head is
+`0015`; `0013` still owns Memory persistence, `0014` owns instruction Skills and
+`0015` owns only the empty-Capsule token lower bound. Migration `0016+`, Browser
+Memory CRUD, tools, shell, SQL, arbitrary HTTP, MCP, workflow/script Skill
+execution and enterprise Runtime authority are not created by this increment.
 
 The compiler may select only committed, active, non-deleted Memory at its exact
 current version. Every read revalidates the live Tenant and server-owned tenant
@@ -3231,6 +3247,13 @@ reserved invocation as `failed/agent_alpha_memory_compile_failed`; provider or
 disconnect ambiguity continues to use the existing unknown/reconciliation
 lifecycle and must never be replayed as success.
 
+When the selected set is empty on a fresh invocation, the compiler must still
+persist and commit exactly one zero-item/zero-token Capsule, then return no
+Memory projection. It must not add an empty prompt message or Memory SSE
+metadata. That audit Capsule is the exact source binding for the first real
+MemoryCandidate. Faking a Memory, writing one token, weakening Candidate binding
+or creating a second Capsule on exact replay is forbidden.
+
 Memory plaintext exists only in the in-process prompt projection. It is a
 separate system message explicitly labelled untrusted reference data below the
 Platform Security Kernel and AgentVersion instructions; text inside it can
@@ -3244,7 +3267,7 @@ physical locators or internal provenance.
 - Tighten exact-scope selection, cryptographic binding, deterministic ranking,
   policy budgets, transaction ordering, replay handling and safe prompt
   projection.
-- Add focused attacks or disposable migration-0013 journeys without widening
+- Add focused attacks or disposable migration-0013/0015 journeys without widening
   Runtime, Planner, Multi-Agent, tool or network authority.
 - Add a Browser governance surface only as a separately reviewed Owner-scoped
   increment; the compiler itself never becomes a public search endpoint.
@@ -3262,7 +3285,7 @@ physical locators or internal provenance.
   compiler failure in a running ledger state.
 - Enabling Runtime outside the exact personal canary, enabling Planner or
   Multi-Agent, modifying the separately owned Skill migration `0014`, creating
-  unauthorized migration `0015+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
+  unauthorized migration `0016+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
   through Memory content.
 
 **Required verification**
@@ -3430,6 +3453,12 @@ incremental SSE, durable cancellation, Core SIGKILL, a real TaskLease expiry,
 restart convergence to `blocked_unknown`, no automatic Provider replay and an
 explicit same-scope Owner `retry_of` with all-new execution and fencing
 identities. A missing terminal SSE event or EOF is a veto.
+
+The initial no-Memory invocation must persist one zero-item/zero-token audit
+Capsule without changing Provider prompt or SSE Memory metadata. Publication of
+the first real Memory must bind that Capsule, and the following invocation must
+project exactly one item. The receipt must also report durable cancel terminal
+event and Task state as `cancelled`. Migration head is `0015`; `0016+` is absent.
 
 The Core container must not restart itself during the interruption window. The
 Provider call counter must remain unchanged across restart and exact replay.

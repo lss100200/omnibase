@@ -9,7 +9,7 @@
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0014",
+    "Alembic migrations 0001 through 0015",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -817,6 +817,7 @@
       "document": "docs/maintainers/security-invariants.md#inv-059-p55b-memory-persistence-delete-export-contract",
       "source_paths": [
         "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
+        "backend/src/omnibase/migrations/versions/0015_p5_9p_empty_context_capsules.py",
         "backend/src/omnibase/agent_memory/models.py",
         "backend/src/omnibase/agent_memory/service.py",
         "backend/src/omnibase/control_plane/service.py",
@@ -828,6 +829,7 @@
       ],
       "test_paths": [
         "backend/tests/test_p5_5b_memory_migration_contract.py",
+        "backend/tests/test_p5_9p_empty_context_capsules_migration_contract.py",
         "backend/tests/test_p5_5b_memory_service.py",
         "backend/tests/test_p34_1_control_plane_service.py",
         "backend/tests/integration/test_p5_5b_memory_persistence_foundation.py",
@@ -840,6 +842,7 @@
       "document": "docs/maintainers/security-invariants.md#inv-060-p55c-memory-compiler-runtime-boundary",
       "source_paths": [
         "backend/src/omnibase/agent_memory/compiler.py",
+        "backend/src/omnibase/migrations/versions/0015_p5_9p_empty_context_capsules.py",
         "backend/src/omnibase/agent_memory/crypto.py",
         "backend/src/omnibase/agent_alpha/contracts.py",
         "backend/src/omnibase/agent_alpha/service.py",
@@ -855,6 +858,7 @@
       ],
       "test_paths": [
         "backend/tests/test_p5_5c_memory_compiler.py",
+        "backend/tests/test_p5_9p_empty_context_capsules_migration_contract.py",
         "backend/tests/test_agent_alpha.py",
         "backend/tests/test_agent_alpha_personal.py",
         "backend/tests/test_agent_alpha_personal_router.py",
@@ -2239,7 +2243,7 @@
       "public_interfaces": [
         "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
         "create_task may receive a validated caller-intent hash which is nested into the canonical task payload so exact replay binds caller intent without discarding immutable task fields",
-        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0014 after the separately authorized provider, Memory and instruction-Skill migrations, while production activation remains blocked",
+        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0015 after the separately authorized provider, Memory, instruction-Skill and empty-Capsule bootstrap migrations, while production activation remains blocked",
         "No Browser runtime DTO exposes physical locators, credentials, provider handles or database identities"
       ],
       "depends_on": [
@@ -2557,7 +2561,7 @@
       ],
       "recovery": [
         "Keep P5.4B unavailable unless the explicit engineering flag, current reviewed migration head, all-false Phase 5 gates and every injected dependency pass strict checks.",
-        "Keep production Runtime activation false and unauthorized migration 0015+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "Keep production Runtime activation false and unauthorized migration 0016+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
         "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
         "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
       ]
@@ -2783,7 +2787,7 @@
       ],
       "recovery": [
         "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
-        "Reject migration head drift beyond reviewed 0014, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "Reject migration head drift beyond reviewed 0015, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
         "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A owns no database or runtime; the separately reviewed P5.6P module owns migration 0014 and personal instruction projection."
       ]
     },
@@ -2937,7 +2941,7 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py"
       ],
       "recovery": [
-        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0014, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
+        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0015, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
       ]
     },
@@ -2982,7 +2986,7 @@
       ],
       "recovery": [
         "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
-        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0014, migration 0015+ absent and all three Phase 5 Feature Gates false.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0015, migration 0016+ absent and all three Phase 5 Feature Gates false.",
         "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     },
@@ -3075,7 +3079,7 @@
       "recovery": [
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
-        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0015+, bypass reviewed migration 0013 Memory or migration 0014 Skill lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0016+, bypass reviewed migration 0013 Memory, migration 0014 Skill or migration 0015 empty-Capsule lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     },
     {
@@ -3103,7 +3107,7 @@
         "Loopback-only full-stack Compose with internal PostgreSQL/Redis/MinIO/backend and one frontend ingress",
         "Non-root reload-free backend production image and standalone frontend production image",
         "Offline doctor, canonical release-manifest and verify-release CLI",
-        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including migration 0014 Skill table/trigger binding and the closed 0013-to-0014 compatibility entry"
+        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including raw migration 0013/0014/0015 binding and the closed 0013-to-0014 Skill plus 0014-to-0015 Memory-bootstrap compatibility entries"
       ],
       "depends_on": [
         "personal-runtime-canary",
@@ -3131,7 +3135,7 @@
       "recovery": [
         "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
         "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
-        "Backup and restore evidence for the current head must bind migration 0014 raw bytes plus the exact Skill table and trigger inventory; arbitrary 0015+ forward restore remains rejected.",
+        "Backup and restore evidence for the current head must bind migration 0013/0014/0015 raw bytes plus the exact Memory and Skill inventories; arbitrary 0016+ forward restore remains rejected.",
         "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
       ]
     },
@@ -3190,11 +3194,13 @@
       "name": "P5.5B tenant Memory persistence, Owner confirmation, delete/export and PostgreSQL backup inventory",
       "source_paths": [
         "backend/src/omnibase/migrations/versions/0013_memory_context_capsules.py",
+        "backend/src/omnibase/migrations/versions/0015_p5_9p_empty_context_capsules.py",
         "backend/src/omnibase/agent_memory/__init__.py",
         "backend/src/omnibase/agent_memory/models.py",
         "backend/src/omnibase/agent_memory/service.py",
         "backend/src/omnibase/control_plane/service.py",
         "backend/tests/test_p5_5b_memory_migration_contract.py",
+        "backend/tests/test_p5_9p_empty_context_capsules_migration_contract.py",
         "backend/tests/test_p5_5b_memory_service.py",
         "backend/tests/test_p34_1_control_plane_service.py",
         "backend/tests/integration/test_p5_5b_memory_persistence_foundation.py",
@@ -3238,7 +3244,7 @@
         "INV-059"
       ],
       "verification": [
-        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_5b_memory_migration_contract.py tests/test_p5_5b_memory_service.py tests/test_p34_1_control_plane_service.py -q",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend pytest tests/test_p5_5b_memory_migration_contract.py tests/test_p5_9p_empty_context_capsules_migration_contract.py tests/test_p5_5b_memory_service.py tests/test_p34_1_control_plane_service.py -q",
         "python -m pytest scripts/production/test_manage_p5_personal_backup.py -q",
         "TEST_COMPOSE_PROJECT=omnibase-p55b-<random> TEST_DATABASE_NAME=omnibase_test_p55b_<random> TEST_DATABASE_ROLE=omnibase_test_p55b_<random> TEST_DATABASE_PORT=<random> TEST_DATABASE_OWNER_PASSWORD=<random> TEST_DATABASE_PASSWORD=<random> make test-p5-5b-memory",
         "docker compose --env-file .env.example run --rm --no-deps backend mypy src",
@@ -3258,6 +3264,7 @@
       "name": "P5.5C bounded personal Memory compiler, ContextCapsule persistence and untrusted prompt injection",
       "source_paths": [
         "backend/src/omnibase/agent_memory/compiler.py",
+        "backend/src/omnibase/migrations/versions/0015_p5_9p_empty_context_capsules.py",
         "backend/src/omnibase/agent_memory/crypto.py",
         "backend/src/omnibase/agent_memory/models.py",
         "backend/src/omnibase/agent_alpha/contracts.py",
@@ -3265,6 +3272,7 @@
         "backend/src/omnibase/agent_alpha/personal.py",
         "backend/src/omnibase/core/config.py",
         "backend/tests/test_p5_5c_memory_compiler.py",
+        "backend/tests/test_p5_9p_empty_context_capsules_migration_contract.py",
         "backend/tests/test_agent_alpha.py",
         "backend/tests/test_agent_alpha_personal.py",
         "backend/tests/test_agent_alpha_personal_router.py",
@@ -3286,6 +3294,7 @@
       ],
       "public_interfaces": [
         "Internal bounded Memory compiler over committed migration-0013 rows",
+        "Zero-item/zero-token migration-0015 audit Capsule for first-Memory bootstrap without prompt or SSE projection",
         "Personal Agent Alpha ContextCapsule prompt projection marked as untrusted reference data",
         "SSE metadata limited to ContextCapsule identity, digest and item count"
       ],
@@ -3418,6 +3427,7 @@
       "public_interfaces": [
         "GitHub Linux disposable production-like acceptance with no real Provider credential",
         "Loopback frontend product journey through the streaming Route Handler",
+        "First-Memory bootstrap through a zero-item audit Capsule followed by real Owner-approved publication and one-item retrieval",
         "Single-Owner explicit retry_of after restart recovery without automatic Provider replay",
         "Cold pg_dump and restore into a new omnibase_restore_* database with Runtime disabled"
       ],

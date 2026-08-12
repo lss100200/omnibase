@@ -58,7 +58,7 @@ The Linux job must prove all of the following in one run:
     false;
 14. stop writers, create and list a custom-format `pg_dump`, restore it into
     Project B, authenticate, list the preserved Workspace, verify migration
-    `0014`, and prove Runtime remains unavailable;
+    `0015`, and prove Runtime remains unavailable;
 15. compare the stopped source database fingerprint before and after restore;
 16. remove both Compose projects, their networks and volumes, and delete the
     run-scoped operator env, canary state and database dump.
@@ -89,7 +89,14 @@ a public deployment or cutover. After the journey:
 AGENT_RUNTIME_ENABLED=false
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
-migration head 0014
-migration 0015 absent
+migration head 0015
+migration 0016 absent
 no real Provider credential used
 ```
+
+The first Agent invocation intentionally starts with no published Memory. It
+must still commit a zero-item/zero-token ContextCapsule as audit evidence before
+Provider dispatch, without injecting an empty Memory prompt or exposing Memory
+SSE metadata. The first published Memory binds that real Capsule; the following
+invocation must retrieve exactly one item. This is the personal bootstrap path,
+not an enterprise approval or multi-Agent requirement.

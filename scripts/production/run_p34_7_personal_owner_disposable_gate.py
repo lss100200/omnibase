@@ -84,7 +84,9 @@ def _manifest() -> dict[str, object]:
     for relative in SOURCE_PATHS:
         path = REPO_ROOT / relative
         if path.is_symlink() or not path.is_file():
-            raise RuntimeError(f"personal Gate source is not a regular file: {relative}")
+            raise RuntimeError(
+                f"personal Gate source is not a regular file: {relative}"
+            )
         files[relative] = _sha256(path)
     return {"schema_version": 1, "file_count": len(files), "files": files}
 
@@ -205,7 +207,9 @@ def _cleanup(project: str, env: dict[str, str]) -> dict[str, int]:
     down = _compose(project, env, "down", "-v", "--remove-orphans")
     counts = _resource_counts(project)
     if down.returncode != 0 or any(counts.values()):
-        raise RuntimeError(f"personal Gate cleanup failed: {counts}\n{down.stdout[-1000:]}")
+        raise RuntimeError(
+            f"personal Gate cleanup failed: {counts}\n{down.stdout[-1000:]}"
+        )
     return counts
 
 
@@ -265,7 +269,7 @@ def _record(
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0014" if passed else None,
+        "migration_head": "0015" if passed else None,
         "migration_0013_created": True,
         "feature_gates": {
             "agent_runtime_enabled": False,
@@ -283,7 +287,9 @@ def _record(
         "source_manifest_sha256": manifest_sha256,
         "cleanup": cleanup,
     }
-    _write(run_dir / "evidence.json", json.dumps(report, indent=2, sort_keys=True) + "\n")
+    _write(
+        run_dir / "evidence.json", json.dumps(report, indent=2, sort_keys=True) + "\n"
+    )
     _write(
         run_dir / "evidence.md",
         "\n".join(
@@ -323,7 +329,7 @@ def _verify_evidence(path: Path) -> None:
         "production_runtime_activated": False,
         "enterprise_track_frozen": True,
         "enterprise_production_approved": False,
-        "migration_head": "0014",
+        "migration_head": "0015",
         "migration_0013_created": True,
         "root_env_accessed": False,
         "business_database_accessed": False,
@@ -336,7 +342,9 @@ def _verify_evidence(path: Path) -> None:
     if report.get("source_manifest_sha256") != _manifest_digest(_manifest()):
         raise RuntimeError("personal Gate source manifest drifted")
     if _dirty_paths():
-        raise RuntimeError("personal Gate evidence verification requires a source-clean checkout")
+        raise RuntimeError(
+            "personal Gate evidence verification requires a source-clean checkout"
+        )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -360,7 +368,9 @@ def main() -> int:
         return 0
     dirty = _dirty_paths()
     if dirty:
-        raise RuntimeError("personal Gate requires a clean checkout: " + ", ".join(dirty))
+        raise RuntimeError(
+            "personal Gate requires a clean checkout: " + ", ".join(dirty)
+        )
 
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     started_at = datetime.now(UTC).isoformat()
@@ -396,7 +406,9 @@ def main() -> int:
     try:
         up = _compose(project, env, "up", "-d", "--wait", "postgres-test")
         if up.returncode != 0:
-            raise RuntimeError(f"personal Gate PostgreSQL startup failed:\n{up.stdout[-3000:]}")
+            raise RuntimeError(
+                f"personal Gate PostgreSQL startup failed:\n{up.stdout[-3000:]}"
+            )
         _run_steps(project, database_url)
         passed = True
     finally:

@@ -16,6 +16,8 @@ PRODUCTION_RUNTIME_NOT_ACTIVATED
   Provider and a one-shot acceptance fixture;
 - a host runner that drives the real loopback frontend/API/SSE product path;
 - sealed first-party instruction Skill and encrypted scoped Memory projection;
+- zero-item/zero-token first-invocation audit Capsule followed by publication
+  and retrieval of the first real Memory, without an empty prompt layer;
 - durable cancellation;
 - Core SIGKILL, real TaskLease expiry, restart recovery and no automatic
   Provider replay;
@@ -52,8 +54,8 @@ must also be green. Until then this file must not be interpreted as a PASS.
 ## Preserved posture
 
 ```text
-migration head 0014
-migration 0015 absent
+migration head 0015
+migration 0016 absent
 AGENT_RUNTIME_ENABLED=false by default and after acceptance
 AGENT_PLANNER_ENABLED=false
 MULTI_AGENT_ENABLED=false
@@ -62,3 +64,7 @@ root .env not read
 business database not accessed or migrated
 no deployment or cutover
 ```
+
+The acceptance receipt self-reports durable cancellation as
+`task_state=cancelled` and `terminal_event=cancelled`; it still contains no
+prompt text, Memory plaintext, Skill instructions or secret locator.

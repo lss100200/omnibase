@@ -5104,3 +5104,62 @@ MULTI_AGENT_ENABLED=false
 enterprise P34.7 frozen and not a personal P6 blocker
 not deployed
 ```
+
+### P5.9P first-Memory bootstrap forward fix (2026-08-12)
+
+The first two GitHub Linux executions of PR #33 passed backend, frontend,
+Compose and PostgreSQL sentinel checks but both failed the final personal
+acceptance at `publish-memory`: the succeeded source Task had no ContextCapsule.
+This exposed a real personal-product bootstrap deadlock, not an enterprise Gate:
+
+```text
+no existing Memory
+-> compiler selected zero rows and created no Capsule
+-> first MemoryCandidate required an existing exact Capsule
+-> the first Memory could never be published
+```
+
+The forward fix adds tenant migration
+`0015_p5_9p_empty_context_capsules.py`. It changes only
+`context_capsules_tokens_check` from a one-token lower bound to zero while
+keeping `max_tokens >= 1`. A fresh invocation with zero selected Memory now
+commits exactly one zero-item/zero-token Capsule with all-zero sensitivity
+summary, then returns no Memory projection. It therefore adds no empty Provider
+prompt and no Memory SSE metadata. The first real Candidate binds that Capsule;
+the next invocation retrieves the published Memory. Exact replay creates no
+second Capsule. Downgrade fails closed if zero-token Capsules exist.
+
+The personal target, acceptance, static contracts and backup/restore controllers
+now bind migration head `0015` and reject `0016+`. Backup manifests independently
+seal raw migration `0013`, `0014` and `0015` bytes. The compatibility matrix adds
+only `p5-memory-bootstrap-0014-to-0015`; arbitrary forward restore and
+restore-in-place remain rejected. The acceptance receipt now includes durable
+cancel `task_state=cancelled` and `terminal_event=cancelled`.
+
+Current local evidence after the final sealed-contract reseal:
+
+```text
+Memory compiler + migration source contract = 15 passed
+backup/restore controller = 35 passed
+current-head/static contract focused = 796 passed / 1 Windows symlink skip
+sealed P5.1A/P5.2A/P5.3A/P5.0 contract chain = 457 passed
+personal Runtime/Memory focused = 191 passed; 7 Windows-only CRLF canonical-byte failures
+Docker disposable PostgreSQL = not run because Docker Desktop daemon is unresponsive
+```
+
+The seven CRLF failures are host test-fixture writes; canonical JSON rejection is
+correct and was not relaxed. GitHub Ubuntu CI remains the authoritative Linux and
+disposable PostgreSQL evidence. No normal business database or real Provider
+credential was used, the root `.env` was not read, and enterprise P34.7 remains
+frozen.
+
+```text
+P5_9P_MEMORY_BOOTSTRAP_FORWARD_FIX_IN_PROGRESS
+migration head=0015
+migration 0016 absent
+AGENT_RUNTIME_ENABLED=false outside the exact disposable canary
+AGENT_PLANNER_ENABLED=false
+MULTI_AGENT_ENABLED=false
+P6_0_PERSONAL_ADMISSION_PENDING_P5_9P_CI
+not deployed
+```
