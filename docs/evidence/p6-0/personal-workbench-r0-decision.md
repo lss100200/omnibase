@@ -48,7 +48,7 @@ git diff --check = passed
 production build = passed (`/dashboard` 30.7 kB, 183 kB first load)
 maintainer map = valid (57 invariants / 46 modules / 894 path specs / 308 entrypoints)
 maintainer benchmark = valid (3 plans / 8 scenarios / 9 unsafe vetoes)
-P5 registry/task-ledger/planner sealed chain = resealed; clean-HEAD verification pending
+P5 registry/task-ledger/planner `--verify` = each exit 2, blocked/not_proven, contract_valid=true, clean=true, vetoes=[]
 ```
 
 Docker/WSL was intentionally not started because the host virtual-disk incident

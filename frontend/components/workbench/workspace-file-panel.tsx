@@ -133,6 +133,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
 
     useEffect(() => {
       scopeGenerationRef.current += 1
+      loadingDirectoriesRef.current.clear()
       handlesRef.current.clear()
       setRootId(null)
       setEntries([])
@@ -187,15 +188,21 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
         toast.error('请先选择 Workspace')
         return
       }
+      const operationScope = liveScopeRef.current
       try {
         const handle = await pickP6Directory()
+        if (liveScopeRef.current !== operationScope) return
         await requireP6Permission(handle, 'read', true)
+        if (liveScopeRef.current !== operationScope) return
         const root = await createP6RootEntry(handle)
+        if (liveScopeRef.current !== operationScope) return
         const firstAdmission = admitP6FileTreeEntry(emptyP6FileTreeUsage(), root.metadata)
         if (!firstAdmission.ok) throw new Error(firstAdmission.code)
+        if (liveScopeRef.current !== operationScope) return
+        const nextGeneration = scopeGenerationRef.current + 1
+        scopeGenerationRef.current = nextGeneration
+        liveScopeRef.current = `${tenantId}:${workspaceId}:${sessionId}:${nextGeneration}`
         handlesRef.current = new Map([[root.metadata.entryId, root]])
-        scopeGenerationRef.current += 1
-        liveScopeRef.current = `${tenantId}:${workspaceId}:${sessionId}:${scopeGenerationRef.current}`
         setRootId(root.metadata.entryId)
         setEntries([root.metadata])
         setChildren({})
@@ -206,12 +213,14 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
         setPreview(null)
         setChanges([])
       } catch (error) {
+        if (liveScopeRef.current !== operationScope) return
         toast.error('目录未授权', { description: errorMessage(error) })
       }
     }
 
     async function toggleDirectory(entryId: string): Promise<void> {
       if (locked) return
+      const operationScope = liveScopeRef.current
       if (expanded.has(entryId)) {
         setExpanded((current) => {
           const next = new Set(current)
@@ -221,29 +230,35 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
         return
       }
       if (!(entryId in children)) {
-        if (loadingDirectoriesRef.current.has(entryId)) return
-        loadingDirectoriesRef.current.add(entryId)
+        const loadingKey = `${operationScope}:${entryId}`
+        if (loadingDirectoriesRef.current.has(loadingKey)) return
+        loadingDirectoriesRef.current.add(loadingKey)
         const parent = handlesRef.current.get(entryId)
         if (!parent) {
-          loadingDirectoriesRef.current.delete(entryId)
+          loadingDirectoriesRef.current.delete(loadingKey)
           return
         }
         try {
           let admissionCode: string | null = null
+          let admittedUsage = usageRef.current
           const accepted = await listP6Children(parent, (metadata) => {
-            const admission = admitP6FileTreeEntry(usageRef.current, metadata)
+            if (liveScopeRef.current !== operationScope) return false
+            const admission = admitP6FileTreeEntry(admittedUsage, metadata)
             if (!admission.ok) {
               admissionCode = admission.code
               return false
             }
-            usageRef.current = admission.usage
+            admittedUsage = admission.usage
             return true
           })
+          if (liveScopeRef.current !== operationScope) return
           if (admissionCode) {
             toast.warning('文件树预算已停止枚举', { description: admissionCode })
           }
           const nextHandles = new Map(handlesRef.current)
           accepted.forEach((item) => nextHandles.set(item.metadata.entryId, item))
+          if (liveScopeRef.current !== operationScope) return
+          usageRef.current = admittedUsage
           handlesRef.current = nextHandles
           setEntries((current) => [...current, ...accepted.map((item) => item.metadata)])
           setChildren((current) => ({
@@ -252,21 +267,25 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
           }))
           setUsage(usageRef.current)
         } catch (error) {
+          if (liveScopeRef.current !== operationScope) return
           toast.error('无法展开目录', { description: errorMessage(error) })
           return
         } finally {
-          loadingDirectoriesRef.current.delete(entryId)
+          loadingDirectoriesRef.current.delete(loadingKey)
         }
       }
+      if (liveScopeRef.current !== operationScope) return
       setExpanded((current) => new Set(current).add(entryId))
     }
 
     async function openFile(entryId: string): Promise<void> {
       if (locked) return
+      const operationScope = liveScopeRef.current
       const entry = handlesRef.current.get(entryId)
       if (!entry || entry.metadata.kind !== 'file') return
       try {
         const snapshot = await readP6Snapshot(entry)
+        if (liveScopeRef.current !== operationScope) return
         setPreview(snapshot)
         setDraft(snapshot.text ?? '')
         setEntries((current) =>
@@ -284,6 +303,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
           ),
         }))
       } catch (error) {
+        if (liveScopeRef.current !== operationScope) return
         toast.error('无法打开文件', { description: errorMessage(error) })
       }
     }
