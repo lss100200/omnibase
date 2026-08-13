@@ -1,264 +1,342 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Diagnostics;
 using System.IO.Compression;
-using System.Linq;
+using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
 
-const int MaxArchiveEntries = 16;
-const long MaxManifestBytes = 64 * 1024;
-const long MaxFileBytes = 2 * 1024 * 1024;
-const long MaxTotalBytes = 10 * 1024 * 1024;
-const long MaxCompressionRatio = 100;
-var expectedPayload = new HashSet<string>(StringComparer.Ordinal)
+return Companion.Run(args);
+
+static class Companion
 {
-    "LICENSE",
-    "deployment/release/windows/README.zh-CN.md",
-    "deployment/release/windows/compose.yml",
-    "deployment/release/windows/operator.env.template",
-    "scripts/release/validate_windows_release_config.py",
-};
+    const int Ready = 0;
+    const int NeedsAction = 10;
+    const int Unsupported = 20;
+    const int SecurityFailure = 30;
+    const int ImagesNotPublished = 40;
 
-if (args.Length != 3 || args[0] != "--verify-and-extract")
-{
-    return Fail("usage: OmniBase.Setup --verify-and-extract <release.zip> <target-directory>");
-}
-
-var archivePath = Path.GetFullPath(args[1]);
-var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(args[2]));
-if (!File.Exists(archivePath) || File.GetAttributes(archivePath).HasFlag(FileAttributes.ReparsePoint) ||
-    File.Exists(target) || Directory.Exists(target))
-{
-    return Fail("invalid_input_or_target_exists");
-}
-
-var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
-try
-{
-    using var archive = ZipFile.OpenRead(archivePath);
-    if (archive.Entries.Count is < 2 or > MaxArchiveEntries)
+    public static int Run(string[] args)
     {
-        return Fail("release_archive_entry_count_invalid");
-    }
-
-    var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
-    long totalLength = 0;
-    foreach (var entry in archive.Entries)
-    {
-        if (!entries.TryAdd(entry.FullName, entry))
-        {
-            return Fail("release_archive_duplicate_path");
-        }
-        if (!ValidArchivePath(entry.FullName) || string.IsNullOrEmpty(entry.Name))
-        {
-            return Fail("release_archive_path_invalid");
-        }
-        if (entry.Length < 0 || entry.Length > MaxFileBytes || entry.CompressedLength < 0)
-        {
-            return Fail("release_archive_file_size_invalid");
-        }
-        if (entry.Length > 0 &&
-            (entry.CompressedLength == 0 || entry.CompressedLength < (entry.Length + MaxCompressionRatio - 1) / MaxCompressionRatio))
-        {
-            return Fail("release_archive_compression_ratio_invalid");
-        }
-        checked { totalLength += entry.Length; }
-        if (totalLength > MaxTotalBytes)
-        {
-            return Fail("release_archive_total_size_invalid");
-        }
-    }
-
-    if (!entries.TryGetValue("release.json", out var manifestEntry) ||
-        manifestEntry.Length is <= 0 or > MaxManifestBytes)
-    {
-        return Fail("release_manifest_missing_or_size_invalid");
-    }
-
-    JsonDocument document;
-    using (var stream = manifestEntry.Open())
-    {
-        document = JsonDocument.Parse(stream, new JsonDocumentOptions
-        {
-            AllowTrailingCommas = false,
-            CommentHandling = JsonCommentHandling.Disallow,
-            MaxDepth = 8,
-        });
-    }
-    using (document)
-    {
-        var root = document.RootElement;
-        var expectedManifestKeys = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "schema_version", "product", "release", "platform", "source_commit",
-            "production_ready", "requires_digest_pinned_images",
-            "publisher_signature_verified", "authenticode_verified",
-            "vhdx_mutation_allowed", "files",
-        };
-        if (root.ValueKind != JsonValueKind.Object || !ExactKeys(root, expectedManifestKeys) ||
-            !ExactInt(root, "schema_version", 1) ||
-            !ExactString(root, "product", "OmniBase") ||
-            !ExactString(root, "release", "v1.0.0-preview") ||
-            !ExactString(root, "platform", "windows-x64") ||
-            !ExactBoolean(root, "production_ready", false) ||
-            !ExactBoolean(root, "requires_digest_pinned_images", true) ||
-            !ExactBoolean(root, "publisher_signature_verified", false) ||
-            !ExactBoolean(root, "authenticode_verified", false) ||
-            !ExactBoolean(root, "vhdx_mutation_allowed", false))
-        {
-            return Fail("release_manifest_schema_or_posture_invalid");
-        }
-        var commit = root.GetProperty("source_commit");
-        if (commit.ValueKind != JsonValueKind.String ||
-            !Regex.IsMatch(commit.GetString()!, "^[0-9a-f]{40}$", RegexOptions.CultureInvariant))
-        {
-            return Fail("release_manifest_source_commit_invalid");
-        }
-
-        var files = root.GetProperty("files");
-        if (files.ValueKind != JsonValueKind.Array || files.GetArrayLength() != expectedPayload.Count)
-        {
-            return Fail("release_manifest_files_invalid");
-        }
-        var manifestPaths = new HashSet<string>(StringComparer.Ordinal);
-        var expectedFileKeys = new HashSet<string>(StringComparer.Ordinal) { "path", "sha256", "size" };
-        foreach (var file in files.EnumerateArray())
-        {
-            if (file.ValueKind != JsonValueKind.Object || !ExactKeys(file, expectedFileKeys))
-            {
-                return Fail("release_manifest_file_schema_invalid");
-            }
-            var pathElement = file.GetProperty("path");
-            var digestElement = file.GetProperty("sha256");
-            var sizeElement = file.GetProperty("size");
-            if (pathElement.ValueKind != JsonValueKind.String ||
-                digestElement.ValueKind != JsonValueKind.String ||
-                sizeElement.ValueKind != JsonValueKind.Number ||
-                !sizeElement.TryGetInt64(out var size) || size < 0 || size > MaxFileBytes)
-            {
-                return Fail("release_manifest_file_value_invalid");
-            }
-            var path = pathElement.GetString()!;
-            var expectedDigest = digestElement.GetString()!;
-            if (!expectedPayload.Contains(path) || !manifestPaths.Add(path) ||
-                !Regex.IsMatch(expectedDigest, "^[0-9a-f]{64}$", RegexOptions.CultureInvariant) ||
-                !entries.TryGetValue(path, out var entry) || entry.Length != size)
-            {
-                return Fail("release_file_missing_or_metadata_drifted");
-            }
-            using var stream = entry.Open();
-            var actualDigest = SHA256.HashData(stream);
-            if (!CryptographicOperations.FixedTimeEquals(
-                    actualDigest, Convert.FromHexString(expectedDigest)))
-            {
-                return Fail("release_file_digest_drifted");
-            }
-        }
-        if (!manifestPaths.SetEquals(expectedPayload) ||
-            !entries.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expectedPayload.Append("release.json")))
-        {
-            return Fail("release_archive_closed_set_drifted");
-        }
-    }
-
-    Directory.CreateDirectory(staging);
-    foreach (var entry in entries.Values.OrderBy(entry => entry.FullName, StringComparer.Ordinal))
-    {
-        var destination = Path.GetFullPath(Path.Combine(staging, entry.FullName));
-        if (!destination.StartsWith(staging + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            return Fail("release_archive_path_escape");
-        }
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        entry.ExtractToFile(destination, overwrite: false);
-    }
-    MoveDirectoryWithRetry(staging, target);
-}
-catch (Exception exception) when (exception is IOException or InvalidDataException or
-                                   JsonException or UnauthorizedAccessException or OverflowException or
-                                   CryptographicException or ArgumentException)
-{
-    return Fail("release_install_failed");
-}
-finally
-{
-    if (Directory.Exists(staging))
-    {
-        try { Directory.Delete(staging, recursive: true); }
-        catch { /* Best-effort cleanup; target is never partially installed. */ }
-    }
-}
-
-Console.WriteLine("verified_and_atomically_installed_preview_release");
-Console.WriteLine("Publisher signature and Authenticode remain NOT_PROVEN.");
-Console.WriteLine("Docker/WSL VHDX was not modified. Runtime, Planner, Multi-Agent and MCP remain disabled.");
-return 0;
-
-static int Fail(string code)
-{
-    Console.Error.WriteLine(code);
-    return 2;
-}
-
-static void MoveDirectoryWithRetry(string source, string destination)
-{
-    const int maxAttempts = 8;
-    const int retryDelayMilliseconds = 100;
-
-    for (var attempt = 1; attempt <= maxAttempts; attempt++)
-    {
-        if (File.Exists(destination) || Directory.Exists(destination))
-        {
-            throw new IOException("release target appeared before atomic install");
-        }
-
         try
         {
-            Directory.Move(source, destination);
-            return;
+            if (args.Length == 3 && args[0] == "--verify-and-extract")
+                return Install(args[1], args[2]);
+            if (args.Length == 2 && args[0] == "verify")
+                return Verify(args[1]);
+            if (args.Length == 3 && args[0] == "install")
+                return Install(args[1], args[2]);
+            if (args.Length == 3 && args[0] == "init-config" && args[1] == "--output")
+                return InitConfig(args[2]);
+            if (args.Length is 3 or 4 && args[0] == "doctor" && args[1] == "--install")
+                return Doctor(args[2], args.Length == 4 && args[3] == "--json");
+            return Fail(SecurityFailure, "usage_invalid");
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or
+            JsonException or UnauthorizedAccessException or OverflowException or
+            CryptographicException or ArgumentException)
         {
-            if (attempt == maxAttempts)
-            {
-                throw new IOException("atomic install retry budget exhausted", exception);
-            }
-            Thread.Sleep(retryDelayMilliseconds * attempt);
+            return Fail(SecurityFailure, "companion_operation_failed");
         }
     }
 
-    throw new IOException("atomic install retry loop terminated unexpectedly");
-}
-
-static bool ValidArchivePath(string path)
-{
-    if (string.IsNullOrEmpty(path) || path.StartsWith('/') || path.Contains('\\') || path.Contains(':'))
+    static int Verify(string archivePath)
     {
-        return false;
+        using var verified = VerifiedRelease.Open(archivePath);
+        Console.WriteLine("release_integrity_verified");
+        Console.WriteLine("production_ready=false; publisher_signature=not_proven; authenticode=not_signed");
+        return Ready;
     }
-    return !path.Split('/', StringSplitOptions.None).Any(segment => segment is "" or "." or "..");
-}
 
-static bool ExactKeys(JsonElement value, HashSet<string> expected)
-{
-    var actual = new HashSet<string>(StringComparer.Ordinal);
-    foreach (var property in value.EnumerateObject())
+    static int Install(string archivePath, string targetPath)
     {
-        if (!actual.Add(property.Name)) return false;
+        var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetPath));
+        if (File.Exists(target) || Directory.Exists(target))
+            return Fail(SecurityFailure, "install_target_exists");
+        using var verified = VerifiedRelease.Open(archivePath);
+        var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            Directory.CreateDirectory(staging);
+            verified.ExtractTo(staging);
+            MoveDirectoryWithRetry(staging, target);
+        }
+        finally
+        {
+            if (Directory.Exists(staging))
+            {
+                try { Directory.Delete(staging, recursive: true); }
+                catch { /* Target is never treated as installed while staging remains. */ }
+            }
+        }
+        Console.WriteLine("verified_and_atomically_installed_preview_release");
+        Console.WriteLine("Docker/WSL/VHDX was not modified. No service or image was started.");
+        return Ready;
     }
-    return actual.SetEquals(expected);
+
+    static int InitConfig(string outputPath)
+    {
+        var output = Path.GetFullPath(outputPath);
+        if (File.Exists(output) || Directory.Exists(output))
+            return Fail(SecurityFailure, "config_target_exists");
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        var postgres = Secret(24);
+        var redis = Secret(24);
+        var minio = Secret(24);
+        var jwt = Secret(48);
+        var providerKey = Base64Url(RandomNumberGenerator.GetBytes(32));
+        var memoryKey = Base64Url(RandomNumberGenerator.GetBytes(32));
+        while (memoryKey == providerKey) memoryKey = Base64Url(RandomNumberGenerator.GetBytes(32));
+        var lines = new[]
+        {
+            "# Generated by OmniBase Companion. Keep this file outside source and release directories.",
+            "OMNIBASE_FRONTEND_PORT=3000",
+            "OMNIBASE_BACKEND_IMAGE=ghcr.io/lss100200/omnibase-backend@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "OMNIBASE_FRONTEND_IMAGE=ghcr.io/lss100200/omnibase-frontend@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "OMNIBASE_POSTGRES_IMAGE=pgvector/pgvector@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "OMNIBASE_REDIS_IMAGE=redis@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "OMNIBASE_MINIO_IMAGE=minio/minio@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "OMNIBASE_MINIO_MC_IMAGE=minio/mc@sha256:REPLACE_WITH_64_HEX_DIGEST",
+            "POSTGRES_USER=omnibase",
+            $"POSTGRES_PASSWORD={postgres}",
+            "POSTGRES_DB=omnibase",
+            $"DATABASE_URL=postgresql+psycopg://omnibase:{Uri.EscapeDataString(postgres)}@postgres:5432/omnibase",
+            $"REDIS_PASSWORD={redis}",
+            $"REDIS_URL=redis://:{Uri.EscapeDataString(redis)}@redis:6379/0",
+            "MINIO_ROOT_USER=omnibase",
+            $"MINIO_ROOT_PASSWORD={minio}",
+            "MINIO_BUCKET=omnibase-files",
+            $"JWT_SECRET={jwt}",
+            $"PROVIDER_CREDENTIAL_ENCRYPTION_KEY={providerKey}",
+            $"MEMORY_CONTENT_ENCRYPTION_KEY={memoryKey}",
+            "PROVIDER_ENDPOINT_ALLOWLIST=[\"api.deepseek.com\",\"api.openai.com\"]",
+            "CORS_ORIGINS=[\"http://127.0.0.1:3000\"]",
+            $"OMNIBASE_DEPLOYMENT_INSTANCE_ID={Guid.NewGuid()}",
+            "AGENT_RUNTIME_ENABLED=false",
+            "AGENT_PLANNER_ENABLED=false",
+            "MULTI_AGENT_ENABLED=false",
+            "MCP_RUNTIME_ENABLED=false",
+        };
+        using var stream = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+        foreach (var line in lines) writer.WriteLine(line);
+        Console.WriteLine("config_initialized_without_secret_echo");
+        Console.WriteLine("image_metadata remains publisher-owned and unpublished");
+        return Ready;
+    }
+
+    static int Doctor(string installPath, bool json)
+    {
+        var checks = new List<DoctorCheck>();
+        var install = Path.GetFullPath(installPath);
+        checks.Add(Check("RELEASE_INTEGRITY", "INSTALL_DIRECTORY", Directory.Exists(install),
+            Directory.Exists(install) ? "PASS" : "INSTALL_DIRECTORY_MISSING"));
+        if (!OperatingSystem.IsWindows())
+            checks.Add(Check("HOST", "WINDOWS_X64", false, "WINDOWS_X64_REQUIRED"));
+        else
+            checks.Add(Check("HOST", "WINDOWS_X64", Environment.Is64BitOperatingSystem,
+                Environment.Is64BitOperatingSystem ? "PASS" : "WINDOWS_X64_REQUIRED"));
+
+        var root = Path.GetPathRoot(install) ?? install;
+        try
+        {
+            var drive = new DriveInfo(root);
+            checks.Add(Check("HOST", "DISK", drive.AvailableFreeSpace >= 20L * 1024 * 1024 * 1024,
+                drive.AvailableFreeSpace >= 20L * 1024 * 1024 * 1024 ? "PASS" : "INSUFFICIENT_DISK"));
+        }
+        catch { checks.Add(Check("HOST", "DISK", false, "DISK_STATUS_UNAVAILABLE")); }
+
+        var dockerVersion = RunBounded("docker", new[] { "version", "--format", "{{.Client.Version}}" }, 4);
+        checks.Add(Check("HOST", "DOCKER_CLI", dockerVersion.Success,
+            dockerVersion.Success ? "PASS" : "DOCKER_CLI_NOT_FOUND"));
+        var daemon = dockerVersion.Success ? RunBounded("docker", new[] { "info", "--format", "{{.OSType}}" }, 5) : default;
+        checks.Add(Check("HOST", "DOCKER_DAEMON", daemon.Success && daemon.Output.Trim() == "linux",
+            !dockerVersion.Success ? "DOCKER_CLI_NOT_FOUND" : !daemon.Success ? "DOCKER_DAEMON_NOT_RUNNING" : daemon.Output.Trim() == "linux" ? "PASS" : "DOCKER_WINDOWS_CONTAINER_MODE"));
+        var compose = dockerVersion.Success ? RunBounded("docker", new[] { "compose", "version", "--short" }, 4) : default;
+        checks.Add(Check("HOST", "COMPOSE", compose.Success, compose.Success ? "PASS" : "COMPOSE_PLUGIN_NOT_FOUND"));
+        var wsl = OperatingSystem.IsWindows() ? RunBounded("wsl.exe", new[] { "--status" }, 4) : default;
+        checks.Add(Check("HOST", "WSL2", wsl.Success, wsl.Success ? "PASS" : "WSL2_NOT_AVAILABLE"));
+
+        var envFile = Path.Combine(install, "operator.env");
+        var template = Path.Combine(install, "deployment", "release", "windows", "operator.env.template");
+        var configPath = File.Exists(envFile) ? envFile : template;
+        var config = ConfigInspector.Inspect(configPath);
+        checks.Add(Check("CONFIG", "ENV", config.Valid, config.Code));
+        checks.Add(Check("IMAGE_METADATA", "DIGESTS", config.ImagesPublished,
+            config.ImagesPublished ? "PASS" : "RELEASE_IMAGES_NOT_PUBLISHED"));
+        checks.Add(Check("RUNTIME", "FEATURE_GATES", config.FeatureGatesClosed,
+            config.FeatureGatesClosed ? "PASS" : "FEATURE_GATE_MUST_REMAIN_FALSE"));
+
+        var securityFailure = checks.Any(item => item.Code is "FEATURE_GATE_MUST_REMAIN_FALSE" or "CONFIG_REPARSE_FORBIDDEN" or "CONFIG_DUPLICATE_KEY");
+        var unsupported = checks.Any(item => item.Code is "WINDOWS_X64_REQUIRED");
+        var imagesMissing = checks.Any(item => item.Code == "RELEASE_IMAGES_NOT_PUBLISHED");
+        var needsAction = checks.Any(item => !item.Passed);
+        var exit = securityFailure ? SecurityFailure : unsupported ? Unsupported : imagesMissing ? ImagesNotPublished : needsAction ? NeedsAction : Ready;
+        var overall = exit == Ready ? "READY_FOR_PULL" : exit == ImagesNotPublished ? "NOT_READY_FOR_PULL" : "NEEDS_ACTION";
+        if (json)
+            Console.WriteLine(JsonSerializer.Serialize(new { schema_version = 1, overall, exit_code = exit, checks, mutation_performed = false }));
+        else
+        {
+            Console.WriteLine($"OmniBase 离线诊断：{overall}");
+            foreach (var check in checks) Console.WriteLine($"[{check.Section}] {check.Name}: {check.Code}");
+            Console.WriteLine("本次诊断未启动 Docker/WSL，未拉取镜像，未修改 VHDX 或系统配置。");
+        }
+        return exit;
+    }
+
+    static DoctorCheck Check(string section, string name, bool passed, string code) => new(section, name, passed, code);
+
+    static ProcessResult RunBounded(string executable, IReadOnlyList<string> arguments, int timeoutSeconds)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+            using var process = Process.Start(startInfo);
+            if (process is null || !process.WaitForExit(timeoutSeconds * 1000))
+            {
+                try { process?.Kill(entireProcessTree: true); } catch { }
+                return new(false, "");
+            }
+            var output = process.StandardOutput.ReadToEnd();
+            return new(process.ExitCode == 0 && output.Length <= 64 * 1024, output);
+        }
+        catch { return new(false, ""); }
+    }
+
+    static string Secret(int bytes) => Base64Url(RandomNumberGenerator.GetBytes(bytes));
+    static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    static int Fail(int code, string reason) { Console.Error.WriteLine(reason); return code; }
+
+    static void MoveDirectoryWithRetry(string source, string destination)
+    {
+        const int maxAttempts = 8;
+        const int retryDelayMilliseconds = 100;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            if (File.Exists(destination) || Directory.Exists(destination))
+                throw new IOException("release target appeared before atomic install");
+            try { Directory.Move(source, destination); return; }
+            catch (IOException exception)
+            {
+                if (attempt == maxAttempts) throw new IOException("atomic install retry budget exhausted", exception);
+                Thread.Sleep(retryDelayMilliseconds * attempt);
+            }
+        }
+    }
+
+    readonly record struct ProcessResult(bool Success, string Output);
+    readonly record struct DoctorCheck(string Section, string Name, bool Passed, string Code);
 }
 
-static bool ExactString(JsonElement root, string name, string expected) =>
-    root.GetProperty(name).ValueKind == JsonValueKind.String &&
-    root.GetProperty(name).GetString() == expected;
+sealed class VerifiedRelease : IDisposable
+{
+    const int MaxArchiveEntries = 16;
+    const long MaxFileBytes = 2 * 1024 * 1024;
+    const long MaxTotalBytes = 10 * 1024 * 1024;
+    static readonly HashSet<string> ExpectedPayload = new(StringComparer.Ordinal)
+    {
+        "LICENSE", "deployment/release/windows/README.zh-CN.md", "deployment/release/windows/compose.yml",
+        "deployment/release/windows/operator.env.template", "scripts/release/validate_windows_release_config.py",
+    };
+    readonly ZipArchive archive;
+    readonly Dictionary<string, ZipArchiveEntry> entries;
 
-static bool ExactBoolean(JsonElement root, string name, bool expected) =>
-    (expected ? JsonValueKind.True : JsonValueKind.False) == root.GetProperty(name).ValueKind;
+    VerifiedRelease(ZipArchive archive, Dictionary<string, ZipArchiveEntry> entries) { this.archive = archive; this.entries = entries; }
 
-static bool ExactInt(JsonElement root, string name, int expected) =>
-    root.GetProperty(name).ValueKind == JsonValueKind.Number &&
-    root.GetProperty(name).TryGetInt32(out var actual) && actual == expected;
+    public static VerifiedRelease Open(string input)
+    {
+        var path = Path.GetFullPath(input);
+        if (!File.Exists(path) || File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint))
+            throw new InvalidDataException("release_input_invalid");
+        var archive = ZipFile.OpenRead(path);
+        try
+        {
+            if (archive.Entries.Count is < 2 or > MaxArchiveEntries) throw new InvalidDataException("release_archive_entry_count_invalid");
+            var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
+            long total = 0;
+            foreach (var entry in archive.Entries)
+            {
+                if (!entries.TryAdd(entry.FullName, entry) || !ValidArchivePath(entry.FullName) || string.IsNullOrEmpty(entry.Name))
+                    throw new InvalidDataException("release_archive_path_invalid");
+                checked { total += entry.Length; }
+                if (entry.Length < 0 || entry.Length > MaxFileBytes || total > MaxTotalBytes)
+                    throw new InvalidDataException("release_archive_size_invalid");
+            }
+            if (!entries.TryGetValue("release.json", out var manifestEntry)) throw new InvalidDataException("release_manifest_missing");
+            using var document = JsonDocument.Parse(manifestEntry.Open());
+            var root = document.RootElement;
+            if (root.GetProperty("product").GetString() != "OmniBase" || root.GetProperty("platform").GetString() != "windows-x64" || root.GetProperty("production_ready").GetBoolean())
+                throw new InvalidDataException("release_manifest_posture_invalid");
+            var files = root.GetProperty("files");
+            var manifestPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var file in files.EnumerateArray())
+            {
+                var relative = file.GetProperty("path").GetString() ?? "";
+                var digest = file.GetProperty("sha256").GetString() ?? "";
+                var size = file.GetProperty("size").GetInt64();
+                if (!ExpectedPayload.Contains(relative) || !manifestPaths.Add(relative) || !entries.TryGetValue(relative, out var entry) || entry.Length != size || !Regex.IsMatch(digest, "^[0-9a-f]{64}$"))
+                    throw new InvalidDataException("release_file_metadata_invalid");
+                using var stream = entry.Open();
+                if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(stream), Convert.FromHexString(digest)))
+                    throw new InvalidDataException("release_file_digest_drifted");
+            }
+            if (!manifestPaths.SetEquals(ExpectedPayload) || !entries.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(ExpectedPayload.Append("release.json")))
+                throw new InvalidDataException("release_archive_closed_set_drifted");
+            return new VerifiedRelease(archive, entries);
+        }
+        catch { archive.Dispose(); throw; }
+    }
+
+    public void ExtractTo(string staging)
+    {
+        foreach (var entry in entries.Values.OrderBy(item => item.FullName, StringComparer.Ordinal))
+        {
+            var destination = Path.GetFullPath(Path.Combine(staging, entry.FullName));
+            if (!destination.StartsWith(staging + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("release_archive_path_escape");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            entry.ExtractToFile(destination, overwrite: false);
+        }
+    }
+    public void Dispose() => archive.Dispose();
+    static bool ValidArchivePath(string path) => !string.IsNullOrEmpty(path) && !path.StartsWith('/') && !path.Contains('\\') && !path.Contains(':') && !path.Split('/').Any(part => part is "" or "." or "..");
+}
+
+static class ConfigInspector
+{
+    static readonly string[] ImageKeys =
+    {
+        "OMNIBASE_BACKEND_IMAGE", "OMNIBASE_FRONTEND_IMAGE", "OMNIBASE_POSTGRES_IMAGE",
+        "OMNIBASE_REDIS_IMAGE", "OMNIBASE_MINIO_IMAGE", "OMNIBASE_MINIO_MC_IMAGE",
+    };
+    static readonly string[] GateKeys = { "AGENT_RUNTIME_ENABLED", "AGENT_PLANNER_ENABLED", "MULTI_AGENT_ENABLED", "MCP_RUNTIME_ENABLED" };
+
+    public static ConfigResult Inspect(string path)
+    {
+        if (!File.Exists(path)) return new(false, false, false, "CONFIG_FILE_MISSING");
+        if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)) return new(false, false, false, "CONFIG_REPARSE_FORBIDDEN");
+        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        try
+        {
+            foreach (var raw in File.ReadAllLines(path, new UTF8Encoding(false, true)))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith('#')) continue;
+                var split = line.IndexOf('=');
+                if (split <= 0 || !values.TryAdd(line[..split], line[(split + 1)..])) return new(false, false, false, "CONFIG_DUPLICATE_KEY");
+            }
+        }
+        catch (DecoderFallbackException) { return new(false, false, false, "CONFIG_UTF8_INVALID"); }
+        var imagesPublished = ImageKeys.All(key => values.TryGetValue(key, out var value) && Regex.IsMatch(value, "^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$"));
+        var gatesClosed = GateKeys.All(key => !values.TryGetValue(key, out var value) || value.Equals("false", StringComparison.OrdinalIgnoreCase));
+        return new(true, imagesPublished, gatesClosed, "PASS");
+    }
+    public readonly record struct ConfigResult(bool Valid, bool ImagesPublished, bool FeatureGatesClosed, string Code);
+}

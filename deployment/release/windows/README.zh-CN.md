@@ -1,16 +1,42 @@
-# OmniBase v1.0 Windows 发布预备包
+# OmniBase Windows 工程预览 Companion
 
-这是 P6.1-D 的预备发布边界，不是已经签名并正式发布的 v1.0。当前 ZIP 的可复现构建与完整性校验已有工程证据；发布者签名、Authenticode、真实镜像 digest、SBOM 和最终 Windows 安装验收仍为 `NOT_PROVEN`。
+这是 P6.2-D 的个人版工程预览，不是已签名并正式发布的 v1.0。Companion 设计为
+Windows x64 self-contained 单文件程序，目标是不要求用户预装 .NET Runtime，并提供四个
+明确命令：
 
-使用原则：
+```powershell
+OmniBase.Setup.exe verify <release.zip>
+OmniBase.Setup.exe install <release.zip> <全新目标目录>
+OmniBase.Setup.exe init-config --output <安装目录外的 operator.env>
+OmniBase.Setup.exe doctor --install <安装目录> [--json]
+```
 
-1. 将 `operator.env.template` 复制到源码与安装目录之外，再填写密钥和不可变镜像 digest。
-2. 在联网拉取镜像前先离线运行：
-   从解压目录运行 `python scripts/release/validate_windows_release_config.py --compose deployment/release/windows/compose.yml --env-file <精确文件>`。
-3. 预检通过后，只运行 `docker compose --env-file <精确文件> -f deployment/release/windows/compose.yml pull --quiet` 与 `up -d --no-build`；不得省略 `--env-file`。
-4. Compose 复用个人生产目标的 PostgreSQL、Redis、MinIO 初始化、Alembic migration、健康检查、只读文件系统、最小 capability 与 fail-closed Feature Gate 生命周期，但全部应用镜像只能来自预检白名单并绑定 `sha256` digest；包内没有 `build:`。
-5. Runtime、Planner、Multi-Agent、Agent Alpha engineering 与 MCP Runtime 默认全部关闭。
-6. 安装器不得自动清理、压缩、迁移、截断或删除 Docker/WSL VHDX。
-7. 包内不含 Docker image tar、数据库、模型、`.env`、密钥、`node_modules` 或 `.next`。
+`verify` 和 `install` 继续执行发行文件闭集、manifest、长度和 SHA-256 校验。安装采用
+staging + 最终原子目录移动，目标已存在时拒绝覆盖。
 
-离线预检只验证 Compose 中声明的每一个镜像变量都精确匹配内置仓库白名单与 64 位小写 SHA-256；它不会联网、拉取镜像、启动容器、读取根 `.env` 或证明镜像发布者身份。正式发布仍须在受控流水线中加入镜像来源证明、SBOM、发布者签名与 Authenticode。
+`init-config` 使用操作系统 CSPRNG 生成数据库、Redis、MinIO、JWT 和两个相互独立的
+32-byte base64url 加密密钥；命令不会在输出中回显秘密，也不会覆盖既有文件。镜像 digest
+属于发布者供应链元数据，因此仍保留占位符，不会用 mutable tag 或随意查询的 digest 代填。
+
+`doctor` 默认离线、只读，分层检查 `RELEASE_INTEGRITY`、`HOST`、`CONFIG`、
+`IMAGE_METADATA` 和 Feature Gates。它只查询 Docker CLI/daemon、Compose、WSL2 和磁盘；
+不会安装、启动或升级 Docker/WSL，不会 pull/up 容器，不会修改 VHDX、PATH、防火墙或系统
+服务。当前六个镜像 digest 未发布时，稳定结论是：
+
+```text
+RELEASE_IMAGES_NOT_PUBLISHED
+NOT_READY_FOR_PULL
+```
+
+这属于发布方阻塞，不是普通用户配置错误。即使未来输出 `READY_FOR_PULL`，它也只表示可以在
+人工确认后进入 exact-digest `docker compose pull`，不表示 production-ready、Publisher
+verified、已启动或已健康。
+
+当前必须按实报告：
+
+- `production_ready=false`；
+- Authenticode 未签名，Publisher signature 未证明；
+- OCI backend/frontend 和第三方镜像真实 digest 未发布；
+- Runtime、Planner、Multi-Agent 与 MCP Runtime 默认全部关闭；
+- 包内不含 Docker image tar、数据库、模型、`.env`、密钥、`node_modules`、`.next` 或 VHDX；
+- 当前机器没有 .NET SDK 时，只能验证源码和安全契约，不能声称 self-contained EXE 已构建。
