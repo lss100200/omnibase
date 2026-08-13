@@ -24,7 +24,7 @@ enterprise P34.7 campaign.
   verifies the ZIP manifest before extraction. Release Compose has no `build:`
   and requires immutable OCI digests. A portable Microsoft .NET SDK 8.0.424
   archive has been restored outside the repository and its SHA-512 matches the
-  official release value. Clean source commit `72a9f2a` produced byte-reproducible
+  official release value. Clean source commit `cf707e2` produced byte-reproducible
   ZIP and EXE artifacts; the EXE passed 20 fresh-target installations and six
   fail-closed archive/target attack cases without partial targets or staging
   residue.

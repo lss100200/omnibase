@@ -26,14 +26,14 @@ release value
 The recovered SDK reports SDK `8.0.424`, MSBuild `17.11.48` and Windows x64.
 
 Authoritative preview artifacts were built outside the repository from clean
-source commit `72a9f2a66ab0e40dfe79b74b0fe5641f432afebc`:
+source commit `cf707e28c656606114bee0aa69bde979af3758a2`:
 
-- ZIP: `E:\Agent IDE\OmniBase-P61-Release-72a9f2a\OmniBase-v1.0.0-preview-windows-x64.zip`,
-  `27161` bytes, SHA-256
-  `e7062aa38173b769518c1f936f880934b203df40a54bff1d24cc8cc89d50a5c3`;
-- EXE: `E:\Agent IDE\OmniBase-P61-Release-72a9f2a\publish\OmniBase.Setup.exe`,
+- ZIP: `E:\Agent IDE\OmniBase-P61-Release-cf707e2\OmniBase-v1.0.0-preview-windows-x64.zip`,
+  `27131` bytes, SHA-256
+  `e9a4049d5d9986a9cc76cf5a4b3a67f17587135f3de7c08554979de652c89fd3`;
+- EXE: `E:\Agent IDE\OmniBase-P61-Release-cf707e2\publish\OmniBase.Setup.exe`,
   `166920` bytes, SHA-256
-  `6e3883b8bb81ef6339128eaf585c0ca2a53b9d79cc9610888d147eea23ecce32`.
+  `6b0c904f29239a474c9dbfe7e0e382b3c5e20341aa637b71cf5db58168b6896c`.
 
 Two independent builds of each artifact were byte-identical. Authenticode is
 `NotSigned`, so `publisher_signature_verified=false` and

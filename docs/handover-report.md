@@ -5549,13 +5549,13 @@ single-file verifier/extractor source. ZIP reproducibility is proven locally.
 A portable Microsoft .NET SDK 8.0.424 archive was recovered outside the
 repository (`285090820` bytes) and verified against the official SHA-512. The
 recovered SDK was expanded into a new non-overwriting directory and reports SDK
-`8.0.424` / MSBuild `17.11.48`. Clean source commit `72a9f2a` produced the
+`8.0.424` / MSBuild `17.11.48`. Clean source commit `cf707e2` produced the
 authoritative preview ZIP and EXE outside the repository. Two independent
 builds of each artifact were byte-identical:
 
 ```text
-ZIP  27161 bytes  SHA-256 e7062aa38173b769518c1f936f880934b203df40a54bff1d24cc8cc89d50a5c3
-EXE 166920 bytes  SHA-256 6e3883b8bb81ef6339128eaf585c0ca2a53b9d79cc9610888d147eea23ecce32
+ZIP  27131 bytes  SHA-256 e9a4049d5d9986a9cc76cf5a4b3a67f17587135f3de7c08554979de652c89fd3
+EXE 166920 bytes  SHA-256 6b0c904f29239a474c9dbfe7e0e382b3c5e20341aa637b71cf5db58168b6896c
 Authenticode = NotSigned
 ```
 
