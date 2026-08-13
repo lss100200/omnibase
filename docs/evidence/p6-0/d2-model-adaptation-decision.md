@@ -49,8 +49,8 @@ remaining host non-integration run = 2673 passed, 42 skipped, 15 failed,
   - the final 2 sealed-contract failures were resolved by resealing and their
     focused matrix subsequently passed
 changed Python Ruff check / format = passed (65 paths)
-maintainer map = valid (58 invariants, 46 modules, 919 path specs,
-  2082 matched files, 311 entrypoints, 19 HTTP entrypoints,
+maintainer map = valid (58 invariants, 46 modules, 920 path specs,
+  2084 matched files, 311 entrypoints, 19 HTTP entrypoints,
   247 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 9 unsafe vetoes)
 guarded PostgreSQL D2 attack module = 10 passed in 99.58s against a disposable
@@ -58,15 +58,17 @@ guarded PostgreSQL D2 attack module = 10 passed in 99.58s against a disposable
   cross-user and closed-set constraints, concurrent first-create, stale
   update/delete, delete/recreate during probe, membership/Binding/generation
   drift, tenant-first empty downgrade and populated atomic rollback passed
-focused migration/model contracts after the database forward fix = 28 passed
+focused migration/model contracts after the database and review forward fixes =
+  47 passed, including 10 direct selector cases proving flagged, ranged,
+  relative and programmatic ambiguity remains fail closed
 broader D2/Agent Alpha/rate-limit/migration regression = 90 passed
 P5 registry/task-ledger/planner sealed-contract regression = 407 passed
 Mypy migration env + model settings boundary = passed (2 source files)
 changed forward-fix Ruff check / format = passed (3 explicit paths)
 disposable PostgreSQL container, networks and tmpfs data = removed with
   down -v --remove-orphans after the Gate
-maintainer map = valid (58 invariants, 46 modules, 919 path specs,
-  2082 matched files, 311 entrypoints, 19 HTTP entrypoints,
+maintainer map = valid (58 invariants, 46 modules, 920 path specs,
+  2084 matched files, 311 entrypoints, 19 HTTP entrypoints,
   247 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 6 critical scenarios,
   9 unsafe vetoes)
@@ -85,6 +87,15 @@ intentionally retained tenants. The final Gate now executes the downgrade proof
 before audited cases, preserves the real request-scoped tenant binding, and
 accepts only the exact ordinary `alembic downgrade 0015` CLI form for the
 tenant-first path. All 10 database attacks passed and cleanup completed.
+
+The final independent review of `f8a4aae` then found that Alembic's parsed
+command metadata could still classify flagged downgrade invocations as the
+ordinary CLI form. The forward fix removed metadata from that authorization
+decision entirely: only the source-complete `sys.argv` tuple `downgrade 0015`
+selects tenant-first order. Ten behavioral selector cases now cover the exact
+positive form plus `-x`, `--name`, `--tag`, `--sql`, range, relative,
+programmatic, wrong-command and wrong-target negatives. The focused matrix
+passed 47 tests and the isolated PostgreSQL Gate passed all 10 attacks again.
 
 The earlier complete frontend, focused backend, P5/P34 sealed-contract and
 maintainer-map evidence remains the D2 engineering baseline. This local

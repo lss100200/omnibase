@@ -37,6 +37,9 @@ from omnibase.core.config import get_settings  # noqa: E402
 from omnibase.core.logging import configure_logging, get_logger  # noqa: E402
 from omnibase.db import tenant as tenant_models  # noqa: E402, F401
 from omnibase.db.models import GLOBAL_METADATA, TENANT_METADATA  # noqa: E402
+from omnibase.migrations.order import (  # noqa: E402
+    is_exact_0016_to_0015_downgrade_cli,
+)
 from omnibase.sandbox import models as sandbox_models  # noqa: E402, F401
 from omnibase.tenants.schema_manager import validate_schema_name  # noqa: E402
 from omnibase.tenants.service import _initialize_tenant_schema  # noqa: E402
@@ -120,28 +123,16 @@ def _configure_context(
 def _is_exact_0016_to_0015_downgrade() -> bool:
     """Select the reviewed tenant-first downgrade without guessing direction.
 
-    Alembic's environment callback does not otherwise expose whether its
-    revision function was built for upgrade or downgrade.  The CLI command
-    tuple and exact destination are therefore both required.  Programmatic or
-    ambiguous invocations retain the historical global-first order, where the
-    0016 global guard fails closed instead of moving the global revision first.
-    """
-    command_options = getattr(config, "cmd_opts", None)
-    raw_command = getattr(command_options, "cmd", None)
-    raw_revision = getattr(command_options, "revision", None)
-    command = raw_command[0] if isinstance(raw_command, tuple) and raw_command else None
-    metadata_matches = (
-        callable(command)
-        and getattr(command, "__name__", None) == "downgrade"
-        and raw_revision == "0015"
-    )
+    Only the source-complete ordinary CLI form is authorized.  Alembic command
+    metadata deliberately does not participate: it preserves the destination
+    revision while accepting flags such as ``-x``, ``--name`` and ``--tag``,
+    which would otherwise make an augmented invocation look exact.
 
-    # Alembic 1.13 may not preserve ``Config.cmd_opts`` when ``env.py`` is
-    # re-entered for a tenant phase.  Accept only the exact ordinary CLI form
-    # as the source-complete fallback; flags, ranges, relative revisions and
-    # programmatic calls remain on the historical fail-closed path.
-    exact_cli = tuple(sys.argv[1:]) == ("downgrade", "0015")
-    return metadata_matches or exact_cli
+    Programmatic, flagged, ranged, relative and otherwise ambiguous calls
+    retain the historical global-first order, where the 0016 global guard
+    fails closed instead of moving the global revision first.
+    """
+    return is_exact_0016_to_0015_downgrade_cli(sys.argv[1:])
 
 
 def _run_global_migrations(connection: Any) -> None:

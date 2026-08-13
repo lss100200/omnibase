@@ -5417,15 +5417,16 @@ guarded D2 PostgreSQL attacks = 10 passed in 99.58s against an isolated
   omnibase_test_p60d2_* sentinel; exact 0016 shape/constraints, concurrency,
   stale writes, probe mutation and authority drift, tenant-first empty
   downgrade and populated atomic rollback all passed
-focused migration/model forward-fix contracts = 28 passed
+focused migration/model forward-fix contracts = 47 passed, including 10 direct
+  exact-CLI selector behavior cases
 broader D2/Agent Alpha/rate-limit/migration regression = 90 passed
 P5 registry/task-ledger/planner sealed-contract regression = 407 passed
 Mypy migration env + model settings boundary = passed (2 source files)
 forward-fix Ruff check / format = passed on 3 explicit paths
 disposable container, networks and tmpfs database = removed with
   down -v --remove-orphans
-maintainer map = valid (58 invariants / 46 modules / 919 path specs /
-  2082 matched files / 311 entrypoints / 19 HTTP entrypoints /
+maintainer map = valid (58 invariants / 46 modules / 920 path specs /
+  2084 matched files / 311 entrypoints / 19 HTTP entrypoints /
   247 verification commands)
 maintainer benchmark = valid (3 plans / 8 scenarios / 6 critical scenarios /
   9 unsafe vetoes)
@@ -5446,6 +5447,16 @@ append-only audit tenants. The forward fix binds the harness exactly like
 `get_tenant_db`, runs database-wide downgrade proofs before audited service
 cases, and selects tenant-first downgrade only for the exact ordinary
 `alembic downgrade 0015` CLI form. Final result: `10 passed`, cleanup complete.
+
+The final independent review of `f8a4aae` found one additional P1 before any
+push: Alembic command metadata preserved the destination revision for flagged
+commands, so `metadata_matches or exact_cli` could bypass the exact-CLI rule.
+The review forward fix removes the metadata branch; tenant-first now requires
+the complete `sys.argv` tuple to equal `("downgrade", "0015")`. Ten direct
+behavior cases prove flags, SQL mode, range, relative revision, programmatic
+invocation, wrong command and wrong destination fail closed. The focused
+matrix passed 47 tests and the disposable PostgreSQL attack module passed all
+10 tests again before cleanup.
 
 Current status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_PASSED_LOCALLY`.
 This remains local disposable engineering evidence, not production evidence.

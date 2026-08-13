@@ -986,6 +986,7 @@
       "document": "docs/maintainers/security-invariants.md#inv-068-p60d2-per-role-model-selection-and-migration-boundary",
       "source_paths": [
         "backend/src/omnibase/user_settings/model_settings.py",
+        "backend/src/omnibase/migrations/order.py",
         "backend/src/omnibase/user_settings/gateway.py",
         "backend/src/omnibase/user_settings/router.py",
         "backend/src/omnibase/user_settings/schemas.py",
