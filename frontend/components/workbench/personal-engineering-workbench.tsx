@@ -49,9 +49,11 @@ import { agentInvokeConditionsMet, canInvokeAgent } from '@/lib/personal-runtime
 import {
   PERSONAL_EMPLOYEES,
   P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS,
+  P6_WORKBENCH_HISTORY_MAX_CHARACTERS,
   P6_WORKBENCH_STORAGE_KEY,
   appendWorkbenchMessage,
   appendWorkbenchTimelineEvent,
+  compileWorkbenchHistory,
   createInitialWorkbenchState,
   estimateSessionTokens,
   listWorkbenchSessions,
@@ -479,7 +481,16 @@ export function PersonalEngineeringWorkbench() {
       setPreparing(false)
       return
     }
-    const finalMessage = `${adaptedRoleMessage}${fileCompilation?.ok ? fileCompilation.context.promptFragment : ''}`
+    const historyBudget = Math.min(
+      P6_WORKBENCH_HISTORY_MAX_CHARACTERS,
+      Math.max(
+        0,
+        selectedGear.contextCharacterBudget -
+          (fileCompilation?.ok ? fileCompilation.context.compiledCharacters : 0),
+      ),
+    )
+    const historyCompilation = compileWorkbenchHistory(activeSession, historyBudget)
+    const finalMessage = `${adaptedRoleMessage}${historyCompilation.promptFragment}${fileCompilation?.ok ? fileCompilation.context.promptFragment : ''}`
     if (finalMessage.length > P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS) {
       toast.error('最终请求超过安全上限', {
         description: `员工职责、模型适配与文件上下文合计 ${finalMessage.length.toLocaleString()} 个字符；任务未发出。`,

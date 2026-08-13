@@ -10,6 +10,7 @@ import {
   addSession,
   appendWorkbenchMessage,
   appendWorkbenchTimelineEvent,
+  compileWorkbenchHistory,
   createInitialWorkbenchState,
   estimateSessionTokens,
   listWorkbenchSessions,
@@ -158,6 +159,52 @@ test('sessions create, rename, pin, search, archive and restore deterministicall
     listWorkbenchSessions(state).some((item) => item.id === originalId),
     true,
   )
+})
+
+test('bounded history compiles only terminal redacted messages from the same session', () => {
+  let state = createInitialWorkbenchState('2026-08-13T00:00:00.000Z')
+  const sessionId = state.activeSessionId
+  state = appendWorkbenchMessage(state, sessionId, {
+    role: 'user',
+    employeeId: 'parent',
+    content: '第一轮问题',
+  })
+  state = appendWorkbenchMessage(state, sessionId, {
+    role: 'agent',
+    employeeId: 'parent',
+    content: '第一轮回答',
+  })
+  const session = state.sessions[0]!
+  const compiled = compileWorkbenchHistory(session, 1_000)
+  assert.match(compiled.promptFragment, /bounded_personal_conversation_history/u)
+  assert.match(compiled.promptFragment, /第一轮问题/u)
+  assert.match(compiled.promptFragment, /第一轮回答/u)
+  assert.equal(compiled.includedMessageIds.length, 2)
+  assert.match(compiled.manifestDigest, /^fnv1a32:[0-9a-f]{8}$/u)
+
+  const other = addSession(state, '另一个会话')
+  const otherSession = other.sessions.find((item) => item.id === other.activeSessionId)!
+  assert.equal(compileWorkbenchHistory(otherSession).promptFragment, '')
+})
+
+test('bounded history keeps newest messages and exposes deterministic omissions', () => {
+  let state = createInitialWorkbenchState('2026-08-13T00:00:00.000Z')
+  const sessionId = state.activeSessionId
+  state = appendWorkbenchMessage(state, sessionId, {
+    role: 'user',
+    employeeId: 'parent',
+    content: 'older-message-content',
+  })
+  state = appendWorkbenchMessage(state, sessionId, {
+    role: 'agent',
+    employeeId: 'parent',
+    content: 'newest-message-content',
+  })
+  const compiled = compileWorkbenchHistory(state.sessions[0]!, 80)
+  assert.doesNotMatch(compiled.promptFragment, /older-message-content/u)
+  assert.match(compiled.promptFragment, /newest-message-content/u)
+  assert.equal(compiled.omittedMessageIds.length, 1)
+  assert.deepEqual(compiled, compileWorkbenchHistory(state.sessions[0]!, 80))
 })
 
 test('new sessions can bind the selected Workspace without crossing existing sessions', () => {

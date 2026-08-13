@@ -35,8 +35,13 @@ import {
   createTaskOwnedChangeSet,
   preflightTaskChangeSetRollback,
   type ChangeSetOwner,
-  type TaskOwnedChangeSet,
 } from '@/lib/p6-changesets'
+import {
+  parseP6ChangeJournal,
+  p6ChangeJournalStorageKey,
+  serializeP6ChangeJournal,
+  type P6ChangeJournalRecord,
+} from '@/lib/p6-change-journal'
 import {
   createP6RootEntry,
   createP6AsyncScopeFence,
@@ -63,11 +68,7 @@ export interface WorkspaceFilePanelHandle {
   ): Promise<P6FileContextCompilation>
 }
 
-interface LocalChangeRecord {
-  readonly changeSet: TaskOwnedChangeSet
-  readonly status: 'applied' | 'rolled_back' | 'conflict' | 'recovery_required'
-  readonly note: string
-}
+type LocalChangeRecord = Omit<P6ChangeJournalRecord, 'sessionId'>
 
 interface Props {
   readonly tenantId: string
@@ -129,6 +130,38 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
     liveScopeRef.current = `${tenantId}:${workspaceId}:${sessionId}:${scopeGenerationRef.current}`
     viewsRef.current = views
     changesRef.current = changes
+    const changeJournalKey = p6ChangeJournalStorageKey(tenantId, workspaceId)
+
+    useEffect(() => {
+      const records = parseP6ChangeJournal(window.localStorage.getItem(changeJournalKey))
+      const next = new Map<string, LocalChangeRecord[]>()
+      for (const record of records) {
+        const existing = next.get(record.sessionId) ?? []
+        existing.push({ changeSet: record.changeSet, status: record.status, note: record.note })
+        next.set(record.sessionId, existing)
+      }
+      sessionChangesRef.current = next
+      setChanges(next.get(sessionId) ?? [])
+    }, [changeJournalKey, sessionId])
+
+    useEffect(() => {
+      const records: P6ChangeJournalRecord[] = []
+      for (const [recordSessionId, items] of sessionChangesRef.current) {
+        for (const item of items) records.push({ sessionId: recordSessionId, ...item })
+      }
+      for (const item of changes) {
+        const index = records.findIndex((record) => record.changeSet.id === item.changeSet.id)
+        const record = { sessionId, ...item }
+        if (index >= 0) records[index] = record
+        else records.push(record)
+      }
+      try {
+        window.localStorage.setItem(changeJournalKey, serializeP6ChangeJournal(records))
+      } catch {
+        // The live ChangeSet stays in memory; a storage quota failure never
+        // authorizes dropping recovery data or pretending persistence passed.
+      }
+    }, [changeJournalKey, changes, sessionId])
 
     const byId = useMemo(() => new Map(entries.map((entry) => [entry.entryId, entry])), [entries])
 
@@ -147,7 +180,6 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
       setDraft('')
       setChanges([])
       sessionViewsRef.current.clear()
-      sessionChangesRef.current.clear()
     }, [tenantId, workspaceId])
 
     useEffect(() => {
