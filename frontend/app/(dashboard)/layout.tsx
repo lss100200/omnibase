@@ -100,9 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <DropdownMenuItem key={item.label} disabled>
                           <Icon className="h-4 w-4" />
                           {item.label}
-                          <span className="ml-auto font-mono text-[8px] uppercase">
-                            {item.status}
-                          </span>
+                          <span className="ml-auto font-mono text-xs uppercase">{item.status}</span>
                         </DropdownMenuItem>
                       )
                     }
@@ -119,7 +117,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="min-w-0">
-              <div className="font-mono text-[8px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              <div className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 OmniBase / Work session
               </div>
               <div className="truncate text-base font-semibold tracking-tight sm:text-lg">
@@ -130,7 +128,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-1 sm:gap-2">
             <div className="hidden items-center gap-2 border border-border/70 bg-card/55 px-3 py-1.5 xl:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-foreground" />
-              <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
                 governed workspace
               </span>
             </div>

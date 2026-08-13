@@ -58,7 +58,7 @@ export function Sidebar() {
       <nav className="relative flex-1 space-y-5 overflow-y-auto px-3 py-5">
         {navGroups.map((group) => (
           <div key={group.label}>
-            <div className="mb-2 px-3 font-mono text-[8px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="mb-2 px-3 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {group.label}
             </div>
             <div className="space-y-0.5">
@@ -69,7 +69,7 @@ export function Sidebar() {
                     <div
                       key={item.label}
                       aria-disabled="true"
-                      className="flex h-10 items-center gap-2.5 rounded-lg px-3 text-xs text-muted-foreground"
+                      className="flex h-11 items-center gap-2.5 rounded-lg px-3 text-sm text-muted-foreground"
                     >
                       <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-muted/35">
                         <Icon className="h-3.5 w-3.5" />
@@ -77,7 +77,7 @@ export function Sidebar() {
                       <span className="flex-1">{item.label}</span>
                       <span
                         className={cn(
-                          'rounded-full px-1.5 py-0.5 font-mono text-[6px] uppercase tracking-wider',
+                          'rounded-full px-1.5 py-0.5 font-mono text-xs uppercase tracking-wider',
                           item.status === 'preview'
                             ? 'border border-foreground/25 bg-foreground/10 text-foreground'
                             : 'border border-border bg-transparent text-muted-foreground',
@@ -95,7 +95,7 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'group relative flex h-10 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-xs font-medium transition-colors',
+                      'group relative flex h-11 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm font-medium transition-colors',
                       active
                         ? 'bg-foreground text-background'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -127,9 +127,9 @@ export function Sidebar() {
         <div className="rounded-xl border border-border bg-muted/35 px-3 py-3">
           <div className="flex items-center gap-2">
             <CircleDot className="h-3.5 w-3.5 text-foreground" />
-            <span className="text-[10px] font-semibold text-foreground">Self-hosted workspace</span>
+            <span className="text-sm font-semibold text-foreground">Self-hosted workspace</span>
           </div>
-          <div className="mt-2 flex items-center justify-between font-mono text-[7px] uppercase tracking-wider text-muted-foreground">
+          <div className="mt-2 flex items-center justify-between font-mono text-xs uppercase tracking-wider text-muted-foreground">
             <span>Agent Alpha</span>
             <span className="text-foreground">Tool-free</span>
           </div>

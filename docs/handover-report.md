@@ -5425,8 +5425,8 @@ Mypy migration env + model settings boundary = passed (2 source files)
 forward-fix Ruff check / format = passed on 3 explicit paths
 disposable container, networks and tmpfs database = removed with
   down -v --remove-orphans
-maintainer map = valid (58 invariants / 46 modules / 920 path specs /
-  2084 matched files / 311 entrypoints / 19 HTTP entrypoints /
+maintainer map = valid (58 invariants / 46 modules / 921 path specs /
+  2087 matched files / 311 entrypoints / 19 HTTP entrypoints /
   247 verification commands)
 maintainer benchmark = valid (3 plans / 8 scenarios / 6 critical scenarios /
   9 unsafe vetoes)
@@ -5461,3 +5461,29 @@ matrix passed 47 tests and the disposable PostgreSQL attack module passed all
 Current status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_PASSED_LOCALLY`.
 This remains local disposable engineering evidence, not production evidence.
 Local commits only; no push, PR, merge or deployment.
+
+### P6.0-D2 readable workbench UX forward fix (2026-08-13)
+
+A direct 2048x1152 product review after PR #34 opened found that the workbench
+was functionally complete but visually undersized: shell metadata, navigation,
+session summaries, employee/model state, file controls and ChangeSet audit text
+used 6-11px fonts. The forward fix raises ordinary content and controls to
+13-14px, enforces a 12px minimum for secondary metadata, widens the session and
+context rails, and applies the same floor to the authenticated dashboard shell
+and sidebar. A source-level regression contract covers the five relevant shell
+and workbench files and rejects any arbitrary font size below 12px.
+
+Final frontend verification on the UX fix:
+
+```text
+frontend tests = 158 passed
+typecheck = passed
+lint = passed
+Prettier = passed
+production build = passed (16 routes)
+API proxy after restart = authenticated boundary reachable; anonymous probe 401
+```
+
+This is a presentation-only forward fix. Runtime, Planner, Multi-Agent, Tools,
+Skills Runtime, MCP, CLI, Vision, migration `0016`, Provider credentials and
+production activation boundaries are unchanged.

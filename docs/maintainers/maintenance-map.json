@@ -3571,6 +3571,7 @@
         "frontend/lib/p6-changesets.test.ts",
         "frontend/lib/p6-model-profiles.ts",
         "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/p6-workbench-typography.test.ts",
         "frontend/lib/p6-workbench.ts",
         "frontend/lib/p6-workbench.test.ts",
         "backend/src/omnibase/user_settings/model_settings.py",

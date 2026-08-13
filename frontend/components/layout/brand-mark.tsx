@@ -43,7 +43,7 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div className="min-w-0">
           <div className="text-[17px] font-bold tracking-[-0.035em]">OmniBase</div>
-          <div className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
             AI Workbench
           </div>
         </div>

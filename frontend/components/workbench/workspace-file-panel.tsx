@@ -596,7 +596,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
           >
             <button
               type="button"
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[9px]"
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs"
               onClick={() => (isDirectory ? void toggleDirectory(entryId) : void openFile(entryId))}
               disabled={locked}
             >
@@ -620,7 +620,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                   onClick={() => toggleMode(entryId, 'CONTEXT')}
                   disabled={locked}
                   className={cn(
-                    'rounded px-1 text-[7px]',
+                    'rounded px-1.5 py-0.5 text-xs',
                     state?.context ? 'bg-foreground text-background' : 'text-muted-foreground',
                   )}
                 >
@@ -653,13 +653,13 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
         <div className="rounded-xl border bg-background p-2.5">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-3.5 w-3.5" />
-            <span className="text-[9px] font-semibold">授权文件树</span>
-            <span className="ml-auto font-mono text-[6px] text-muted-foreground">
+            <span className="text-sm font-semibold">授权文件树</span>
+            <span className="ml-auto font-mono text-xs text-muted-foreground">
               {usage.nodes} nodes
             </span>
           </div>
           {!supported ? (
-            <p className="mt-2 text-[8px] leading-4 text-muted-foreground">
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
               此浏览器没有 File System Access API。不会扫描全盘，也不会用下载冒充系统打开。
             </p>
           ) : rootId ? (
@@ -668,7 +668,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
             <Button
               size="sm"
               variant="outline"
-              className="mt-2 h-8 w-full text-[9px]"
+              className="mt-2 h-9 w-full text-xs"
               onClick={() => void authorize()}
               disabled={locked || !workspaceId}
             >
@@ -680,7 +680,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
             <Button
               size="sm"
               variant="ghost"
-              className="mt-1 h-7 w-full text-[8px]"
+              className="mt-1 h-9 w-full text-xs"
               onClick={() => {
                 if (locked) return
                 handlesRef.current.clear()
@@ -707,11 +707,11 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
           <div className="rounded-xl border bg-background p-2.5">
             <div className="flex items-center gap-2">
               <FileCode2 className="h-3.5 w-3.5" />
-              <span className="min-w-0 flex-1 truncate text-[9px] font-semibold">
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold">
                 {preview.metadata.logicalPath}
               </span>
             </div>
-            <p className="mt-1 font-mono text-[6px] text-muted-foreground">
+            <p className="mt-1 font-mono text-xs leading-5 text-muted-foreground">
               {preview.metadata.fileType?.previewKind} ·{' '}
               {preview.metadata.sizeBytes.toLocaleString()} bytes · OPEN{' '}
               {views[preview.metadata.entryId]?.context ? '· CONTEXT' : ''}{' '}
@@ -722,14 +722,14 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  className="mt-2 h-40 w-full resize-y rounded-lg border bg-muted/20 p-2 font-mono text-[8px] outline-none"
+                  className="mt-2 h-40 w-full resize-y rounded-lg border bg-muted/20 p-2 font-mono text-xs leading-5 outline-none"
                   spellCheck={false}
                   disabled={locked}
                 />
                 <div className="mt-2 flex gap-1">
                   <Button
                     size="sm"
-                    className="h-7 text-[8px]"
+                    className="h-9 text-xs"
                     onClick={() => void saveReviewedEdit()}
                     disabled={locked || draft === preview.text}
                   >
@@ -739,7 +739,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-[8px]"
+                    className="h-9 text-xs"
                     disabled
                     title="浏览器无法可靠调用系统默认应用"
                   >
@@ -761,7 +761,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                 className="mt-2 h-56 w-full rounded-lg border"
               />
             ) : (
-              <p className="mt-2 rounded-lg border border-dashed p-3 text-[8px] text-muted-foreground">
+              <p className="mt-2 rounded-lg border border-dashed p-3 text-xs leading-5 text-muted-foreground">
                 {preview.metadata.sizeBytes > P6_INTERNAL_PREVIEW_MAX_BYTES
                   ? '文件超过 20 MiB 内部预览上限，仅显示元数据。'
                   : '该二进制类型仅显示元数据，不注入模型上下文。'}
@@ -773,17 +773,20 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
         <div className="rounded-xl border bg-background p-2.5">
           <div className="flex items-center gap-2">
             <RotateCcw className="h-3.5 w-3.5" />
-            <span className="text-[9px] font-semibold">任务修改记录</span>
+            <span className="text-sm font-semibold">任务修改记录</span>
           </div>
-          <p className="mt-1 text-[7px] leading-3 text-muted-foreground">
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
             当前 Runtime 没有文件工具；这里只记录你依据成功任务审阅后写入的本地文本，不声称 Agent
             自动改盘。
           </p>
           {changes.length === 0 ? (
-            <p className="mt-2 text-[8px] text-muted-foreground">暂无 ChangeSet</p>
+            <p className="mt-2 text-xs text-muted-foreground">暂无 ChangeSet</p>
           ) : (
             changes.map((record) => (
-              <div key={record.changeSet.id} className="mt-2 rounded-lg border p-2 text-[7px]">
+              <div
+                key={record.changeSet.id}
+                className="mt-2 rounded-lg border p-2 text-xs leading-5"
+              >
                 <div className="flex items-center gap-1">
                   <span className="min-w-0 flex-1 truncate font-mono">
                     {record.changeSet.files[0]?.path}
@@ -794,15 +797,15 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                   task {record.changeSet.taskId.slice(0, 8)} · {record.note}
                 </p>
                 <details className="mt-2 rounded border bg-muted/20 p-1.5">
-                  <summary className="cursor-pointer text-[7px]">查看 Before / After 审计</summary>
+                  <summary className="cursor-pointer text-xs">查看 Before / After 审计</summary>
                   <div className="mt-1 grid gap-1">
-                    <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-background p-1 text-[6px]">
+                    <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-background p-2 text-xs leading-5">
                       BEFORE\n
                       {record.changeSet.files[0]?.before.kind === 'text'
                         ? record.changeSet.files[0].before.content
                         : `[${record.changeSet.files[0]?.before.kind}]`}
                     </pre>
-                    <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-background p-1 text-[6px]">
+                    <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-background p-2 text-xs leading-5">
                       AFTER\n
                       {record.changeSet.files[0]?.after.kind === 'text'
                         ? record.changeSet.files[0].after.content
@@ -814,7 +817,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-2 h-7 text-[8px]"
+                    className="mt-2 h-9 text-xs"
                     onClick={() => void rollback(record)}
                     disabled={locked}
                   >
@@ -825,7 +828,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
               </div>
             ))
           )}
-          <div className="mt-2 flex gap-2 rounded-lg border border-dashed p-2 text-[7px] leading-3 text-muted-foreground">
+          <div className="mt-2 flex gap-2 rounded-lg border border-dashed p-2 text-xs leading-5 text-muted-foreground">
             <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
             <span>
               写前再次校验摘要、写后复核结果；浏览器不具备跨文件原子事务，异常时会标记 recovery

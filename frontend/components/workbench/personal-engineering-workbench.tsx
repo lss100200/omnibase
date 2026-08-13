@@ -795,7 +795,7 @@ export function PersonalEngineeringWorkbench() {
         gear={gear}
         onGearChange={setGear}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[16.5rem_minmax(0,1fr)_19rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)_22rem]">
         <SessionRail
           state={state}
           sessions={sessions}
@@ -1070,14 +1070,14 @@ function TopBar({
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
-      <span className="flex items-center gap-2 px-2 text-xs font-semibold">
+      <span className="flex items-center gap-2 px-2 text-sm font-semibold">
         <BrainCircuit className="h-4 w-4" /> Personal Engineering Workbench
       </span>
       <select
         value={workspaceId}
         onChange={(event) => onWorkspaceChange(event.target.value)}
         disabled={locked}
-        className="h-8 max-w-48 rounded-md border border-border bg-card px-2 text-[10px] outline-none"
+        className="h-9 max-w-48 rounded-md border border-border bg-card px-2 text-[13px] outline-none"
         aria-label="选择 Workspace"
       >
         <option value="">{workspaceError ? 'Workspace 不可用' : '选择 Workspace'}</option>
@@ -1091,7 +1091,7 @@ function TopBar({
         value={agentVersionId}
         onChange={(event) => onAgentChange(event.target.value)}
         disabled={locked}
-        className="hidden h-8 max-w-44 rounded-md border border-border bg-card px-2 text-[8px] outline-none lg:block"
+        className="hidden h-9 max-w-44 rounded-md border border-border bg-card px-2 text-[13px] outline-none lg:block"
         aria-label="选择 Agent"
       >
         <option value="">未安装 Agent</option>
@@ -1105,7 +1105,7 @@ function TopBar({
         value={gear}
         onChange={(event) => onGearChange(event.target.value as P6ReasoningGear)}
         disabled={locked}
-        className="h-8 rounded-md border border-border bg-card px-2 text-[9px] outline-none"
+        className="h-9 rounded-md border border-border bg-card px-2 text-[13px] outline-none"
         aria-label="选择推理挡位"
       >
         {(Object.values(P6_GEAR_PROFILES) as Array<(typeof P6_GEAR_PROFILES)[P6ReasoningGear]>).map(
@@ -1131,7 +1131,7 @@ function Status({ label, muted = false }: { label: string; muted?: boolean }) {
   return (
     <span
       className={cn(
-        'hidden h-8 items-center rounded-md border border-border px-2 font-mono text-[8px] lg:flex',
+        'hidden h-9 items-center rounded-md border border-border px-3 font-mono text-xs lg:flex',
         muted && 'text-muted-foreground',
       )}
     >
@@ -1168,7 +1168,7 @@ function SessionRail({
   return (
     <aside className="hidden min-h-0 flex-col border-r border-border bg-muted/15 lg:flex">
       <div className="space-y-2 border-b border-border p-3">
-        <Button className="h-9 w-full justify-start text-xs" onClick={onCreate} disabled={locked}>
+        <Button className="h-10 w-full justify-start text-sm" onClick={onCreate} disabled={locked}>
           <MessageSquarePlus className="h-3.5 w-3.5" />
           新建会话
         </Button>
@@ -1178,24 +1178,21 @@ function SessionRail({
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="搜索会话与消息"
-            className="h-9 pl-8 text-[10px]"
+            className="h-10 pl-8 text-sm"
           />
         </div>
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
           <button
             type="button"
             onClick={() => onArchiveMode(false)}
-            className={cn(
-              'rounded-md py-1.5 text-[9px]',
-              !archiveMode && 'bg-background shadow-sm',
-            )}
+            className={cn('rounded-md py-2 text-xs', !archiveMode && 'bg-background shadow-sm')}
           >
             会话
           </button>
           <button
             type="button"
             onClick={() => onArchiveMode(true)}
-            className={cn('rounded-md py-1.5 text-[9px]', archiveMode && 'bg-background shadow-sm')}
+            className={cn('rounded-md py-2 text-xs', archiveMode && 'bg-background shadow-sm')}
           >
             已归档
           </button>
@@ -1224,14 +1221,14 @@ function SessionRail({
                 ) : (
                   <MessageSquarePlus className="h-3 w-3" />
                 )}
-                <span className="min-w-0 flex-1 truncate text-[11px] font-medium">
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
                   {session.title}
                 </span>
-                <span className="font-mono text-[7px] text-muted-foreground">
+                <span className="font-mono text-xs text-muted-foreground">
                   {shortTime(session.updatedAt)}
                 </span>
               </div>
-              <p className="mt-1.5 truncate text-[8px] text-muted-foreground">
+              <p className="mt-1.5 truncate text-xs leading-5 text-muted-foreground">
                 {session.messages.at(-1)?.content ?? '尚无消息'}
               </p>
             </button>
@@ -1260,7 +1257,7 @@ function SessionRail({
           </div>
         ))}
         {sessions.length === 0 && (
-          <p className="px-3 py-8 text-center text-[9px] text-muted-foreground">没有匹配会话</p>
+          <p className="px-3 py-8 text-center text-xs text-muted-foreground">没有匹配会话</p>
         )}
       </div>
     </aside>
@@ -1298,8 +1295,8 @@ function ConversationPane({
     <main className="flex min-h-0 min-w-0 flex-col">
       <header className="flex h-12 shrink-0 items-center border-b border-border px-4">
         <div>
-          <h1 className="text-xs font-semibold">{session.title}</h1>
-          <p className="font-mono text-[7px] uppercase text-muted-foreground">
+          <h1 className="text-sm font-semibold">{session.title}</h1>
+          <p className="font-mono text-xs uppercase leading-5 text-muted-foreground">
             Owner session · local durable draft · one employee per message
           </p>
         </div>
@@ -1312,7 +1309,7 @@ function ConversationPane({
                 <Sparkles className="h-5 w-5" />
               </span>
               <div>
-                <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-muted-foreground">
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
                   P6.0-A / Parent Agent active
                 </p>
                 <h2 className="mt-1 text-2xl font-semibold">从一个真实任务开始</h2>
@@ -1332,8 +1329,8 @@ function ConversationPane({
                     onClick={() => onMention(item)}
                     className="rounded-xl border bg-muted/20 p-3 text-left hover:bg-muted"
                   >
-                    <span className="text-[10px] font-semibold">@{item.displayName}</span>
-                    <span className="mt-1 block text-[8px] leading-4 text-muted-foreground">
+                    <span className="text-sm font-semibold">@{item.displayName}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                       {item.responsibility}
                     </span>
                   </button>
@@ -1359,7 +1356,7 @@ function ConversationPane({
                     {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
                   </span>
                   <div className="max-w-[84%]">
-                    <div className="mb-1 text-[8px] text-muted-foreground">
+                    <div className="mb-1 text-xs text-muted-foreground">
                       {isUser ? '你' : actor.displayName} · {shortTime(message.createdAt)}
                     </div>
                     <div
@@ -1382,7 +1379,7 @@ function ConversationPane({
                   <Bot className="h-3.5 w-3.5" />
                 </span>
                 <div className="max-w-[84%]">
-                  <div className="mb-1 text-[8px] text-muted-foreground">
+                  <div className="mb-1 text-xs text-muted-foreground">
                     {employee.displayName} · 工作中
                   </div>
                   <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-muted/45 px-4 py-3 text-sm leading-6">
@@ -1414,15 +1411,15 @@ function ConversationPane({
           />
           <div className="mt-2 flex items-center justify-between gap-3 border-t pt-2">
             <div className="flex min-w-0 items-center gap-2">
-              <Badge variant="outline" className="text-[8px]">
+              <Badge variant="outline" className="text-xs">
                 {employee.id === 'parent'
                   ? '父 Agent · Active'
                   : `${employee.displayName} · Invoked`}
               </Badge>
-              <span className="hidden truncate text-[8px] text-muted-foreground sm:block">
+              <span className="hidden truncate text-xs text-muted-foreground sm:block">
                 其他 9 名员工静默 · 禁止自动委派
               </span>
-              <span className="font-mono text-[8px] text-muted-foreground">
+              <span className="font-mono text-xs text-muted-foreground">
                 {input.length.toLocaleString()} / {maximumCharacters.toLocaleString()}
               </span>
             </div>
@@ -1492,7 +1489,7 @@ function ContextRail({
   return (
     <aside className="hidden min-h-0 flex-col border-l bg-muted/10 lg:flex">
       <div className="flex h-12 items-center justify-between border-b px-3">
-        <span className="text-[10px] font-semibold">工作上下文</span>
+        <span className="text-sm font-semibold">工作上下文</span>
         <button
           type="button"
           onClick={onTimeline}
@@ -1507,8 +1504,8 @@ function ContextRail({
             <RailTitle icon={History} title="会话时间线" />
             {[...session.timeline].reverse().map((item) => (
               <div key={item.id} className="border-l pl-3">
-                <p className="text-[9px] font-medium">{item.label}</p>
-                <p className="mt-1 font-mono text-[7px] text-muted-foreground">
+                <p className="text-[13px] font-medium">{item.label}</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
                   {new Date(item.createdAt).toLocaleString()}
                 </p>
               </div>
@@ -1518,10 +1515,10 @@ function ContextRail({
           <div className="space-y-5">
             <RailSection icon={Folder} title="Workspace">
               <div className="rounded-xl border bg-background p-3">
-                <p className="truncate text-[10px] font-semibold">
+                <p className="truncate text-sm font-semibold">
                   {workspace?.display_name ?? '未选择 Workspace'}
                 </p>
-                <p className="mt-1 text-[8px] text-muted-foreground">
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   {workspace
                     ? `generation ${workspace.generation} · ${workspace.observed_state}`
                     : '选择后加载上下文'}
@@ -1532,11 +1529,11 @@ function ContextRail({
               {documents.slice(0, 4).map((document) => (
                 <div
                   key={document.id}
-                  className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-[9px]"
+                  className="mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-xs"
                 >
                   <FileText className="h-3.5 w-3.5" />
                   <span className="min-w-0 flex-1 truncate">{document.filename}</span>
-                  <span className="font-mono text-[6px] uppercase text-muted-foreground">
+                  <span className="font-mono text-xs uppercase text-muted-foreground">
                     {document.status}
                   </span>
                 </div>
@@ -1548,7 +1545,7 @@ function ContextRail({
                 {PERSONAL_EMPLOYEES.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[9px]"
+                    className="flex items-center gap-2 rounded-lg px-2 py-2 text-[13px]"
                   >
                     <span
                       className={cn(
@@ -1560,12 +1557,12 @@ function ContextRail({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{item.displayName}</span>
-                      <span className="block truncate font-mono text-[6px] text-muted-foreground">
+                      <span className="block truncate font-mono text-xs leading-5 text-muted-foreground">
                         {modelSettings.find((setting) => setting.employee_role_id === item.id)
                           ?.effective_model_id ?? '未配置可用模型'}
                       </span>
                     </span>
-                    <span className="font-mono text-[6px] uppercase text-muted-foreground">
+                    <span className="font-mono text-xs uppercase text-muted-foreground">
                       {(() => {
                         const setting = modelSettings.find(
                           (candidate) => candidate.employee_role_id === item.id,
@@ -1589,11 +1586,11 @@ function ContextRail({
               </div>
             </RailSection>
             <RailSection icon={CircleDot} title="模型与成本">
-              <p className="break-words text-[8px] leading-4 text-muted-foreground">{identity}</p>
-              <p className="mt-1 text-[8px] font-medium">
+              <p className="break-words text-xs leading-5 text-muted-foreground">{identity}</p>
+              <p className="mt-1 text-xs font-medium">
                 最近观测：{provider.displayName} · {selectedGear.displayName}
               </p>
-              <p className="mt-1 text-[7px] leading-3 text-muted-foreground">
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
                 按当前角色的有效模型名称选择保守画像；名称识别不是原生能力证明。原生思考参数未接入；
                 Tools / MCP / CLI / Vision / 自主委派均关闭。目标输出{' '}
                 {selectedGear.targetOutputTokens.toLocaleString()} tokens 仅作界面预算，当前 API
@@ -1604,13 +1601,13 @@ function ContextRail({
                 <Metric label="Output" value={usage?.output_tokens ?? 0} />
                 <Metric label="Total" value={usage?.total_tokens ?? 0} />
               </div>
-              <p className="mt-2 text-[7px] text-muted-foreground">
+              <p className="mt-2 text-xs text-muted-foreground">
                 {cost.known
                   ? `${cost.currency} ${cost.amount.toFixed(6)}`
                   : '费用未知（未配置费率）'}
               </p>
             </RailSection>
-            <div className="rounded-lg border p-2.5 text-[8px] leading-4 text-muted-foreground">
+            <div className="rounded-lg border p-3 text-xs leading-5 text-muted-foreground">
               <ShieldCheck className="mb-1 h-3.5 w-3.5" />
               会话保存在当前浏览器的 tenant/user 隔离空间；不保存访问令牌、Provider Key 或
               Capability。
@@ -1630,7 +1627,7 @@ function RailTitle({
   title: string
 }) {
   return (
-    <div className="flex items-center gap-2 text-[10px] font-semibold">
+    <div className="flex items-center gap-2 text-sm font-semibold">
       <Icon className="h-3.5 w-3.5" />
       {title}
     </div>
@@ -1655,8 +1652,8 @@ function RailSection({
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border px-2 py-2 text-center">
-      <p className="font-mono text-[6px] uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-[9px] font-semibold">{value}</p>
+      <p className="font-mono text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[13px] font-semibold">{value}</p>
     </div>
   )
 }

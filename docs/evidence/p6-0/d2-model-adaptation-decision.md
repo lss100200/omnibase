@@ -49,8 +49,8 @@ remaining host non-integration run = 2673 passed, 42 skipped, 15 failed,
   - the final 2 sealed-contract failures were resolved by resealing and their
     focused matrix subsequently passed
 changed Python Ruff check / format = passed (65 paths)
-maintainer map = valid (58 invariants, 46 modules, 920 path specs,
-  2084 matched files, 311 entrypoints, 19 HTTP entrypoints,
+maintainer map = valid (58 invariants, 46 modules, 921 path specs,
+  2087 matched files, 311 entrypoints, 19 HTTP entrypoints,
   247 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 9 unsafe vetoes)
 guarded PostgreSQL D2 attack module = 10 passed in 99.58s against a disposable
@@ -67,8 +67,8 @@ Mypy migration env + model settings boundary = passed (2 source files)
 changed forward-fix Ruff check / format = passed (3 explicit paths)
 disposable PostgreSQL container, networks and tmpfs data = removed with
   down -v --remove-orphans after the Gate
-maintainer map = valid (58 invariants, 46 modules, 920 path specs,
-  2084 matched files, 311 entrypoints, 19 HTTP entrypoints,
+maintainer map = valid (58 invariants, 46 modules, 921 path specs,
+  2087 matched files, 311 entrypoints, 19 HTTP entrypoints,
   247 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 6 critical scenarios,
   9 unsafe vetoes)
@@ -76,6 +76,15 @@ root .env = not read
 business database = not accessed or migrated
 push / PR / merge / deploy = not performed
 ```
+
+After the ready-for-review PR was opened, a direct 2048x1152 product review
+found that the workbench, shell metadata, navigation and context rail used
+6-11px text that was not comfortably readable at normal browser zoom. The UX
+forward fix raises ordinary controls and content to 13-14px, keeps secondary
+metadata at a 12px floor, widens the two side rails, and adds a source-level
+contract covering the dashboard shell plus P6 workbench components so text
+below 12px cannot be reintroduced. Final frontend verification on that fix is
+158 passed, typecheck/lint clean and a successful 16-route production build.
 
 Docker Desktop Linux Engine recovered on 2026-08-13. The guarded database Gate
 then exposed and forward-fixed three evidence defects: the reviewed schema
