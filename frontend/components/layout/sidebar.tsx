@@ -33,7 +33,7 @@ export const navGroups = [
     label: '扩展',
     items: [
       { href: '/agents', label: 'AI 员工', icon: Bot },
-      { href: '/skills', label: '技能', icon: Wrench },
+      { href: '/skills', label: '个人能力', icon: Wrench },
       { label: 'MCP', icon: Plug, status: 'locked' },
       { label: '市场', icon: Store, status: 'preview' },
     ],
