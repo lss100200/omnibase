@@ -24,8 +24,10 @@ enterprise P34.7 campaign.
   verifies the ZIP manifest before extraction. Release Compose has no `build:`
   and requires immutable OCI digests. A portable Microsoft .NET SDK 8.0.424
   archive has been restored outside the repository and its SHA-512 matches the
-  official release value. The recovery branch must still reach a committed,
-  clean HEAD before the authoritative EXE is rebuilt and stress-tested.
+  official release value. Clean source commit `72a9f2a` produced byte-reproducible
+  ZIP and EXE artifacts; the EXE passed 20 fresh-target installations and six
+  fail-closed archive/target attack cases without partial targets or staging
+  residue.
 
 ## Model research and stable-prefix rule
 
@@ -35,13 +37,14 @@ persisted prefix. OmniBase therefore injects adaptation as the first stable
 system message and leaves changing task input last. DeepSeek-native fields are
 sent only for one unambiguous `deepseek` token in the actual model name.
 
-OpenAI remote documentation retrieval was unavailable from this environment.
-The implementation uses the bundled official guidance snapshot: lead with the
-outcome, retain success/security/tool-routing/stop criteria, keep reusable
-prefixes stable, evaluate reasoning effort instead of globally using maximum,
-and treat verbosity as a Responses-only control, so this Chat Completions path
-does not send it. This limitation remains explicit
-until remote official docs can be revalidated.
+Official OpenAI documentation was retrieved on 2026-08-14 from
+`https://developers.openai.com/api/docs/guides/reasoning` and
+`https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5`.
+It recommends scaling reasoning effort to task difficulty, states that
+reasoning models perform better through Responses while Chat Completions
+remains supported, and documents verbosity as a Responses text control. The
+implementation therefore sends only Chat-Completions-compatible reasoning
+effort on this path, never a Responses-only verbosity field.
 
 ## Security posture
 
@@ -70,7 +73,8 @@ until remote official docs can be revalidated.
   automation, shell and write filesystem are absent.
 - OCI images are not built/published and digest placeholders are not filled;
   the offline preflight rejects tags, placeholders and repository drift.
-- EXE wrapper source and its bounded atomic-move retry are verified; the final
-  recovery-HEAD binary, repeated installation stress and Authenticode result
-  are recorded only after the clean-HEAD artifact build.
+- The EXE wrapper and bounded atomic-move retry are verified against the real
+  clean-HEAD binary. It remains a framework-dependent unsigned preview:
+  Authenticode is `NotSigned`, publisher identity is not verified, and the
+  target machine must provide the .NET 8 runtime.
 - No push, PR, merge, deployment or production activation occurred.
