@@ -22,9 +22,7 @@ def _response(
     identifier: object, *, result: object = None, error: object = None
 ) -> dict[str, object]:
     payload: dict[str, object] = {"jsonrpc": "2.0", "id": identifier}
-    payload["error" if error is not None else "result"] = (
-        error if error is not None else result
-    )
+    payload["error" if error is not None else "result"] = error if error is not None else result
     return payload
 
 
@@ -49,13 +47,9 @@ def _dispatch(server: ReadOnlyMcpServer, request: object) -> dict[str, object] |
     if method == "tools/call":
         params = request.get("params")
         if not isinstance(params, dict):
-            return _response(
-                identifier, error={"code": -32602, "message": "invalid_params"}
-            )
+            return _response(identifier, error={"code": -32602, "message": "invalid_params"})
         try:
-            result = server.call(
-                str(params.get("name") or ""), params.get("arguments", {})
-            )
+            result = server.call(str(params.get("name") or ""), params.get("arguments", {}))
         except McpToolError as exc:
             return _response(
                 identifier,

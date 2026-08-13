@@ -73,9 +73,7 @@ def validate_release_config(compose_path: Path, env_path: Path) -> dict[str, obj
         value = env.get(name, "")
         match = _IMAGE.fullmatch(value)
         if match is None or match.group("repository") != repository:
-            raise ReleaseConfigError(
-                f"release_image_not_allowlisted_or_digest_pinned:{name}"
-            )
+            raise ReleaseConfigError(f"release_image_not_allowlisted_or_digest_pinned:{name}")
         verified.append(
             {
                 "variable": name,
