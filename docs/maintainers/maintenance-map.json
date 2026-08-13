@@ -872,6 +872,8 @@
       "source_paths": [
         "backend/src/omnibase/agent_skills/models.py",
         "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/agent_skills/__init__.py",
+        "backend/src/omnibase/main.py",
         "backend/src/omnibase/agent_skills/resolver.py",
         "backend/src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py",
         "backend/src/omnibase/agent_alpha/contracts.py",
@@ -1005,6 +1007,45 @@
         "backend/tests/test_agent_alpha_personal.py",
         "frontend/lib/p6-model-profiles.test.ts"
       ]
+    },
+    {
+      "id": "INV-069",
+      "title": "P6.1 native Skill Browser stays first-party, instruction-only and live-Owner bound",
+      "document": "docs/maintainers/security-invariants.md#inv-069-p61-native-skill-browser-boundary",
+      "source_paths": ["backend/src/omnibase/agent_skills/**", "frontend/app/(dashboard)/skills/page.tsx"],
+      "test_paths": ["backend/tests/test_p6_1_native_skill_catalog.py", "backend/tests/test_p5_6p_instruction_skills.py"]
+    },
+    {
+      "id": "INV-070",
+      "title": "P6.1 model-name-native parameters and cache usage stay exact and non-authorizing",
+      "document": "docs/maintainers/security-invariants.md#inv-070-p61-model-native-parameter-and-cache-boundary",
+      "source_paths": ["backend/src/omnibase/model_gateway/**", "backend/src/omnibase/agent_alpha/**"],
+      "test_paths": ["backend/tests/test_model_gateway.py", "backend/tests/test_agent_alpha.py"]
+    },
+    {
+      "id": "INV-071",
+      "title": "P6.1 read-only MCP preview stays separate, bounded and non-mutating",
+      "document": "docs/maintainers/security-invariants.md#inv-071-p61-read-only-mcp-preview-boundary",
+      "source_paths": ["backend/src/omnibase/mcp_runtime/**", "scripts/mcp/omnibase_readonly_mcp.py"],
+      "test_paths": ["backend/tests/test_p6_1_readonly_mcp.py"]
+    },
+    {
+      "id": "INV-072",
+      "title": "P6.1 Windows release preview is reproducible, no-build and VHDX-safe",
+      "document": "docs/maintainers/security-invariants.md#inv-072-p61-reproducible-windows-release-boundary",
+      "source_paths": ["deployment/release/windows/**", "scripts/release/**", "packaging/windows/OmniBase.Setup/**"],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-073",
+      "title": "Recursive deletion requires one literal resolved target, same-shell containment proof and explicit permanent-delete authority",
+      "document": "docs/maintainers/security-invariants.md#inv-073-literal-target-recursive-delete-boundary",
+      "source_paths": [
+        "AGENTS.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "test_paths": ["scripts/maintenance/validate_maintainer_map.py"]
     }
   ],
   "modules": [
@@ -2488,6 +2529,7 @@
         "backend/tests/test_p5_personal_runtime_activation.py",
         "frontend/app/(dashboard)/agents/page.tsx",
         "frontend/components/layout/sidebar.tsx",
+        "frontend/app/(dashboard)/layout.tsx",
         "frontend/lib/api.ts",
         "frontend/app/api/v1/**",
         "frontend/next.config.js",
@@ -3648,6 +3690,97 @@
         "Treat interrupted local writes as recovery_required and restore only under exact digest comparison.",
         "Fall back to generic adaptation and rate_not_configured; never infer provider identity or pricing before server evidence.",
         "Migration 0016 stores only user-owned role model preferences; its exact 0016-to-0015 downgrade is tenant-first and atomic, and it must not be reused as conversation persistence or expanded into Planner/Multi-Agent authority."
+      ]
+    },
+    {
+      "id": "p6-1-native-skills-mcp-release",
+      "name": "P6.1 native Skill Browser, DeepSeek/GPT adaptation, read-only MCP preview and Windows release preview",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/control.py",
+        "backend/src/omnibase/agent_skills/native_catalog.py",
+        "backend/src/omnibase/agent_skills/router.py",
+        "backend/src/omnibase/agent_skills/schemas.py",
+        "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/mcp_runtime/**",
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "backend/src/omnibase/model_gateway/contracts.py",
+        "backend/src/omnibase/model_gateway/providers.py",
+        "backend/src/omnibase/model_gateway/service.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "backend/tests/test_model_gateway.py",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/components/layout/sidebar.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/agent-alpha-stream.test.ts",
+        "frontend/lib/api.ts",
+        "scripts/mcp/omnibase_readonly_mcp.py",
+        "deployment/release/windows/**",
+        "scripts/release/build_windows_release.py",
+        "scripts/release/validate_windows_release_config.py",
+        "scripts/release/test_build_windows_release.py",
+        "packaging/windows/OmniBase.Setup/**",
+        "docs/architecture/p6-1-native-skills-model-mcp-release.md",
+        "docs/evidence/p6-1/engineering-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_skills/router.py:router",
+        "backend/src/omnibase/agent_skills/control.py:NativeSkillControlService",
+        "backend/src/omnibase/model_gateway/adaptation.py:plan_model_adaptation",
+        "backend/src/omnibase/mcp_runtime/readonly.py:ReadOnlyMcpServer",
+        "scripts/mcp/omnibase_readonly_mcp.py:main",
+        "scripts/release/build_windows_release.py:build_release",
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage"
+      ],
+      "public_interfaces": [
+        "Authenticated /api/v1/skills catalog/detail and exact install/disable routes",
+        "Chinese /skills catalog and one-Owner Workspace/Agent installation controls",
+        "Model-name-first DeepSeek/GPT native request profiles and cache/reasoning usage",
+        "Separately launched three-tool read-only stdio MCP preview with metadata-only Git status/log",
+        "Deterministic canonical Windows ZIP plus offline digest preflight, no-build personal lifecycle Compose and EXE thin-wrapper source"
+      ],
+      "depends_on": [
+        "personal-instruction-skills",
+        "agent-alpha-workbench",
+        "p6-personal-engineering-workbench",
+        "desktop-runtime",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_model_gateway.py backend/tests/test_agent_alpha.py backend/tests/test_agent_alpha_personal.py backend/tests/test_p6_1_readonly_mcp.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable or revoke the exact native Skill installation and preserve immutable versions and Audit history; do not edit a sealed version.",
+        "Fall back to generic model adaptation and keep actual model identity checks; never infer native controls from URL/provider labels.",
+        "Do not launch the MCP server, and never mount it into no_tool, if root/Git/path identity is ambiguous.",
+        "Discard only the unpopulated preview release output. Never delete images, volumes, databases or mutate VHDX to repair packaging."
       ]
     }
   ]

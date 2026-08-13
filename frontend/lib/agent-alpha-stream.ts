@@ -39,6 +39,8 @@ export interface AgentAlphaUsage {
   output_tokens: number
   total_tokens: number
   reasoning_tokens?: number
+  cached_input_tokens?: number
+  cache_miss_input_tokens?: number
 }
 
 export type AgentAlphaStreamTerminal =
@@ -172,6 +174,8 @@ function parseUsage(value: unknown): AgentAlphaUsage | null {
   const output = value.output_tokens
   const total = value.total_tokens
   const reasoning = value.reasoning_tokens
+  const cached = value.cached_input_tokens
+  const cacheMiss = value.cache_miss_input_tokens
   if (
     typeof input !== 'number' ||
     typeof output !== 'number' ||
@@ -183,7 +187,12 @@ function parseUsage(value: unknown): AgentAlphaUsage | null {
     output < 0 ||
     total < 0 ||
     (reasoning !== undefined &&
-      (typeof reasoning !== 'number' || !Number.isFinite(reasoning) || reasoning < 0))
+      (typeof reasoning !== 'number' || !Number.isFinite(reasoning) || reasoning < 0)) ||
+    (cached !== undefined &&
+      (typeof cached !== 'number' || !Number.isFinite(cached) || cached < 0)) ||
+    (cacheMiss !== undefined &&
+      (typeof cacheMiss !== 'number' || !Number.isFinite(cacheMiss) || cacheMiss < 0)) ||
+    (typeof cached === 'number' && typeof cacheMiss === 'number' && cached + cacheMiss > input)
   ) {
     return null
   }
@@ -192,6 +201,8 @@ function parseUsage(value: unknown): AgentAlphaUsage | null {
     output_tokens: output,
     total_tokens: total,
     ...(typeof reasoning === 'number' ? { reasoning_tokens: reasoning } : {}),
+    ...(typeof cached === 'number' ? { cached_input_tokens: cached } : {}),
+    ...(typeof cacheMiss === 'number' ? { cache_miss_input_tokens: cacheMiss } : {}),
   }
 }
 

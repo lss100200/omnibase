@@ -224,6 +224,7 @@ def invoke_alpha(
             agent_version_id=payload.agent_version_id,
             message=payload.message,
             top_k=payload.top_k,
+            reasoning_gear=payload.reasoning_gear,
             idempotency_key=key,
             retry_of=payload.retry_of,
             employee_role_id=payload.employee_role_id,

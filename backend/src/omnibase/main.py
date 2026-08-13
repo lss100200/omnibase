@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 
 from omnibase import __version__
 from omnibase.agent_alpha.router import router as agent_alpha_router
+from omnibase.agent_skills.router import router as native_skills_router
 from omnibase.agent_registry.router import (
     builder_router as agent_builder_router,
 )
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     api_router.include_router(agent_installation_router)
     api_router.include_router(agent_builder_router)
     api_router.include_router(agent_alpha_router)
+    api_router.include_router(native_skills_router)
     api_router.include_router(user_settings_router)
 
     # Convenience: /health at root too (without /api prefix) for simple probes

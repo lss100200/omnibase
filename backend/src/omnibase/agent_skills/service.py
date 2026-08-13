@@ -183,6 +183,37 @@ class SkillPersistenceService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def validate_owner_workspace_agent(
+        self,
+        *,
+        tenant_id: str,
+        tenant_schema: str,
+        owner_user_id: str,
+        workspace_id: str,
+        agent_version_id: str,
+    ) -> None:
+        """Revalidate and lock the live personal Owner/Workspace/Agent binding.
+
+        Browser orchestration calls this before reserving an idempotency key so
+        an invalid or stale logical target cannot create control-plane state.
+        Mutation methods repeat the same validation inside their own boundary
+        as defence in depth.
+        """
+
+        _lock_owner(
+            self._session,
+            tenant_id=tenant_id,
+            tenant_schema=tenant_schema,
+            owner_user_id=owner_user_id,
+        )
+        _lock_workspace_agent(
+            self._session,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            workspace_id=workspace_id,
+            agent_version_id=agent_version_id,
+        )
+
     def register_definition(
         self,
         *,
@@ -462,24 +493,37 @@ class SkillPersistenceService:
             tenant_schema=tenant_schema,
             owner_user_id=owner_user_id,
         )
+        installation_scope = self._session.scalar(
+            select(WorkspaceAgentSkillInstallationModel).where(
+                WorkspaceAgentSkillInstallationModel.id == installation_id,
+                WorkspaceAgentSkillInstallationModel.tenant_id == tenant_id,
+                WorkspaceAgentSkillInstallationModel.owner_user_id == owner_user_id,
+            )
+        )
+        if installation_scope is None:
+            raise SkillNotFoundError("skill_installation_not_found")
+        _lock_workspace_agent(
+            self._session,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            workspace_id=installation_scope.workspace_id,
+            agent_version_id=installation_scope.agent_version_id,
+        )
         installation = self._session.scalar(
             select(WorkspaceAgentSkillInstallationModel)
             .where(
                 WorkspaceAgentSkillInstallationModel.id == installation_id,
                 WorkspaceAgentSkillInstallationModel.tenant_id == tenant_id,
                 WorkspaceAgentSkillInstallationModel.owner_user_id == owner_user_id,
+                WorkspaceAgentSkillInstallationModel.workspace_id
+                == installation_scope.workspace_id,
+                WorkspaceAgentSkillInstallationModel.agent_version_id
+                == installation_scope.agent_version_id,
             )
             .with_for_update()
         )
         if installation is None:
             raise SkillNotFoundError("skill_installation_not_found")
-        _lock_workspace_agent(
-            self._session,
-            tenant_id=tenant_id,
-            owner_user_id=owner_user_id,
-            workspace_id=installation.workspace_id,
-            agent_version_id=installation.agent_version_id,
-        )
         if target_state == "disabled" and installation.installation_state != "installed":
             raise SkillStateError("skill_installation_disable_invalid")
         if target_state == "revoked" and installation.installation_state not in {
@@ -512,12 +556,31 @@ class SkillPersistenceService:
             tenant_schema=tenant_schema,
             owner_user_id=owner_user_id,
         )
+        current_scope = self._session.scalar(
+            select(WorkspaceAgentSkillInstallationModel).where(
+                WorkspaceAgentSkillInstallationModel.id == current_installation_id,
+                WorkspaceAgentSkillInstallationModel.tenant_id == tenant_id,
+                WorkspaceAgentSkillInstallationModel.owner_user_id == owner_user_id,
+            )
+        )
+        if current_scope is None:
+            raise SkillNotFoundError("skill_installation_not_found")
+        _lock_workspace_agent(
+            self._session,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            workspace_id=current_scope.workspace_id,
+            agent_version_id=current_scope.agent_version_id,
+        )
         current = self._session.scalar(
             select(WorkspaceAgentSkillInstallationModel)
             .where(
                 WorkspaceAgentSkillInstallationModel.id == current_installation_id,
                 WorkspaceAgentSkillInstallationModel.tenant_id == tenant_id,
                 WorkspaceAgentSkillInstallationModel.owner_user_id == owner_user_id,
+                WorkspaceAgentSkillInstallationModel.workspace_id == current_scope.workspace_id,
+                WorkspaceAgentSkillInstallationModel.agent_version_id
+                == current_scope.agent_version_id,
             )
             .with_for_update()
         )

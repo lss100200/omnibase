@@ -53,6 +53,7 @@ from omnibase.core.db import get_session_factory
 from omnibase.db.models import Tenant
 from omnibase.db.tenant import User
 from omnibase.model_gateway import ModelGateway, UnavailableModelGateway
+from omnibase.model_gateway.adaptation import ReasoningGear
 from omnibase.model_gateway.service import configured_model_gateway
 from omnibase.production.personal_runtime_activation import (
     PersonalRuntimeCanaryConfig,
@@ -475,6 +476,7 @@ class PersonalCanaryAgentAlpha:
         agent_version_id: str,
         message: str,
         top_k: int,
+        reasoning_gear: ReasoningGear = "standard",
         idempotency_key: str,
         retry_of: str | None,
         employee_role_id: str = "parent",
@@ -496,6 +498,7 @@ class PersonalCanaryAgentAlpha:
             agent_version_id=agent_version_id,
             message=message,
             top_k=top_k,
+            reasoning_gear=reasoning_gear,
             idempotency_key=idempotency_key,
             retry_of=retry_of,
             employee_role_id=employee_role_id,

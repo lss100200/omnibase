@@ -27,6 +27,7 @@ const pageTitles: Record<string, string> = {
   '/playground': '检索实验室',
   '/chat': 'AI 问答',
   '/agents': 'AI 员工',
+  '/skills': '原生技能',
   '/database': '数据库能力',
   '/settings': '系统设置',
 }

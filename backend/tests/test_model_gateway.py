@@ -60,6 +60,22 @@ def _response(*, model: str = "model-alpha", content: str = "answer") -> object:
     return SimpleNamespace(model=model, choices=[choice], usage=usage)
 
 
+def _provider_for(model_id: str) -> tuple[ModelGateway, _Client]:
+    client_factory, client = _factory(_response(model=model_id))
+    return (
+        ModelGateway(
+            provider=OpenAICompatibleProvider(
+                provider_id="relay",
+                api_key="server-secret",
+                base_url="https://provider.example/v1",
+                client_factory=client_factory,
+            ),
+            model_id=model_id,
+        ),
+        client,
+    )
+
+
 def test_complete_records_exact_identity_and_never_sends_tools() -> None:
     client_factory, client = _factory(_response())
     provider = OpenAICompatibleProvider(
@@ -95,6 +111,99 @@ def test_silent_model_fallback_is_rejected() -> None:
 
     with pytest.raises(ModelIdentityMismatch, match="model_actual_identity_mismatch"):
         gateway.complete((ModelMessage(role="user", content="hello"),))
+
+
+def test_deepseek_model_name_enables_stable_prefix_and_thinking_on_any_relay() -> None:
+    gateway, client = _provider_for("deepseek-v4-pro")
+    gateway.complete(
+        (ModelMessage(role="user", content="changing task tail"),),
+        reasoning_gear="deep",
+    )
+
+    payload = client.chat.completions.calls[0]
+    assert payload["reasoning_effort"] == "high"
+    assert payload["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert "temperature" not in payload
+    assert payload["max_tokens"] == 4096
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    assert "DeepSeek disk context-cache hits" in str(messages[0])
+    assert messages[-1] == {"role": "user", "content": "changing task tail"}
+
+
+def test_gpt_model_name_uses_chat_compatible_outcome_profile_reasoning() -> None:
+    gateway, client = _provider_for("gpt-5.6-luna")
+    gateway.complete((ModelMessage(role="user", content="ship it"),), reasoning_gear="economy")
+
+    payload = client.chat.completions.calls[0]
+    assert payload["reasoning_effort"] == "low"
+    assert "verbosity" not in payload
+    assert payload["max_completion_tokens"] == 4096
+    assert "max_tokens" not in payload
+    assert "temperature" not in payload
+    assert "Lead with the outcome" in str(payload["messages"])
+
+
+def test_unknown_or_conflicting_model_name_never_receives_native_controls() -> None:
+    gateway, client = _provider_for("deepseek-gpt-bridge")
+    gateway.complete((ModelMessage(role="user", content="hello"),), reasoning_gear="audit")
+
+    payload = client.chat.completions.calls[0]
+    assert payload["temperature"] == 0.2
+    assert payload["max_tokens"] == 4096
+    assert "reasoning_effort" not in payload
+    assert "verbosity" not in payload
+    assert "extra_body" not in payload
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "my-gpt-compatible",
+        "openai-compatible-proxy",
+        "o3-emulator",
+        "not-o4-model",
+        "gpt",
+        "openai-gpt-5",
+    ],
+)
+def test_native_model_matching_is_a_conservative_closed_grammar(model_id: str) -> None:
+    gateway, client = _provider_for(model_id)
+    gateway.complete((ModelMessage(role="user", content="hello"),), reasoning_gear="audit")
+
+    payload = client.chat.completions.calls[0]
+    assert payload["temperature"] == 0.2
+    assert "reasoning_effort" not in payload
+    assert "verbosity" not in payload
+    assert "extra_body" not in payload
+
+
+def test_cache_and_reasoning_usage_are_projected_without_provider_payload_leakage() -> None:
+    usage = SimpleNamespace(
+        prompt_tokens=12,
+        completion_tokens=5,
+        total_tokens=17,
+        prompt_cache_hit_tokens=8,
+        prompt_cache_miss_tokens=4,
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=3),
+    )
+    response = _response()
+    response.usage = usage
+    client_factory, _ = _factory(response)
+    gateway = ModelGateway(
+        provider=OpenAICompatibleProvider(
+            provider_id="test-provider",
+            api_key="server-secret",
+            base_url="https://provider.example/v1",
+            client_factory=client_factory,
+        ),
+        model_id="model-alpha",
+    )
+
+    result = gateway.complete((ModelMessage(role="user", content="hello"),))
+    assert result.usage.cached_input_tokens == 8
+    assert result.usage.cache_miss_input_tokens == 4
+    assert result.usage.reasoning_tokens == 3
 
 
 def test_gateway_fails_closed_when_unavailable() -> None:

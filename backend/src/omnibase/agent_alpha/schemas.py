@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -15,6 +17,7 @@ class AlphaInvokeRequest(AlphaApiModel):
     agent_version_id: str = Field(pattern=_UUID)
     message: str = Field(min_length=1, max_length=32_000)
     top_k: int = Field(default=5, ge=1, le=12)
+    reasoning_gear: Literal["economy", "standard", "deep", "audit"] = "standard"
     retry_of: str | None = Field(default=None, pattern=_UUID)
     employee_role_id: str = Field(
         default="parent",

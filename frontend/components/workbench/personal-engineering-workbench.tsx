@@ -72,7 +72,6 @@ import {
 } from '@/lib/p6-workbench'
 import {
   P6_GEAR_PROFILES,
-  buildP6AdaptationInstruction,
   estimateP6Cost,
   getP6ProviderProfile,
   type P6ModelIdentity,
@@ -457,18 +456,7 @@ export function PersonalEngineeringWorkbench() {
       return
     }
     const selectedGear = P6_GEAR_PROFILES[preparationScope.gear]
-    const adaptation = buildP6AdaptationInstruction(
-      {
-        providerId: selectedModelSetting.effective_provider_id,
-        modelId: selectedModelSetting.effective_model_id,
-        familyOverride:
-          selectedModelSetting.family_source === 'explicit_override'
-            ? selectedModelSetting.family
-            : null,
-      },
-      preparationScope.gear,
-    )
-    const adaptedRoleMessage = `${preparedRoleMessage.roleMessage}\n\n${adaptation}`
+    const adaptedRoleMessage = preparedRoleMessage.roleMessage
     let fileCompilation
     try {
       fileCompilation = await filePanelRef.current?.compileContext(
@@ -604,6 +592,7 @@ export function PersonalEngineeringWorkbench() {
           employee_role_id: employee.id,
           message: finalMessage,
           top_k: selectedGear.topK,
+          reasoning_gear: preparationScope.gear,
         },
         { signal: controller.signal },
       )
@@ -1591,16 +1580,20 @@ function ContextRail({
                 最近观测：{provider.displayName} · {selectedGear.displayName}
               </p>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                按当前角色的有效模型名称选择保守画像；名称识别不是原生能力证明。原生思考参数未接入；
-                Tools / MCP / CLI / Vision / 自主委派均关闭。目标输出{' '}
-                {selectedGear.targetOutputTokens.toLocaleString()} tokens 仅作界面预算，当前 API
-                未下发该参数。
+                后端按当前角色的有效模型名称选择保守画像；仅在名称明确匹配 DeepSeek 或 GPT
+                系列时发送对应的思考参数，未知或冲突名称保持通用兼容模式。Tools / MCP / CLI / Vision
+                / 自主委派仍关闭。目标输出 {selectedGear.targetOutputTokens.toLocaleString()} tokens
+                仅作界面预算，当前 API 未下发该参数。
               </p>
               <div className="mt-2 grid grid-cols-3 gap-1">
                 <Metric label="Input" value={usage?.input_tokens ?? 0} />
                 <Metric label="Output" value={usage?.output_tokens ?? 0} />
                 <Metric label="Total" value={usage?.total_tokens ?? 0} />
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                缓存：命中 {usage?.cached_input_tokens?.toLocaleString() ?? '未报告'} · 未命中{' '}
+                {usage?.cache_miss_input_tokens?.toLocaleString() ?? '未报告'}
+              </p>
               <p className="mt-2 text-xs text-muted-foreground">
                 {cost.known
                   ? `${cost.currency} ${cost.amount.toFixed(6)}`

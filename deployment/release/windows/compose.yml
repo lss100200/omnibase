@@ -1,0 +1,203 @@
+name: omnibase-v1
+
+services:
+  postgres:
+    image: ${OMNIBASE_POSTGRES_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777", "/var/run/postgresql:size=16m,uid=999,gid=999,mode=0770"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: ["data"]
+
+  redis-init:
+    image: ${OMNIBASE_REDIS_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: "no"
+    user: "0:0"
+    command: ["sh", "-ec", "chown redis:redis /data"]
+    volumes: ["redis-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN"]
+    security_opt: ["no-new-privileges:true"]
+    networks: ["data"]
+
+  redis:
+    image: ${OMNIBASE_REDIS_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: unless-stopped
+    user: redis
+    depends_on:
+      redis-init:
+        condition: service_completed_successfully
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes: ["redis-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: ["data"]
+
+  minio:
+    image: ${OMNIBASE_MINIO_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes: ["minio-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: ["data"]
+
+  minio-init:
+    image: ${OMNIBASE_MINIO_MC_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set none "local/$$MINIO_BUCKET"
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777", "/root/.mc:size=8m,mode=0700"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: ["data"]
+
+  migrate:
+    image: ${OMNIBASE_BACKEND_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &backend-environment
+      ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET}
+      MINIO_SECURE: "false"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:?set provider key}
+      MEMORY_CONTENT_ENCRYPTION_KEY: ${MEMORY_CONTENT_ENCRYPTION_KEY:?set memory key}
+    command: ["alembic", "upgrade", "head"]
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: ["data"]
+
+  backend:
+    image: ${OMNIBASE_BACKEND_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *backend-environment
+      LOG_LEVEL: INFO
+      JWT_ALGORITHM: HS256
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_FAIL_CLOSED: "true"
+      TENANT_MANAGEMENT_API_ENABLED: "false"
+      MODEL_DOWNLOAD_ENABLED: "false"
+      PROVIDER_ENDPOINT_ALLOWLIST: ${PROVIDER_ENDPOINT_ALLOWLIST:?set provider allowlist}
+      OMNIBASE_DEPLOYMENT_INSTANCE_ID: ${OMNIBASE_DEPLOYMENT_INSTANCE_ID:?set deployment instance id}
+      AGENT_ALPHA_ENGINEERING_ENABLED: "false"
+      AGENT_RUNTIME_ENABLED: "false"
+      AGENT_PLANNER_ENABLED: "false"
+      MULTI_AGENT_ENABLED: "false"
+      MCP_RUNTIME_ENABLED: "false"
+      PERSONAL_RUNTIME_PROFILE: ""
+      PERSONAL_RUNTIME_CANARY_CONFIG: ""
+      PERSONAL_RUNTIME_STATE_DIR: ""
+      PERSONAL_RUNTIME_READINESS_ROOT: ""
+    expose: ["8000"]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks: ["data", "edge"]
+
+  frontend:
+    image: ${OMNIBASE_FRONTEND_IMAGE:?set an immutable allowlisted image@sha256 digest}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_PROXY_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:${OMNIBASE_FRONTEND_PORT:?set frontend port}:3000"
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=64m,uid=1001,gid=1001,mode=0750"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: ["edge"]
+
+networks:
+  data:
+    internal: true
+  edge:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

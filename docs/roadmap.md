@@ -206,6 +206,15 @@ not silently included in P6.0.
 
 ## Phase 6.x: Skills + MCP extension ecosystem
 
+> **P6.1 A-D engineering R0 (2026-08-13):** the personal line now has an
+> authenticated six-Skill first-party catalog, model-name-first DeepSeek/GPT
+> request adaptation, a separately launched three-tool read-only MCP preview
+> whose Git surface is metadata-only status/log, and a deterministic Windows
+> ZIP/no-build release preview with offline immutable-image preflight. MCP is not mounted
+> into Agent Alpha, migration remains `0016`, and EXE build/sign plus real OCI
+> digests remain not proven. This is not Marketplace, arbitrary MCP, production
+> release or enterprise P34.7 activation.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

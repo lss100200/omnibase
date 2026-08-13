@@ -191,11 +191,11 @@ test('formatAgentIdentity uses actual model when present', () => {
   )
 })
 
-test('usage preserves finite non-negative reasoning tokens and rejects invalid usage', async () => {
+test('usage preserves finite reasoning/cache tokens and rejects invalid usage', async () => {
   let observed: AgentAlphaUsage | null = null
   const terminal = await consumeAgentAlphaStream(
     streamOf(
-      'event: usage\ndata: {"input_tokens":3,"output_tokens":4,"total_tokens":7,"reasoning_tokens":2}\n\n' +
+      'event: usage\ndata: {"input_tokens":3,"output_tokens":4,"total_tokens":7,"reasoning_tokens":2,"cached_input_tokens":2,"cache_miss_input_tokens":1}\n\n' +
         'event: done\ndata: {"answer":"ok"}\n\n',
     ).getReader(),
     { onUsage: (usage) => (observed = usage) },
@@ -205,6 +205,8 @@ test('usage preserves finite non-negative reasoning tokens and rejects invalid u
     output_tokens: 4,
     total_tokens: 7,
     reasoning_tokens: 2,
+    cached_input_tokens: 2,
+    cache_miss_input_tokens: 1,
   })
   assert.equal(terminal.kind, 'done')
 

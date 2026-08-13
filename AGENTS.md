@@ -232,6 +232,21 @@ runtime evidence; then correct the stale documentation in the same change.
 - Do not use `git add .`. Stage explicit paths and inspect the cached diff.
 - Do not run destructive database tests against a normal database. Use the
   sentinel Compose project and `omnibase_test_*` names enforced by the Makefile.
+- Recursive filesystem deletion is a separately authorized destructive action,
+  not a normal cleanup primitive. Before deleting any directory tree, resolve
+  and print the exact literal absolute target, prove it is neither a workspace
+  root nor an ancestor/sibling container of repositories, worktrees, release
+  artifacts, user libraries or unrelated data, and inventory the intended
+  entries with the same shell and path semantics that will perform the delete.
+  Never pass a PowerShell-enumerated path to `cmd.exe rd`, a batch builtin or a
+  second shell; quoting and extended-path reinterpretation can widen the target.
+  Do not use a glob, unresolved environment variable, command substitution,
+  junction/reparse traversal or a parent directory to work around long paths.
+  Delete only one already-verified literal target per operation. Prefer a
+  recoverable same-volume move to a clearly named quarantine/trash directory;
+  permanent deletion requires explicit user authorization naming the exact
+  target after the inventory is shown. If containment, ownership, link state or
+  recovery scope is uncertain, stop. See INV-073.
 - Treat Docker Desktop, WSL, Hyper-V and other VM disk images as stateful
   infrastructure, not disposable cache files. Before any VHD/VHDX/VDI/VMDK
   maintenance, identify the owner, distinguish system and data disks, stop all

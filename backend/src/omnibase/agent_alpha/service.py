@@ -43,6 +43,7 @@ from omnibase.agent_alpha.contracts import (
 )
 from omnibase.agent_skills.resolver import SkillInstructionBundle
 from omnibase.model_gateway import ModelGateway, ModelMessage, ModelUsage
+from omnibase.model_gateway.adaptation import ReasoningGear
 from omnibase.model_gateway.providers import ModelProviderError
 
 
@@ -244,6 +245,7 @@ class AgentAlphaService:
         idempotency_key: str,
         retry_of: str | None,
         employee_role_id: str = "parent",
+        reasoning_gear: ReasoningGear = "standard",
     ) -> Iterator[AlphaStreamEvent]:
         self._verify_runtime_guard()
         if len(message) > self._limits.max_message_characters:
@@ -302,6 +304,7 @@ class AgentAlphaService:
             idempotency_key=idempotency_key,
             retry_of=retry_of,
             preferences=preferences,
+            reasoning_gear=reasoning_gear,
             selection=selection,
             employee_role_id=employee_role_id,
         )
@@ -324,6 +327,7 @@ class AgentAlphaService:
             selection=selection,
             employee_role_id=employee_role_id,
             preferences=preferences,
+            reasoning_gear=reasoning_gear,
         )
 
     def _stream(
@@ -339,6 +343,7 @@ class AgentAlphaService:
         selection: AlphaGatewaySelection,
         employee_role_id: str,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
     ) -> Iterator[AlphaStreamEvent]:
         """SSE event stream for one durable invocation (or its exact replay)."""
         try:
@@ -411,6 +416,7 @@ class AgentAlphaService:
                 cancellation=cancellation,
                 selection=selection,
                 preferences=preferences,
+                reasoning_gear=reasoning_gear,
             )
         except ModelProviderError:
             self._ledger.fail(
@@ -469,6 +475,7 @@ class AgentAlphaService:
         cancellation: Event,
         selection: AlphaGatewaySelection,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
     ) -> Iterator[AlphaStreamEvent]:
         """One Model Gateway stream bounded by the server-owned deadline."""
         answer: list[str] = []
@@ -506,6 +513,7 @@ class AgentAlphaService:
             messages,
             max_output_tokens=min(profile.max_context_tokens, self._limits.max_output_tokens),
             temperature=0.2,
+            reasoning_gear=reasoning_gear,
         ):
             self._verify_runtime_guard()
             if time.monotonic() > deadline:
@@ -549,6 +557,8 @@ class AgentAlphaService:
                 "output_tokens": usage.output_tokens,
                 "total_tokens": usage.total_tokens,
                 "reasoning_tokens": usage.reasoning_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "cache_miss_input_tokens": usage.cache_miss_input_tokens,
             },
         )
         yield AlphaStreamEvent(
@@ -564,6 +574,8 @@ class AgentAlphaService:
                     "output_tokens": usage.output_tokens,
                     "total_tokens": usage.total_tokens,
                     "reasoning_tokens": usage.reasoning_tokens,
+                    "cached_input_tokens": usage.cached_input_tokens,
+                    "cache_miss_input_tokens": usage.cache_miss_input_tokens,
                 },
             },
         )
@@ -581,6 +593,7 @@ class AgentAlphaService:
         idempotency_key: str,
         retry_of: str | None,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
         selection: AlphaGatewaySelection,
         employee_role_id: str,
     ) -> tuple[
@@ -647,6 +660,7 @@ class AgentAlphaService:
                 "workspace_agent_binding_id": profile.workspace_agent_binding_id,
                 "message": message,
                 "top_k": top_k,
+                "reasoning_gear": reasoning_gear,
                 "retry_of": retry_of,
                 "assistant_name": preferences.assistant_name,
                 "assistant_tone": preferences.assistant_tone,

@@ -6,6 +6,8 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from omnibase.model_gateway.adaptation import ReasoningGear
+
 ModelRole = Literal["system", "user", "assistant"]
 
 
@@ -27,6 +29,8 @@ class ModelUsage:
     output_tokens: int
     total_tokens: int
     reasoning_tokens: int = 0
+    cached_input_tokens: int = 0
+    cache_miss_input_tokens: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -34,11 +38,15 @@ class ModelUsage:
             self.output_tokens,
             self.total_tokens,
             self.reasoning_tokens,
+            self.cached_input_tokens,
+            self.cache_miss_input_tokens,
         )
         if any(value < 0 for value in values):
             raise ValueError("model_usage_negative")
         if self.total_tokens < self.input_tokens + self.output_tokens:
             raise ValueError("model_usage_total_inconsistent")
+        if self.cached_input_tokens + self.cache_miss_input_tokens > self.input_tokens:
+            raise ValueError("model_usage_cache_tokens_inconsistent")
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +57,7 @@ class ModelRequest:
     max_output_tokens: int
     temperature: float = 0.2
     timeout_seconds: float = 60.0
+    reasoning_gear: ReasoningGear = "standard"
 
     def __post_init__(self) -> None:
         if not self.provider_id or not self.model_id:
@@ -61,6 +70,8 @@ class ModelRequest:
             raise ValueError("model_temperature_invalid")
         if self.timeout_seconds <= 0:
             raise ValueError("model_timeout_invalid")
+        if self.reasoning_gear not in {"economy", "standard", "deep", "audit"}:
+            raise ValueError("model_reasoning_gear_invalid")
 
 
 @dataclass(frozen=True, slots=True)

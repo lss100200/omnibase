@@ -5518,3 +5518,41 @@ source-level Chinese shell regression contract = passed
 
 This is presentation-only. Runtime, authorization, model routing, migrations,
 credentials and production activation boundaries are unchanged.
+
+### P6.1 A-D native Skills, model adaptation, read-only MCP and release preview (2026-08-13)
+
+Branch `codex/p6-1-native-skills-mcp-release` starts from local P6.0 Chinese
+workbench head `25f82a9`. P6.1-A adds six first-party instruction-only Skills,
+authenticated catalog/detail API, live Owner/Workspace/Agent install/disable
+control and a Chinese `/skills` page. It reuses migration `0014`; no new schema.
+
+P6.1-B moves reasoning gears into Browser API and provider gateway. Effective
+model name is authoritative: DeepSeek gets stable cache-friendly prefix,
+thinking and reasoning effort; GPT gets outcome-first stable guidance and
+Chat-Completions-compatible reasoning effort. Unknown/conflicting or
+compatible/proxy/emulator names stay generic. Usage
+projects reasoning plus cache hit/miss input tokens when supplied. DeepSeek
+official docs were retrieved; OpenAI live docs were blocked, so bundled
+official guidance was used and disclosed.
+
+P6.1-C adds an independent stdio MCP preview with exactly authorized-file list,
+authorized UTF-8 read and metadata-only Git status/log. Stable root/repository/
+Git identities are revalidated per call and file/Git I/O is bounded while it
+runs. It is not mounted into Agent
+Alpha and does not change `no_tool`; no arbitrary server, HTTP, shell, write or
+credential flow exists.
+
+P6.1-D adds deterministic canonical ZIP, offline immutable-image preflight,
+release-only Compose with no `build:` and the personal migration/init/health
+lifecycle, operator env template, Chinese instructions and .NET
+single-file verifier/extractor source. ZIP reproducibility is proven locally.
+A portable Microsoft .NET SDK 8.0.424 archive was recovered outside the
+repository (`285090820` bytes) and verified against the official SHA-512. The
+authoritative recovery EXE remains pending until the recovered source reaches a
+committed clean HEAD; signing remains not proven. No image was built or
+published.
+
+Independent review also changed native Definition/Version database IDs to a
+deterministic tenant-scoped projection and added explicit resource/audit
+evidence for first materialization. Safety remains: migration head `0016`; enterprise P34.7 frozen; no root `.env`,
+business DB, Docker build, VHDX mutation, push, PR, merge or deployment.

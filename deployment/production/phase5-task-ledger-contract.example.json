@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "f4a2824aadd14e076c0af8acdf351d5efc122cd318748b1afed0288eae0fe0d1"
+      "sha256": "5a374214572d667822e19af4d49c99cd42ca826e64448e1dfad24cb439486359"
     }
   },
   "source": {
@@ -133,7 +133,9 @@
         "workspace_agent_binding_id",
         "task_id"
       ],
-      "core_generated_fields": ["request_hash"],
+      "core_generated_fields": [
+        "request_hash"
+      ],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -213,7 +215,10 @@
         "run_fencing_token",
         "node_fencing_token"
       ],
-      "not_yet_generated_fields": ["task_lease_id", "task_fencing_token"],
+      "not_yet_generated_fields": [
+        "task_lease_id",
+        "task_fencing_token"
+      ],
       "immutable_fields": [
         "task_id",
         "task_generation",
@@ -277,7 +282,10 @@
         "task_fencing_token",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [
         "task_id",
@@ -330,7 +338,10 @@
         "task_fencing_token",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [
         "task_id",
@@ -374,7 +385,10 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -427,7 +441,10 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -480,7 +497,10 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -535,7 +555,10 @@
         "attempt_id",
         "workspace_generation"
       ],
-      "core_generated_fields": ["operation_id", "request_hash"],
+      "core_generated_fields": [
+        "operation_id",
+        "request_hash"
+      ],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [],
       "forbidden_fields": [
@@ -622,12 +645,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "e3f5b72e567844ba2163b88afa15829124f6db0bddba5958bc6b0436d3226f73"
+      "sha256": "b58c9845d337dd9a44fd1e050784ce924a34239e074f8b994201012bbf676fa4"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "04e4d9a2e6fcb7e6a82342c613f728642d1a69cb2a32bdac2aa2cef0f503ae17"
+      "sha256": "2a6ca9b5a263a35f92e0334f374f9221845017f75ff4a8b7fd4d9314e7693c87"
     }
   ],
   "openapi_snapshot": {
@@ -702,7 +725,9 @@
         "plan_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "plan_version": "1",
         "plan_digest": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
-        "dependencies": ["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
+        "dependencies": [
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        ],
         "state": "ready",
         "created_at": "2026-08-03T00:03:00Z"
       }

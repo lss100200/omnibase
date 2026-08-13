@@ -359,6 +359,7 @@ export interface AgentAlphaInvokePayload {
   readonly employee_role_id?: P6EmployeeRoleId
   readonly message: string
   readonly top_k?: number
+  readonly reasoning_gear?: 'economy' | 'standard' | 'deep' | 'audit'
   readonly retry_of?: string | null
 }
 
@@ -429,6 +430,74 @@ export const agentBuilderApi = {
       .post<AgentBuilderResult>(`/workspaces/${workspaceId}/agents`, payload, {
         headers: { 'Idempotency-Key': crypto.randomUUID() },
       })
+      .then((response) => response.data),
+}
+
+export interface NativeSkillRead {
+  readonly stable_logical_key: string
+  readonly display_name: string
+  readonly description: string
+  readonly category: string
+  readonly semantic_version: string
+  readonly manifest_digest: string
+  readonly kind: 'instruction'
+  readonly first_party: true
+  readonly tools_enabled: false
+  readonly network_enabled: false
+  readonly secrets_allowed: false
+}
+
+export interface NativeSkillList {
+  readonly items: NativeSkillRead[]
+  readonly total: number
+}
+
+export interface SkillInstallationRead {
+  readonly installation_id: string
+  readonly workspace_id: string
+  readonly agent_version_id: string
+  readonly stable_logical_key: string
+  readonly display_name: string
+  readonly semantic_version: string
+  readonly manifest_digest: string
+  readonly installation_state: 'installed' | 'disabled' | 'superseded' | 'revoked'
+  readonly created_at: string | null
+  readonly disabled_at: string | null
+  readonly revoked_at: string | null
+}
+
+export interface SkillInstallationList {
+  readonly items: SkillInstallationRead[]
+  readonly total: number
+}
+
+export const nativeSkillsApi = {
+  list: () => api.get<NativeSkillList>('/skills').then((response) => response.data),
+  installations: (workspaceId: string, agentVersionId: string) =>
+    api
+      .get<SkillInstallationList>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/skill-installations`,
+      )
+      .then((response) => response.data),
+  install: (skill: NativeSkillRead, workspaceId: string, agentVersionId: string) =>
+    api
+      .post<SkillInstallationRead>(
+        `/skills/${skill.stable_logical_key}/install`,
+        {
+          workspace_id: workspaceId,
+          agent_version_id: agentVersionId,
+          expected_manifest_digest: skill.manifest_digest,
+        },
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      )
+      .then((response) => response.data),
+  disable: (installation: SkillInstallationRead) =>
+    api
+      .post<SkillInstallationRead>(
+        `/workspaces/${installation.workspace_id}/agents/${installation.agent_version_id}/skill-installations/${installation.installation_id}/disable`,
+        undefined,
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      )
       .then((response) => response.data),
 }
 

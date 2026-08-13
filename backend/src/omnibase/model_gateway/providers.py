@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from omnibase.model_gateway.adaptation import plan_model_adaptation
 from omnibase.model_gateway.contracts import (
     ModelRequest,
     ModelResponse,
@@ -27,11 +28,20 @@ def _usage_from_openai(value: Any) -> ModelUsage:
         return ModelUsage(input_tokens=0, output_tokens=0, total_tokens=0)
     details = getattr(value, "completion_tokens_details", None)
     reasoning = int(getattr(details, "reasoning_tokens", 0) or 0)
+    prompt_details = getattr(value, "prompt_tokens_details", None)
+    cached = int(
+        getattr(value, "prompt_cache_hit_tokens", 0)
+        or getattr(prompt_details, "cached_tokens", 0)
+        or 0
+    )
+    cache_miss = int(getattr(value, "prompt_cache_miss_tokens", 0) or 0)
     return ModelUsage(
         input_tokens=int(getattr(value, "prompt_tokens", 0) or 0),
         output_tokens=int(getattr(value, "completion_tokens", 0) or 0),
         total_tokens=int(getattr(value, "total_tokens", 0) or 0),
         reasoning_tokens=reasoning,
+        cached_input_tokens=cached,
+        cache_miss_input_tokens=cache_miss,
     )
 
 
@@ -74,14 +84,25 @@ class OpenAICompatibleProvider:
     def _payload(self, request: ModelRequest) -> dict[str, object]:
         if request.provider_id != self._provider_id:
             raise ModelProviderError("model_provider_identity_mismatch")
-        return {
+        adaptation = plan_model_adaptation(request.model_id, request.reasoning_gear)
+        payload: dict[str, object] = {
             "model": request.model_id,
             "messages": [
-                {"role": message.role, "content": message.content} for message in request.messages
+                {"role": "system", "content": adaptation.stable_prefix},
+                *[
+                    {"role": message.role, "content": message.content}
+                    for message in request.messages
+                ],
             ],
-            "temperature": request.temperature,
-            "max_tokens": request.max_output_tokens,
         }
+        if adaptation.family == "openai":
+            payload["max_completion_tokens"] = request.max_output_tokens
+        else:
+            payload["max_tokens"] = request.max_output_tokens
+        if adaptation.family == "generic":
+            payload["temperature"] = request.temperature
+        payload.update(adaptation.extra_payload)
+        return payload
 
     @staticmethod
     def _verify_model(requested: str, actual: object) -> str:

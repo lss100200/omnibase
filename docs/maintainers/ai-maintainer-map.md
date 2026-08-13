@@ -2130,6 +2130,24 @@ path. `compact` is host-space reclamation, not a capacity limit. Never force a
 shrink when the guest filesystem or container format cannot prove the minimum
 safe size, and preserve the VM service SID ACL when restoring a copied image.
 
+## Recursive filesystem deletion boundary
+
+Read INV-073 before removing any directory tree, including backups, archives,
+caches and long-path remnants. Resolve one literal absolute target, inspect its
+symlink/junction/reparse state without following links, inventory descendants,
+and prove containment under the exact user-authorized parent. Also prove the
+target is not that parent, a workspace/repository root, or an ancestor of any
+retained repository, worktree, release artifact or user library.
+
+Keep discovery and mutation in one shell with literal-path semantics. Never
+enumerate in PowerShell and pass the result to `cmd.exe rd`, a batch builtin or
+another shell; never substitute a parent directory when a long child path is
+difficult to remove. Globs, unresolved variables, constructed command strings
+and multi-target recursive deletes are forbidden. Prefer a same-volume move to
+a uniquely named quarantine directory. Permanent deletion requires a separate
+explicit authorization that names the already-resolved target after inventory
+and recovery consequences are visible. Any drift or ambiguity fails closed.
+
 ## P6.0 authorized files, local ChangeSets and model gears
 
 Read INV-065 through INV-067 and
@@ -2184,3 +2202,32 @@ hardened endpoint resolver/client seam, never a retired pre-hardening HTTP
 entrypoint. The tenant-first online path accepts only the exact ordinary
 `alembic downgrade 0015` CLI form; flags, ranges, relative revisions and
 programmatic ambiguity stay fail closed.
+
+## P6.1 native Skills, model-native parameters, read-only MCP and release preview
+
+Read INV-069 through INV-072 and
+`docs/architecture/p6-1-native-skills-model-mcp-release.md`. The Browser catalog
+is a fixed first-party instruction-only set over migration `0014`; never accept
+caller instructions, URL, ZIP, arbitrary path or capability expansion. Live
+Owner/Workspace/Agent binding validation precedes idempotency reservation and
+is repeated by persistence before mutation.
+
+Model-native fields are selected only from the exact effective model name.
+Keep the server-owned prefix stable and current task data last. Unknown,
+conflicting and compatible/proxy/emulator names remain generic. Chat
+Completions must not receive Responses-only `verbosity`. Cache usage is observational, not authority,
+and actual model identity remains mandatory.
+
+The stdio MCP preview is separately launched and must not be mounted into the
+historical `no_tool` Agent Alpha path. Keep the exact three-tool closed set,
+path/link/reparse/sensitive-file guards, per-call stable identity revalidation,
+incrementally bounded file reads and metadata-only Git status/log. Any
+Runtime integration requires a separately reviewed explicit mode and durable
+grant/receipt design.
+
+The release ZIP is the canonical audit root. Preserve deterministic ordering,
+timestamps, modes and digests; keep release Compose free of `build:`, preserve
+personal migration/init/health lifecycle and require offline-preflighted
+immutable OCI digests. The EXE may only verify/extract that ZIP. Do not claim a
+release while image digests, EXE build/signing or production journey remain
+unproven, and never mutate Docker/WSL VHDX from installer code.

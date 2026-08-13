@@ -3676,6 +3676,120 @@ The current migration fact does not enable Planner, Multi-Agent,
 Skills, MCP, CLI, Vision, arbitrary tools, enterprise Trust Policy approval,
 production evidence or a public deployment.
 
+## INV-069 p61-native-skill-browser-boundary
+
+The P6.1 native catalog is a source-owned closed set of first-party,
+instruction-only Skill manifests. Browser list/detail never accepts instruction
+text, URL, ZIP or path. Install/disable locks the live Tenant, active personal
+Owner, owned Workspace, active owner membership, sealed AgentVersion and exact
+installed binding before idempotency reserve; persistence repeats validation.
+Mutation, idempotency completion and append-only Audit share one transaction.
+Catalog source IDs are not reused as global database primary keys: Definition
+and Version rows use deterministic tenant-scoped UUIDs, and first
+materialization registers logical resources plus explicit Definition/Version
+Audit evidence in the same transaction.
+Native Skills have no tools, network, secrets, MCP, Planner, Multi-Agent or
+Capability expansion, and catalog digest drift fails closed.
+
+## INV-070 p61-model-native-parameter-and-cache-boundary
+
+Only one unambiguous effective model name selects DeepSeek or GPT native request
+fields; base URL/provider label never override it. Unknown/conflicting and
+compatible/proxy/emulator claims receive no native controls. The current Chat
+Completions boundary never sends the Responses-only `verbosity` field. A stable server-owned system prefix precedes sealed
+Agent/Skill/context messages and changing user data remains last. Reasoning gear
+is a closed API value bound into invocation intent/replay identity. DeepSeek
+cache hit/miss and reasoning tokens are bounded usage observations, never
+authorization or proof that caching occurred. Actual model identity must still
+equal requested identity; tools, MCP, Planner and Multi-Agent remain disabled.
+
+## INV-071 p61-read-only-mcp-preview-boundary
+
+The P6.1 MCP server is an explicitly launched local stdio preview, not mounted
+into Agent Alpha. Existing `no_tool` semantics remain unchanged and
+`MCP_RUNTIME_ENABLED` stays false. It exposes exactly authorized-file list,
+authorized UTF-8 read and metadata-only Git status/log inspection. Roots,
+repository and Git binary identities are captured and revalidated for each
+call. They must be
+regular non-link/non-reparse objects. Paths reject traversal, absolute/drive,
+UNC, ADS, links and reparse escape; secret-like, binary and oversized files
+fail closed. File handles are checked after open and reads are incrementally
+bounded. Git argv/environment/time/output are fixed and bounded while the
+process runs; arbitrary
+flags, shell, writes, network operations and credentials are absent.
+
+## INV-072 p61-reproducible-windows-release-boundary
+
+The canonical Windows artifact is a deterministic ZIP with closed manifest,
+fixed sort/time/mode/stored encoding and per-file SHA-256. It contains no root
+`.env`, populated operator env, secret, DB, model, image tar, VHDX/WSL data,
+`node_modules`, `.next` or virtualenv. Release Compose has no `build:` and every
+release payload byte is read from the declared clean commit's fixed-path Git
+blob under a closed Git environment; ambient repository-overriding `GIT_*`
+variables and mutable worktree bytes are not provenance. Every image value is
+an operator-supplied immutable `image@sha256` reference verified
+by an offline repository/digest closed-set preflight; normal
+hosts use pull plus `up --no-build`. The EXE is a thin verifier/extractor of the
+same ZIP. Release Compose preserves personal migration, storage initialization,
+health and least-privilege lifecycle without host source builds. Install/doctor may report virtual-disk posture but must never compact,
+truncate, relocate or delete VHDX or unknown volumes. Unsigned/unbuilt EXE and
+placeholder image digests are not a release.
+
+## INV-073 literal-target-recursive-delete-boundary
+
+**Authoritative source**
+
+- `AGENTS.md`
+- `docs/maintainers/ai-maintainer-map.md`
+- `docs/maintainers/maintenance-map.json`
+
+Recursive deletion is a high-impact external-state mutation even when the
+requested object is called a backup, archive, cache, temporary directory or
+empty long-path tree. A directory name, approximate location, size or apparent
+rebuildability is not proof that its descendants are isolated from repositories,
+worktrees, game libraries, release artifacts or unrelated user data.
+
+Before any recursive delete, the maintainer must use read-only checks to resolve
+the literal absolute target, inspect every path component for symlink, junction
+or reparse behavior, prove the target is contained by the user-authorized parent
+and prove it is not that parent itself or an ancestor of any retained object.
+The intended entries and aggregate scope must be inventoried using the same
+shell and literal-path semantics as the mutation. One command may operate on
+only one verified target. Globs, unresolved variables, constructed command
+strings, parent-directory cleanup and cross-shell path handoff are forbidden.
+In particular, PowerShell discovery must never feed `cmd.exe rd`, batch builtins
+or another shell: quoting, backslash and extended-path reinterpretation can
+silently widen the deletion boundary.
+
+The default cleanup action is a recoverable same-volume move to a uniquely named
+quarantine/trash location after proving the destination is outside the source.
+Permanent deletion requires a separate explicit user authorization naming the
+exact resolved target after the inventory and recovery consequence are shown.
+Long paths, access-denied files or apparently empty parents never justify
+switching shells, deleting an ancestor or bypassing containment checks. If any
+ownership, containment, link state, target identity or recovery fact changes
+between inventory and mutation, fail closed and repeat the read-only proof.
+
+**Required verification**
+
+- capture the exact resolved literal target and authorized parent;
+- confirm the target exists, is not the filesystem/workspace/repository root,
+  and is not an ancestor of retained repositories, worktrees or user libraries;
+- enumerate link/reparse state and intended descendants without following links;
+- record whether the action is recoverable and the exact quarantine or backup;
+- after mutation, verify only the authorized target moved or disappeared and
+  report the recovery status explicitly.
+
+**Failure recovery**
+
+Stop all further cleanup immediately, preserve logs and surviving storage, and
+do not delete secondary recovery or forensic material. Identify affected paths,
+free space and authoritative remote copies with read-only checks. Prefer restore
+from version control, verified backups or a new destination; never conceal the
+scope, invent recovered evidence or continue destructive work to make the tree
+look tidy. Any follow-up deletion requires a fresh authorization and a fresh
+literal-target proof.
+
 **Required verification**
 
 - `backend/tests/test_p6_0_d2_model_settings.py`

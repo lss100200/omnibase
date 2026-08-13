@@ -25,14 +25,14 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "f4a2824aadd14e076c0af8acdf351d5efc122cd318748b1afed0288eae0fe0d1"
+      "sha256": "5a374214572d667822e19af4d49c99cd42ca826e64448e1dfad24cb439486359"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "a5c154400b3306574449db4d97a4ba68c7fe00f9710e464f758603b66b79fc1d"
+      "sha256": "d3d1d2b2d1281efe2a05918bb19645e4d19712add24f1a8115a94c8dcea8217d"
     }
   },
   "source": {
@@ -96,7 +96,9 @@
       "artifact_write_proposal",
       "sandbox_job_proposal"
     ],
-    "allowed_tool_ids": ["knowledge_search"],
+    "allowed_tool_ids": [
+      "knowledge_search"
+    ],
     "max_replan": 2,
     "approval_policy": {
       "low": "optional",
@@ -121,8 +123,12 @@
       "tenant_id": "00000000-0000-0000-0000-00000000000a",
       "version_state": "sealed",
       "risk_level": "low",
-      "allowed_tool_ids": ["knowledge_search"],
-      "resource_scopes": ["workspace-docs"],
+      "allowed_tool_ids": [
+        "knowledge_search"
+      ],
+      "resource_scopes": [
+        "workspace-docs"
+      ],
       "instructions_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     }
   ],
@@ -141,7 +147,9 @@
             "maxLength": 500
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       }
     }
   ],
@@ -149,8 +157,12 @@
     "workspace_id": "66666666-6666-6666-6666-666666666666",
     "workspace_generation": 1,
     "tenant_id": "00000000-0000-0000-0000-00000000000a",
-    "resource_scopes": ["workspace-docs"],
-    "tool_binding_ids": ["knowledge_search"],
+    "resource_scopes": [
+      "workspace-docs"
+    ],
+    "tool_binding_ids": [
+      "knowledge_search"
+    ],
     "scope_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
   },
   "frozen_task": {
@@ -221,12 +233,18 @@
                   "maxLength": 2000
                 }
               },
-              "required": ["summary"]
+              "required": [
+                "summary"
+              ]
             },
             "output_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           },
-          "allowed_tool_ids": ["knowledge_search"],
-          "resource_scopes": ["workspace-docs"],
+          "allowed_tool_ids": [
+            "knowledge_search"
+          ],
+          "resource_scopes": [
+            "workspace-docs"
+          ],
           "risk_level": "low",
           "budget": {
             "input_tokens": 100000,
@@ -333,12 +351,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "e3f5b72e567844ba2163b88afa15829124f6db0bddba5958bc6b0436d3226f73"
+      "sha256": "b58c9845d337dd9a44fd1e050784ce924a34239e074f8b994201012bbf676fa4"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "04e4d9a2e6fcb7e6a82342c613f728642d1a69cb2a32bdac2aa2cef0f503ae17"
+      "sha256": "2a6ca9b5a263a35f92e0334f374f9221845017f75ff4a8b7fd4d9314e7693c87"
     }
   ],
   "openapi_snapshot": {
