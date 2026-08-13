@@ -82,7 +82,7 @@ def _validate_config() -> None:
             REPO_ROOT / "deployment/production/phase5-typed-executor.example.json"
         ).read_text(encoding="utf-8")
     )
-    if config.get("migration_baseline") != "0015":
+    if config.get("migration_baseline") != "0016":
         raise RuntimeError("P5.4A migration baseline drifted")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4A activation must remain false")

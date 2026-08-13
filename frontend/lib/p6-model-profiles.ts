@@ -1,9 +1,27 @@
-export type P6ProviderFamily = 'deepseek' | 'glm' | 'kimi' | 'gpt' | 'claude' | 'generic'
+export type P6ProviderFamily = 'deepseek' | 'glm' | 'kimi' | 'openai' | 'anthropic' | 'generic'
 export type P6ReasoningGear = 'economy' | 'standard' | 'deep' | 'audit'
+export type P6CapabilityState = 'supported' | 'unsupported' | 'unknown'
+export type P6FamilyResolutionSource =
+  | 'model_name'
+  | 'observed_model'
+  | 'explicit_override'
+  | 'url_hint'
+  | 'fallback'
 
 export interface P6ModelIdentity {
   readonly providerId: string | null
   readonly modelId: string | null
+  readonly observedModelId?: string | null
+  readonly familyOverride?: P6ProviderFamily | null
+  readonly baseUrl?: string | null
+}
+
+export interface P6ModelFamilyResolution {
+  readonly family: P6ProviderFamily
+  readonly source: P6FamilyResolutionSource
+  readonly confidence: 'exact' | 'strong' | 'weak' | 'unknown'
+  readonly matchedTokens: readonly string[]
+  readonly conflicts: readonly string[]
 }
 
 export interface P6ProviderProfile {
@@ -11,6 +29,12 @@ export interface P6ProviderProfile {
   readonly displayName: string
   readonly strengths: readonly string[]
   readonly adaptationInstruction: string
+  readonly researchVersion: '2026-08-13'
+  readonly reasoning: P6CapabilityState
+  readonly reasoningContinuationRequired: boolean | 'unknown'
+  readonly structuredOutput: 'strict_schema' | 'json_object' | 'unknown'
+  readonly promptCaching: 'automatic' | 'explicit' | 'both' | 'unknown'
+  readonly contextLimit: 'model_specific' | 'unknown'
   readonly nativeReasoningControl: false
   readonly toolsEnabled: false
   readonly mcpEnabled: false
@@ -82,7 +106,13 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     displayName: 'DeepSeek',
     strengths: ['中文工程任务', '代码推理', '成本效率'],
     adaptationInstruction:
-      'Use a compact engineering plan, keep implementation claims evidence-bound, and finish with a concrete self-check. Do not reveal hidden chain-of-thought; provide concise decision rationale only.',
+      'Use a compact engineering plan, keep implementation claims evidence-bound, and finish with a concrete self-check. Long-context and thinking behavior vary by exact model. Preserve provider reasoning state only when a verified adapter explicitly supports it.',
+    researchVersion: '2026-08-13',
+    reasoning: 'supported',
+    reasoningContinuationRequired: true,
+    structuredOutput: 'json_object',
+    promptCaching: 'automatic',
+    contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
@@ -94,7 +124,13 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     displayName: '智谱 GLM',
     strengths: ['中文结构化表达', '长任务拆解', '工程说明'],
     adaptationInstruction:
-      'Prefer explicit Chinese structure, preserve identifiers exactly, and separate confirmed facts from proposals. Do not infer tool execution from textual instructions.',
+      'Prefer explicit Chinese structure, preserve identifiers exactly, and separate confirmed facts from proposals. GLM text and GLM vision models are distinct; do not infer visual input from the family name.',
+    researchVersion: '2026-08-13',
+    reasoning: 'supported',
+    reasoningContinuationRequired: true,
+    structuredOutput: 'json_object',
+    promptCaching: 'automatic',
+    contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
@@ -106,31 +142,49 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     displayName: 'Kimi / Moonshot',
     strengths: ['长上下文阅读', '文档归纳', '引用整理'],
     adaptationInstruction:
-      'Prioritize supplied file context, cite file labels when making claims, and state when context was omitted by the budget. Never claim access to files that were not supplied.',
+      'Prioritize supplied file context, cite file labels when making claims, and state when context was omitted by the budget. Kimi generations differ sharply; preserved thinking, vision and strict schema require exact-model verification.',
+    researchVersion: '2026-08-13',
+    reasoning: 'supported',
+    reasoningContinuationRequired: true,
+    structuredOutput: 'strict_schema',
+    promptCaching: 'automatic',
+    contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
     cliEnabled: false,
     visionEnabled: false,
   },
-  gpt: {
-    family: 'gpt',
+  openai: {
+    family: 'openai',
     displayName: 'GPT',
     strengths: ['通用工程推理', '代码与产品协作', '指令遵循'],
     adaptationInstruction:
-      'Use the requested engineering altitude, keep proposed edits distinct from completed edits, and report verification evidence explicitly. Tools remain unavailable in this P6.0 request.',
+      'Use the requested engineering altitude, keep proposed edits distinct from completed edits, and report verification evidence explicitly. Prefer Responses-style state and compaction only when the verified endpoint supports them.',
+    researchVersion: '2026-08-13',
+    reasoning: 'supported',
+    reasoningContinuationRequired: 'unknown',
+    structuredOutput: 'strict_schema',
+    promptCaching: 'both',
+    contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
     cliEnabled: false,
     visionEnabled: false,
   },
-  claude: {
-    family: 'claude',
+  anthropic: {
+    family: 'anthropic',
     displayName: 'Claude',
     strengths: ['代码审查', '长文档理解', '边界分析'],
     adaptationInstruction:
-      'Keep a clear distinction between observations, risks and actions. Preserve security constraints verbatim and avoid broad rewrites when a bounded change is sufficient.',
+      'Keep a clear distinction between observations, risks and actions. Preserve security constraints verbatim, avoid broad rewrites, and account for thinking budget inside the output budget only when the verified endpoint supports it.',
+    researchVersion: '2026-08-13',
+    reasoning: 'supported',
+    reasoningContinuationRequired: true,
+    structuredOutput: 'strict_schema',
+    promptCaching: 'explicit',
+    contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
@@ -143,6 +197,12 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     strengths: ['通用文本与代码任务'],
     adaptationInstruction:
       'Follow the supplied context and security boundaries, distinguish evidence from proposals, and do not claim tool or filesystem access.',
+    researchVersion: '2026-08-13',
+    reasoning: 'unknown',
+    reasoningContinuationRequired: 'unknown',
+    structuredOutput: 'unknown',
+    promptCaching: 'unknown',
+    contextLimit: 'unknown',
     nativeReasoningControl: false,
     toolsEnabled: false,
     mcpEnabled: false,
@@ -193,14 +253,69 @@ export const P6_GEAR_PROFILES: Record<P6ReasoningGear, P6GearProfile> = {
   },
 }
 
+function normalizeModelLocator(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[_.:/\\\s]+/gu, '-')
+}
+
+function familyMatches(value: string): readonly P6ProviderFamily[] {
+  const matches: P6ProviderFamily[] = []
+  if (/(?:^|-)deepseek(?:-|$)/u.test(value)) matches.push('deepseek')
+  if (/(?:^|-)(?:zhipu|bigmodel|chatglm|glm)(?:-|$)/u.test(value)) matches.push('glm')
+  if (/(?:^|-)(?:moonshot|kimi)(?:-|$)/u.test(value)) matches.push('kimi')
+  if (/(?:^|-)(?:openai|gpt|o1|o3|o4)(?:-|$)/u.test(value)) matches.push('openai')
+  if (/(?:^|-)(?:anthropic|claude)(?:-|$)/u.test(value)) matches.push('anthropic')
+  return matches
+}
+
+function resolveCandidate(
+  raw: string | null | undefined,
+  source: P6FamilyResolutionSource,
+  confidence: P6ModelFamilyResolution['confidence'],
+): P6ModelFamilyResolution | null {
+  const matches = [...new Set(familyMatches(normalizeModelLocator(raw)))]
+  if (matches.length === 0) return null
+  if (matches.length > 1) {
+    return {
+      family: 'generic',
+      source,
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: matches,
+    }
+  }
+  return { family: matches[0]!, source, confidence, matchedTokens: matches, conflicts: [] }
+}
+
+export function resolveP6ModelFamily(identity: P6ModelIdentity): P6ModelFamilyResolution {
+  const ordered = [
+    resolveCandidate(identity.modelId, 'model_name', 'strong'),
+    resolveCandidate(identity.observedModelId, 'observed_model', 'exact'),
+    identity.familyOverride
+      ? {
+          family: identity.familyOverride,
+          source: 'explicit_override' as const,
+          confidence: 'strong' as const,
+          matchedTokens: [identity.familyOverride],
+          conflicts: [],
+        }
+      : null,
+    resolveCandidate(identity.baseUrl ?? identity.providerId, 'url_hint', 'weak'),
+  ]
+  for (const result of ordered) if (result) return result
+  return {
+    family: 'generic',
+    source: 'fallback',
+    confidence: 'unknown',
+    matchedTokens: [],
+    conflicts: [],
+  }
+}
+
 export function resolveP6ProviderFamily(identity: P6ModelIdentity): P6ProviderFamily {
-  const value = `${identity.providerId ?? ''} ${identity.modelId ?? ''}`.toLowerCase()
-  if (/deepseek/.test(value)) return 'deepseek'
-  if (/(?:zhipu|bigmodel|chatglm|\bglm[-_.0-9])/.test(value)) return 'glm'
-  if (/(?:moonshot|\bkimi\b)/.test(value)) return 'kimi'
-  if (/(?:anthropic|claude)/.test(value)) return 'claude'
-  if (/(?:openai|\bgpt[-_.0-9]|\bo[134](?:[-_.]|$))/.test(value)) return 'gpt'
-  return 'generic'
+  return resolveP6ModelFamily(identity).family
 }
 
 export function getP6ProviderProfile(identity: P6ModelIdentity): P6ProviderProfile {
@@ -213,7 +328,8 @@ export function buildP6AdaptationInstruction(
 ): string {
   const provider = getP6ProviderProfile(identity)
   const selected = P6_GEAR_PROFILES[gear]
-  return `[P6.0 model adaptation]\nProvider family: ${provider.displayName}\nGear: ${selected.displayName}\n${provider.adaptationInstruction}\n${selected.reasoningInstruction}\nNative provider reasoning controls are not exposed by the current Agent Alpha API. Tools, MCP, CLI and autonomous delegation remain disabled.`
+  const resolution = resolveP6ModelFamily(identity)
+  return `[P6.0-D2 model adaptation]\nProvider family: ${provider.displayName}\nResolution: ${resolution.source}/${resolution.confidence}\nResearch profile: ${provider.researchVersion}\nGear: ${selected.displayName}\n${provider.adaptationInstruction}\n${selected.reasoningInstruction}\nFamily recognition selects conservative prompt guidance only. It does not prove native reasoning, vision, tool, cache or schema support. Native provider controls remain unavailable until an exact model connection proves compatibility. Tools, MCP, CLI and autonomous delegation remain disabled.`
 }
 
 const PRIORITY_ORDER: Record<P6ContextCandidate['priority'], number> = {

@@ -13,6 +13,7 @@ const P6_WORKBENCH_MAX_ID_CHARACTERS = 200
 const P6_WORKBENCH_MAX_WORKSPACE_ID_CHARACTERS = 200
 const P6_WORKBENCH_MAX_DATE_CHARACTERS = 64
 const PERSISTENCE_REDACTED_MARKER = '[OMNIBASE_LOCAL_REDACTED]'
+const PERSISTENCE_TRUNCATED_MARKER = '\n[OMNIBASE_LOCAL_TRUNCATED]'
 
 export type EmployeeId =
   | 'parent'
@@ -44,6 +45,7 @@ export type WorkbenchTimelineKind =
   | 'invocation_interrupted_unknown'
   | 'employee_returned_dormant'
   | 'message_added'
+  | 'history_compacted'
 
 export interface EmployeeDefinition {
   readonly id: EmployeeId
@@ -138,6 +140,7 @@ export type EmployeeRoleMessagePreparation =
 export interface WorkbenchPersistenceText {
   readonly content: string
   readonly redacted: boolean
+  readonly truncated: boolean
   readonly categories: readonly WorkbenchSensitiveCategory[]
 }
 
@@ -178,7 +181,7 @@ export const PERSONAL_EMPLOYEES: readonly EmployeeDefinition[] = [
     id: 'ux',
     displayName: 'UI/UX 设计师',
     shortName: 'UX',
-    aliases: ['UIUX设计师', 'UI设计师', 'UX设计师', 'UX', 'UI'],
+    aliases: ['UI/UX', 'UIUX设计师', 'UI设计师', 'UX设计师', 'UX', 'UI'],
     title: 'UI/UX 设计师',
     responsibility: '信息架构、交互、视觉系统、可访问性与体验验收。',
     boundary: '不改后端授权或数据模型，不把视觉原型描述成已实现功能。',
@@ -257,8 +260,14 @@ export const PERSONAL_EMPLOYEES: readonly EmployeeDefinition[] = [
 ] as const
 
 const EMPLOYEE_BY_ALIAS = new Map<string, EmployeeDefinition>()
+function normalizeEmployeeAlias(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase()
+}
+
 for (const employee of PERSONAL_EMPLOYEES) {
-  for (const alias of employee.aliases) EMPLOYEE_BY_ALIAS.set(alias.toLocaleLowerCase(), employee)
+  for (const alias of [employee.displayName, employee.shortName, ...employee.aliases]) {
+    EMPLOYEE_BY_ALIAS.set(normalizeEmployeeAlias(alias), employee)
+  }
 }
 
 const MENTION_PATTERN = /@([A-Za-z0-9_\-/\u4e00-\u9fff]+)/gu
@@ -327,6 +336,7 @@ const TIMELINE_KINDS = new Set<WorkbenchTimelineKind>([
   'invocation_interrupted_unknown',
   'employee_returned_dormant',
   'message_added',
+  'history_compacted',
 ])
 
 function newId(prefix: string): string {
@@ -392,24 +402,15 @@ export function parseEmployeeInvocation(input: string): EmployeeInvocation {
     }
   }
 
-  if (mentions.length === 0) {
-    return {
-      ok: true,
-      employee: PERSONAL_EMPLOYEES[0]!,
-      message: trimmed,
-      explicitMention: false,
-    }
-  }
-
   const rawAlias = mentions[0]?.[1] ?? ''
-  if (BROADCAST_ALIASES.has(rawAlias.toLocaleLowerCase())) {
+  if (BROADCAST_ALIASES.has(normalizeEmployeeAlias(rawAlias))) {
     return {
       ok: false,
       code: 'broadcast_employee',
       message: '不支持 @所有人 或广播；一次只能唤醒一名专业员工。',
     }
   }
-  const employee = EMPLOYEE_BY_ALIAS.get(rawAlias.toLocaleLowerCase())
+  const employee = EMPLOYEE_BY_ALIAS.get(normalizeEmployeeAlias(rawAlias))
   if (!employee) {
     return {
       ok: false,
@@ -450,14 +451,68 @@ export function sanitizeWorkbenchPersistenceText(input: string): WorkbenchPersis
   const categories: WorkbenchSensitiveCategory[] = SENSITIVE_PATTERNS.filter(({ pattern }) =>
     pattern.test(input),
   ).map(({ category }) => category)
-  if (input.length > P6_WORKBENCH_MAX_MESSAGE_CHARACTERS) categories.push('oversized_text')
+  const oversized = input.length > P6_WORKBENCH_MAX_MESSAGE_CHARACTERS
+  if (oversized) categories.push('oversized_text')
   const uniqueCategories = [...new Set(categories)]
-  if (uniqueCategories.length === 0) return { content: input, redacted: false, categories: [] }
-  return {
-    content: PERSISTENCE_REDACTED_MARKER,
-    redacted: true,
-    categories: uniqueCategories,
+  const sensitiveCategories = uniqueCategories.filter((category) => category !== 'oversized_text')
+  if (sensitiveCategories.length > 0) {
+    return {
+      content: PERSISTENCE_REDACTED_MARKER,
+      redacted: true,
+      truncated: false,
+      categories: uniqueCategories,
+    }
   }
+  if (oversized) {
+    return {
+      content: `${input.slice(
+        0,
+        P6_WORKBENCH_MAX_MESSAGE_CHARACTERS - PERSISTENCE_TRUNCATED_MARKER.length,
+      )}${PERSISTENCE_TRUNCATED_MARKER}`,
+      redacted: false,
+      truncated: true,
+      categories: uniqueCategories,
+    }
+  }
+  return {
+    content: input,
+    redacted: false,
+    truncated: false,
+    categories: [],
+  }
+}
+
+function compactSessionToByteBudget(session: WorkbenchSession, now: string): WorkbenchSession {
+  let messages = [...session.messages]
+  let timeline = [...session.timeline]
+  let removedMessages = 0
+  let candidate: WorkbenchSession = { ...session, messages, timeline }
+
+  while (jsonBytes(candidate) > P6_WORKBENCH_MAX_SESSION_BYTES && messages.length > 1) {
+    messages = messages.slice(1)
+    removedMessages += 1
+    candidate = { ...candidate, messages }
+  }
+  if (removedMessages > 0) {
+    timeline = [
+      ...timeline,
+      event(
+        'history_compacted',
+        `为保持本地会话字节上限，已移除 ${removedMessages} 条最旧消息`,
+        now,
+      ),
+    ].slice(-P6_WORKBENCH_MAX_TIMELINE_EVENTS_PER_SESSION)
+    candidate = { ...candidate, timeline }
+  }
+  while (jsonBytes(candidate) > P6_WORKBENCH_MAX_SESSION_BYTES && timeline.length > 1) {
+    timeline = timeline.slice(1)
+    candidate = { ...candidate, timeline }
+  }
+  while (jsonBytes(candidate) > P6_WORKBENCH_MAX_SESSION_BYTES && messages.length > 1) {
+    messages = messages.slice(1)
+    candidate = { ...candidate, messages }
+  }
+  return candidate
 }
 
 export function createWorkbenchSession(
@@ -598,9 +653,12 @@ export function setSessionArchived(
   }))
   if (!archived || next.activeSessionId !== sessionId) return next
   const replacement = next.sessions.find((session) => session.archivedAt === null)
-  return replacement
-    ? { ...next, activeSessionId: replacement.id }
-    : addSession(next, '新会话', now)
+  if (replacement) return { ...next, activeSessionId: replacement.id }
+  const added = tryAddSession(next, '新会话', now)
+  // Archiving the last visible session must be atomic from the local product's
+  // perspective. If every capacity slot is protected, keep the original
+  // active session visible instead of leaving activeSessionId on an archive.
+  return added.ok ? added.state : state
 }
 
 export function appendWorkbenchMessage(
@@ -624,21 +682,24 @@ export function appendWorkbenchMessage(
       message.role === 'user' && employee
         ? [event('employee_invoked', `${employee.displayName} 已被本次消息唤醒`, now, employee.id)]
         : []
-    return {
-      ...session,
-      updatedAt: now,
-      messages: [...session.messages, nextMessage].slice(-P6_WORKBENCH_MAX_MESSAGES_PER_SESSION),
-      timeline: appendTimeline(
-        session.timeline,
-        ...invokedEvent,
-        event(
-          'message_added',
-          message.role === 'user' ? '用户消息已记录' : 'Agent 消息已记录',
-          now,
-          message.employeeId ?? undefined,
+    return compactSessionToByteBudget(
+      {
+        ...session,
+        updatedAt: now,
+        messages: [...session.messages, nextMessage].slice(-P6_WORKBENCH_MAX_MESSAGES_PER_SESSION),
+        timeline: appendTimeline(
+          session.timeline,
+          ...invokedEvent,
+          event(
+            'message_added',
+            message.role === 'user' ? '用户消息已记录' : 'Agent 消息已记录',
+            now,
+            message.employeeId ?? undefined,
+          ),
         ),
-      ),
-    }
+      },
+      now,
+    )
   })
 }
 

@@ -517,19 +517,20 @@ def _migration_facts(repo_root: Path) -> dict[str, object]:
     )
     numeric_revisions = {int(revision) for revision in revisions if revision.isdigit()}
     if (
-        heads != ["0015"]
-        or not {"0013", "0014", "0015"}.issubset(revisions)
-        or any(revision >= 16 for revision in numeric_revisions)
+        heads != ["0016"]
+        or not {"0013", "0014", "0015", "0016"}.issubset(revisions)
+        or any(revision >= 17 for revision in numeric_revisions)
     ):
         raise TargetConfigurationError(
-            "migration head must be 0015 and migration 0016 or higher must be absent"
+            "migration head must be 0016 and migration 0017 or higher must be absent"
         )
     return {
-        "head": "0015",
+        "head": "0016",
         "migration_0013_created": True,
         "migration_0014_created": True,
         "migration_0015_created": True,
-        "migration_0016_or_higher_absent": True,
+        "migration_0016_created": True,
+        "migration_0017_or_higher_absent": True,
     }
 
 

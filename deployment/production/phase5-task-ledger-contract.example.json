@@ -18,14 +18,14 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "e77ec2c348673e34a55bad9cf9e902540f4c1f1b28a1c9988605a98999a99583"
+      "sha256": "0ee31ac7db848a95e165119cbb9b1dea59b9e15d09483b23988591536f50bc52"
     }
   },
   "source": {
@@ -133,9 +133,7 @@
         "workspace_agent_binding_id",
         "task_id"
       ],
-      "core_generated_fields": [
-        "request_hash"
-      ],
+      "core_generated_fields": ["request_hash"],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -215,10 +213,7 @@
         "run_fencing_token",
         "node_fencing_token"
       ],
-      "not_yet_generated_fields": [
-        "task_lease_id",
-        "task_fencing_token"
-      ],
+      "not_yet_generated_fields": ["task_lease_id", "task_fencing_token"],
       "immutable_fields": [
         "task_id",
         "task_generation",
@@ -282,10 +277,7 @@
         "task_fencing_token",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [
         "task_id",
@@ -338,10 +330,7 @@
         "task_fencing_token",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [
         "task_id",
@@ -385,10 +374,7 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -441,10 +427,7 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -497,10 +480,7 @@
         "task_generation",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [
         "tenant_id",
         "workspace_id",
@@ -555,10 +535,7 @@
         "attempt_id",
         "workspace_generation"
       ],
-      "core_generated_fields": [
-        "operation_id",
-        "request_hash"
-      ],
+      "core_generated_fields": ["operation_id", "request_hash"],
       "browser_submittable_fields": [],
       "workload_submittable_fields": [],
       "forbidden_fields": [
@@ -618,7 +595,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -634,7 +612,7 @@
     {
       "name": "task_ledger_tests",
       "path": "backend/tests/test_p5_2a_task_ledger_contract.py",
-      "sha256": "b70c888d07ead6490d4a4ed86ed81ea1a3e15867d79c0d9799f1083686d44d1a"
+      "sha256": "2b6ba4e18798d21c239a32c6ae19bcb3f36e029bd3028d6a606aeb6cebf6e256"
     },
     {
       "name": "threat_model",
@@ -644,12 +622,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "456776cc61c3d39507a6458eba6068b42659e0a2764844a99916aabcc6b48e00"
+      "sha256": "e1b1057330c4e4eb91ab0ade22271e3ecd0d208b367606fc1550f0889838d3e3"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "67b2998e0c87a5a3a629d9d7cf08b7280b61841708b259a21e72349b6d0ea5fa"
+      "sha256": "04e4d9a2e6fcb7e6a82342c613f728642d1a69cb2a32bdac2aa2cef0f503ae17"
     }
   ],
   "openapi_snapshot": {
@@ -724,9 +702,7 @@
         "plan_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "plan_version": "1",
         "plan_digest": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
-        "dependencies": [
-          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-        ],
+        "dependencies": ["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
         "state": "ready",
         "created_at": "2026-08-03T00:03:00Z"
       }

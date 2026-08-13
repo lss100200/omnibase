@@ -96,7 +96,7 @@ def _mapping() -> dict[str, object]:
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0015",
+        "migration_head": "0016",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -116,9 +116,10 @@ def _config() -> PersonalRuntimeCanaryConfig:
 
 
 def _write_config(path: Path, mapping: dict[str, object] | None = None) -> None:
-    path.write_text(
-        json.dumps(mapping or _mapping(), separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
+    path.write_bytes(
+        (json.dumps(mapping or _mapping(), separators=(",", ":"), sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
     )
 
 
@@ -242,7 +243,7 @@ def test_posture_assembles_only_with_active_exact_scope(
     fake_session = SimpleNamespace(rollback=lambda: None, close=lambda: None)
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._migration_head",
-        lambda _: "0015",
+        lambda _: "0016",
     )
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
@@ -314,9 +315,8 @@ def test_posture_rejects_owner_readiness_digest_drift(tmp_path: Path) -> None:
     owner_readiness = cast(dict[str, object], mapping["owner_readiness"])
     owner_readiness["sha256"] = "0" * 64
     config_path = (tmp_path / "canary.json").resolve()
-    config_path.write_text(
-        json.dumps(mapping, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
+    config_path.write_bytes(
+        (json.dumps(mapping, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
     )
 
     posture = personal_alpha_posture(
@@ -356,7 +356,7 @@ def test_posture_turns_database_failure_into_stable_unavailable(
         confirmed_plan_sha256=config.activation_plan().canonical_digest(),
         now=NOW,
     )
-    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0015")
+    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0016")
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(

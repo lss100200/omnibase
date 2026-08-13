@@ -9,7 +9,7 @@
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0015",
+    "Alembic migrations 0001 through 0016",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -978,6 +978,31 @@
       "test_paths": [
         "frontend/lib/p6-model-profiles.test.ts",
         "frontend/lib/agent-alpha-stream.test.ts"
+      ]
+    },
+    {
+      "id": "INV-068",
+      "title": "P6 per-role model settings stay user-owned, exact-tested, version-fenced and single-Runtime",
+      "document": "docs/maintainers/security-invariants.md#inv-068-p60d2-per-role-model-selection-and-migration-boundary",
+      "source_paths": [
+        "backend/src/omnibase/user_settings/model_settings.py",
+        "backend/src/omnibase/user_settings/gateway.py",
+        "backend/src/omnibase/user_settings/router.py",
+        "backend/src/omnibase/user_settings/schemas.py",
+        "backend/src/omnibase/db/tenant.py",
+        "backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/p6-model-profiles.ts",
+        "docs/architecture/p6-0-d2-model-adaptation.md",
+        "docs/evidence/p6-0/d2-model-adaptation-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_0_d2_model_settings.py",
+        "backend/tests/integration/test_p6_0_d2_model_settings_foundation.py",
+        "backend/tests/test_rate_limit.py",
+        "backend/tests/test_agent_alpha_engineering.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "frontend/lib/p6-model-profiles.test.ts"
       ]
     }
   ],
@@ -2313,7 +2338,7 @@
       "public_interfaces": [
         "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
         "create_task may receive a validated caller-intent hash which is nested into the canonical task payload so exact replay binds caller intent without discarding immutable task fields",
-        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0015 after the separately authorized provider, Memory, instruction-Skill and empty-Capsule bootstrap migrations, while production activation remains blocked",
+        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0016 after the separately authorized provider, Memory, instruction-Skill, empty-Capsule bootstrap and per-role model-preference migrations, while production activation remains blocked",
         "No Browser runtime DTO exposes physical locators, credentials, provider handles or database identities"
       ],
       "depends_on": [
@@ -2631,7 +2656,7 @@
       ],
       "recovery": [
         "Keep P5.4B unavailable unless the explicit engineering flag, current reviewed migration head, all-false Phase 5 gates and every injected dependency pass strict checks.",
-        "Keep production Runtime activation false and unauthorized migration 0016+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "Keep production Runtime activation false and unauthorized migration 0017+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
         "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
         "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
       ]
@@ -2857,7 +2882,7 @@
       ],
       "recovery": [
         "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
-        "Reject migration head drift beyond reviewed 0015, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "Reject migration head drift beyond reviewed 0016, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
         "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A owns no database or runtime; the separately reviewed P5.6P module owns migration 0014 and personal instruction projection."
       ]
     },
@@ -3011,7 +3036,7 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py"
       ],
       "recovery": [
-        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0015, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
+        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0016, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
       ]
     },
@@ -3056,7 +3081,7 @@
       ],
       "recovery": [
         "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
-        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0015, migration 0016+ absent and all three Phase 5 Feature Gates false.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0016, migration 0017+ absent and all three Phase 5 Feature Gates false.",
         "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     },
@@ -3149,7 +3174,7 @@
       "recovery": [
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
-        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0016+, bypass reviewed migration 0013 Memory, migration 0014 Skill or migration 0015 empty-Capsule lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0017+, bypass reviewed migration 0013 Memory, migration 0014 Skill, migration 0015 empty-Capsule lifecycle or migration 0016 personal model-preference ownership, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     },
     {
@@ -3177,7 +3202,7 @@
         "Loopback-only full-stack Compose with internal PostgreSQL/Redis/MinIO/backend and one frontend ingress",
         "Non-root reload-free backend production image and standalone frontend production image",
         "Offline doctor, canonical release-manifest and verify-release CLI",
-        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including raw migration 0013/0014/0015 binding and the closed 0013-to-0014 Skill plus 0014-to-0015 Memory-bootstrap compatibility entries"
+        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including raw migration 0013/0014/0015/0016 binding and the closed 0013-to-0014 Skill, 0014-to-0015 Memory-bootstrap and 0015-to-0016 personal-model-preference compatibility entries"
       ],
       "depends_on": [
         "personal-runtime-canary",
@@ -3205,7 +3230,7 @@
       "recovery": [
         "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
         "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
-        "Backup and restore evidence for the current head must bind migration 0013/0014/0015 raw bytes plus the exact Memory and Skill inventories; arbitrary 0016+ forward restore remains rejected.",
+        "Backup and restore evidence for the current head must bind migration 0013/0014/0015/0016 raw bytes plus the exact Memory, Skill and personal-model-preference inventories; arbitrary 0017+ forward restore remains rejected.",
         "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
       ]
     },
@@ -3547,12 +3572,21 @@
         "frontend/lib/p6-model-profiles.test.ts",
         "frontend/lib/p6-workbench.ts",
         "frontend/lib/p6-workbench.test.ts",
+        "backend/src/omnibase/user_settings/model_settings.py",
+        "backend/src/omnibase/user_settings/gateway.py",
+        "backend/src/omnibase/user_settings/router.py",
+        "backend/src/omnibase/user_settings/schemas.py",
+        "backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py",
+        "backend/tests/test_p6_0_d2_model_settings.py",
+        "backend/tests/integration/test_p6_0_d2_model_settings_foundation.py",
         "frontend/lib/agent-alpha-stream.ts",
         "frontend/lib/invocation-state.ts",
         "frontend/lib/personal-runtime-gate.ts",
         "docs/architecture/p6-0-personal-engineering-workbench.md",
+        "docs/architecture/p6-0-d2-model-adaptation.md",
         "docs/evidence/p6-0/personal-workbench-a-r0-decision.md",
-        "docs/evidence/p6-0/personal-workbench-r0-decision.md"
+        "docs/evidence/p6-0/personal-workbench-r0-decision.md",
+        "docs/evidence/p6-0/d2-model-adaptation-decision.md"
       ],
       "entrypoints": [
         "frontend/app/(dashboard)/dashboard/page.tsx:DashboardPage",
@@ -3561,6 +3595,9 @@
         "frontend/lib/p6-files.ts:compileP6FileContext",
         "frontend/lib/p6-changesets.ts:preflightTaskChangeSetRollback",
         "frontend/lib/p6-model-profiles.ts:buildP6AdaptationInstruction",
+        "backend/src/omnibase/user_settings/router.py:list_agent_model_settings",
+        "backend/src/omnibase/user_settings/router.py:put_agent_model_setting",
+        "backend/src/omnibase/user_settings/router.py:test_agent_model_setting",
         "frontend/lib/p6-workbench.ts:parseEmployeeInvocation",
         "frontend/lib/p6-workbench.ts:parseWorkbenchState"
       ],
@@ -3571,6 +3608,7 @@
         "Owner-authorized lazy file tree with OPEN/CONTEXT/PINNED and internal text/image/PDF preview",
         "Task/invocation-bound Owner-reviewed text ChangeSets with Before/After audit and three-way rollback",
         "Observed five-provider profiles plus economy/standard/deep/audit top-k and context gears",
+        "Ten role model-setting projections with default credential inheritance, per-role saved-credential/model overrides and exact-model tests",
         "Existing Agent Alpha Workspace/profile/SSE/cancel/usage interfaces without Planner or Multi-Agent activation"
       ],
       "depends_on": [
@@ -3589,13 +3627,15 @@
         "INV-063",
         "INV-065",
         "INV-066",
-        "INV-067"
+        "INV-067",
+        "INV-068"
       ],
       "verification": [
         "cd frontend && pnpm test",
         "cd frontend && pnpm typecheck",
         "cd frontend && pnpm lint",
         "cd frontend && NODE_ENV=production pnpm build",
+        "TEST_COMPOSE_PROJECT=omnibase_test_p60d2_model_settings TEST_DATABASE_NAME=omnibase_test_p60d2_model_settings docker compose --env-file .env.example -p omnibase_test_p60d2_model_settings -f docker-compose.destructive-tests.yml up -d --wait postgres-test, then run backend/tests/integration/test_p6_0_d2_model_settings_foundation.py with OMNIBASE_INTEGRATION_TESTS=1 and always down -v --remove-orphans",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
       ],
@@ -3605,7 +3645,7 @@
         "Forget volatile file handles on scope change and require a new Owner gesture after permission loss.",
         "Treat interrupted local writes as recovery_required and restore only under exact digest comparison.",
         "Fall back to generic adaptation and rate_not_configured; never infer provider identity or pricing before server evidence.",
-        "Keep migration 0016 absent until a separately reviewed tenant/user/workspace-bound conversation service is authorized."
+        "Migration 0016 stores only user-owned role model preferences; its exact 0016-to-0015 downgrade is tenant-first and atomic, and it must not be reused as conversation persistence or expanded into Planner/Multi-Agent authority."
       ]
     }
   ]

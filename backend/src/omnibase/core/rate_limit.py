@@ -220,6 +220,28 @@ def enforce_provider_test_rate_limit(
     )
 
 
+def enforce_agent_model_test_rate_limit(
+    workspace_id: str,
+    agent_version_id: str,
+    employee_role_id: str,
+    ctx: Annotated[TenantContext, Depends(get_current_tenant)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Bound role-model probes to the authenticated logical selection scope."""
+    _enforce(
+        policy=RateLimitPolicy(
+            name="agent-model-test",
+            limit=settings.provider_test_rate_limit_per_window,
+            window_seconds=settings.rate_limit_window_seconds,
+        ),
+        identity=(
+            f"{ctx.tenant_id}:{ctx.user_id}:{workspace_id}:"
+            f"{agent_version_id}:{employee_role_id}"
+        ),
+        settings=settings,
+    )
+
+
 def reset_rate_limiter_cache() -> None:
     """Clear cached Redis clients (tests and settings reloads)."""
     _get_limiter.cache_clear()
@@ -229,6 +251,7 @@ __all__ = [
     "RateLimitDecision",
     "RateLimitPolicy",
     "RedisRateLimiter",
+    "enforce_agent_model_test_rate_limit",
     "enforce_auth_rate_limit",
     "enforce_provider_test_rate_limit",
     "enforce_rag_rate_limit",

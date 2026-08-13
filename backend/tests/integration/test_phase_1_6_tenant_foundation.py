@@ -227,8 +227,9 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
             "rag_document_index_state",
             "user_profiles",
             "model_provider_credentials",
+            "workspace_agent_model_overrides",
         }.issubset(tables)
-    assert tenant_revision == "0015"
+    assert tenant_revision == "0016"
 
 
 def test_new_tenant_is_at_current_head_inside_creation_transaction(
@@ -255,8 +256,13 @@ def test_new_tenant_is_at_current_head_inside_creation_transaction(
             ).scalars()
         )
 
-    assert revision == "0015"
-    assert {"memory_candidates", "memories", "context_capsules"}.issubset(tables)
+    assert revision == "0016"
+    assert {
+        "memory_candidates",
+        "memories",
+        "context_capsules",
+        "workspace_agent_model_overrides",
+    }.issubset(tables)
 
 
 def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
@@ -310,17 +316,18 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
         or "0013 populated downgrade is forbidden" in output
         or "0014 populated downgrade is forbidden" in output
         or "0015 downgrade refused" in output
+        or "0016 downgrade refused" in output
     )
 
     with db_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
-            == "0015"
+            == "0016"
         )
         for schema in schemas:
             assert (
                 conn.execute(
                     text(f'SELECT version_num FROM "{schema}".alembic_version')
                 ).scalar_one()
-                == "0015"
+                == "0016"
             )

@@ -446,7 +446,7 @@ def test_0010_migration_upgrades_to_head(db_engine) -> None:
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
         )
-    assert current == "0015"
+    assert current == "0016"
 
 
 # ---------------------------------------------------------------------------
@@ -1458,5 +1458,5 @@ def test_0010_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
         )
-    assert revision == "0015"
+    assert revision == "0016"
     assert tenant_id

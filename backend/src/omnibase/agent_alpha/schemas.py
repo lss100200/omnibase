@@ -16,6 +16,10 @@ class AlphaInvokeRequest(AlphaApiModel):
     message: str = Field(min_length=1, max_length=32_000)
     top_k: int = Field(default=5, ge=1, le=12)
     retry_of: str | None = Field(default=None, pattern=_UUID)
+    employee_role_id: str = Field(
+        default="parent",
+        pattern=r"^(parent|product|ux|frontend|backend|data|security|qa|operations|docs)$",
+    )
 
 
 class AlphaCancelResponse(AlphaApiModel):
@@ -57,7 +61,7 @@ class AlphaStatusResponse(AlphaApiModel):
     formal_builder_integration: str = "proven_engineering_only"
     engineering_composition_ready: bool = True
     activation_allowed: bool = False
-    expected_migration_head: str = "0015"
+    expected_migration_head: str = "0016"
     # P5 personal Runtime canary disclosure. These fields describe only the
     # exact current request scope; they contain no credential, locator,
     # approval, lease, fencing or workload-identity material.

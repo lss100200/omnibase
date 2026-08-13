@@ -243,6 +243,7 @@ class AgentAlphaService:
         top_k: int,
         idempotency_key: str,
         retry_of: str | None,
+        employee_role_id: str = "parent",
     ) -> Iterator[AlphaStreamEvent]:
         self._verify_runtime_guard()
         if len(message) > self._limits.max_message_characters:
@@ -255,6 +256,9 @@ class AgentAlphaService:
                     tenant_id=tenant_id,
                     tenant_schema=tenant_schema,
                     actor_user_id=actor_user_id,
+                    workspace_id=workspace_id,
+                    agent_version_id=agent_version_id,
+                    employee_role_id=employee_role_id,
                 )
                 if self._gateway_resolver is not None
                 else AlphaGatewaySelection(
@@ -265,6 +269,7 @@ class AgentAlphaService:
                             "credential_source": "operator_default",
                             "provider_id": self._gateway.provider_id,
                             "model_id": self._gateway.model_id,
+                            "employee_role_id": employee_role_id,
                         }
                     ),
                 )
@@ -298,6 +303,7 @@ class AgentAlphaService:
             retry_of=retry_of,
             preferences=preferences,
             selection=selection,
+            employee_role_id=employee_role_id,
         )
         cancellation = Event()
         with _CANCELLATION_LOCK:
@@ -316,6 +322,7 @@ class AgentAlphaService:
             message=message,
             cancellation=cancellation,
             selection=selection,
+            employee_role_id=employee_role_id,
             preferences=preferences,
         )
 
@@ -330,6 +337,7 @@ class AgentAlphaService:
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
+        employee_role_id: str,
         preferences: AlphaUserPreferences,
     ) -> Iterator[AlphaStreamEvent]:
         """SSE event stream for one durable invocation (or its exact replay)."""
@@ -345,6 +353,7 @@ class AgentAlphaService:
                 "provider_id": selection.gateway.provider_id,
                 "requested_model_id": selection.gateway.model_id,
                 "credential_source": selection.credential_source,
+                "employee_role_id": employee_role_id,
                 "tools_enabled": False,
             }
             if memory_capsule is not None:
@@ -573,6 +582,7 @@ class AgentAlphaService:
         retry_of: str | None,
         preferences: AlphaUserPreferences,
         selection: AlphaGatewaySelection,
+        employee_role_id: str,
     ) -> tuple[
         AlphaAgentProfile,
         tuple[AlphaContextChunk, ...],
@@ -594,6 +604,12 @@ class AgentAlphaService:
                 actor_user_id=actor_user_id,
                 agent_version_id=agent_version_id,
             )
+            if selection.workspace_agent_binding_id is not None and (
+                selection.workspace_agent_binding_id != profile.workspace_agent_binding_id
+                or selection.workspace_generation != profile.workspace_generation
+                or selection.agent_version_digest != profile.agent_version_digest
+            ):
+                raise AgentAlphaError("agent_alpha_model_scope_drifted")
             if profile.allowed_tool_ids:
                 raise AgentAlphaError("agent_alpha_tools_forbidden")
             try:
@@ -627,6 +643,8 @@ class AgentAlphaService:
                 "workspace_id": workspace_id,
                 "agent_version_id": profile.agent_version_id,
                 "agent_version_digest": profile.agent_version_digest,
+                "workspace_generation": profile.workspace_generation,
+                "workspace_agent_binding_id": profile.workspace_agent_binding_id,
                 "message": message,
                 "top_k": top_k,
                 "retry_of": retry_of,
@@ -638,6 +656,11 @@ class AgentAlphaService:
                 "provider_id": selection.gateway.provider_id,
                 "requested_model_id": selection.gateway.model_id,
                 "provider_configuration_digest": selection.configuration_digest,
+                "employee_role_id": employee_role_id,
+                "model_override_id": selection.override_id,
+                "model_override_version": selection.override_version,
+                "model_family": selection.model_family,
+                "model_family_source": selection.family_source,
                 "memory_policy_digest": (
                     self._memory_compiler.policy_digest
                     if self._memory_compiler is not None

@@ -17,7 +17,7 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "source": {
@@ -88,7 +88,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -104,17 +105,17 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "456776cc61c3d39507a6458eba6068b42659e0a2764844a99916aabcc6b48e00"
+      "sha256": "e1b1057330c4e4eb91ab0ade22271e3ecd0d208b367606fc1550f0889838d3e3"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "67b2998e0c87a5a3a629d9d7cf08b7280b61841708b259a21e72349b6d0ea5fa"
+      "sha256": "04e4d9a2e6fcb7e6a82342c613f728642d1a69cb2a32bdac2aa2cef0f503ae17"
     },
     {
       "name": "registry_tests",
       "path": "backend/tests/test_p5_1_registry_contract.py",
-      "sha256": "50ab3cc80d51ad483122ede3282565c1f2f518a49dcd1d28c7a6274b2be41e1c"
+      "sha256": "f2a8277f87fabd803358cb0422cf29983686aee116208a3331fc29fc1ca95ee6"
     }
   ],
   "openapi_snapshot": {
@@ -131,9 +132,7 @@
         "display_name": "Repository Inspector",
         "description": "Read-only repository inspection agent",
         "risk_level": "low",
-        "allowed_installation_scopes": [
-          "workspace"
-        ],
+        "allowed_installation_scopes": ["workspace"],
         "definition_state": "active",
         "created_by": "00000000-0000-0000-0000-0000000000aa",
         "created_at": "2026-08-03T00:00:00Z",
@@ -151,10 +150,7 @@
         "model_policy_id": "22222222-2222-2222-2222-222222222222",
         "instructions_digest": "3333333333333333333333333333333333333333333333333333333333333333",
         "max_context_tokens": 200000,
-        "allowed_tool_ids": [
-          "rag_search",
-          "artifact_read"
-        ],
+        "allowed_tool_ids": ["rag_search", "artifact_read"],
         "input_schema": {
           "type": "object",
           "properties": {
@@ -163,9 +159,7 @@
               "minLength": 1
             }
           },
-          "required": [
-            "query"
-          ]
+          "required": ["query"]
         },
         "output_schema": {
           "type": "object",
@@ -200,9 +194,7 @@
         "agent_version_id": "11111111-1111-1111-1111-111111111111",
         "agent_version_digest": "4b5a26ba3980e80216db50d8d069a6c052ca472954c33247baa1b81ec69f91ca",
         "installation_state": "installed",
-        "resource_scopes": [
-          "workspace_private_read"
-        ],
+        "resource_scopes": ["workspace_private_read"],
         "default_budget_policy": {
           "max_tokens": 50000,
           "max_cost_units": 500,

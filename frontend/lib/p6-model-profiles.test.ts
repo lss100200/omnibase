@@ -7,6 +7,7 @@ import {
   compileP6Context,
   estimateP6Cost,
   getP6ProviderProfile,
+  resolveP6ModelFamily,
   resolveP6ProviderFamily,
 } from './p6-model-profiles'
 
@@ -17,9 +18,32 @@ test('five target provider families and a generic fallback resolve deterministic
   )
   assert.equal(resolveP6ProviderFamily({ providerId: 'zhipu', modelId: 'glm-4.5' }), 'glm')
   assert.equal(resolveP6ProviderFamily({ providerId: 'moonshot', modelId: 'kimi-k2' }), 'kimi')
-  assert.equal(resolveP6ProviderFamily({ providerId: 'openai', modelId: 'gpt-5' }), 'gpt')
-  assert.equal(resolveP6ProviderFamily({ providerId: 'anthropic', modelId: 'claude-4' }), 'claude')
+  assert.equal(resolveP6ProviderFamily({ providerId: 'openai', modelId: 'gpt-5' }), 'openai')
+  assert.equal(
+    resolveP6ProviderFamily({ providerId: 'anthropic', modelId: 'claude-4' }),
+    'anthropic',
+  )
   assert.equal(resolveP6ProviderFamily({ providerId: 'custom', modelId: 'local-model' }), 'generic')
+})
+
+test('model name wins over an unrelated relay URL and conflicts fail closed', () => {
+  assert.deepEqual(
+    resolveP6ModelFamily({
+      providerId: 'custom-relay',
+      baseUrl: 'https://random.example/openai/v1',
+      modelId: 'deepseek-v4-pro',
+    }),
+    {
+      family: 'deepseek',
+      source: 'model_name',
+      confidence: 'strong',
+      matchedTokens: ['deepseek'],
+      conflicts: [],
+    },
+  )
+  const conflict = resolveP6ModelFamily({ modelId: 'claude-gpt-bridge', providerId: null })
+  assert.equal(conflict.family, 'generic')
+  assert.deepEqual(conflict.conflicts, ['openai', 'anthropic'])
 })
 
 test('all profiles disclose that native tools and reasoning controls remain closed', () => {
@@ -50,7 +74,8 @@ test('adaptation text is honest about prompt guidance and unavailable native con
   )
   assert.match(value, /Claude/)
   assert.match(value, /审计挡/)
-  assert.match(value, /Native provider reasoning controls are not exposed/)
+  assert.match(value, /Native provider controls remain unavailable/)
+  assert.match(value, /does not prove native reasoning, vision, tool, cache or schema support/)
   assert.match(value, /Tools, MCP, CLI and autonomous delegation remain disabled/)
 })
 

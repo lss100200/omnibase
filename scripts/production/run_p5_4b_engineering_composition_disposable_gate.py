@@ -27,7 +27,7 @@ LEGACY_ROOT = (REPO_ROOT / ".tmp" / "p5-4b-engineering-composition-gate").resolv
 EVIDENCE_ROOT = (REPO_ROOT / ".tmp" / "p5-4b-engineering-composition-gate-v2").resolve()
 GATE_NAME = "P5.4B engineering composition disposable Gate v2"
 INTEGRATION_TEST = "tests/integration/test_p5_4b_engineering_composition_foundation.py"
-EXPECTED_HEAD = "0015"
+EXPECTED_HEAD = "0016"
 BACKEND_IMAGE = "omnibase-backend:latest"
 POSTGRES_IMAGE = "pgvector/pgvector:0.8.5-pg15-bookworm"
 BACKEND_VENV_VOLUME = "omnibase_backend_venv"
@@ -214,7 +214,7 @@ def _validate_config() -> None:
         ).read_text(encoding="utf-8")
     )
     if config.get("migration_baseline") != EXPECTED_HEAD:
-        raise RuntimeError("P5.4B Gate requires migration baseline 0013")
+        raise RuntimeError("P5.4B Gate requires migration baseline 0016")
     if config.get("activation_requested") is not False:
         raise RuntimeError("P5.4B activation must remain false")
     if config.get("feature_gates") != {
@@ -471,7 +471,7 @@ def _parse_graph(stdout: str) -> dict[str, object]:
     heads = graph.get("heads")
     revisions = graph.get("revisions")
     if heads != [EXPECTED_HEAD] or not isinstance(revisions, list):
-        raise RuntimeError("Alembic graph is not single-head 0015")
+        raise RuntimeError("Alembic graph is not single-head 0016")
     numeric = []
     for revision in revisions:
         if not isinstance(revision, str) or re.fullmatch(r"[0-9]{4}", revision) is None:
@@ -479,14 +479,15 @@ def _parse_graph(stdout: str) -> dict[str, object]:
                 "Alembic revision identifier is outside the closed numeric set"
             )
         numeric.append(int(revision))
-    if 15 not in numeric or any(value >= 16 for value in numeric):
-        raise RuntimeError("Alembic graph contains migration 0016 or higher")
+    if 16 not in numeric or any(value >= 17 for value in numeric):
+        raise RuntimeError("Alembic graph contains migration 0017 or higher")
     return {
         "heads": heads,
         "revisions": revisions,
         "migration_0014_created": True,
         "migration_0015_created": True,
-        "migration_0016_or_higher_present": False,
+        "migration_0016_created": True,
+        "migration_0017_or_higher_present": False,
     }
 
 
@@ -637,7 +638,7 @@ def _run_gate(
     commands.append(python_environment)
     measured_head = _command_stdout(run_dir, head)
     if measured_head != EXPECTED_HEAD:
-        raise RuntimeError(f"sentinel Alembic head is {measured_head!r}, not 0013")
+        raise RuntimeError(f"sentinel Alembic head is {measured_head!r}, not 0016")
     graph_value = _parse_graph(_command_stdout(run_dir, graph))
     gates_value = json.loads(_command_stdout(run_dir, gates))
     if gates_value != EXPECTED_RUNTIME_GATES:
@@ -833,7 +834,9 @@ def _verify(path: Path) -> None:  # noqa: C901
         raise RuntimeError("migration 0014 evidence mismatch")
     if report.get("migration_0015_created") is not True:
         raise RuntimeError("migration 0015 evidence mismatch")
-    if report.get("migration_0016_or_higher_present") is not False:
+    if report.get("migration_0016_created") is not True:
+        raise RuntimeError("migration 0016 evidence mismatch")
+    if report.get("migration_0017_or_higher_present") is not False:
         raise RuntimeError("migration graph evidence mismatch")
     if report.get("production_runtime_activated") is not False:
         raise RuntimeError("production Runtime evidence mismatch")
@@ -952,8 +955,13 @@ def _write_report(
         )
         if isinstance(measurements.get("alembic_graph"), dict)
         else None,
-        "migration_0016_or_higher_present": measurements.get("alembic_graph", {}).get(
-            "migration_0016_or_higher_present"
+        "migration_0016_created": measurements.get("alembic_graph", {}).get(
+            "migration_0016_created"
+        )
+        if isinstance(measurements.get("alembic_graph"), dict)
+        else None,
+        "migration_0017_or_higher_present": measurements.get("alembic_graph", {}).get(
+            "migration_0017_or_higher_present"
         )
         if isinstance(measurements.get("alembic_graph"), dict)
         else None,
@@ -991,7 +999,8 @@ def _write_report(
             f"- Migration head: `{report['migration_head']}`",
             f"- Migration 0014 created: `{report['migration_0014_created']}`",
             f"- Migration 0015 created: `{report['migration_0015_created']}`",
-            f"- Migration 0016 or higher: `{report['migration_0016_or_higher_present']}`",
+            f"- Migration 0016 created: `{report['migration_0016_created']}`",
+            f"- Migration 0017 or higher: `{report['migration_0017_or_higher_present']}`",
             "- Production Runtime activated: `false`",
             "- Feature gates: `false / false / false`",
             "- Workload-container external network denied: "

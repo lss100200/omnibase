@@ -1632,7 +1632,7 @@ python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --veri
   `$ref`. Rollback targets the same Definition and a strictly older reviewed
   release.
 - Verification requires clean Git provenance, all three Phase 5 gates false
-  and current repository migration head exactly `0015`. P5.6A itself remains compile-only; the
+  and current repository migration head exactly `0016`. P5.6A itself remains compile-only; the
   separately authorized P5.6P successor owns the Skill ORM, installation and
   personal runtime projection. Browser `/skills` remains absent.
 
@@ -1979,7 +1979,8 @@ P5.9P forward migration `0015` changes only the ContextCapsule token lower
 bound. A fresh invocation with no selected Memory persists one zero-item audit
 Capsule, then returns no Memory projection: no empty prompt and no Memory SSE
 metadata. The first real Candidate binds that Capsule. Backup/restore must bind
-the raw `0015` bytes; `0016+` remains absent.
+the raw `0015` bytes plus the separately reviewed `0016` personal-model-setting
+migration bytes; `0017+` remains absent.
 
 Use the focused compiler/Alpha tests plus one random `omnibase_test_*`
 PostgreSQL journey for local evidence. GitHub required CI is the full regression
@@ -2042,10 +2043,12 @@ Workspace, Owner, AgentVersion/binding, scope and budget digests, and require a
 retryable terminal state. Never mutate or revive the old ledger, Lease,
 fencing, runtime/workload identity or Effect. Preserve unknown evidence.
 
-Personal target and backup controllers now use migration head `0015`, reject
-`0016+`, bind the Skill tables, guard triggers and raw empty-Capsule migration
-bytes, and restore only into new identities. Closed compatibility entries are
-`0013 -> 0014` for Skills and `0014 -> 0015` for Memory bootstrap. GitHub
+Personal target and backup controllers now use migration head `0016`, reject
+`0017+`, bind the Skill tables, guard triggers, raw empty-Capsule migration
+bytes and raw personal-model-setting migration bytes, and restore only into new
+identities. Closed compatibility entries are `0013 -> 0014` for Skills,
+`0014 -> 0015` for Memory bootstrap and `0015 -> 0016` for personal model
+preferences. GitHub
 PostgreSQL sentinel CI is authoritative
 when local Docker is unavailable; do not substitute a normal database.
 
@@ -2073,7 +2076,8 @@ binding. SIGKILL must not be defeated by a container restart policy.
 The journey begins with no Memory and must prove one empty audit Capsule, no
 empty prompt/SSE metadata, first real Memory publication bound to that Capsule,
 then one-item retrieval. The redacted receipt carries the durable cancel Task
-state and terminal event. Current head is `0015`; `0016+` remains absent.
+state and terminal event. Current head is `0016`; `0017+` remains absent, and
+the `0016` role-preference table does not alter this acceptance evidence.
 
 Treat EOF without an SSE terminal event, any Provider call-count increase on
 restart/exact replay, reused retry identity, failed kill switch, in-place
@@ -2134,6 +2138,40 @@ Owner-gesture permission, pre-read secret-name rejection, memory-only handles,
 logical paths, one monotonic lazy-tree budget, reviewed content digests and the
 exact final request budget. Agent Alpha still has no file tool: local edits are
 Owner-reviewed and Task-bound, with CAS/digest checks and conflict-safe
-three-way rollback. Browser writes are not atomic transactions. Provider
-identity arrives after dispatch; gears must not overstate native reasoning,
-output controls, tools, MCP, CLI or current pricing.
+three-way rollback. Browser writes are not atomic transactions. The
+user-entered model name selects the conservative family profile before
+dispatch; the Provider-returned actual model remains the exact runtime identity.
+Conflicts fall back to generic and URL/provider hints are weaker than model
+names. Gears must not overstate native reasoning, output controls, tools, MCP,
+CLI or current pricing.
+
+## P6.0-D2 per-role model selection maintenance boundary
+
+Read INV-068 and the P6.0 architecture note before changing migration `0016`,
+the role model-setting API, Provider test writeback or personal gateway
+resolution. The parent plus nine specialists are still role contexts over one
+Runtime. They inherit one default encrypted Provider credential unless the
+Owner selects another already-saved credential or model for a single role.
+
+Keep API keys solely in `model_provider_credentials`; the override table and
+Browser DTO contain no key, ciphertext or nonce. Require `expected_version=0`
+for first creation and the exact current version thereafter. Preserve the
+Tenant -> User -> Workspace -> Membership -> installed Binding -> override lock
+and validation boundary and the composite credential/user foreign key.
+
+An overridden model remains pending until an exact no-tool Provider probe
+returns the same actual model. Freeze and revalidate override ID/version,
+credential/key/provider/base URL/model state around the external call. Runtime
+dispatch binds role and configuration identity into its request digest and must
+not fall back to another credential after an invalid override. Model-family
+recognition is prompt guidance only; it never enables native reasoning controls,
+Tools, MCP, CLI, Vision, Planner or Multi-Agent.
+
+Migration `0016` authorizes only personal role preferences. Advance current
+personal/P5 migration facts and restore-new contracts to `0016`, reject `0017+`,
+and keep historical `0015` receipts immutable. Its exact backward transition is
+tenant-first and atomic: every retained tenant must reach `0015` with the role
+table and credential ownership unique constraint absent before the global head
+may move. Global-first, partial, or populated downgrade attempts fail closed.
+P34.7 may acknowledge the current repository head while remaining
+frozen/blocked with the approved digest empty.

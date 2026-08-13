@@ -9,7 +9,7 @@ builder.  It assembles only when all of the following independently hold:
 * a canonical, exact-scope canary config and an ACTIVE, unexpired activation
   ledger are mounted at explicit absolute paths;
 * the application environment is production, the Model Gateway is configured
-  and the database migration head is exactly ``0015``;
+  and the database migration head is exactly ``0016``;
 * the current request is the configured Tenant/Workspace/Owner and the live
   tenant schema still contains exactly that one active Owner, who is also an
   active tenant administrator.
@@ -76,7 +76,7 @@ PERSONAL_RUNTIME_CONFIG_ENV = "PERSONAL_RUNTIME_CANARY_CONFIG"
 PERSONAL_RUNTIME_STATE_DIR_ENV = "PERSONAL_RUNTIME_STATE_DIR"
 PERSONAL_RUNTIME_READINESS_ROOT_ENV = "PERSONAL_RUNTIME_READINESS_ROOT"
 PERSONAL_RUNTIME_PROFILE = "personal_single_owner"
-_EXPECTED_MIGRATION_HEAD = "0015"
+_EXPECTED_MIGRATION_HEAD = "0016"
 _ACTIVE_WORKSPACE_RUN_STATES = frozenset(
     {"queued", "leased", "starting", "running", "pausing", "paused", "stopping"}
 )
@@ -477,6 +477,7 @@ class PersonalCanaryAgentAlpha:
         top_k: int,
         idempotency_key: str,
         retry_of: str | None,
+        employee_role_id: str = "parent",
     ) -> Iterator[AlphaStreamEvent]:
         self._scope(
             tenant_id=tenant_id,
@@ -497,6 +498,7 @@ class PersonalCanaryAgentAlpha:
             top_k=top_k,
             idempotency_key=idempotency_key,
             retry_of=retry_of,
+            employee_role_id=employee_role_id,
         )
 
     def cancel(
@@ -692,7 +694,7 @@ def personal_alpha_posture(
         factory = factory or get_session_factory(settings)
         migration_ready = _migration_head(factory) == _EXPECTED_MIGRATION_HEAD
         if not migration_ready:
-            blockers.append("migration head is not 0015")
+            blockers.append(f"migration head is not {_EXPECTED_MIGRATION_HEAD}")
         if scope_matches:
             session = _open_tenant_session(factory, tenant_id)
             try:

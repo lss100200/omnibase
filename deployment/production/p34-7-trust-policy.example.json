@@ -42,5 +42,5 @@
     "validity_seconds": 3153600000
   },
   "max_evidence_age_seconds": 604800,
-  "migration_head": "0015"
+  "migration_head": "0016"
 }

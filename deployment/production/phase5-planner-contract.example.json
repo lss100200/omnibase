@@ -18,21 +18,21 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "e77ec2c348673e34a55bad9cf9e902540f4c1f1b28a1c9988605a98999a99583"
+      "sha256": "0ee31ac7db848a95e165119cbb9b1dea59b9e15d09483b23988591536f50bc52"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "c6832045abdad81f64d82e1665513048e4aee25d865982a33070dde5a6f47712"
+      "sha256": "5686605e3900bcf2ff8527deb12f891c6a2bb9c61fbc194ad7c2cf9196b36508"
     }
   },
   "source": {
@@ -96,9 +96,7 @@
       "artifact_write_proposal",
       "sandbox_job_proposal"
     ],
-    "allowed_tool_ids": [
-      "knowledge_search"
-    ],
+    "allowed_tool_ids": ["knowledge_search"],
     "max_replan": 2,
     "approval_policy": {
       "low": "optional",
@@ -123,12 +121,8 @@
       "tenant_id": "00000000-0000-0000-0000-00000000000a",
       "version_state": "sealed",
       "risk_level": "low",
-      "allowed_tool_ids": [
-        "knowledge_search"
-      ],
-      "resource_scopes": [
-        "workspace-docs"
-      ],
+      "allowed_tool_ids": ["knowledge_search"],
+      "resource_scopes": ["workspace-docs"],
       "instructions_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     }
   ],
@@ -147,9 +141,7 @@
             "maxLength": 500
           }
         },
-        "required": [
-          "query"
-        ]
+        "required": ["query"]
       }
     }
   ],
@@ -157,12 +149,8 @@
     "workspace_id": "66666666-6666-6666-6666-666666666666",
     "workspace_generation": 1,
     "tenant_id": "00000000-0000-0000-0000-00000000000a",
-    "resource_scopes": [
-      "workspace-docs"
-    ],
-    "tool_binding_ids": [
-      "knowledge_search"
-    ],
+    "resource_scopes": ["workspace-docs"],
+    "tool_binding_ids": ["knowledge_search"],
     "scope_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
   },
   "frozen_task": {
@@ -233,18 +221,12 @@
                   "maxLength": 2000
                 }
               },
-              "required": [
-                "summary"
-              ]
+              "required": ["summary"]
             },
             "output_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           },
-          "allowed_tool_ids": [
-            "knowledge_search"
-          ],
-          "resource_scopes": [
-            "workspace-docs"
-          ],
+          "allowed_tool_ids": ["knowledge_search"],
+          "resource_scopes": ["workspace-docs"],
           "risk_level": "low",
           "budget": {
             "input_tokens": 100000,
@@ -324,7 +306,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -350,12 +333,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "456776cc61c3d39507a6458eba6068b42659e0a2764844a99916aabcc6b48e00"
+      "sha256": "e1b1057330c4e4eb91ab0ade22271e3ecd0d208b367606fc1550f0889838d3e3"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "67b2998e0c87a5a3a629d9d7cf08b7280b61841708b259a21e72349b6d0ea5fa"
+      "sha256": "04e4d9a2e6fcb7e6a82342c613f728642d1a69cb2a32bdac2aa2cef0f503ae17"
     }
   ],
   "openapi_snapshot": {

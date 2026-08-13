@@ -3141,12 +3141,13 @@ bytes. Restore verification uses a distinct `omnibase_restore_*` database and a
 new `restore_new_evidence` inventory; source evidence is never edited or
 relabelled.
 
-The current personal head is `0015`. Migration `0015` changes only
+The current personal head is `0016`. Migration `0015` changes only
 `context_capsules_tokens_check` so `total_tokens=0` is valid while
 `max_tokens>=1` remains mandatory. Backup and restore bind the raw bytes of
-`0013`, `0014` and `0015`; the only new forward compatibility entry is the
-closed `0014 -> 0015` Memory-bootstrap upgrade. Downgrade refuses when any
-zero-token Capsule exists. Migration `0016+` remains absent.
+`0013`, `0014`, `0015` and `0016`; the reviewed compatibility entries are the
+closed `0014 -> 0015` Memory-bootstrap upgrade and the personal-model-settings
+`0015 -> 0016` upgrade. Migration `0015` downgrade refuses when any zero-token
+Capsule exists. Migration `0017+` remains absent.
 
 **Allowed changes**
 
@@ -3213,8 +3214,9 @@ unknown deletion as committed or downgrading a populated business database.
 P5.5C enables bounded Memory compilation only inside the exact INV-056 personal
 single-Owner canary composition. Runtime remains false by default, Planner and
 Multi-Agent remain false everywhere. The current personal repository head is
-`0015`; `0013` still owns Memory persistence, `0014` owns instruction Skills and
-`0015` owns only the empty-Capsule token lower bound. Migration `0016+`, Browser
+`0016`; `0013` still owns Memory persistence, `0014` owns instruction Skills,
+`0015` owns only the empty-Capsule token lower bound, and `0016` owns only
+user-scoped per-role model preferences. Migration `0017+`, Browser
 Memory CRUD, tools, shell, SQL, arbitrary HTTP, MCP, workflow/script Skill
 execution and enterprise Runtime authority are not created by this increment.
 
@@ -3285,7 +3287,7 @@ physical locators or internal provenance.
   compiler failure in a running ledger state.
 - Enabling Runtime outside the exact personal canary, enabling Planner or
   Multi-Agent, modifying the separately owned Skill migration `0014`, creating
-  unauthorized migration `0016+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
+  unauthorized migration `0017+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
   through Memory content.
 
 **Required verification**
@@ -3458,7 +3460,9 @@ The initial no-Memory invocation must persist one zero-item/zero-token audit
 Capsule without changing Provider prompt or SSE Memory metadata. Publication of
 the first real Memory must bind that Capsule, and the following invocation must
 project exactly one item. The receipt must also report durable cancel terminal
-event and Task state as `cancelled`. Migration head is `0015`; `0016+` is absent.
+event and Task state as `cancelled`. The current migration head is `0016`;
+`0017+` is absent. Migration `0016` adds only personal per-role model
+preferences and does not alter this Memory/restart receipt.
 
 The Core container must not restart itself during the interruption window. The
 Provider call counter must remain unchanged across restart and exact replay.
@@ -3519,8 +3523,9 @@ Attempt, Lease, Memory, ContextCapsule or append-only audit history.
 P6.0-A reuses the existing Agent Alpha Runtime status, profile, SSE and cancel
 boundaries. InvocationGuard still owns one in-flight request, EOF without a
 terminal stays an error, and browser history never automatically replays a
-Provider call. Planner and Multi-Agent remain false. Migration `0016` is absent
-because Task/Run and Memory are not conversation persistence substitutes.
+Provider call. Planner and Multi-Agent remain false. Migration `0016` stores
+only personal per-role model preferences; Task/Run, Memory and that preference
+table remain forbidden as conversation-persistence substitutes.
 
 **Required verification**
 
@@ -3608,9 +3613,82 @@ are recovery-required and may restore only under exact digest comparison.
 
 ## INV-067 p60-model-adaptation-and-cost-honesty-boundary
 
-Provider identity is post-dispatch SSE evidence, so the active request uses
-generic adaptation. Gears control only real Agent Alpha top-k, local context
-budget and prompt guidance. Native reasoning, target output control, Tools,
-MCP, CLI, Vision and autonomous delegation remain unavailable and visibly
-disclosed. The final assembled request must fit 32,000 characters. Usage must
-be finite/non-negative and cost remains unknown without explicit rates.
+The user-entered model name is the first conservative family-classification
+input; observed Provider model identity remains the exact runtime evidence.
+Conflicting family tokens resolve to generic. An explicit family override is a
+fallback only and a Provider/base-URL hint must never override a recognized
+model name. Classification selects prompt guidance, not native capability.
+Gears control only real Agent Alpha top-k, local context budget and prompt
+guidance. Native reasoning, target output control, Tools, MCP, CLI, Vision and
+autonomous delegation remain unavailable and visibly disclosed. The final
+assembled request must fit 32,000 characters. Usage must be finite/non-negative
+and cost remains unknown without explicit rates.
+
+## INV-068 p60d2-per-role-model-selection-and-migration-boundary
+
+**Authoritative source**
+
+- `backend/src/omnibase/user_settings/model_settings.py`
+- `backend/src/omnibase/user_settings/gateway.py`
+- `backend/src/omnibase/user_settings/router.py`
+- `backend/src/omnibase/user_settings/schemas.py`
+- `backend/src/omnibase/db/tenant.py`
+- `backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py`
+- `frontend/components/workbench/personal-engineering-workbench.tsx`
+- `frontend/lib/p6-model-profiles.ts`
+
+One parent and nine dormant specialists remain request-scoped roles over one
+personal Agent Alpha Runtime. All ten inherit the user's default saved Provider
+credential and model unless a role references another credential or overrides
+its model name. The override table stores only logical user, Workspace,
+AgentVersion, employee-role and credential IDs, model/family metadata, an
+optimistic version and exact-test evidence. API keys, ciphertext and nonces stay
+in `model_provider_credentials` and never enter the override table, audit detail
+or Browser DTO. Model-name fields reject secret-shaped values, authenticated
+URLs, sensitive environment assignments, `.env` locators and absolute physical
+paths before ORM mutation or Audit.
+
+Every read, mutation, test and Runtime resolution revalidates the live Tenant,
+active tenant User, non-archived tenant-bound Workspace, active membership,
+installed exact AgentVersion binding and Workspace generation. Mutations use
+the repository lock order and require an exact `expected_version`, including
+zero for first creation. Credential ownership is enforced by the composite
+`(credential_id, user_id)` foreign key. A custom model is unusable until its
+exact requested/actual identity test passes. That evidence binds the override
+ID/version, credential/key/provider/base-URL/model state, Workspace generation,
+installed Binding ID, AgentVersion digest and endpoint-policy digest. Probe and
+personal Runtime share an HTTPS-only, port-443, allowlisted, public-DNS,
+no-environment-proxy and no-redirect transport; the verified address set is
+frozen for that client while TLS keeps the original hostname/SNI. Runtime
+resolves the policy again before dispatch. Concurrent mutation,
+generation/binding replacement, credential drift, allowlist change or DNS-set
+change invalidates the old evidence. Invocation identity binds the employee
+role and resolved scope/configuration so an idempotency key cannot cross role,
+model, Workspace generation or Binding.
+
+Migration `0016` is tenant-scoped and authorizes only this personal preference
+surface. Its exact `0016 -> 0015` downgrade is tenant-first: all retained
+tenants must atomically reach head `0015` and remove both the override table and
+the credential ownership unique constraint before the global revision may
+move. A populated tenant or any global-first attempt fails closed and rolls
+back without partial head movement; recovery is forward-fix or restore-new.
+The current migration fact does not enable Planner, Multi-Agent,
+Skills, MCP, CLI, Vision, arbitrary tools, enterprise Trust Policy approval,
+production evidence or a public deployment.
+
+**Required verification**
+
+- `backend/tests/test_p6_0_d2_model_settings.py`
+- `backend/tests/test_rate_limit.py`
+- focused Agent Alpha personal/engineering tests
+- disposable `omnibase_test_*` PostgreSQL migration and concurrent mutation tests
+- frontend test, typecheck, lint and production build
+- maintainer map and benchmark validators
+
+**Failure recovery**
+
+Disable the role override or restore inheritance, keep the personal Runtime and
+all enterprise gates fail closed, and preserve append-only audit evidence. Do
+not copy or expose a key, accept a stale test result, edit a populated schema
+backward or enable Planner/Multi-Agent to repair a model setting. Use a reviewed
+forward fix or restore into a new `omnibase_restore_*` database.

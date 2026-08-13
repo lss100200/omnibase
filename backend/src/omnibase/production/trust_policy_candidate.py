@@ -63,7 +63,7 @@ from omnibase.production.phase5_admission import discover_migration_head
 CANDIDATE_SCHEMA = "omnibase.p34-7.trust-policy-candidate.v1"
 APPROVAL_PACKET_SCHEMA = "omnibase.p34-7.trust-policy-approval-packet.v1"
 SCHEMA_VERSION = "1"
-MIGRATION_HEAD = "0015"
+MIGRATION_HEAD = "0016"
 
 REQUIRED_ROLES = ("core", "runner", "broker", "gateway", "overlay", "recovery_sla", "sealer")
 _SEALER = "sealer"
@@ -1933,7 +1933,7 @@ def _verify_repository_migration_posture(repo_root: Path) -> str:
     if migration_head != MIGRATION_HEAD:
         raise ConfigurationError(f"migration head must remain {MIGRATION_HEAD}")
     migration_versions = repo_root / "backend" / "src" / "omnibase" / "migrations" / "versions"
-    for required_revision in ("0013", "0014", "0015"):
+    for required_revision in ("0013", "0014", "0015", "0016"):
         if not any(
             path.name.startswith(f"{required_revision}_")
             for path in migration_versions.glob("*.py")
@@ -1942,10 +1942,10 @@ def _verify_repository_migration_posture(repo_root: Path) -> str:
                 f"migration {required_revision} must exist at the current repository head"
             )
     if any(
-        path.name[:4].isdigit() and int(path.name[:4]) >= 16
+        path.name[:4].isdigit() and int(path.name[:4]) >= 17
         for path in migration_versions.glob("[0-9][0-9][0-9][0-9]_*.py")
     ):
-        raise ConfigurationError("migration 0016 or higher must not exist")
+        raise ConfigurationError("migration 0017 or higher must not exist")
     return migration_head
 
 

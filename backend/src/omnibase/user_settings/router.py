@@ -11,9 +11,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from omnibase.core.config import Settings, get_settings
-from omnibase.core.rate_limit import enforce_provider_test_rate_limit
+from omnibase.core.rate_limit import (
+    enforce_agent_model_test_rate_limit,
+    enforce_provider_test_rate_limit,
+)
 from omnibase.tenants.dependencies import CurrentPrincipal, get_current_principal, get_tenant_db
+from omnibase.user_settings.model_settings import AgentModelSettingsService
 from omnibase.user_settings.schemas import (
+    AgentModelSettingList,
+    AgentModelSettingRead,
+    AgentModelSettingWrite,
+    EmployeeRoleId,
     ProviderCredentialActivate,
     ProviderCredentialCreate,
     ProviderCredentialList,
@@ -264,6 +272,116 @@ def provider_runtime_posture(
     settings: Settings = Depends(get_settings),
 ) -> ProviderRuntimePosture:
     return _run_read(lambda: _service(settings).runtime_posture(db, user_id=str(principal.user.id)))
+
+
+@router.get(
+    "/workspaces/{workspace_id}/agents/{agent_version_id}/model-settings",
+    response_model=AgentModelSettingList,
+)
+def list_agent_model_settings(
+    workspace_id: UUID,
+    agent_version_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_tenant_db),
+    settings: Settings = Depends(get_settings),
+) -> AgentModelSettingList:
+    return _run_read(
+        lambda: AgentModelSettingsService(settings=settings).list_settings(
+            db,
+            tenant_id=str(principal.tenant.id),
+            user_id=str(principal.user.id),
+            workspace_id=str(workspace_id),
+            agent_version_id=str(agent_version_id),
+        )
+    )
+
+
+@router.put(
+    "/workspaces/{workspace_id}/agents/{agent_version_id}/model-settings/{employee_role_id}",
+    response_model=AgentModelSettingRead,
+)
+def put_agent_model_setting(
+    workspace_id: UUID,
+    agent_version_id: UUID,
+    employee_role_id: EmployeeRoleId,
+    payload: AgentModelSettingWrite,
+    request: Request,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_tenant_db),
+    settings: Settings = Depends(get_settings),
+) -> AgentModelSettingRead:
+    return _run_mutation(
+        db,
+        lambda: AgentModelSettingsService(settings=settings).put_setting(
+            db,
+            tenant_id=str(principal.tenant.id),
+            user_id=str(principal.user.id),
+            workspace_id=str(workspace_id),
+            agent_version_id=str(agent_version_id),
+            employee_role_id=employee_role_id,
+            payload=payload,
+            request_id=_request_id(request),
+        ),
+    )
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/agents/{agent_version_id}/model-settings/{employee_role_id}",
+    response_model=AgentModelSettingRead,
+)
+def delete_agent_model_setting(
+    workspace_id: UUID,
+    agent_version_id: UUID,
+    employee_role_id: EmployeeRoleId,
+    request: Request,
+    expected_version: int,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_tenant_db),
+    settings: Settings = Depends(get_settings),
+) -> AgentModelSettingRead:
+    return _run_mutation(
+        db,
+        lambda: AgentModelSettingsService(settings=settings).delete_setting(
+            db,
+            tenant_id=str(principal.tenant.id),
+            user_id=str(principal.user.id),
+            workspace_id=str(workspace_id),
+            agent_version_id=str(agent_version_id),
+            employee_role_id=employee_role_id,
+            expected_version=expected_version,
+            request_id=_request_id(request),
+        ),
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/agents/{agent_version_id}/model-settings/"
+    "{employee_role_id}/test",
+    response_model=ProviderTestResult,
+    dependencies=[Depends(enforce_agent_model_test_rate_limit)],
+)
+def test_agent_model_setting(
+    workspace_id: UUID,
+    agent_version_id: UUID,
+    employee_role_id: EmployeeRoleId,
+    request: Request,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_tenant_db),
+    settings: Settings = Depends(get_settings),
+) -> ProviderTestResult:
+    return _run_mutation(
+        db,
+        lambda: AgentModelSettingsService(settings=settings).test_setting(
+            db,
+            settings=settings,
+            tenant_id=str(principal.tenant.id),
+            user_id=str(principal.user.id),
+            workspace_id=str(workspace_id),
+            agent_version_id=str(agent_version_id),
+            employee_role_id=employee_role_id,
+            request_id=_request_id(request),
+        ),
+    )
 
 
 __all__ = ["router"]

@@ -7,7 +7,7 @@
     "agent_planner_enabled": false,
     "multi_agent_enabled": false
   },
-  "migration_baseline": "0015",
+  "migration_baseline": "0016",
   "executor_runtime_authorized": false,
   "allowed_tool_bindings": [
     {

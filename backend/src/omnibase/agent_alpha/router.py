@@ -67,7 +67,7 @@ def get_agent_alpha(
     environment, so setting the flag genuinely enables the route. When the
     gate is open this factory delegates to the Alpha engineering seam, which
     itself remains fail-closed until every P5.2C dependency (environment,
-    Phase 5 gates, provider gateway, migration head 0015) holds.
+    Phase 5 gates, provider gateway, migration head 0016) holds.
     ``lite_agent_posture`` exposes the honest single-mode posture to the
     status endpoint without authorizing anything.
     """
@@ -226,6 +226,7 @@ def invoke_alpha(
             top_k=payload.top_k,
             idempotency_key=key,
             retry_of=payload.retry_of,
+            employee_role_id=payload.employee_role_id,
         )
     except Exception as exc:
         _raise_alpha(exc)

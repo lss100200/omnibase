@@ -405,6 +405,7 @@ class RegistryProfileResolver:
             workspace_agent_binding_id=binding.id,
             resource_scope_digest=canonical_digest(list(binding.resource_scopes)),
             budget_policy_digest=canonical_digest(binding.default_budget_policy),
+            workspace_generation=binding.workspace_generation,
         )
 
 

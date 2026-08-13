@@ -105,7 +105,7 @@ def test_example_contract_is_valid_but_compile_only() -> None:
     assert report.state is AdmissionState.BLOCKED
     assert report.contract_valid is True
     assert report.activation_allowed is False
-    assert config.migration_baseline == "0015"
+    assert config.migration_baseline == "0016"
     assert config.memory_persistence_authorized is False
     assert config.memory_runtime_authorized is False
     assert config.memory_browser_api_exposed is False
@@ -176,7 +176,7 @@ def test_source_and_migration_baseline_are_closed() -> None:
 
     mapping = _mapping()
     mapping["migration_baseline"] = "0013"
-    with pytest.raises(MemoryContractError, match="exactly 0015"):
+    with pytest.raises(MemoryContractError, match="exactly 0016"):
         MemoryContractConfig.from_mapping(mapping)
 
 
@@ -504,7 +504,7 @@ def test_verify_reports_dirty_source_gate_and_migration_drift(
 
     monkeypatch.setattr(
         "omnibase.production.phase5_memory_contract.discover_migration_head",
-        lambda *_args: "0016",
+        lambda *_args: "0017",
     )
     report = gate.verify(config, source=_provenance())
     assert report.state is AdmissionState.INVALID

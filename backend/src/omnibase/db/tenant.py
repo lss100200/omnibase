@@ -23,11 +23,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -155,6 +157,11 @@ class ModelProviderCredential(TenantBase):
             unique=True,
             postgresql_where=text("is_active AND is_default AND revoked_at IS NULL"),
         ),
+        UniqueConstraint(
+            "id",
+            "user_id",
+            name="model_provider_credentials_id_user_uq",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -178,6 +185,98 @@ class ModelProviderCredential(TenantBase):
     last_test_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=_CREATED_SERVER_DEFAULT
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=_CREATED_SERVER_DEFAULT,
+        onupdate=_CREATED_SERVER_DEFAULT,
+    )
+
+
+class WorkspaceAgentModelOverride(TenantBase):
+    """User-owned model selection for one P6 role and installed AgentVersion."""
+
+    __tablename__ = "workspace_agent_model_overrides"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["credential_id", "user_id"],
+            ["model_provider_credentials.id", "model_provider_credentials.user_id"],
+            name="workspace_agent_model_overrides_credential_user_fk",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "employee_role_id IN "
+            "('parent', 'product', 'ux', 'frontend', 'backend', 'data', "
+            "'security', 'qa', 'operations', 'docs')",
+            name="workspace_agent_model_overrides_role_check",
+        ),
+        CheckConstraint(
+            "credential_id IS NOT NULL OR model_id IS NOT NULL",
+            name="workspace_agent_model_overrides_selection_check",
+        ),
+        CheckConstraint(
+            "model_id IS NULL OR char_length(btrim(model_id)) BETWEEN 1 AND 200",
+            name="workspace_agent_model_overrides_model_id_check",
+        ),
+        CheckConstraint(
+            "family_override IS NULL OR family_override IN "
+            "('deepseek', 'glm', 'kimi', 'openai', 'anthropic', 'generic')",
+            name="workspace_agent_model_overrides_family_check",
+        ),
+        CheckConstraint(
+            "last_test_status IS NULL OR last_test_status IN "
+            "('passed', 'auth_failed', 'timeout', 'identity_mismatch', 'unreachable', 'failed')",
+            name="workspace_agent_model_overrides_test_status_check",
+        ),
+        CheckConstraint(
+            "tested_configuration_digest IS NULL OR "
+            "tested_configuration_digest ~ '^[0-9a-f]{64}$'",
+            name="workspace_agent_model_overrides_test_digest_check",
+        ),
+        CheckConstraint(
+            "tested_endpoint_policy_digest IS NULL OR "
+            "tested_endpoint_policy_digest ~ '^[0-9a-f]{64}$'",
+            name="workspace_agent_model_overrides_endpoint_digest_check",
+        ),
+        CheckConstraint("version >= 1", name="workspace_agent_model_overrides_version_check"),
+        Index(
+            "workspace_agent_model_overrides_scope_uq",
+            "user_id",
+            "workspace_id",
+            "agent_version_id",
+            "employee_role_id",
+            unique=True,
+        ),
+        Index(
+            "workspace_agent_model_overrides_credential_idx",
+            "user_id",
+            "credential_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=_PK_SERVER_DEFAULT
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    agent_version_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    employee_role_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    credential_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        nullable=True,
+    )
+    model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    family_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_test_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tested_configuration_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tested_endpoint_policy_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=_CREATED_SERVER_DEFAULT
     )
@@ -378,4 +477,5 @@ __all__ = [
     "TenantBase",
     "User",
     "UserProfile",
+    "WorkspaceAgentModelOverride",
 ]

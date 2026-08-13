@@ -5349,3 +5349,83 @@ verification, cross-disk backup, filesystem-aware supported operations and VM
 service ACL/SID-preserving restore. It forbids deleting, truncating, replacing
 or shrinking a mounted or unknown virtual disk and records that compaction is
 not a capacity limit. P6 work resumed without further VHD/VHDX operations.
+
+### P6.0-D2 researched model adaptation and per-role settings (2026-08-13)
+
+P6.0-D2 continues from the frozen P6.0 workbench in the isolated
+`codex/p6-0-d2-model-adaptation` worktree at base `dd23b976`. The product remains
+one personal Agent Alpha Runtime with one parent and nine dormant request-scoped
+specialists. Every role inherits the user's default saved Provider URL,
+encrypted key and model; the Owner may reference another saved credential or
+override only the model name for one role. API keys are not copied to the role
+table or returned through Browser DTOs.
+
+Five conservative profiles were researched for DeepSeek, GLM, Kimi, GPT and
+Claude. Resolution is model-name first, then observed actual model, explicit
+family fallback, weak URL/provider hint and finally generic. Conflicts fail
+closed to generic. Classification changes prompt guidance only: native
+reasoning controls, Tools, MCP, CLI and Vision remain disabled.
+
+Custom model names remain pending until an exact no-tool probe returns the same
+actual model. Test evidence binds override ID/version and credential/key/
+provider/base-URL/model state; mutation, delete/recreate or credential drift
+invalidates writeback. Runtime selection binds the employee role and the same
+configuration identity into the invocation request digest.
+
+Migration `0016` is authorized only for tenant-owned role model preferences and
+the composite credential/user ownership constraint. It is not conversation
+persistence and does not authorize Planner, Multi-Agent, Skills, MCP, enterprise
+Trust Policy approval or production evidence. Populated tenant downgrade and
+global-before-tenant downgrade fail closed. The reviewed `0016 -> 0015` path
+downgrades every retained tenant first and the global head last in one
+transaction; the global preflight requires tenant head `0015`, the role table
+absent and the added credential ownership unique constraint absent. Personal
+target/backup/restore and current P5 contracts advance to exact `0016`; `0017+`
+remains rejected and historical `0015` evidence is not rewritten.
+
+An external read-only review of an earlier P6.0-A development baseline supplied
+three useful attacks: long-session persistence poisoning, a non-round-tripping
+UI/UX quick mention and oversized ordinary replies being mislabeled as secrets.
+Current D2 contains deterministic session compaction, stable short-name/alias
+routing and separate truncation versus secret-redaction behavior with tests.
+The old report is retained as attack input, not current acceptance evidence.
+
+The final independent security review then found five current D2 issues, all
+now forward-fixed: model-test evidence binds Workspace generation and the exact
+installed Binding; model-name fields reject secrets and physical locators
+before persistence/Audit; probe and personal Runtime share a pinned HTTPS,
+no-proxy, no-redirect endpoint policy; exact `0016 -> 0015` is tenant-first and
+atomic; and frontend submission uses a scope generation plus complete
+model-setting fingerprint so stale projections cannot cross Workspace/Agent
+switches.
+
+Final local verification available on the Windows host:
+
+```text
+frontend tests = 157 passed
+frontend typecheck = passed
+frontend lint = passed
+frontend production build = passed
+backend focused model/Alpha/rate-limit/endpoint-policy tests = 104 passed
+personal target/backup/acceptance controller tests = 68 passed
+P5/P34 focused contracts = 1028 passed, 1 Windows symlink skip
+remaining host non-integration = 2673 passed / 42 skipped / 15 host-platform
+  failures / 16 deselected after excluding one Linux-launcher collection error
+changed-path Ruff check and format = passed (65 Python paths)
+maintainer map and benchmark = valid
+guarded D2 PostgreSQL attacks = 8 test functions collected (including
+  parameterized authority-drift cases) and statically clean, but not executed
+  because Docker Desktop Linux Engine is unavailable
+root .env not read
+business database not accessed or migrated
+not pushed / not merged / not deployed
+```
+
+The P5/P34 sealed chain, production frontend build and maintainer validators are
+closed. External P6.0-A findings were independently rechecked; all current P1/P2
+and applicable P3 issues are fixed, including honest `interrupted_unknown`
+semantics when an invocation ID has not arrived. The remaining acceptance item is
+infrastructure-bound: run the `0016` migration/concurrency attack module and the
+authoritative complete Linux/container matrix once Docker/WSL is healthy. Current
+status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_NOT_PROVEN_LOCALLY`, not
+production evidence. Local commits only; no push, PR, merge or deployment.

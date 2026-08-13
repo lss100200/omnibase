@@ -1,5 +1,7 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import type {
+  AgentModelSettingList,
+  AgentModelSettingRead,
   ApiErrorResponse,
   DocumentDownloadURL,
   DocumentList,
@@ -8,6 +10,7 @@ import type {
   HealthResponse,
   LoginRequest,
   PlaygroundResponse,
+  P6EmployeeRoleId,
   ProviderCredentialList,
   ProviderCredentialRead,
   ProviderRuntimePosture,
@@ -353,6 +356,7 @@ export const ragApi = {
 
 export interface AgentAlphaInvokePayload {
   readonly agent_version_id: string
+  readonly employee_role_id?: P6EmployeeRoleId
   readonly message: string
   readonly top_k?: number
   readonly retry_of?: string | null
@@ -436,6 +440,56 @@ export const workspaceInstallationsApi = {
 }
 
 export const agentAlphaApi = {
+  modelSettings: (workspaceId: string, agentVersionId: string) =>
+    api
+      .get<AgentModelSettingList>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings`,
+      )
+      .then((response) => response.data),
+
+  updateModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+    payload: {
+      inherit_default: boolean
+      provider_credential_id?: string | null
+      requested_model_id?: string | null
+      family_override?: AgentModelSettingRead['family'] | null
+      expected_version: number
+    },
+  ) =>
+    api
+      .put<AgentModelSettingRead>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}`,
+        payload,
+      )
+      .then((response) => response.data),
+
+  deleteModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+    expectedVersion: number,
+  ) =>
+    api
+      .delete<AgentModelSettingRead>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}`,
+        { params: { expected_version: expectedVersion } },
+      )
+      .then((response) => response.data),
+
+  testModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+  ) =>
+    api
+      .post<ProviderTestResult>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}/test`,
+      )
+      .then((response) => response.data),
+
   profiles: (workspaceId: string) =>
     api
       .get<AgentAlphaProfileList>(`/workspaces/${workspaceId}/agent-alpha/profiles`)

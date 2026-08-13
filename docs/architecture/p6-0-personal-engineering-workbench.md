@@ -30,10 +30,12 @@ access/refresh tokens, Provider credentials, Capability material or physical
 database locators. Corrupted or future-schema records fail safe to a fresh
 local session.
 
-This is deliberately not migration `0016`. Existing Task/Run tables are an
-execution ledger, not conversation history. Existing Memory and
-ContextCapsules are curated context, not raw transcripts. Cross-device sync
-will require a later, separate tenant/user/workspace-bound conversation model.
+Conversation history remains browser-local. Existing Task/Run tables are an
+execution ledger, not conversation history, and Memory/ContextCapsules are
+curated context rather than raw transcripts. Migration `0016` is separately
+authorized only for user-owned, Workspace/AgentVersion/employee-role model
+selection metadata; it does not create a conversation service. Cross-device
+session sync still requires a later tenant/user/workspace-bound model.
 
 P6.0-A provides exactly one active parent Agent and nine dormant specialists:
 
@@ -127,20 +129,45 @@ loss or disk exhaustion. P6.0 labels this honestly: an interrupted write is
 conditional restore only when the live digest still matches. This is personal
 local recovery, not enterprise atomic mutation.
 
-## P6.0-D model profiles and four gears
+## P6.0-D2 model profiles, per-role settings and four gears
 
-The product recognizes DeepSeek, GLM, Kimi, GPT and Claude after receiving
-server-owned SSE identity evidence; unknown providers use the generic profile.
+The product recognizes DeepSeek, GLM, Kimi, GPT and Claude using the user-entered
+model name first. The observed actual model returned by the Provider is still
+the runtime identity authority. An explicit family override is only a fallback
+when the model name is unrecognized; Provider name or base URL is a weak final
+hint, and conflicting family tokens fail closed to the generic profile.
+
+The parent and nine dormant specialists each expose one fixed model-setting
+entry. By default all ten inherit the same saved Provider URL, encrypted key and
+model. A role may reference another saved credential and/or override its model
+name, then return to inheritance. The role table stores only logical IDs,
+model/family metadata, optimistic version and exact-test evidence. It never
+copies API keys, ciphertext or nonces and Browser DTOs never return them.
+
+An overridden model name is `pending` until the exact requested model is tested
+through its selected credential. The test result binds the override row ID and
+version, credential/key identity, Provider/base URL and model ID. Mutation,
+deletion/recreation, credential rotation, membership loss, Workspace generation
+drift or Agent binding drift invalidates the result. Runtime dispatch freezes
+the same role/model/configuration identity into the invocation request digest,
+and the Provider adapter still requires the actual returned model ID to match.
+
+Migration `0016` creates only this tenant-owned preference table and a composite
+credential/user ownership constraint. Its populated downgrade and global-before-
+tenant downgrade paths fail closed; recovery remains forward-fix or restore-new.
+It does not authorize Planner, Multi-Agent, Skills, MCP, CLI, Vision, arbitrary
+tools, enterprise Trust Policy approval or production evidence.
+
 The selected `economy`, `standard`, `deep` or `audit` gear actually controls
 the allowed Agent Alpha `top_k`, local file-context budget and a concise prompt
 guidance block. It does not claim a native provider reasoning API.
 
-Provider and actual model identity can be known only after dispatch. To avoid
-binding a request to the previous invocation's model, the current request uses
-the generic adaptation and the UI updates the observed family when SSE metadata
-or the terminal actual model arrives. The target output token value is an
-interface budget only because Agent Alpha does not expose a corresponding
-request field. Tools, MCP, CLI, Vision and autonomous delegation remain false.
+Model-name recognition selects conservative prompt guidance only; it is not
+proof of native reasoning, structured output, context size, cache, tool or
+vision capability. Exact-model capability controls remain disabled until a
+separate adapter proves them. The target output token value is an interface
+budget only because Agent Alpha does not expose a corresponding request field.
+Tools, MCP, CLI, Vision and autonomous delegation remain false.
 
 The exact employee role message, generic adaptation and compiled file context
 are counted together and must remain at or below 32,000 characters before any
@@ -158,6 +185,7 @@ monotonic budget. A selected text file binds its reviewed SHA-256 digest in
 addition to size and mtime, and async request preparation revalidates the live
 tenant/user, session, Workspace, Agent and gear scope before dispatch.
 
-Local engineering acceptance does not activate P6.x, migration `0016`,
-Planner, Multi-Agent, MCP, CLI or automatic Agent filesystem mutation. Owner
-browser review, push, merge and deployment remain separate decisions.
+Local engineering acceptance does not activate Planner, Multi-Agent, MCP, CLI,
+native model controls or automatic Agent filesystem mutation. Migration `0016`
+authorizes only scoped role model preferences. Owner browser review, push,
+merge and deployment remain separate decisions.

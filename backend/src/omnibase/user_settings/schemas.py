@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from omnibase.user_settings.model_identifiers import validate_public_model_id
+
 
 class UserProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -44,6 +46,19 @@ class UserProfileUpdate(BaseModel):
 ProviderTestStatus = Literal[
     "passed", "auth_failed", "timeout", "identity_mismatch", "unreachable", "failed"
 ]
+EmployeeRoleId = Literal[
+    "parent",
+    "product",
+    "ux",
+    "frontend",
+    "backend",
+    "data",
+    "security",
+    "qa",
+    "operations",
+    "docs",
+]
+ModelFamily = Literal["deepseek", "glm", "kimi", "openai", "anthropic", "generic"]
 
 
 class ProviderCredentialRead(BaseModel):
@@ -74,6 +89,8 @@ class ProviderCredentialList(BaseModel):
 
 
 class ProviderCredentialCreate(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     display_name: str = Field(min_length=1, max_length=120)
     provider_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$")
     base_url: str = Field(min_length=8, max_length=500)
@@ -81,8 +98,15 @@ class ProviderCredentialCreate(BaseModel):
     api_key: SecretStr
     is_default: bool = True
 
+    @field_validator("model_id")
+    @classmethod
+    def _safe_model_id(cls, value: str) -> str:
+        return validate_public_model_id(value)
+
 
 class ProviderCredentialUpdate(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     expected_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
     provider_id: str | None = Field(
@@ -91,6 +115,11 @@ class ProviderCredentialUpdate(BaseModel):
     base_url: str | None = Field(default=None, min_length=8, max_length=500)
     model_id: str | None = Field(default=None, min_length=1, max_length=200)
     is_default: bool | None = None
+
+    @field_validator("model_id")
+    @classmethod
+    def _safe_model_id(cls, value: str | None) -> str | None:
+        return None if value is None else validate_public_model_id(value)
 
 
 class ProviderCredentialSecretUpdate(BaseModel):
@@ -117,7 +146,52 @@ class ProviderRuntimePosture(BaseModel):
     credential_id: str | None
 
 
+class AgentModelSettingWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    inherit_default: bool
+    provider_credential_id: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    )
+    requested_model_id: str | None = Field(default=None, min_length=1, max_length=200)
+    family_override: ModelFamily | None = None
+    expected_version: int = Field(ge=0)
+
+    @field_validator("requested_model_id")
+    @classmethod
+    def _strip_model_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_public_model_id(value)
+
+
+class AgentModelSettingRead(BaseModel):
+    employee_role_id: EmployeeRoleId
+    inherit_default: bool
+    override_credential_id: str | None
+    requested_model_id: str | None
+    effective_provider_id: str | None
+    effective_model_id: str | None
+    family: ModelFamily
+    family_source: Literal["model_name", "explicit_override", "unknown"]
+    state: Literal["inherited", "pending", "active", "unavailable"]
+    test_status: ProviderTestStatus | None = None
+    tested_at: datetime | None = None
+    version: int = Field(ge=0)
+
+
+class AgentModelSettingList(BaseModel):
+    items: list[AgentModelSettingRead]
+    total: int
+
+
 __all__ = [
+    "AgentModelSettingList",
+    "AgentModelSettingRead",
+    "AgentModelSettingWrite",
+    "EmployeeRoleId",
+    "ModelFamily",
     "ProviderCredentialActivate",
     "ProviderCredentialCreate",
     "ProviderCredentialList",
@@ -126,6 +200,7 @@ __all__ = [
     "ProviderCredentialUpdate",
     "ProviderRuntimePosture",
     "ProviderTestResult",
+    "ProviderTestStatus",
     "UserProfileRead",
     "UserProfileUpdate",
 ]

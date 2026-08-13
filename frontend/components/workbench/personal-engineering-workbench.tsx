@@ -7,6 +7,7 @@ import {
   Bot,
   BrainCircuit,
   CircleDot,
+  Cog,
   FileText,
   Folder,
   History,
@@ -27,6 +28,7 @@ import {
   agentAlphaApi,
   documentsApi,
   getApiErrorMessage,
+  userSettingsApi,
   workspacesApi,
   type AgentAlphaProfile,
 } from '@/lib/api'
@@ -34,6 +36,15 @@ import { consumeAgentAlphaStream, type AgentAlphaUsage } from '@/lib/agent-alpha
 import { isUserCancelledError } from '@/lib/cancel-detection'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { InvocationGuard, type InvocationPhase } from '@/lib/invocation-state'
+import {
+  advanceModelSettingsScope,
+  captureModelSettingPreparation,
+  modelSettingPreparationIsCurrent,
+  modelSettingsScopeKey,
+  projectionForScope,
+  type ModelSettingsProjection,
+  type ModelSettingsScope,
+} from '@/lib/model-settings-projection'
 import { agentInvokeConditionsMet, canInvokeAgent } from '@/lib/personal-runtime-gate'
 import {
   PERSONAL_EMPLOYEES,
@@ -74,9 +85,22 @@ import {
 } from '@/components/workbench/workspace-file-panel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import type { WorkspaceRead } from '@/lib/types'
+import type {
+  AgentModelSettingRead,
+  P6EmployeeRoleId,
+  ProviderCredentialRead,
+  WorkspaceRead,
+} from '@/lib/types'
 
 type RuntimePosture = Awaited<ReturnType<typeof agentAlphaApi.status>>
 
@@ -87,6 +111,7 @@ interface InvocationContext {
   readonly agentVersionId: string
   invocationId: string | null
   taskId: string | null
+  cancellationIdentityUnavailable: boolean
 }
 
 type WorkbenchInvocationPhase = InvocationPhase | 'preparing'
@@ -133,12 +158,21 @@ export function PersonalEngineeringWorkbench() {
   const [usage, setUsage] = useState<AgentAlphaUsage | null>(null)
   const [taskBinding, setTaskBinding] = useState<P6TaskBinding | null>(null)
   const [fileMutating, setFileMutating] = useState(false)
+  const [modelSettingsProjection, setModelSettingsProjection] =
+    useState<ModelSettingsProjection | null>(null)
+  const [credentials, setCredentials] = useState<ProviderCredentialRead[]>([])
+  const [modelEditorRole, setModelEditorRole] = useState<P6EmployeeRoleId | null>(null)
+  const [modelEditorCredential, setModelEditorCredential] = useState('')
+  const [modelEditorName, setModelEditorName] = useState('')
+  const [savingModelSetting, setSavingModelSetting] = useState(false)
+  const [testingModelSetting, setTestingModelSetting] = useState(false)
   const guardRef = useRef(new InvocationGuard())
   const submitInFlightRef = useRef(false)
   const filePanelRef = useRef<WorkspaceFilePanelHandle>(null)
   const invocationContextRef = useRef<InvocationContext | null>(null)
   const runtimeRequestGenerationRef = useRef(0)
   const persistenceWarningKeyRef = useRef<string | null>(null)
+  const modelSettingsScopeRef = useRef<ModelSettingsScope>({ key: null, generation: 0 })
   const preparationScopeRef = useRef({
     storageKey,
     sessionId: '',
@@ -157,6 +191,61 @@ export function PersonalEngineeringWorkbench() {
     identityReady ? ['p6-documents', tenant!.id, user!.id] : null,
     () => documentsApi.list({ limit: 8 }),
   )
+  const modelSettingsKey = identityReady ? modelSettingsScopeKey(workspaceId, agentVersionId) : null
+  modelSettingsScopeRef.current = advanceModelSettingsScope(
+    modelSettingsScopeRef.current,
+    modelSettingsKey,
+  )
+  const modelSettingsScope = modelSettingsScopeRef.current
+  const currentModelSettingsProjection = projectionForScope(
+    modelSettingsProjection,
+    modelSettingsScope,
+  )
+  const modelSettings = currentModelSettingsProjection?.items ?? []
+
+  useEffect(() => {
+    let alive = true
+    const requestedScope = modelSettingsScopeRef.current
+    if (!modelSettingsKey) {
+      setModelSettingsProjection(null)
+      return () => {
+        alive = false
+      }
+    }
+    void Promise.all([
+      agentAlphaApi.modelSettings(workspaceId, agentVersionId),
+      userSettingsApi.credentials(),
+    ])
+      .then(([settings, credentialList]) => {
+        if (
+          !alive ||
+          modelSettingsScopeRef.current.key !== requestedScope.key ||
+          modelSettingsScopeRef.current.generation !== requestedScope.generation
+        ) {
+          return
+        }
+        setModelSettingsProjection({ scope: requestedScope, items: settings.items })
+        setCredentials(credentialList.items.filter((item) => item.is_active && !item.revoked_at))
+      })
+      .catch((reason) => {
+        if (alive) {
+          if (
+            modelSettingsScopeRef.current.key !== requestedScope.key ||
+            modelSettingsScopeRef.current.generation !== requestedScope.generation
+          ) {
+            return
+          }
+          setModelSettingsProjection(null)
+          toast.error('员工模型配置加载失败', {
+            description: getApiErrorMessage(reason, 'p6_model_settings_failed'),
+          })
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [agentVersionId, modelSettingsKey, workspaceId])
+  const modelSettingsReady = currentModelSettingsProjection !== null
 
   const activeSession =
     state.sessions.find((session) => session.id === state.activeSessionId) ?? state.sessions[0]
@@ -188,13 +277,25 @@ export function PersonalEngineeringWorkbench() {
   }, [storageKey])
 
   useEffect(() => {
-    const restored = parseWorkbenchState(window.localStorage.getItem(storageKey))
-    setState(restored ?? createInitialWorkbenchState())
+    if (!identityReady) {
+      setState(createInitialWorkbenchState())
+      setHydratedKey(null)
+      return
+    }
+    try {
+      const restored = parseWorkbenchState(window.localStorage.getItem(storageKey))
+      setState(restored ?? createInitialWorkbenchState())
+    } catch {
+      setState(createInitialWorkbenchState())
+      toast.error('本机会话暂时无法读取', {
+        description: '浏览器存储不可用；已使用空白本地投影，不会重放 Provider 请求。',
+      })
+    }
     setHydratedKey(storageKey)
-  }, [storageKey])
+  }, [identityReady, storageKey])
 
   useEffect(() => {
-    if (hydratedKey === storageKey) {
+    if (identityReady && hydratedKey === storageKey) {
       const prepared = prepareWorkbenchStateForPersistence(state)
       if (!prepared.ok) {
         const warningKey = `${storageKey}:${prepared.code}`
@@ -228,7 +329,7 @@ export function PersonalEngineeringWorkbench() {
         }
       }
     }
-  }, [hydratedKey, state, storageKey])
+  }, [hydratedKey, identityReady, state, storageKey])
 
   useEffect(() => {
     if (hydratedKey !== storageKey || !workspaces) return
@@ -272,15 +373,36 @@ export function PersonalEngineeringWorkbench() {
   )
   const workspace = workspaces?.items.find((candidate) => candidate.id === workspaceId)
   const activeEmployee = employeeById(activeEmployeeId)
-
   useEffect(() => {
     setTaskBinding(null)
   }, [activeSession?.id])
 
   const mutate = (updater: (current: WorkbenchState) => WorkbenchState) => setState(updater)
+  const publishModelSettings = (
+    requestedScope: ModelSettingsScope,
+    items: AgentModelSettingRead[],
+  ) => {
+    if (
+      modelSettingsScopeRef.current.key === requestedScope.key &&
+      modelSettingsScopeRef.current.generation === requestedScope.generation
+    ) {
+      setModelSettingsProjection({ scope: requestedScope, items })
+    }
+  }
 
   async function submit(): Promise<void> {
-    if (!activeSession || phase !== 'idle' || fileMutating || submitInFlightRef.current) return
+    if (submitInFlightRef.current) {
+      toast.info('任务已在准备中', {
+        description: '请等待当前准备或调用完成，本次重复提交未发出。',
+      })
+      return
+    }
+    if (!activeSession || phase !== 'idle' || fileMutating) return
+    const readyProjection = projectionForScope(
+      modelSettingsProjection,
+      modelSettingsScopeRef.current,
+    )
+    if (!readyProjection) return
     submitInFlightRef.current = true
     setPreparing(true)
     const preparationScope = {
@@ -297,6 +419,15 @@ export function PersonalEngineeringWorkbench() {
       setPreparing(false)
       return
     }
+    const modelSettingPreparation = captureModelSettingPreparation(
+      readyProjection,
+      route.employee.id,
+    )
+    if (!modelSettingPreparation) {
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
     const preparedRoleMessage = prepareEmployeeRoleMessage(route.employee, route.message)
     if (!preparedRoleMessage.ok) {
       toast.error('任务内容过长', {
@@ -306,9 +437,35 @@ export function PersonalEngineeringWorkbench() {
       setPreparing(false)
       return
     }
+    const selectedModelSetting = readyProjection.items.find(
+      (item) => item.employee_role_id === route.employee.id,
+    )
+    if (!selectedModelSetting || selectedModelSetting.state === 'unavailable') {
+      toast.error('当前员工没有可用模型', {
+        description: '请先配置并验证个人 Provider 或该员工的专属模型。',
+      })
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
+    if (selectedModelSetting.state === 'pending') {
+      toast.error('当前员工模型尚未验证', {
+        description: '自定义模型名称必须先通过精确身份验证，任务未发出。',
+      })
+      submitInFlightRef.current = false
+      setPreparing(false)
+      return
+    }
     const selectedGear = P6_GEAR_PROFILES[preparationScope.gear]
     const adaptation = buildP6AdaptationInstruction(
-      { providerId: null, modelId: null },
+      {
+        providerId: selectedModelSetting.effective_provider_id,
+        modelId: selectedModelSetting.effective_model_id,
+        familyOverride:
+          selectedModelSetting.family_source === 'explicit_override'
+            ? selectedModelSetting.family
+            : null,
+      },
       preparationScope.gear,
     )
     const adaptedRoleMessage = `${preparedRoleMessage.roleMessage}\n\n${adaptation}`
@@ -349,7 +506,12 @@ export function PersonalEngineeringWorkbench() {
       currentScope.sessionId !== preparationScope.sessionId ||
       currentScope.workspaceId !== preparationScope.workspaceId ||
       currentScope.agentVersionId !== preparationScope.agentVersionId ||
-      currentScope.gear !== preparationScope.gear
+      currentScope.gear !== preparationScope.gear ||
+      !modelSettingPreparationIsCurrent(
+        modelSettingPreparation,
+        modelSettingsProjection,
+        modelSettingsScopeRef.current,
+      )
     ) {
       submitInFlightRef.current = false
       setPreparing(false)
@@ -395,6 +557,7 @@ export function PersonalEngineeringWorkbench() {
       agentVersionId: invocationAgentVersionId,
       invocationId: null,
       taskId: null,
+      cancellationIdentityUnavailable: false,
     }
     const visibleMessage = route.explicitMention
       ? `@${employee.displayName} ${route.message}`
@@ -403,6 +566,10 @@ export function PersonalEngineeringWorkbench() {
     if (visiblePersistence.redacted) {
       toast.warning('敏感内容未写入本机会话', {
         description: '检测到密钥、令牌、数据库地址或物理路径；本地历史仅保存安全占位符。',
+      })
+    } else if (visiblePersistence.truncated) {
+      toast.info('超长消息已截断保存', {
+        description: 'Provider 请求仍使用通过安全预检的完整内容；本地会话只保留有界副本。',
       })
     }
     mutate((current) =>
@@ -434,6 +601,7 @@ export function PersonalEngineeringWorkbench() {
         invocationWorkspaceId,
         {
           agent_version_id: invocationAgentVersionId,
+          employee_role_id: employee.id,
           message: finalMessage,
           top_k: selectedGear.topK,
         },
@@ -470,15 +638,26 @@ export function PersonalEngineeringWorkbench() {
       ) {
         setTaskBinding({ taskId: terminal.taskId, invocationId: terminal.invocationId })
       }
+      const cancellationIdentityUnavailable =
+        terminal.kind === 'cancelled' &&
+        invocationContextRef.current?.generation === generation &&
+        invocationContextRef.current.cancellationIdentityUnavailable
       const content =
         terminal.kind === 'done'
           ? terminal.answer
           : terminal.kind === 'cancelled'
-            ? '任务已取消。'
+            ? cancellationIdentityUnavailable
+              ? '本地连接已中断；服务器最终状态未知。'
+              : '任务已取消。'
             : `任务失败：${terminal.code}`
-      if (sanitizeWorkbenchPersistenceText(content).redacted) {
+      const contentPersistence = sanitizeWorkbenchPersistenceText(content)
+      if (contentPersistence.redacted) {
         toast.warning('Agent 返回的敏感内容未写入本机会话', {
           description: '本地历史仅保存安全占位符；流式临时内容不会作为持久化记录保留。',
+        })
+      } else if (contentPersistence.truncated) {
+        toast.info('Agent 超长回复已截断保存', {
+          description: '本次流式回复已完整展示；本地会话保留带截断标记的有界副本。',
         })
       }
       mutate((current) =>
@@ -494,13 +673,17 @@ export function PersonalEngineeringWorkbench() {
             terminal.kind === 'done'
               ? 'invocation_completed'
               : terminal.kind === 'cancelled'
-                ? 'invocation_cancelled'
+                ? cancellationIdentityUnavailable
+                  ? 'invocation_interrupted_unknown'
+                  : 'invocation_cancelled'
                 : 'invocation_failed',
           label:
             terminal.kind === 'done'
               ? `${employee.displayName} 调用已完成`
               : terminal.kind === 'cancelled'
-                ? `${employee.displayName} 调用已取消`
+                ? cancellationIdentityUnavailable
+                  ? `${employee.displayName} 本地连接已中断，服务器状态未知`
+                  : `${employee.displayName} 调用已取消`
                 : `${employee.displayName} 调用失败：${terminal.code}`,
           employeeId: employee.id,
         }),
@@ -508,8 +691,15 @@ export function PersonalEngineeringWorkbench() {
       setStreaming('')
     } catch (error: unknown) {
       if (!guard.isCurrent(generation)) return
-      const content = isUserCancelledError(error)
-        ? '任务已取消。'
+      const userCancelled = isUserCancelledError(error)
+      const cancellationIdentityUnavailable =
+        userCancelled &&
+        invocationContextRef.current?.generation === generation &&
+        invocationContextRef.current.cancellationIdentityUnavailable
+      const content = userCancelled
+        ? cancellationIdentityUnavailable
+          ? '本地连接已中断；服务器最终状态未知。'
+          : '任务已取消。'
         : error instanceof Error && error.message === 'auth_session_expired'
           ? '登录状态已失效，请重新登录后再试。'
           : `任务失败：${getApiErrorMessage(error, 'agent_alpha_failed')}`
@@ -522,9 +712,15 @@ export function PersonalEngineeringWorkbench() {
       )
       mutate((current) =>
         appendWorkbenchTimelineEvent(current, sessionId, {
-          kind: isUserCancelledError(error) ? 'invocation_cancelled' : 'invocation_failed',
-          label: isUserCancelledError(error)
-            ? `${employee.displayName} 调用已取消`
+          kind: userCancelled
+            ? cancellationIdentityUnavailable
+              ? 'invocation_interrupted_unknown'
+              : 'invocation_cancelled'
+            : 'invocation_failed',
+          label: userCancelled
+            ? cancellationIdentityUnavailable
+              ? `${employee.displayName} 本地连接已中断，服务器状态未知`
+              : `${employee.displayName} 调用已取消`
             : `${employee.displayName} 调用失败`,
           employeeId: employee.id,
         }),
@@ -551,13 +747,21 @@ export function PersonalEngineeringWorkbench() {
   }
 
   async function stop(): Promise<void> {
-    guardRef.current.stop()
+    const controller = guardRef.current.stop()
+    if (!controller) return
     setPhase('cancelling')
     const invocation = invocationContextRef.current
     if (invocation?.workspaceId && invocation.invocationId) {
       await agentAlphaApi
         .cancel(invocation.workspaceId, invocation.invocationId)
         .catch(() => undefined)
+    } else {
+      if (invocation?.generation !== undefined) {
+        invocation.cancellationIdentityUnavailable = true
+      }
+      toast.info('已中断本地连接', {
+        description: '服务器尚未返回调用标识，无法发送精确取消；最终状态将由服务器账本收敛。',
+      })
     }
   }
 
@@ -638,14 +842,18 @@ export function PersonalEngineeringWorkbench() {
           streaming={streaming}
           phase={preparing ? 'preparing' : phase}
           interactionLocked={fileMutating}
-          ready={!fileMutating && canInvokeAgent(posture, input, workspaceId, agentVersionId)}
+          ready={
+            modelSettingsReady &&
+            !fileMutating &&
+            canInvokeAgent(posture, input, workspaceId, agentVersionId)
+          }
           maximumCharacters={P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS}
           onInput={setInput}
           onSubmit={() => void submit()}
           onStop={() => void stop()}
           onMention={(employee) => {
             if (fileMutating) return
-            setInput((current) => `@${employee.displayName} ${current.replace(/^@\S+\s*/, '')}`)
+            setInput((current) => `@${employee.shortName} ${current.replace(/^@\S+\s*/, '')}`)
           }}
         />
         <ContextRail
@@ -658,7 +866,17 @@ export function PersonalEngineeringWorkbench() {
           usage={usage}
           timelineOpen={timelineOpen}
           session={activeSession}
+          modelSettings={modelSettings}
           onTimeline={() => setTimelineOpen((current) => !current)}
+          onConfigureModel={(selectedEmployee) => {
+            if (!modelSettingsReady) return
+            const setting = modelSettings.find(
+              (item) => item.employee_role_id === selectedEmployee.id,
+            )
+            setModelEditorRole(selectedEmployee.id)
+            setModelEditorCredential(setting?.override_credential_id ?? '')
+            setModelEditorName(setting?.requested_model_id ?? '')
+          }}
           filePanel={
             <WorkspaceFilePanel
               ref={filePanelRef}
@@ -672,6 +890,153 @@ export function PersonalEngineeringWorkbench() {
           }
         />
       </div>
+      <Dialog
+        open={modelEditorRole !== null}
+        onOpenChange={(open) => !open && setModelEditorRole(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>配置专属模型</DialogTitle>
+            <DialogDescription>
+              默认继承当前个人 Provider。独立配置只引用已加密保存的凭据，不复制或回显 API Key。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">已保存的 Provider 连接</span>
+              <select
+                value={modelEditorCredential}
+                onChange={(event) => setModelEditorCredential(event.target.value)}
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="">继承默认 URL 与 Key</option>
+                {credentials.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {credential.display_name} · {credential.model_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">模型名称（名称优先识别）</span>
+              <Input
+                value={modelEditorName}
+                onChange={(event) => setModelEditorName(event.target.value)}
+                placeholder="例如 deepseek-v4-pro / kimi-k3 / claude-sonnet-5"
+                maxLength={200}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            {modelSettings.find((item) => item.employee_role_id === modelEditorRole)
+              ?.requested_model_id ? (
+              <Button
+                variant="secondary"
+                disabled={!modelSettingsReady || savingModelSetting || testingModelSetting}
+                onClick={() => {
+                  if (!modelEditorRole) return
+                  const requestedScope = modelSettingsScopeRef.current
+                  setTestingModelSetting(true)
+                  void agentAlphaApi
+                    .testModelSetting(workspaceId, agentVersionId, modelEditorRole)
+                    .then((result) => {
+                      toast[result.status === 'passed' ? 'success' : 'error'](
+                        result.status === 'passed' ? '专属模型验证通过' : '专属模型验证失败',
+                        { description: `状态：${result.status} · ${result.latency_ms} ms` },
+                      )
+                      return agentAlphaApi.modelSettings(workspaceId, agentVersionId)
+                    })
+                    .then((settings) => publishModelSettings(requestedScope, settings.items))
+                    .catch((reason) =>
+                      toast.error('专属模型验证失败', {
+                        description: getApiErrorMessage(reason, 'p6_model_setting_test_failed'),
+                      }),
+                    )
+                    .finally(() => setTestingModelSetting(false))
+                }}
+              >
+                验证模型
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              disabled={!modelSettingsReady || savingModelSetting || testingModelSetting}
+              onClick={() => {
+                if (!modelEditorRole) return
+                const requestedScope = modelSettingsScopeRef.current
+                setSavingModelSetting(true)
+                void agentAlphaApi
+                  .deleteModelSetting(
+                    workspaceId,
+                    agentVersionId,
+                    modelEditorRole,
+                    modelSettings.find((item) => item.employee_role_id === modelEditorRole)
+                      ?.version ?? 0,
+                  )
+                  .then((updated) => {
+                    publishModelSettings(
+                      requestedScope,
+                      modelSettings.map((item) =>
+                        item.employee_role_id === updated.employee_role_id ? updated : item,
+                      ),
+                    )
+                    setModelEditorRole(null)
+                    toast.success('已恢复继承默认模型')
+                  })
+                  .catch((reason) =>
+                    toast.error('恢复默认模型失败', {
+                      description: getApiErrorMessage(reason, 'p6_model_setting_delete_failed'),
+                    }),
+                  )
+                  .finally(() => setSavingModelSetting(false))
+              }}
+            >
+              恢复默认
+            </Button>
+            <Button
+              disabled={
+                !modelSettingsReady ||
+                savingModelSetting ||
+                testingModelSetting ||
+                (!modelEditorCredential && !modelEditorName.trim())
+              }
+              onClick={() => {
+                if (!modelEditorRole) return
+                const requestedScope = modelSettingsScopeRef.current
+                const current = modelSettings.find(
+                  (item) => item.employee_role_id === modelEditorRole,
+                )
+                setSavingModelSetting(true)
+                void agentAlphaApi
+                  .updateModelSetting(workspaceId, agentVersionId, modelEditorRole, {
+                    inherit_default: false,
+                    provider_credential_id: modelEditorCredential || null,
+                    requested_model_id: modelEditorName.trim() || null,
+                    expected_version: current?.version ?? 0,
+                  })
+                  .then((updated) => {
+                    publishModelSettings(
+                      requestedScope,
+                      modelSettings.map((item) =>
+                        item.employee_role_id === updated.employee_role_id ? updated : item,
+                      ),
+                    )
+                    setModelEditorRole(null)
+                    toast.success('专属模型配置已保存')
+                  })
+                  .catch((reason) =>
+                    toast.error('专属模型配置失败', {
+                      description: getApiErrorMessage(reason, 'p6_model_setting_update_failed'),
+                    }),
+                  )
+                  .finally(() => setSavingModelSetting(false))
+              }}
+            >
+              保存配置
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1098,7 +1463,9 @@ function ContextRail({
   usage,
   timelineOpen,
   session,
+  modelSettings,
   onTimeline,
+  onConfigureModel,
   filePanel,
 }: {
   workspace?: WorkspaceRead
@@ -1110,7 +1477,9 @@ function ContextRail({
   usage: AgentAlphaUsage | null
   timelineOpen: boolean
   session: WorkbenchSession
+  modelSettings: AgentModelSettingRead[]
   onTimeline: () => void
+  onConfigureModel: (employee: EmployeeDefinition) => void
   filePanel: React.ReactNode
 }) {
   const provider = getP6ProviderProfile(modelIdentity)
@@ -1189,14 +1558,32 @@ function ContextRail({
                           : 'border border-muted-foreground/50',
                       )}
                     />
-                    <span className="min-w-0 flex-1 truncate">{item.displayName}</span>
-                    <span className="font-mono text-[6px] uppercase text-muted-foreground">
-                      {item.id === employee.id
-                        ? item.id === 'parent'
-                          ? 'active'
-                          : 'invoked'
-                        : 'dormant'}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{item.displayName}</span>
+                      <span className="block truncate font-mono text-[6px] text-muted-foreground">
+                        {modelSettings.find((setting) => setting.employee_role_id === item.id)
+                          ?.effective_model_id ?? '未配置可用模型'}
+                      </span>
                     </span>
+                    <span className="font-mono text-[6px] uppercase text-muted-foreground">
+                      {(() => {
+                        const setting = modelSettings.find(
+                          (candidate) => candidate.employee_role_id === item.id,
+                        )
+                        if (!setting) return '加载中'
+                        if (setting.state === 'pending') return '待验证'
+                        if (setting.state === 'unavailable') return '不可用'
+                        return setting.inherit_default ? '继承' : '专属'
+                      })()}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`配置 ${item.displayName} 的模型`}
+                      onClick={() => onConfigureModel(item)}
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <Cog className="h-3 w-3" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1207,9 +1594,10 @@ function ContextRail({
                 最近观测：{provider.displayName} · {selectedGear.displayName}
               </p>
               <p className="mt-1 text-[7px] leading-3 text-muted-foreground">
-                本轮请求在 Provider 确定前使用通用适配。原生思考参数未接入；Tools / MCP / CLI /
-                Vision / 自主委派均关闭。目标输出 {selectedGear.targetOutputTokens.toLocaleString()}{' '}
-                tokens 仅作界面预算，当前 API 未下发该参数。
+                按当前角色的有效模型名称选择保守画像；名称识别不是原生能力证明。原生思考参数未接入；
+                Tools / MCP / CLI / Vision / 自主委派均关闭。目标输出{' '}
+                {selectedGear.targetOutputTokens.toLocaleString()} tokens 仅作界面预算，当前 API
+                未下发该参数。
               </p>
               <div className="mt-2 grid grid-cols-3 gap-1">
                 <Metric label="Input" value={usage?.input_tokens ?? 0} />

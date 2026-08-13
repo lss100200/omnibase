@@ -45,7 +45,7 @@ POSTURE_SCHEMA = "omnibase.p34-7.posture-measurement.v1"
 ATTACK_SCHEMA = "omnibase.p34-7.attack-matrix.v1"
 CLEANUP_SCHEMA = "omnibase.p34-7.cleanup-inventory.v1"
 SEAL_SCHEMA = "omnibase.p34-7.evidence-seal.v1"
-CURRENT_MIGRATION_HEAD = "0015"
+CURRENT_MIGRATION_HEAD = "0016"
 
 REQUIRED_COMMANDS = (
     "core_runner",

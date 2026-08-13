@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS,
+  P6_WORKBENCH_MAX_MESSAGE_CHARACTERS,
+  P6_WORKBENCH_MAX_SESSION_BYTES,
   P6_WORKBENCH_MAX_SESSIONS,
   P6_WORKBENCH_MAX_STORE_BYTES,
   PERSONAL_EMPLOYEES,
@@ -35,6 +37,18 @@ test('personal roster has one active parent and nine dormant specialists', () =>
     PERSONAL_EMPLOYEES.filter((employee) => employee.defaultState === 'dormant').length,
     9,
   )
+})
+
+test('every employee quick-mention alias round-trips through mention routing', () => {
+  for (const employee of PERSONAL_EMPLOYEES) {
+    const result = parseEmployeeInvocation(`@${employee.shortName} 执行职责内任务`)
+    assert.equal(result.ok, true, employee.shortName)
+    if (!result.ok) continue
+    assert.equal(result.employee.id, employee.id, employee.shortName)
+  }
+  const uxDisplayPrefix = parseEmployeeInvocation('@UI/UX 执行职责内任务')
+  assert.equal(uxDisplayPrefix.ok, true)
+  if (uxDisplayPrefix.ok) assert.equal(uxDisplayPrefix.employee.id, 'ux')
 })
 
 test('messages without an @ target stay with the parent Agent', () => {
@@ -177,6 +191,26 @@ test('capacity never silently evicts pinned or active sessions', () => {
   )
 })
 
+test('archiving the last visible session rolls back when protected capacity blocks replacement', () => {
+  let state = createInitialWorkbenchState('2026-08-13T00:00:00.000Z')
+  state = setSessionPinned(state, state.activeSessionId, true)
+  for (let index = 1; index < P6_WORKBENCH_MAX_SESSIONS; index += 1) {
+    const previousActiveId = state.activeSessionId
+    state = addSession(
+      state,
+      `session-${index}`,
+      `2026-08-13T00:${String(index).padStart(2, '0')}:00.000Z`,
+    )
+    state = setSessionPinned(state, state.activeSessionId, true)
+    state = setSessionArchived(state, previousActiveId, true)
+  }
+  const activeId = state.activeSessionId
+  const archived = setSessionArchived(state, activeId, true, '2026-08-13T02:00:00.000Z')
+  assert.equal(archived, state)
+  assert.equal(archived.activeSessionId, activeId)
+  assert.equal(archived.sessions.find((session) => session.id === activeId)?.archivedAt, null)
+})
+
 test('stored state round-trips and malformed or future schemas fail closed', () => {
   const state = createInitialWorkbenchState('2026-08-13T00:00:00.000Z')
   assert.deepEqual(parseWorkbenchState(serializeWorkbenchState(state)), state)
@@ -262,8 +296,29 @@ test('sensitive user and Agent text is replaced by a category-only marker', () =
   assert.deepEqual(sanitizeWorkbenchPersistenceText('普通产品讨论'), {
     content: '普通产品讨论',
     redacted: false,
+    truncated: false,
     categories: [],
   })
+})
+
+test('oversized non-sensitive Agent text is truncated with an explicit marker', () => {
+  const original = '长'.repeat(P6_WORKBENCH_MAX_MESSAGE_CHARACTERS + 100)
+  const result = sanitizeWorkbenchPersistenceText(original)
+  assert.equal(result.redacted, false)
+  assert.equal(result.truncated, true)
+  assert.deepEqual(result.categories, ['oversized_text'])
+  assert.equal(result.content.length, P6_WORKBENCH_MAX_MESSAGE_CHARACTERS)
+  assert.match(result.content, /\[OMNIBASE_LOCAL_TRUNCATED\]$/)
+})
+
+test('oversized sensitive text remains fully redacted instead of exposing a prefix', () => {
+  const original = `sk-1234567890abcdef${'x'.repeat(P6_WORKBENCH_MAX_MESSAGE_CHARACTERS)}`
+  const result = sanitizeWorkbenchPersistenceText(original)
+  assert.equal(result.redacted, true)
+  assert.equal(result.truncated, false)
+  assert.equal(result.content, '[OMNIBASE_LOCAL_REDACTED]')
+  assert.equal(result.categories.includes('provider_key'), true)
+  assert.equal(result.categories.includes('oversized_text'), true)
 })
 
 test('append sanitizes secrets before they enter the durable projection', () => {
@@ -290,6 +345,33 @@ test('persistence preparation validates state and preserves protected sessions',
     sessions: [{ ...state.sessions[0]!, messages: [null] as never }],
   })
   assert.equal(invalid.ok, false)
+})
+
+test('legal message growth compacts one session before it can poison store persistence', () => {
+  let state = createInitialWorkbenchState('2026-08-13T00:00:00.000Z')
+  const sessionId = state.activeSessionId
+  for (let index = 0; index < 80; index += 1) {
+    state = appendWorkbenchMessage(
+      state,
+      sessionId,
+      { role: 'agent', employeeId: 'parent', content: `${index}:${'长'.repeat(12_000)}` },
+      `2026-08-13T00:${String(index % 60).padStart(2, '0')}:00.000Z`,
+    )
+  }
+  const session = state.sessions[0]!
+  assert.ok(
+    new TextEncoder().encode(JSON.stringify(session)).byteLength <= P6_WORKBENCH_MAX_SESSION_BYTES,
+  )
+  assert.equal(session.messages.at(-1)?.content.startsWith('79:'), true)
+  assert.equal(session.messages.length < 80, true)
+  assert.equal(
+    session.timeline.some((item) => item.kind === 'history_compacted'),
+    true,
+  )
+  const prepared = prepareWorkbenchStateForPersistence(state)
+  assert.equal(prepared.ok, true)
+  if (!prepared.ok) return
+  assert.notEqual(parseWorkbenchState(prepared.serialized), null)
 })
 
 test('an unterminated invocation restores as unknown without provider replay', () => {
