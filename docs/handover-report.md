@@ -5494,3 +5494,27 @@ bytes, so the first PR CI run correctly reported Registry/Task Ledger
 resealed Registry first, then Task Ledger against Registry, then Planner
 against both downstream raw-byte digests. The focused sealed-contract matrix
 passed 407 tests after resealing; no feature gate or activation field changed.
+
+### P6.0-D2 AI employee workbench Chinese localization (2026-08-13)
+
+The next visual review found a mixed-language product surface: navigation was
+mostly Chinese while `/agents` still presented its title, empty state,
+invocation target, capability disclosures, runtime status and employee builder
+in English. The forward fix localizes all user-visible copy on this page and
+the remaining shell labels to Chinese. Required technical names such as Agent
+Alpha, API, MCP, Gate, token and backend identifiers remain intact rather than
+being mistranslated.
+
+Verification after localization:
+
+```text
+frontend tests = 159 passed
+typecheck = passed
+lint = passed
+Prettier = passed
+production build = passed (16 routes)
+source-level Chinese shell regression contract = passed
+```
+
+This is presentation-only. Runtime, authorization, model routing, migrations,
+credentials and production activation boundaries are unchanged.

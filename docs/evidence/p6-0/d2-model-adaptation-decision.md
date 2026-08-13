@@ -116,6 +116,18 @@ maintainer-map evidence remains the D2 engineering baseline. This local
 disposable database PASS is not a business-database migration, public release,
 deployment or production evidence.
 
+## Chinese workbench localization forward fix
+
+A second direct product review found that the AI employee page still mixed a
+Chinese navigation shell with English workbench copy. The localized forward
+fix converts the complete user-visible `/agents` surface to Chinese, including
+empty states, invocation target, workspace capability disclosure, runtime
+posture, citations, errors and the employee builder. Protocol identifiers,
+model names, API/MCP terminology and backend reason codes remain unchanged.
+A frontend source contract now rejects regression of the principal workbench
+headings to the previous English copy. Verification after localization is 159
+frontend tests, typecheck, lint, Prettier and the 16-route production build.
+
 ## Safety posture
 
 ```text

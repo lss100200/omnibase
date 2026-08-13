@@ -118,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </DropdownMenu>
             <div className="min-w-0">
               <div className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                OmniBase / Work session
+                OmniBase / 工作会话
               </div>
               <div className="truncate text-base font-semibold tracking-tight sm:text-lg">
                 {pageTitle}
@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="hidden items-center gap-2 border border-border/70 bg-card/55 px-3 py-1.5 xl:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-foreground" />
               <span className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                governed workspace
+                受治理的工作空间
               </span>
             </div>
             <ThemeToggle />

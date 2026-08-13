@@ -23,7 +23,7 @@ export const navGroups = [
     label: '工作区',
     items: [
       { href: '/dashboard', label: 'AI 工作台', icon: Sparkles },
-      { href: '/spaces', label: 'Workspaces', icon: Boxes },
+      { href: '/spaces', label: 'AI 空间', icon: Boxes },
       { href: '/knowledge', label: '知识与文件', icon: BookOpen },
       { href: '/database', label: '数据库', icon: Database },
       { href: '/playground', label: '检索实验室', icon: FileSearch },
@@ -33,7 +33,7 @@ export const navGroups = [
     label: '扩展',
     items: [
       { href: '/agents', label: 'AI 员工', icon: Bot },
-      { label: 'Skills', icon: Wrench, status: 'preview' },
+      { label: '技能', icon: Wrench, status: 'preview' },
       { label: 'MCP', icon: Plug, status: 'locked' },
       { label: '市场', icon: Store, status: 'preview' },
     ],
@@ -127,11 +127,11 @@ export function Sidebar() {
         <div className="rounded-xl border border-border bg-muted/35 px-3 py-3">
           <div className="flex items-center gap-2">
             <CircleDot className="h-3.5 w-3.5 text-foreground" />
-            <span className="text-sm font-semibold text-foreground">Self-hosted workspace</span>
+            <span className="text-sm font-semibold text-foreground">本地自托管空间</span>
           </div>
           <div className="mt-2 flex items-center justify-between font-mono text-xs uppercase tracking-wider text-muted-foreground">
             <span>Agent Alpha</span>
-            <span className="text-foreground">Tool-free</span>
+            <span className="text-foreground">无工具</span>
           </div>
         </div>
       </div>
