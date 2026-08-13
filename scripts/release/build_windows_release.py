@@ -130,9 +130,7 @@ def _read_committed_file(root: Path, source_commit: str, relative: str) -> bytes
             env=_git_environment(),
         )
     except subprocess.SubprocessError as exc:
-        raise ReleaseBuildError(
-            f"release_committed_source_unavailable:{relative}"
-        ) from exc
+        raise ReleaseBuildError(f"release_committed_source_unavailable:{relative}") from exc
     return completed.stdout
 
 
@@ -151,27 +149,11 @@ def _validate_template(raw: bytes) -> None:
             raise ReleaseBuildError(f"release_template_secret_not_placeholder:{name}")
 
 
-def build_release(
-    repo_root: Path,
-    output: Path,
-    *,
+def _read_release_files(
+    root: Path,
     source_commit: str,
-    repository_state: RepositoryState | None = None,
-) -> dict[str, object]:
-    root = repo_root.resolve()
-    if _COMMIT.fullmatch(source_commit) is None:
-        raise ReleaseBuildError("release_source_commit_invalid")
-    state = (
-        repository_state if repository_state is not None else _repository_state(root)
-    )
-    if not state.clean:
-        raise ReleaseBuildError("release_repository_must_be_clean")
-    if state.head != source_commit:
-        raise ReleaseBuildError("release_source_commit_not_current_head")
-    if output.resolve(strict=False).is_relative_to(root):
-        raise ReleaseBuildError("release_output_must_be_outside_repository")
-    if output.exists():
-        raise ReleaseBuildError("release_output_exists")
+    repository_state: RepositoryState | None,
+) -> list[tuple[str, bytes]]:
     files: list[tuple[str, bytes]] = []
     for relative in _FILES:
         path = root / PurePosixPath(relative)
@@ -195,6 +177,29 @@ def build_release(
         if relative.endswith("operator.env.template"):
             _validate_template(raw)
         files.append((relative, raw))
+    return files
+
+
+def build_release(
+    repo_root: Path,
+    output: Path,
+    *,
+    source_commit: str,
+    repository_state: RepositoryState | None = None,
+) -> dict[str, object]:
+    root = repo_root.resolve()
+    if _COMMIT.fullmatch(source_commit) is None:
+        raise ReleaseBuildError("release_source_commit_invalid")
+    state = repository_state if repository_state is not None else _repository_state(root)
+    if not state.clean:
+        raise ReleaseBuildError("release_repository_must_be_clean")
+    if state.head != source_commit:
+        raise ReleaseBuildError("release_source_commit_not_current_head")
+    if output.resolve(strict=False).is_relative_to(root):
+        raise ReleaseBuildError("release_output_must_be_outside_repository")
+    if output.exists():
+        raise ReleaseBuildError("release_output_exists")
+    files = _read_release_files(root, source_commit, repository_state)
     if repository_state is None and _repository_state(root) != state:
         raise ReleaseBuildError("release_repository_changed_during_build")
     manifest = {
@@ -208,14 +213,10 @@ def build_release(
         "publisher_signature_verified": False,
         "authenticode_verified": False,
         "vhdx_mutation_allowed": False,
-        "files": [
-            {"path": name, "sha256": _digest(raw), "size": len(raw)}
-            for name, raw in files
-        ],
+        "files": [{"path": name, "sha256": _digest(raw), "size": len(raw)} for name, raw in files],
     }
     manifest_raw = (
-        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
     files.append(("release.json", manifest_raw))
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -240,9 +241,7 @@ def main() -> int:
     parser.add_argument("--source-commit", required=True)
     args = parser.parse_args()
     try:
-        result = build_release(
-            args.repo_root, args.output, source_commit=args.source_commit
-        )
+        result = build_release(args.repo_root, args.output, source_commit=args.source_commit)
     except (OSError, subprocess.SubprocessError, ReleaseBuildError) as exc:
         print(json.dumps({"error": str(exc)}, sort_keys=True))
         return 2

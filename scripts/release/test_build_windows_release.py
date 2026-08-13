@@ -15,7 +15,8 @@ import pytest
 def _module(repo: Path, name: str, relative: str):
     path = repo / relative
     spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -59,9 +60,7 @@ def test_release_zip_is_byte_reproducible_and_closed(tmp_path: Path) -> None:
     with zipfile.ZipFile(first) as archive:
         names = archive.namelist()
         assert names == sorted(names)
-        assert all(
-            entry.compress_type == zipfile.ZIP_STORED for entry in archive.infolist()
-        )
+        assert all(entry.compress_type == zipfile.ZIP_STORED for entry in archive.infolist())
         assert "release.json" in names
         manifest = json.loads(archive.read("release.json"))
         assert manifest["publisher_signature_verified"] is False
@@ -147,9 +146,7 @@ def test_committed_payload_reader_ignores_dirty_worktree_bytes(tmp_path: Path) -
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True
-    )
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     payload = repo / "payload.txt"
     payload.write_text("committed", encoding="utf-8")
@@ -173,9 +170,7 @@ def test_committed_payload_reader_ignores_git_replace_refs(tmp_path: Path) -> No
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True
-    )
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
     payload = repo / "payload.txt"
     payload.write_text("original", encoding="utf-8")
@@ -190,9 +185,7 @@ def test_committed_payload_reader_ignores_git_replace_refs(tmp_path: Path) -> No
     ).stdout.strip()
     payload.write_text("replacement", encoding="utf-8")
     subprocess.run(["git", "add", "payload.txt"], cwd=repo, check=True)
-    subprocess.run(
-        ["git", "commit", "--quiet", "-m", "replacement"], cwd=repo, check=True
-    )
+    subprocess.run(["git", "commit", "--quiet", "-m", "replacement"], cwd=repo, check=True)
     replacement = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -214,9 +207,7 @@ def test_repository_state_disables_local_fsmonitor(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
     marker = repo / "executed"
     hook = repo / "fsmonitor-hook"
-    hook.write_text(
-        f"#!/bin/sh\necho executed > '{marker}'\nexit 1\n", encoding="utf-8"
-    )
+    hook.write_text(f"#!/bin/sh\necho executed > '{marker}'\nexit 1\n", encoding="utf-8")
     hook.chmod(0o755)
     subprocess.run(["git", "config", "core.fsmonitor", str(hook)], cwd=repo, check=True)
 
@@ -244,9 +235,7 @@ def test_release_template_secret_scan_rejects_non_placeholders() -> None:
 
 def test_release_compose_has_no_build_and_reuses_personal_lifecycle() -> None:
     repo = Path(__file__).resolve().parents[2]
-    compose = (repo / "deployment/release/windows/compose.yml").read_text(
-        encoding="utf-8"
-    )
+    compose = (repo / "deployment/release/windows/compose.yml").read_text(encoding="utf-8")
     assert "build:" not in compose
     for service in ("redis-init:", "minio-init:", "migrate:"):
         assert service in compose
@@ -260,9 +249,7 @@ def test_release_compose_has_no_build_and_reuses_personal_lifecycle() -> None:
 
 def test_windows_installer_retries_only_the_final_atomic_move() -> None:
     repo = Path(__file__).resolve().parents[2]
-    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
-        encoding="utf-8"
-    )
+    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(encoding="utf-8")
 
     assert source.count("MoveDirectoryWithRetry(staging, target);") == 1
     assert source.count("Directory.Move(source, destination);") == 1
@@ -279,9 +266,7 @@ def test_windows_installer_retries_only_the_final_atomic_move() -> None:
     assert "Thread.Sleep(retryDelayMilliseconds * attempt);" in helper
     destination_guard = "if (File.Exists(destination) || Directory.Exists(destination))"
     assert destination_guard in helper
-    assert helper.index(destination_guard) < helper.index(
-        "Directory.Move(source, destination);"
-    )
+    assert helper.index(destination_guard) < helper.index("Directory.Move(source, destination);")
     assert "release target appeared before atomic install" in helper
     assert "atomic install retry budget exhausted" in helper
 
@@ -298,30 +283,22 @@ def test_offline_preflight_accepts_only_allowlisted_digest_images(
     env.write_text(
         "\n".join(
             f"{name}={repository}@sha256:{index:064x}"
-            for index, (name, repository) in enumerate(
-                preflight.IMAGE_REPOSITORIES.items(), 1
-            )
+            for index, (name, repository) in enumerate(preflight.IMAGE_REPOSITORIES.items(), 1)
         )
         + "\n",
         encoding="utf-8",
     )
-    result = preflight.validate_release_config(
-        repo / "deployment/release/windows/compose.yml", env
-    )
+    result = preflight.validate_release_config(repo / "deployment/release/windows/compose.yml", env)
     assert result["valid"] is True
     assert result["network_used"] is False
     assert len(result["images"]) == 6
 
     env.write_text(
-        env.read_text(encoding="utf-8").replace(
-            "redis@sha256:", "attacker.example/redis@sha256:"
-        ),
+        env.read_text(encoding="utf-8").replace("redis@sha256:", "attacker.example/redis@sha256:"),
         encoding="utf-8",
     )
     with pytest.raises(preflight.ReleaseConfigError, match="not_allowlisted"):
-        preflight.validate_release_config(
-            repo / "deployment/release/windows/compose.yml", env
-        )
+        preflight.validate_release_config(repo / "deployment/release/windows/compose.yml", env)
 
 
 def test_offline_preflight_rejects_tags_placeholders_and_duplicate_env(
