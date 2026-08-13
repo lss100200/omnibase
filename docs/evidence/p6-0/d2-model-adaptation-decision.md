@@ -85,6 +85,11 @@ metadata at a 12px floor, widens the two side rails, and adds a source-level
 contract covering the dashboard shell plus P6 workbench components so text
 below 12px cannot be reintroduced. Final frontend verification on that fix is
 158 passed, typecheck/lint clean and a successful 16-route production build.
+The accompanying maintenance-map path addition changed the sealed raw bytes;
+CI correctly failed closed on Registry and Task Ledger map drift. Registry was
+resealed first, Task Ledger was then resealed against the new Registry bytes,
+and Planner was resealed against both. The three-contract regression passed
+407 tests after that forward fix.
 
 Docker Desktop Linux Engine recovered on 2026-08-13. The guarded database Gate
 then exposed and forward-fixed three evidence defects: the reviewed schema

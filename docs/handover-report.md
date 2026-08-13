@@ -5487,3 +5487,10 @@ API proxy after restart = authenticated boundary reachable; anonymous probe 401
 This is a presentation-only forward fix. Runtime, Planner, Multi-Agent, Tools,
 Skills Runtime, MCP, CLI, Vision, migration `0016`, Provider credentials and
 production activation boundaries are unchanged.
+
+Adding the typography contract to the maintainer map changed its sealed raw
+bytes, so the first PR CI run correctly reported Registry/Task Ledger
+`maintainer_map` drift while all other backend tests passed. The forward fix
+resealed Registry first, then Task Ledger against Registry, then Planner
+against both downstream raw-byte digests. The focused sealed-contract matrix
+passed 407 tests after resealing; no feature gate or activation field changed.
