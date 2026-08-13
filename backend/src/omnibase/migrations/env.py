@@ -129,14 +129,19 @@ def _is_exact_0016_to_0015_downgrade() -> bool:
     command_options = getattr(config, "cmd_opts", None)
     raw_command = getattr(command_options, "cmd", None)
     raw_revision = getattr(command_options, "revision", None)
-    if not isinstance(raw_command, tuple) or not raw_command:
-        return False
-    command = raw_command[0]
-    return (
+    command = raw_command[0] if isinstance(raw_command, tuple) and raw_command else None
+    metadata_matches = (
         callable(command)
         and getattr(command, "__name__", None) == "downgrade"
         and raw_revision == "0015"
     )
+
+    # Alembic 1.13 may not preserve ``Config.cmd_opts`` when ``env.py`` is
+    # re-entered for a tenant phase.  Accept only the exact ordinary CLI form
+    # as the source-complete fallback; flags, ranges, relative revisions and
+    # programmatic calls remain on the historical fail-closed path.
+    exact_cli = tuple(sys.argv[1:]) == ("downgrade", "0015")
+    return metadata_matches or exact_cli
 
 
 def _run_global_migrations(connection: Any) -> None:

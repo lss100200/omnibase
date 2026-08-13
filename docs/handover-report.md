@@ -5413,9 +5413,22 @@ remaining host non-integration = 2673 passed / 42 skipped / 15 host-platform
   failures / 16 deselected after excluding one Linux-launcher collection error
 changed-path Ruff check and format = passed (65 Python paths)
 maintainer map and benchmark = valid
-guarded D2 PostgreSQL attacks = 8 test functions collected (including
-  parameterized authority-drift cases) and statically clean, but not executed
-  because Docker Desktop Linux Engine is unavailable
+guarded D2 PostgreSQL attacks = 10 passed in 99.58s against an isolated
+  omnibase_test_p60d2_* sentinel; exact 0016 shape/constraints, concurrency,
+  stale writes, probe mutation and authority drift, tenant-first empty
+  downgrade and populated atomic rollback all passed
+focused migration/model forward-fix contracts = 28 passed
+broader D2/Agent Alpha/rate-limit/migration regression = 90 passed
+P5 registry/task-ledger/planner sealed-contract regression = 407 passed
+Mypy migration env + model settings boundary = passed (2 source files)
+forward-fix Ruff check / format = passed on 3 explicit paths
+disposable container, networks and tmpfs database = removed with
+  down -v --remove-orphans
+maintainer map = valid (58 invariants / 46 modules / 919 path specs /
+  2082 matched files / 311 entrypoints / 19 HTTP entrypoints /
+  247 verification commands)
+maintainer benchmark = valid (3 plans / 8 scenarios / 6 critical scenarios /
+  9 unsafe vetoes)
 root .env not read
 business database not accessed or migrated
 not pushed / not merged / not deployed
@@ -5424,8 +5437,16 @@ not pushed / not merged / not deployed
 The P5/P34 sealed chain, production frontend build and maintainer validators are
 closed. External P6.0-A findings were independently rechecked; all current P1/P2
 and applicable P3 issues are fixed, including honest `interrupted_unknown`
-semantics when an invocation ID has not arrived. The remaining acceptance item is
-infrastructure-bound: run the `0016` migration/concurrency attack module and the
-authoritative complete Linux/container matrix once Docker/WSL is healthy. Current
-status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_NOT_PROVEN_LOCALLY`, not
-production evidence. Local commits only; no push, PR, merge or deployment.
+semantics when an invocation ID has not arrived. Docker/WSL recovery allowed the
+previously missing database Gate to run. Its first real execution exposed a
+schema-assertion drift, a stale pre-hardening Provider test double, missing
+tenant-session rebinding in that test harness after the deliberate mid-probe
+commit, and downgrade-test ordering polluted by intentionally retained
+append-only audit tenants. The forward fix binds the harness exactly like
+`get_tenant_db`, runs database-wide downgrade proofs before audited service
+cases, and selects tenant-first downgrade only for the exact ordinary
+`alembic downgrade 0015` CLI form. Final result: `10 passed`, cleanup complete.
+
+Current status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_PASSED_LOCALLY`.
+This remains local disposable engineering evidence, not production evidence.
+Local commits only; no push, PR, merge or deployment.

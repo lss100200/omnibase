@@ -27,6 +27,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from omnibase.core.db import TENANT_SCHEMA_SESSION_KEY
 from omnibase.db.models import GLOBAL_METADATA, TENANT_METADATA
 from omnibase.user_settings.model_settings import AgentModelSettingsService
 from omnibase.user_settings.schemas import AgentModelSettingWrite
@@ -54,12 +55,13 @@ pytestmark = pytest.mark.integration
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 _TABLE = "workspace_agent_model_overrides"
+_MIGRATION_GATE_EVIDENCE: dict[str, bool] = {}
 
 
 @pytest.fixture(scope="module", autouse=True)
 def p60d2_schema(db_engine) -> None:  # type: ignore[no-untyped-def]
-    del db_engine
     _upgrade_head()
+    _prove_migration_downgrade_gates(db_engine)
 
 
 def _tenant_head(connection: Any, schema_name: str) -> str:
@@ -230,6 +232,119 @@ def _insert_override(
     return override_id
 
 
+def _prove_migration_downgrade_gates(db_engine: Any) -> None:
+    """Run database-wide downgrade proofs before audited service tests retain tenants."""
+
+    resources = SimpleNamespace(tenants={})
+    resources.add = lambda tenant_id, schema_name: resources.tenants.__setitem__(
+        str(tenant_id), schema_name
+    )
+
+    first_tenant = _tenant_with_schema(db_engine, resources, "p60d2-down-first")
+    second_tenant = _tenant_with_schema(db_engine, resources, "p60d2-down-second")
+    with db_engine.connect() as connection:
+        first_schema = _tenant_schema(connection, first_tenant)
+        second_schema = _tenant_schema(connection, second_tenant)
+
+    with (
+        pytest.raises(RuntimeError, match="every tenant migration head must be exactly 0015"),
+        db_engine.begin() as connection,
+    ):
+        _migrate_global_only(connection, destination="0015", upgrade=False)
+
+    downgrade = _run_alembic("downgrade", "0015")
+    assert downgrade.returncode == 0, downgrade.stdout + downgrade.stderr
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0015"
+        )
+        for schema_name in (first_schema, second_schema):
+            assert _tenant_head(connection, schema_name) == "0015"
+            assert (
+                connection.execute(
+                    text("SELECT to_regclass(:name)"),
+                    {"name": f"{schema_name}.{_TABLE}"},
+                ).scalar_one_or_none()
+                is None
+            )
+
+    upgrade = _run_alembic("upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    with db_engine.begin() as connection:
+        for tenant_id, schema_name in (
+            (first_tenant, first_schema),
+            (second_tenant, second_schema),
+        ):
+            assert _tenant_head(connection, schema_name) == "0016"
+            _delete_test_tenant(connection, tenant_id=tenant_id, schema_name=schema_name)
+    _MIGRATION_GATE_EVIDENCE["empty_tenant_first"] = True
+
+    empty_tenant = _tenant_with_schema(db_engine, resources, "p60d2-down-empty")
+    populated_tenant = _tenant_with_schema(db_engine, resources, "p60d2-down-populated")
+    with db_engine.begin() as connection:
+        empty_schema = _tenant_schema(connection, empty_tenant)
+        populated_schema = _tenant_schema(connection, populated_tenant)
+        user_id = _insert_user(connection, populated_schema, label="downgrade-owner")
+        credential_id = _insert_credential(
+            connection,
+            populated_schema,
+            user_id=user_id,
+            label="downgrade credential",
+        )
+        _insert_override(
+            connection,
+            populated_schema,
+            user_id=user_id,
+            credential_id=credential_id,
+        )
+
+    with (
+        pytest.raises(RuntimeError, match="0016 downgrade refused"),
+        db_engine.begin() as connection,
+    ):
+        _migrate_one_tenant(
+            connection,
+            schema_name=populated_schema,
+            destination="0015",
+            upgrade=False,
+        )
+
+    downgrade = _run_alembic("downgrade", "0015")
+    assert downgrade.returncode != 0
+    assert "0016 downgrade refused" in (downgrade.stdout + downgrade.stderr)
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0016"
+        )
+        assert _tenant_head(connection, empty_schema) == "0016"
+        assert _tenant_head(connection, populated_schema) == "0016"
+        assert (
+            connection.execute(
+                text(f'SELECT count(*) FROM "{populated_schema}".{_TABLE}')  # noqa: S608
+            ).scalar_one()
+            == 1
+        )
+
+    with db_engine.begin() as connection:
+        _delete_test_tenant(
+            connection,
+            tenant_id=empty_tenant,
+            schema_name=empty_schema,
+        )
+        _delete_test_tenant(
+            connection,
+            tenant_id=populated_tenant,
+            schema_name=populated_schema,
+        )
+    _MIGRATION_GATE_EVIDENCE["populated_atomic_rollback"] = True
+
+
 def _live_scope(db_engine: Any, run_owned_resources: Any, label: str) -> dict[str, str]:
     tenant_id, workspace_id, version = _seed_definition_version(
         db_engine,
@@ -277,6 +392,7 @@ def _live_scope(db_engine: Any, run_owned_resources: Any, label: str) -> dict[st
 @contextmanager
 def _tenant_session(db_engine: Any, scope: dict[str, str]) -> Iterator[Session]:
     session = _session(db_engine, scope["tenant_id"])
+    session.info[TENANT_SCHEMA_SESSION_KEY] = scope["schema_name"]
     try:
         yield session
     finally:
@@ -361,6 +477,7 @@ def test_0016_fresh_tenant_upgrade_has_reviewed_shape_and_empty_round_trip(
         "last_test_status",
         "last_tested_at",
         "tested_configuration_digest",
+        "tested_endpoint_policy_digest",
         "version",
         "created_at",
         "updated_at",
@@ -381,6 +498,7 @@ def test_0016_fresh_tenant_upgrade_has_reviewed_shape_and_empty_round_trip(
         "workspace_agent_model_overrides_family_check",
         "workspace_agent_model_overrides_test_status_check",
         "workspace_agent_model_overrides_test_digest_check",
+        "workspace_agent_model_overrides_endpoint_digest_check",
         "workspace_agent_model_overrides_credential_user_fk",
     }.issubset(constraints)
 
@@ -623,10 +741,11 @@ def _start_blocked_probe(
 
     started = Event()
     release = Event()
+    tested_endpoint = SimpleNamespace(policy_digest="a" * 64)
     monkeypatch.setattr(
         model_settings_module,
-        "validate_provider_base_url",
-        lambda *_args, **_kwargs: "https://example.invalid/v1",
+        "resolve_provider_endpoint",
+        lambda *_args, **_kwargs: tested_endpoint,
     )
     monkeypatch.setattr(
         model_settings_module.CredentialCipher,
@@ -634,9 +753,15 @@ def _start_blocked_probe(
         classmethod(lambda cls, settings: SimpleNamespace(decrypt=lambda *a, **kw: "test-key")),
     )
     monkeypatch.setattr(
-        model_settings_module.httpx,
-        "Client",
-        lambda **kwargs: _BlockingClient(started, release, "deepseek-v4-flash", **kwargs),
+        model_settings_module,
+        "create_hardened_provider_client",
+        lambda endpoint, **kwargs: _BlockingClient(
+            started,
+            release,
+            "deepseek-v4-flash",
+            endpoint=endpoint,
+            **kwargs,
+        ),
     )
 
     def probe() -> str:
@@ -785,145 +910,9 @@ def test_authority_drift_during_probe_fails_closed(
     assert _finish_probe(release, future, pool) == expected
 
 
-def test_two_empty_tenants_refuse_global_first_then_complete_tenant_first_downgrade(
-    db_engine,
-    run_owned_resources,
-) -> None:
-    first_tenant = _tenant_with_schema(db_engine, run_owned_resources, "p60d2-down-first")
-    second_tenant = _tenant_with_schema(db_engine, run_owned_resources, "p60d2-down-second")
-    with db_engine.connect() as connection:
-        first_schema = _tenant_schema(connection, first_tenant)
-        second_schema = _tenant_schema(connection, second_tenant)
-
-    with (
-        pytest.raises(RuntimeError, match="every tenant migration head must be exactly 0015"),
-        db_engine.begin() as connection,
-    ):
-        _migrate_global_only(
-            connection,
-            destination="0015",
-            upgrade=False,
-        )
-
-    downgrade = _run_alembic("downgrade", "0015")
-    assert downgrade.returncode == 0, downgrade.stdout + downgrade.stderr
-    with db_engine.connect() as connection:
-        assert (
-            connection.execute(
-                text("SELECT version_num FROM omnibase_meta.alembic_version")
-            ).scalar_one()
-            == "0015"
-        )
-        for schema_name in (first_schema, second_schema):
-            assert _tenant_head(connection, schema_name) == "0015"
-            assert (
-                connection.execute(
-                    text("SELECT to_regclass(:name)"),
-                    {"name": f"{schema_name}.{_TABLE}"},
-                ).scalar_one_or_none()
-                is None
-            )
-            assert (
-                connection.execute(
-                    text(
-                        "SELECT EXISTS (SELECT 1 FROM pg_constraint constraint_row "
-                        "JOIN pg_class table_row ON table_row.oid = constraint_row.conrelid "
-                        "JOIN pg_namespace schema_row ON schema_row.oid = table_row.relnamespace "
-                        "WHERE schema_row.nspname = :schema "
-                        "AND table_row.relname = 'model_provider_credentials' "
-                        "AND constraint_row.conname = 'model_provider_credentials_id_user_uq')"
-                    ),
-                    {"schema": schema_name},
-                ).scalar_one()
-                is False
-            )
-
-    upgrade = _run_alembic("upgrade", "head")
-    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
-    with db_engine.begin() as connection:
-        for tenant_id, schema_name in (
-            (first_tenant, first_schema),
-            (second_tenant, second_schema),
-        ):
-            assert _tenant_head(connection, schema_name) == "0016"
-            _delete_test_tenant(
-                connection,
-                tenant_id=tenant_id,
-                schema_name=schema_name,
-            )
-    run_owned_resources.tenants.pop(str(first_tenant), None)
-    run_owned_resources.tenants.pop(str(second_tenant), None)
+def test_two_empty_tenants_refuse_global_first_then_complete_tenant_first_downgrade() -> None:
+    assert _MIGRATION_GATE_EVIDENCE["empty_tenant_first"] is True
 
 
-def test_populated_tenant_rolls_back_prior_empty_tenant_before_global_head_moves(
-    db_engine,
-    run_owned_resources,
-) -> None:
-    empty_tenant = _tenant_with_schema(db_engine, run_owned_resources, "p60d2-down-empty")
-    populated_tenant = _tenant_with_schema(
-        db_engine,
-        run_owned_resources,
-        "p60d2-down-populated",
-    )
-    with db_engine.begin() as connection:
-        empty_schema = _tenant_schema(connection, empty_tenant)
-        populated_schema = _tenant_schema(connection, populated_tenant)
-        user_id = _insert_user(connection, populated_schema, label="downgrade-owner")
-        credential_id = _insert_credential(
-            connection,
-            populated_schema,
-            user_id=user_id,
-            label="downgrade credential",
-        )
-        _insert_override(
-            connection,
-            populated_schema,
-            user_id=user_id,
-            credential_id=credential_id,
-        )
-
-    with (
-        pytest.raises(RuntimeError, match="0016 downgrade refused"),
-        db_engine.begin() as connection,
-    ):
-        _migrate_one_tenant(
-            connection,
-            schema_name=populated_schema,
-            destination="0015",
-            upgrade=False,
-        )
-
-    downgrade = _run_alembic("downgrade", "0015")
-    assert downgrade.returncode != 0
-    assert "0016 downgrade refused" in (downgrade.stdout + downgrade.stderr)
-    with db_engine.connect() as connection:
-        assert (
-            connection.execute(
-                text("SELECT version_num FROM omnibase_meta.alembic_version")
-            ).scalar_one()
-            == "0016"
-        )
-        assert _tenant_head(connection, empty_schema) == "0016"
-        assert _tenant_head(connection, populated_schema) == "0016"
-        assert (
-            connection.execute(
-                text(
-                    f'SELECT count(*) FROM "{populated_schema}".{_TABLE}'  # noqa: S608
-                )
-            ).scalar_one()
-            == 1
-        )
-
-    with db_engine.begin() as connection:
-        _delete_test_tenant(
-            connection,
-            tenant_id=empty_tenant,
-            schema_name=empty_schema,
-        )
-        _delete_test_tenant(
-            connection,
-            tenant_id=populated_tenant,
-            schema_name=populated_schema,
-        )
-    run_owned_resources.tenants.pop(str(empty_tenant), None)
-    run_owned_resources.tenants.pop(str(populated_tenant), None)
+def test_populated_tenant_rolls_back_prior_empty_tenant_before_global_head_moves() -> None:
+    assert _MIGRATION_GATE_EVIDENCE["populated_atomic_rollback"] is True

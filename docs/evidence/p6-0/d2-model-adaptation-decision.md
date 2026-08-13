@@ -2,7 +2,7 @@
 
 Date: 2026-08-13
 
-Decision: `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_NOT_PROVEN_LOCALLY`
+Decision: `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_PASSED_LOCALLY`
 
 ## Delivered
 
@@ -53,22 +53,43 @@ maintainer map = valid (58 invariants, 46 modules, 919 path specs,
   2082 matched files, 311 entrypoints, 19 HTTP entrypoints,
   247 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 9 unsafe vetoes)
-guarded PostgreSQL D2 attack module = 8 test functions collected (including
-  parameterized authority-drift cases); static checks passed;
-  execution not proven because Docker Desktop Linux Engine is unavailable
+guarded PostgreSQL D2 attack module = 10 passed in 99.58s against a disposable
+  omnibase_test_p60d2_* PostgreSQL sentinel; exact 0016 migration shape,
+  cross-user and closed-set constraints, concurrent first-create, stale
+  update/delete, delete/recreate during probe, membership/Binding/generation
+  drift, tenant-first empty downgrade and populated atomic rollback passed
+focused migration/model contracts after the database forward fix = 28 passed
+broader D2/Agent Alpha/rate-limit/migration regression = 90 passed
+P5 registry/task-ledger/planner sealed-contract regression = 407 passed
+Mypy migration env + model settings boundary = passed (2 source files)
+changed forward-fix Ruff check / format = passed (3 explicit paths)
+disposable PostgreSQL container, networks and tmpfs data = removed with
+  down -v --remove-orphans after the Gate
+maintainer map = valid (58 invariants, 46 modules, 919 path specs,
+  2082 matched files, 311 entrypoints, 19 HTTP entrypoints,
+  247 verification commands)
+maintainer benchmark = valid (3 plans, 8 scenarios, 6 critical scenarios,
+  9 unsafe vetoes)
 root .env = not read
 business database = not accessed or migrated
 push / PR / merge / deploy = not performed
 ```
 
-The authoritative Linux/container `mypy src`, complete non-integration suite and
-the guarded disposable PostgreSQL migration/concurrency Gate could not run because
-Docker Desktop's Linux engine/WSL distribution is unavailable. Host mypy proved
-and fixed the only D2-local type defect, then remained blocked by pre-existing
-missing optional packages and POSIX stubs. The database attacks are committed
-test code, not passing database evidence. Therefore the engineering implementation
-is complete but final database/container acceptance remains explicitly not proven.
-This decision is not production evidence.
+Docker Desktop Linux Engine recovered on 2026-08-13. The guarded database Gate
+then exposed and forward-fixed three evidence defects: the reviewed schema
+assertion omitted the endpoint-policy digest column; the probe attack double
+still patched the retired pre-hardening network entrypoint and did not model the
+request session's tenant binding after its deliberate mid-probe commit; and the
+database-wide downgrade proof ran after append-only audited service cases had
+intentionally retained tenants. The final Gate now executes the downgrade proof
+before audited cases, preserves the real request-scoped tenant binding, and
+accepts only the exact ordinary `alembic downgrade 0015` CLI form for the
+tenant-first path. All 10 database attacks passed and cleanup completed.
+
+The earlier complete frontend, focused backend, P5/P34 sealed-contract and
+maintainer-map evidence remains the D2 engineering baseline. This local
+disposable database PASS is not a business-database migration, public release,
+deployment or production evidence.
 
 ## Safety posture
 

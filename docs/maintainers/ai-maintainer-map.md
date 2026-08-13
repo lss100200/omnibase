@@ -2175,3 +2175,12 @@ table and credential ownership unique constraint absent before the global head
 may move. Global-first, partial, or populated downgrade attempts fail closed.
 P34.7 may acknowledge the current repository head while remaining
 frozen/blocked with the approved digest empty.
+
+The guarded disposable PostgreSQL Gate must execute database-wide downgrade
+proofs before service cases that intentionally retain append-only audited
+tenants. Probe attack tests must preserve the same tenant schema binding as
+`get_tenant_db` across the deliberate mid-probe commit and patch the shared
+hardened endpoint resolver/client seam, never a retired pre-hardening HTTP
+entrypoint. The tenant-first online path accepts only the exact ordinary
+`alembic downgrade 0015` CLI form; flags, ranges, relative revisions and
+programmatic ambiguity stay fail closed.

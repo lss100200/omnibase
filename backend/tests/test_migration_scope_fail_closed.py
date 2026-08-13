@@ -69,6 +69,7 @@ def test_0016_to_0015_online_downgrade_is_explicitly_tenant_first() -> None:
     ).read_text(encoding="utf-8")
     assert "def _is_exact_0016_to_0015_downgrade() -> bool:" in migration_env
     assert 'getattr(command, "__name__", None) == "downgrade"' in migration_env
+    assert 'tuple(sys.argv[1:]) == ("downgrade", "0015")' in migration_env
     assert 'raw_revision == "0015"' in migration_env
     tenant_first = migration_env.split("def _run_exact_0016_to_0015_downgrade(", 1)[1].split(
         "def run_migrations_offline() -> None:", 1
