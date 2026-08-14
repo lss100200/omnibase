@@ -69,9 +69,11 @@ Independent review found and closed six P2 boundary gaps before final sealing:
 - text search revalidates every descendant directory before scanning and every
   yielded file's complete component chain before opening, closing a local
   junction/symlink replacement race;
-- file lifecycle budget is reserved before open, directory listing has a fixed
-  pre-sort visited ceiling, and Git stdout/stderr consume shared budget while
-  pipe chunks arrive on success and failure paths;
+- file capacity is required before open even for an empty file, current size is
+  reserved, post-stat growth is charged per chunk and overflow saturates the
+  counter; directory listing has a fixed pre-sort visited ceiling, and Git
+  stdout/stderr consume shared budget while pipe chunks arrive on success and
+  failure paths;
 - backend Kimi/Moonshot exact-name recognition now matches the frontend and
   keeps vendor-native controls absent;
 - any present but unknown requested/observed model name now terminates at
@@ -80,7 +82,7 @@ Independent review found and closed six P2 boundary gaps before final sealing:
   path rechecks alone cannot close the final rename TOCTOU window.
 
 The final focused regression counts are recorded in the verification matrix
-below; the new MCP-only file reports `42 passed`, model-gateway reports
+below; the MCP-only file reports `47 passed`, model-gateway reports
 `43 passed`, and Windows release contracts report `18 passed, 1 skipped`.
 
 Backend and frontend family recognition now share conservative exact Kimi,
@@ -182,7 +184,7 @@ install exit: 30; target_exists=false; staging_count=0
 Integrated focused backend matrix:
 
 ```text
-113 passed
+118 passed
 ```
 
 It includes native Skill catalog/persistence/resolution, Model Gateway, Agent

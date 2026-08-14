@@ -56,8 +56,10 @@ name/status/line-count metadata. VCS control directories and secret-like files
 remain excluded.
 
 The process has lifetime ceilings for calls, aggregate file bytes and aggregate
-Git output. File work is reserved before opening and failure does not refund the
-reservation; directory listing has a visited-entry ceiling before sorting. Git
+Git output. File capacity is required before opening even a currently empty
+file; current size is reserved and any post-stat growth is charged per chunk,
+with overflow saturating the counter. Failure does not refund consumed work.
+Directory listing has a visited-entry ceiling before sorting. Git
 stdout and stderr are charged while they are read, including failed commands,
 and an exhausted budget rejects before starting another process. No tool accepts
 arbitrary shell, Git flags, regular expressions, glob patterns, network targets,

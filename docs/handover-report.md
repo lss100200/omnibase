@@ -5817,11 +5817,14 @@ the remaining review-fix chain is:
 da726a9 fix(p6.3): enforce MCP lifetime resource budgets
 933c993 fix(p6.3): align model-name family profiles
 b5d380f fix(p6.3): freeze unsafe Companion install mutation
+b88ea67 fix(p6.3): charge MCP file growth during reads
 ```
 
-MCP file bytes are now reserved before opening, list enumeration has a fixed
-pre-sort visited ceiling, and Git stdout/stderr consume the shared lifetime
-budget while chunks arrive on success and failure paths. Backend Kimi/Moonshot
+MCP file capacity is required before opening even a currently empty file,
+current size is reserved, and post-stat growth is charged per chunk with
+overflow saturation. List enumeration has a fixed pre-sort visited ceiling, and
+Git stdout/stderr consume the shared lifetime budget while chunks arrive on
+success and failure paths. Backend Kimi/Moonshot
 recognition now matches the frontend; any present but unknown requested or
 observed name is terminal `generic` and cannot be upgraded by branded relay or
 Provider hints.
@@ -5838,8 +5841,8 @@ open, staging creation, extraction, move or cleanup. `verify`, `help`,
 Final review-fix verification before the sealed-chain clean-HEAD pass:
 
 ```text
-P6.3 focused backend = 113 passed
-MCP focused = 42 passed
+P6.3 focused backend = 118 passed
+MCP focused = 47 passed
 model gateway focused = 43 passed
 frontend = 175 passed; typecheck/lint/Prettier/build passed; 17 routes
 Windows release contracts = 18 passed, 1 skipped

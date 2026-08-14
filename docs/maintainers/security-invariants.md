@@ -3938,9 +3938,12 @@ process has fixed lifetime budgets for calls, aggregate file bytes and aggregate
 Git output. Text search revalidates every descendant directory before scanning
 and every yielded file's complete component chain immediately before opening;
 an initially safe directory cannot be replaced by a junction/symlink to escape
-the authorized root. File bytes are reserved before an opened-file read can
-start, so exhausted process budget causes no further file open; conservative
-reservations remain consumed on identity, decoding, redaction or search failure.
+the authorized root. File capacity is required even for a currently empty file,
+then current size is reserved before an opened-file read can start; exhausted
+process budget causes no further file open. If a file grows after stat/fstat,
+every byte beyond the reservation is charged as its chunk arrives and overflow
+saturates the lifetime counter before failing. Reservations and actual growth
+remain consumed on identity, decoding, redaction or search failure.
 Directory listing has a separate visited-entry ceiling before sorting. Git
 stdout and stderr consume the shared lifetime budget as pipe chunks arrive,
 including non-zero, timeout and over-limit paths; exhausted budget rejects the

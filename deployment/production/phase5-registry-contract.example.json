@@ -110,7 +110,7 @@
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "36d6b9cdf6ec618d9786393a76ef036deccb78b3ec5141eeb0b8934b4a5a65e9"
+      "sha256": "5663cf3385c83d32f5bf2feca37652acec757a06786c1883501e7993c7413959"
     },
     {
       "name": "registry_tests",
