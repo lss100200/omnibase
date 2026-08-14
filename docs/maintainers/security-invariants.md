@@ -3806,3 +3806,90 @@ all enterprise gates fail closed, and preserve append-only audit evidence. Do
 not copy or expose a key, accept a stale test result, edit a populated schema
 backward or enable Planner/Multi-Agent to repair a model setting. Use a reviewed
 forward fix or restore into a new `omnibase_restore_*` database.
+
+## INV-074 p62-scan-only-local-skill-discovery-boundary
+
+P6.2 local Skill discovery begins only from an Owner-triggered browser directory
+picker. It examines only direct child directories that expose a `SKILL.md`,
+uses fixed candidate/file/aggregate byte budgets and accepts UTF-8 text only.
+Executable siblings, capability/tool/network/secret/script declarations,
+unknown frontmatter fields, duplicate fields, binary content and identity drift
+fail closed. The Browser projection uses opaque scan-local IDs and must not
+return or persist an absolute physical path.
+
+Discovery is never installation or trust approval. It performs no execution,
+dependency loading, network access, download, publish or database mutation. A
+safe-looking unknown candidate remains `unsupported_unreviewed`; an invalid
+candidate is `rejected`. Neither status may be written into migration `0014`,
+because that schema and `SkillPersistenceService` authorize only the sealed
+source-owned first-party catalog. Importing a real third-party Skill requires a
+separate provenance/review/revocation model and separately reviewed migration.
+
+**Required verification**
+
+- `frontend/lib/p6-skill-discovery.test.ts`
+- `frontend/lib/p6-capability-center.test.ts`
+- `frontend/lib/p6-native-skills.test.ts`
+- `backend/tests/test_p6_1_native_skill_catalog.py`
+- `backend/tests/test_p5_6p_instruction_skills.py`
+
+## INV-075 p62-bounded-history-and-local-changeset-journal-boundary
+
+P6.2 conversation continuity may compile only redacted terminal `user` and
+`agent` messages from the exact active browser session. It is capped at 24
+messages and an independent 12,000-character budget, retains newest messages
+deterministically and never imports another session or Workspace. The
+`fnv1a32` value is a browser-local diagnostic fingerprint, not a cryptographic
+digest, replay identity, approval or authorization. Partial SSE, unknown
+outcome and timeline/system entries do not become successful conversation
+history.
+
+The ChangeSet journal is browser-local under the exact tenant/Workspace key,
+bounded to 40 records and 4 MiB. Restore validates tenant, Workspace, IDs,
+logical paths, unique files, version kinds, content byte limits and digest
+grammar before exposing a record. It never restores a `FileSystemHandle` or
+grants write authority. Every rollback still requires the current Owner-held
+handle, exact Task/Attempt ownership, current-file reread, manifest/content
+validation, CAS and the existing three-way conflict rules. A scope change,
+malformed journal, storage failure or unknown write outcome fails closed and
+must not replay a Provider request or automatically write a file.
+
+**Required verification**
+
+- `frontend/lib/p6-workbench.test.ts`
+- `frontend/lib/p6-change-journal.test.ts`
+- `frontend/lib/p6-changesets.test.ts`
+- frontend typecheck, lint and production build
+
+## INV-076 p62-windows-companion-offline-no-mutation-boundary
+
+The P6.2 Windows Companion must compile as a self-contained, single-file
+`win-x64` program and preserve every P6.1 archive guard: exact manifest and file
+schemas, fixed preview/product/platform/posture, clean source-commit grammar,
+closed payload set, manifest/file/total byte ceilings, compression-ratio limit
+and fixed-time SHA-256 comparison. Installed-release doctor verifies the same
+closed file/directory set and payload digests; directory existence alone is not
+release-integrity evidence.
+
+`init-config` uses the operating-system CSPRNG, creates rather than overwrites,
+does not echo secrets and keeps image digests publisher-owned. Config diagnosis
+requires the exact key set, allowlisted image repositories, digest grammar,
+strong distinct encryption keys, credential/URL consistency, local CORS,
+deployment UUID and all four feature gates explicitly `false`. Unknown or
+malformed doctor arguments fail closed. Doctor is offline and read-only: fixed,
+bounded process arguments may inspect Docker CLI/daemon, Compose and WSL status,
+but the Companion never pulls, starts, installs, upgrades, restarts or mutates
+Docker, WSL, VHDX, PATH, firewall or system services.
+
+`RELEASE_IMAGES_NOT_PUBLISHED` is a publisher blocker, not a user config error.
+`READY_FOR_PULL` does not mean images were pulled, services are healthy,
+publisher identity is verified or production is ready. Until real OCI digests,
+Authenticode and clean-machine release evidence exist, the manifest remains
+`production_ready=false` and the artifact is an engineering preview.
+
+**Required verification**
+
+- zero-warning .NET build and self-contained publish using the pinned SDK;
+- `scripts/release/test_build_windows_release.py`;
+- real `verify`, `install` and `init-config` preview smoke plus tamper cases;
+- no Docker/WSL/VHDX mutation during verification.

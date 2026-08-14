@@ -8,7 +8,7 @@ Windows x64 self-contained 单文件程序，目标是不要求用户预装 .NET
 OmniBase.Setup.exe verify <release.zip>
 OmniBase.Setup.exe install <release.zip> <全新目标目录>
 OmniBase.Setup.exe init-config --output <安装目录外的 operator.env>
-OmniBase.Setup.exe doctor --install <安装目录> [--json]
+OmniBase.Setup.exe doctor --install <安装目录> [--env-file <operator.env>] [--json]
 ```
 
 `verify` 和 `install` 继续执行发行文件闭集、manifest、长度和 SHA-256 校验。安装采用

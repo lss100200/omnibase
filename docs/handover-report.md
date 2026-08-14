@@ -5581,3 +5581,110 @@ business DB, Docker build, VHDX mutation, push, PR, merge or deployment.
 Final local status: `P6_1_ENGINEERING_COMPLETE_RELEASE_PREVIEW_VERIFIED`.
 This is a verified personal-edition engineering preview, not a signed,
 published or production-deployed Windows release.
+
+### P6.2 personal capability center and Windows Companion R0 (2026-08-14)
+
+Branch `codex/p6-2-personal-capability-center-r0` starts from the final local
+P6.1 documentation head `8d13f6c`. P6.2 keeps the personal product truth: one
+human Owner, one Agent Alpha Runtime, one active parent role and nine dormant
+request-scoped specialists. It does not reopen enterprise P34.7, Planner,
+autonomous Multi-Agent or general MCP execution.
+
+P6.2-A upgrades `/skills` into a Chinese personal capability center. It
+combines the sealed six-Skill first-party catalog, the existing P6.0-D2
+ten-role model settings and the exact three-tool read-only MCP posture. An
+Owner can explicitly choose a local directory for a bounded scan of direct
+child `SKILL.md` candidates. The scanner is UTF-8/count/byte bounded, rejects
+scripts, executables, tools, network, secrets and unsupported fields, returns
+opaque source IDs and performs no execution, installation or network use.
+Unknown candidates remain `unsupported_unreviewed`; migration `0014` is not
+misused to label them first-party.
+
+P6.2-B compiles at most 24 recent terminal user/Agent messages from the exact
+active browser session under an independent 12,000-character budget. These
+messages are already processed by the P6.0 persistence redactor. Newest
+messages are retained deterministically; timeline/system entries and another
+session never enter the request. The `fnv1a32` manifest is explicitly a local
+diagnostic fingerprint, not a security digest. ChangeSets now survive refresh
+in the bounded key `omnibase.p6.changes.v1:<tenant>:<workspace>`. Restore
+validates exact scope, logical paths, unique files, complete version shapes,
+content limits and digest grammar before the existing handle/CAS/three-way
+rollback path can use a record. No backend file API or replay authority was
+added.
+
+P6.2-C does not duplicate the model gateway. The capability center combines
+`model-provider-runtime` with the ten existing role projections and reports
+personal/operator-default/unavailable source, ready/pending/unavailable role
+counts and explicit overrides. MCP still exposes only
+`omnibase_files_list`, `omnibase_files_read` and `omnibase_git_inspect` as a
+separately launched preview; it is not mounted into Agent Alpha and `no_tool`
+is unchanged.
+
+P6.2-D upgrades `OmniBase.Setup` source to a self-contained `win-x64`
+single-file Companion with `verify`, `install`, `init-config` and `doctor`.
+The first implementation passed static tests but an actual build using the
+already preserved, officially SHA-512-verified .NET SDK `8.0.424` found missing
+namespace imports and failed compilation. Independent source comparison also
+found that the expansion had dropped P6.1 manifest schema, manifest-size,
+compression-ratio, source-commit and posture checks. A forward fix restored the
+entire P6.1 integrity baseline, added installed-directory closed-set/digest
+verification, closed doctor argument parsing, exact repository/config-key
+validation, credential/key/CORS checks and explicit false values for Runtime,
+Planner, Multi-Agent and MCP gates. The fixed project builds with zero errors
+and zero warnings; the offline Release regression reports `14 passed, 1
+skipped` (the existing POSIX-only fsmonitor fixture is skipped on Windows).
+
+The first full frontend run executed 169 tests and exposed one new journal
+predicate failure: `Array.filter` passed its numeric index into a two-argument
+scope validator. The forward fix wraps the predicate explicitly and adds scope,
+traversal and malformed-version attacks. Final frontend verification is `169
+passed`; TypeScript typecheck, Next lint, explicit-path Prettier and production
+build all pass, with 17 routes generated. The focused backend model/Skill/MCP/
+Agent matrix is `85 passed`. The ordered Registry → Task Ledger → Planner
+raw-byte reseal is complete and its three contract suites report `129 + 200 +
+78 = 407 passed`. Maintainer validation reports `66 invariants`, `48 modules`,
+`1014 path specs`, `3098 matched files`, `324 entrypoints`, `20 discovered HTTP
+entrypoints` and `264 verification commands`; the benchmark reports `3 plans`,
+`8 scenarios`, `6 critical scenarios` and `9 unsafe vetoes`.
+
+The canonical .NET formatter passes and the Release build remains `0 warnings /
+0 errors`. The self-contained artifact is preserved outside the repository at
+`E:\Agent IDE\Artifacts\OmniBase-P62-Companion-R0\OmniBase.Setup.exe`:
+`67,519,558` bytes, SHA-256
+`1669acef98afcd8aa865593d541f7e9915d934cad3714bf8b3313b46f869936d`,
+Authenticode `NotSigned`. Offline verify/install/init-config smoke passed; the
+negative corrupt archive, existing target/config and invalid doctor argument
+cases failed closed. A valid doctor host probe was intentionally not run
+because that path invokes read-only Docker/WSL diagnostics and this branch's
+explicit boundary excludes Docker/WSL access.
+
+Final engineering state:
+
+```text
+P6_2_PERSONAL_CAPABILITY_CENTER_ENGINEERING_COMPLETE
+PERSONAL_WORKBENCH_CONTINUITY_VERIFIED
+LOCAL_SKILL_DISCOVERY_SCAN_ONLY
+MCP_RUNTIME_NOT_INTEGRATED
+WINDOWS_COMPANION_SELF_CONTAINED_BINARY_VERIFIED
+OCI_RELEASE_IMAGES_NOT_PUBLISHED
+AUTHENTICODE_NOT_SIGNED
+PRODUCTION_READY_FALSE
+NOT_PUSHED
+NOT_DEPLOYED
+```
+
+Current invariant posture remains:
+
+```text
+migration head = 0016; migration 0017 absent
+Agent Runtime / Planner / Multi-Agent / MCP Runtime = unchanged and disabled
+unknown local Skill install/execute = absent
+MCP-to-Agent integration = absent
+OCI release image digests = not published
+Authenticode / publisher verification = not proven
+production_ready = false
+root .env not read
+business database not accessed or migrated
+Docker / WSL / VHDX mutation not performed
+not pushed / not merged / not deployed
+```

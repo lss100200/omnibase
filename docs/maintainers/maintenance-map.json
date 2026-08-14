@@ -1046,6 +1046,50 @@
         "docs/maintainers/security-invariants.md"
       ],
       "test_paths": ["scripts/maintenance/validate_maintainer_map.py"]
+    },
+    {
+      "id": "INV-074",
+      "title": "P6.2 local Skill discovery stays explicit, scan-only, opaque-path and never first-party by inference",
+      "document": "docs/maintainers/security-invariants.md#inv-074-p62-scan-only-local-skill-discovery-boundary",
+      "source_paths": [
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-skill-browser.ts",
+        "frontend/lib/p6-skill-discovery.ts"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "frontend/lib/p6-skill-discovery.test.ts"
+      ]
+    },
+    {
+      "id": "INV-075",
+      "title": "P6.2 conversation continuity and ChangeSet recovery stay redacted, bounded, exact-scope and browser-local",
+      "document": "docs/maintainers/security-invariants.md#inv-075-p62-bounded-history-and-local-changeset-journal-boundary",
+      "source_paths": [
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-change-journal.ts",
+        "frontend/lib/p6-changesets.ts"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/p6-change-journal.test.ts",
+        "frontend/lib/p6-changesets.test.ts"
+      ]
+    },
+    {
+      "id": "INV-076",
+      "title": "P6.2 Windows Companion preserves exact release integrity and performs only offline bounded diagnostics",
+      "document": "docs/maintainers/security-invariants.md#inv-076-p62-windows-companion-offline-no-mutation-boundary",
+      "source_paths": [
+        "deployment/release/windows/**",
+        "packaging/windows/OmniBase.Setup/**",
+        "scripts/release/**"
+      ],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
     }
   ],
   "modules": [
@@ -3781,6 +3825,92 @@
         "Fall back to generic model adaptation and keep actual model identity checks; never infer native controls from URL/provider labels.",
         "Do not launch the MCP server, and never mount it into no_tool, if root/Git/path identity is ambiguous.",
         "Discard only the unpopulated preview release output. Never delete images, volumes, databases or mutate VHDX to repair packaging."
+      ]
+    },
+    {
+      "id": "p6-2-personal-capability-center",
+      "name": "P6.2 personal capability center, bounded local continuity and Windows Companion",
+      "source_paths": [
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/components/layout/sidebar.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-skill-browser.ts",
+        "frontend/lib/p6-skill-discovery.ts",
+        "frontend/lib/p6-skill-discovery.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/p6-change-journal.ts",
+        "frontend/lib/p6-change-journal.test.ts",
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/build_windows_release.py",
+        "scripts/release/validate_windows_release_config.py",
+        "scripts/release/test_build_windows_release.py",
+        "docs/architecture/p6-2-personal-capability-center.md",
+        "docs/evidence/p6-2/engineering-r0-decision.md"
+      ],
+      "entrypoints": [
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage",
+        "frontend/lib/p6-skill-discovery.ts:scanP6SkillCandidates",
+        "frontend/lib/p6-skill-browser.ts:chooseAndScanP6SkillRoot",
+        "frontend/lib/p6-workbench.ts:compileWorkbenchHistory",
+        "frontend/lib/p6-change-journal.ts:parseP6ChangeJournal",
+        "packaging/windows/OmniBase.Setup/Program.cs:Companion.Run"
+      ],
+      "public_interfaces": [
+        "Chinese /skills personal capability center over existing authenticated Skill/model APIs",
+        "Owner-triggered browser directory scan returning opaque scan-only Skill candidates",
+        "Same-session bounded redacted terminal history in personal Agent Alpha requests",
+        "Tenant/Workspace-scoped browser-local ChangeSet recovery journal",
+        "Self-contained Windows verify/install/init-config/doctor engineering-preview CLI"
+      ],
+      "depends_on": [
+        "p6-1-native-skills-mcp-release",
+        "p6-personal-engineering-workbench",
+        "agent-alpha-workbench",
+        "desktop-runtime",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-065",
+        "INV-066",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-074",
+        "INV-075",
+        "INV-076"
+      ],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_p6_1_readonly_mcp.py backend/tests/test_p6_0_d2_model_settings.py backend/tests/test_agent_alpha_personal.py backend/tests/test_model_gateway.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "dotnet build packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj -c Release",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Discard a local Skill scan report and require a new Owner directory-picker gesture; never import an unknown candidate into the first-party catalog.",
+        "Discard only the exact tenant/Workspace browser journal key when malformed; never replay Provider work or infer a file handle from recovery metadata.",
+        "Fall back to the P6.1 framework-dependent preview source if a reviewed forward fix is required; never weaken archive/config checks or mutate Docker/WSL/VHDX.",
+        "Keep migration head 0016 and every Runtime/Planner/Multi-Agent/MCP gate closed; P6.2 recovery never requires migration 0017 or enterprise P34.7 activation."
       ]
     }
   ]

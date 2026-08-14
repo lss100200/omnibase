@@ -68,6 +68,10 @@ out/
 build/
 next-env.d.ts
 
+# --- .NET build output ---
+**/bin/
+**/obj/
+
 # --- TypeScript ---
 *.tsbuildinfo
 npm-debug.log*

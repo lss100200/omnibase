@@ -64,4 +64,22 @@ test('ChangeSet journal fails closed on malformed, duplicate or oversized projec
     parseP6ChangeJournal(JSON.stringify({ schemaVersion: 1, records: [item, item] })),
     [],
   )
+  assert.deepEqual(
+    parseP6ChangeJournal(JSON.stringify({ schemaVersion: 1, records: [item] }), {
+      tenantId: 'another-tenant',
+      workspaceId: 'workspace',
+    }),
+    [],
+  )
+  const malformedFile = {
+    ...item,
+    changeSet: {
+      ...item.changeSet,
+      files: [{ ...item.changeSet.files[0], path: '../outside.txt' }],
+    },
+  }
+  assert.deepEqual(
+    parseP6ChangeJournal(JSON.stringify({ schemaVersion: 1, records: [malformedFile] })),
+    [],
+  )
 })

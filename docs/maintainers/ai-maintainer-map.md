@@ -2231,3 +2231,37 @@ personal migration/init/health lifecycle and require offline-preflighted
 immutable OCI digests. The EXE may only verify/extract that ZIP. Do not claim a
 release while image digests, EXE build/signing or production journey remain
 unproven, and never mutate Docker/WSL VHDX from installer code.
+
+## P6.2 personal capability center, local continuity and Windows Companion
+
+Read INV-074 through INV-076 and
+`docs/architecture/p6-2-personal-capability-center.md`. P6.2 is a personal
+single-Owner product increment, not a general extension-runtime unlock.
+
+The local Skill picker is scan-only. Keep its explicit Owner gesture, direct
+child scope, UTF-8 and byte/count budgets, opaque source IDs and capability/
+script/executable rejection. Never execute, install, download or persist an
+unknown candidate as first-party. Migration `0014` remains the sealed native
+catalog; migration head remains `0016` and P6.2 does not create `0017`.
+
+Conversation history must come only from the redacted terminal projection of
+the exact active session and remain independently bounded. Its FNV fingerprint
+is diagnostic only. ChangeSet journal records are local recovery data, not
+server audit authority: validate the full record and exact tenant/Workspace
+scope, then retain the original handle/CAS/digest/three-way rollback checks.
+Never reconstruct a handle, auto-replay a Provider call or add a server-side
+arbitrary file writer to recover a journal.
+
+The capability center reuses the existing P6.0-D2 ten-role settings and the
+P6.1 exact three-tool read-only MCP preview. Do not create ten autonomous
+Agents, a second model router or any MCP-to-Agent connection. `no_tool`,
+Runtime, Planner, Multi-Agent and MCP Runtime stay unchanged and disabled.
+
+The Windows Companion is a self-contained CLI preview. Preserve P6.1 manifest,
+compression and digest guards while extending `verify/install/init-config/
+doctor`. Doctor must verify installed bytes and exact config shape and must use
+fixed parameterized child-process arguments only. It may observe host posture;
+it must not pull/up images, launch Docker/WSL, install dependencies or touch
+VHDX/system configuration. Real image digests, Authenticode and clean-machine
+acceptance remain separate publisher evidence, so never describe this source or
+a locally built unsigned binary as a production-ready public v1.0 release.

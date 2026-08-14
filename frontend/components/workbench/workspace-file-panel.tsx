@@ -133,7 +133,10 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
     const changeJournalKey = p6ChangeJournalStorageKey(tenantId, workspaceId)
 
     useEffect(() => {
-      const records = parseP6ChangeJournal(window.localStorage.getItem(changeJournalKey))
+      const records = parseP6ChangeJournal(window.localStorage.getItem(changeJournalKey), {
+        tenantId,
+        workspaceId,
+      })
       const next = new Map<string, LocalChangeRecord[]>()
       for (const record of records) {
         const existing = next.get(record.sessionId) ?? []
@@ -142,7 +145,7 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
       }
       sessionChangesRef.current = next
       setChanges(next.get(sessionId) ?? [])
-    }, [changeJournalKey, sessionId])
+    }, [changeJournalKey, sessionId, tenantId, workspaceId])
 
     useEffect(() => {
       const records: P6ChangeJournalRecord[] = []

@@ -215,6 +215,20 @@ not silently included in P6.0.
 > digests remain not proven. This is not Marketplace, arbitrary MCP, production
 > release or enterprise P34.7 activation.
 
+> **P6.2 A-D personal capability center engineering R0 (2026-08-14):** the
+> personal line now consolidates the native Skill catalog, ten-role model
+> posture and exact read-only MCP boundary in one Chinese capability center;
+> adds Owner-triggered scan-only local Skill discovery; injects only bounded,
+> redacted terminal history from the same browser session; and restores
+> tenant/Workspace-scoped ChangeSet metadata plus bounded local Before/After
+> recovery content after refresh. P6.2-D upgrades the Windows source contract
+> to a self-contained Companion with exact release/installed-byte verification,
+> atomic install, CSPRNG config initialization and offline doctor. Migration
+> remains `0016`; unknown Skills are not installed, MCP is not connected to
+> Agent Alpha, and Runtime/Planner/Multi-Agent/MCP gates remain closed. Real OCI
+> digests, Authenticode, clean-machine public release acceptance and production
+> deployment remain separate future evidence.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

@@ -333,6 +333,45 @@ def test_windows_companion_doctor_reports_publisher_image_blocker_separately() -
     assert '"NOT_READY_FOR_PULL"' in source
     assert "production_ready=false" in source
     assert "image_metadata remains publisher-owned and unpublished" in source
+    assert 'args[index] == "--env-file"' in source
+    assert 'return Fail(SecurityFailure, "doctor_usage_invalid")' in source
+    assert "VerifiedRelease.VerifyDirectory(install)" in source
+    assert "INSTALLED_RELEASE_INTEGRITY_FAILED" in source
+
+
+def test_windows_companion_preserves_release_manifest_and_config_fail_closed_contract() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "MaxManifestBytes",
+        "MaxCompressionRatio",
+        "release_archive_compression_ratio_invalid",
+        "expectedManifestKeys",
+        'ExactString(root, "release", "v1.0.0-preview")',
+        'ExactBoolean(root, "requires_digest_pinned_images", true)',
+        'ExactBoolean(root, "publisher_signature_verified", false)',
+        'ExactBoolean(root, "authenticode_verified", false)',
+        'ExactBoolean(root, "vhdx_mutation_allowed", false)',
+        "release_manifest_source_commit_invalid",
+        "installed_release_closed_set_drifted",
+        "CONFIG_KEY_SET_INVALID",
+        "CONFIG_SECRET_STRENGTH_INVALID",
+        "CONFIG_CREDENTIAL_URL_MISMATCH",
+        "CONFIG_ENCRYPTION_KEY_INVALID",
+        "CONFIG_CORS_INVALID",
+    ):
+        assert marker in source
+    for repository in (
+        "ghcr.io/lss100200/omnibase-backend",
+        "ghcr.io/lss100200/omnibase-frontend",
+        "pgvector/pgvector",
+        "redis",
+        "minio/minio",
+        "minio/mc",
+    ):
+        assert repository in source
 
 
 def test_offline_preflight_accepts_only_allowlisted_digest_images(
