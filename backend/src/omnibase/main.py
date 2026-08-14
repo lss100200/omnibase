@@ -22,7 +22,6 @@ from fastapi.responses import JSONResponse
 
 from omnibase import __version__
 from omnibase.agent_alpha.router import router as agent_alpha_router
-from omnibase.agent_skills.router import router as native_skills_router
 from omnibase.agent_registry.router import (
     builder_router as agent_builder_router,
 )
@@ -30,6 +29,7 @@ from omnibase.agent_registry.router import (
     installation_router as agent_installation_router,
 )
 from omnibase.agent_registry.router import router as agent_registry_router
+from omnibase.agent_skills.router import router as native_skills_router
 from omnibase.api.health import router as health_router
 from omnibase.auth.router import router as auth_router
 from omnibase.control_plane.router import router as control_plane_router
