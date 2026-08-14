@@ -36,12 +36,14 @@ class _Client:
         self.chat = SimpleNamespace(completions=_Completions(response))
 
 
-def _factory(response: object) -> tuple[Any, _Client]:
+def _factory(
+    response: object, *, expected_base_url: str = "https://provider.example/v1"
+) -> tuple[Any, _Client]:
     client = _Client(response)
 
     def create_client(**kwargs: object) -> _Client:
         assert kwargs["api_key"] == "server-secret"
-        assert kwargs["base_url"] == "https://provider.example/v1"
+        assert kwargs["base_url"] == expected_base_url
         return client
 
     return create_client, client
@@ -61,14 +63,19 @@ def _response(*, model: str = "model-alpha", content: str = "answer") -> object:
     return SimpleNamespace(model=model, choices=[choice], usage=usage)
 
 
-def _provider_for(model_id: str) -> tuple[ModelGateway, _Client]:
-    client_factory, client = _factory(_response(model=model_id))
+def _provider_for(
+    model_id: str,
+    *,
+    provider_id: str = "relay",
+    base_url: str = "https://provider.example/v1",
+) -> tuple[ModelGateway, _Client]:
+    client_factory, client = _factory(_response(model=model_id), expected_base_url=base_url)
     return (
         ModelGateway(
             provider=OpenAICompatibleProvider(
-                provider_id="relay",
+                provider_id=provider_id,
                 api_key="server-secret",
-                base_url="https://provider.example/v1",
+                base_url=base_url,
                 client_factory=client_factory,
             ),
             model_id=model_id,
@@ -151,13 +158,15 @@ def test_gpt_model_name_uses_chat_compatible_outcome_profile_reasoning() -> None
         ("glm-5.2", "glm"),
         ("zhipu/glm-5.2", "glm"),
         ("relay/glm-4.7-flashx", "glm"),
+        ("kimi-k2", "kimi"),
+        ("moonshot-v1-128k", "kimi"),
         ("claude-opus-5", "anthropic"),
         ("anthropic/claude-sonnet-5", "anthropic"),
         ("anthropic/sonnet-5", "anthropic"),
         ("relay/claude-haiku-4-5", "anthropic"),
     ],
 )
-def test_glm_and_anthropic_exact_model_names_match_on_relays(model_id: str, family: str) -> None:
+def test_conservative_exact_model_names_match_on_relays(model_id: str, family: str) -> None:
     assert detect_gateway_family(model_id) == family
 
 
@@ -167,11 +176,15 @@ def test_glm_and_anthropic_exact_model_names_match_on_relays(model_id: str, fami
         "glm",
         "chatglm",
         "zhipu",
+        "kimi",
+        "moonshot",
         "claude",
         "anthropic",
         "sonnet-5",
         "proxy/claude-opus-5",
+        "proxy/kimi-k2",
         "glm-5.2-claude-sonnet-5",
+        "kimi-k2-gpt-5",
         "claude-gpt-bridge",
         "custom-model",
     ],
@@ -184,10 +197,12 @@ def test_bare_conflicting_proxy_or_unknown_names_stay_generic(model_id: str) -> 
     ("model_id", "expected_text"),
     [
         ("relay/glm-5.2", "GLM-specific controls as unverified"),
+        ("kimi-k2", "Treat Moonshot/Kimi thinking"),
+        ("moonshot-v1-128k", "Treat Moonshot/Kimi thinking"),
         ("relay/claude-opus-5", "does not claim native Anthropic Messages"),
     ],
 )
-def test_glm_and_anthropic_chat_profiles_send_prompt_guidance_only(
+def test_conservative_chat_profiles_send_prompt_guidance_only(
     model_id: str, expected_text: str
 ) -> None:
     gateway, client = _provider_for(model_id)
@@ -202,6 +217,22 @@ def test_glm_and_anthropic_chat_profiles_send_prompt_guidance_only(
     assert "output_config" not in payload
     assert "tools" not in payload
     assert "tool_choice" not in payload
+
+
+def test_unknown_model_is_not_promoted_by_branded_provider_or_base_url() -> None:
+    gateway, client = _provider_for(
+        "unknown-model",
+        provider_id="moonshot",
+        base_url="https://api.moonshot.cn/v1",
+    )
+    gateway.complete((ModelMessage(role="user", content="hello"),), reasoning_gear="audit")
+
+    payload = client.chat.completions.calls[0]
+    assert payload["temperature"] == 0.2
+    assert "Kimi" not in str(payload["messages"])
+    assert "reasoning_effort" not in payload
+    assert "extra_body" not in payload
+    assert "cache_control" not in payload
 
 
 def test_unknown_or_conflicting_model_name_never_receives_native_controls() -> None:

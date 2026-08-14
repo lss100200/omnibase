@@ -7,13 +7,14 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
-ModelFamily = Literal["deepseek", "glm", "openai", "anthropic", "generic"]
+ModelFamily = Literal["deepseek", "glm", "kimi", "openai", "anthropic", "generic"]
 ReasoningGear = Literal["economy", "standard", "deep", "audit"]
 
 _INCOMPATIBLE_MODEL_CLAIM = re.compile(r"(?:^|-)(?:compatible|compat|proxy|bridge|emulator)(?:-|$)")
 _FAMILY_CLAIMS: tuple[tuple[ModelFamily, frozenset[str]], ...] = (
     ("deepseek", frozenset({"deepseek"})),
     ("glm", frozenset({"zhipu", "bigmodel", "chatglm", "glm"})),
+    ("kimi", frozenset({"moonshot", "kimi"})),
     ("openai", frozenset({"openai", "gpt", "o1", "o3", "o4"})),
     ("anthropic", frozenset({"anthropic", "claude"})),
 )
@@ -26,6 +27,7 @@ _EXACT_MODEL_PATTERNS: tuple[tuple[ModelFamily, re.Pattern[str]], ...] = (
             r"(?:glm|chatglm)-[0-9][a-z0-9]*(?:-[a-z0-9]+)*$"
         ),
     ),
+    ("kimi", re.compile(r"^(?:kimi|moonshot)-(?:[a-z0-9]+(?:-[a-z0-9]+)*)$")),
     (
         "openai",
         re.compile(r"^(?:gpt-(?:[a-z0-9]+(?:-[a-z0-9]+)*)|o[134](?:-[a-z0-9]+)*)$"),
@@ -117,6 +119,18 @@ def plan_model_adaptation(model_id: str, gear: ReasoningGear) -> ModelAdaptation
                 "instructions before changing task data for context locality. Treat reasoning, "
                 "cache hits, tools and GLM-specific controls as unverified on this Chat "
                 "Completions transport."
+            ),
+            extra_payload={},
+        )
+    if family == "kimi":
+        return ModelAdaptation(
+            family=family,
+            stable_prefix=(
+                common
+                + "\nPrioritize the supplied file and conversation context, cite its labels when "
+                "making claims, and state when the context budget omitted material. Treat "
+                "Moonshot/Kimi thinking, cache, schema and tool controls as unverified on this "
+                "Chat Completions transport."
             ),
             extra_payload={},
         )

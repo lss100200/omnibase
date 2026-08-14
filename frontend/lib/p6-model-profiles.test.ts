@@ -74,21 +74,97 @@ test('GLM and Claude exact names resolve consistently through unrelated relays',
   }
 })
 
+test('Kimi and Moonshot exact names resolve consistently through unrelated relays', () => {
+  for (const modelId of ['kimi-k2', 'moonshot-v1-128k']) {
+    assert.equal(
+      resolveP6ProviderFamily({
+        providerId: 'openai-relay',
+        baseUrl: 'https://relay.example/gpt/v1',
+        modelId,
+      }),
+      'kimi',
+    )
+  }
+})
+
 test('bare, proxy, conflicting and unknown model names fail closed', () => {
   for (const modelId of [
     'glm',
     'chatglm',
+    'kimi',
+    'moonshot',
     'claude',
     'anthropic',
     'sonnet-5',
     'proxy/claude-opus-5',
+    'proxy/kimi-k2',
     'glm-5.2-claude-sonnet-5',
+    'kimi-k2-gpt-5',
   ]) {
     assert.equal(resolveP6ModelFamily({ providerId: null, modelId }).family, 'generic')
   }
   assert.equal(
     resolveP6ProviderFamily({ providerId: 'custom-relay', modelId: 'unknown-model' }),
     'generic',
+  )
+})
+
+test('non-empty unknown requested or observed names block branded URL and provider hints', () => {
+  assert.deepEqual(
+    resolveP6ModelFamily({
+      providerId: 'moonshot',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      modelId: 'unknown-model',
+    }),
+    {
+      family: 'generic',
+      source: 'model_name',
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: [],
+    },
+  )
+  assert.deepEqual(
+    resolveP6ModelFamily({
+      providerId: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      modelId: null,
+      observedModelId: 'unknown-observed-model',
+    }),
+    {
+      family: 'generic',
+      source: 'observed_model',
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: [],
+    },
+  )
+  assert.equal(
+    resolveP6ModelFamily({
+      providerId: 'moonshot',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      modelId: 'kimi-k2',
+      observedModelId: 'unknown-observed-model',
+    }).family,
+    'generic',
+  )
+})
+
+test('requested and observed family conflicts fail closed before provider hints', () => {
+  assert.deepEqual(
+    resolveP6ModelFamily({
+      providerId: 'moonshot',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      modelId: 'kimi-k2',
+      observedModelId: 'gpt-5',
+    }),
+    {
+      family: 'generic',
+      source: 'observed_model',
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: ['kimi', 'openai'],
+    },
   )
 })
 

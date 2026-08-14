@@ -308,8 +308,18 @@ function resolveCandidate(
   confidence: P6ModelFamilyResolution['confidence'],
 ): P6ModelFamilyResolution | null {
   const value = normalizeModelLocator(raw)
+  if (!value) return null
   const matches = [...new Set(familyClaims(value))]
-  if (matches.length === 0) return null
+  if (matches.length === 0) {
+    if (source === 'url_hint') return null
+    return {
+      family: 'generic',
+      source,
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: [],
+    }
+  }
   if (matches.length > 1) {
     return {
       family: 'generic',
@@ -335,9 +345,23 @@ function resolveCandidate(
 }
 
 export function resolveP6ModelFamily(identity: P6ModelIdentity): P6ModelFamilyResolution {
+  const requested = resolveCandidate(identity.modelId, 'model_name', 'strong')
+  const observed = resolveCandidate(identity.observedModelId, 'observed_model', 'exact')
+  for (const result of [requested, observed]) {
+    if (result?.family === 'generic') return result
+  }
+  if (requested && observed && requested.family !== observed.family) {
+    return {
+      family: 'generic',
+      source: 'observed_model',
+      confidence: 'unknown',
+      matchedTokens: [],
+      conflicts: [requested.family, observed.family],
+    }
+  }
+  for (const result of [requested, observed]) if (result) return result
+
   const ordered = [
-    resolveCandidate(identity.modelId, 'model_name', 'strong'),
-    resolveCandidate(identity.observedModelId, 'observed_model', 'exact'),
     identity.familyOverride
       ? {
           family: identity.familyOverride,
