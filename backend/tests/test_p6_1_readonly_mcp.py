@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,32 @@ import pytest
 
 from omnibase.mcp_runtime import readonly as readonly_mcp
 from omnibase.mcp_runtime.readonly import McpToolError, ReadOnlyMcpServer
+
+
+class _GrowingStream:
+    def __init__(self, path: Path, payload: bytes) -> None:
+        self._stack = ExitStack()
+        self.stream = self._stack.enter_context(path.open("r+b"))
+        self.payload = payload
+        self.read_once = False
+
+    def __enter__(self) -> _GrowingStream:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self._stack.close()
+
+    def fileno(self) -> int:
+        return self.stream.fileno()
+
+    def read(self, size: int) -> bytes:
+        if not self.read_once:
+            self.read_once = True
+            self.stream.write(self.payload)
+            self.stream.flush()
+            self.stream.seek(0)
+            return self.stream.read(size)
+        return b""
 
 
 @pytest.fixture
@@ -347,6 +374,66 @@ def test_exhausted_file_budget_rejects_before_opening(
     ):
         server.call("omnibase_files_read", {"path": "visible.txt"})
     open_file.assert_not_called()
+
+
+def test_exhausted_file_budget_rejects_zero_size_file_before_opening(
+    server: ReadOnlyMcpServer,
+) -> None:
+    empty = server.authorized_root / "empty.txt"
+    empty.write_bytes(b"")
+    server._budget.file_bytes = readonly_mcp._MAX_PROCESS_FILE_BYTES
+    with (
+        patch("omnibase.mcp_runtime.readonly._open_regular_file") as open_file,
+        pytest.raises(McpToolError, match="mcp_process_file_budget_exhausted"),
+    ):
+        server.call("omnibase_files_read", {"path": "empty.txt"})
+    open_file.assert_not_called()
+
+
+def test_file_growth_after_open_consumes_lifetime_budget_and_saturates(
+    server: ReadOnlyMcpServer,
+) -> None:
+    growing = server.authorized_root / "growing.txt"
+    growing.write_bytes(b"")
+
+    server._budget.file_bytes = readonly_mcp._MAX_PROCESS_FILE_BYTES - 1
+    with (
+        patch(
+            "omnibase.mcp_runtime.readonly._open_regular_file",
+            side_effect=lambda path: _GrowingStream(path, b"growth"),
+        ),
+        pytest.raises(McpToolError, match="mcp_process_file_budget_exhausted"),
+    ):
+        server.call("omnibase_files_read", {"path": "growing.txt"})
+    assert server._budget.file_bytes == readonly_mcp._MAX_PROCESS_FILE_BYTES
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("omnibase_files_read", {"path": "growing.txt"}),
+        ("omnibase_files_hash", {"path": "growing.txt"}),
+        ("omnibase_text_search", {"path": ".", "query": "needle"}),
+    ],
+)
+def test_growth_identity_drift_keeps_actual_bytes_for_every_file_path(
+    server: ReadOnlyMcpServer,
+    tool: str,
+    arguments: dict[str, str],
+) -> None:
+    growing = server.authorized_root / "growing.txt"
+    growing.write_bytes(b"")
+    payload = b"needle"
+
+    with (
+        patch(
+            "omnibase.mcp_runtime.readonly._open_regular_file",
+            side_effect=lambda path: _GrowingStream(path, payload),
+        ),
+        pytest.raises(McpToolError, match="mcp_file_identity_drifted"),
+    ):
+        server.call(tool, arguments)
+    assert server._budget.file_bytes == len(payload)
 
 
 def test_search_failure_keeps_consumed_file_budget(server: ReadOnlyMcpServer) -> None:

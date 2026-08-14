@@ -212,8 +212,11 @@ def _read_bounded_file(
     before = _capture_path_identity(path, directory=False)
     if before.size > max_bytes:
         raise McpToolError("mcp_file_too_large")
+    reserved_size = 0
     if budget is not None:
+        budget.require_file_capacity()
         budget.reserve_file_bytes(before.size)
+        reserved_size = before.size
     with _open_regular_file(path) as stream:
         opened = os.fstat(stream.fileno())
         if (
@@ -226,12 +229,17 @@ def _read_bounded_file(
             raise McpToolError("mcp_file_too_large")
         chunks: list[bytes] = []
         total = 0
+        charged_growth = 0
         while True:
             chunk = stream.read(min(_READ_CHUNK_BYTES, max_bytes + 1 - total))
             if not chunk:
                 break
             chunks.append(chunk)
             total += len(chunk)
+            growth = max(0, total - reserved_size)
+            if budget is not None and growth > charged_growth:
+                budget.consume_file_bytes(growth - charged_growth)
+                charged_growth = growth
             if total > max_bytes:
                 raise McpToolError("mcp_file_too_large")
         after = os.fstat(stream.fileno())
@@ -422,6 +430,18 @@ class _ProcessBudget:
 
     def reserve_file_bytes(self, amount: int) -> None:
         if amount < 0 or self.file_bytes + amount > _MAX_PROCESS_FILE_BYTES:
+            raise McpToolError("mcp_process_file_budget_exhausted")
+        self.file_bytes += amount
+
+    def require_file_capacity(self) -> None:
+        if self.file_bytes >= _MAX_PROCESS_FILE_BYTES:
+            raise McpToolError("mcp_process_file_budget_exhausted")
+
+    def consume_file_bytes(self, amount: int) -> None:
+        if amount < 0:
+            raise McpToolError("mcp_process_file_budget_exhausted")
+        if self.file_bytes + amount > _MAX_PROCESS_FILE_BYTES:
+            self.file_bytes = _MAX_PROCESS_FILE_BYTES
             raise McpToolError("mcp_process_file_budget_exhausted")
         self.file_bytes += amount
 
