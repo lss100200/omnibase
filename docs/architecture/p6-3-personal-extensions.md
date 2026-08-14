@@ -107,12 +107,24 @@ The presentation distinguishes **Available**, **Engineering Preview** and
 Alpha, Runtime/Planner/Multi-Agent remain closed, OCI image digests are not
 published, Authenticode is not proven and `production_ready=false`.
 
-Updating source does not prove that `omnibase.chat` was rebuilt or deployed.
-If the preview host, Docker/WSL or tunnel is unavailable, the correct result is:
+Updating source alone does not prove that `omnibase.chat` was rebuilt or
+deployed. The final completion audit rebuilt the production frontend from the
+P6.3 branch, first verified the visible page on an alternate loopback port,
+then replaced only the stale Next.js preview process behind the existing
+Cloudflare Tunnel mapping `omnibase.chat -> http://127.0.0.1:3100`. Docker,
+WSL, Hyper-V, VHDX and the tunnel configuration were not modified. A live
+browser read verified P6.3, fifteen Skills, six MCP tools, GLM/Claude/Kimi and
+the Windows Companion disclosures.
 
 ```text
-PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
+PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED
 ```
+
+This remains an operator-hosted, process-bound engineering preview, not a
+high-availability SaaS deployment or evidence that production Runtime is
+enabled. If the preview host later cannot be safely rebuilt without touching
+protected infrastructure, source and live status must again be reported
+separately.
 
 ## D. Windows Companion install experience
 

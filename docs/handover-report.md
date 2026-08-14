@@ -5733,10 +5733,15 @@ for these paths passed `44` tests.
 P6.3-C updates both READMEs and `/public-preview` to migration `0016`, the 1+9
 personal role model, file/conversation/ChangeSet continuity, fifteen Skills,
 six MCP tools and the Windows Companion. The production frontend build generated
-all 17 routes, including static `/public-preview`. Docker/WSL/tunnel deployment
-was intentionally not attempted, so the status is
-`PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING`; GitHub About metadata
-is deferred until the same source is public.
+all 17 routes, including static `/public-preview`. The initial engineering seal
+stopped before deployment; the final completion audit later verified the new
+build on an alternate loopback port and replaced only the stale Next.js process
+behind the existing `omnibase.chat -> http://127.0.0.1:3100` Cloudflare Tunnel.
+The tunnel configuration, Docker/WSL, Hyper-V and VHDX were not modified. A live
+browser read verified the P6.3, fifteen-Skill, six-MCP, GLM/Claude/Kimi and
+Windows Companion presentation. The current status is
+`PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED`; it remains operator-hosted
+and process-bound, not high-availability SaaS or production Runtime evidence.
 
 P6.3-D adds `help`, `locations` and `plan-install` with user/machine/custom
 location policies and no UAC, PATH, registry, service, firewall, Docker, WSL or
@@ -5796,7 +5801,7 @@ READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
 FIVE_FAMILY_CHAT_COMPLETIONS_PROMPT_PROFILES_ALIGNED
 WINDOWS_COMPANION_MUTATING_INSTALL_FROZEN_FAIL_CLOSED
 INSTALL_PATH_IDENTITY_BINDING_NOT_IMPLEMENTED
-PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
+PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED
 CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
 AUTHENTICODE_NOT_SIGNED
 OCI_RELEASE_IMAGES_NOT_PUBLISHED
@@ -5804,7 +5809,7 @@ PRODUCTION_READY_FALSE
 migration head 0016; migration 0017 absent
 Runtime / Planner / Multi-Agent / MCP Runtime disabled
 root .env not read; business database not accessed or migrated
-not deployed
+public preview deployed from the P6.3 build; production product/runtime not deployed
 ```
 
 ### P6.3 final independent-review fixes and safe Companion freeze (2026-08-14)

@@ -13,7 +13,7 @@ READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
 FIVE_FAMILY_CHAT_COMPLETIONS_PROMPT_PROFILES_ALIGNED
 WINDOWS_COMPANION_MUTATING_INSTALL_FROZEN_FAIL_CLOSED
 INSTALL_PATH_IDENTITY_BINDING_NOT_IMPLEMENTED
-PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
+PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED
 CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
 NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
 AUTHENTICODE_NOT_SIGNED
@@ -127,18 +127,26 @@ may safely send their native fields.
   six-tool MCP, model-name-first and Windows Companion presentation.
 - Updated `/public-preview` metadata and bilingual content with explicit
   Available / Engineering Preview / Deferred states.
-- The public page source was built successfully. No Docker/WSL/tunnel operation
-  was attempted because the known host VM boundary is not required for source
-  acceptance and must not be repaired through VHDX mutation.
+- The final completion audit rebuilt the production frontend and verified all
+  17 routes before switching the public preview.
+- The existing Cloudflare Tunnel already mapped `omnibase.chat` to
+  `http://127.0.0.1:3100`; only the stale P5.4C Next.js process on that port was
+  replaced with the P6.3 build from this worktree. The tunnel configuration,
+  Docker, WSL, Hyper-V and VHDX were not modified.
+- A live browser read of `https://omnibase.chat/public-preview` verified the
+  P6.3 title, fifteen native Skills, six read-only MCP tools, GLM/Claude/Kimi
+  guidance and the Windows Companion engineering-preview disclosure.
 
 Therefore:
 
 ```text
-PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
+PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED
 ```
 
-GitHub About metadata must not lead the public `main` source. Its external
-description/topic update remains deferred until this source is published.
+This is still an operator-hosted, process-bound engineering preview, not a
+high-availability SaaS deployment or production Runtime activation. GitHub PR
+`#41` publishes the consolidated P6 source for review; default-branch README
+presentation remains dependent on that PR being accepted and merged.
 
 ## P6.3-D — Windows Companion
 
@@ -286,5 +294,6 @@ business database not accessed or migrated
 Docker / WSL / Hyper-V / VHDX mutation not performed
 third-party Skill installation absent
 MCP-to-Agent integration absent
-not deployed
+public preview deployed from the P6.3 build
+production product/runtime not deployed
 ```
