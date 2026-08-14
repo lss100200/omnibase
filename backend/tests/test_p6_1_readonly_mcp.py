@@ -100,6 +100,18 @@ def test_text_search_fails_closed_before_an_unbounded_tree_walk(
         server.call("omnibase_text_search", {"path": ".", "query": "needle"})
 
 
+def test_files_list_fails_closed_at_the_visited_entry_ceiling(
+    server: ReadOnlyMcpServer,
+) -> None:
+    for index in range(3):
+        (server.authorized_root / f"listed-{index}.txt").write_text("visible", encoding="utf-8")
+    with (
+        patch("omnibase.mcp_runtime.readonly._MAX_LIST_VISITED_ENTRIES", 2),
+        pytest.raises(McpToolError, match="mcp_list_directory_too_large"),
+    ):
+        server.call("omnibase_files_list", {"path": "."})
+
+
 def test_files_list_and_read_never_expose_env(server: ReadOnlyMcpServer) -> None:
     listing = server.call("omnibase_files_list", {"path": "."})
     assert [item["path"] for item in listing["entries"]] == ["visible.txt"]
@@ -322,6 +334,34 @@ def test_read_rejects_opened_handle_identity_drift(server: ReadOnlyMcpServer) ->
         pytest.raises(McpToolError, match="mcp_file_identity_drifted"),
     ):
         server.call("omnibase_files_read", {"path": "visible.txt"})
+    assert server._budget.file_bytes == len(b"hello")
+
+
+def test_exhausted_file_budget_rejects_before_opening(
+    server: ReadOnlyMcpServer,
+) -> None:
+    server._budget.file_bytes = readonly_mcp._MAX_PROCESS_FILE_BYTES
+    with (
+        patch("omnibase.mcp_runtime.readonly._open_regular_file") as open_file,
+        pytest.raises(McpToolError, match="mcp_process_file_budget_exhausted"),
+    ):
+        server.call("omnibase_files_read", {"path": "visible.txt"})
+    open_file.assert_not_called()
+
+
+def test_search_failure_keeps_consumed_file_budget(server: ReadOnlyMcpServer) -> None:
+    searchable = server.authorized_root / "searchable.txt"
+    searchable.write_text("needle", encoding="utf-8")
+    before = server._budget.file_bytes
+    with (
+        patch(
+            "omnibase.mcp_runtime.readonly._redact_text",
+            side_effect=McpToolError("mcp_secret_scan_failed"),
+        ),
+        pytest.raises(McpToolError, match="mcp_secret_scan_failed"),
+    ):
+        server.call("omnibase_text_search", {"path": ".", "query": "needle"})
+    assert server._budget.file_bytes > before
 
 
 def test_git_output_limit_is_enforced_while_process_is_running(
@@ -358,6 +398,114 @@ def test_git_output_limit_is_enforced_while_process_is_running(
     ):
         server.call("omnibase_git_inspect", {"operation": "status"})
     assert process.killed
+
+
+def test_exhausted_git_budget_rejects_before_starting_process(
+    server: ReadOnlyMcpServer,
+) -> None:
+    server._budget.git_bytes = readonly_mcp._MAX_PROCESS_GIT_BYTES
+    with (
+        patch("omnibase.mcp_runtime.readonly.subprocess.Popen") as popen,
+        pytest.raises(McpToolError, match="mcp_process_git_budget_exhausted"),
+    ):
+        server.call("omnibase_git_inspect", {"operation": "status"})
+    popen.assert_not_called()
+
+
+def test_failed_git_stderr_consumes_lifetime_budget(server: ReadOnlyMcpServer) -> None:
+    class FakePipe:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self.chunks = iter(chunks)
+
+        def read(self, size: int) -> bytes:
+            return next(self.chunks, b"")
+
+        def close(self) -> None:
+            pass
+
+    class FakeProcess:
+        stdout = FakePipe([b"partial-output"])
+        stderr = FakePipe([b"failure-details"])
+
+        def poll(self) -> int:
+            return 1
+
+        def kill(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 1
+
+    with (
+        patch("omnibase.mcp_runtime.readonly.subprocess.Popen", return_value=FakeProcess()),
+        pytest.raises(McpToolError, match="mcp_git_inspection_failed"),
+    ):
+        server.call("omnibase_git_inspect", {"operation": "status"})
+    assert server._budget.git_bytes == len(b"partial-outputfailure-details")
+
+
+def test_git_output_crossing_remaining_budget_saturates_and_terminates(
+    server: ReadOnlyMcpServer,
+) -> None:
+    class FakePipe:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self.chunks = iter(chunks)
+
+        def read(self, size: int) -> bytes:
+            return next(self.chunks, b"")
+
+        def close(self) -> None:
+            pass
+
+    class FakeProcess:
+        stdout = FakePipe([b"overflow"])
+        stderr = FakePipe([])
+        killed = False
+
+        def poll(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    process = FakeProcess()
+    server._budget.git_bytes = readonly_mcp._MAX_PROCESS_GIT_BYTES - 1
+    with (
+        patch("omnibase.mcp_runtime.readonly.subprocess.Popen", return_value=process),
+        pytest.raises(McpToolError, match="mcp_process_git_budget_exhausted"),
+    ):
+        server.call("omnibase_git_inspect", {"operation": "status"})
+    assert process.killed
+    assert server._budget.git_bytes == readonly_mcp._MAX_PROCESS_GIT_BYTES
+
+
+def test_git_diff_commands_share_one_lifetime_budget(server: ReadOnlyMcpServer) -> None:
+    calls = 0
+
+    def consume(
+        command: list[str],
+        *,
+        cwd: Path,
+        environment: dict[str, str],
+        budget: readonly_mcp._ProcessBudget,
+    ) -> bytes:
+        nonlocal calls
+        calls += 1
+        budget.reserve_git_bytes(7)
+        if calls == 2:
+            raise McpToolError("mcp_git_inspection_failed")
+        return b"M\ttracked.txt\n"
+
+    with (
+        patch("omnibase.mcp_runtime.readonly._run_bounded", side_effect=consume),
+        pytest.raises(McpToolError, match="mcp_git_inspection_failed"),
+    ):
+        server.call("omnibase_git_diff_summary", {"scope": "worktree"})
+    assert calls == 2
+    assert server._budget.git_bytes == 14
 
 
 def test_unknown_tool_and_extra_arguments_fail_closed(server: ReadOnlyMcpServer) -> None:

@@ -20,6 +20,7 @@ _MAX_READ_BYTES = 256_000
 _MAX_HASH_BYTES = 4 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 512_000
 _MAX_LIST_ENTRIES = 500
+_MAX_LIST_VISITED_ENTRIES = 2_048
 _MAX_PROCESS_CALLS = 256
 _MAX_PROCESS_FILE_BYTES = 16 * 1024 * 1024
 _MAX_PROCESS_GIT_BYTES = 4 * 1024 * 1024
@@ -202,8 +203,17 @@ def _open_regular_file(path: Path) -> IO[bytes]:
     return stream
 
 
-def _read_bounded_file(path: Path, *, max_bytes: int = _MAX_READ_BYTES) -> bytes:
+def _read_bounded_file(
+    path: Path,
+    *,
+    max_bytes: int = _MAX_READ_BYTES,
+    budget: _ProcessBudget | None = None,
+) -> bytes:
     before = _capture_path_identity(path, directory=False)
+    if before.size > max_bytes:
+        raise McpToolError("mcp_file_too_large")
+    if budget is not None:
+        budget.reserve_file_bytes(before.size)
     with _open_regular_file(path) as stream:
         opened = os.fstat(stream.fileno())
         if (
@@ -368,10 +378,11 @@ def _search_file(
     query: str,
     *,
     authorized_root: Path,
+    budget: _ProcessBudget,
     max_matches: int,
 ) -> tuple[int, list[dict[str, object]]]:
     path = _reject_component_links(authorized_root, relative)
-    raw = _read_bounded_file(path)
+    raw = _read_bounded_file(path, budget=budget)
     if b"\x00" in raw:
         return len(raw), []
     try:
@@ -415,9 +426,19 @@ class _ProcessBudget:
         self.file_bytes += amount
 
     def reserve_git_bytes(self, amount: int) -> None:
-        if amount < 0 or self.git_bytes + amount > _MAX_PROCESS_GIT_BYTES:
+        if amount < 0:
+            raise McpToolError("mcp_process_git_budget_exhausted")
+        if self.git_bytes + amount > _MAX_PROCESS_GIT_BYTES:
+            # Git output has already crossed the pipe boundary. Saturate the
+            # lifetime counter before failing so consumed stderr/stdout cannot
+            # be replayed against an apparently unspent budget.
+            self.git_bytes = _MAX_PROCESS_GIT_BYTES
             raise McpToolError("mcp_process_git_budget_exhausted")
         self.git_bytes += amount
+
+    def require_git_capacity(self) -> None:
+        if self.git_bytes >= _MAX_PROCESS_GIT_BYTES:
+            raise McpToolError("mcp_process_git_budget_exhausted")
 
 
 @dataclass(frozen=True, slots=True)
@@ -559,8 +580,18 @@ class ReadOnlyMcpServer:
         relative = _safe_relative(arguments["path"])
         directory = _reject_component_links(self.authorized_root, relative)
         before = _capture_path_identity(directory, directory=True)
+        children: list[Path] = []
+        try:
+            with os.scandir(directory) as iterator:
+                for entry in iterator:
+                    if len(children) >= _MAX_LIST_VISITED_ENTRIES:
+                        raise McpToolError("mcp_list_directory_too_large")
+                    children.append(Path(entry.path))
+        except OSError as exc:
+            raise McpToolError("mcp_list_directory_unavailable") from exc
+        _verify_path_identity(directory, before, directory=True)
         entries: list[dict[str, object]] = []
-        for child in sorted(directory.iterdir(), key=lambda item: item.name.casefold()):
+        for child in sorted(children, key=lambda item: item.name.casefold()):
             child_relative = PurePosixPath(child.relative_to(self.authorized_root).as_posix())
             if _sensitive(child_relative):
                 continue
@@ -588,8 +619,7 @@ class ReadOnlyMcpServer:
         if _sensitive(relative):
             raise McpToolError("mcp_sensitive_file_forbidden")
         path = _reject_component_links(self.authorized_root, relative)
-        raw = _read_bounded_file(path)
-        self._budget.reserve_file_bytes(len(raw))
+        raw = _read_bounded_file(path, budget=self._budget)
         if b"\x00" in raw:
             raise McpToolError("mcp_binary_file_forbidden")
         try:
@@ -609,8 +639,7 @@ class ReadOnlyMcpServer:
         if _sensitive(relative):
             raise McpToolError("mcp_sensitive_file_forbidden")
         path = _reject_component_links(self.authorized_root, relative)
-        raw = _read_bounded_file(path, max_bytes=_MAX_HASH_BYTES)
-        self._budget.reserve_file_bytes(len(raw))
+        raw = _read_bounded_file(path, max_bytes=_MAX_HASH_BYTES, budget=self._budget)
         return {
             "path": relative.as_posix(),
             "algorithm": "sha256",
@@ -650,6 +679,7 @@ class ReadOnlyMcpServer:
                 item_relative,
                 query,
                 authorized_root=self.authorized_root,
+                budget=self._budget,
                 max_matches=_MAX_SEARCH_MATCHES - len(matches),
             )
             inspected_files += 1
@@ -657,7 +687,6 @@ class ReadOnlyMcpServer:
             matches.extend(file_matches)
             if len(matches) >= _MAX_SEARCH_MATCHES:
                 truncated = True
-        self._budget.reserve_file_bytes(inspected_bytes)
         _verify_path_identity(directory, before, directory=True)
         return {
             "query": query,
@@ -698,8 +727,12 @@ class ReadOnlyMcpServer:
             "credential.helper=",
             *args,
         ]
-        stdout = _run_bounded(command, cwd=self.repo_root, environment=environment)
-        self._budget.reserve_git_bytes(len(stdout))
+        stdout = _run_bounded(
+            command,
+            cwd=self.repo_root,
+            environment=environment,
+            budget=self._budget,
+        )
         output = stdout.decode("utf-8", errors="replace")
         if operation == "status":
             output = _filter_git_status(output)
@@ -725,13 +758,14 @@ class ReadOnlyMcpServer:
             _git_command(self.git_executable, [*common, "--name-status"]),
             cwd=self.repo_root,
             environment=environment,
+            budget=self._budget,
         )
         numstat_raw = _run_bounded(
             _git_command(self.git_executable, [*common, "--numstat"]),
             cwd=self.repo_root,
             environment=environment,
+            budget=self._budget,
         )
-        self._budget.reserve_git_bytes(len(name_status_raw) + len(numstat_raw))
         status_by_path = _parse_name_status(name_status_raw.decode("utf-8", errors="replace"))
         files = _parse_numstat(numstat_raw.decode("utf-8", errors="replace"), status_by_path)
         return {
@@ -742,13 +776,20 @@ class ReadOnlyMcpServer:
         }
 
 
-def _run_bounded(command: list[str], *, cwd: Path, environment: dict[str, str]) -> bytes:
+def _run_bounded(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    budget: _ProcessBudget,
+) -> bytes:
+    budget.require_git_capacity()
     process = _start_git_process(command, cwd=cwd, environment=environment)
     assert process.stdout is not None
     assert process.stderr is not None
     chunks, readers = _start_pipe_readers(process.stdout, process.stderr)
     try:
-        return _collect_process_output(process, chunks, len(readers))
+        return _collect_process_output(process, chunks, len(readers), budget)
     except McpToolError:
         _terminate_process(process)
         _drain_reader_queue(chunks, len(readers))
@@ -805,6 +846,7 @@ def _collect_process_output(
     process: subprocess.Popen[bytes],
     chunks: queue.Queue[tuple[bool, bytes | None]],
     reader_count: int,
+    budget: _ProcessBudget,
 ) -> bytes:
     stdout = bytearray()
     total = 0
@@ -821,6 +863,7 @@ def _collect_process_output(
         if chunk is None:
             closed_pipes += 1
             continue
+        budget.reserve_git_bytes(len(chunk))
         total += len(chunk)
         if total > _MAX_OUTPUT_BYTES:
             raise McpToolError("mcp_git_output_too_large")
