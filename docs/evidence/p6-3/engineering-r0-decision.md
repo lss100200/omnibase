@@ -61,7 +61,8 @@ budgets. Search is literal-only; Git diff accepts only `worktree|staged` and
 returns no patch content. MCP remains manually launched, is not mounted into
 Agent Alpha and leaves `MCP_RUNTIME_ENABLED=false`.
 
-Independent review found and closed six P2 boundary gaps before final sealing:
+Independent review and the final completion audit found and closed seven P2
+boundary gaps before final sealing:
 
 - native catalog queries now return detached deep snapshots, so mutating a
   returned nested JSON Schema cannot change the source catalog digest or later
@@ -80,10 +81,14 @@ Independent review found and closed six P2 boundary gaps before final sealing:
   `generic`, so a branded Provider/base URL cannot upgrade it;
 - mutating Windows `install` is frozen before path/archive/write access because
   path rechecks alone cannot close the final rename TOCTOU window.
+- the Windows runbook no longer presents the frozen `install` entrypoint as a
+  working staging-and-rename flow; it documents verify/plan/config/doctor and
+  the exact exit-30 boundary, with a regression test guarding that product
+  guidance.
 
 The final focused regression counts are recorded in the verification matrix
 below; the MCP-only file reports `47 passed`, model-gateway reports
-`43 passed`, and Windows release contracts report `18 passed, 1 skipped`.
+`43 passed`, and Windows release contracts report `19 passed, 1 skipped`.
 
 Backend and frontend family recognition now share conservative exact Kimi,
 GLM and Claude rules, including relay namespaces and model-family locators.
@@ -218,7 +223,7 @@ production build passed; 17 routes; /public-preview statically generated
 Windows release/Companion:
 
 ```text
-18 passed, 1 skipped (existing Windows POSIX-only fsmonitor fixture)
+19 passed, 1 skipped (existing Windows POSIX-only fsmonitor fixture)
 dotnet format --verify-no-changes passed
 dotnet Release build: 0 warnings, 0 errors
 safe-frozen self-contained publish passed

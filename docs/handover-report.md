@@ -5845,7 +5845,7 @@ P6.3 focused backend = 118 passed
 MCP focused = 47 passed
 model gateway focused = 43 passed
 frontend = 175 passed; typecheck/lint/Prettier/build passed; 17 routes
-Windows release contracts = 18 passed, 1 skipped
+Windows release contracts = 19 passed, 1 skipped
 dotnet format = passed; Release build = 0 warnings / 0 errors
 maintainer map = valid; 70 invariants / 49 modules / 1059 path specs /
   3634 matched files / 333 entrypoints / 275 verification commands
@@ -5866,6 +5866,11 @@ install exit = 30; target_exists=false; staging_count=0
 
 The earlier `OmniBase-P63-Companion-D-R0` binary predates this security freeze
 and is explicitly marked `DO_NOT_DISTRIBUTE.txt`; it is not release evidence.
+The final completion audit also removed one stale runbook paragraph that still
+described `install` as a working staging-and-rename flow. The runbook now
+presents verify, location planning, configuration and read-only diagnosis as
+the usable frozen-period workflow, states the exact exit-30 boundary, and has a
+regression test preventing the unsafe guidance from returning.
 The D-drive P6.2 full-history bundle remains verified and must be retained:
 
 ```text

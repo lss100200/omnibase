@@ -25,25 +25,25 @@ OmniBase.Setup.exe plan-install --scope custom --target 'D:\Applications\OmniBas
 上述命令只输出路径和权限要求，不创建目录、不写配置、不提升 UAC，也不修改 PATH、
 注册表、快捷方式、服务或防火墙。`plan-install` 要求目标尚不存在。
 
-## 安装流程
+## 冻结期验证与配置流程
 
-发行 ZIP 与 Companion EXE 应作为同一工程预览制品交付。先核对外部发布页提供的
-SHA-256，再执行：
+发行 ZIP 与 Companion EXE 可以作为同一工程预览制品用于校验、位置规划、配置生成和
+只读诊断。先核对外部发布页提供的 SHA-256，再执行当前允许的无安装流程：
 
 ```powershell
 OmniBase.Setup.exe verify .\omnibase-windows-x64-preview.zip
-OmniBase.Setup.exe install .\omnibase-windows-x64-preview.zip `
-  "$env:LOCALAPPDATA\Programs\OmniBase"
+OmniBase.Setup.exe plan-install --scope user --json
 OmniBase.Setup.exe init-config --output `
   "$env:LOCALAPPDATA\OmniBase\config\operator.env"
 OmniBase.Setup.exe doctor `
-  --install "$env:LOCALAPPDATA\Programs\OmniBase" `
   --env-file "$env:LOCALAPPDATA\OmniBase\config\operator.env"
 ```
 
-安装仍使用经过验证的 staging 目录与最终原子移动。目标已存在时拒绝覆盖；本阶段不提供
-就地升级或卸载。`init-config` 使用操作系统 CSPRNG 且拒绝覆盖已有配置，不在控制台回显
-生成的秘密。
+当前不得把 `plan-install` 的目标当作已经安装的目录，也不得在 `doctor` 中宣称产品文件
+已经部署。`install` 与兼容别名 `--verify-and-extract` 仅用于验证冻结边界：它们在解析
+目标路径、打开 ZIP、创建 target/staging、解压、移动或清理之前返回 exit `30` 和
+`install_path_identity_binding_not_implemented`。本阶段没有可变安装、就地升级或卸载。
+`init-config` 使用操作系统 CSPRNG 且拒绝覆盖已有配置，不在控制台回显生成的秘密。
 
 `doctor` 是只读诊断。它可以查询 Docker CLI/daemon、Compose 和 WSL 状态，但不会安装、
 启动、升级或重启这些组件，不会拉取镜像，也不会修改 VHDX。由于正式 OCI digest 尚未

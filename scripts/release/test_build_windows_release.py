@@ -268,7 +268,10 @@ def test_windows_installer_freezes_mutating_install_before_path_access() -> None
     install_start = source.index("static int Install(string archivePath")
     install_end = source.index("static int InitConfig", install_start)
     install = source[install_start:install_end]
-    assert 'return Fail(SecurityFailure, "install_path_identity_binding_not_implemented");' in install
+    assert (
+        'return Fail(SecurityFailure, "install_path_identity_binding_not_implemented");'
+        in install
+    )
     assert install.index("_ = archivePath;") < install.index(
         "install_path_identity_binding_not_implemented"
     )
@@ -285,6 +288,23 @@ def test_windows_installer_freezes_mutating_install_before_path_access() -> None
         ".staging-",
     ):
         assert forbidden not in install
+
+
+def test_windows_companion_runbook_matches_frozen_install_boundary() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    runbook = (repo / "docs/runbooks/p6-3-windows-companion-install.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "## 冻结期验证与配置流程" in runbook
+    assert "OmniBase.Setup.exe verify" in runbook
+    assert "OmniBase.Setup.exe plan-install --scope user --json" in runbook
+    assert "OmniBase.Setup.exe init-config" in runbook
+    assert "OmniBase.Setup.exe doctor" in runbook
+    assert "install_path_identity_binding_not_implemented" in runbook
+    assert "返回 exit `30`" in runbook
+    assert "OmniBase.Setup.exe install .\\" not in runbook
+    assert "安装仍使用经过验证的 staging 目录与最终原子移动" not in runbook
 
 
 def test_windows_companion_is_self_contained_and_never_mutates_runtime_dependencies() -> (
