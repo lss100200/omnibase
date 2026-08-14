@@ -259,34 +259,32 @@ def test_release_compose_has_no_build_and_reuses_personal_lifecycle() -> None:
     assert 'RATE_LIMIT_FAIL_CLOSED: "true"' in compose
 
 
-def test_windows_installer_retries_only_the_final_atomic_move() -> None:
+def test_windows_installer_freezes_mutating_install_before_path_access() -> None:
     repo = Path(__file__).resolve().parents[2]
     source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
         encoding="utf-8"
     )
 
-    assert source.count("MoveDirectoryWithRetry(staging, target);") == 1
-    assert source.count("Directory.Move(source, destination);") == 1
-    assert source.count("catch (IOException exception)") == 1
-
-    helper_start = source.index("static void MoveDirectoryWithRetry")
-    helper_end = source.index("static bool ValidArchivePath", helper_start)
-    helper = source[helper_start:helper_end]
-    assert "const int maxAttempts = 8;" in helper
-    assert "const int retryDelayMilliseconds = 100;" in helper
-    assert "for (var attempt = 1; attempt <= maxAttempts; attempt++)" in helper
-    assert "if (attempt == maxAttempts)" in helper
-    assert "atomic install retry budget exhausted" in helper
-    assert "Thread.Sleep(retryDelayMilliseconds * attempt);" in helper
-    destination_guard = "if (File.Exists(destination) || Directory.Exists(destination))"
-    assert destination_guard in helper
-    assert helper.index(destination_guard) < helper.index(
-        "Directory.Move(source, destination);"
+    install_start = source.index("static int Install(string archivePath")
+    install_end = source.index("static int InitConfig", install_start)
+    install = source[install_start:install_end]
+    assert 'return Fail(SecurityFailure, "install_path_identity_binding_not_implemented");' in install
+    assert install.index("_ = archivePath;") < install.index(
+        "install_path_identity_binding_not_implemented"
     )
-    assert "release target appeared before atomic install" in helper
-
-    before_move = source[: source.index("MoveDirectoryWithRetry(staging, target);")]
-    assert "catch (IOException) when" not in before_move
+    assert install.index("_ = targetPath;") < install.index(
+        "install_path_identity_binding_not_implemented"
+    )
+    for forbidden in (
+        "InstallPathPolicy.",
+        "VerifiedRelease.",
+        "Directory.CreateDirectory",
+        "ExtractTo(",
+        "MoveDirectoryWithRetry(",
+        "Directory.Move",
+        ".staging-",
+    ):
+        assert forbidden not in install
 
 
 def test_windows_companion_is_self_contained_and_never_mutates_runtime_dependencies() -> (
@@ -363,7 +361,7 @@ def test_windows_companion_rejects_unsafe_or_existing_install_targets() -> None:
         "install_target_exists",
     ):
         assert marker in policy
-    assert "InstallPathPolicy.ValidateNewTarget(targetPath)" in source
+    assert "InstallPathPolicy.ValidateNewTarget(targetPath)" not in source
     for forbidden in (
         'ProcessStartInfo("runas")',
         'Verb = "runas"',
@@ -374,6 +372,19 @@ def test_windows_companion_rejects_unsafe_or_existing_install_targets() -> None:
         "New-Service",
     ):
         assert forbidden not in source
+
+
+def test_windows_installer_keeps_custom_and_elevated_acceptance_unproven() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "custom_or_elevated_acceptance_proven = false" in source
+    assert "handle_relative_install_proven = false" in source
+    assert "Custom/elevated install acceptance" in source
+    assert 'ProcessStartInfo("runas")' not in source
+    assert 'Verb = "runas"' not in source
 
 
 def test_clean_windows_vm_probe_is_read_only_and_fail_fast() -> None:

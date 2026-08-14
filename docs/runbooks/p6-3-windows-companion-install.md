@@ -96,3 +96,16 @@ NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
 - 没有 public clean-machine 完整产品部署证据；
 - Runtime、Planner、Multi-Agent 与 MCP Runtime 仍必须保持关闭；
 - `production_ready=false` 保持不变。
+
+## P6.3 安装路径冻结说明
+
+独立安全复核确认：仅在多个阶段重复按路径检查 reparse 与目录 identity，仍不能闭合
+最终 rename 前的 check-then-use 竞态。在具备稳定的 handle-relative 创建、写入和
+rename 实现及相应攻击测试前，`install` 命令会在解析路径、打开归档或创建任何目录
+之前稳定返回 `install_path_identity_binding_not_implemented`，不会创建 staging、
+解压文件或移动目录。
+
+`verify`、`help`、`locations`、`plan-install`、`init-config` 与只读 `doctor` 保持可用。
+custom 路径和 elevated/machine-scope 的安装验收仍未证明；machine scope 仍只提供
+规划，Companion 不请求 UAC，也不扩大文件系统或系统权限。本次 forward fix 没有
+再次运行 clean-Windows VM probe。

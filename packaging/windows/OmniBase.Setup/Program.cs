@@ -8,7 +8,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
 
 return Companion.Run(args);
 
@@ -66,6 +65,8 @@ static class Companion
     Console.WriteLine("init-config --output <operator.env>");
     Console.WriteLine("doctor --install <install-dir> [--env-file <operator.env>] [--json]");
     Console.WriteLine("Machine scope is planning-only. The Companion never elevates through UAC.");
+    Console.WriteLine("Install is frozen: path-identity binding is not implemented and no files are written.");
+    Console.WriteLine("Custom/elevated install acceptance and handle-relative rename remain not proven.");
     Console.WriteLine("No command changes PATH, registry, services, firewall, Docker, WSL or VHDX.");
     return Ready;
   }
@@ -155,6 +156,8 @@ static class Companion
         config_path = plan.ConfigPath,
         requires_elevation = plan.RequiresElevation,
         machine_install_is_planning_only = plan.Scope == "machine",
+        custom_or_elevated_acceptance_proven = false,
+        handle_relative_install_proven = false,
         target_state = "new",
         mutation_performed = false,
       }));
@@ -166,6 +169,8 @@ static class Companion
       Console.WriteLine($"config_path={plan.ConfigPath}");
       Console.WriteLine($"requires_elevation={plan.RequiresElevation.ToString().ToLowerInvariant()}");
       Console.WriteLine($"machine_install_is_planning_only={(plan.Scope == "machine").ToString().ToLowerInvariant()}");
+      Console.WriteLine("custom_or_elevated_acceptance_proven=false");
+      Console.WriteLine("handle_relative_install_proven=false");
       Console.WriteLine("target_state=new");
       Console.WriteLine("mutation_performed=false");
     }
@@ -182,26 +187,9 @@ static class Companion
 
   static int Install(string archivePath, string targetPath)
   {
-    var target = InstallPathPolicy.ValidateNewTarget(targetPath);
-    using var verified = VerifiedRelease.Open(archivePath);
-    var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
-    try
-    {
-      Directory.CreateDirectory(staging);
-      verified.ExtractTo(staging);
-      MoveDirectoryWithRetry(staging, target);
-    }
-    finally
-    {
-      if (Directory.Exists(staging))
-      {
-        try { Directory.Delete(staging, recursive: true); }
-        catch { /* Target is never treated as installed while staging remains. */ }
-      }
-    }
-    Console.WriteLine("verified_and_atomically_installed_preview_release");
-    Console.WriteLine("Docker/WSL/VHDX was not modified. No service or image was started.");
-    return Ready;
+    _ = archivePath;
+    _ = targetPath;
+    return Fail(SecurityFailure, "install_path_identity_binding_not_implemented");
   }
 
   static int InitConfig(string outputPath)
@@ -383,23 +371,6 @@ static class Companion
   static string Secret(int bytes) => Base64Url(RandomNumberGenerator.GetBytes(bytes));
   static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
   static int Fail(int code, string reason) { Console.Error.WriteLine(reason); return code; }
-
-  static void MoveDirectoryWithRetry(string source, string destination)
-  {
-    const int maxAttempts = 8;
-    const int retryDelayMilliseconds = 100;
-    for (var attempt = 1; attempt <= maxAttempts; attempt++)
-    {
-      if (File.Exists(destination) || Directory.Exists(destination))
-        throw new IOException("release target appeared before atomic install");
-      try { Directory.Move(source, destination); return; }
-      catch (IOException exception)
-      {
-        if (attempt == maxAttempts) throw new IOException("atomic install retry budget exhausted", exception);
-        Thread.Sleep(retryDelayMilliseconds * attempt);
-      }
-    }
-  }
 
   readonly record struct ProcessResult(bool Success, string Output);
   readonly record struct DoctorCheck(string Section, string Name, bool Passed, string Code);
@@ -719,17 +690,6 @@ sealed class VerifiedRelease : IDisposable
       throw new InvalidDataException("installed_release_manifest_closed_set_drifted");
   }
 
-  public void ExtractTo(string staging)
-  {
-    foreach (var entry in entries.Values.OrderBy(item => item.FullName, StringComparer.Ordinal))
-    {
-      var destination = Path.GetFullPath(Path.Combine(staging, entry.FullName));
-      if (!destination.StartsWith(staging + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        throw new InvalidDataException("release_archive_path_escape");
-      Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-      entry.ExtractToFile(destination, overwrite: false);
-    }
-  }
   public void Dispose() => archive.Dispose();
   static bool ValidArchivePath(string path) => !string.IsNullOrEmpty(path) && !path.StartsWith('/') && !path.Contains('\\') && !path.Contains(':') && !path.Split('/').Any(part => part is "" or "." or "..");
   static bool ExactKeys(JsonElement value, HashSet<string> expected)
