@@ -5688,3 +5688,106 @@ business database not accessed or migrated
 Docker / WSL / VHDX mutation not performed
 not pushed / not merged / not deployed
 ```
+
+### P6.3 personal extensions engineering R0 (2026-08-14)
+
+Branch `codex/p6-3-personal-extensions-r0` starts from local P6.2 head
+`b3fdd46`. P6.2 Git upload was not retried after the user-authorized three
+methods failed; its complete verified fallback remains
+`D:\OmniBase-Backups\P6.2-20260814\omnibase-p6.2-b3fdd46.bundle`, SHA-256
+`cfeb929a4fa1cde2481d922e31016e44535cf87ec9b2ee15d9053228af0df711`.
+
+P6.3-A expands the fixed catalog to fifteen first-party instruction-only Skills,
+adds catalog metadata/filtering, exact persisted-row comparison and independent
+install/resolve ceilings of eight live Skills and 32 KiB instructions. P6.3-B
+expands the standalone read-only MCP server to six tools with bounded hash,
+literal search and Git diff metadata, while keeping Agent Alpha `no_tool` and
+MCP Runtime disabled. GLM and Claude now use exact model-name-first conservative
+prompt/context profiles; the current Chat Completions transport does not claim
+their native thinking, cache, effort, strict tools or MCP controls.
+
+Official sources rechecked with HTTP 200 on 2026-08-14:
+
+- Z.AI: [thinking](https://docs.z.ai/guides/capabilities/thinking),
+  [cache](https://docs.z.ai/guides/capabilities/cache),
+  [function calling](https://docs.z.ai/guides/capabilities/function-calling),
+  [tool streaming](https://docs.z.ai/guides/capabilities/stream-tool) and
+  [OpenAI Python compatibility](https://docs.z.ai/guides/develop/openai/python);
+- Anthropic: [models](https://platform.claude.com/docs/en/about-claude/models/overview),
+  [extended thinking](https://platform.claude.com/docs/en/build-with-claude/extended-thinking),
+  [effort](https://platform.claude.com/docs/en/build-with-claude/effort),
+  [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching),
+  [strict tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use),
+  [MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector)
+  and [OpenAI SDK compatibility](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk).
+
+These sources describe official transports, not an unknown relay. Therefore
+the P6.3 Chat Completions gateway keeps vendor-native fields disabled.
+
+Independent review then found two P2 issues and both were forward-fixed before
+the final seal: public native-Skill catalog lookups now return detached nested
+snapshots, and MCP text search revalidates every descendant directory and every
+yielded file component chain before scanning/opening. The focused regression
+for these paths passed `44` tests.
+
+P6.3-C updates both READMEs and `/public-preview` to migration `0016`, the 1+9
+personal role model, file/conversation/ChangeSet continuity, fifteen Skills,
+six MCP tools and the Windows Companion. The production frontend build generated
+all 17 routes, including static `/public-preview`. Docker/WSL/tunnel deployment
+was intentionally not attempted, so the status is
+`PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING`; GitHub About metadata
+is deferred until the same source is public.
+
+P6.3-D adds `help`, `locations` and `plan-install` with user/machine/custom
+location policies and no UAC, PATH, registry, service, firewall, Docker, WSL or
+VHDX mutation. The clean-Windows probe was run exactly once and stopped on a
+Windows PowerShell 5.1 compatibility blocker. Source was forward-fixed and only
+AST-parsed afterward; Hyper-V/VM inspection was not repeated. Therefore:
+
+```text
+CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
+NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
+```
+
+Verified matrix before the final sealed-contract pass:
+
+```text
+focused backend Skill/Model/MCP/Agent Alpha = 95 passed
+frontend = 172 passed; typecheck/lint/build passed; 17 routes
+Windows release contract = 17 passed, 1 skipped
+dotnet format = passed; Release build = 0 warnings / 0 errors
+PowerShell AST parse = passed
+Companion EXE = 67,535,942 bytes
+SHA-256 = e85efe0282be1e2ab48e485986f3c6bbbd71f6195aff04b25f6c1e5c73ae0e02
+Authenticode = NotSigned
+catalog = 15 Skills
+catalog SHA-256 = abd8923479f6040d4f747f28f27054101f01fba710528f06bb870a42d471ab98
+Ruff 0.8.6 = 14 explicit Python paths passed
+Mypy follow-imports=skip = 9 changed source files, 0 issues
+maintainer map = valid; 70 invariants / 49 modules / 1059 path specs
+maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
+P5 sealed regression = 129 + 200 + 78 = 407 passed
+P5.1A / P5.2A / P5.3A validate-only = blocked/not_proven,
+  activation_allowed=false, vetoes=[]
+git diff --check = passed
+```
+
+Full design, official GLM/Claude references, detailed evidence and recovery
+boundaries are in `docs/architecture/p6-3-personal-extensions.md` and
+`docs/evidence/p6-3/engineering-r0-decision.md`.
+
+```text
+P6_3_PERSONAL_EXTENSIONS_ENGINEERING_COMPLETE
+FIRST_PARTY_SKILLS_EXACT_15
+READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
+GLM_CLAUDE_CHAT_COMPLETIONS_PROMPT_PROFILES_IMPLEMENTED
+PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
+CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
+AUTHENTICODE_NOT_SIGNED
+OCI_RELEASE_IMAGES_NOT_PUBLISHED
+PRODUCTION_READY_FALSE
+migration head 0016; migration 0017 absent
+Runtime / Planner / Multi-Agent / MCP Runtime disabled
+root .env not read; business database not accessed or migrated
+not deployed
+```

@@ -229,6 +229,21 @@ not silently included in P6.0.
 > digests, Authenticode, clean-machine public release acceptance and production
 > deployment remain separate future evidence.
 
+> **P6.3 A-D personal extensions engineering R0 (2026-08-14):** the
+> first-party catalog expands from six to fifteen instruction-only Skills with
+> exact registration comparison plus live-count and aggregate-instruction
+> budgets. The standalone read-only MCP preview expands from three to six tools
+> with bounded SHA-256, literal text search and Git diff metadata; it remains
+> disconnected from Agent Alpha. GLM and Claude gain exact model-name-first
+> prompt/context profiles while the current Chat Completions transport honestly
+> leaves native thinking, caching, strict tools and MCP unproven. GitHub and
+> `/public-preview` source now describe the P6 personal workbench instead of the
+> old P5-only snapshot. The Windows Companion adds help and safe install-location
+> planning without auto-elevation or host mutation. Migration stays `0016`,
+> `0017` is absent, and Runtime/Planner/Multi-Agent/MCP Runtime remain disabled.
+> Live `omnibase.chat`, published OCI digests, Authenticode and clean-Windows VM
+> acceptance remain separate external evidence.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

@@ -3705,10 +3705,11 @@ equal requested identity; tools, MCP, Planner and Multi-Agent remain disabled.
 
 ## INV-071 p61-read-only-mcp-preview-boundary
 
-The P6.1 MCP server is an explicitly launched local stdio preview, not mounted
-into Agent Alpha. Existing `no_tool` semantics remain unchanged and
-`MCP_RUNTIME_ENABLED` stays false. It exposes exactly authorized-file list,
-authorized UTF-8 read and metadata-only Git status/log inspection. Roots,
+The P6.1 MCP baseline introduced an explicitly launched local stdio preview,
+not mounted into Agent Alpha, with authorized-file list/read and metadata-only
+Git status/log. P6.3 extends that same server to the exact six-tool closed set
+defined by INV-078; it does not create a second MCP Runtime. Existing `no_tool`
+semantics remain unchanged and `MCP_RUNTIME_ENABLED` stays false. Roots,
 repository and Git binary identities are captured and revalidated for each
 call. They must be
 regular non-link/non-reparse objects. Paths reject traversal, absolute/drive,
@@ -3893,3 +3894,109 @@ Authenticode and clean-machine release evidence exist, the manifest remains
 - `scripts/release/test_build_windows_release.py`;
 - real `verify`, `install` and `init-config` preview smoke plus tamper cases;
 - no Docker/WSL/VHDX mutation during verification.
+
+## INV-077 p63-first-party-skill-registry-expansion-boundary
+
+P6.3 expands the source-owned catalog to exactly fifteen first-party,
+instruction-only Skills without changing migration `0014` or creating migration
+`0017`. Catalog metadata may improve Browser discovery, but an existing
+Definition/Version must match the complete immutable source projection before it
+is reused. Source IDs are not global database IDs, sealed versions are not
+edited, and registration/idempotency/Audit remain one caller-owned transaction.
+Public catalog lookup and list functions return detached nested snapshots;
+mutating a returned JSON Schema must not alter the source catalog, its digest or
+a later lookup.
+
+One Agent binding may resolve at most eight live Skills and at most 32 KiB of
+aggregate UTF-8 instructions. Installation and resolution independently reject
+duplicates, count overflow and byte overflow. Native Skills retain empty tools,
+capabilities and required-tool IDs, deny network and secrets, and cannot enable
+MCP, CLI, Planner or Multi-Agent. Owner-triggered local discovery stays
+scan-only; an unknown candidate can never borrow the first-party registration
+path or migration `0014` identity.
+
+**Required verification**
+
+- `backend/tests/test_p6_1_native_skill_catalog.py`;
+- `backend/tests/test_p5_6p_instruction_skills.py`;
+- Skill-focused frontend tests, typecheck, lint and production build;
+- migration head `0016`, migration `0017` absent.
+
+## INV-078 p63-readonly-mcp-expansion-boundary
+
+The P6.3 MCP preview remains a separately launched local stdio process and is
+not mounted into Agent Alpha. `MCP_RUNTIME_ENABLED` remains false. The exact
+six-tool closed set is file list/read/hash, literal text search, Git status/log
+and Git worktree/staged diff summary. File hash returns no content. Search has
+fixed query, depth, visited-entry, file, byte, match and snippet ceilings and
+skips secret/VCS/link/reparse/binary content. Git diff accepts no ref, pathspec,
+arbitrary flag, external diff, textconv, hook, pager, credential or network
+operation and returns no patch body.
+
+Root, repository, Git binary and opened-file identities are revalidated. The
+process has fixed lifetime budgets for calls, aggregate file bytes and aggregate
+Git output. Text search revalidates every descendant directory before scanning
+and every yielded file's complete component chain immediately before opening;
+an initially safe directory cannot be replaced by a junction/symlink to escape
+the authorized root. No MCP tool writes files, invokes shell, performs arbitrary
+Git, opens a network connection or changes global Codex/Claude/Zed configuration.
+
+**Required verification**
+
+- `backend/tests/test_p6_1_readonly_mcp.py`;
+- `frontend/lib/p6-capability-center.test.ts`;
+- focused Ruff, Mypy, frontend typecheck and production build;
+- explicit confirmation that Agent Alpha remains `no_tool`.
+
+## INV-079 p63-glm-claude-model-adaptation-boundary
+
+The normalized user-entered model name selects only a conservative family
+prompt/context profile. Exact GLM and Claude patterns may be recognized through
+an opaque relay namespace, but a Provider label or base URL cannot override a
+recognized or fail-closed name. Bare brands, proxy/bridge/emulator claims and
+conflicting family evidence resolve to `generic`. Requested/actual model
+identity remains exact runtime evidence.
+
+Family classification is not transport capability. The current OpenAI-compatible
+Chat Completions boundary must not claim or send unverified GLM thinking,
+reasoning effort, clear-thinking, tool-stream fields, Anthropic Messages
+thinking/signatures, output effort, cache control, strict native tools or native
+MCP. Unknown relay context limits and cache hits remain unknown. Model
+classification never enables Tools, MCP, CLI, Vision, Planner, Multi-Agent or
+autonomous delegation.
+
+**Required verification**
+
+- `backend/tests/test_model_gateway.py`;
+- `frontend/lib/p6-model-profiles.test.ts`;
+- frontend/backend exact-name, relay, bare-name, conflict and unknown-name cases;
+- payload assertions proving vendor-only fields are absent.
+
+## INV-080 p63-windows-install-location-and-clean-vm-failfast-boundary
+
+P6.3 may add help, location reporting and install planning to the P6.2 Windows
+Companion while preserving all archive, manifest, config and installed-byte
+checks. Recommended user paths are `%LOCALAPPDATA%\Programs\OmniBase` and
+`%LOCALAPPDATA%\OmniBase\config\operator.env`; machine paths are
+`%ProgramFiles%\OmniBase` and `%ProgramData%\OmniBase\config\operator.env`.
+Machine scope may report that elevation is required but must not trigger UAC or
+self-restart. Custom paths must be explicit absolute local paths. Roots, UNC or
+network locations, alternate data streams, reparse targets and existing
+destinations fail closed.
+
+The Companion must not write PATH, registry, shortcuts, services, firewall or
+global IDE/MCP settings, and must not install, launch, repair or mutate Docker,
+WSL, Hyper-V or any VHD/VHDX. Clean-Windows acceptance has one read-only,
+fail-fast preflight and accepts only an explicitly named dedicated test VM with
+unambiguous ownership, path, ACL, guest access and disk posture. Missing
+cmdlets, VM or evidence stops the step as
+`CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN` and
+`NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`; enabling components, restarting the
+host, editing ACLs or creating/moving/resizing disks is forbidden.
+
+**Required verification**
+
+- zero-warning .NET build and self-contained publish using the pinned SDK;
+- `scripts/release/test_build_windows_release.py`;
+- help/location/plan output plus root/UNC/ADS/reparse/existing-target attacks;
+- at most one read-only VM preflight and explicit no-mutation report.

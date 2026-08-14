@@ -2219,10 +2219,11 @@ Completions must not receive Responses-only `verbosity`. Cache usage is observat
 and actual model identity remains mandatory.
 
 The stdio MCP preview is separately launched and must not be mounted into the
-historical `no_tool` Agent Alpha path. Keep the exact three-tool closed set,
+historical `no_tool` Agent Alpha path. P6.1 introduced the three-tool baseline;
+P6.3 extends the same process to the six-tool closed set in INV-078. Preserve
 path/link/reparse/sensitive-file guards, per-call stable identity revalidation,
-incrementally bounded file reads and metadata-only Git status/log. Any
-Runtime integration requires a separately reviewed explicit mode and durable
+incrementally bounded file work and metadata-only Git inspection. Any Runtime
+integration requires a separately reviewed explicit mode and durable
 grant/receipt design.
 
 The release ZIP is the canonical audit root. Preserve deterministic ordering,
@@ -2253,9 +2254,11 @@ Never reconstruct a handle, auto-replay a Provider call or add a server-side
 arbitrary file writer to recover a journal.
 
 The capability center reuses the existing P6.0-D2 ten-role settings and the
-P6.1 exact three-tool read-only MCP preview. Do not create ten autonomous
-Agents, a second model router or any MCP-to-Agent connection. `no_tool`,
-Runtime, Planner, Multi-Agent and MCP Runtime stay unchanged and disabled.
+standalone read-only MCP preview. P6.2 displayed the P6.1 three-tool baseline;
+P6.3 expands the same preview to six tools under INV-078. Do not create ten
+autonomous Agents, a second model router or any MCP-to-Agent connection.
+`no_tool`, Runtime, Planner, Multi-Agent and MCP Runtime stay unchanged and
+disabled.
 
 The Windows Companion is a self-contained CLI preview. Preserve P6.1 manifest,
 compression and digest guards while extending `verify/install/init-config/
@@ -2265,3 +2268,46 @@ it must not pull/up images, launch Docker/WSL, install dependencies or touch
 VHDX/system configuration. Real image digests, Authenticode and clean-machine
 acceptance remain separate publisher evidence, so never describe this source or
 a locally built unsigned binary as a production-ready public v1.0 release.
+
+## P6.3 personal extensions maintenance boundary
+
+Read INV-077 through INV-080 and
+`docs/architecture/p6-3-personal-extensions.md` before changing the expanded
+Skill catalog, MCP preview, GLM/Claude model-name profiles, public presentation
+or Companion install planning.
+
+P6.3 keeps the personal architecture. The fifteen native Skills are still a
+source-owned first-party instruction-only closed set over migration `0014`.
+Metadata and filtering do not authorize third-party import. Enforce the exact
+eight-live-Skill and 32 KiB aggregate instruction budgets both when installing
+and when resolving a fresh invocation. Existing persisted Definition/Version
+rows must match their immutable source projection; do not edit a sealed row to
+make drift disappear.
+
+The MCP stdio process has exactly six read-only tools. Hash returns no content,
+search is literal and bounded, and Git diff returns metadata without patch text.
+Keep lifetime call/file/Git budgets, VCS/secret/link/reparse exclusion and fixed
+Git argv/environment. Do not add shell, regex/glob scans, arbitrary refs,
+network, writes, global client configuration or any Agent Alpha connection.
+
+GLM and Claude recognition is model-name-first prompt/context guidance on the
+existing Chat Completions transport. Exact names through a relay may select a
+family profile; they do not prove the relay accepts native vendor fields. Bare,
+proxy/bridge/emulator or conflicting names stay generic. Do not send or claim
+GLM thinking/tool-stream controls or Anthropic Messages thinking, effort,
+cache, strict tools or native MCP without a separately implemented and verified
+transport adapter.
+
+README and `/public-preview` must distinguish Available, Engineering Preview
+and Deferred. Source changes are not live deployment evidence. If the preview
+host cannot be safely rebuilt without touching root `.env`, Docker/WSL recovery
+or VHDX, report `PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING`.
+
+The Companion may report recommended user/machine/custom locations and reject
+unsafe targets, but it must not elevate, write PATH/registry/service/firewall,
+or mutate Docker/WSL/Hyper-V/VHDX. The clean-Windows probe is read-only,
+one-shot and accepts only the fixed dedicated VM name. Any missing or ambiguous
+host/VM/disk/ACL/guest fact stops as `CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN`
+and `NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`. Do not rerun the probe in the
+same acceptance round after its first environmental blocker; static source or
+AST fixes do not become VM evidence.

@@ -1090,6 +1090,60 @@
         "scripts/release/**"
       ],
       "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-077",
+      "title": "P6.3 first-party Skill expansion stays source-owned, exact, instruction-only and aggregate-budgeted",
+      "document": "docs/maintainers/security-invariants.md#inv-077-p63-first-party-skill-registry-expansion-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/**",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "frontend/lib/p6-native-skills.test.ts"
+      ]
+    },
+    {
+      "id": "INV-078",
+      "title": "P6.3 six-tool read-only MCP remains separately launched, bounded and non-mutating",
+      "document": "docs/maintainers/security-invariants.md#inv-078-p63-readonly-mcp-expansion-boundary",
+      "source_paths": [
+        "backend/src/omnibase/mcp_runtime/**",
+        "scripts/mcp/omnibase_readonly_mcp.py",
+        "frontend/lib/p6-capability-center.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "frontend/lib/p6-capability-center.test.ts"
+      ]
+    },
+    {
+      "id": "INV-079",
+      "title": "P6.3 GLM and Claude model-name profiles never imply unverified native transport controls",
+      "document": "docs/maintainers/security-invariants.md#inv-079-p63-glm-claude-model-adaptation-boundary",
+      "source_paths": [
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "frontend/lib/p6-model-profiles.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_model_gateway.py",
+        "frontend/lib/p6-model-profiles.test.ts"
+      ]
+    },
+    {
+      "id": "INV-080",
+      "title": "P6.3 Windows install planning and clean-VM preflight never elevate or mutate host virtualization",
+      "document": "docs/maintainers/security-invariants.md#inv-080-p63-windows-install-location-and-clean-vm-failfast-boundary",
+      "source_paths": [
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1",
+        "docs/runbooks/p6-3-windows-companion-install.md"
+      ],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
     }
   ],
   "modules": [
@@ -3785,7 +3839,7 @@
         "Authenticated /api/v1/skills catalog/detail and exact install/disable routes",
         "Chinese /skills catalog and one-Owner Workspace/Agent installation controls",
         "Model-name-first DeepSeek/GPT native request profiles and cache/reasoning usage",
-        "Separately launched three-tool read-only stdio MCP preview with metadata-only Git status/log",
+        "P6.1 three-tool read-only stdio MCP baseline, extended by P6.3 to the exact six-tool closed set without Agent Alpha integration",
         "Deterministic canonical Windows ZIP plus offline digest preflight, no-build personal lifecycle Compose and EXE thin-wrapper source"
       ],
       "depends_on": [
@@ -3862,7 +3916,7 @@
         "packaging/windows/OmniBase.Setup/Program.cs:Companion.Run"
       ],
       "public_interfaces": [
-        "Chinese /skills personal capability center over existing authenticated Skill/model APIs",
+        "Chinese /skills personal capability center over authenticated Skill/model APIs and the current standalone six-tool MCP posture",
         "Owner-triggered browser directory scan returning opaque scan-only Skill candidates",
         "Same-session bounded redacted terminal history in personal Agent Alpha requests",
         "Tenant/Workspace-scoped browser-local ChangeSet recovery journal",
@@ -3911,6 +3965,105 @@
         "Discard only the exact tenant/Workspace browser journal key when malformed; never replay Provider work or infer a file handle from recovery metadata.",
         "Fall back to the P6.1 framework-dependent preview source if a reviewed forward fix is required; never weaken archive/config checks or mutate Docker/WSL/VHDX.",
         "Keep migration head 0016 and every Runtime/Planner/Multi-Agent/MCP gate closed; P6.2 recovery never requires migration 0017 or enterprise P34.7 activation."
+      ]
+    },
+    {
+      "id": "p6-3-personal-extensions",
+      "name": "P6.3 first-party Skill expansion, six-tool read-only MCP, GLM/Claude profiles, product presentation and Windows install planning",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/**",
+        "backend/src/omnibase/mcp_runtime/**",
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "backend/tests/test_model_gateway.py",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/app/public-preview/**",
+        "frontend/lib/api.ts",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/test_build_windows_release.py",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1",
+        "AGENTS.md",
+        "README.md",
+        "README.zh-CN.md",
+        "docs/architecture/p6-3-personal-extensions.md",
+        "docs/runbooks/p6-3-windows-companion-install.md",
+        "docs/evidence/p6-3/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_skills/router.py:list_skills",
+        "backend/src/omnibase/agent_skills/control.py:NativeSkillControlService",
+        "backend/src/omnibase/agent_skills/native_catalog.py:filter_native_skills",
+        "backend/src/omnibase/mcp_runtime/readonly.py:ReadOnlyMcpServer",
+        "backend/src/omnibase/model_gateway/adaptation.py:plan_model_adaptation",
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage",
+        "frontend/app/public-preview/public-preview-client.tsx:PublicPreviewClient",
+        "packaging/windows/OmniBase.Setup/Program.cs:Companion.Run",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1:script"
+      ],
+      "public_interfaces": [
+        "Authenticated filtered fifteen-Skill first-party catalog with exact digest and live installation footprint",
+        "Six-tool separately launched read-only MCP stdio preview with process lifetime budgets",
+        "Model-name-first GLM and Claude prompt/context profiles on the existing Chat Completions boundary",
+        "English/Chinese GitHub README and /public-preview personal workbench presentation",
+        "Windows Companion help, locations and user/machine/custom install planning",
+        "One-shot read-only clean-Windows Hyper-V preflight that never mutates a VM or VHDX"
+      ],
+      "depends_on": [
+        "p6-2-personal-capability-center",
+        "p6-1-native-skills-mcp-release",
+        "p6-personal-engineering-workbench",
+        "personal-instruction-skills",
+        "agent-model-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-074",
+        "INV-075",
+        "INV-076",
+        "INV-077",
+        "INV-078",
+        "INV-079",
+        "INV-080"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_model_gateway.py backend/tests/test_p6_1_readonly_mcp.py backend/tests/test_agent_alpha_personal.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "dotnet format packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj --verify-no-changes",
+        "dotnet build packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj -c Release --no-restore",
+        "PowerShell AST parse scripts/release/probe_p6_3_clean_windows_vm.ps1 without running a second VM preflight",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable only the exact affected first-party Skill installation and preserve immutable versions, idempotency and append-only Audit.",
+        "Stop the standalone MCP process and retain Agent Alpha no_tool; never repair MCP by granting shell, network or global client configuration writes.",
+        "Fall back to generic model adaptation while preserving exact requested/actual model identity; never retry with broader vendor-only fields.",
+        "Correct README/public-preview source and report live deployment separately; do not claim omnibase.chat was rebuilt without direct evidence.",
+        "Discard only an unpopulated Companion preview output and forward-fix source; never mutate Docker, WSL, Hyper-V or VHDX to repair packaging."
       ]
     }
   ]

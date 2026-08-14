@@ -198,6 +198,21 @@ runtime evidence; then correct the stale documentation in the same change.
   Skills cannot request tools or capability; workflow/script versions cannot
   be approved or published. Skill execution remains blocked until the roadmap
   explicitly proves the required P5.4 and P34.7 boundaries.
+- The separately authorized personal successor is now at P6.3 with migration
+  head `0016` and migration `0017` absent. It permits exactly fifteen
+  source-owned first-party instruction-only Skills, at most eight live Skills
+  and 32 KiB aggregate instructions per Agent binding, plus a manually launched
+  six-tool read-only MCP preview. MCP is not mounted into Agent Alpha and
+  `MCP_RUNTIME_ENABLED` remains false. GLM/Claude model-name profiles select
+  conservative prompt/context guidance only on the current Chat Completions
+  transport; they do not prove native thinking, cache, effort, strict tools or
+  MCP. The Windows Companion may verify/install a closed release archive and
+  report safe user/machine/custom plans, but it must not elevate, write system
+  integration, start Docker/WSL, or mutate Hyper-V/VHDX. Runtime, Planner and
+  Multi-Agent remain disabled; third-party Skill import, executable Skills,
+  MCP-to-Agent integration, published OCI images, Authenticode and live public
+  deployment require separate evidence. Read INV-077 through INV-080 before
+  changing these P6.3 boundaries.
 
 ## Safe change workflow
 
