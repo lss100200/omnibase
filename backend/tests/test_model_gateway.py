@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from omnibase.model_gateway import ModelGateway, ModelMessage
+from omnibase.model_gateway.adaptation import detect_gateway_family
 from omnibase.model_gateway.providers import (
     ModelIdentityMismatch,
     OpenAICompatibleProvider,
@@ -142,6 +143,65 @@ def test_gpt_model_name_uses_chat_compatible_outcome_profile_reasoning() -> None
     assert "max_tokens" not in payload
     assert "temperature" not in payload
     assert "Lead with the outcome" in str(payload["messages"])
+
+
+@pytest.mark.parametrize(
+    ("model_id", "family"),
+    [
+        ("glm-5.2", "glm"),
+        ("zhipu/glm-5.2", "glm"),
+        ("relay/glm-4.7-flashx", "glm"),
+        ("claude-opus-5", "anthropic"),
+        ("anthropic/claude-sonnet-5", "anthropic"),
+        ("anthropic/sonnet-5", "anthropic"),
+        ("relay/claude-haiku-4-5", "anthropic"),
+    ],
+)
+def test_glm_and_anthropic_exact_model_names_match_on_relays(model_id: str, family: str) -> None:
+    assert detect_gateway_family(model_id) == family
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "glm",
+        "chatglm",
+        "zhipu",
+        "claude",
+        "anthropic",
+        "sonnet-5",
+        "proxy/claude-opus-5",
+        "glm-5.2-claude-sonnet-5",
+        "claude-gpt-bridge",
+        "custom-model",
+    ],
+)
+def test_bare_conflicting_proxy_or_unknown_names_stay_generic(model_id: str) -> None:
+    assert detect_gateway_family(model_id) == "generic"
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected_text"),
+    [
+        ("relay/glm-5.2", "GLM-specific controls as unverified"),
+        ("relay/claude-opus-5", "does not claim native Anthropic Messages"),
+    ],
+)
+def test_glm_and_anthropic_chat_profiles_send_prompt_guidance_only(
+    model_id: str, expected_text: str
+) -> None:
+    gateway, client = _provider_for(model_id)
+    gateway.complete((ModelMessage(role="user", content="ship safely"),), reasoning_gear="audit")
+
+    payload = client.chat.completions.calls[0]
+    assert payload["max_tokens"] == 4096
+    assert expected_text in str(payload["messages"])
+    assert "reasoning_effort" not in payload
+    assert "extra_body" not in payload
+    assert "cache_control" not in payload
+    assert "output_config" not in payload
+    assert "tools" not in payload
+    assert "tool_choice" not in payload
 
 
 def test_unknown_or_conflicting_model_name_never_receives_native_controls() -> None:

@@ -1,4 +1,4 @@
-"""Model-name-first request adaptation for the P6.1 personal gateway."""
+"""Model-name-first request adaptation for the P6.3 personal gateway."""
 
 from __future__ import annotations
 
@@ -7,22 +7,54 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
-ModelFamily = Literal["deepseek", "openai", "generic"]
+ModelFamily = Literal["deepseek", "glm", "openai", "anthropic", "generic"]
 ReasoningGear = Literal["economy", "standard", "deep", "audit"]
+
+_INCOMPATIBLE_MODEL_CLAIM = re.compile(r"(?:^|-)(?:compatible|compat|proxy|bridge|emulator)(?:-|$)")
+_FAMILY_CLAIMS: tuple[tuple[ModelFamily, frozenset[str]], ...] = (
+    ("deepseek", frozenset({"deepseek"})),
+    ("glm", frozenset({"zhipu", "bigmodel", "chatglm", "glm"})),
+    ("openai", frozenset({"openai", "gpt", "o1", "o3", "o4"})),
+    ("anthropic", frozenset({"anthropic", "claude"})),
+)
+_EXACT_MODEL_PATTERNS: tuple[tuple[ModelFamily, re.Pattern[str]], ...] = (
+    ("deepseek", re.compile(r"^deepseek-(?:[a-z0-9]+(?:-[a-z0-9]+)*)$")),
+    (
+        "glm",
+        re.compile(
+            r"^(?:(?:zhipu|bigmodel|zai|z-ai|thudm|relay|openrouter)-)?"
+            r"(?:glm|chatglm)-[0-9][a-z0-9]*(?:-[a-z0-9]+)*$"
+        ),
+    ),
+    (
+        "openai",
+        re.compile(r"^(?:gpt-(?:[a-z0-9]+(?:-[a-z0-9]+)*)|o[134](?:-[a-z0-9]+)*)$"),
+    ),
+    (
+        "anthropic",
+        re.compile(
+            r"^(?:(?:relay|openrouter)-)?claude-"
+            r"(?:(?:fable|mythos|opus|sonnet|haiku|[0-9][a-z0-9]*)"
+            r"(?:-[a-z0-9]+)*)$|^anthropic-(?:claude-)?"
+            r"(?:fable|mythos|opus|sonnet|haiku)(?:-[a-z0-9]+)*$"
+        ),
+    ),
+)
 
 
 def detect_gateway_family(model_id: str) -> ModelFamily:
     value = re.sub(r"[_.:/\\\s]+", "-", unicodedata.normalize("NFKC", model_id).casefold())
-    incompatible_claim = re.search(
-        r"(?:^|-)(?:compatible|compat|proxy|bridge|emulator)(?:-|$)", value
-    )
-    if incompatible_claim is not None:
+    tokens = frozenset(part for part in value.split("-") if part)
+    claims = {
+        family for family, family_tokens in _FAMILY_CLAIMS if not tokens.isdisjoint(family_tokens)
+    }
+    if len(claims) != 1 or _INCOMPATIBLE_MODEL_CLAIM.search(value) is not None:
         return "generic"
-    deepseek = re.fullmatch(r"deepseek(?:-[a-z0-9]+)+", value) is not None
-    openai = re.fullmatch(r"(?:gpt(?:-[a-z0-9]+)+|o[134](?:-[a-z0-9]+)*)", value) is not None
-    if deepseek == openai:
-        return "generic"
-    return "deepseek" if deepseek else "openai"
+    claimed_family = next(iter(claims))
+    for family, pattern in _EXACT_MODEL_PATTERNS:
+        if family == claimed_family and pattern.search(value) is not None:
+            return family
+    return "generic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +77,7 @@ def plan_model_adaptation(model_id: str, gear: ReasoningGear) -> ModelAdaptation
 
     family = detect_gateway_family(model_id)
     common = (
-        "[OmniBase P6.1 model profile]\n"
+        "[OmniBase P6.3 model profile]\n"
         "Keep completed work distinct from proposals. Preserve security boundaries, "
         "report verification evidence, and stop when required authority is missing.\n"
         f"Reasoning gear: {gear}. {_GEAR_GUIDANCE[gear]}"
@@ -76,6 +108,28 @@ def plan_model_adaptation(model_id: str, gear: ReasoningGear) -> ModelAdaptation
             # Responses API control, so it must not cross this compatibility
             # boundary until a dedicated endpoint is implemented and tested.
             extra_payload={"reasoning_effort": effort},
+        )
+    if family == "glm":
+        return ModelAdaptation(
+            family=family,
+            stable_prefix=(
+                common + "\nUse explicit structure, preserve identifiers exactly, and keep stable "
+                "instructions before changing task data for context locality. Treat reasoning, "
+                "cache hits, tools and GLM-specific controls as unverified on this Chat "
+                "Completions transport."
+            ),
+            extra_payload={},
+        )
+    if family == "anthropic":
+        return ModelAdaptation(
+            family=family,
+            stable_prefix=(
+                common
+                + "\nSeparate observations, risks and actions; preserve supplied constraints "
+                "verbatim and prefer narrow edits. This Chat Completions transport does not "
+                "claim native Anthropic Messages thinking, prompt caching or output effort."
+            ),
+            extra_payload={},
         )
     return ModelAdaptation(family="generic", stable_prefix=common, extra_payload={})
 

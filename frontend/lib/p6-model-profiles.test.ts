@@ -16,11 +16,11 @@ test('five target provider families and a generic fallback resolve deterministic
     resolveP6ProviderFamily({ providerId: 'deepseek', modelId: 'deepseek-chat' }),
     'deepseek',
   )
-  assert.equal(resolveP6ProviderFamily({ providerId: 'zhipu', modelId: 'glm-4.5' }), 'glm')
+  assert.equal(resolveP6ProviderFamily({ providerId: 'zhipu', modelId: 'glm-5.2' }), 'glm')
   assert.equal(resolveP6ProviderFamily({ providerId: 'moonshot', modelId: 'kimi-k2' }), 'kimi')
   assert.equal(resolveP6ProviderFamily({ providerId: 'openai', modelId: 'gpt-5' }), 'openai')
   assert.equal(
-    resolveP6ProviderFamily({ providerId: 'anthropic', modelId: 'claude-4' }),
+    resolveP6ProviderFamily({ providerId: 'anthropic', modelId: 'claude-opus-5' }),
     'anthropic',
   )
   assert.equal(resolveP6ProviderFamily({ providerId: 'custom', modelId: 'local-model' }), 'generic')
@@ -46,8 +46,61 @@ test('model name wins over an unrelated relay URL and conflicts fail closed', ()
   assert.deepEqual(conflict.conflicts, ['openai', 'anthropic'])
 })
 
+test('GLM and Claude exact names resolve consistently through unrelated relays', () => {
+  for (const modelId of ['glm-5.2', 'zhipu/glm-5.2', 'relay/glm-4.7-flashx']) {
+    assert.equal(
+      resolveP6ProviderFamily({
+        providerId: 'anthropic-relay',
+        baseUrl: 'https://relay.example/claude/v1',
+        modelId,
+      }),
+      'glm',
+    )
+  }
+  for (const modelId of [
+    'claude-opus-5',
+    'anthropic/claude-sonnet-5',
+    'anthropic/sonnet-5',
+    'relay/claude-haiku-4-5',
+  ]) {
+    assert.equal(
+      resolveP6ProviderFamily({
+        providerId: 'zhipu-relay',
+        baseUrl: 'https://relay.example/glm/v1',
+        modelId,
+      }),
+      'anthropic',
+    )
+  }
+})
+
+test('bare, proxy, conflicting and unknown model names fail closed', () => {
+  for (const modelId of [
+    'glm',
+    'chatglm',
+    'claude',
+    'anthropic',
+    'sonnet-5',
+    'proxy/claude-opus-5',
+    'glm-5.2-claude-sonnet-5',
+  ]) {
+    assert.equal(resolveP6ModelFamily({ providerId: null, modelId }).family, 'generic')
+  }
+  assert.equal(
+    resolveP6ProviderFamily({ providerId: 'custom-relay', modelId: 'unknown-model' }),
+    'generic',
+  )
+})
+
 test('all profiles disclose that native tools and reasoning controls remain closed', () => {
-  for (const modelId of ['deepseek-chat', 'glm-4', 'kimi-k2', 'gpt-5', 'claude-4', 'custom']) {
+  for (const modelId of [
+    'deepseek-chat',
+    'glm-5.2',
+    'kimi-k2',
+    'gpt-5',
+    'claude-opus-5',
+    'custom',
+  ]) {
     const profile = getP6ProviderProfile({ providerId: null, modelId })
     assert.equal(profile.nativeReasoningControl, false)
     assert.equal(profile.toolsEnabled, false)
@@ -74,9 +127,21 @@ test('adaptation text is honest about prompt guidance and unavailable native con
   )
   assert.match(value, /Claude/)
   assert.match(value, /审计挡/)
-  assert.match(value, /Native provider controls remain unavailable/)
+  assert.match(value, /Research profile: 2026-08-14/)
   assert.match(value, /does not prove native reasoning, vision, tool, cache or schema support/)
+  assert.match(value, /does not claim Anthropic Messages controls or unprobed GLM extensions/)
   assert.match(value, /Tools, MCP, CLI and autonomous delegation remain disabled/)
+})
+
+test('GLM and Claude profiles do not claim unproved native transport controls', () => {
+  for (const modelId of ['glm-5.2', 'claude-opus-5']) {
+    const profile = getP6ProviderProfile({ providerId: null, modelId })
+    assert.equal(profile.researchVersion, '2026-08-14')
+    assert.equal(profile.reasoning, 'unknown')
+    assert.equal(profile.reasoningContinuationRequired, 'unknown')
+    assert.equal(profile.structuredOutput, 'unknown')
+    assert.equal(profile.promptCaching, 'unknown')
+  }
 })
 
 test('context compilation preserves priority and deterministically omits lower value context', () => {

@@ -29,7 +29,7 @@ export interface P6ProviderProfile {
   readonly displayName: string
   readonly strengths: readonly string[]
   readonly adaptationInstruction: string
-  readonly researchVersion: '2026-08-13'
+  readonly researchVersion: '2026-08-14'
   readonly reasoning: P6CapabilityState
   readonly reasoningContinuationRequired: boolean | 'unknown'
   readonly structuredOutput: 'strict_schema' | 'json_object' | 'unknown'
@@ -107,7 +107,7 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     strengths: ['中文工程任务', '代码推理', '成本效率'],
     adaptationInstruction:
       'Use a compact engineering plan, keep implementation claims evidence-bound, and finish with a concrete self-check. Long-context and thinking behavior vary by exact model. Preserve provider reasoning state only when a verified adapter explicitly supports it.',
-    researchVersion: '2026-08-13',
+    researchVersion: '2026-08-14',
     reasoning: 'supported',
     reasoningContinuationRequired: true,
     structuredOutput: 'json_object',
@@ -124,12 +124,12 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     displayName: '智谱 GLM',
     strengths: ['中文结构化表达', '长任务拆解', '工程说明'],
     adaptationInstruction:
-      'Prefer explicit Chinese structure, preserve identifiers exactly, and separate confirmed facts from proposals. GLM text and GLM vision models are distinct; do not infer visual input from the family name.',
-    researchVersion: '2026-08-13',
-    reasoning: 'supported',
-    reasoningContinuationRequired: true,
-    structuredOutput: 'json_object',
-    promptCaching: 'automatic',
+      'Prefer explicit structure, preserve identifiers exactly, and keep stable instructions before changing task data for context locality. The current Chat Completions transport does not prove GLM reasoning, cache, tool-stream or vision controls.',
+    researchVersion: '2026-08-14',
+    reasoning: 'unknown',
+    reasoningContinuationRequired: 'unknown',
+    structuredOutput: 'unknown',
+    promptCaching: 'unknown',
     contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
@@ -143,7 +143,7 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     strengths: ['长上下文阅读', '文档归纳', '引用整理'],
     adaptationInstruction:
       'Prioritize supplied file context, cite file labels when making claims, and state when context was omitted by the budget. Kimi generations differ sharply; preserved thinking, vision and strict schema require exact-model verification.',
-    researchVersion: '2026-08-13',
+    researchVersion: '2026-08-14',
     reasoning: 'supported',
     reasoningContinuationRequired: true,
     structuredOutput: 'strict_schema',
@@ -161,7 +161,7 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     strengths: ['通用工程推理', '代码与产品协作', '指令遵循'],
     adaptationInstruction:
       'Use the requested engineering altitude, keep proposed edits distinct from completed edits, and report verification evidence explicitly. Prefer Responses-style state and compaction only when the verified endpoint supports them.',
-    researchVersion: '2026-08-13',
+    researchVersion: '2026-08-14',
     reasoning: 'supported',
     reasoningContinuationRequired: 'unknown',
     structuredOutput: 'strict_schema',
@@ -178,12 +178,12 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     displayName: 'Claude',
     strengths: ['代码审查', '长文档理解', '边界分析'],
     adaptationInstruction:
-      'Keep a clear distinction between observations, risks and actions. Preserve security constraints verbatim, avoid broad rewrites, and account for thinking budget inside the output budget only when the verified endpoint supports it.',
-    researchVersion: '2026-08-13',
-    reasoning: 'supported',
-    reasoningContinuationRequired: true,
-    structuredOutput: 'strict_schema',
-    promptCaching: 'explicit',
+      'Keep a clear distinction between observations, risks and actions, preserve constraints verbatim, and prefer narrow edits. The current Chat Completions transport does not prove native Anthropic Messages thinking, prompt caching, strict tools or output effort.',
+    researchVersion: '2026-08-14',
+    reasoning: 'unknown',
+    reasoningContinuationRequired: 'unknown',
+    structuredOutput: 'unknown',
+    promptCaching: 'unknown',
     contextLimit: 'model_specific',
     nativeReasoningControl: false,
     toolsEnabled: false,
@@ -197,7 +197,7 @@ const CLOSED_PROVIDER_PROFILES: Record<P6ProviderFamily, P6ProviderProfile> = {
     strengths: ['通用文本与代码任务'],
     adaptationInstruction:
       'Follow the supplied context and security boundaries, distinguish evidence from proposals, and do not claim tool or filesystem access.',
-    researchVersion: '2026-08-13',
+    researchVersion: '2026-08-14',
     reasoning: 'unknown',
     reasoningContinuationRequired: 'unknown',
     structuredOutput: 'unknown',
@@ -260,14 +260,46 @@ function normalizeModelLocator(value: string | null | undefined): string {
     .replace(/[_.:/\\\s]+/gu, '-')
 }
 
-function familyMatches(value: string): readonly P6ProviderFamily[] {
+const INCOMPATIBLE_MODEL_CLAIM = /(?:^|-)(?:compatible|compat|proxy|bridge|emulator)(?:-|$)/u
+
+function familyClaims(value: string): readonly P6ProviderFamily[] {
+  const tokens = new Set(value.split('-').filter(Boolean))
   const matches: P6ProviderFamily[] = []
-  if (/(?:^|-)deepseek(?:-|$)/u.test(value)) matches.push('deepseek')
-  if (/(?:^|-)(?:zhipu|bigmodel|chatglm|glm)(?:-|$)/u.test(value)) matches.push('glm')
-  if (/(?:^|-)(?:moonshot|kimi)(?:-|$)/u.test(value)) matches.push('kimi')
-  if (/(?:^|-)(?:openai|gpt|o1|o3|o4)(?:-|$)/u.test(value)) matches.push('openai')
-  if (/(?:^|-)(?:anthropic|claude)(?:-|$)/u.test(value)) matches.push('anthropic')
+  if (tokens.has('deepseek')) matches.push('deepseek')
+  if (['zhipu', 'bigmodel', 'chatglm', 'glm'].some((token) => tokens.has(token))) {
+    matches.push('glm')
+  }
+  if (['moonshot', 'kimi'].some((token) => tokens.has(token))) matches.push('kimi')
+  if (['openai', 'gpt', 'o1', 'o3', 'o4'].some((token) => tokens.has(token))) {
+    matches.push('openai')
+  }
+  if (['anthropic', 'claude'].some((token) => tokens.has(token))) matches.push('anthropic')
   return matches
+}
+
+function exactModelFamily(value: string): P6ProviderFamily | null {
+  if (/^deepseek-(?:[a-z0-9]+(?:-[a-z0-9]+)*)$/u.test(value)) return 'deepseek'
+  if (
+    /^(?:(?:zhipu|bigmodel|zai|z-ai|thudm|relay|openrouter)-)?(?:glm|chatglm)-[0-9][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(
+      value,
+    )
+  ) {
+    return 'glm'
+  }
+  if (/^(?:kimi|moonshot)-(?:[a-z0-9]+(?:-[a-z0-9]+)*)$/u.test(value)) {
+    return 'kimi'
+  }
+  if (/^(?:gpt-(?:[a-z0-9]+(?:-[a-z0-9]+)*)|o[134](?:-[a-z0-9]+)*)$/u.test(value)) {
+    return 'openai'
+  }
+  if (
+    /^(?:(?:relay|openrouter)-)?claude-(?:(?:fable|mythos|opus|sonnet|haiku|[0-9][a-z0-9]*)(?:-[a-z0-9]+)*)$|^anthropic-(?:claude-)?(?:fable|mythos|opus|sonnet|haiku)(?:-[a-z0-9]+)*$/u.test(
+      value,
+    )
+  ) {
+    return 'anthropic'
+  }
+  return null
 }
 
 function resolveCandidate(
@@ -275,7 +307,8 @@ function resolveCandidate(
   source: P6FamilyResolutionSource,
   confidence: P6ModelFamilyResolution['confidence'],
 ): P6ModelFamilyResolution | null {
-  const matches = [...new Set(familyMatches(normalizeModelLocator(raw)))]
+  const value = normalizeModelLocator(raw)
+  const matches = [...new Set(familyClaims(value))]
   if (matches.length === 0) return null
   if (matches.length > 1) {
     return {
@@ -284,6 +317,18 @@ function resolveCandidate(
       confidence: 'unknown',
       matchedTokens: [],
       conflicts: matches,
+    }
+  }
+  if (source !== 'url_hint') {
+    const exact = exactModelFamily(value)
+    if (INCOMPATIBLE_MODEL_CLAIM.test(value) || exact !== matches[0]) {
+      return {
+        family: 'generic',
+        source,
+        confidence: 'unknown',
+        matchedTokens: [],
+        conflicts: [],
+      }
     }
   }
   return { family: matches[0]!, source, confidence, matchedTokens: matches, conflicts: [] }
@@ -329,7 +374,7 @@ export function buildP6AdaptationInstruction(
   const provider = getP6ProviderProfile(identity)
   const selected = P6_GEAR_PROFILES[gear]
   const resolution = resolveP6ModelFamily(identity)
-  return `[P6.0-D2 model adaptation]\nProvider family: ${provider.displayName}\nResolution: ${resolution.source}/${resolution.confidence}\nResearch profile: ${provider.researchVersion}\nGear: ${selected.displayName}\n${provider.adaptationInstruction}\n${selected.reasoningInstruction}\nFamily recognition selects conservative prompt guidance only. It does not prove native reasoning, vision, tool, cache or schema support. Native provider controls remain unavailable until an exact model connection proves compatibility. Tools, MCP, CLI and autonomous delegation remain disabled.`
+  return `[P6.3-B model adaptation]\nProvider family: ${provider.displayName}\nResolution: ${resolution.source}/${resolution.confidence}\nResearch profile: ${provider.researchVersion}\nGear: ${selected.displayName}\n${provider.adaptationInstruction}\n${selected.reasoningInstruction}\nFamily recognition selects conservative prompt guidance only. It does not prove native reasoning, vision, tool, cache or schema support. This Chat Completions transport does not claim Anthropic Messages controls or unprobed GLM extensions. Tools, MCP, CLI and autonomous delegation remain disabled.`
 }
 
 const PRIORITY_ORDER: Record<P6ContextCandidate['priority'], number> = {
