@@ -15,6 +15,7 @@ from omnibase.agent_registry.models import (
     AgentVersionModel,
     WorkspaceAgentBindingModel,
 )
+from omnibase.agent_skills.limits import SkillBundleLimitError, validate_skill_bundle_limits
 from omnibase.agent_skills.models import (
     SkillDefinitionModel,
     SkillVersionModel,
@@ -70,6 +71,13 @@ def _canonical_digest(items: tuple[SkillInstruction, ...]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_resolved_bundle_limits(items: tuple[SkillInstruction, ...]) -> None:
+    try:
+        validate_skill_bundle_limits(item.instructions for item in items)
+    except SkillBundleLimitError as exc:
+        raise SkillResolutionError(str(exc)) from exc
 
 
 def _validate_personal_identity(
@@ -277,6 +285,7 @@ class SqlAlchemySkillResolver:
             )
             if len({item.stable_logical_key for item in items}) != len(items):
                 raise SkillResolutionError("skill_bundle_contains_duplicate_definition")
+            _validate_resolved_bundle_limits(items)
             return SkillInstructionBundle(
                 canonical_digest=_canonical_digest(items),
                 items=items,

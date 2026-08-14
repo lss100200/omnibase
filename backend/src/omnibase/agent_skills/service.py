@@ -20,6 +20,7 @@ from omnibase.agent_registry.models import (
     AgentVersionModel,
     WorkspaceAgentBindingModel,
 )
+from omnibase.agent_skills.limits import SkillBundleLimitError, validate_skill_bundle_limits
 from omnibase.agent_skills.models import (
     SkillDefinitionModel,
     SkillVersionModel,
@@ -175,6 +176,37 @@ def _validate_version(version: SkillVersion) -> None:
         or version.budget.max_tool_calls != 0
     ):
         raise SkillStateError("skill_version_non_escalating_posture_invalid")
+
+
+def _validate_prospective_bundle_limits(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    agent_version_id: str,
+    new_instructions: str,
+) -> None:
+    live_instructions = session.scalars(
+        select(SkillVersionModel.instructions)
+        .join(
+            WorkspaceAgentSkillInstallationModel,
+            (WorkspaceAgentSkillInstallationModel.skill_version_id == SkillVersionModel.id)
+            & (WorkspaceAgentSkillInstallationModel.tenant_id == SkillVersionModel.tenant_id),
+        )
+        .where(
+            WorkspaceAgentSkillInstallationModel.tenant_id == tenant_id,
+            WorkspaceAgentSkillInstallationModel.workspace_id == workspace_id,
+            WorkspaceAgentSkillInstallationModel.agent_version_id == agent_version_id,
+            WorkspaceAgentSkillInstallationModel.installation_state == "installed",
+        )
+        .order_by(WorkspaceAgentSkillInstallationModel.id)
+    ).all()
+    try:
+        validate_skill_bundle_limits((*live_instructions, new_instructions))
+    except SkillBundleLimitError as exc:
+        if str(exc) == "skill_bundle_live_limit_exceeded":
+            raise SkillStateError("skill_installation_live_limit_exceeded") from exc
+        raise SkillStateError("skill_installation_instruction_budget_exceeded") from exc
 
 
 class SkillPersistenceService:
@@ -408,6 +440,13 @@ class SkillPersistenceService:
         )
         if live is not None:
             raise SkillConflictError("skill_installation_already_live")
+        _validate_prospective_bundle_limits(
+            self._session,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            agent_version_id=agent_version_id,
+            new_instructions=version.instructions,
+        )
         if previous_installation_id is not None:
             previous = self._session.scalar(
                 select(WorkspaceAgentSkillInstallationModel)

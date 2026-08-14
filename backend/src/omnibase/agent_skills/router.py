@@ -7,11 +7,17 @@ from collections.abc import Callable
 from typing import TypeVar
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from omnibase.agent_skills.control import NativeSkillControlService, translate_skill_error
-from omnibase.agent_skills.native_catalog import list_native_skills
+from omnibase.agent_skills.native_catalog import (
+    NativeSkillCatalogItem,
+    filter_native_skills,
+    list_native_skills,
+    native_skill_catalog_digest,
+    native_skill_categories,
+)
 from omnibase.agent_skills.schemas import (
     NativeSkillDetail,
     NativeSkillInstallCreate,
@@ -39,6 +45,20 @@ def _uuid(value: UUID) -> str:
     return str(value)
 
 
+def _catalog_read(item: NativeSkillCatalogItem) -> NativeSkillRead:
+    return NativeSkillRead(
+        stable_logical_key=item.definition.stable_logical_key,
+        display_name=item.definition.display_name,
+        description=item.summary,
+        category=item.category,
+        tags=list(item.tags),
+        recommended_roles=list(item.recommended_roles),
+        instructions_bytes=item.instructions_bytes,
+        semantic_version=item.version.version,
+        manifest_digest=item.version.canonical_digest(),
+    )
+
+
 def _mutation(db: Session, operation: Callable[[], T]) -> T:
     try:
         value = operation()
@@ -55,21 +75,32 @@ def _mutation(db: Session, operation: Callable[[], T]) -> T:
 
 @router.get("/skills", response_model=NativeSkillList)
 def list_skills(
+    q: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=80,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+    category: str | None = Query(default=None, min_length=1, max_length=32),
+    role: str | None = Query(default=None, min_length=1, max_length=16),
     principal: CurrentPrincipal = Depends(get_current_principal),
 ) -> NativeSkillList:
     del principal
-    items = [
-        NativeSkillRead(
-            stable_logical_key=item.definition.stable_logical_key,
-            display_name=item.definition.display_name,
-            description=item.summary,
-            category=item.category,
-            semantic_version=item.version.version,
-            manifest_digest=item.version.canonical_digest(),
-        )
-        for item in list_native_skills()
-    ]
-    return NativeSkillList(items=items, total=len(items))
+    try:
+        catalog_items = filter_native_skills(q=q, category=category, role=role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": str(exc), "message": str(exc).replace("_", " ")}},
+        ) from exc
+    items = [_catalog_read(item) for item in catalog_items]
+    return NativeSkillList(
+        catalog_digest=native_skill_catalog_digest(),
+        catalog_total=len(list_native_skills()),
+        categories=list(native_skill_categories()),
+        items=items,
+        total=len(items),
+    )
 
 
 @router.get("/skills/{stable_key}", response_model=NativeSkillDetail)
@@ -92,12 +123,7 @@ def get_skill(
             detail={"error": {"code": "native_skill_not_found", "message": "not found"}},
         )
     return NativeSkillDetail(
-        stable_logical_key=item.definition.stable_logical_key,
-        display_name=item.definition.display_name,
-        description=item.summary,
-        category=item.category,
-        semantic_version=item.version.version,
-        manifest_digest=item.version.canonical_digest(),
+        **_catalog_read(item).model_dump(),
         instructions=item.version.instructions,
     )
 

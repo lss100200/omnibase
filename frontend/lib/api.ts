@@ -438,8 +438,13 @@ export interface NativeSkillRead {
   readonly display_name: string
   readonly description: string
   readonly category: string
+  readonly tags: string[]
+  readonly recommended_roles: P6EmployeeRoleId[]
+  readonly instructions_bytes: number
   readonly semantic_version: string
   readonly manifest_digest: string
+  readonly source: 'omnibase_first_party'
+  readonly review_state: 'sealed'
   readonly kind: 'instruction'
   readonly first_party: true
   readonly tools_enabled: false
@@ -448,6 +453,10 @@ export interface NativeSkillRead {
 }
 
 export interface NativeSkillList {
+  readonly schema_version: 1
+  readonly catalog_digest: string
+  readonly catalog_total: number
+  readonly categories: string[]
   readonly items: NativeSkillRead[]
   readonly total: number
 }
@@ -469,10 +478,21 @@ export interface SkillInstallationRead {
 export interface SkillInstallationList {
   readonly items: SkillInstallationRead[]
   readonly total: number
+  readonly live_count: number
+  readonly live_instruction_bytes: number
+  readonly max_live_installations: number
+  readonly max_instruction_bytes: number
+}
+
+export interface NativeSkillFilters {
+  readonly q?: string
+  readonly category?: string
+  readonly role?: P6EmployeeRoleId
 }
 
 export const nativeSkillsApi = {
-  list: () => api.get<NativeSkillList>('/skills').then((response) => response.data),
+  list: (filters: NativeSkillFilters = {}) =>
+    api.get<NativeSkillList>('/skills', { params: filters }).then((response) => response.data),
   installations: (workspaceId: string, agentVersionId: string) =>
     api
       .get<SkillInstallationList>(

@@ -16,6 +16,21 @@ export const P6_READONLY_MCP_TOOLS = [
     label: 'Git 检查',
     boundary: '只允许 status/log 元数据操作，不写仓库。',
   },
+  {
+    id: 'omnibase_files_hash',
+    label: '文件摘要',
+    boundary: '只计算单个有界普通文件的 SHA-256，不返回文件正文。',
+  },
+  {
+    id: 'omnibase_text_search',
+    label: '字面量搜索',
+    boundary: '只在授权根内搜索有界 UTF-8 文件；无正则、Glob 或整盘扫描。',
+  },
+  {
+    id: 'omnibase_git_diff_summary',
+    label: 'Git 改动摘要',
+    boundary: '只返回 worktree/staged 的文件状态与行数元数据，不返回补丁正文。',
+  },
 ] as const
 
 export interface P6CapabilitySummary {

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from omnibase.mcp_runtime import readonly as readonly_mcp
 from omnibase.mcp_runtime.readonly import McpToolError, ReadOnlyMcpServer
 
 
@@ -32,17 +33,71 @@ def server(tmp_path: Path) -> ReadOnlyMcpServer:
     )
 
 
-def test_tool_list_is_an_exact_three_tool_read_only_closed_set(server: ReadOnlyMcpServer) -> None:
+def test_tool_list_is_an_exact_six_tool_read_only_closed_set(server: ReadOnlyMcpServer) -> None:
     assert [tool["name"] for tool in server.tools()] == [
         "omnibase_files_list",
         "omnibase_files_read",
         "omnibase_git_inspect",
+        "omnibase_files_hash",
+        "omnibase_text_search",
+        "omnibase_git_diff_summary",
     ]
     git_tool = server.tools()[2]
     assert git_tool["inputSchema"]["properties"]["operation"]["enum"] == [
         "status",
         "log",
     ]
+
+
+def test_file_hash_returns_digest_without_content(server: ReadOnlyMcpServer) -> None:
+    result = server.call("omnibase_files_hash", {"path": "visible.txt"})
+    assert result == {
+        "path": "visible.txt",
+        "algorithm": "sha256",
+        "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        "bytes": 5,
+    }
+    assert "content" not in result
+
+
+def test_literal_text_search_is_bounded_and_redacted(server: ReadOnlyMcpServer) -> None:
+    nested = server.authorized_root / "src"
+    nested.mkdir()
+    (nested / "first.txt").write_text(
+        "needle public\napi_key=do-not-return needle\n",
+        encoding="utf-8",
+    )
+    (nested / "binary.bin").write_bytes(b"needle\x00binary")
+    (nested / ".git").mkdir()
+    (nested / ".git" / "hidden.txt").write_text("needle", encoding="utf-8")
+
+    result = server.call("omnibase_text_search", {"path": ".", "query": "needle"})
+
+    assert result["inspected_files"] == 3
+    assert [match["path"] for match in result["matches"]] == [
+        "src/first.txt",
+        "src/first.txt",
+    ]
+    assert "do-not-return" not in str(result["matches"])
+    assert ".git" not in str(result)
+
+
+@pytest.mark.parametrize("query", ["x", "x" * 129, "bad\nquery"])
+def test_text_search_rejects_invalid_query(server: ReadOnlyMcpServer, query: str) -> None:
+    with pytest.raises(McpToolError, match="mcp_search_query_invalid"):
+        server.call("omnibase_text_search", {"path": ".", "query": query})
+
+
+def test_text_search_fails_closed_before_an_unbounded_tree_walk(
+    server: ReadOnlyMcpServer,
+) -> None:
+    for index in range(3):
+        (server.authorized_root / f"item-{index}.txt").write_text("needle", encoding="utf-8")
+    with (
+        patch("omnibase.mcp_runtime.readonly._MAX_SEARCH_ENTRIES", 2),
+        pytest.raises(McpToolError, match="mcp_search_tree_too_large"),
+    ):
+        server.call("omnibase_text_search", {"path": ".", "query": "needle"})
 
 
 def test_files_list_and_read_never_expose_env(server: ReadOnlyMcpServer) -> None:
@@ -57,6 +112,9 @@ def test_files_list_and_read_never_expose_env(server: ReadOnlyMcpServer) -> None
     "name",
     [
         ".git-credentials",
+        ".git",
+        ".hg",
+        ".svn",
         ".netrc",
         ".npmrc",
         ".pypirc",
@@ -109,6 +167,57 @@ def test_git_operations_are_a_fixed_non_mutating_closed_set(server: ReadOnlyMcpS
     for operation in ("diff", "cached_diff", "show"):
         with pytest.raises(McpToolError, match="mcp_git_operation_invalid"):
             server.call("omnibase_git_inspect", {"operation": operation})
+
+
+def test_git_diff_summary_reports_only_metadata_for_worktree_and_staged(
+    server: ReadOnlyMcpServer,
+) -> None:
+    subprocess.run(
+        [str(server.git_executable), "-c", "core.autocrlf=false", "add", "tracked.txt"],
+        cwd=server.repo_root,
+        check=True,
+    )
+    subprocess.run(
+        [
+            str(server.git_executable),
+            "-c",
+            "user.name=OmniBase Test",
+            "-c",
+            "user.email=test@invalid.local",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline",
+        ],
+        cwd=server.repo_root,
+        check=True,
+    )
+    (server.repo_root / "tracked.txt").write_text("worktree\nsecond\n", encoding="utf-8")
+
+    worktree = server.call("omnibase_git_diff_summary", {"scope": "worktree"})
+    assert worktree["files"] == [{"path": "tracked.txt", "status": "M", "added": 2, "deleted": 1}]
+    assert "worktree\nsecond" not in str(worktree)
+
+    subprocess.run(
+        [str(server.git_executable), "-c", "core.autocrlf=false", "add", "tracked.txt"],
+        cwd=server.repo_root,
+        check=True,
+    )
+    staged = server.call("omnibase_git_diff_summary", {"scope": "staged"})
+    assert staged["files"] == worktree["files"]
+    assert server.call("omnibase_git_diff_summary", {"scope": "worktree"})["files"] == []
+
+
+def test_git_diff_summary_rejects_arbitrary_scope_and_arguments(
+    server: ReadOnlyMcpServer,
+) -> None:
+    for arguments in (
+        {"scope": "HEAD~1"},
+        {"scope": "worktree", "path": "."},
+        {"scope": ["worktree"]},
+    ):
+        with pytest.raises(McpToolError, match="mcp_git_diff_scope_invalid"):
+            server.call("omnibase_git_diff_summary", arguments)
 
 
 def test_git_status_omits_sensitive_path_names(server: ReadOnlyMcpServer) -> None:
@@ -234,3 +343,20 @@ def test_unknown_tool_and_extra_arguments_fail_closed(server: ReadOnlyMcpServer)
         server.call("shell", {})
     with pytest.raises(McpToolError, match="mcp_arguments_invalid"):
         server.call("omnibase_files_read", {"path": "visible.txt", "extra": True})
+
+
+def test_process_lifetime_call_file_and_git_budgets_fail_closed(
+    server: ReadOnlyMcpServer,
+) -> None:
+    server._budget.calls = readonly_mcp._MAX_PROCESS_CALLS
+    with pytest.raises(McpToolError, match="mcp_process_call_budget_exhausted"):
+        server.call("omnibase_files_list", {"path": "."})
+
+    server._budget.calls = 0
+    server._budget.file_bytes = readonly_mcp._MAX_PROCESS_FILE_BYTES
+    with pytest.raises(McpToolError, match="mcp_process_file_budget_exhausted"):
+        server.call("omnibase_files_read", {"path": "visible.txt"})
+
+    server._budget.git_bytes = readonly_mcp._MAX_PROCESS_GIT_BYTES
+    with pytest.raises(McpToolError, match="mcp_process_git_budget_exhausted"):
+        server.call("omnibase_git_inspect", {"operation": "status"})

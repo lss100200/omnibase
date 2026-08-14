@@ -10,6 +10,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from omnibase.agent_skills.limits import (
+    MAX_LIVE_SKILL_INSTALLATIONS,
+    MAX_SKILL_INSTRUCTION_BYTES,
+    SkillBundleLimitError,
+    validate_skill_bundle_limits,
+)
 from omnibase.agent_skills.models import (
     SkillDefinitionModel,
     SkillVersionModel,
@@ -68,6 +74,58 @@ def _project_installation(
         disabled_at=installation.disabled_at.isoformat() if installation.disabled_at else None,
         revoked_at=installation.revoked_at.isoformat() if installation.revoked_at else None,
     )
+
+
+def _assert_definition_matches_catalog(
+    definition: SkillDefinitionModel,
+    item: NativeSkillCatalogItem,
+    *,
+    tenant_id: str,
+    owner_user_id: str,
+) -> None:
+    expected = item.definition
+    if (
+        definition.id != expected.skill_definition_id
+        or definition.tenant_id != tenant_id
+        or definition.stable_logical_key != expected.stable_logical_key
+        or definition.display_name != expected.display_name
+        or definition.description != expected.description
+        or definition.definition_state != "active"
+        or definition.installation_scopes != ["workspace"]
+        or definition.first_party is not True
+        or definition.created_by != owner_user_id
+    ):
+        raise NativeSkillControlError("native_skill_definition_catalog_drifted")
+
+
+def _assert_version_matches_catalog(
+    version: SkillVersionModel,
+    item: NativeSkillCatalogItem,
+    *,
+    tenant_id: str,
+    owner_user_id: str,
+) -> None:
+    expected = item.version
+    if (
+        version.id != expected.skill_version_id
+        or version.tenant_id != tenant_id
+        or version.definition_id != expected.skill_definition_id
+        or version.semantic_version != expected.version
+        or version.version_state != "sealed"
+        or version.kind != "instruction"
+        or version.manifest_payload != expected.to_dict()
+        or version.manifest_digest != expected.canonical_digest()
+        or version.instructions != expected.instructions
+        or version.instructions_digest != expected.instructions_digest
+        or version.required_tool_ids != []
+        or version.capability_requirements != []
+        or version.network_policy != "deny"
+        or version.secrets_allowed is not False
+        or version.max_tool_calls != 0
+        or version.rollback_version_id != expected.rollback_version_id
+        or version.created_by != owner_user_id
+    ):
+        raise NativeSkillControlError("native_skill_version_catalog_drifted")
 
 
 class NativeSkillControlService:
@@ -134,9 +192,22 @@ class NativeSkillControlService:
                 WorkspaceAgentSkillInstallationModel.id.desc(),
             )
         ).all()
+        live_instructions = [
+            version.instructions
+            for installation, _, version in rows
+            if installation.installation_state == "installed"
+        ]
+        try:
+            live_count, live_instruction_bytes = validate_skill_bundle_limits(live_instructions)
+        except SkillBundleLimitError as exc:
+            raise NativeSkillControlError(str(exc)) from exc
         return SkillInstallationList(
             items=[_project_installation(*row) for row in rows],
             total=int(total),
+            live_count=live_count,
+            live_instruction_bytes=live_instruction_bytes,
+            max_live_installations=MAX_LIVE_SKILL_INSTALLATIONS,
+            max_instruction_bytes=MAX_SKILL_INSTRUCTION_BYTES,
         )
 
     def install_native(
@@ -390,8 +461,13 @@ class NativeSkillControlService:
                 created_by_actor_id=owner_user_id,
             )
             definition_created = True
-        elif definition.id != item.definition.skill_definition_id:
-            raise NativeSkillControlError("native_skill_definition_identity_conflict")
+        else:
+            _assert_definition_matches_catalog(
+                definition,
+                item,
+                tenant_id=tenant_id,
+                owner_user_id=owner_user_id,
+            )
         version = self._session.scalar(
             select(SkillVersionModel).where(
                 SkillVersionModel.tenant_id == tenant_id,
@@ -418,8 +494,13 @@ class NativeSkillControlService:
                 created_by_actor_id=owner_user_id,
             )
             version_created = True
-        elif version.manifest_digest != item.version.canonical_digest():
-            raise NativeSkillControlError("native_skill_version_digest_conflict")
+        else:
+            _assert_version_matches_catalog(
+                version,
+                item,
+                tenant_id=tenant_id,
+                owner_user_id=owner_user_id,
+            )
         return definition_created, version_created
 
     def _definition(self, tenant_id: str, item: NativeSkillCatalogItem) -> SkillDefinitionModel:

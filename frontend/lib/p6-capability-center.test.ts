@@ -47,9 +47,16 @@ test('capability summary distinguishes operator fallback and explicit role overr
   assert.equal(summary.explicitOverrides, 1)
 })
 
-test('MCP preview remains an exact three-tool read-only closed set', () => {
+test('MCP preview remains an exact six-tool read-only closed set', () => {
   assert.deepEqual(
     P6_READONLY_MCP_TOOLS.map((tool) => tool.id),
-    ['omnibase_files_list', 'omnibase_files_read', 'omnibase_git_inspect'],
+    [
+      'omnibase_files_list',
+      'omnibase_files_read',
+      'omnibase_git_inspect',
+      'omnibase_files_hash',
+      'omnibase_text_search',
+      'omnibase_git_diff_summary',
+    ],
   )
 })

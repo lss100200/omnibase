@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -32,7 +33,7 @@ import {
 import { P6_READONLY_MCP_TOOLS, summarizeP6ModelCapabilities } from '@/lib/p6-capability-center'
 import { chooseAndScanP6SkillRoot } from '@/lib/p6-skill-browser'
 import type { P6SkillScanReport } from '@/lib/p6-skill-discovery'
-import type { AgentModelSettingRead, ProviderRuntimePosture } from '@/lib/types'
+import type { AgentModelSettingRead, P6EmployeeRoleId, ProviderRuntimePosture } from '@/lib/types'
 
 interface WorkspaceOption {
   readonly id: string
@@ -43,6 +44,36 @@ interface AgentOption {
   readonly display_name: string
 }
 
+const ROLE_LABELS: Record<P6EmployeeRoleId, string> = {
+  parent: '父 Agent',
+  product: '产品',
+  ux: 'UX',
+  frontend: '前端',
+  backend: '后端',
+  data: '数据',
+  security: '安全',
+  qa: '测试',
+  operations: '运维',
+  docs: '文档',
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  api: 'API',
+  context: '上下文',
+  data: '数据',
+  dependency: '依赖',
+  documentation: '文档',
+  engineering: '工程',
+  observability: '可观测性',
+  performance: '性能',
+  planning: '规划',
+  release: '发布',
+  research: '研究',
+  security: '安全',
+  testing: '测试',
+  ux: 'UX',
+}
+
 export default function SkillsPage() {
   const [skills, setSkills] = useState<NativeSkillRead[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
@@ -51,6 +82,16 @@ export default function SkillsPage() {
   const [modelSettings, setModelSettings] = useState<AgentModelSettingRead[]>([])
   const [runtimePosture, setRuntimePosture] = useState<ProviderRuntimePosture | null>(null)
   const [scanReport, setScanReport] = useState<P6SkillScanReport | null>(null)
+  const [catalogTotal, setCatalogTotal] = useState(0)
+  const [catalogDigest, setCatalogDigest] = useState('')
+  const [categories, setCategories] = useState<string[]>([])
+  const [skillQuery, setSkillQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | P6EmployeeRoleId>('all')
+  const [liveSkillCount, setLiveSkillCount] = useState(0)
+  const [liveInstructionBytes, setLiveInstructionBytes] = useState(0)
+  const [maxLiveSkills, setMaxLiveSkills] = useState(8)
+  const [maxInstructionBytes, setMaxInstructionBytes] = useState(32_768)
   const [workspaceId, setWorkspaceId] = useState('')
   const [agentVersionId, setAgentVersionId] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -60,6 +101,8 @@ export default function SkillsPage() {
     if (!workspaceId || !agentVersionId) {
       setInstallations([])
       setModelSettings([])
+      setLiveSkillCount(0)
+      setLiveInstructionBytes(0)
       return
     }
     const [installationList, settingList] = await Promise.all([
@@ -68,18 +111,47 @@ export default function SkillsPage() {
     ])
     setInstallations(installationList.items)
     setModelSettings(settingList.items)
+    setLiveSkillCount(installationList.live_count)
+    setLiveInstructionBytes(installationList.live_instruction_bytes)
+    setMaxLiveSkills(installationList.max_live_installations)
+    setMaxInstructionBytes(installationList.max_instruction_bytes)
   }, [agentVersionId, workspaceId])
 
   useEffect(() => {
-    Promise.all([nativeSkillsApi.list(), workspacesApi.list(), userSettingsApi.runtime()])
-      .then(([catalog, workspaceList, posture]) => {
-        setSkills(catalog.items)
+    Promise.all([workspacesApi.list(), userSettingsApi.runtime()])
+      .then(([workspaceList, posture]) => {
         setWorkspaces(workspaceList.items)
         setRuntimePosture(posture)
         if (workspaceList.items.length === 1) setWorkspaceId(workspaceList.items[0]?.id ?? '')
       })
       .catch((reason) => setError(getApiErrorMessage(reason, '个人能力中心加载失败')))
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      nativeSkillsApi
+        .list({
+          q: skillQuery.trim() || undefined,
+          category: categoryFilter === 'all' ? undefined : categoryFilter,
+          role: roleFilter === 'all' ? undefined : roleFilter,
+        })
+        .then((catalog) => {
+          if (cancelled) return
+          setSkills(catalog.items)
+          setCatalogTotal(catalog.catalog_total)
+          setCatalogDigest(catalog.catalog_digest)
+          setCategories(catalog.categories)
+        })
+        .catch((reason) => {
+          if (!cancelled) setError(getApiErrorMessage(reason, 'Skill 目录加载失败'))
+        })
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [categoryFilter, roleFilter, skillQuery])
 
   useEffect(() => {
     setAgents([])
@@ -203,6 +275,48 @@ export default function SkillsPage() {
         </div>
       )}
 
+      <section className="grid gap-3 rounded-lg border p-4 lg:grid-cols-[minmax(0,1fr)_14rem_14rem]">
+        <Input
+          value={skillQuery}
+          onChange={(event) => setSkillQuery(event.target.value.slice(0, 80))}
+          placeholder="搜索名称、说明、标签或稳定标识"
+          aria-label="搜索第一方 Skill"
+        />
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger aria-label="按分类筛选 Skill">
+            <SelectValue placeholder="全部分类" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部分类</SelectItem>
+            {categories.map((category) => (
+              <SelectItem key={category} value={category}>
+                {CATEGORY_LABELS[category] ?? category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={roleFilter}
+          onValueChange={(value) => setRoleFilter(value as 'all' | P6EmployeeRoleId)}
+        >
+          <SelectTrigger aria-label="按推荐角色筛选 Skill">
+            <SelectValue placeholder="全部推荐角色" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部推荐角色</SelectItem>
+            {Object.entries(ROLE_LABELS).map(([role, label]) => (
+              <SelectItem key={role} value={role}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="text-xs text-muted-foreground lg:col-span-3">
+          当前显示 {skills.length} / {catalogTotal || 15} · 目录摘要{' '}
+          {catalogDigest ? `${catalogDigest.slice(0, 16)}…` : '加载中'}
+        </div>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader>
@@ -301,11 +415,26 @@ export default function SkillsPage() {
       )}
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold">OmniBase 第一方原生 Skills</h2>
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+          <div>
+            <h2 className="text-xl font-semibold">OmniBase 第一方原生 Skills</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              固定第一方目录，不接受第三方上传、URL、ZIP、脚本或 Marketplace。
+            </p>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            已安装 {liveSkillCount} / {maxLiveSkills} · 指令{' '}
+            {(liveInstructionBytes / 1024).toFixed(1)} / {(maxInstructionBytes / 1024).toFixed(0)}{' '}
+            KiB
+          </div>
+        </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {skills.map((skill) => {
             const installed = liveByKey.get(skill.stable_logical_key)
             const working = busy === skill.stable_logical_key
+            const budgetBlocked =
+              liveSkillCount >= maxLiveSkills ||
+              liveInstructionBytes + skill.instructions_bytes > maxInstructionBytes
             return (
               <Card key={skill.stable_logical_key} className="flex min-h-64 flex-col">
                 <CardHeader>
@@ -326,6 +455,22 @@ export default function SkillsPage() {
                     <Badge variant="outline">无工具</Badge>
                     <Badge variant="outline">无网络</Badge>
                     <Badge variant="outline">无密钥</Badge>
+                    <Badge variant="secondary">
+                      {CATEGORY_LABELS[skill.category] ?? skill.category}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <p>
+                      推荐：{skill.recommended_roles.map((role) => ROLE_LABELS[role]).join('、')}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {skill.tags.map((tag) => (
+                        <Badge key={tag} variant="outline" className="font-normal">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p>指令体积：{skill.instructions_bytes} bytes</p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <ShieldCheck className="h-4 w-4" />
@@ -346,9 +491,10 @@ export default function SkillsPage() {
                     <Button
                       className="w-full"
                       onClick={() => void install(skill)}
-                      disabled={!workspaceId || !agentVersionId || working}
+                      disabled={!workspaceId || !agentVersionId || working || budgetBlocked}
                     >
-                      {working && <Loader2 className="h-4 w-4 animate-spin" />}安装到当前 AI 员工
+                      {working && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {budgetBlocked ? '安装预算已满' : '安装到当前 AI 员工'}
                     </Button>
                   )}
                 </CardContent>

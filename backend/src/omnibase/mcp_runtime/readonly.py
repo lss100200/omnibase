@@ -8,15 +8,27 @@ import stat
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import IO, Any
 
 from omnibase.runtime.diagnostics import redact_mapping
 
 _MAX_READ_BYTES = 256_000
+_MAX_HASH_BYTES = 4 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 512_000
 _MAX_LIST_ENTRIES = 500
+_MAX_PROCESS_CALLS = 256
+_MAX_PROCESS_FILE_BYTES = 16 * 1024 * 1024
+_MAX_PROCESS_GIT_BYTES = 4 * 1024 * 1024
+_MAX_SEARCH_DEPTH = 8
+_MAX_SEARCH_FILES = 64
+_MAX_SEARCH_ENTRIES = 2_048
+_MAX_SEARCH_BYTES = 2 * 1024 * 1024
+_MAX_SEARCH_MATCHES = 100
+_MAX_SEARCH_SNIPPET_CHARS = 180
 _READ_CHUNK_BYTES = 64 * 1024
 _GIT_TIMEOUT_SECONDS = 10.0
 _SENSITIVE_NAMES = {
@@ -25,13 +37,16 @@ _SENSITIVE_NAMES = {
     ".docker",
     ".env",
     ".env.local",
+    ".git",
     ".git-credentials",
     ".gnupg",
+    ".hg",
     ".kube",
     ".netrc",
     ".npmrc",
     ".pypirc",
     ".ssh",
+    ".svn",
     "auth.json",
     "credentials",
     "credentials.json",
@@ -187,7 +202,7 @@ def _open_regular_file(path: Path) -> IO[bytes]:
     return stream
 
 
-def _read_bounded_file(path: Path) -> bytes:
+def _read_bounded_file(path: Path, *, max_bytes: int = _MAX_READ_BYTES) -> bytes:
     before = _capture_path_identity(path, directory=False)
     with _open_regular_file(path) as stream:
         opened = os.fstat(stream.fileno())
@@ -197,17 +212,17 @@ def _read_bounded_file(path: Path) -> bytes:
             or not _same_opened_file(_identity(opened), before)
         ):
             raise McpToolError("mcp_file_identity_drifted")
-        if opened.st_size > _MAX_READ_BYTES:
+        if opened.st_size > max_bytes:
             raise McpToolError("mcp_file_too_large")
         chunks: list[bytes] = []
         total = 0
         while True:
-            chunk = stream.read(min(_READ_CHUNK_BYTES, _MAX_READ_BYTES + 1 - total))
+            chunk = stream.read(min(_READ_CHUNK_BYTES, max_bytes + 1 - total))
             if not chunk:
                 break
             chunks.append(chunk)
             total += len(chunk)
-            if total > _MAX_READ_BYTES:
+            if total > max_bytes:
                 raise McpToolError("mcp_file_too_large")
         after = os.fstat(stream.fileno())
         if not _same_opened_file(_identity(after), _identity(opened)):
@@ -225,6 +240,179 @@ def _redact_text(content: str) -> str:
     return redacted
 
 
+def _walk_regular_files(directory: Path, authorized_root: Path) -> Iterator[Path]:
+    pending: list[tuple[Path, int]] = [(directory, 0)]
+    visited_entries = 0
+    while pending:
+        current, depth = pending.pop()
+        children: list[Path] = []
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    visited_entries += 1
+                    if visited_entries > _MAX_SEARCH_ENTRIES:
+                        raise McpToolError("mcp_search_tree_too_large")
+                    children.append(Path(entry.path))
+        except OSError as exc:
+            raise McpToolError("mcp_search_tree_unavailable") from exc
+        children.sort(key=lambda item: item.name.casefold())
+        next_directories: list[Path] = []
+        for child in children:
+            relative = PurePosixPath(child.relative_to(authorized_root).as_posix())
+            if _sensitive(relative):
+                continue
+            try:
+                metadata = os.stat(child, follow_symlinks=False)
+            except OSError as exc:
+                raise McpToolError("mcp_search_tree_unavailable") from exc
+            if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+                continue
+            if stat.S_ISREG(metadata.st_mode):
+                yield child
+            elif stat.S_ISDIR(metadata.st_mode) and depth < _MAX_SEARCH_DEPTH:
+                next_directories.append(child)
+        pending.extend((child, depth + 1) for child in reversed(next_directories))
+
+
+def _git_environment(git_executable: Path) -> dict[str, str]:
+    return {
+        "PATH": str(git_executable.parent),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C.UTF-8",
+    }
+
+
+def _git_command(git_executable: Path, arguments: list[str]) -> list[str]:
+    return [
+        str(git_executable),
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=",
+        "-c",
+        "diff.external=",
+        "-c",
+        "credential.helper=",
+        *arguments,
+    ]
+
+
+def _parse_name_status(raw: str) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for line in raw.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 2:
+            continue
+        status, path_text = fields
+        try:
+            relative = _safe_relative(path_text)
+        except McpToolError:
+            continue
+        if _sensitive(relative):
+            continue
+        statuses[relative.as_posix()] = status
+    return statuses
+
+
+def _parse_numstat(raw: str, statuses: dict[str, str]) -> list[dict[str, object]]:
+    files: list[dict[str, object]] = []
+    for line in raw.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 3:
+            continue
+        added_text, deleted_text, path_text = fields
+        try:
+            relative = _safe_relative(path_text)
+        except McpToolError:
+            continue
+        path = relative.as_posix()
+        if _sensitive(relative) or path not in statuses:
+            continue
+        added = int(added_text) if added_text.isdigit() else None
+        deleted = int(deleted_text) if deleted_text.isdigit() else None
+        files.append(
+            {
+                "path": path,
+                "status": statuses[path],
+                "added": added,
+                "deleted": deleted,
+            }
+        )
+    return files
+
+
+def _search_query(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not 2 <= len(value) <= 128
+        or any(ord(character) < 32 for character in value)
+    ):
+        raise McpToolError("mcp_search_query_invalid")
+    return value
+
+
+def _search_file(
+    path: Path,
+    relative: PurePosixPath,
+    query: str,
+    *,
+    max_matches: int,
+) -> tuple[int, list[dict[str, object]]]:
+    raw = _read_bounded_file(path)
+    if b"\x00" in raw:
+        return len(raw), []
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return len(raw), []
+    matches: list[dict[str, object]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        column = line.find(query)
+        if column < 0:
+            continue
+        snippet_start = max(0, column - (_MAX_SEARCH_SNIPPET_CHARS // 3))
+        snippet = line[snippet_start : snippet_start + _MAX_SEARCH_SNIPPET_CHARS]
+        matches.append(
+            {
+                "path": relative.as_posix(),
+                "line": line_number,
+                "column": column + 1,
+                "snippet": _redact_text(snippet),
+            }
+        )
+        if len(matches) >= max_matches:
+            break
+    return len(raw), matches
+
+
+@dataclass(slots=True)
+class _ProcessBudget:
+    calls: int = 0
+    file_bytes: int = 0
+    git_bytes: int = 0
+
+    def reserve_call(self) -> None:
+        if self.calls >= _MAX_PROCESS_CALLS:
+            raise McpToolError("mcp_process_call_budget_exhausted")
+        self.calls += 1
+
+    def reserve_file_bytes(self, amount: int) -> None:
+        if amount < 0 or self.file_bytes + amount > _MAX_PROCESS_FILE_BYTES:
+            raise McpToolError("mcp_process_file_budget_exhausted")
+        self.file_bytes += amount
+
+    def reserve_git_bytes(self, amount: int) -> None:
+        if amount < 0 or self.git_bytes + amount > _MAX_PROCESS_GIT_BYTES:
+            raise McpToolError("mcp_process_git_budget_exhausted")
+        self.git_bytes += amount
+
+
 @dataclass(frozen=True, slots=True)
 class ReadOnlyMcpServer:
     authorized_root: Path
@@ -233,6 +421,7 @@ class ReadOnlyMcpServer:
     authorized_root_identity: _StableIdentity
     repo_root_identity: _StableIdentity
     git_executable_identity: _StableIdentity
+    _budget: _ProcessBudget = field(default_factory=_ProcessBudget, compare=False, repr=False)
 
     @classmethod
     def create(
@@ -300,10 +489,44 @@ class ReadOnlyMcpServer:
                     "additionalProperties": False,
                 },
             },
+            {
+                "name": "omnibase_files_hash",
+                "description": "Compute SHA-256 for one bounded regular file without returning content.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "omnibase_text_search",
+                "description": "Search a bounded UTF-8 tree for one literal text query.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "query": {"type": "string", "minLength": 2, "maxLength": 128},
+                    },
+                    "required": ["path", "query"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "omnibase_git_diff_summary",
+                "description": "Return bounded worktree or staged Git name/status and line-count metadata.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"scope": {"enum": ["worktree", "staged"]}},
+                    "required": ["scope"],
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def call(self, name: str, arguments: object) -> dict[str, object]:
         self._verify_boundaries()
+        self._budget.reserve_call()
         if not isinstance(arguments, dict) or any(not isinstance(key, str) for key in arguments):
             raise McpToolError("mcp_arguments_invalid")
         if name == "omnibase_files_list":
@@ -312,6 +535,12 @@ class ReadOnlyMcpServer:
             result = self._read(arguments)
         elif name == "omnibase_git_inspect":
             result = self._git(arguments)
+        elif name == "omnibase_files_hash":
+            result = self._hash(arguments)
+        elif name == "omnibase_text_search":
+            result = self._search(arguments)
+        elif name == "omnibase_git_diff_summary":
+            result = self._git_diff_summary(arguments)
         else:
             raise McpToolError("mcp_tool_unknown")
         self._verify_boundaries()
@@ -330,6 +559,8 @@ class ReadOnlyMcpServer:
                 continue
             metadata = os.stat(child, follow_symlinks=False)
             if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+                continue
+            if not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
                 continue
             entries.append(
                 {
@@ -351,6 +582,7 @@ class ReadOnlyMcpServer:
             raise McpToolError("mcp_sensitive_file_forbidden")
         path = _reject_component_links(self.authorized_root, relative)
         raw = _read_bounded_file(path)
+        self._budget.reserve_file_bytes(len(raw))
         if b"\x00" in raw:
             raise McpToolError("mcp_binary_file_forbidden")
         try:
@@ -361,6 +593,70 @@ class ReadOnlyMcpServer:
             "path": relative.as_posix(),
             "content": _redact_text(content),
             "bytes": len(raw),
+        }
+
+    def _hash(self, arguments: dict[str, Any]) -> dict[str, object]:
+        if set(arguments) != {"path"}:
+            raise McpToolError("mcp_arguments_invalid")
+        relative = _safe_relative(arguments["path"])
+        if _sensitive(relative):
+            raise McpToolError("mcp_sensitive_file_forbidden")
+        path = _reject_component_links(self.authorized_root, relative)
+        raw = _read_bounded_file(path, max_bytes=_MAX_HASH_BYTES)
+        self._budget.reserve_file_bytes(len(raw))
+        return {
+            "path": relative.as_posix(),
+            "algorithm": "sha256",
+            "sha256": sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+
+    def _search(self, arguments: dict[str, Any]) -> dict[str, object]:
+        if set(arguments) != {"path", "query"}:
+            raise McpToolError("mcp_arguments_invalid")
+        query = _search_query(arguments["query"])
+        relative = _safe_relative(arguments["path"])
+        if _sensitive(relative):
+            raise McpToolError("mcp_sensitive_file_forbidden")
+        directory = _reject_component_links(self.authorized_root, relative)
+        before = _capture_path_identity(directory, directory=True)
+        matches: list[dict[str, object]] = []
+        inspected_files = 0
+        inspected_bytes = 0
+        truncated = False
+
+        for path in _walk_regular_files(directory, self.authorized_root):
+            if inspected_files >= _MAX_SEARCH_FILES or len(matches) >= _MAX_SEARCH_MATCHES:
+                truncated = True
+                break
+            item_relative = PurePosixPath(path.relative_to(self.authorized_root).as_posix())
+            if _sensitive(item_relative):
+                continue
+            metadata = os.stat(path, follow_symlinks=False)
+            if metadata.st_size > _MAX_READ_BYTES:
+                continue
+            if inspected_bytes + metadata.st_size > _MAX_SEARCH_BYTES:
+                truncated = True
+                break
+            read_bytes, file_matches = _search_file(
+                path,
+                item_relative,
+                query,
+                max_matches=_MAX_SEARCH_MATCHES - len(matches),
+            )
+            inspected_files += 1
+            inspected_bytes += read_bytes
+            matches.extend(file_matches)
+            if len(matches) >= _MAX_SEARCH_MATCHES:
+                truncated = True
+        self._budget.reserve_file_bytes(inspected_bytes)
+        _verify_path_identity(directory, before, directory=True)
+        return {
+            "query": query,
+            "matches": matches,
+            "inspected_files": inspected_files,
+            "inspected_bytes": inspected_bytes,
+            "truncated": truncated,
         }
 
     def _git(self, arguments: dict[str, Any]) -> dict[str, object]:
@@ -395,10 +691,47 @@ class ReadOnlyMcpServer:
             *args,
         ]
         stdout = _run_bounded(command, cwd=self.repo_root, environment=environment)
+        self._budget.reserve_git_bytes(len(stdout))
         output = stdout.decode("utf-8", errors="replace")
         if operation == "status":
             output = _filter_git_status(output)
         return {"operation": operation, "output": _redact_text(output), "truncated": False}
+
+    def _git_diff_summary(self, arguments: dict[str, Any]) -> dict[str, object]:
+        scope_value = arguments.get("scope")
+        if (
+            set(arguments) != {"scope"}
+            or not isinstance(scope_value, str)
+            or scope_value
+            not in {
+                "worktree",
+                "staged",
+            }
+        ):
+            raise McpToolError("mcp_git_diff_scope_invalid")
+        scope = scope_value
+        cached = ["--cached"] if scope == "staged" else []
+        common = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", *cached]
+        environment = _git_environment(self.git_executable)
+        name_status_raw = _run_bounded(
+            _git_command(self.git_executable, [*common, "--name-status"]),
+            cwd=self.repo_root,
+            environment=environment,
+        )
+        numstat_raw = _run_bounded(
+            _git_command(self.git_executable, [*common, "--numstat"]),
+            cwd=self.repo_root,
+            environment=environment,
+        )
+        self._budget.reserve_git_bytes(len(name_status_raw) + len(numstat_raw))
+        status_by_path = _parse_name_status(name_status_raw.decode("utf-8", errors="replace"))
+        files = _parse_numstat(numstat_raw.decode("utf-8", errors="replace"), status_by_path)
+        return {
+            "scope": scope,
+            "files": files,
+            "file_count": len(files),
+            "truncated": False,
+        }
 
 
 def _run_bounded(command: list[str], *, cwd: Path, environment: dict[str, str]) -> bytes:
