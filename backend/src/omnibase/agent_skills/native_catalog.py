@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from uuid import NAMESPACE_URL, uuid5
 
@@ -406,8 +407,25 @@ def _validate_catalog(items: tuple[NativeSkillCatalogItem, ...]) -> None:
 _validate_catalog(_NATIVE_SKILLS)
 
 
+def _snapshot_item(item: NativeSkillCatalogItem) -> NativeSkillCatalogItem:
+    """Return a detached snapshot so callers cannot mutate the source catalog."""
+
+    return NativeSkillCatalogItem(
+        definition=item.definition,
+        version=deepcopy(item.version),
+        category=item.category,
+        summary=item.summary,
+        tags=item.tags,
+        recommended_roles=item.recommended_roles,
+        instructions_bytes=item.instructions_bytes,
+    )
+
+
 def list_native_skills() -> tuple[NativeSkillCatalogItem, ...]:
-    return tuple(sorted(_NATIVE_SKILLS, key=lambda item: item.definition.stable_logical_key))
+    return tuple(
+        _snapshot_item(item)
+        for item in sorted(_NATIVE_SKILLS, key=lambda item: item.definition.stable_logical_key)
+    )
 
 
 def native_skill_catalog_digest() -> str:
@@ -472,7 +490,7 @@ def filter_native_skills(
 def get_native_skill(stable_key: str) -> NativeSkillCatalogItem:
     for item in _NATIVE_SKILLS:
         if item.definition.stable_logical_key == stable_key:
-            return item
+            return _snapshot_item(item)
     raise KeyError("native_skill_not_found")
 
 

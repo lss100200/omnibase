@@ -245,6 +245,9 @@ def _walk_regular_files(directory: Path, authorized_root: Path) -> Iterator[Path
     visited_entries = 0
     while pending:
         current, depth = pending.pop()
+        current_relative = PurePosixPath(current.relative_to(authorized_root).as_posix())
+        current = _reject_component_links(authorized_root, current_relative)
+        current_identity = _capture_path_identity(current, directory=True)
         children: list[Path] = []
         try:
             with os.scandir(current) as entries:
@@ -255,12 +258,14 @@ def _walk_regular_files(directory: Path, authorized_root: Path) -> Iterator[Path
                     children.append(Path(entry.path))
         except OSError as exc:
             raise McpToolError("mcp_search_tree_unavailable") from exc
+        _verify_path_identity(current, current_identity, directory=True)
         children.sort(key=lambda item: item.name.casefold())
         next_directories: list[Path] = []
         for child in children:
             relative = PurePosixPath(child.relative_to(authorized_root).as_posix())
             if _sensitive(relative):
                 continue
+            child = _reject_component_links(authorized_root, relative)
             try:
                 metadata = os.stat(child, follow_symlinks=False)
             except OSError as exc:
@@ -362,8 +367,10 @@ def _search_file(
     relative: PurePosixPath,
     query: str,
     *,
+    authorized_root: Path,
     max_matches: int,
 ) -> tuple[int, list[dict[str, object]]]:
+    path = _reject_component_links(authorized_root, relative)
     raw = _read_bounded_file(path)
     if b"\x00" in raw:
         return len(raw), []
@@ -642,6 +649,7 @@ class ReadOnlyMcpServer:
                 path,
                 item_relative,
                 query,
+                authorized_root=self.authorized_root,
                 max_matches=_MAX_SEARCH_MATCHES - len(matches),
             )
             inspected_files += 1

@@ -97,6 +97,19 @@ def test_catalog_digest_filters_and_categories_are_stable_and_bounded() -> None:
         filter_native_skills(role="autonomous-worker")
 
 
+def test_catalog_lookups_return_detached_nested_snapshots() -> None:
+    before = native_skill_catalog_digest()
+    item = get_native_skill("omnibase.requirement-clarifier")
+
+    item.version.input_schema["additionalProperties"] = True
+
+    assert native_skill_catalog_digest() == before
+    assert get_native_skill("omnibase.requirement-clarifier").version.input_schema == {
+        "type": "object",
+        "additionalProperties": False,
+    }
+
+
 def test_native_catalog_lookup_is_exact_and_never_falls_back() -> None:
     assert get_native_skill("omnibase.change-reviewer").definition.display_name == "变更审阅员"
     for value in (

@@ -159,6 +159,28 @@ def test_symlink_or_junction_escape_is_rejected(server: ReadOnlyMcpServer, tmp_p
         server.call("omnibase_files_list", {"path": "escape"})
 
 
+def test_text_search_revalidates_each_yielded_file_component(
+    server: ReadOnlyMcpServer, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("needle", encoding="utf-8")
+    link = server.authorized_root / "late-link"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("link creation unavailable")
+
+    with (
+        patch(
+            "omnibase.mcp_runtime.readonly._walk_regular_files",
+            return_value=iter((link / "secret.txt",)),
+        ),
+        pytest.raises(McpToolError, match="mcp_path_link_forbidden"),
+    ):
+        server.call("omnibase_text_search", {"path": ".", "query": "needle"})
+
+
 def test_git_operations_are_a_fixed_non_mutating_closed_set(server: ReadOnlyMcpServer) -> None:
     status = server.call("omnibase_git_inspect", {"operation": "status"})
     assert "tracked.txt" in str(status["output"])
