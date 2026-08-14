@@ -210,11 +210,13 @@ test-destructive: ## 在一次性隔离数据库中运行破坏性集成测试
 		uv run pytest -m integration \
 			tests/integration/test_p5_5b_memory_persistence_foundation.py::test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip; \
 		uv run pytest -m integration \
+			tests/integration/test_phase_1_6_tenant_foundation.py::test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves; \
+		uv run pytest -m integration \
 			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_empty_downgrade_and_reupgrade_are_safe \
 			tests/integration/test_p34_3_controlled_data_foundation.py::test_0006_downgrade_refuses_live_controlled_resources; \
 		uv run pytest -m integration tests/integration \
 			--ignore=tests/integration/test_auth_e2e.py \
-			-k "not test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip and not test_0006_empty_downgrade_and_reupgrade_are_safe and not test_0006_downgrade_refuses_live_controlled_resources"; \
+			-k "not test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip and not test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves and not test_0006_empty_downgrade_and_reupgrade_are_safe and not test_0006_downgrade_refuses_live_controlled_resources"; \
 		uv run pytest -m integration tests/integration/test_auth_e2e.py
 
 test-p5-1b-registry: ## 一次性隔离数据库上的 P5.1B Agent Registry 持久化 Gate

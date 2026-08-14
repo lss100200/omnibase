@@ -34,6 +34,7 @@ from omnibase.agent_memory.service import (
     export_memory,
 )
 from omnibase.control_plane.service import create_approval, create_operation, decide_approval
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 from tests.integration.test_p5_1b_agent_registry_foundation import (
     ACTOR_ID,
     _binding_dto,
@@ -1103,7 +1104,7 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
                 {"tenant": str(uuid.uuid4()), "digest": "0" * 64},
             )
 
-    _alembic("downgrade", "0015")
+    downgrade_0016_to_0015(_run_alembic)
     with db_engine.begin() as connection:
         assert _head(connection, "omnibase_meta") == "0015"
         assert _head(connection, schema_name) == "0015"
@@ -1876,7 +1877,7 @@ def test_populated_0013_downgrade_fails_closed_without_head_or_data_drift(
         _set_tenant_search_path(connection, seed.schema_name)
         candidate_id = _insert_candidate(connection, seed)
 
-    _alembic("downgrade", "0015")
+    downgrade_0016_to_0015(_run_alembic)
     with db_engine.connect() as connection:
         assert _head(connection, "omnibase_meta") == "0015"
         assert _head(connection, seed.schema_name) == "0015"

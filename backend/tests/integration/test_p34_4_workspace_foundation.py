@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from omnibase.workspaces import overlay, service
 from omnibase.workspaces.service import WorkspaceConflict
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
@@ -1089,13 +1090,32 @@ def test_node_revocation_revokes_run_lease_and_old_holder_cannot_resume(
 
 def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources) -> None:
     tenant_id: str | None = None
+    tenant_schema: str | None = None
     template_id: str | None = None
     try:
         with db_engine.begin() as connection:
             tenant_id = _tenant(connection, run_owned_resources, "downgrade")
+            tenant_schema = _tenant_schema(connection, tenant_id)
             template_id = _template(connection, tenant_id)
 
         _upgrade_head()
+        downgrade_0016_to_0015(_run_alembic)
+        with db_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT version_num FROM omnibase_meta.alembic_version")
+                ).scalar_one()
+                == "0015"
+            )
+            assert (
+                connection.execute(
+                    text(
+                        f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                    )
+                ).scalar_one()
+                == "0015"
+            )
+
         downgrade = _run_alembic("downgrade", "0006")
         assert downgrade.returncode != 0
         output = downgrade.stdout + downgrade.stderr
@@ -1105,7 +1125,17 @@ def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
                 connection.execute(
                     text("SELECT version_num FROM omnibase_meta.alembic_version")
                 ).scalar_one()
-                == "0016"
+                == "0015"
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM omnibase_meta.workspace_templates "
+                        "WHERE tenant_id = :tenant AND id = :template"
+                    ),
+                    {"tenant": tenant_id, "template": template_id},
+                ).scalar_one()
+                == 1
             )
     finally:
         if template_id is not None and tenant_id is not None:
@@ -1117,3 +1147,21 @@ def test_0007_populated_downgrade_is_fail_closed(db_engine, run_owned_resources)
                     ),
                     {"tenant": tenant_id, "template": template_id},
                 )
+        _upgrade_head()
+
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0016"
+        )
+        if tenant_schema is not None:
+            assert (
+                connection.execute(
+                    text(
+                        f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                    )
+                ).scalar_one()
+                == "0016"
+            )
