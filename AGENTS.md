@@ -203,12 +203,14 @@ runtime evidence; then correct the stale documentation in the same change.
   source-owned first-party instruction-only Skills, at most eight live Skills
   and 32 KiB aggregate instructions per Agent binding, plus a manually launched
   six-tool read-only MCP preview. MCP is not mounted into Agent Alpha and
-  `MCP_RUNTIME_ENABLED` remains false. GLM/Claude model-name profiles select
-  conservative prompt/context guidance only on the current Chat Completions
-  transport; they do not prove native thinking, cache, effort, strict tools or
-  MCP. The Windows Companion may verify/install a closed release archive and
-  report safe user/machine/custom plans, but it must not elevate, write system
-  integration, start Docker/WSL, or mutate Hyper-V/VHDX. Runtime, Planner and
+  `MCP_RUNTIME_ENABLED` remains false. DeepSeek/GPT/Kimi/GLM/Claude model-name
+  profiles select conservative prompt/context guidance only on the current Chat
+  Completions transport; they do not prove native thinking, cache, effort,
+  strict tools or MCP. The Windows Companion may verify a closed release
+  archive and report safe user/machine/custom plans, but mutating `install` is
+  frozen until handle-relative path identity binding is implemented and proven.
+  It must not elevate, write system integration, start Docker/WSL, or mutate
+  Hyper-V/VHDX. Runtime, Planner and
   Multi-Agent remain disabled; third-party Skill import, executable Skills,
   MCP-to-Agent integration, published OCI images, Authenticode and live public
   deployment require separate evidence. Read INV-077 through INV-080 before

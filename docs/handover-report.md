@@ -5793,7 +5793,9 @@ boundaries are in `docs/architecture/p6-3-personal-extensions.md` and
 P6_3_PERSONAL_EXTENSIONS_ENGINEERING_COMPLETE
 FIRST_PARTY_SKILLS_EXACT_15
 READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
-GLM_CLAUDE_CHAT_COMPLETIONS_PROMPT_PROFILES_IMPLEMENTED
+FIVE_FAMILY_CHAT_COMPLETIONS_PROMPT_PROFILES_ALIGNED
+WINDOWS_COMPANION_MUTATING_INSTALL_FROZEN_FAIL_CLOSED
+INSTALL_PATH_IDENTITY_BINDING_NOT_IMPLEMENTED
 PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
 CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
 AUTHENTICODE_NOT_SIGNED
@@ -5804,3 +5806,69 @@ Runtime / Planner / Multi-Agent / MCP Runtime disabled
 root .env not read; business database not accessed or migrated
 not deployed
 ```
+
+### P6.3 final independent-review fixes and safe Companion freeze (2026-08-14)
+
+The final read-only review of clean head `6098180` found six P2 issues. Three
+were already closed by the catalog-snapshot and descendant-path forward fix;
+the remaining review-fix chain is:
+
+```text
+da726a9 fix(p6.3): enforce MCP lifetime resource budgets
+933c993 fix(p6.3): align model-name family profiles
+b5d380f fix(p6.3): freeze unsafe Companion install mutation
+```
+
+MCP file bytes are now reserved before opening, list enumeration has a fixed
+pre-sort visited ceiling, and Git stdout/stderr consume the shared lifetime
+budget while chunks arrive on success and failure paths. Backend Kimi/Moonshot
+recognition now matches the frontend; any present but unknown requested or
+observed name is terminal `generic` and cannot be upgraded by branded relay or
+Provider hints.
+
+The Companion review proved that repeated path/reparse checks do not bind the
+final rename identity. An attempted no-delete-share lease design was rejected
+during master review because releasing the staging handle to permit a path-based
+`Directory.Move` reopened the race. No experimental lease/P/Invoke code was
+retained. Mutating `install` and `--verify-and-extract` now exit `30` with
+`install_path_identity_binding_not_implemented` before path resolution, archive
+open, staging creation, extraction, move or cleanup. `verify`, `help`,
+`locations`, `plan-install`, `init-config` and read-only `doctor` remain.
+
+Final review-fix verification before the sealed-chain clean-HEAD pass:
+
+```text
+P6.3 focused backend = 113 passed
+MCP focused = 42 passed
+model gateway focused = 43 passed
+frontend = 175 passed; typecheck/lint/Prettier/build passed; 17 routes
+Windows release contracts = 18 passed, 1 skipped
+dotnet format = passed; Release build = 0 warnings / 0 errors
+maintainer map = valid; 70 invariants / 49 modules / 1059 path specs /
+  3634 matched files / 333 entrypoints / 275 verification commands
+maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
+```
+
+The rebuilt fail-closed self-contained artifact is:
+
+```text
+E:\Agent IDE\Artifacts\OmniBase-P63-Companion-Safe-Freeze-R0\OmniBase.Setup.exe
+size = 67,535,942 bytes
+SHA-256 = a646c2db2c5ad5a03ce906bafc6e589c2435233e923add1ee67626a6f7209eb0
+Authenticode = NotSigned
+help exit = 0
+plan-install exit = 0; mutation_performed=false; acceptance fields=false
+install exit = 30; target_exists=false; staging_count=0
+```
+
+The earlier `OmniBase-P63-Companion-D-R0` binary predates this security freeze
+and is explicitly marked `DO_NOT_DISTRIBUTE.txt`; it is not release evidence.
+The D-drive P6.2 full-history bundle remains verified and must be retained:
+
+```text
+D:\OmniBase-Backups\P6.2-20260814\omnibase-p6.2-b3fdd46.bundle
+SHA-256 = cfeb929a4fa1cde2481d922e31016e44535cf87ec9b2ee15d9053228af0df711
+```
+
+The clean-Windows VM probe was not run a second time. Docker/WSL/Hyper-V/VHDX,
+the root `.env`, business databases and production activation remained untouched.

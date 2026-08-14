@@ -10,7 +10,9 @@ Pre-head: `b3fdd46413885e2649023bb818a70526203b03e8`
 P6_3_PERSONAL_EXTENSIONS_ENGINEERING_COMPLETE
 FIRST_PARTY_SKILLS_EXACT_15
 READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
-GLM_CLAUDE_CHAT_COMPLETIONS_PROMPT_PROFILES_IMPLEMENTED
+FIVE_FAMILY_CHAT_COMPLETIONS_PROMPT_PROFILES_ALIGNED
+WINDOWS_COMPANION_MUTATING_INSTALL_FROZEN_FAIL_CLOSED
+INSTALL_PATH_IDENTITY_BINDING_NOT_IMPLEMENTED
 PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING
 CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
 NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
@@ -59,23 +61,36 @@ budgets. Search is literal-only; Git diff accepts only `worktree|staged` and
 returns no patch content. MCP remains manually launched, is not mounted into
 Agent Alpha and leaves `MCP_RUNTIME_ENABLED=false`.
 
-Independent review found and closed two P2 boundary gaps before final sealing:
+Independent review found and closed six P2 boundary gaps before final sealing:
 
 - native catalog queries now return detached deep snapshots, so mutating a
   returned nested JSON Schema cannot change the source catalog digest or later
   installation projection;
 - text search revalidates every descendant directory before scanning and every
   yielded file's complete component chain before opening, closing a local
-  junction/symlink replacement race.
+  junction/symlink replacement race;
+- file lifecycle budget is reserved before open, directory listing has a fixed
+  pre-sort visited ceiling, and Git stdout/stderr consume shared budget while
+  pipe chunks arrive on success and failure paths;
+- backend Kimi/Moonshot exact-name recognition now matches the frontend and
+  keeps vendor-native controls absent;
+- any present but unknown requested/observed model name now terminates at
+  `generic`, so a branded Provider/base URL cannot upgrade it;
+- mutating Windows `install` is frozen before path/archive/write access because
+  path rechecks alone cannot close the final rename TOCTOU window.
 
-The two focused regression files report `44 passed` after these forward fixes.
+The final focused regression counts are recorded in the verification matrix
+below; the new MCP-only file reports `42 passed`, model-gateway reports
+`43 passed`, and Windows release contracts report `18 passed, 1 skipped`.
 
-Backend and frontend family recognition now share conservative exact GLM and
-Claude rules, including relay namespaces and Anthropic model-family locators.
+Backend and frontend family recognition now share conservative exact Kimi,
+GLM and Claude rules, including relay namespaces and model-family locators.
 Bare names, proxy/bridge/emulator claims and conflicting family names remain
-generic. Model family selects stable prompt/context guidance only. The current
-Chat Completions transport does not send or claim native GLM thinking/tool
-stream or Anthropic Messages thinking/cache/effort/strict-tool/MCP fields.
+generic. A present unknown requested/observed name is also terminal generic and
+cannot be replaced by a Provider/base-URL hint. Model family selects stable
+prompt/context guidance only. The current Chat Completions transport does not
+send or claim native Kimi/GLM thinking/tool-stream or Anthropic Messages
+thinking/cache/effort/strict-tool/MCP fields.
 
 Official research used for the profile decision:
 
@@ -120,7 +135,7 @@ description/topic update remains deferred until this source is published.
 
 ## P6.3-D — Windows Companion
 
-Existing `verify`, `install`, `init-config`, `doctor` and compatibility commands
+Existing `verify`, `init-config`, `doctor` and compatibility command parsing
 remain. New commands:
 
 ```text
@@ -130,10 +145,14 @@ plan-install --scope user|machine|custom [--target <absolute-path>] [--json]
 ```
 
 The Companion reports conventional user/machine locations, marks machine scope
-as elevation-required planning only, and validates custom targets. Install and
-planning reject relative/root/UNC/network/ADS/reparse/existing targets. No UAC,
-PATH, registry, shortcut, service, firewall, Docker, WSL or VHDX mutation was
-added.
+as elevation-required planning only, and validates custom targets. Planning
+rejects relative/root/UNC/network/ADS/reparse/existing targets. Independent
+review proved that the previous path-based extraction/rename could not bind the
+final target identity across its TOCTOU window. Therefore `install` and its
+compatibility alias return exit `30` with
+`install_path_identity_binding_not_implemented` before path parsing, archive
+open, staging creation, extraction, move or cleanup. No UAC, PATH, registry,
+shortcut, service, firewall, Docker, WSL or VHDX mutation was added.
 
 One clean-Windows VM preflight was attempted. Windows PowerShell 5.1 lacked the
 PowerShell 7 `$IsWindows` variable used by the first source revision, so the
@@ -146,13 +165,16 @@ CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
 NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
 ```
 
-Self-contained artifact independently rechecked:
+Self-contained fail-closed artifact independently rebuilt and rechecked:
 
 ```text
-path: E:\Agent IDE\Artifacts\OmniBase-P63-Companion-D-R0\OmniBase.Setup.exe
+path: E:\Agent IDE\Artifacts\OmniBase-P63-Companion-Safe-Freeze-R0\OmniBase.Setup.exe
 size: 67,535,942 bytes
-SHA-256: e85efe0282be1e2ab48e485986f3c6bbbd71f6195aff04b25f6c1e5c73ae0e02
+SHA-256: a646c2db2c5ad5a03ce906bafc6e589c2435233e923add1ee67626a6f7209eb0
 Authenticode: NotSigned
+help exit: 0; frozen-install disclosure present
+plan-install exit: 0; mutation_performed=false; both acceptance fields false
+install exit: 30; target_exists=false; staging_count=0
 ```
 
 ## Verification
@@ -160,7 +182,7 @@ Authenticode: NotSigned
 Integrated focused backend matrix:
 
 ```text
-95 passed
+113 passed
 ```
 
 It includes native Skill catalog/persistence/resolution, Model Gateway, Agent
@@ -176,25 +198,29 @@ abd8923479f6040d4f747f28f27054101f01fba710528f06bb870a42d471ab98
 Changed-source static checks:
 
 ```text
-Ruff 0.8.6 format/check = 14 explicit Python paths passed
-Mypy --follow-imports=skip = 9 changed source files, 0 issues
+original P6.3 seal: Ruff 0.8.6 format/check = 14 explicit Python paths passed
+final review-fix: Ruff format/check = 4 explicit Python paths passed
+final review-fix: Mypy --follow-imports=skip = 2 changed source files, 0 issues
 ```
 
 Frontend:
 
 ```text
-172 passed
+175 passed
 TypeScript typecheck passed
 Next lint passed with zero warnings/errors
+targeted Prettier passed
 production build passed; 17 routes; /public-preview statically generated
 ```
 
 Windows release/Companion:
 
 ```text
-17 passed, 1 skipped (existing Windows POSIX-only fsmonitor fixture)
+18 passed, 1 skipped (existing Windows POSIX-only fsmonitor fixture)
 dotnet format --verify-no-changes passed
 dotnet Release build: 0 warnings, 0 errors
+safe-frozen self-contained publish passed
+compiled EXE install: exit 30, no target/staging mutation
 PowerShell AST parse passed
 ```
 
@@ -202,7 +228,7 @@ Maintainer, sealed-contract and clean-HEAD checks:
 
 ```text
 maintainer map = valid (70 invariants, 49 modules, 1059 path specs,
-  3628 matched files, 333 entrypoints, 275 verification commands)
+  3634 matched files, 333 entrypoints, 275 verification commands)
 maintainer benchmark = valid (3 plans, 8 scenarios, 6 critical scenarios,
   9 unsafe vetoes)
 P5.1A registry contract tests = 129 passed

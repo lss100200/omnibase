@@ -3920,7 +3920,7 @@
         "Owner-triggered browser directory scan returning opaque scan-only Skill candidates",
         "Same-session bounded redacted terminal history in personal Agent Alpha requests",
         "Tenant/Workspace-scoped browser-local ChangeSet recovery journal",
-        "Self-contained Windows verify/install/init-config/doctor engineering-preview CLI"
+        "Self-contained Windows verify/init-config/doctor engineering-preview CLI; mutating install is frozen fail-closed by P6.3 until path identity binding is proven"
       ],
       "depends_on": [
         "p6-1-native-skills-mcp-release",
@@ -4011,9 +4011,9 @@
       "public_interfaces": [
         "Authenticated filtered fifteen-Skill first-party catalog with exact digest and live installation footprint",
         "Six-tool separately launched read-only MCP stdio preview with process lifetime budgets",
-        "Model-name-first GLM and Claude prompt/context profiles on the existing Chat Completions boundary",
+        "Model-name-first DeepSeek/GPT/Kimi/GLM/Claude prompt/context profiles on the existing Chat Completions boundary",
         "English/Chinese GitHub README and /public-preview personal workbench presentation",
-        "Windows Companion help, locations and user/machine/custom install planning",
+        "Windows Companion help, locations and user/machine/custom install planning, with mutating install frozen before any path/archive/write access",
         "One-shot read-only clean-Windows Hyper-V preflight that never mutates a VM or VHDX"
       ],
       "depends_on": [

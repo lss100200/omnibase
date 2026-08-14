@@ -56,8 +56,12 @@ name/status/line-count metadata. VCS control directories and secret-like files
 remain excluded.
 
 The process has lifetime ceilings for calls, aggregate file bytes and aggregate
-Git output. No tool accepts arbitrary shell, Git flags, regular expressions,
-glob patterns, network targets, credentials or write operations.
+Git output. File work is reserved before opening and failure does not refund the
+reservation; directory listing has a visited-entry ceiling before sorting. Git
+stdout and stderr are charged while they are read, including failed commands,
+and an exhausted budget rejects before starting another process. No tool accepts
+arbitrary shell, Git flags, regular expressions, glob patterns, network targets,
+credentials or write operations.
 
 ## B.2 Model-name-first GLM and Claude profiles
 
@@ -66,7 +70,9 @@ normalization and exact model-name patterns recognize conservative DeepSeek,
 GPT, Kimi, GLM and Claude families. Bare brand words, proxy/bridge/emulator
 claims and names containing conflicting family evidence resolve to `generic`.
 A Provider label or base URL cannot override a recognized or fail-closed model
-name.
+name. Kimi/Moonshot uses the same closed exact-name grammar in the frontend and
+backend. If a requested or observed model name is present but unknown, the
+result is terminal `generic`; branded relay/provider hints are not consulted.
 
 Family classification and transport capability are separate facts. The current
 gateway is OpenAI-compatible Chat Completions, so GLM and Claude receive only
@@ -122,11 +128,16 @@ custom  one explicit absolute local path
 ```
 
 Machine scope can report that elevation is needed but cannot trigger UAC or
-restart itself with greater authority. Planning and installation reject roots,
-relative paths, UNC/network targets, alternate data streams, reparse targets
-and existing destinations. The Companion does not write PATH, registry,
-shortcuts, services, firewall rules or global IDE/MCP configuration. It does
-not install, start, repair or mutate Docker, WSL, Hyper-V or virtual disks.
+restart itself with greater authority. Planning rejects roots, relative paths,
+UNC/network targets, alternate data streams, reparse targets and existing
+destinations. Independent review found that repeated path checks cannot close
+the final rename TOCTOU window. Therefore mutating `install` is frozen and
+returns `install_path_identity_binding_not_implemented` before path/archive
+access or any staging/write/move operation. `verify`, `help`, `locations`,
+`plan-install`, `init-config` and read-only `doctor` remain available. The
+Companion does not write PATH, registry, shortcuts, services, firewall rules or
+global IDE/MCP configuration. It does not install, start, repair or mutate
+Docker, WSL, Hyper-V or virtual disks.
 
 ## Clean Windows VM gate
 

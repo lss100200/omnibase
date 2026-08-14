@@ -3938,8 +3938,15 @@ process has fixed lifetime budgets for calls, aggregate file bytes and aggregate
 Git output. Text search revalidates every descendant directory before scanning
 and every yielded file's complete component chain immediately before opening;
 an initially safe directory cannot be replaced by a junction/symlink to escape
-the authorized root. No MCP tool writes files, invokes shell, performs arbitrary
-Git, opens a network connection or changes global Codex/Claude/Zed configuration.
+the authorized root. File bytes are reserved before an opened-file read can
+start, so exhausted process budget causes no further file open; conservative
+reservations remain consumed on identity, decoding, redaction or search failure.
+Directory listing has a separate visited-entry ceiling before sorting. Git
+stdout and stderr consume the shared lifetime budget as pipe chunks arrive,
+including non-zero, timeout and over-limit paths; exhausted budget rejects the
+next Git process before launch and the two diff commands share one counter. No
+MCP tool writes files, invokes shell, performs arbitrary Git, opens a network
+connection or changes global Codex/Claude/Zed configuration.
 
 **Required verification**
 
@@ -3951,11 +3958,12 @@ Git, opens a network connection or changes global Codex/Claude/Zed configuration
 ## INV-079 p63-glm-claude-model-adaptation-boundary
 
 The normalized user-entered model name selects only a conservative family
-prompt/context profile. Exact GLM and Claude patterns may be recognized through
-an opaque relay namespace, but a Provider label or base URL cannot override a
-recognized or fail-closed name. Bare brands, proxy/bridge/emulator claims and
-conflicting family evidence resolve to `generic`. Requested/actual model
-identity remains exact runtime evidence.
+prompt/context profile. Exact Kimi/Moonshot, GLM and Claude patterns may be
+recognized through an opaque relay namespace, but a Provider label or base URL
+cannot override a recognized or fail-closed name. Any present but unknown
+requested or observed model name terminates at `generic`; bare brands,
+proxy/bridge/emulator claims and conflicting family evidence also resolve to
+`generic`. Requested/actual model identity remains exact runtime evidence.
 
 Family classification is not transport capability. The current OpenAI-compatible
 Chat Completions boundary must not claim or send unverified GLM thinking,
@@ -3983,6 +3991,16 @@ Machine scope may report that elevation is required but must not trigger UAC or
 self-restart. Custom paths must be explicit absolute local paths. Roots, UNC or
 network locations, alternate data streams, reparse targets and existing
 destinations fail closed.
+
+Independent review proved that repeated path/reparse checks cannot close the
+final rename check-then-use window. Until a handle-relative create/write/rename
+implementation and deterministic replacement attacks are proven, mutating
+`install` (including its compatibility alias) must return
+`install_path_identity_binding_not_implemented` before path resolution, archive
+open, staging creation, extraction, move or cleanup. `verify`, `help`,
+`locations`, `plan-install`, `init-config` and read-only `doctor` remain
+available. Plan output must state that custom/elevated and handle-relative
+installation acceptance are false; planning is never installation authority.
 
 The Companion must not write PATH, registry, shortcuts, services, firewall or
 global IDE/MCP settings, and must not install, launch, repair or mutate Docker,
