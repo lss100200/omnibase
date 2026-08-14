@@ -12,6 +12,7 @@ and secret containment are all verified against the database.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import socket
@@ -844,6 +845,8 @@ def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
         )
         session.commit()
     repo_root = Path(__file__).resolve().parents[3]
+    readiness_relative_path = "deployment/production/personal-single-owner.example.json"
+    readiness_path = repo_root / readiness_relative_path
     config_mapping = {
         "agent_planner_enabled": False,
         "agent_version_id": str(target["agent_version_id"]),
@@ -860,8 +863,11 @@ def test_personal_runtime_canary_assembles_from_live_owner_and_persists_run(
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
-            "path": "deployment/production/personal-single-owner.example.json",
-            "sha256": "a7ceaa82d762584838489c5a3bf2d7e287eaf9e7ad29aa7fe58c078360e9a1ee",
+            "path": readiness_relative_path,
+            # Bind the positive integration fixture to the exact repository
+            # artifact that the runtime loader verifies. Digest-drift rejection
+            # remains covered independently by test_agent_alpha_personal.py.
+            "sha256": hashlib.sha256(readiness_path.read_bytes()).hexdigest(),
         },
         "owner_user_id": ACTOR_ID,
         "profile": "personal_single_owner",
