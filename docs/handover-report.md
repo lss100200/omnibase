@@ -5769,8 +5769,21 @@ maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
 P5 sealed regression = 129 + 200 + 78 = 407 passed
 P5.1A / P5.2A / P5.3A validate-only = blocked/not_proven,
   activation_allowed=false, vetoes=[]
+P5.0 / P5.1A / P5.2A / P5.3A / P5.6A clean-HEAD verify = exit 2,
+  source.clean=true, blocked/not_proven, activation_allowed=false, vetoes=[]
+personal single-Owner validate-only = exit 0; runtime_activated=false
+Windows-compatible backend non-integration = 2734 passed / 41 skipped /
+  16 deselected
 git diff --check = passed
 ```
+
+The native-Windows backend run excluded exactly five P34.5 modules that require
+Linux UID/root-mode semantics, AF_UNIX peer credentials, cgroups or
+`ctypes.CDLL(None)`. The initial unfiltered run exposed those host-only
+collection/execution limits. Two unrelated sealed-evidence failures were CRLF
+working-tree drift; restoring the tracked files to their `.gitattributes` LF
+bytes introduced no source diff and both focused tests passed. Docker/WSL was
+not started to manufacture a Linux result.
 
 Full design, official GLM/Claude references, detailed evidence and recovery
 boundaries are in `docs/architecture/p6-3-personal-extensions.md` and

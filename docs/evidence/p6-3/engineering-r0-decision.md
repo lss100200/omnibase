@@ -198,7 +198,7 @@ dotnet Release build: 0 warnings, 0 errors
 PowerShell AST parse passed
 ```
 
-Maintainer and sealed-contract checks before the final clean-HEAD verification:
+Maintainer, sealed-contract and clean-HEAD checks:
 
 ```text
 maintainer map = valid (70 invariants, 49 modules, 1059 path specs,
@@ -210,13 +210,33 @@ P5.2A task-ledger contract tests = 200 passed
 P5.3A planner contract tests = 78 passed
 P5.1A / P5.2A / P5.3A validate-only = contract_valid=true,
   state=blocked/not_proven, activation_allowed=false, vetoes=[]
+P5.0 / P5.1A / P5.2A / P5.3A / P5.6A --verify = expected exit 2,
+  source.clean=true, state=blocked/not_proven, activation_allowed=false,
+  vetoes=[]
+personal single-Owner validate-only = exit 0, contract_valid=true,
+  runtime_activated=false, migration head 0016
 git diff --check = passed
 ```
 
 The ordered final-byte chain is maintenance map and security invariants,
-Registry, Task Ledger, then Planner. Formal `--verify` results are recorded
-only after a clean local commit; validate-only is not presented as clean-HEAD
-source provenance.
+Registry, Task Ledger, then Planner. `--validate-only` is not presented as
+clean-HEAD source provenance.
+
+Native-Windows non-integration regression:
+
+```text
+2734 passed, 41 skipped, 16 deselected
+```
+
+That run excluded exactly five P34.5 modules whose collection or execution
+requires Linux UID, root-owned POSIX modes, AF_UNIX peer credentials, cgroups or
+`ctypes.CDLL(None)`: sandbox deployment launcher, network Broker daemon,
+Overlay adapter, A4 runtime and A4 transport. The first unfiltered Windows run
+demonstrated this host limitation rather than a P6.3 regression. Two additional
+sealed-evidence failures were traced to pre-existing CRLF working-tree bytes;
+the files were restored to their `.gitattributes`-mandated LF bytes without a
+source diff, and both focused tests then passed. No Docker/WSL substitute was
+started.
 
 ## Safety state
 
