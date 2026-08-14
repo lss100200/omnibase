@@ -1,15 +1,31 @@
 # OmniBase Windows 工程预览 Companion
 
 这是 P6.2-D 的个人版工程预览，不是已签名并正式发布的 v1.0。Companion 设计为
-Windows x64 self-contained 单文件程序，目标是不要求用户预装 .NET Runtime，并提供四个
-明确命令：
+Windows x64 self-contained 单文件程序，目标是不要求用户预装 .NET Runtime。P6.3-D
+在原有四个执行命令之外增加了安装帮助和无副作用位置规划：
 
 ```powershell
+OmniBase.Setup.exe help
+OmniBase.Setup.exe locations [--json]
+OmniBase.Setup.exe plan-install --scope user|machine|custom [--target <绝对本地路径>] [--json]
 OmniBase.Setup.exe verify <release.zip>
-OmniBase.Setup.exe install <release.zip> <全新目标目录>
+OmniBase.Setup.exe install <release.zip> <全新绝对本地目标目录>
 OmniBase.Setup.exe init-config --output <安装目录外的 operator.env>
 OmniBase.Setup.exe doctor --install <安装目录> [--env-file <operator.env>] [--json]
 ```
+
+默认位置遵循常见 Windows IDE/工作台约定：
+
+```text
+user.install  = %LOCALAPPDATA%\Programs\OmniBase
+user.config   = %LOCALAPPDATA%\OmniBase\config\operator.env
+machine.install = %ProgramFiles%\OmniBase
+machine.config  = %ProgramData%\OmniBase\config\operator.env
+```
+
+`machine` 只提供规划，不自动发起 UAC 或提权。`custom` 必须是全限定本地路径。安装目标
+拒绝盘符根、UNC/网络位置、ADS、reparse 路径、尾随点/空格组件和任何已经存在的目标。
+Companion 不写 PATH、注册表、快捷方式、服务或防火墙。
 
 `verify` 和 `install` 继续执行发行文件闭集、manifest、长度和 SHA-256 校验。安装采用
 staging + 最终原子目录移动，目标已存在时拒绝覆盖。
@@ -40,3 +56,9 @@ verified、已启动或已健康。
 - Runtime、Planner、Multi-Agent 与 MCP Runtime 默认全部关闭；
 - 包内不含 Docker image tar、数据库、模型、`.env`、密钥、`node_modules`、`.next` 或 VHDX；
 - 当前机器没有 .NET SDK 时，只能验证源码和安全契约，不能声称 self-contained EXE 已构建。
+
+完整的安装说明和只读 clean-Windows VM fail-fast 预检见
+`docs/runbooks/p6-3-windows-companion-install.md`。预检不创建、启动或修改 VM/VHDX；任何
+Hyper-V cmdlet、专用 VM、owner/ACL、磁盘或 guest 新鲜度事实不明确时，必须停止并输出
+`CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN` 与
+`NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`。

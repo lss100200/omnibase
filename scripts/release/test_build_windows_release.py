@@ -320,6 +320,105 @@ def test_windows_companion_is_self_contained_and_never_mutates_runtime_dependenc
         assert forbidden not in source
 
 
+def test_windows_companion_exposes_non_mutating_location_and_install_plans() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
+        encoding="utf-8"
+    )
+
+    for command in (
+        'args[0] == "help"',
+        'args[0] == "locations"',
+        'args[0] == "plan-install"',
+    ):
+        assert command in source
+    assert 'scope is not ("user" or "machine" or "custom")' in source
+    assert "Environment.SpecialFolder.LocalApplicationData" in source
+    assert 'Path.Combine(local, "Programs", "OmniBase")' in source
+    assert 'Path.Combine(local, "OmniBase", "config", "operator.env")' in source
+    assert "Environment.SpecialFolder.ProgramFiles" in source
+    assert "Environment.SpecialFolder.CommonApplicationData" in source
+    assert "machine_install_is_planning_only" in source
+    assert source.count("mutation_performed = false") >= 2
+    assert "The Companion never elevates through UAC" in source
+
+
+def test_windows_companion_rejects_unsafe_or_existing_install_targets() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
+        encoding="utf-8"
+    )
+
+    install_start = source.index("static class InstallPathPolicy")
+    install_end = source.index("sealed class VerifiedRelease", install_start)
+    policy = source[install_start:install_end]
+    for marker in (
+        "Path.IsPathFullyQualified",
+        "install_target_unc_forbidden",
+        "install_target_root_forbidden",
+        "install_target_ads_forbidden",
+        "install_target_component_invalid",
+        "DriveType.Network",
+        "install_target_reparse_forbidden",
+        "install_target_exists",
+    ):
+        assert marker in policy
+    assert "InstallPathPolicy.ValidateNewTarget(targetPath)" in source
+    for forbidden in (
+        'ProcessStartInfo("runas")',
+        'Verb = "runas"',
+        "Registry.SetValue",
+        "Environment.SetEnvironmentVariable",
+        "sc.exe",
+        "netsh",
+        "New-Service",
+    ):
+        assert forbidden not in source
+
+
+def test_clean_windows_vm_probe_is_read_only_and_fail_fast() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    source = (repo / "scripts/release/probe_p6_3_clean_windows_vm.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    for marker in (
+        "OmniBase-P63-Clean-Windows",
+        "CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN",
+        "NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED",
+        "DEDICATED_CLEAN_WINDOWS_VM_NOT_FOUND",
+        "VM_NAME_NOT_AUTHORIZED",
+        "GUEST_FRESHNESS_AND_INSTALL_ACCEPTANCE_NOT_PROVEN",
+        "Get-VM",
+        "Get-VHD",
+        "Get-Acl",
+        "$hostIsWindows",
+        "mutation_performed = $false",
+        "S-1-5-32-545",
+    ):
+        assert marker in source
+    for forbidden in (
+        "Start-VM",
+        "Stop-VM",
+        "Restart-VM",
+        "New-VM",
+        "Set-VM",
+        "Remove-VM",
+        "Checkpoint-VM",
+        "Restore-VMSnapshot",
+        "Mount-VHD",
+        "Dismount-VHD",
+        "Resize-VHD",
+        "Optimize-VHD",
+        "Enable-WindowsOptionalFeature",
+        "Restart-Computer",
+        "wsl.exe",
+        "docker",
+    ):
+        assert forbidden not in source
+    assert "$IsWindows" not in source
+
+
 def test_windows_companion_doctor_reports_publisher_image_blocker_separately() -> None:
     repo = Path(__file__).resolve().parents[2]
     source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
@@ -339,7 +438,9 @@ def test_windows_companion_doctor_reports_publisher_image_blocker_separately() -
     assert "INSTALLED_RELEASE_INTEGRITY_FAILED" in source
 
 
-def test_windows_companion_preserves_release_manifest_and_config_fail_closed_contract() -> None:
+def test_windows_companion_preserves_release_manifest_and_config_fail_closed_contract() -> (
+    None
+):
     repo = Path(__file__).resolve().parents[2]
     source = (repo / "packaging/windows/OmniBase.Setup/Program.cs").read_text(
         encoding="utf-8"

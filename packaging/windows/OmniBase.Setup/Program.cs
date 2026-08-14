@@ -24,6 +24,12 @@ static class Companion
   {
     try
     {
+      if (args.Length == 1 && args[0] == "help")
+        return Help();
+      if (args.Length is 1 or 2 && args[0] == "locations")
+        return LocationsCommand(args);
+      if (args.Length >= 3 && args[0] == "plan-install")
+        return PlanInstallCommand(args);
       if (args.Length == 3 && args[0] == "--verify-and-extract")
         return Install(args[1], args[2]);
       if (args.Length == 2 && args[0] == "verify")
@@ -36,6 +42,10 @@ static class Companion
         return DoctorCommand(args);
       return Fail(SecurityFailure, "usage_invalid");
     }
+    catch (CompanionFailureException exception)
+    {
+      return Fail(SecurityFailure, exception.Code);
+    }
     catch (Exception exception) when (exception is IOException or InvalidDataException or
         JsonException or UnauthorizedAccessException or OverflowException or
         CryptographicException or ArgumentException or InvalidOperationException or
@@ -43,6 +53,123 @@ static class Companion
     {
       return Fail(SecurityFailure, "companion_operation_failed");
     }
+  }
+
+  static int Help()
+  {
+    Console.WriteLine("OmniBase Windows Companion (engineering preview)");
+    Console.WriteLine("help");
+    Console.WriteLine("locations [--json]");
+    Console.WriteLine("plan-install --scope user|machine|custom [--target <absolute-path>] [--json]");
+    Console.WriteLine("verify <release.zip>");
+    Console.WriteLine("install <release.zip> <new-absolute-local-target>");
+    Console.WriteLine("init-config --output <operator.env>");
+    Console.WriteLine("doctor --install <install-dir> [--env-file <operator.env>] [--json]");
+    Console.WriteLine("Machine scope is planning-only. The Companion never elevates through UAC.");
+    Console.WriteLine("No command changes PATH, registry, services, firewall, Docker, WSL or VHDX.");
+    return Ready;
+  }
+
+  static int LocationsCommand(IReadOnlyList<string> args)
+  {
+    var json = args.Count == 2 && args[1] == "--json";
+    if (args.Count == 2 && !json)
+      return Fail(SecurityFailure, "locations_usage_invalid");
+    var locations = InstallLocations.Resolve();
+    if (json)
+    {
+      Console.WriteLine(JsonSerializer.Serialize(new
+      {
+        schema_version = 1,
+        user = new
+        {
+          install_path = locations.UserInstall,
+          config_path = locations.UserConfig,
+          requires_elevation = false,
+        },
+        machine = new
+        {
+          install_path = locations.MachineInstall,
+          config_path = locations.MachineConfig,
+          requires_elevation = true,
+          planning_only = true,
+        },
+        custom = new
+        {
+          requires_absolute_local_path = true,
+          config_path = locations.UserConfig,
+        },
+        mutation_performed = false,
+      }));
+    }
+    else
+    {
+      Console.WriteLine($"user.install={locations.UserInstall}");
+      Console.WriteLine($"user.config={locations.UserConfig}");
+      Console.WriteLine($"machine.install={locations.MachineInstall}");
+      Console.WriteLine($"machine.config={locations.MachineConfig}");
+      Console.WriteLine("machine.requires_elevation=true; machine.planning_only=true");
+      Console.WriteLine("custom.requires_absolute_local_path=true");
+      Console.WriteLine("mutation_performed=false");
+    }
+    return Ready;
+  }
+
+  static int PlanInstallCommand(IReadOnlyList<string> args)
+  {
+    string? scope = null;
+    string? customTarget = null;
+    var json = false;
+    for (var index = 1; index < args.Count; index++)
+    {
+      if (args[index] == "--scope" && scope is null && index + 1 < args.Count)
+      {
+        scope = args[++index];
+        continue;
+      }
+      if (args[index] == "--target" && customTarget is null && index + 1 < args.Count)
+      {
+        customTarget = args[++index];
+        continue;
+      }
+      if (args[index] == "--json" && !json)
+      {
+        json = true;
+        continue;
+      }
+      return Fail(SecurityFailure, "plan_install_usage_invalid");
+    }
+    if (scope is not ("user" or "machine" or "custom") ||
+        (scope == "custom") != (customTarget is not null) ||
+        (scope != "custom" && customTarget is not null))
+      return Fail(SecurityFailure, "plan_install_usage_invalid");
+
+    var plan = InstallPlan.Create(scope, customTarget);
+    if (json)
+    {
+      Console.WriteLine(JsonSerializer.Serialize(new
+      {
+        schema_version = 1,
+        scope = plan.Scope,
+        install_path = plan.InstallPath,
+        config_path = plan.ConfigPath,
+        requires_elevation = plan.RequiresElevation,
+        machine_install_is_planning_only = plan.Scope == "machine",
+        target_state = "new",
+        mutation_performed = false,
+      }));
+    }
+    else
+    {
+      Console.WriteLine($"scope={plan.Scope}");
+      Console.WriteLine($"install_path={plan.InstallPath}");
+      Console.WriteLine($"config_path={plan.ConfigPath}");
+      Console.WriteLine($"requires_elevation={plan.RequiresElevation.ToString().ToLowerInvariant()}");
+      Console.WriteLine($"machine_install_is_planning_only={(plan.Scope == "machine").ToString().ToLowerInvariant()}");
+      Console.WriteLine("target_state=new");
+      Console.WriteLine("mutation_performed=false");
+    }
+    return Ready;
   }
 
   static int Verify(string archivePath)
@@ -55,9 +182,7 @@ static class Companion
 
   static int Install(string archivePath, string targetPath)
   {
-    var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetPath));
-    if (File.Exists(target) || Directory.Exists(target))
-      return Fail(SecurityFailure, "install_target_exists");
+    var target = InstallPathPolicy.ValidateNewTarget(targetPath);
     using var verified = VerifiedRelease.Open(archivePath);
     var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
     try
@@ -278,6 +403,121 @@ static class Companion
 
   readonly record struct ProcessResult(bool Success, string Output);
   readonly record struct DoctorCheck(string Section, string Name, bool Passed, string Code);
+}
+
+sealed class CompanionFailureException(string code) : Exception(code)
+{
+  public string Code { get; } = code;
+}
+
+readonly record struct InstallLocations(
+    string UserInstall,
+    string UserConfig,
+    string MachineInstall,
+    string MachineConfig)
+{
+  public static InstallLocations Resolve()
+  {
+    if (!OperatingSystem.IsWindows())
+      throw new CompanionFailureException("windows_install_locations_unavailable");
+    var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+    var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+    if (string.IsNullOrWhiteSpace(local) || string.IsNullOrWhiteSpace(programFiles) ||
+        string.IsNullOrWhiteSpace(programData))
+      throw new CompanionFailureException("windows_install_locations_unavailable");
+    return new InstallLocations(
+        Path.Combine(local, "Programs", "OmniBase"),
+        Path.Combine(local, "OmniBase", "config", "operator.env"),
+        Path.Combine(programFiles, "OmniBase"),
+        Path.Combine(programData, "OmniBase", "config", "operator.env"));
+  }
+}
+
+readonly record struct InstallPlan(
+    string Scope,
+    string InstallPath,
+    string ConfigPath,
+    bool RequiresElevation)
+{
+  public static InstallPlan Create(string scope, string? customTarget)
+  {
+    var locations = InstallLocations.Resolve();
+    var target = scope switch
+    {
+      "user" => locations.UserInstall,
+      "machine" => locations.MachineInstall,
+      "custom" => customTarget!,
+      _ => throw new CompanionFailureException("plan_install_scope_invalid"),
+    };
+    var config = scope == "machine" ? locations.MachineConfig : locations.UserConfig;
+    return new InstallPlan(
+        scope,
+        InstallPathPolicy.ValidateNewTarget(target),
+        Path.GetFullPath(config),
+        scope == "machine");
+  }
+}
+
+static class InstallPathPolicy
+{
+  public static string ValidateNewTarget(string input)
+  {
+    if (string.IsNullOrWhiteSpace(input) || !Path.IsPathFullyQualified(input))
+      throw new CompanionFailureException("install_target_must_be_absolute");
+    var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(input));
+    if (full.StartsWith("\\\\", StringComparison.Ordinal) ||
+        full.StartsWith("//", StringComparison.Ordinal))
+      throw new CompanionFailureException("install_target_unc_forbidden");
+    var root = Path.GetPathRoot(full);
+    if (string.IsNullOrEmpty(root))
+      throw new CompanionFailureException("install_target_root_unavailable");
+    var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+    if (string.Equals(full, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+      throw new CompanionFailureException("install_target_root_forbidden");
+    if (full[root.Length..].Contains(':'))
+      throw new CompanionFailureException("install_target_ads_forbidden");
+    foreach (var component in full[root.Length..].Split(
+        new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+        StringSplitOptions.RemoveEmptyEntries))
+      if (component.EndsWith(' ') || component.EndsWith('.'))
+        throw new CompanionFailureException("install_target_component_invalid");
+    RejectNetworkVolume(root);
+    RejectExistingReparseAncestors(full);
+    if (File.Exists(full) || Directory.Exists(full))
+      throw new CompanionFailureException("install_target_exists");
+    return full;
+  }
+
+  static void RejectNetworkVolume(string root)
+  {
+    try
+    {
+      var drive = new DriveInfo(root);
+      if (drive.DriveType is DriveType.Network or DriveType.NoRootDirectory or DriveType.Unknown)
+        throw new CompanionFailureException("install_target_volume_forbidden");
+    }
+    catch (CompanionFailureException) { throw; }
+    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+    {
+      throw new CompanionFailureException("install_target_volume_unavailable");
+    }
+  }
+
+  static void RejectExistingReparseAncestors(string full)
+  {
+    string? current = full;
+    while (!string.IsNullOrEmpty(current))
+    {
+      if ((File.Exists(current) || Directory.Exists(current)) &&
+          File.GetAttributes(current).HasFlag(FileAttributes.ReparsePoint))
+        throw new CompanionFailureException("install_target_reparse_forbidden");
+      var parent = Path.GetDirectoryName(current);
+      if (string.IsNullOrEmpty(parent) || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase))
+        break;
+      current = parent;
+    }
+  }
 }
 
 sealed class VerifiedRelease : IDisposable
