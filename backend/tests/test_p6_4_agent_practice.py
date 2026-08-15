@@ -293,6 +293,10 @@ class _SynchronousFailingAlphaInvoker(_AlphaInvoker):
     [
         ("personal_runtime_scope_mismatch", "personal_runtime_scope_mismatch"),
         ("agent_alpha_context_unavailable", "agent_alpha_context_unavailable"),
+        (
+            "personal_runtime_control_state_unavailable: C:/private/detail",
+            "personal_runtime_control_state_unavailable",
+        ),
         ("unsafe-detail:C:/secret", "agent_alpha_error"),
     ],
 )

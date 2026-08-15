@@ -81,6 +81,10 @@ _ROLE_GUIDANCE: dict[ParticipantRole, str] = {
 _SAFE_NODE_ERROR = re.compile(
     r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_[a-z0-9_]{1,96}$"
 )
+_SAFE_NODE_ERROR_PREFIX = re.compile(
+    r"^((?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_"
+    r"[a-z0-9_]{1,96})(?=[:\s])"
+)
 
 _USAGE_FIELDS = (
     "input_tokens",
@@ -340,8 +344,13 @@ def _observe_node_event(
 
 def _stable_agent_error_code(exc: AgentAlphaError) -> str:
     code = exc.code
-    if isinstance(code, str) and _SAFE_NODE_ERROR.fullmatch(code) is not None:
+    if not isinstance(code, str):
+        return "agent_alpha_error"
+    if _SAFE_NODE_ERROR.fullmatch(code) is not None:
         return code
+    match = _SAFE_NODE_ERROR_PREFIX.match(code)
+    if match is not None:
+        return match.group(1)
     return "agent_alpha_error"
 
 
