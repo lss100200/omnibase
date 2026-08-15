@@ -57,7 +57,8 @@ _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 _COUNTS = frozenset({1, 3, 4, 5, 6})
 _ALLOWED_MODELS = frozenset({"deepseek-v4-flash", "deepseek-v4-pro"})
 _SAFE_NODE_ERROR = re.compile(
-    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_[a-z0-9_]{1,96}$"
+    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway|task)_"
+    r"[a-z0-9_]{1,96}$"
 )
 _ROLES = frozenset(
     {

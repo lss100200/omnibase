@@ -220,6 +220,28 @@ def test_terminal_error_preserves_only_a_stable_node_failure_code() -> None:
         )
 
 
+def test_terminal_error_preserves_a_stable_task_ledger_failure_code() -> None:
+    stream = io.BytesIO(
+        _event(
+            "error",
+            {"code": "practice_node_terminal_failure:parent:task_lease_expired"},
+        )
+    )
+
+    with pytest.raises(
+        acceptance.LiveMatrixError,
+        match=(
+            "practice_stream_terminal_error:practice_node_terminal_failure:"
+            "parent:task_lease_expired"
+        ),
+    ):
+        acceptance.collect_practice_stream(
+            stream,
+            expected_roles=("parent",),
+            expected_scenario="rag",
+        )
+
+
 def test_terminal_error_rejects_untrusted_detail_from_the_diagnostic_code() -> None:
     stream = io.BytesIO(
         _event(

@@ -79,10 +79,11 @@ _ROLE_GUIDANCE: dict[ParticipantRole, str] = {
 }
 
 _SAFE_NODE_ERROR = re.compile(
-    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_[a-z0-9_]{1,96}$"
+    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway|task)_"
+    r"[a-z0-9_]{1,96}$"
 )
 _SAFE_NODE_ERROR_PREFIX = re.compile(
-    r"^((?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_"
+    r"^((?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway|task)_"
     r"[a-z0-9_]{1,96})(?=[:\s])"
 )
 

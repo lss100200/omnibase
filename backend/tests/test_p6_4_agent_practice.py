@@ -293,6 +293,7 @@ class _SynchronousFailingAlphaInvoker(_AlphaInvoker):
     [
         ("personal_runtime_scope_mismatch", "personal_runtime_scope_mismatch"),
         ("agent_alpha_context_unavailable", "agent_alpha_context_unavailable"),
+        ("task_lease_expired", "task_lease_expired"),
         (
             "personal_runtime_control_state_unavailable: C:/private/detail",
             "personal_runtime_control_state_unavailable",
