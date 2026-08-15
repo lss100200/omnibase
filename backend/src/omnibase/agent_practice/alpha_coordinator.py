@@ -258,9 +258,10 @@ def _parent_message(
 
 
 def _practice_reasoning_gear(*, scenario: PracticeScenario, role: ParticipantRole) -> ReasoningGear:
+    del scenario
     if role != "parent":
         return "economy"
-    return "audit" if scenario == "rag" else "standard"
+    return "standard"
 
 
 @dataclass(slots=True)

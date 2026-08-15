@@ -249,7 +249,11 @@ def test_durable_coordinator_runs_three_existing_alpha_invocations_serially() ->
     )
 
     assert [call["employee_role_id"] for call in invoker.calls] == ["data", "qa", "parent"]
-    assert [call["reasoning_gear"] for call in invoker.calls] == ["economy", "economy", "audit"]
+    assert [call["reasoning_gear"] for call in invoker.calls] == [
+        "economy",
+        "economy",
+        "standard",
+    ]
     assert len({str(call["idempotency_key"]) for call in invoker.calls}) == 3
     completed = [event for event in events if event.kind == "practice_completed"]
     assert completed[0].payload["provider_call_count"] == 3
