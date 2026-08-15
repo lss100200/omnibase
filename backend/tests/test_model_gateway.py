@@ -139,6 +139,18 @@ def test_deepseek_model_name_enables_stable_prefix_and_thinking_on_any_relay() -
     assert messages[-1] == {"role": "user", "content": "changing task tail"}
 
 
+def test_deepseek_economy_disables_thinking_for_bounded_specialist_work() -> None:
+    gateway, client = _provider_for("deepseek-v4-flash")
+    gateway.complete(
+        (ModelMessage(role="user", content="return one compact JSON object"),),
+        reasoning_gear="economy",
+    )
+
+    payload = client.chat.completions.calls[0]
+    assert payload["reasoning_effort"] == "low"
+    assert payload["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
 def test_gpt_model_name_uses_chat_compatible_outcome_profile_reasoning() -> None:
     gateway, client = _provider_for("gpt-5.6-luna")
     gateway.complete((ModelMessage(role="user", content="ship it"),), reasoning_gear="economy")

@@ -86,6 +86,7 @@ def plan_model_adaptation(model_id: str, gear: ReasoningGear) -> ModelAdaptation
     )
     if family == "deepseek":
         effort = "low" if gear == "economy" else "medium" if gear == "standard" else "high"
+        thinking = "disabled" if gear == "economy" else "enabled"
         return ModelAdaptation(
             family=family,
             stable_prefix=(
@@ -95,7 +96,7 @@ def plan_model_adaptation(model_id: str, gear: ReasoningGear) -> ModelAdaptation
             ),
             extra_payload={
                 "reasoning_effort": effort,
-                "extra_body": {"thinking": {"type": "enabled"}},
+                "extra_body": {"thinking": {"type": thinking}},
             },
         )
     if family == "openai":
