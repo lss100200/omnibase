@@ -282,8 +282,10 @@ class AgentAlphaService:
                         }
                     ),
                 )
+        except AgentAlphaError:
+            raise
         except RuntimeError as exc:
-            raise AgentAlphaUnavailable(str(exc)) from exc
+            raise AgentAlphaUnavailable("agent_alpha_gateway_selection_unavailable") from exc
         try:
             preferences = (
                 self._preferences_resolver.resolve_preferences(
@@ -298,7 +300,7 @@ class AgentAlphaService:
                 )
             )
         except RuntimeError as exc:
-            raise AgentAlphaUnavailable(str(exc)) from exc
+            raise AgentAlphaUnavailable("agent_alpha_preferences_unavailable") from exc
         profile, chunks, memory_capsule, skill_bundle, identity = self._reserve_invocation(
             tenant_id=tenant_id,
             tenant_schema=tenant_schema,

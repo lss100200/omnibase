@@ -17,6 +17,7 @@ from omnibase.agent_alpha.contracts import (
     AlphaGatewaySelection,
     AlphaInvocationIdentity,
     AlphaMemoryCapsule,
+    AlphaUserPreferences,
 )
 from omnibase.agent_alpha.router import get_agent_alpha, router
 from omnibase.agent_alpha.service import (
@@ -312,6 +313,16 @@ class _GatewayResolver:
         )
 
 
+class _FailingGatewayResolver:
+    def resolve(self, **_: object) -> AlphaGatewaySelection:
+        raise RuntimeError("provider detail must not cross the Agent boundary")
+
+
+class _FailingPreferencesResolver:
+    def resolve_preferences(self, **_: object) -> AlphaUserPreferences:
+        raise RuntimeError("profile detail must not cross the Agent boundary")
+
+
 def test_request_scoped_resolver_does_not_require_an_operator_gateway() -> None:
     ledger = _Ledger()
     service = AgentAlphaService(
@@ -338,6 +349,62 @@ def test_request_scoped_resolver_does_not_require_an_operator_gateway() -> None:
 
     assert events[-1].kind == "done"
     assert events[-1].payload["actual_model_id"] == "model-alpha"
+
+
+def test_request_scoped_resolver_failure_is_stably_redacted() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver(),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_gateway_selection_unavailable$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert "provider detail" not in str(raised.value)
+
+
+def test_preferences_resolver_failure_is_stably_redacted() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=ModelGateway(provider=_Provider(), model_id="model-alpha"),
+        preferences_resolver=_FailingPreferencesResolver(),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_preferences_unavailable$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert "profile detail" not in str(raised.value)
 
 
 def test_missing_operator_gateway_and_request_resolver_fails_closed() -> None:
