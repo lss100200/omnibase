@@ -172,6 +172,53 @@ accepted run:
 The accepted executable source is the end of this review-fix chain. No code
 change was made after its receipt was produced.
 
+## Final engineering verification
+
+The accepted executable source plus the first documentation-only evidence
+commit were checked with the repository-locked toolchain:
+
+```text
+P6.4 focused backend, receipt, router, upload and controller = 118 passed
+Model Gateway / personal Agent / per-role model = 88 passed
+Document / Worker / upload / RAG / rate-limit = 126 passed
+P5.1A / P5.2A / P5.3A sealed-contract regression = 407 passed
+P34.7 Trust Policy candidate + joint regression = 255 passed, 1 skipped
+frontend = 196 passed; typecheck, lint and production build passed; 17 routes
+targeted Mypy = 17 source files, no issues
+Ruff check = passed; Ruff format --check = 17 files already formatted
+maintainer map = valid; 71 invariants / 50 modules / 345 entrypoints
+maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
+three-file production/P6.4/canary Compose config --quiet = passed
+git diff --check = passed
+```
+
+The broad backend non-integration run completed twice with the same honest
+result:
+
+```text
+2941 passed / 26 skipped / 16 deselected / 1 failed
+```
+
+The sole failure was not a behavior assertion. Pytest collected two unclosed
+Unix-domain sockets and one unclosed event loop as an unraisable
+`ResourceWarning` while running
+`TestInsertChunksBatchBehavior.test_total_returned_is_sum_of_batches`. The
+entire `test_rag_store.py` file passed independently (`20 passed`), and the
+adjacent `test_rag_sse.py + test_rag_store.py` sequence passed (`31 passed`).
+No P6.4, Gateway, upload, citation, artifact, Workspace, sealed-contract or
+formal-verifier test failed. The broad suite is therefore not claimed as fully
+green; the order-dependent resource-hygiene warning remains a separate test
+infrastructure finding.
+
+From clean evidence HEAD `e2692c0592d0b98775a89d275edb645e3a405775`,
+P5.0, P5.1A, P5.2A, P5.3A and P5.6A `--verify` each returned the intended
+`exit 2`, `blocked/not_proven`, `activation_allowed=false`, clean source and
+zero vetoes. The P34.7 joint contract returned `exit 2`,
+`blocked/not_proven`, the sole blocker `contract_mode_no_direct_evidence` and
+zero vetoes. The Trust Policy candidate returned `exit 0`,
+`candidate/valid_not_approved`, with its candidate digest verified but
+`production_approved=false` and `activation_allowed=false`.
+
 ## Independent audit conclusion
 
 The first audit draft expected 18 Provider calls. The fixed matrix arithmetic

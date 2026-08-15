@@ -6066,6 +6066,38 @@ records the result without claiming a second paid run.
 The authoritative decision is
 `docs/evidence/p6-4/production-practice-r0-decision.md`.
 
+Final engineering verification around the evidence commit was:
+
+```text
+P6.4 focused = 118 passed
+Model Gateway / personal Agent = 88 passed
+Document / Worker / upload / RAG / rate-limit = 126 passed
+P5 sealed-contract regression = 407 passed
+P34.7 Trust Policy + joint = 255 passed, 1 skipped
+frontend = 196 passed; typecheck/lint/production build passed; 17 routes
+Mypy = 17 files, no issues
+Ruff check/format = passed / 17 files already formatted
+maintainer map + benchmark = valid
+three-file Compose config --quiet = passed
+```
+
+The broad non-integration suite completed twice as `2941 passed / 26 skipped /
+16 deselected / 1 failed`. The sole failure was an order-dependent pytest
+unraisable `ResourceWarning` for two sockets and one event loop, observed at a
+RAG batch mock test rather than a behavior assertion. The whole RAG-store file
+passed independently (`20 passed`) and the adjacent RAG SSE/store sequence
+passed (`31 passed`). This broad suite is not claimed fully green; the warning
+is retained as a separate test-hygiene finding and did not affect any P6.4,
+Gateway, citation, artifact, Workspace or formal Gate result.
+
+From clean evidence HEAD `e2692c0592d0b98775a89d275edb645e3a405775`,
+P5.0/P5.1A/P5.2A/P5.3A/P5.6A formal verification each returned the expected
+`exit 2 blocked/not_proven`, `activation_allowed=false` and zero vetoes. P34.7
+joint returned `exit 2 blocked/not_proven` with only
+`contract_mode_no_direct_evidence` and zero vetoes. The Trust Policy candidate
+remained `candidate/valid_not_approved`, digest-verified, unapproved and unable
+to activate production.
+
 ```text
 P6_4_PERSONAL_PRODUCTION_PRACTICE_ACCEPTED
 REAL_DEEPSEEK_SINGLE_AND_3_TO_6_AGENT_MATRIX_PASSED
