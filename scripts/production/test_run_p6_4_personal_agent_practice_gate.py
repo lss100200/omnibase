@@ -249,6 +249,41 @@ def test_final_receipt_rejects_missing_target_cleanup(
         controller._receipt()
 
 
+def test_live_matrix_failure_preserves_only_the_stable_reason_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = _controller(tmp_path)
+    controller.coordinates = gate.ProductCoordinates(
+        access_token="synthetic-browser-token",
+        tenant_id="00000000-0000-0000-0000-000000000101",
+        owner_user_id="00000000-0000-0000-0000-000000000103",
+        workspace_id="00000000-0000-0000-0000-000000000102",
+        decoy_workspace_id="00000000-0000-0000-0000-000000000104",
+        agent_version_id="00000000-0000-0000-0000-000000000105",
+    )
+
+    class _FailingRunner:
+        def __init__(self, **_kwargs: object) -> None:
+            return
+
+        def execute(self) -> dict[str, object]:
+            raise gate.LiveMatrixError("deepseek_requested_model_unavailable")
+
+        def cleanup_browser_state(
+            self, _matrix: dict[str, object] | None
+        ) -> tuple[str, ...]:
+            return ()
+
+    monkeypatch.setattr(gate, "LiveMatrixRunner", _FailingRunner)
+
+    with pytest.raises(
+        gate.PracticeGateError,
+        match="live_matrix_failed:deepseek_requested_model_unavailable",
+    ):
+        controller._run_matrix()
+
+
 def test_bounded_cleanup_removes_only_named_child_tree(tmp_path: Path) -> None:
     controller = _controller(tmp_path)
     controller.work_root.mkdir()

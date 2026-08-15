@@ -650,7 +650,9 @@ class PracticeGateController:
             failure = exc
         cleanup_errors = runner.cleanup_browser_state(matrix)
         if failure is not None:
-            raise PracticeGateError("live_matrix_failed") from failure
+            raise PracticeGateError(
+                f"live_matrix_failed:{_error_code(failure)}"
+            ) from failure
         if matrix is None or cleanup_errors:
             raise PracticeGateError("live_matrix_cleanup_failed")
         cleanup = matrix.get("cleanup")
