@@ -123,7 +123,12 @@ max_concurrent_invocations=1
 
 The narrow P6.4 gate does not replace the Runtime gate and cannot activate the
 enterprise Planner/Multi-Agent system. Provider access remains inside Core's
-Model Gateway. Workload network destinations stay empty because these are
+Model Gateway. The production posture may assemble from the request-scoped
+personal Provider resolver without a global operator `LLM_API_KEY`; it proves
+only that the encrypted credential path and endpoint allowlist are configured.
+The exact user credential is selected, decrypted and revalidated only inside
+the invocation scope, and a missing, untested, revoked or drifted credential
+still fails closed. Workload network destinations stay empty because these are
 no-tool calls.
 
 The real DeepSeek credential is accepted only through the encrypted personal

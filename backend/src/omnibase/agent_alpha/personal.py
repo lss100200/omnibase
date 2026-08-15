@@ -8,8 +8,9 @@ builder.  It assembles only when all of the following independently hold:
   Multi-Agent=false;
 * a canonical, exact-scope canary config and an ACTIVE, unexpired activation
   ledger are mounted at explicit absolute paths;
-* the application environment is production, the Model Gateway is configured
-  and the database migration head is exactly ``0016``;
+* the application environment is production, either the request-scoped
+  personal Provider resolver or an operator Model Gateway is safely
+  configured, and the database migration head is exactly ``0016``;
 * the current request is the configured Tenant/Workspace/Owner and the live
   tenant schema still contains exactly that one active Owner, who is also an
   active tenant administrator.
@@ -69,6 +70,7 @@ from omnibase.production.phase5_admission import (
 )
 from omnibase.task_ledger.service import TaskAdmissionContext
 from omnibase.tenants.schema_manager import set_search_path
+from omnibase.user_settings.crypto import CredentialCipher, CredentialCryptoUnavailable
 from omnibase.user_settings.gateway import UserModelGatewayResolver
 from omnibase.workspaces.models import WorkspaceMembership, WorkspaceRun
 
@@ -568,6 +570,18 @@ def _memory_crypto_available(settings: Settings) -> bool:
     return True
 
 
+def _personal_gateway_resolver_available(settings: Settings) -> bool:
+    """Prove the request-scoped credential path can assemble without reading a key."""
+
+    if not settings.provider_endpoint_allowlist:
+        return False
+    try:
+        CredentialCipher.from_settings(settings)
+    except CredentialCryptoUnavailable:
+        return False
+    return True
+
+
 def _personal_posture_assembled(
     *,
     profile_selected: bool,
@@ -645,8 +659,11 @@ def personal_alpha_posture(
     migration_ready = False
     settings = settings or get_settings()
     environment_allowed = settings.env is Environment.PRODUCTION
-    gateway = gateway or configured_model_gateway()
-    gateway_configured = not isinstance(gateway, UnavailableModelGateway)
+    gateway = gateway if gateway is not None else configured_model_gateway()
+    gateway_configured = bool(
+        not isinstance(gateway, UnavailableModelGateway)
+        or _personal_gateway_resolver_available(settings)
+    )
     memory_crypto_configured = _memory_crypto_available(settings)
     factory: sessionmaker[Any] | None = session_factory
     try:
@@ -781,7 +798,7 @@ def build_personal_agent_alpha(
     if not resolve_personal_runtime_profile(selected_profile):
         return UnavailableAgentAlpha()
     settings = settings or get_settings()
-    gateway = gateway or configured_model_gateway()
+    gateway = gateway if gateway is not None else configured_model_gateway()
     factory = session_factory or get_session_factory(settings)
     posture = personal_alpha_posture(
         tenant_id=tenant_id,
@@ -796,7 +813,7 @@ def build_personal_agent_alpha(
         session_factory=factory,
         gateway=gateway,
     )
-    if not posture.assembled or isinstance(gateway, UnavailableModelGateway):
+    if not posture.assembled:
         return UnavailableAgentAlpha()
     selected_config = (
         config_path if config_path is not None else os.environ.get(PERSONAL_RUNTIME_CONFIG_ENV)

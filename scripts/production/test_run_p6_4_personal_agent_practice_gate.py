@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -313,6 +314,40 @@ def test_docker_preflight_requires_a_healthy_linux_engine(
     monkeypatch.setattr(gate, "_run", lambda *_args, **_kwargs: next(results))
 
     gate._require_healthy_docker(tmp_path)
+
+
+def test_run_decodes_utf8_independently_of_the_windows_host_locale(
+    tmp_path: Path,
+) -> None:
+    result = gate._run(
+        [
+            sys.executable,
+            "-c",
+            "import sys;sys.stdout.buffer.write('构建完成 ✓'.encode('utf-8'))",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.stdout == "构建完成 ✓"
+
+
+def test_run_nonzero_exit_uses_a_stable_error_without_output_disclosure(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        gate.PracticeGateError,
+        match=r"^acceptance_command_failed:python(?:\.exe)?$",
+    ) as raised:
+        gate._run(
+            [
+                sys.executable,
+                "-c",
+                "import sys;sys.stderr.buffer.write(b'sensitive-output');sys.exit(7)",
+            ],
+            cwd=tmp_path,
+        )
+
+    assert "sensitive-output" not in str(raised.value)
 
 
 @pytest.mark.parametrize(

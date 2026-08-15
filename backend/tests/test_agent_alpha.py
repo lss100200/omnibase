@@ -19,7 +19,11 @@ from omnibase.agent_alpha.contracts import (
     AlphaMemoryCapsule,
 )
 from omnibase.agent_alpha.router import get_agent_alpha, router
-from omnibase.agent_alpha.service import AgentAlphaError, AgentAlphaService
+from omnibase.agent_alpha.service import (
+    AgentAlphaError,
+    AgentAlphaService,
+    AgentAlphaUnavailable,
+)
 from omnibase.agent_skills.resolver import SkillInstruction, SkillInstructionBundle
 from omnibase.model_gateway import (
     ModelGateway,
@@ -27,6 +31,7 @@ from omnibase.model_gateway import (
     ModelResponse,
     ModelStreamChunk,
     ModelUsage,
+    UnavailableModelGateway,
 )
 from omnibase.model_gateway.providers import ModelProviderError
 from omnibase.tenants.dependencies import get_current_tenant
@@ -305,6 +310,59 @@ class _GatewayResolver:
             configuration_digest=self.configuration_digest,
             credential_id="credential-1",
         )
+
+
+def test_request_scoped_resolver_does_not_require_an_operator_gateway() -> None:
+    ledger = _Ledger()
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_GatewayResolver("a" * 64),
+    )
+
+    events = list(
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+    )
+
+    assert events[-1].kind == "done"
+    assert events[-1].payload["actual_model_id"] == "model-alpha"
+
+
+def test_missing_operator_gateway_and_request_resolver_fails_closed() -> None:
+    ledger = _Ledger()
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=UnavailableModelGateway(),
+    )
+
+    with pytest.raises(AgentAlphaUnavailable, match="model_gateway_unavailable"):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert ledger.begin_request_hash is None
 
 
 def test_invocation_intent_binds_non_secret_provider_configuration() -> None:

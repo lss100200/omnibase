@@ -36,6 +36,7 @@ from omnibase.model_gateway import (
     ModelResponse,
     ModelStreamChunk,
     ModelUsage,
+    UnavailableModelGateway,
 )
 from omnibase.production.personal_runtime_activation import (
     PersonalRuntimeCanaryConfig,
@@ -48,7 +49,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OWNER_READINESS_SHA256 = "68d5b91f428eaa2632f4ea60e6eab2aa27f3c9b94b593025e17ceced5bebf4d3"
 
 
-def _settings(env: str = "production") -> Settings:
+def _settings(
+    env: str = "production",
+    *,
+    personal_provider_resolver: bool = False,
+) -> Settings:
     return Settings(
         env=env,
         database_url="postgresql+psycopg://u:p@localhost:5432/db",
@@ -58,6 +63,7 @@ def _settings(env: str = "production") -> Settings:
         redis_url="redis://localhost:6379/0",
         jwt_secret="x" * 40,
         memory_content_encryption_key="11" * 32,
+        provider_credential_encryption_key=("22" * 32 if personal_provider_resolver else ""),
     )
 
 
@@ -224,9 +230,11 @@ def test_default_builder_returns_unavailable_before_loading_dependencies() -> No
     assert isinstance(result, UnavailableAgentAlpha)
 
 
-def test_posture_assembles_only_with_active_exact_scope(
+@pytest.mark.parametrize(("personal_provider_resolver",), [(True,), (False,)])
+def test_posture_assembles_only_with_active_exact_scope_and_gateway_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    personal_provider_resolver: bool,
 ) -> None:
     mapping, readiness_root = _current_readiness_fixture(tmp_path / "readiness")
     config = PersonalRuntimeCanaryConfig.from_mapping(mapping)
@@ -271,18 +279,20 @@ def test_posture_assembles_only_with_active_exact_scope(
             "AGENT_PLANNER_ENABLED": "false",
             "MULTI_AGENT_ENABLED": "false",
         },
-        settings=_settings(),
+        settings=_settings(personal_provider_resolver=personal_provider_resolver),
         session_factory=_session_factory(factory),
-        gateway=_gateway(),
+        gateway=UnavailableModelGateway(),
     )
 
-    assert posture.assembled is True
+    assert posture.assembled is personal_provider_resolver
     assert posture.canary_active is True
     assert posture.scope_matches is True
     assert posture.live_owner_verified is True
     assert posture.runtime_gate_enabled is True
     assert posture.planner_gate_enabled is False
     assert posture.multi_agent_gate_enabled is False
+    assert posture.gateway_configured is personal_provider_resolver
+    assert ("Model Gateway is unavailable" in posture.blockers) is (not personal_provider_resolver)
 
 
 def test_posture_rejects_gate_and_scope_drift(tmp_path: Path) -> None:
@@ -446,9 +456,9 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
             "AGENT_PLANNER_ENABLED": "false",
             "MULTI_AGENT_ENABLED": "false",
         },
-        settings=_settings(),
+        settings=_settings(personal_provider_resolver=True),
         session_factory=_session_factory(factory),
-        gateway=_gateway(),
+        gateway=UnavailableModelGateway(),
     )
     assert isinstance(result, PersonalCanaryAgentAlpha)
     assert captured["factory"] is factory

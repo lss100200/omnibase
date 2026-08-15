@@ -42,7 +42,12 @@ from omnibase.agent_alpha.contracts import (
     AlphaUserPreferencesResolver,
 )
 from omnibase.agent_skills.resolver import SkillInstructionBundle
-from omnibase.model_gateway import ModelGateway, ModelMessage, ModelUsage
+from omnibase.model_gateway import (
+    ModelGateway,
+    ModelMessage,
+    ModelUsage,
+    UnavailableModelGateway,
+)
 from omnibase.model_gateway.adaptation import ReasoningGear
 from omnibase.model_gateway.providers import ModelProviderError
 
@@ -185,7 +190,7 @@ class AgentAlphaService:
         profiles: AlphaProfileResolver,
         knowledge: AlphaKnowledgeRetriever,
         ledger: AlphaInvocationLedger,
-        gateway: ModelGateway,
+        gateway: ModelGateway | UnavailableModelGateway,
         gateway_resolver: AlphaGatewayResolver | None = None,
         preferences_resolver: AlphaUserPreferencesResolver | None = None,
         memory_compiler: AlphaMemoryCompiler | None = None,
@@ -253,8 +258,8 @@ class AgentAlphaService:
         if top_k < 1 or top_k > self._limits.max_rag_chunks:
             raise AgentAlphaError("agent_alpha_top_k_exceeded")
         try:
-            selection = (
-                self._gateway_resolver.resolve(
+            if self._gateway_resolver is not None:
+                selection = self._gateway_resolver.resolve(
                     tenant_id=tenant_id,
                     tenant_schema=tenant_schema,
                     actor_user_id=actor_user_id,
@@ -262,8 +267,10 @@ class AgentAlphaService:
                     agent_version_id=agent_version_id,
                     employee_role_id=employee_role_id,
                 )
-                if self._gateway_resolver is not None
-                else AlphaGatewaySelection(
+            else:
+                if isinstance(self._gateway, UnavailableModelGateway):
+                    raise AgentAlphaUnavailable("model_gateway_unavailable")
+                selection = AlphaGatewaySelection(
                     gateway=self._gateway,
                     credential_source="operator_default",
                     configuration_digest=_digest(
@@ -275,7 +282,6 @@ class AgentAlphaService:
                         }
                     ),
                 )
-            )
         except RuntimeError as exc:
             raise AgentAlphaUnavailable(str(exc)) from exc
         try:

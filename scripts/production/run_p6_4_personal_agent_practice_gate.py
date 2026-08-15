@@ -110,6 +110,8 @@ def _run(
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:

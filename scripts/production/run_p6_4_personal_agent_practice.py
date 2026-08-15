@@ -909,6 +909,8 @@ def _dump_dom(*, artifact_path: Path, profile_root: Path) -> str:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=45,
     )
     if result.returncode != 0 or "<html" not in result.stdout.lower():
@@ -1101,6 +1103,8 @@ class LiveMatrixRunner:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         value = result.stdout.strip()
@@ -1112,6 +1116,8 @@ class LiveMatrixRunner:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         if status.returncode != 0:

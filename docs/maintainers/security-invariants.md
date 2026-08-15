@@ -2899,8 +2899,13 @@ The chain is an integrity/lifecycle receipt, not an external signature or
 separate authenticity root.
 
 Every Browser request independently binds config/plan/ledger, feature gates,
-migration, Tenant/Workspace/Owner/AgentVersion and Model Gateway. The exact
-live Owner, tenant-admin and AgentVersion scope is rechecked inside Task Ledger
+migration, Tenant/Workspace/Owner/AgentVersion and the request-scoped personal
+Provider resolver (or an explicitly configured operator Model Gateway). The
+status posture may prove the resolver's encryption and endpoint-policy
+composition without reading or decrypting a user credential; invocation must
+still select and revalidate one exact active, tested credential and fail closed
+on missing, revoked or drifted state. The exact live Owner, tenant-admin and
+AgentVersion scope is rechecked inside Task Ledger
 transaction A before reservation. Invalid profile tokens may not fall back to
 engineering Lite. Public status exposes no credentials, Approval/Capability,
 lease/fencing, physical locator or workload identity material.
