@@ -354,6 +354,34 @@ def test_request_scoped_resolver_does_not_require_an_operator_gateway() -> None:
     assert events[-1].payload["actual_model_id"] == "model-alpha"
 
 
+def test_rag_query_is_bounded_or_search_and_prioritizes_fact_tokens() -> None:
+    from omnibase.agent_alpha.adapters import _bounded_websearch_query
+
+    prompt = " ".join(f"ordinaryword{index}" for index in range(80))
+    prompt += " project_codename release_channel ORCHID-417 LANTERN-82"
+
+    query = _bounded_websearch_query(prompt)
+    terms = query.split(" OR ")
+
+    assert len(terms) == 32
+    assert '"project_codename"' in terms
+    assert '"release_channel"' in terms
+    assert '"orchid-417"' in terms
+    assert '"lantern-82"' in terms
+    assert all(term.startswith('"') and term.endswith('"') for term in terms)
+
+
+def test_rag_query_does_not_forward_locator_or_quote_syntax() -> None:
+    from omnibase.agent_alpha.adapters import _bounded_websearch_query
+
+    query = _bounded_websearch_query('C:\\private\\secret.txt "quoted" https://host/path')
+
+    assert "\\" not in query
+    assert ":" not in query
+    assert "/" not in query
+    assert query == '"private" OR "secret" OR "txt" OR "quoted" OR "https" OR "host" OR "path"'
+
+
 def test_request_scoped_resolver_failure_is_stably_redacted() -> None:
     service = AgentAlphaService(
         profiles=_Profiles(),

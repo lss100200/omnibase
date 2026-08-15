@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -84,6 +85,8 @@ _ALPHA_ACTIVE_ATTEMPT_STATES = frozenset({"leased", "dispatching", "running"})
 _ALPHA_MAX_RAG_CHUNKS = 8
 _ALPHA_MAX_RAG_CHUNK_CHARACTERS = 1200
 _ALPHA_MAX_RAG_CONTEXT_CHARACTERS = 8_000
+_ALPHA_MAX_RAG_QUERY_TERMS = 32
+_RAG_QUERY_TERM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{1,63}")
 _ALPHA_INVOCATION_DEADLINE = timedelta(seconds=110)
 _ALPHA_LEASE_TTL_SECONDS = 90
 _ALPHA_WORKSPACE_RUN_LEASE_SECONDS = 120
@@ -104,6 +107,33 @@ _ALPHA_BUDGET_LIMITS = {
     "max_attempts": 1,
     "max_parallel_steps": 1,
 }
+
+
+def _bounded_websearch_query(query: str) -> str:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for match in _RAG_QUERY_TERM.finditer(query):
+        term = match.group(0).casefold()
+        if term not in seen:
+            seen.add(term)
+            unique.append(term)
+    if not unique:
+        return '"omnibase_no_match_sentinel"'
+    prioritized = sorted(
+        enumerate(unique),
+        key=lambda item: (
+            (
+                0
+                if any(character in "_-" for character in item[1])
+                else 1
+                if any(character.isdigit() for character in item[1])
+                else 2
+            ),
+            item[0],
+        ),
+    )
+    selected = [term for _, term in prioritized[:_ALPHA_MAX_RAG_QUERY_TERMS]]
+    return " OR ".join(f'"{term}"' for term in selected)
 
 
 class AlphaAdapterError(RuntimeError):
@@ -445,7 +475,9 @@ class RagKnowledgeRetriever:
         top_k = min(top_k, _ALPHA_MAX_RAG_CHUNKS)
         session = _tenant_session(self._factory, tenant_id)
         try:
-            query_expression = func.plainto_tsquery("pg_catalog.simple", query)
+            query_expression = func.websearch_to_tsquery(
+                "pg_catalog.simple", _bounded_websearch_query(query)
+            )
             canonical_rank = func.ts_rank(Embedding.tsv, query_expression)
             canonical_rows = session.execute(
                 select(
