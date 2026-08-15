@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
+import omnibase.agent_alpha.personal as personal_module
 from omnibase.agent_alpha.contracts import AlphaAgentProfile
 from omnibase.agent_alpha.personal import (
     PersonalAlphaConfigurationError,
@@ -40,6 +41,7 @@ from omnibase.model_gateway import (
 )
 from omnibase.production.personal_runtime_activation import (
     PersonalRuntimeCanaryConfig,
+    PersonalRuntimeConfigurationError,
     activate_personal_runtime_canary,
     read_personal_runtime_status,
 )
@@ -119,6 +121,39 @@ def _mapping() -> dict[str, object]:
 
 def _config() -> PersonalRuntimeCanaryConfig:
     return PersonalRuntimeCanaryConfig.from_mapping(_mapping())
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (
+            PersonalAlphaConfigurationError("personal_runtime_invocation_slot_occupied"),
+            "personal_runtime_invocation_slot_occupied",
+        ),
+        (
+            PersonalAlphaConfigurationError("unsafe detail: C:/private"),
+            "personal_runtime_invocation_guard_unavailable",
+        ),
+        (
+            OperationalError("SELECT secret", {"token": "private"}, Exception("driver")),
+            "personal_runtime_database_guard_unavailable",
+        ),
+        (
+            PersonalRuntimeConfigurationError("private path is unavailable"),
+            "personal_runtime_control_state_unavailable",
+        ),
+        (OSError("C:/private"), "personal_runtime_control_state_unavailable"),
+    ],
+)
+def test_invocation_guard_projects_only_stable_failure_codes(
+    exc: BaseException,
+    expected: str,
+) -> None:
+    code = personal_module._invocation_guard_error_code(exc)
+
+    assert code == expected
+    assert "private" not in code
+    assert "secret" not in code
 
 
 def _write_config(path: Path, mapping: dict[str, object] | None = None) -> None:

@@ -24,6 +24,7 @@ one interactive Run at a time, with no Planner/Multi-Agent/Sandbox execution.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -74,6 +75,7 @@ from omnibase.user_settings.crypto import CredentialCipher, CredentialCryptoUnav
 from omnibase.user_settings.gateway import UserModelGatewayResolver
 from omnibase.workspaces.models import WorkspaceMembership, WorkspaceRun
 
+_SAFE_PERSONAL_RUNTIME_CODE = re.compile(r"^personal_runtime_[a-z0-9_]{1,96}$")
 PERSONAL_RUNTIME_PROFILE_ENV = "PERSONAL_RUNTIME_PROFILE"
 PERSONAL_RUNTIME_CONFIG_ENV = "PERSONAL_RUNTIME_CANARY_CONFIG"
 PERSONAL_RUNTIME_STATE_DIR_ENV = "PERSONAL_RUNTIME_STATE_DIR"
@@ -330,6 +332,17 @@ def _runtime_checkpoint(
     return guard
 
 
+def _invocation_guard_error_code(exc: BaseException) -> str:
+    if isinstance(exc, PersonalAlphaConfigurationError):
+        code = str(exc)
+        if _SAFE_PERSONAL_RUNTIME_CODE.fullmatch(code) is not None:
+            return code
+        return "personal_runtime_invocation_guard_unavailable"
+    if isinstance(exc, SQLAlchemyError):
+        return "personal_runtime_database_guard_unavailable"
+    return "personal_runtime_control_state_unavailable"
+
+
 def _invocation_guard(
     config: PersonalRuntimeCanaryConfig,
     *,
@@ -419,7 +432,7 @@ def _invocation_guard(
             PersonalRuntimeConfigurationError,
             SQLAlchemyError,
         ) as exc:
-            raise AlphaAdapterUnavailable(str(exc)) from exc
+            raise AlphaAdapterUnavailable(_invocation_guard_error_code(exc)) from exc
 
     return guard
 
