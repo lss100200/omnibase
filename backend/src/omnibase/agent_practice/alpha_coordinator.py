@@ -376,6 +376,26 @@ def _require_node_identity(
     return str(values[0]), str(values[1]), str(values[2])
 
 
+def _canonical_parent_answer(value: str) -> str:
+    candidate = value.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        if (
+            len(lines) < 3
+            or lines[0].strip().casefold() not in {"```", "```json"}
+            or lines[-1].strip() != "```"
+        ):
+            raise RuntimeError("practice_node_parent_json_invalid:parent")
+        candidate = "\n".join(lines[1:-1]).strip()
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("practice_node_parent_json_invalid:parent") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("practice_node_parent_json_invalid:parent")
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
 def _finalize_node(
     observed: _ObservedNode, *, ordinal: int, role: ParticipantRole
 ) -> tuple[PracticeNodeReceipt, str]:
@@ -388,6 +408,7 @@ def _finalize_node(
         raise RuntimeError(f"practice_node_model_identity_mismatch:{role}")
     if observed.usage is None:
         raise RuntimeError(f"practice_node_usage_missing:{role}")
+    answer = _canonical_parent_answer(observed.answer) if role == "parent" else observed.answer
     return (
         PracticeNodeReceipt(
             ordinal=ordinal,
@@ -402,10 +423,10 @@ def _finalize_node(
             reasoning_tokens=observed.usage["reasoning_tokens"],
             cached_input_tokens=observed.usage["cached_input_tokens"],
             cache_miss_input_tokens=observed.usage["cache_miss_input_tokens"],
-            answer_sha256=hashlib.sha256(observed.answer.encode()).hexdigest(),
+            answer_sha256=hashlib.sha256(answer.encode()).hexdigest(),
             citations=observed.citations,
         ),
-        observed.answer,
+        answer,
     )
 
 

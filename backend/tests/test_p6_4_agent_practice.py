@@ -111,6 +111,7 @@ class _AlphaInvoker:
         omit_citations_at: int | None = None,
         mismatched_model_at: int | None = None,
         specialist_answer_characters: int = 0,
+        parent_answer: str | None = None,
         duplicate_meta_at: int | None = None,
         reuse_identity_at: int | None = None,
     ) -> None:
@@ -120,6 +121,7 @@ class _AlphaInvoker:
         self.omit_citations_at = omit_citations_at
         self.mismatched_model_at = mismatched_model_at
         self.specialist_answer_characters = specialist_answer_characters
+        self.parent_answer = parent_answer
         self.duplicate_meta_at = duplicate_meta_at
         self.reuse_identity_at = reuse_identity_at
 
@@ -159,7 +161,9 @@ class _AlphaInvoker:
             yield AlphaStreamEvent(kind="error", payload={"code": "fixture_unknown"})
             return
         answer = (
-            "S" * self.specialist_answer_characters
+            self.parent_answer
+            if role == "parent" and self.parent_answer is not None
+            else "S" * self.specialist_answer_characters
             if role != "parent" and self.specialist_answer_characters
             else json.dumps({"role": role, "ok": True})
         )
@@ -279,6 +283,56 @@ def test_durable_artifact_parent_uses_standard_reasoning_without_specialists() -
     )
 
     assert invoker.calls[0]["reasoning_gear"] == "standard"
+
+
+def test_durable_parent_canonicalizes_one_complete_json_fence() -> None:
+    invoker = _AlphaInvoker(parent_answer='```json\n{"role":"parent","ok":true}\n```')
+    events = list(
+        DurablePersonalPracticeCoordinator(invoker).run(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="owner",
+            agent_version_id="version",
+            scenario="artifact",
+            specialist_roles=(),
+            task="Return a bounded artifact proposal.",
+            top_k=5,
+            idempotency_key="owner-request",
+        )
+    )
+
+    completed = [event for event in events if event.kind == "practice_completed"]
+    assert completed[0].payload["final_answer"] == '{"ok":true,"role":"parent"}'
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        'Result: {"ok":true}',
+        '```json\n{"ok":true}\n```\nextra',
+        '[{"ok":true}]',
+        "",
+    ],
+)
+def test_durable_parent_rejects_non_exact_json_answer(answer: str) -> None:
+    invoker = _AlphaInvoker(parent_answer=answer)
+
+    with pytest.raises(RuntimeError, match="practice_node_parent_json_invalid:parent"):
+        list(
+            DurablePersonalPracticeCoordinator(invoker).run(
+                tenant_id="tenant",
+                tenant_schema="tenant_schema",
+                workspace_id="workspace",
+                actor_user_id="owner",
+                agent_version_id="version",
+                scenario="artifact",
+                specialist_roles=(),
+                task="Return a bounded artifact proposal.",
+                top_k=5,
+                idempotency_key="owner-request",
+            )
+        )
 
 
 def test_durable_coordinator_stops_after_unknown_member() -> None:
