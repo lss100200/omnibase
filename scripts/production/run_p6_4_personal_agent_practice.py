@@ -56,6 +56,9 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _COUNTS = frozenset({1, 3, 4, 5, 6})
 _ALLOWED_MODELS = frozenset({"deepseek-v4-flash", "deepseek-v4-pro"})
+_SAFE_NODE_ERROR = re.compile(
+    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_[a-z0-9_]{1,96}$"
+)
 _ROLES = frozenset(
     {
         "parent",
@@ -78,6 +81,24 @@ _ROSTERS: dict[str, tuple[str, ...]] = {
     "workspace_single": ("parent",),
     "workspace_six": ("product", "frontend", "backend", "security", "qa", "parent"),
 }
+
+
+def _safe_practice_error_code(value: object) -> str | None:
+    if not isinstance(value, str) or len(value) > 180:
+        return None
+    if re.fullmatch(r"practice_[a-z0-9_]{1,96}", value) is not None:
+        return value
+    prefix = "practice_node_terminal_failure:"
+    if not value.startswith(prefix):
+        return None
+    fields = value[len(prefix) :].split(":")
+    if (
+        len(fields) != 2
+        or fields[0] not in _ROLES
+        or _SAFE_NODE_ERROR.fullmatch(fields[1]) is None
+    ):
+        return None
+    return value
 
 
 class LiveMatrixError(RuntimeError):
@@ -615,7 +636,9 @@ class _PracticeStreamState:
             "practice_completed": self._completed,
         }
         if event == "error":
-            raise LiveMatrixError("practice_stream_terminal_error")
+            code = _safe_practice_error_code(payload.get("code"))
+            suffix = f":{code}" if code is not None else ""
+            raise LiveMatrixError(f"practice_stream_terminal_error{suffix}")
         handler = handlers.get(event)
         if handler is None:
             raise LiveMatrixError("practice_stream_event_unknown")

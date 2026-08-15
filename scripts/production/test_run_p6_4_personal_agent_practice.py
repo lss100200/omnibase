@@ -193,6 +193,59 @@ def test_incomplete_sse_frame_is_rejected() -> None:
         )
 
 
+def test_terminal_error_preserves_only_a_stable_node_failure_code() -> None:
+    stream = io.BytesIO(
+        _event(
+            "error",
+            {
+                "code": (
+                    "practice_node_terminal_failure:parent:"
+                    "agent_alpha_provider_unavailable"
+                )
+            },
+        )
+    )
+
+    with pytest.raises(
+        acceptance.LiveMatrixError,
+        match=(
+            "practice_stream_terminal_error:practice_node_terminal_failure:"
+            "parent:agent_alpha_provider_unavailable"
+        ),
+    ):
+        acceptance.collect_practice_stream(
+            stream,
+            expected_roles=("parent",),
+            expected_scenario="rag",
+        )
+
+
+def test_terminal_error_rejects_untrusted_detail_from_the_diagnostic_code() -> None:
+    stream = io.BytesIO(
+        _event(
+            "error",
+            {
+                "code": (
+                    "practice_node_terminal_failure:parent:"
+                    "agent_alpha_provider_unavailable:untrusted-detail"
+                )
+            },
+        )
+    )
+
+    with pytest.raises(
+        acceptance.LiveMatrixError,
+        match=r"^practice_stream_terminal_error$",
+    ) as raised:
+        acceptance.collect_practice_stream(
+            stream,
+            expected_roles=("parent",),
+            expected_scenario="rag",
+        )
+
+    assert "untrusted-detail" not in str(raised.value)
+
+
 def _rag_payload(
     *,
     statement_codename: str = "ORCHID-417",
