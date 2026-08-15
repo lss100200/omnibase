@@ -12,6 +12,7 @@ from starlette.responses import StreamingResponse
 from omnibase.agent_alpha.contracts import AlphaStreamEvent
 from omnibase.agent_alpha.router import run_alpha_practice
 from omnibase.agent_alpha.schemas import AlphaPracticeRunRequest
+from omnibase.tenants.context import get_current_schema
 
 TENANT_ID = "00000000-0000-0000-0000-000000000101"
 WORKSPACE_ID = "00000000-0000-0000-0000-000000000102"
@@ -27,11 +28,13 @@ class _PracticeAlpha:
         mismatch_at: int | None = None,
     ) -> None:
         self.calls: list[dict[str, object]] = []
+        self.schemas: list[str | None] = []
         self.fail_at = fail_at
         self.mismatch_at = mismatch_at
 
     def invoke(self, **kwargs: object) -> Iterator[AlphaStreamEvent]:
         self.calls.append(kwargs)
+        self.schemas.append(get_current_schema())
         ordinal = len(self.calls)
         role = str(kwargs["employee_role_id"])
         yield AlphaStreamEvent(
@@ -126,6 +129,26 @@ def _run(
         ctx=_ctx(),
     )
     return asyncio.run(_collect_body(response)), alpha
+
+
+def test_practice_stream_reestablishes_and_restores_tenant_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_posture(monkeypatch)
+    alpha = _PracticeAlpha()
+    payload = AlphaPracticeRunRequest(
+        agent_version_id=AGENT_VERSION_ID,
+        scenario="rag",
+        participant_count=1,
+        task="Answer from evidence.",
+    )
+
+    assert get_current_schema() is None
+    body, alpha = _run(payload=payload, alpha=alpha)
+
+    assert "event: practice_completed" in body
+    assert alpha.schemas == ["tenant_personal"]
+    assert get_current_schema() is None
 
 
 @pytest.mark.parametrize(

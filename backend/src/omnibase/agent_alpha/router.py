@@ -44,6 +44,7 @@ from omnibase.agent_alpha.service import (
 )
 from omnibase.agent_practice.alpha_coordinator import DurablePersonalPracticeCoordinator
 from omnibase.agent_practice.posture import personal_practice_posture
+from omnibase.tenants.context import tenant_scope
 from omnibase.tenants.dependencies import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/agent-alpha", tags=["agent-alpha"])
@@ -318,19 +319,25 @@ def run_alpha_practice(
     coordinator = DurablePersonalPracticeCoordinator(alpha)
 
     def _practice_stream() -> Iterator[str]:
+        events = coordinator.run(
+            tenant_id=ctx.tenant_id,
+            tenant_schema=ctx.schema_name,
+            workspace_id=_logical_uuid(workspace_id),
+            actor_user_id=ctx.user_id,
+            agent_version_id=payload.agent_version_id,
+            scenario=payload.scenario,
+            specialist_roles=tuple(payload.specialist_roles),
+            task=payload.task,
+            top_k=payload.top_k,
+            idempotency_key=key,
+        )
         try:
-            for event in coordinator.run(
-                tenant_id=ctx.tenant_id,
-                tenant_schema=ctx.schema_name,
-                workspace_id=_logical_uuid(workspace_id),
-                actor_user_id=ctx.user_id,
-                agent_version_id=payload.agent_version_id,
-                scenario=payload.scenario,
-                specialist_roles=tuple(payload.specialist_roles),
-                task=payload.task,
-                top_k=payload.top_k,
-                idempotency_key=key,
-            ):
+            while True:
+                try:
+                    with tenant_scope(ctx.schema_name):
+                        event = next(events)
+                except StopIteration:
+                    return
                 yield (
                     f"event: {event.kind}\n"
                     f"data: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
