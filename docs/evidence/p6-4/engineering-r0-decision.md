@@ -1,6 +1,6 @@
 # P6.4 Personal Agent Practice — engineering R0 decision
 
-Status: **IMPLEMENTATION_STARTED_LIVE_PRODUCTION_ACCEPTANCE_NOT_YET_PROVEN**
+Status: **ENGINEERING_IMPLEMENTATION_COMPLETE_LIVE_PRODUCTION_ACCEPTANCE_NOT_YET_PROVEN**
 
 This record covers the engineering implementation on top of P6.3. It is not
 the final P6.4 receipt and does not claim that the clean production target has
@@ -79,6 +79,52 @@ again found the `dockerDesktopLinuxEngine` pipe absent. The real Gate therefore
 cannot run on this host at present; the DeepSeek matrix and final accepted
 receipt remain unexecuted.
 
+## Clean-HEAD engineering closure
+
+The implementation and security-forward-fix chain was sealed in one
+forward-only local commit:
+
+```text
+HEAD = 184fef897effe27df0cf860e23baf926836dfd4b
+parent = 38b60ce7208bed231210873822f4c0526204ed9a
+subject = feat(p6.4): add bounded personal agent practice gate
+scope = 44 files, +10347 / -78
+worktree = clean
+```
+
+From that exact clean HEAD, the formal frozen admission verifiers were rerun
+with all three Phase 5 feature gates explicitly false. These results are
+expected safety posture, not failures to be changed into PASS:
+
+```text
+P5.0  --verify = exit 2; blocked/not_proven; activation_allowed=false;
+  vetoes=[]; source.clean=true; source.git_commit=184fef8...
+P5.1A --verify = exit 2; blocked/not_proven; activation_allowed=false;
+  vetoes=[]; source.clean=true; source.git_commit=184fef8...
+P5.2A --verify = exit 2; blocked/not_proven; activation_allowed=false;
+  vetoes=[]; source.clean=true; source.git_commit=184fef8...
+P5.3A --verify = exit 2; blocked/not_proven; activation_allowed=false;
+  vetoes=[]; source.clean=true; source.git_commit=184fef8...
+P5.6A --verify = exit 2; blocked/not_proven; activation_allowed=false;
+  vetoes=[]; source.clean=true; source.git_commit=184fef8...
+```
+
+The corrected P34.7 clean-HEAD regression is:
+
+```text
+joint validate-only with the canonical example evidence = exit 2;
+  blocked/not_proven; blockers=[contract_mode_no_direct_evidence]; vetoes=[]
+Trust Policy candidate validate-only = exit 0;
+  candidate/valid_not_approved; candidate_digest_verified=true;
+  production_approved=false; approved_digest_written=false;
+  activation_allowed=false
+focused Trust Policy + joint tests = 255 passed, 1 skipped
+```
+
+The P34.7 candidate accurately reports the repository's current migration
+head `0016` and the existing personal-successor migration history. It does not
+approve a Trust Policy digest or authorize production activation.
+
 Secrets were not read from the root `.env`, written to this repository or
 included in this evidence. No Docker/WSL/VHDX mutation, business database
 access, deployment, push, PR or merge was performed by this implementation
@@ -88,6 +134,7 @@ availability probe.
 ```text
 P6_4_ENGINEERING_IMPLEMENTATION_ADVANCED_SECURITY_FORWARD_FIX_APPLIED
 P6_4_FOCUSED_100_PASSED
+P6_4_CLEAN_HEAD_FORMAL_VERIFIERS_COMPLETED
 LIVE_MATRIX_RUNNER_IMPLEMENTED_AND_OFFLINE_VERIFIED
 FINAL_ACCEPTANCE_CONTROLLER_IMPLEMENTED_AND_OFFLINE_VERIFIED
 DOCKER_LINUX_ENGINE_PIPE_ABSENT_READ_ONLY_PROBE

@@ -5966,3 +5966,50 @@ migration head 0016; migration 0017 absent
 root .env not read; business database not accessed or migrated
 not pushed; not merged; not deployed
 ```
+
+### P6.4 clean-HEAD formal closure and live-gate blocker (2026-08-15)
+
+The complete engineering implementation is sealed locally as forward-only
+commit `184fef897effe27df0cf860e23baf926836dfd4b` (`44 files`,
+`+10347/-78`) on `codex/p6-4-agent-practice-r0`, parent
+`38b60ce7208bed231210873822f4c0526204ed9a`. The worktree was clean before the
+formal closure run.
+
+The clean-HEAD P5 frozen verifiers all bound their source evidence to that
+exact commit. P5.0, P5.1A, P5.2A, P5.3A and P5.6A each returned `exit 2`,
+`blocked/not_proven`, `activation_allowed=false`, `vetoes=[]` and
+`source.clean=true`. This is the required fail-closed production posture; none
+of these static contracts was reinterpreted as Runtime authority.
+
+The corrected P34.7 invocation supplied the canonical example evidence file.
+The joint Gate returned `exit 2`, `blocked/not_proven`, the sole blocker
+`contract_mode_no_direct_evidence` and no veto. The Trust Policy candidate
+returned `exit 0`, `candidate/valid_not_approved`, with its raw digest verified
+but `production_approved=false`, `approved_digest_written=false` and
+`activation_allowed=false`. Its focused Trust Policy and joint regression is
+`255 passed, 1 skipped` (the Windows symlink behavior is covered by reparse
+guards).
+
+No remaining engineering implementation defect is currently known in the
+bounded P6.4 lane. The still-missing acceptance fact is external runtime
+evidence: the already-running Docker Desktop Linux Engine must be healthy so
+the outer controller can execute the real DeepSeek six-journey matrix from a
+clean unchanged source commit. The latest read-only pipe probe found the Linux
+Engine absent. Per INV-081, the controller stopped before creating target
+material or making a paid Provider call and did not start or repair Docker,
+WSL, Hyper-V or any virtual disk.
+
+```text
+P6_4_ENGINEERING_IMPLEMENTATION_COMPLETE
+P6_4_CLEAN_HEAD_FORMAL_VERIFIERS_COMPLETED
+P6_4_FOCUSED_100_PASSED
+P34_7_JOINT_BLOCKED_NOT_PROVEN_ZERO_VETOES
+P34_7_TRUST_POLICY_CANDIDATE_VALID_NOT_APPROVED
+DOCKER_LINUX_ENGINE_NOT_HEALTHY
+REAL_DEEPSEEK_SIX_JOURNEY_RECEIPT_NOT_EXECUTED
+PRODUCTION_ACCEPTANCE_NOT_PROVEN
+Runtime / Planner / enterprise Multi-Agent / MCP Runtime disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```
