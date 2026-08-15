@@ -2362,3 +2362,16 @@ start or repair Docker Desktop, WSL, Hyper-V or VHDX for this gate. Matrix unit
 tests, fake Providers, Compose parsing and offline receipt validation are
 necessary engineering evidence but do not substitute for the real DeepSeek
 production-mode receipt.
+
+The R0 production-practice Gate later completed from clean executable source
+HEAD `3c3d322e3f9871749da00525eaac9505062026b4`. The retained redacted receipt
+has SHA-256
+`5e8145525e75feb84d6a28d3cf1007e078747f8e73ac7bd62b8b462b5978f0ef` and
+is summarized by
+`docs/evidence/p6-4/production-practice-r0-decision.md`. It proves the exact
+six journeys, 16 unique Provider/invocation/task calls, RAG fact/citation
+precision and recall of `1.0`, trusted artifact bytes, Workspace CAS rollback,
+credential/document cleanup, closed final gates and zero labeled Compose
+resources. Treat this as acceptance of the bounded personal P6.4 practice lane
+only. It does not authorize P34.7, enterprise P5, Planner, enterprise
+Multi-Agent, MCP-to-Agent, migration `0017`, deployment or release.

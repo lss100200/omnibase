@@ -1,7 +1,10 @@
 # P6.4 Personal Agent Practice
 
-Status: **implementation in progress; no production acceptance claim until the
-real DeepSeek receipt passes from a clean production-mode target**.
+Status: **personal production practice accepted for the bounded P6.4 lane**.
+The accepted executable source and redacted receipt digest are recorded in
+`docs/evidence/p6-4/production-practice-r0-decision.md`. This does not approve
+P34.7, activate the enterprise Planner/Multi-Agent Runtime or constitute a
+deployment.
 
 P6.4 is the personal edition's transition from a capable workbench to bounded
 Agent practice. It proves exactly three outcomes: uploaded-file RAG with
@@ -209,6 +212,14 @@ identity uniqueness across all six journeys and exact fixed acceptance rosters.
 The controller must not start or repair Docker Desktop, WSL, Hyper-V or a
 virtual disk. If the Docker daemon is not already healthy, live acceptance
 stops as not proved while static, unit, Compose-parse and receipt-contract work
-continues. As of the current engineering worktree, the daemon was not running,
-so the real DeepSeek six-journey receipt has not yet been produced and the
-status remains implementation in progress.
+continues.
+
+The bounded production-mode Gate subsequently completed from clean executable
+source HEAD `3c3d322e3f9871749da00525eaac9505062026b4`. Its six journeys used 16
+separate DeepSeek calls, both RAG journeys scored exact `1.0` fact and citation
+precision/recall, both artifacts passed trusted byte/DOM/offline checks, both
+Workspace journeys restored their original tree digests, and final cleanup
+closed every gate and removed every labeled Compose resource. See the final
+decision for the receipt SHA-256 and independent redaction audit. The result is
+P6.4 personal production-practice acceptance only; the enterprise production
+authorization tracks remain fail-closed.

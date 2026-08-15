@@ -6013,3 +6013,71 @@ migration head 0016; migration 0017 absent
 root .env not read; business database not accessed or migrated
 not pushed; not merged; not deployed
 ```
+
+### P6.4 personal production-practice acceptance (2026-08-16)
+
+The previously missing external-runtime fact is now closed. From clean
+executable source HEAD `3c3d322e3f9871749da00525eaac9505062026b4`, the outer
+disposable-target controller completed the real DeepSeek production-mode Gate
+and produced a strictly validated redacted receipt:
+
+```text
+schema = omnibase.p6-4.personal-agent-practice.v1
+receipt SHA-256 = 5e8145525e75feb84d6a28d3cf1007e078747f8e73ac7bd62b8b462b5978f0ef
+production_accepted = true
+provider/model = deepseek / deepseek-v4-flash
+models preflight = passed
+```
+
+All six required journeys passed: one- and three-Agent upload-to-Workspace RAG,
+one- and four-Agent artifact creation, and one- and six-Agent disposable
+Workspace modification with rollback. The exact serial rosters made
+`1 + 3 + 1 + 4 + 1 + 6 = 16` separate Provider calls with 16 unique invocation
+IDs and 16 unique task IDs. Both RAG journeys scored fact precision/recall and
+citation precision/recall at `1.0`, with two expected facts, two supported
+claims and zero missing, unsupported, wrong-chunk, unknown-chunk or
+statement-mismatch findings. The clock and offline slide HTML artifacts passed
+digest and DOM checks; the clock changed between samples. Both Workspace
+journeys applied exact CAS, passed the deterministic project check, rolled back
+under after-CAS and restored the original tree digest.
+
+The canary used production mode with the personal single-owner profile and one
+active invocation. Runtime and P6.4 practice were true only during that bounded
+window; Planner, enterprise Multi-Agent and MCP remained false. Before and
+after the window all five gates were false. Final cleanup proves credential
+revocation, disposable document and Workspace removal, canary closure and all
+feature gates closed. A post-Gate host audit found zero P6.4 containers,
+networks and volumes; the run root retained only the redacted receipt.
+
+The complete receipt was independently audited without printing its content.
+It contained zero matches for Provider-key shapes, Bearer tokens, JWTs, URLs,
+Windows physical paths, the private acceptance facts, prompts, full answers,
+source text or raw responses. The first audit draft alone had an incorrect
+expected total of 18 calls; correcting the arithmetic to 16 made the full audit
+pass. The receipt itself was not changed to suppress a product failure.
+
+Real-Gate forward fixes closed stable redacted error propagation, tenant scope
+across synchronous SSE generator pulls, over-constrained multi-Agent RAG
+queries, specialist reasoning/output bounds, DeepSeek economy thinking and
+strict whole-response fenced-JSON canonicalization. No executable source was
+changed after the accepted receipt. The documentation-only evidence commit
+records the result without claiming a second paid run.
+
+The authoritative decision is
+`docs/evidence/p6-4/production-practice-r0-decision.md`.
+
+```text
+P6_4_PERSONAL_PRODUCTION_PRACTICE_ACCEPTED
+REAL_DEEPSEEK_SINGLE_AND_3_TO_6_AGENT_MATRIX_PASSED
+UPLOAD_RAG_CITATION_ACCEPTANCE_PASSED
+OFFLINE_ARTIFACT_ACCEPTANCE_PASSED
+DISPOSABLE_WORKSPACE_CAS_AND_ROLLBACK_ACCEPTANCE_PASSED
+FINAL_PERSONAL_CANARY_CLOSED
+
+P34.7 Trust Policy remains a separate approval track
+enterprise P5 total production authorization is not implied
+Planner / enterprise Multi-Agent / MCP Runtime remain disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```

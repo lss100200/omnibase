@@ -2,6 +2,13 @@
 
 Status: **ENGINEERING_IMPLEMENTATION_COMPLETE_LIVE_PRODUCTION_ACCEPTANCE_NOT_YET_PROVEN**
 
+Historical note: the live-evidence blocker described by this engineering
+record was subsequently closed. The authoritative successor is
+`production-practice-r0-decision.md`, which records the accepted source HEAD,
+receipt digest, six real DeepSeek journeys, independent audit and remaining
+authority boundaries. This file remains unchanged below as the pre-acceptance
+engineering record.
+
 This record covers the engineering implementation on top of P6.3. It is not
 the final P6.4 receipt and does not claim that the clean production target has
 completed the real DeepSeek six-journey matrix.
