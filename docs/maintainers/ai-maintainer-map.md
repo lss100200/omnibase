@@ -2311,3 +2311,54 @@ host/VM/disk/ACL/guest fact stops as `CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN`
 and `NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`. Do not rerun the probe in the
 same acceptance round after its first environmental blocker; static source or
 AST fixes do not become VM evidence.
+
+## P6.4 bounded personal Agent practice maintenance boundary
+
+Read INV-081 and `docs/architecture/p6-4-personal-agent-practice.md` before
+changing the Browser practice route, upload-to-Workspace binding, deterministic
+citation scorer, trusted artifact renderer, ChangeSet controller, live runner,
+Compose acceptance overlay or final receipt validator.
+
+P6.4 is one Owner-declared request with exactly one or three through six
+separately metered serial Model Gateway calls. The final participant is the
+parent synthesizer. Specialists cannot wake peers, create descendants, replan,
+execute a tool or retry an unknown outcome. This lane does not activate the
+enterprise Planner or Multi-Agent Runtime. Planner, enterprise Multi-Agent and
+MCP must remain false throughout the time-limited canary.
+
+An uploaded-file acceptance must traverse the Browser multipart endpoint,
+immutable Workspace binding, worker ingestion and the authoritative ready
+Embedding lane. Tenant-only legacy documents and a decoy Workspace must remain
+invisible. Citation presence is not a score: the trusted local scorer requires
+exact fact/chunk/document precision and recall and rejects wrong statements
+wrapped in correct identifiers. Browser list/get/download/delete operations on
+a Workspace-private document must re-prove the matching active membership;
+missing bindings fail closed. Initial metadata failure after object upload must
+remove the object or veto. Prefer canonical v1 chunks and suppress a v2 shadow
+for the same source document.
+
+Artifact model output is only a closed JSON proposal. Trusted code may render
+`clock_html` or offline `slides_html`; it must not advertise HTML slides as
+PPTX or accept arbitrary HTML, URLs, scripts, templates or dependencies.
+Workspace output is likewise proposal-only and applies one allowlisted UTF-8
+replacement under exact before-CAS, read-back digest, deterministic project
+check and conflict-safe rollback in a disposable root. Never target the
+OmniBase source tree or a user Workspace during acceptance.
+
+The live matrix runner reads its Browser token and DeepSeek key only from fixed
+environment names, accepts no secret CLI option, targets only explicit loopback
+HTTP and is permanently unable to set `production_accepted=true`. The outer
+controller is the only acceptance authority. It must prove a clean source HEAD,
+perform a read-only healthy Linux Docker Engine preflight, prove closed before
+posture, activate the exact personal canary, execute all six journeys, revoke
+the Provider credential, delete the disposable documents, kill the canary,
+recreate the backend with every gate false, remove the exact labeled sentinel
+Compose project, recheck the unchanged clean HEAD and validate the strict
+redacted receipt before acceptance. Node metadata order and invocation/task
+identity uniqueness fail closed in both the coordinator and Browser stream.
+
+If Docker is not already healthy, report the live matrix as unexecuted. Do not
+start or repair Docker Desktop, WSL, Hyper-V or VHDX for this gate. Matrix unit
+tests, fake Providers, Compose parsing and offline receipt validation are
+necessary engineering evidence but do not substitute for the real DeepSeek
+production-mode receipt.

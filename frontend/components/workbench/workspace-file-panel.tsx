@@ -66,6 +66,11 @@ export interface WorkspaceFilePanelHandle {
     baseRequest: string,
     maximumContextCharacters: number,
   ): Promise<P6FileContextCompilation>
+  loadPracticeProposal(proposal: {
+    readonly path: string
+    readonly expectedBeforeSha256: string
+    readonly afterText: string
+  }): Promise<{ readonly path: string; readonly beforeSha256: string }>
 }
 
 type LocalChangeRecord = Omit<P6ChangeJournalRecord, 'sessionId'>
@@ -407,8 +412,46 @@ export const WorkspaceFilePanel = forwardRef<WorkspaceFilePanelHandle, Props>(
             },
           })
         },
+        async loadPracticeProposal(proposal) {
+          if (locked) throw new Error('p6_file_panel_locked')
+          if (!taskBinding) throw new Error('p6_practice_task_binding_missing')
+          const scopeFence = createP6AsyncScopeFence(() => liveScopeRef.current)
+          const metadata = entries.find(
+            (item) => item.kind === 'file' && item.logicalPath === proposal.path,
+          )
+          if (!metadata) throw new Error('p6_practice_target_not_authorized')
+          const entry = handlesRef.current.get(metadata.entryId)
+          if (!entry) throw new Error('p6_practice_target_not_authorized')
+          const snapshot = await readP6Snapshot(entry)
+          if (!scopeFence.isCurrent()) throw new Error('p6_file_scope_changed')
+          if (
+            snapshot.text === null ||
+            snapshot.version?.kind !== 'text' ||
+            snapshot.version.digest !== proposal.expectedBeforeSha256
+          ) {
+            throw new Error('p6_changeset_cas_drift')
+          }
+          const beforeSha256 = snapshot.version.digest
+          setPreview(snapshot)
+          setDraft(proposal.afterText)
+          setEntries((current) =>
+            current.map((item) => (item.entryId === metadata.entryId ? snapshot.metadata : item)),
+          )
+          setViews((current) => ({
+            ...current,
+            [metadata.entryId]: bindP6FileViewDigest(
+              setP6FileMode(
+                current[metadata.entryId] ?? createP6FileViewState(snapshot.metadata),
+                'OPEN',
+                true,
+              ),
+              beforeSha256,
+            ),
+          }))
+          return { path: proposal.path, beforeSha256 }
+        },
       }),
-      [views],
+      [entries, locked, taskBinding, views],
     )
 
     async function saveReviewedEdit(): Promise<void> {

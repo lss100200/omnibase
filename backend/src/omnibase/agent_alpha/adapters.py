@@ -35,11 +35,11 @@ from omnibase.agent_registry.models import (
     AgentVersionModel,
     WorkspaceAgentBindingModel,
 )
-from omnibase.control_plane.models import IdempotencyRecord
+from omnibase.control_plane.models import IdempotencyRecord, ResourceRecord
 from omnibase.control_plane.service import create_operation
 from omnibase.core.logging import get_logger
 from omnibase.db.models import Tenant
-from omnibase.db.tenant import User
+from omnibase.db.tenant import Embedding, User
 from omnibase.model_gateway import ModelUsage
 from omnibase.onboarding import ensure_local_model_runtime_anchor
 from omnibase.task_ledger.models import (
@@ -59,7 +59,12 @@ from omnibase.task_ledger.service import (
 )
 from omnibase.workspace_data.models import WorkspaceDerivedIndex
 from omnibase.workspace_data.tenant_models import WorkspaceDerivedChunkV2
-from omnibase.workspaces.models import Workspace, WorkspaceMembership, WorkspaceNode
+from omnibase.workspaces.models import (
+    ResourceScopeBinding,
+    Workspace,
+    WorkspaceMembership,
+    WorkspaceNode,
+)
 from omnibase.workspaces.service import (
     LeaseRejected,
     WorkspaceError,
@@ -412,12 +417,14 @@ class RegistryProfileResolver:
 class RagKnowledgeRetriever:
     """Read-only, capped, logical-identity RAG retrieval for the Alpha.
 
-    Retrieval reads only ready P34.6 derived-index generations belonging to the
-    requested tenant and Workspace.  Canonical tenant-wide RAG is deliberately
-    excluded because it cannot prove Workspace authorization.  When retrieval
-    itself fails the adapter logs a content-free diagnostic and returns no
-    chunks: the Alpha service then explicitly states that no context was
-    retrieved.  No physical locator ever leaves this adapter.
+    Retrieval reads ready P34.6 derived-index generations plus canonical v1
+    document chunks whose Resource Registry binding proves that the document is
+    active and private to the requested Workspace.  Unbound tenant-wide RAG is
+    deliberately excluded.  V1 is authoritative and written by every normal
+    ingestion; the optional v2 shadow lane cannot be required for visibility.
+    When retrieval itself fails the adapter logs a content-free diagnostic and
+    returns no chunks: the Alpha service then explicitly states that no context
+    was retrieved.  No physical locator ever leaves this adapter.
     """
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
@@ -439,14 +446,43 @@ class RagKnowledgeRetriever:
         session = _tenant_session(self._factory, tenant_id)
         try:
             query_expression = func.plainto_tsquery("pg_catalog.simple", query)
-            rank = func.ts_rank(WorkspaceDerivedChunkV2.tsv, query_expression)
-            rows = session.execute(
+            canonical_rank = func.ts_rank(Embedding.tsv, query_expression)
+            canonical_rows = session.execute(
+                select(
+                    Embedding.id,
+                    Embedding.document_id,
+                    Embedding.content,
+                    Embedding.metadata_,
+                    canonical_rank.label("rank"),
+                    Embedding.chunk_index,
+                )
+                .join(
+                    ResourceScopeBinding,
+                    ResourceScopeBinding.resource_id == Embedding.document_id,
+                )
+                .join(ResourceRecord, ResourceRecord.id == ResourceScopeBinding.resource_id)
+                .where(
+                    ResourceScopeBinding.tenant_id == tenant_id,
+                    ResourceScopeBinding.workspace_id == workspace_id,
+                    ResourceScopeBinding.scope_class == "workspace_private",
+                    ResourceRecord.tenant_id == tenant_id,
+                    ResourceRecord.kind == "document",
+                    ResourceRecord.policy_class == "workspace_private",
+                    ResourceRecord.state == "active",
+                    Embedding.tsv.op("@@")(query_expression),
+                )
+                .order_by(desc("rank"), Embedding.chunk_index)
+                .limit(top_k)
+            ).all()
+            derived_rank = func.ts_rank(WorkspaceDerivedChunkV2.tsv, query_expression)
+            derived_rows = session.execute(
                 select(
                     WorkspaceDerivedChunkV2.id,
                     WorkspaceDerivedIndex.source_resource_id,
                     WorkspaceDerivedChunkV2.content,
                     WorkspaceDerivedChunkV2.metadata_,
-                    rank.label("rank"),
+                    derived_rank.label("rank"),
+                    WorkspaceDerivedChunkV2.chunk_index,
                 )
                 .join(
                     WorkspaceDerivedIndex,
@@ -463,6 +499,14 @@ class RagKnowledgeRetriever:
                 .order_by(desc("rank"), WorkspaceDerivedChunkV2.chunk_index)
                 .limit(top_k)
             ).all()
+            canonical_document_ids = {str(row[1]) for row in canonical_rows}
+            nonduplicated_derived_rows = tuple(
+                row for row in derived_rows if str(row[1]) not in canonical_document_ids
+            )
+            rows = sorted(
+                (*canonical_rows, *nonduplicated_derived_rows),
+                key=lambda row: (-float(row[4] or 0.0), int(row[5])),
+            )[:top_k]
         except Exception as exc:
             log.warning(
                 "agent_alpha.workspace_rag_unavailable",
@@ -473,7 +517,7 @@ class RagKnowledgeRetriever:
             session.close()
         chunks: list[AlphaContextChunk] = []
         total = 0
-        for chunk_id, source_resource_id, raw_content, metadata, score in rows:
+        for chunk_id, source_resource_id, raw_content, metadata, score, _ in rows:
             content = str(raw_content)[:_ALPHA_MAX_RAG_CHUNK_CHARACTERS]
             total += len(content)
             if total > _ALPHA_MAX_RAG_CONTEXT_CHARACTERS:

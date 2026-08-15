@@ -21,6 +21,7 @@ import {
   Square,
   User,
   Users,
+  Upload,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -84,6 +85,7 @@ import {
   type P6TaskBinding,
   type WorkspaceFilePanelHandle,
 } from '@/components/workbench/workspace-file-panel'
+import { PersonalAgentPracticePanel } from '@/components/workbench/personal-agent-practice-panel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -159,6 +161,7 @@ export function PersonalEngineeringWorkbench() {
   const [usage, setUsage] = useState<AgentAlphaUsage | null>(null)
   const [taskBinding, setTaskBinding] = useState<P6TaskBinding | null>(null)
   const [fileMutating, setFileMutating] = useState(false)
+  const [practiceRunning, setPracticeRunning] = useState(false)
   const [modelSettingsProjection, setModelSettingsProjection] =
     useState<ModelSettingsProjection | null>(null)
   const [credentials, setCredentials] = useState<ProviderCredentialRead[]>([])
@@ -188,7 +191,7 @@ export function PersonalEngineeringWorkbench() {
     identityReady ? ['p6-workspaces', tenant!.id, user!.id] : null,
     () => workspacesApi.list(),
   )
-  const { data: documents } = useSWR(
+  const { data: documents, mutate: mutateDocuments } = useSWR(
     identityReady ? ['p6-documents', tenant!.id, user!.id] : null,
     () => documentsApi.list({ limit: 8 }),
   )
@@ -774,7 +777,7 @@ export function PersonalEngineeringWorkbench() {
         workspaces={workspaces?.items ?? []}
         workspaceError={Boolean(workspaceError)}
         onWorkspaceChange={(value) => {
-          if (phase !== 'idle' || preparing || fileMutating) return
+          if (phase !== 'idle' || preparing || fileMutating || practiceRunning) return
           setTaskBinding(null)
           setWorkspaceId(value)
           mutate((current) => ({
@@ -787,11 +790,12 @@ export function PersonalEngineeringWorkbench() {
         profiles={profiles}
         agentVersionId={agentVersionId}
         onAgentChange={(value) => {
-          if (phase === 'idle' && !preparing && !fileMutating) setAgentVersionId(value)
+          if (phase === 'idle' && !preparing && !fileMutating && !practiceRunning)
+            setAgentVersionId(value)
         }}
         posture={posture}
         tokens={estimateSessionTokens(activeSession)}
-        locked={phase !== 'idle' || preparing || fileMutating}
+        locked={phase !== 'idle' || preparing || fileMutating || practiceRunning}
         gear={gear}
         onGearChange={setGear}
       />
@@ -803,9 +807,9 @@ export function PersonalEngineeringWorkbench() {
           archiveMode={archiveMode}
           onQuery={setQuery}
           onArchiveMode={setArchiveMode}
-          locked={phase !== 'idle' || preparing || fileMutating}
+          locked={phase !== 'idle' || preparing || fileMutating || practiceRunning}
           onCreate={() => {
-            if (phase !== 'idle' || preparing || fileMutating) return
+            if (phase !== 'idle' || preparing || fileMutating || practiceRunning) return
             const result = tryAddSession(state, '新会话', undefined, workspaceId || null)
             if (!result.ok) {
               toast.error('无法新建会话', {
@@ -816,19 +820,19 @@ export function PersonalEngineeringWorkbench() {
             setState(result.state)
           }}
           onSelect={(id) => {
-            if (phase !== 'idle' || preparing || fileMutating) return
+            if (phase !== 'idle' || preparing || fileMutating || practiceRunning) return
             setTaskBinding(null)
             const target = state.sessions.find((session) => session.id === id)
             setWorkspaceId(target?.workspaceId ?? '')
             mutate((current) => setActiveSession(current, id))
           }}
           onPin={(session) => {
-            if (phase === 'idle' && !preparing && !fileMutating) {
+            if (phase === 'idle' && !preparing && !fileMutating && !practiceRunning) {
               mutate((current) => setSessionPinned(current, session.id, !session.pinned))
             }
           }}
           onArchive={(session) => {
-            if (phase === 'idle' && !preparing && !fileMutating) {
+            if (phase === 'idle' && !preparing && !fileMutating && !practiceRunning) {
               mutate((current) =>
                 setSessionArchived(current, session.id, session.archivedAt === null),
               )
@@ -841,10 +845,11 @@ export function PersonalEngineeringWorkbench() {
           input={input}
           streaming={streaming}
           phase={preparing ? 'preparing' : phase}
-          interactionLocked={fileMutating}
+          interactionLocked={fileMutating || practiceRunning}
           ready={
             modelSettingsReady &&
             !fileMutating &&
+            !practiceRunning &&
             canInvokeAgent(posture, input, workspaceId, agentVersionId)
           }
           maximumCharacters={P6_AGENT_ALPHA_MAX_MESSAGE_CHARACTERS}
@@ -877,6 +882,34 @@ export function PersonalEngineeringWorkbench() {
             setModelEditorCredential(setting?.override_credential_id ?? '')
             setModelEditorName(setting?.requested_model_id ?? '')
           }}
+          onUploadKnowledge={async (file) => {
+            if (!workspaceId) {
+              toast.error('请先选择 Workspace')
+              return
+            }
+            try {
+              await documentsApi.upload(file, workspaceId)
+              await mutateDocuments()
+              toast.success('文件已绑定到当前 Workspace，索引完成后 Agent 即可引用')
+            } catch (error) {
+              toast.error(getApiErrorMessage(error, '文件上传失败'))
+            }
+          }}
+          practicePanel={
+            <PersonalAgentPracticePanel
+              workspaceId={workspaceId}
+              agentVersionId={agentVersionId}
+              disabled={phase !== 'idle' || preparing || fileMutating || practiceRunning}
+              practiceActive={posture?.personal_practice_active ?? false}
+              onTaskBinding={setTaskBinding}
+              onRunningChange={setPracticeRunning}
+              onLoadWorkspaceProposal={async (proposal) => {
+                const panel = filePanelRef.current
+                if (!panel) throw new Error('p6_file_panel_unavailable')
+                await panel.loadPracticeProposal(proposal)
+              }}
+            />
+          }
           filePanel={
             <WorkspaceFilePanel
               ref={filePanelRef}
@@ -884,7 +917,7 @@ export function PersonalEngineeringWorkbench() {
               workspaceId={workspaceId}
               sessionId={activeSession.id}
               taskBinding={taskBinding}
-              locked={phase !== 'idle' || preparing || fileMutating}
+              locked={phase !== 'idle' || preparing || fileMutating || practiceRunning}
               onMutationChange={setFileMutating}
             />
           }
@@ -1463,6 +1496,8 @@ function ContextRail({
   modelSettings,
   onTimeline,
   onConfigureModel,
+  onUploadKnowledge,
+  practicePanel,
   filePanel,
 }: {
   workspace?: WorkspaceRead
@@ -1477,8 +1512,12 @@ function ContextRail({
   modelSettings: AgentModelSettingRead[]
   onTimeline: () => void
   onConfigureModel: (employee: EmployeeDefinition) => void
+  onUploadKnowledge: (file: File) => Promise<void>
+  practicePanel: React.ReactNode
   filePanel: React.ReactNode
 }) {
+  const knowledgeInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingKnowledge, setUploadingKnowledge] = useState(false)
   const provider = getP6ProviderProfile(modelIdentity)
   const selectedGear = P6_GEAR_PROFILES[gear]
   const cost = estimateP6Cost({
@@ -1526,6 +1565,30 @@ function ContextRail({
               </div>
             </RailSection>
             <RailSection icon={FileText} title="文件与知识">
+              <input
+                ref={knowledgeInputRef}
+                type="file"
+                className="hidden"
+                accept=".pdf,.docx,.txt,.md"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!file || uploadingKnowledge) return
+                  setUploadingKnowledge(true)
+                  void onUploadKnowledge(file).finally(() => setUploadingKnowledge(false))
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mb-2 w-full"
+                disabled={!workspace || uploadingKnowledge}
+                onClick={() => knowledgeInputRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {uploadingKnowledge ? '上传并绑定中' : '上传到当前 Workspace'}
+              </Button>
               {documents.slice(0, 4).map((document) => (
                 <div
                   key={document.id}
@@ -1539,6 +1602,9 @@ function ContextRail({
                 </div>
               ))}
               {filePanel}
+            </RailSection>
+            <RailSection icon={Sparkles} title="个人受控协作">
+              {practicePanel}
             </RailSection>
             <RailSection icon={Users} title="预制员工">
               <div className="space-y-1">

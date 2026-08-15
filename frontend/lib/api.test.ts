@@ -470,6 +470,46 @@ test('Agent Alpha 401 without a refresh token never exposes the internal refresh
   assert.equal(fetchCount, 1)
 })
 
+test('P6.4 practice stream uses the closed workspace route and preserves its roster', async () => {
+  setTokens('access-token', 'refresh-token', Date.now() + 60_000)
+  const controller = new AbortController()
+  let observedUrl: string | URL | Request = ''
+  let observedRequest: RequestInit = {}
+  globalThis.fetch = async (input, init = {}) => {
+    observedUrl = input
+    observedRequest = init
+    return new Response(null, { status: 200 })
+  }
+
+  const response = await agentAlphaApi.practiceStream(
+    'workspace-1',
+    {
+      agent_version_id: 'version-1',
+      scenario: 'rag',
+      participant_count: 3,
+      specialist_roles: ['data', 'qa'],
+      task: 'Answer from the uploaded Workspace evidence.',
+      top_k: 5,
+    },
+    { signal: controller.signal, idempotencyKey: 'stable-p64-key' },
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal(observedUrl, '/api/v1/workspaces/workspace-1/agent-alpha/practice')
+  assert.equal(observedRequest.method, 'POST')
+  assert.equal(observedRequest.signal, controller.signal)
+  assert.equal(new Headers(observedRequest.headers).get('Idempotency-Key'), 'stable-p64-key')
+  assert.equal(new Headers(observedRequest.headers).get('Authorization'), 'Bearer access-token')
+  assert.deepEqual(JSON.parse(String(observedRequest.body)), {
+    agent_version_id: 'version-1',
+    scenario: 'rag',
+    participant_count: 3,
+    specialist_roles: ['data', 'qa'],
+    task: 'Answer from the uploaded Workspace evidence.',
+    top_k: 5,
+  })
+})
+
 test('Agent Alpha cancel uses the versioned workspace invocation path', async () => {
   let requestUrl = ''
   api.defaults.adapter = async (config) => {

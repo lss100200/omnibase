@@ -1144,6 +1144,16 @@
         "docs/runbooks/p6-3-windows-companion-install.md"
       ],
       "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-081",
+      "title": "P6.4 personal Agent practice uses real bounded calls, local scoring/rendering and rollback",
+      "document": "docs/maintainers/security-invariants.md#inv-081-p64-personal-agent-practice-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_practice/**",
+        "docs/architecture/p6-4-personal-agent-practice.md"
+      ],
+      "test_paths": ["backend/tests/test_p6_4_agent_practice.py"]
     }
   ],
   "modules": [
@@ -4064,6 +4074,95 @@
         "Fall back to generic model adaptation while preserving exact requested/actual model identity; never retry with broader vendor-only fields.",
         "Correct README/public-preview source and report live deployment separately; do not claim omnibase.chat was rebuilt without direct evidence.",
         "Discard only an unpopulated Companion preview output and forward-fix source; never mutate Docker, WSL, Hyper-V or VHDX to repair packaging."
+      ]
+    },
+    {
+      "id": "p6-4-personal-agent-practice",
+      "name": "P6.4 bounded personal single and 3-6 Agent production practice",
+      "source_paths": [
+        "backend/src/omnibase/agent_practice/**",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/documents/router.py",
+        "backend/src/omnibase/documents/service.py",
+        "backend/src/omnibase/workers/tasks.py",
+        "backend/tests/test_p6_4_*.py",
+        "frontend/components/workbench/personal-agent-practice-panel.tsx",
+        "frontend/lib/p6-practice-*.ts",
+        "scripts/production/run_p6_4_personal_agent_practice.py",
+        "scripts/production/run_p6_4_personal_agent_practice_gate.py",
+        "scripts/production/test_run_p6_4_personal_agent_practice*.py",
+        "deployment/personal-production/p6-4-acceptance.compose.yml",
+        "docs/architecture/p6-4-personal-agent-practice.md",
+        "docs/maintainers/security-invariants.md",
+        "docs/evidence/p6-4/**",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_practice/service.py:PersonalAgentPracticeService",
+        "backend/src/omnibase/agent_practice/scoring.py:score_citations",
+        "backend/src/omnibase/agent_practice/artifacts.py:render_clock_html",
+        "backend/src/omnibase/agent_practice/artifacts.py:render_slide_deck_html",
+        "backend/src/omnibase/agent_practice/changesets.py:apply_text_change",
+        "backend/src/omnibase/agent_practice/changesets.py:rollback_text_change",
+        "backend/src/omnibase/agent_practice/posture.py:personal_practice_posture",
+        "backend/src/omnibase/agent_practice/receipt.py:validate_personal_practice_receipt",
+        "backend/src/omnibase/agent_practice/alpha_coordinator.py:DurablePersonalPracticeCoordinator",
+        "backend/src/omnibase/agent_alpha/router.py:run_alpha_practice",
+        "scripts/production/run_p6_4_personal_agent_practice.py:main",
+        "scripts/production/run_p6_4_personal_agent_practice_gate.py:main"
+      ],
+      "public_interfaces": [
+        "One or 3-6 request-scoped serial Model Gateway calls with a final parent synthesizer",
+        "Deterministic exact fact-to-chunk citation scoring",
+        "Closed offline clock and HTML slide artifact rendering",
+        "Disposable-root UTF-8 ChangeSet CAS apply and conflict-safe rollback",
+        "Browser upload to immutable Workspace knowledge binding with membership-scoped document lifecycle and ready Agent-readable RAG",
+        "Canonical-v1-first RAG retrieval with same-source v2 shadow suppression",
+        "Strict redacted six-journey production receipt validator",
+        "Disposable production target controller with clean-source and healthy-Linux-Docker preflight, before/during/after gate and cleanup proof",
+        "Strict production personal-practice posture with Planner, enterprise Multi-Agent and MCP disabled"
+      ],
+      "depends_on": [
+        "p6-3-personal-extensions",
+        "p6-personal-engineering-workbench",
+        "agent-model-gateway",
+        "agent-alpha-workbench",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-060",
+        "INV-061",
+        "INV-066",
+        "INV-067",
+        "INV-068",
+        "INV-073",
+        "INV-079",
+        "INV-081"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py -q",
+        "python -m pytest backend/tests/test_model_gateway.py backend/tests/test_agent_alpha_personal.py backend/tests/test_agent_alpha_personal_router.py backend/tests/test_p6_0_d2_model_settings.py -q",
+        "python -m pytest backend/tests/test_documents.py backend/tests/test_document_api_contract.py backend/tests/test_document_lifecycle.py backend/tests/test_upload_router.py backend/tests/test_upload_queue.py backend/tests/test_upload_no_sync_ingest.py backend/tests/test_upload_failure.py backend/tests/test_workers.py backend/tests/test_rate_limit.py backend/tests/test_rag_store.py backend/tests/test_rag_sse.py -q",
+        "python -m mypy --ignore-missing-imports backend/src/omnibase/agent_practice backend/src/omnibase/agent_alpha/adapters.py backend/src/omnibase/agent_alpha/router.py backend/src/omnibase/agent_alpha/schemas.py backend/src/omnibase/documents/router.py backend/src/omnibase/documents/service.py backend/src/omnibase/workers/tasks.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py",
+        "python -m ruff check backend/src/omnibase/agent_practice backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py",
+        "python -m ruff format --check backend/src/omnibase/agent_practice backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py",
+        "docker compose --env-file .env.example -f deployment/personal-production/compose.yml -f deployment/personal-production/p6-4-acceptance.compose.yml -f deployment/production/personal-runtime-canary.compose.example.yml config --quiet with explicit P6.4 host path overrides",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable P6_4_PERSONAL_PRACTICE_ENABLED and restore Runtime, Planner, Multi-Agent and MCP gates to false.",
+        "Stop a roster on the first unknown, cancelled, timed-out or identity-drifted member; never auto-replay or synthesize a success.",
+        "Discard only a run-scoped artifact scratch root after exact inventory; never modify OmniBase source or a user Workspace during acceptance.",
+        "Rollback a ChangeSet only while the live after digest matches; preserve a conflict rather than overwrite external edits.",
+        "Revoke the run-scoped Provider credential and retain only the redacted digest/metric receipt.",
+        "The matrix fragment is never production acceptance; only the outer controller may set production_accepted=true after strict receipt validation, canary closure, all gates false and zero labeled Compose resources.",
+        "If Docker is not already healthy, stop before infrastructure activation; do not start or repair Docker Desktop, WSL, Hyper-V or a virtual disk to manufacture P6.4 evidence."
       ]
     }
   ]

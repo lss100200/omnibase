@@ -282,9 +282,10 @@ export const documentsApi = {
 
   get: (id: string) => api.get<DocumentRead>(`/documents/${id}`).then((r) => r.data),
 
-  upload: (file: File) => {
+  upload: (file: File, workspaceId?: string) => {
     const formData = new FormData()
     formData.append('file', file)
+    if (workspaceId) formData.append('workspace_id', workspaceId)
     return api
       .post<DocumentUploadResponse>('/documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -361,6 +362,15 @@ export interface AgentAlphaInvokePayload {
   readonly top_k?: number
   readonly reasoning_gear?: 'economy' | 'standard' | 'deep' | 'audit'
   readonly retry_of?: string | null
+}
+
+export interface AgentAlphaPracticePayload {
+  readonly agent_version_id: string
+  readonly scenario: 'rag' | 'artifact' | 'workspace'
+  readonly participant_count: 1 | 3 | 4 | 5 | 6
+  readonly specialist_roles: readonly Exclude<P6EmployeeRoleId, 'parent'>[]
+  readonly task: string
+  readonly top_k?: number
 }
 
 export interface AgentInstallation {
@@ -608,6 +618,8 @@ export const agentAlphaApi = {
         personal_runtime_active: boolean
         personal_canary_id: string | null
         personal_canary_expires_at: string | null
+        personal_practice_active: boolean
+        personal_practice_blockers: string[]
       }>(`/workspaces/${workspaceId}/agent-alpha/status`)
       .then((response) => response.data),
 
@@ -624,6 +636,33 @@ export const agentAlphaApi = {
       })
       if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
       return fetch(apiUrl(`/workspaces/${workspaceId}/agent-alpha/invoke`), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: options.signal,
+      })
+    }
+    const response = await requestStream(getAccessToken())
+    return refreshStreamAfterUnauthorized(
+      response,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
+  },
+
+  practiceStream: async (
+    workspaceId: string,
+    payload: AgentAlphaPracticePayload,
+    options: { signal?: AbortSignal; idempotencyKey?: string } = {},
+  ): Promise<Response> => {
+    const key = options.idempotencyKey ?? crypto.randomUUID()
+    const requestStream = (accessToken: string | null): Promise<Response> => {
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': key,
+      })
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+      return fetch(apiUrl(`/workspaces/${workspaceId}/agent-alpha/practice`), {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),

@@ -4021,3 +4021,57 @@ host, editing ACLs or creating/moving/resizing disks is forbidden.
 - `scripts/release/test_build_windows_release.py`;
 - help/location/plan output plus root/UNC/ADS/reparse/existing-target attacks;
 - at most one read-only VM preflight and explicit no-mutation report.
+
+## INV-081 p64-personal-agent-practice-boundary
+
+P6.4 is a request-scoped personal practice lane for exactly three scenarios:
+uploaded-file RAG with deterministic citation scoring, bounded offline artifact
+creation, and audited rollback-capable modification of an explicitly disposable
+Workspace. Allowed participant counts are one or three through six, including
+the final parent. Every participant is a separate, identity-checked Model
+Gateway call in a fixed Owner-declared serial roster; one prompt imitating
+multiple roles is not evidence. Roles cannot self-wake, delegate, recurse,
+replan, execute tools or automatically retry an unknown outcome.
+
+The practice window requires `ENV=production`, exact active single-Owner
+personal canary, `P6_4_PERSONAL_PRACTICE_ENABLED=true` and Agent Runtime true
+while Planner, enterprise Multi-Agent and MCP remain false. Defaults and final
+state are all false. Model output is always an untrusted JSON proposal. Trusted
+local code alone scores citations, renders a closed offline artifact type, or
+applies an allowlisted UTF-8 ChangeSet under before-CAS, post-write digest and
+conflict-safe rollback. No shell, arbitrary network, arbitrary file tool, MCP,
+SQL or background autonomy is introduced.
+
+An upload acceptance must traverse the Browser document endpoint, immutable
+Workspace binding and ready index; a DB fixture cannot prove upload-to-RAG.
+Citation presence alone is insufficient: fixed facts require exact
+fact/chunk/document precision and recall with no decoy or unsupported claim.
+Workspace-private document list/get/download/delete paths require the exact
+live Workspace membership; an unbound or missing binding fails closed while
+legacy tenant documents retain their existing tenant scope. If the initial
+Document/Resource/Binding transaction fails after object upload, the object
+must be removed and unverified compensation is a veto. Canonical v1 Embedding
+chunks are authoritative; a v2 shadow for the same source document cannot be
+returned as a duplicate citation candidate.
+Artifacts require real bytes, bounded media type/size and SHA-256. Workspace
+tests run only in a run-scoped disposable fixture and must restore its original
+tree digest. The redacted receipt contains logical IDs, digests and numeric
+metrics only; Provider keys, Authorization/JWT, prompts, full answers, source
+text, physical paths and raw errors are forbidden. Node metadata order is
+exactly meta, citations, usage and terminal completion; invocation/task
+identities are unique within a roster and across the six-journey receipt. A
+model identity drift, member unknown/cancel/timeout, unsafe path, CAS drift,
+partial write, failed rollback, secret-shaped receipt field or final open gate
+is a veto. The outer controller requires a clean source HEAD before any
+Provider call or target creation and rechecks the unchanged clean HEAD before
+receipt creation. It performs only read-only `docker version`/`docker info`
+health checks and must stop before target preparation unless an already-running
+Linux Engine is healthy.
+
+**Required verification**
+
+- `backend/tests/test_p6_4_agent_practice.py`;
+- focused Model Gateway and Personal Agent Alpha regressions;
+- clean production-mode single/3/4/6-Agent live DeepSeek receipt;
+- exact upload-to-Workspace-RAG and ChangeSet rollback product journeys;
+- final Runtime/Planner/Multi-Agent/MCP false and disposable cleanup proof.

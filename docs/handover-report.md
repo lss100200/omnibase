@@ -5885,3 +5885,84 @@ SHA-256 = cfeb929a4fa1cde2481d922e31016e44535cf87ec9b2ee15d9053228af0df711
 
 The clean-Windows VM probe was not run a second time. Docker/WSL/Hyper-V/VHDX,
 the root `.env`, business databases and production activation remained untouched.
+
+### P6.4 bounded personal Agent practice engineering implementation (2026-08-15)
+
+P6.4 is the personal edition's bounded transition from a capable workbench to
+real Agent practice. It covers exactly three scenarios, each once with one
+Agent and once with an Owner-declared 3-6 Agent roster: uploaded-file RAG with
+deterministic citation accuracy, trusted small artifact generation, and one
+audited reversible modification of a disposable Workspace. Participants are
+separate durable Agent Alpha calls in a fixed serial roster; the final parent
+synthesizes. Planner, enterprise Multi-Agent and MCP Runtime remain disabled.
+
+The engineering implementation now includes:
+
+- Browser upload binding from `Document.id` to an immutable
+  Workspace-private Resource and the authoritative ready Embedding lane;
+  Browser reads/deletes require the exact live Workspace membership, an initial
+  metadata-commit failure compensates the uploaded object, and canonical v1
+  chunks suppress a same-source v2 shadow;
+- durable practice API/UI with per-node invocation, task, actual model, Token
+  usage, exact metadata order, unique identities, progress and current-node
+  cancellation;
+- local exact fact/chunk/document citation scoring, including statement-text
+  mismatch rejection, answer citation-label verification, per-fact document
+  isolation and two-document decoy Workspace exclusion;
+- trusted dependency-free clock HTML and offline HTML slides, with no PPTX
+  claim or arbitrary template execution;
+- exact-before-CAS Workspace replacement, read-back verification,
+  deterministic project check, lexical symlink/junction/reparse rejection,
+  atomic replace and conflict-safe rollback;
+- strict `omnibase.p6-4.personal-agent-practice.v1` redacted receipt validation;
+- a loopback-only live matrix runner whose CLI cannot accept secrets and whose
+  fragment is permanently forced to `production_accepted=false`;
+- an outer disposable production controller that alone may accept after
+  clean unchanged source binding, read-only healthy Linux Docker preflight,
+  before/during/after gate proof, Provider/document cleanup, canary kill, zero
+  labeled Compose resources and final receipt validation;
+- a production Compose overlay with a run-scoped embedding prewarm and one
+  bounded ingestion worker, without Planner, enterprise Multi-Agent or MCP.
+
+Latest local evidence:
+
+```text
+P6.4 focused backend + runner/controller = 100 passed
+Document/Worker/RAG/rate-limit related regression = 126 passed
+Model Gateway/personal Agent/per-role model regression = 81 passed
+Frontend unit tests = 196 passed
+Frontend typecheck / lint / changed-path Prettier / production build = passed
+Full frontend Prettier baseline remains dirty in 95 pre-existing files and is
+  not claimed as clean; no unrelated formatting rewrite was made
+Ruff changed-path check / format --check = passed
+targeted Mypy = 17 source files, no issues
+maintainer map = valid (71 invariants / 50 modules / 345 entrypoints)
+maintainer benchmark = valid (3 plans / 8 scenarios)
+P5.1A/P5.2A/P5.3A sealed-contract regression = 407 passed after raw-byte
+  reseal in Registry -> Task Ledger -> Planner order
+Broad Windows-host non-integration (Linux launcher module excluded) =
+  2863 passed / 42 skipped / 16 deselected / 13 failed; all 13 are outside
+  P6.4: 11 require POSIX/Linux primitives and 2 reproduce only under the host
+  FastAPI 0.141.1 / Starlette 1.3.1 instead of the locked FastAPI 0.116.2 /
+  Starlette 0.48.0 route-introspection behavior
+Compose merged config --quiet = passed using explicit .env.example and
+  non-secret placeholder host coordinates
+```
+
+A current read-only `docker version` / `docker info` probe again found the
+`dockerDesktopLinuxEngine` pipe absent. The controller stops before target
+preparation and does not start or repair Docker Desktop, WSL, Hyper-V or a
+virtual disk. Therefore the real DeepSeek six-journey production receipt
+remains unexecuted and no production acceptance claim is permitted yet.
+
+```text
+P6_4_ENGINEERING_IMPLEMENTATION_ADVANCED_SECURITY_FORWARD_FIX_APPLIED
+P6_4_FOCUSED_100_PASSED
+DOCKER_LINUX_ENGINE_PIPE_ABSENT_READ_ONLY_PROBE
+REAL_DEEPSEEK_LIVE_MATRIX_PENDING
+PRODUCTION_ACCEPTANCE_NOT_PROVEN
+Planner / enterprise Multi-Agent / MCP Runtime disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```

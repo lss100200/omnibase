@@ -31,6 +31,7 @@ from omnibase.agent_alpha.personal import (
 from omnibase.agent_alpha.schemas import (
     AlphaCancelResponse,
     AlphaInvokeRequest,
+    AlphaPracticeRunRequest,
     AlphaProfileList,
     AlphaProfileRead,
     AlphaStatusResponse,
@@ -41,6 +42,8 @@ from omnibase.agent_alpha.service import (
     AgentAlphaUnavailable,
     UnavailableAgentAlpha,
 )
+from omnibase.agent_practice.alpha_coordinator import DurablePersonalPracticeCoordinator
+from omnibase.agent_practice.posture import personal_practice_posture
 from omnibase.tenants.dependencies import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/agent-alpha", tags=["agent-alpha"])
@@ -133,6 +136,7 @@ def alpha_status(
             actor_user_id=ctx.user_id,
             profile=selected_profile,
         )
+    practice = personal_practice_posture(os.environ, participant_count=1)
     return AlphaStatusResponse(
         engineering_implemented=True,
         lite_gate_enabled=bool(lite["lite_gate_enabled"]),
@@ -167,6 +171,10 @@ def alpha_status(
         personal_runtime_active=bool(personal and personal.assembled),
         personal_canary_id=personal.canary_id if personal is not None else None,
         personal_canary_expires_at=(personal.canary_expires_at if personal is not None else None),
+        personal_practice_active=bool(
+            personal is not None and personal.assembled and practice.activation_allowed
+        ),
+        personal_practice_blockers=list(practice.blockers),
     )
 
 
@@ -243,6 +251,97 @@ def invoke_alpha(
             yield ("event: error\n" f"data: {json.dumps({'code': exc.code})}\n\n")
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+@router.post("/practice")
+def run_alpha_practice(
+    workspace_id: str,
+    payload: AlphaPracticeRunRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    alpha: AgentAlphaService | PersonalCanaryAgentAlpha | UnavailableAgentAlpha = Depends(
+        get_agent_alpha
+    ),
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> StreamingResponse:
+    """Run one Owner-declared serial personal roster over durable Alpha calls."""
+
+    if payload.participant_count != len(payload.specialist_roles) + 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "practice_roster_count_mismatch",
+                    "message": "Participant count must include all specialists and the parent",
+                }
+            },
+        )
+    if len(set(payload.specialist_roles)) != len(payload.specialist_roles):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "practice_duplicate_role",
+                    "message": "Practice specialist roles must be unique",
+                }
+            },
+        )
+    posture = personal_practice_posture(
+        os.environ,
+        participant_count=payload.participant_count,
+    )
+    if not posture.activation_allowed:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": {
+                    "code": "personal_practice_unavailable",
+                    "message": "Personal Agent practice is unavailable",
+                }
+            },
+        )
+    if not isinstance(alpha, PersonalCanaryAgentAlpha):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": {
+                    "code": "personal_practice_unavailable",
+                    "message": "Personal Agent practice is unavailable",
+                }
+            },
+        )
+    key = idempotency_key or uuid4().hex
+    if _SAFE_KEY.fullmatch(key) is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "invalid_idempotency_key", "message": "Invalid key"}},
+        )
+    coordinator = DurablePersonalPracticeCoordinator(alpha)
+
+    def _practice_stream() -> Iterator[str]:
+        try:
+            for event in coordinator.run(
+                tenant_id=ctx.tenant_id,
+                tenant_schema=ctx.schema_name,
+                workspace_id=_logical_uuid(workspace_id),
+                actor_user_id=ctx.user_id,
+                agent_version_id=payload.agent_version_id,
+                scenario=payload.scenario,
+                specialist_roles=tuple(payload.specialist_roles),
+                task=payload.task,
+                top_k=payload.top_k,
+                idempotency_key=key,
+            ):
+                yield (
+                    f"event: {event.kind}\n"
+                    f"data: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
+                )
+        except (AgentAlphaError, RuntimeError, ValueError) as exc:
+            code = str(exc)
+            if not code.startswith("practice_"):
+                code = "personal_practice_failed"
+            yield f"event: error\ndata: {json.dumps({'code': code})}\n\n"
+
+    return StreamingResponse(_practice_stream(), media_type="text/event-stream")
 
 
 @router.post("/invocations/{invocation_id}/cancel", response_model=AlphaCancelResponse)

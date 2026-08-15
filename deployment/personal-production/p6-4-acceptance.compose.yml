@@ -1,0 +1,138 @@
+services:
+  p6-model-prewarm:
+    image: omnibase-backend:personal-production
+    restart: "no"
+    command:
+      - python
+      - -c
+      - >-
+        from sentence_transformers import SentenceTransformer;
+        SentenceTransformer('BAAI/bge-small-zh-v1.5', device='cpu',
+        cache_folder='/app/models/cache', local_files_only=False)
+    environment:
+      HF_HOME: /app/models/cache
+      MODEL_CACHE_DIR: /app/models/cache
+    volumes:
+      - type: bind
+        source: ${P6_4_MODEL_CACHE_HOST_ROOT:?set an absolute run-scoped model cache root}
+        target: /app/models/cache
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - edge
+
+  backend:
+    depends_on:
+      p6-model-prewarm:
+        condition: service_completed_successfully
+    environment:
+      P6_4_PERSONAL_PRACTICE_ENABLED: "true"
+      MCP_RUNTIME_ENABLED: "false"
+      MODEL_DOWNLOAD_ENABLED: "false"
+      MODEL_CACHE_DIR: /app/models/cache
+    volumes:
+      - type: bind
+        source: ${P6_4_MODEL_CACHE_HOST_ROOT:?set an absolute run-scoped model cache root}
+        target: /app/models/cache
+        read_only: true
+
+  celery-worker:
+    image: omnibase-backend:personal-production
+    restart: "no"
+    command:
+      [
+        "celery",
+        "-A",
+        "omnibase.workers.app.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=1",
+      ]
+    depends_on:
+      p6-model-prewarm:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ENV: production
+      LOG_LEVEL: INFO
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in the operator env file}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET in the operator env file}
+      MINIO_SECURE: "false"
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL in the operator env file}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the operator env file}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:?set PROVIDER_CREDENTIAL_ENCRYPTION_KEY in the operator env file}
+      MEMORY_CONTENT_ENCRYPTION_KEY: ${MEMORY_CONTENT_ENCRYPTION_KEY:?set MEMORY_CONTENT_ENCRYPTION_KEY in the operator env file}
+      PROVIDER_ENDPOINT_ALLOWLIST: ${PROVIDER_ENDPOINT_ALLOWLIST:?set PROVIDER_ENDPOINT_ALLOWLIST in the operator env file}
+      MODEL_DOWNLOAD_ENABLED: "false"
+      MODEL_CACHE_DIR: /app/models/cache
+    volumes:
+      - type: bind
+        source: ${P6_4_MODEL_CACHE_HOST_ROOT:?set an absolute run-scoped model cache root}
+        target: /app/models/cache
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+
+  acceptance-fixture:
+    image: omnibase-backend:personal-production
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in the operator env file}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in the operator env file}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in the operator env file}
+      MINIO_BUCKET: ${MINIO_BUCKET:?set MINIO_BUCKET in the operator env file}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL in the operator env file}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the operator env file}
+      PROVIDER_CREDENTIAL_ENCRYPTION_KEY: ${PROVIDER_CREDENTIAL_ENCRYPTION_KEY:?set PROVIDER_CREDENTIAL_ENCRYPTION_KEY in the operator env file}
+      MEMORY_CONTENT_ENCRYPTION_KEY: ${MEMORY_CONTENT_ENCRYPTION_KEY:?set MEMORY_CONTENT_ENCRYPTION_KEY in the operator env file}
+    command: ["python", "/acceptance/p5_9p_acceptance_fixture.py"]
+    volumes:
+      - type: bind
+        source: ${P6_4_ACCEPTANCE_FIXTURE_PATH:?set the exact acceptance fixture path}
+        target: /acceptance/p5_9p_acceptance_fixture.py
+        read_only: true
+      - type: bind
+        source: ${PERSONAL_RUNTIME_CANARY_HOST_CONFIG:?set an absolute canonical config path}
+        target: /run/omnibase-personal/canary.json
+        read_only: true
+      - type: bind
+        source: ${PERSONAL_RUNTIME_CANARY_HOST_STATE:?set an absolute state directory}
+        target: /run/omnibase-personal/state
+      - type: bind
+        source: ${PERSONAL_RUNTIME_READINESS_HOST_ROOT:?set an absolute readiness root}
+        target: /run/omnibase-personal/readiness-root
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data

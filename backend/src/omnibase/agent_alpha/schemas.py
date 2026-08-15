@@ -30,6 +30,28 @@ class AlphaCancelResponse(AlphaApiModel):
     cancellation_requested: bool
 
 
+PracticeEmployeeRole = Literal[
+    "product",
+    "ux",
+    "frontend",
+    "backend",
+    "data",
+    "security",
+    "qa",
+    "operations",
+    "docs",
+]
+
+
+class AlphaPracticeRunRequest(AlphaApiModel):
+    agent_version_id: str = Field(pattern=_UUID)
+    scenario: Literal["rag", "artifact", "workspace"]
+    participant_count: Literal[1, 3, 4, 5, 6]
+    specialist_roles: list[PracticeEmployeeRole] = Field(default_factory=list, max_length=5)
+    task: str = Field(min_length=1, max_length=16_000)
+    top_k: int = Field(default=5, ge=1, le=8)
+
+
 class AlphaProfileRead(AlphaApiModel):
     agent_definition_id: str = Field(pattern=_UUID)
     agent_version_id: str = Field(pattern=_UUID)
@@ -73,11 +95,14 @@ class AlphaStatusResponse(AlphaApiModel):
     personal_runtime_active: bool = False
     personal_canary_id: str | None = Field(default=None, pattern=_UUID)
     personal_canary_expires_at: str | None = None
+    personal_practice_active: bool = False
+    personal_practice_blockers: list[str] = Field(default_factory=list)
 
 
 __all__ = [
     "AlphaCancelResponse",
     "AlphaInvokeRequest",
+    "AlphaPracticeRunRequest",
     "AlphaProfileList",
     "AlphaProfileRead",
     "AlphaStatusResponse",

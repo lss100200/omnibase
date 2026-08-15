@@ -14,12 +14,18 @@ Multi-tenancy:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import uuid
 from dataclasses import dataclass
+from typing import Protocol
 
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, exists, func, or_, select, update
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from omnibase.control_plane.models import ResourceRecord
+from omnibase.control_plane.service import register_resource
 from omnibase.core.config import Settings, get_settings
 from omnibase.core.db import get_session_factory
 from omnibase.core.logging import get_logger
@@ -28,8 +34,13 @@ from omnibase.documents.enqueue import enqueue_ingest
 from omnibase.storage.minio_client import get_minio_client
 from omnibase.tenants.context import tenant_scope
 from omnibase.tenants.schema_manager import validate_schema_name
+from omnibase.workspaces.models import ResourceScopeBinding, Workspace, WorkspaceMembership
 
 log = get_logger(__name__)
+
+
+class _ObjectRemovalClient(Protocol):
+    def remove_object(self, bucket_name: str, object_name: str) -> object: ...
 
 
 # -----------------------------------------------------------
@@ -125,6 +136,196 @@ class UploadResult:
     metadata_extracted: bool
 
 
+def _preflight_workspace_upload(
+    *,
+    schema_name: str,
+    tenant_id: str | None,
+    workspace_id: str | None,
+    actor_user_id: str | None,
+    settings: Settings,
+) -> None:
+    if workspace_id is None:
+        return
+    if not tenant_id or not actor_user_id:
+        raise DocumentError("Workspace upload identity is required")
+    _require_workspace_upload_access(
+        schema_name=schema_name,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        settings=settings,
+    )
+
+
+def _revalidate_workspace_upload(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    actor_user_id: str,
+) -> None:
+    """Revalidate the live Workspace aggregate under the stable lock order."""
+
+    _require_workspace_upload_access_in_session(
+        session,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        lock=True,
+    )
+
+
+def _compensate_uploaded_object(
+    client: _ObjectRemovalClient,
+    *,
+    bucket_name: str,
+    minio_key: str,
+    document_id: str,
+) -> bool:
+    """Remove an object whose initial metadata transaction did not commit."""
+
+    try:
+        client.remove_object(bucket_name, minio_key)
+    except Exception as cleanup_exc:
+        log.warning(
+            "document.workspace_upload_compensation_failed",
+            document_id=document_id,
+            error_type=type(cleanup_exc).__name__,
+        )
+        return False
+    return True
+
+
+def _mark_workspace_document_resource_failed(
+    session: Session,
+    *,
+    document_id: str,
+    tenant_id: str | None,
+    workspace_id: str | None,
+) -> None:
+    if workspace_id is None or tenant_id is None:
+        return
+    session.execute(
+        update(ResourceRecord)
+        .where(
+            ResourceRecord.id == document_id,
+            ResourceRecord.tenant_id == tenant_id,
+            ResourceRecord.kind == "document",
+            ResourceRecord.state == "provisioning",
+        )
+        .values(
+            state="failed",
+            version=ResourceRecord.version + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+def _persist_initial_document(
+    session: Session,
+    *,
+    document_id: str,
+    filename: str,
+    content_type: str,
+    size_bytes: int,
+    minio_key: str,
+    data_sha256: str,
+    tenant_id: str | None,
+    actor_user_id: str | None,
+    workspace_id: str | None,
+) -> Document:
+    """Atomically create Document metadata and its optional Workspace binding."""
+
+    workspace_bound = (
+        workspace_id is not None and actor_user_id is not None and tenant_id is not None
+    )
+    if workspace_bound:
+        assert tenant_id is not None
+        assert workspace_id is not None
+        assert actor_user_id is not None
+        _revalidate_workspace_upload(
+            session,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            actor_user_id=actor_user_id,
+        )
+    document = Document(
+        id=document_id,
+        filename=filename,
+        mime_type=content_type,
+        size_bytes=size_bytes,
+        status="pending",
+        minio_key=minio_key,
+        page_count=None,
+        metadata_={},
+    )
+    session.add(document)
+    if workspace_bound:
+        assert tenant_id is not None
+        assert workspace_id is not None
+        assert actor_user_id is not None
+        register_resource(
+            session,
+            tenant_id=tenant_id,
+            kind="document",
+            owner_type="workspace",
+            owner_id=workspace_id,
+            display_name=filename,
+            policy_class="workspace_private",
+            resource_id=document_id,
+            state="provisioning",
+            metadata={
+                "content_sha256": data_sha256,
+                "media_type": content_type,
+                "size_bytes": size_bytes,
+            },
+            created_by_actor_id=actor_user_id,
+        )
+        session.add(
+            ResourceScopeBinding(
+                resource_id=document_id,
+                tenant_id=tenant_id,
+                scope_class="workspace_private",
+                workspace_id=workspace_id,
+                version=1,
+            )
+        )
+    session.commit()
+    session.refresh(document)
+    return document
+
+
+def _extract_document_metadata(
+    document: Document,
+    *,
+    data: bytes,
+    content_type: str,
+) -> bool:
+    """Apply best-effort synchronous metadata without changing lifecycle state."""
+
+    try:
+        from omnibase.documents.metadata import extract_pdf_metadata
+
+        metadata = extract_pdf_metadata(data, content_type)
+        if not metadata:
+            return False
+        document.page_count = metadata.get("page_count")
+        document.metadata_ = metadata
+        log.info(
+            "document.metadata_extracted",
+            document_id=document.id,
+            page_count=metadata.get("page_count"),
+        )
+        return True
+    except Exception as exc:
+        log.warning(
+            "document.metadata_extraction_failed",
+            document_id=document.id,
+            error=str(exc)[:200],
+        )
+        return False
+
+
 def upload_document(
     *,
     schema_name: str,
@@ -133,6 +334,9 @@ def upload_document(
     data: bytes,
     settings: Settings | None = None,
     extract_metadata: bool = True,
+    tenant_id: str | None = None,
+    actor_user_id: str | None = None,
+    workspace_id: str | None = None,
 ) -> UploadResult:
     """Upload a file to MinIO + record metadata row."""
     settings = settings or get_settings()
@@ -144,11 +348,22 @@ def upload_document(
         settings=settings,
     )
 
+    _preflight_workspace_upload(
+        schema_name=schema_name,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        settings=settings,
+    )
+
     if content_type is None:
         content_type = _guess_mime_type(filename) or "application/octet-stream"
 
     document_id = str(uuid.uuid4())
     minio_key = make_minio_key(schema_name, document_id, filename)
+    # Resolve the factory before creating the object so configuration failure
+    # cannot leave an object without any possible metadata transaction.
+    factory = get_session_factory(settings)
 
     # 1. Upload to MinIO
     client = get_minio_client(settings)
@@ -170,24 +385,24 @@ def upload_document(
         raise StorageError(f"Failed to upload file: {exc}") from exc
 
     # 2. Insert metadata row + extract metadata (search_path auto-set via contextvar)
-    factory = get_session_factory(settings)
     metadata_extracted = False
+    metadata_committed = False
     with tenant_scope(schema_name):
         session = factory()
         try:
-            document = Document(
-                id=document_id,
+            document = _persist_initial_document(
+                session,
+                document_id=document_id,
                 filename=filename,
-                mime_type=content_type,
+                content_type=content_type,
                 size_bytes=size_bytes,
-                status="pending",
                 minio_key=minio_key,
-                page_count=None,
-                metadata_={},
+                data_sha256=hashlib.sha256(data).hexdigest(),
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                workspace_id=workspace_id,
             )
-            session.add(document)
-            session.commit()
-            session.refresh(document)
+            metadata_committed = True
 
             log.info(
                 "document.uploaded",
@@ -202,25 +417,11 @@ def upload_document(
             #    Metadata extraction is best-effort and does not introduce a
             #    separate lifecycle state.
             if extract_metadata:
-                try:
-                    from omnibase.documents.metadata import extract_pdf_metadata
-
-                    meta = extract_pdf_metadata(data, content_type)
-                    if meta:
-                        document.page_count = meta.get("page_count")
-                        document.metadata_ = meta
-                        metadata_extracted = True
-                        log.info(
-                            "document.metadata_extracted",
-                            document_id=document.id,
-                            page_count=meta.get("page_count"),
-                        )
-                except Exception as exc:
-                    log.warning(
-                        "document.metadata_extraction_failed",
-                        document_id=document.id,
-                        error=str(exc)[:200],
-                    )
+                metadata_extracted = _extract_document_metadata(
+                    document,
+                    data=data,
+                    content_type=content_type,
+                )
 
             # 4. Persist queued before dispatch. A worker may start immediately
             #    after the broker accepts the task, so upload must never write
@@ -270,6 +471,12 @@ def upload_document(
                 if compensated:
                     document.status = "failed"
                     document.error_detail = "Failed to enqueue ingestion task"
+                    _mark_workspace_document_resource_failed(
+                        session,
+                        document_id=document.id,
+                        tenant_id=tenant_id,
+                        workspace_id=workspace_id,
+                    )
                 session.commit()
                 session.refresh(document)
                 log.warning(
@@ -280,8 +487,136 @@ def upload_document(
                 )
 
             return UploadResult(document=document, metadata_extracted=metadata_extracted)
+        except Exception as exc:
+            session.rollback()
+            if not metadata_committed:
+                compensated = _compensate_uploaded_object(
+                    client,
+                    bucket_name=settings.minio_bucket,
+                    minio_key=minio_key,
+                    document_id=document_id,
+                )
+                if not compensated:
+                    raise StorageError(
+                        "Upload metadata failed and object cleanup could not be verified"
+                    ) from exc
+                if not isinstance(exc, DocumentError):
+                    raise DocumentError("Failed to persist upload metadata") from exc
+            raise
         finally:
             session.close()
+
+
+def _require_workspace_upload_access(
+    *,
+    schema_name: str,
+    tenant_id: str,
+    workspace_id: str,
+    actor_user_id: str,
+    settings: Settings,
+) -> None:
+    """Revalidate one active Workspace membership before object upload."""
+
+    factory = get_session_factory(settings)
+    with tenant_scope(schema_name):
+        session = factory()
+        try:
+            _require_workspace_upload_access_in_session(
+                session,
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                lock=False,
+            )
+        finally:
+            session.close()
+
+
+def _require_workspace_upload_access_in_session(
+    session: Session,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    actor_user_id: str,
+    lock: bool,
+) -> None:
+    """Validate Workspace then membership in stable aggregate lock order."""
+
+    workspace_query = select(Workspace).where(
+        Workspace.id == workspace_id,
+        Workspace.tenant_id == tenant_id,
+        Workspace.desired_state != "archived",
+        ~Workspace.observed_state.in_(("archiving", "archived", "failed")),
+    )
+    membership_query = select(WorkspaceMembership).where(
+        WorkspaceMembership.tenant_id == tenant_id,
+        WorkspaceMembership.workspace_id == workspace_id,
+        WorkspaceMembership.user_id == actor_user_id,
+        WorkspaceMembership.state == "active",
+        WorkspaceMembership.role.in_(("member", "operator", "maintainer", "owner")),
+    )
+    if lock:
+        workspace_query = workspace_query.with_for_update()
+        membership_query = membership_query.with_for_update()
+    workspace = session.execute(workspace_query).scalar_one_or_none()
+    membership = session.execute(membership_query).scalar_one_or_none()
+    if workspace is None or membership is None:
+        raise DocumentError("Workspace upload is unavailable")
+
+
+def _document_visibility_clause(
+    *,
+    tenant_id: str | None,
+    actor_user_id: str | None,
+    write: bool,
+) -> ColumnElement[bool] | None:
+    """Return a public-endpoint visibility predicate for Workspace documents.
+
+    Legacy tenant documents have no Workspace-private ResourceRecord and retain
+    their existing tenant-level behavior.  Once a document is registered as
+    Workspace-private, however, every Browser read or delete must prove the
+    matching live Workspace membership.  Missing bindings fail closed.
+    """
+
+    if tenant_id is None or actor_user_id is None:
+        return None
+    private_resource = exists(
+        select(ResourceRecord.id).where(
+            ResourceRecord.id == Document.id,
+            ResourceRecord.tenant_id == tenant_id,
+            ResourceRecord.kind == "document",
+            ResourceRecord.policy_class == "workspace_private",
+        )
+    )
+    allowed_roles = (
+        ("member", "operator", "maintainer", "owner")
+        if write
+        else ("viewer", "member", "operator", "maintainer", "owner")
+    )
+    authorized_private_resource = exists(
+        select(ResourceRecord.id)
+        .join(
+            ResourceScopeBinding,
+            (ResourceScopeBinding.resource_id == ResourceRecord.id)
+            & (ResourceScopeBinding.tenant_id == ResourceRecord.tenant_id),
+        )
+        .join(
+            WorkspaceMembership,
+            (WorkspaceMembership.tenant_id == ResourceScopeBinding.tenant_id)
+            & (WorkspaceMembership.workspace_id == ResourceScopeBinding.workspace_id),
+        )
+        .where(
+            ResourceRecord.id == Document.id,
+            ResourceRecord.tenant_id == tenant_id,
+            ResourceRecord.kind == "document",
+            ResourceRecord.policy_class == "workspace_private",
+            ResourceScopeBinding.scope_class == "workspace_private",
+            WorkspaceMembership.user_id == actor_user_id,
+            WorkspaceMembership.state == "active",
+            WorkspaceMembership.role.in_(allowed_roles),
+        )
+    )
+    return or_(~private_resource, authorized_private_resource)
 
 
 # -----------------------------------------------------------
@@ -294,6 +629,8 @@ def list_documents(
     offset: int = 0,
     status_filter: str | None = None,
     settings: Settings | None = None,
+    tenant_id: str | None = None,
+    actor_user_id: str | None = None,
 ) -> tuple[list[Document], int]:
     """Return (documents, total_count) for the current tenant."""
     settings = settings or get_settings()
@@ -302,12 +639,21 @@ def list_documents(
         session = factory()
         try:
             stmt = select(Document).order_by(desc(Document.created_at)).limit(limit).offset(offset)
+            visibility = _document_visibility_clause(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                write=False,
+            )
+            if visibility is not None:
+                stmt = stmt.where(visibility)
             if status_filter:
                 stmt = stmt.where(Document.status == status_filter)
 
             documents = list(session.execute(stmt).scalars())
 
             count_stmt = select(func.count()).select_from(Document)
+            if visibility is not None:
+                count_stmt = count_stmt.where(visibility)
             if status_filter:
                 count_stmt = count_stmt.where(Document.status == status_filter)
             total = int(session.execute(count_stmt).scalar() or 0)
@@ -325,6 +671,8 @@ def get_document(
     schema_name: str,
     document_id: str,
     settings: Settings | None = None,
+    tenant_id: str | None = None,
+    actor_user_id: str | None = None,
 ) -> Document:
     """Fetch a single document by id (raises DocumentNotFound)."""
     settings = settings or get_settings()
@@ -333,6 +681,13 @@ def get_document(
         session = factory()
         try:
             stmt = select(Document).where(Document.id == document_id)
+            visibility = _document_visibility_clause(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                write=False,
+            )
+            if visibility is not None:
+                stmt = stmt.where(visibility)
             document = session.execute(stmt).scalar_one_or_none()
             if document is None:
                 raise DocumentNotFound(f"Document {document_id} not found")
@@ -350,12 +705,20 @@ def get_download_url(
     document_id: str,
     expires_seconds: int = 3600,
     settings: Settings | None = None,
+    tenant_id: str | None = None,
+    actor_user_id: str | None = None,
 ) -> tuple[str, str]:
     """Return (presigned_url, filename) for a document."""
     from datetime import timedelta
 
     settings = settings or get_settings()
-    document = get_document(schema_name=schema_name, document_id=document_id, settings=settings)
+    document = get_document(
+        schema_name=schema_name,
+        document_id=document_id,
+        settings=settings,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+    )
 
     client = get_minio_client(settings)
     try:
@@ -384,6 +747,8 @@ def delete_document(
     schema_name: str,
     document_id: str,
     settings: Settings | None = None,
+    tenant_id: str | None = None,
+    actor_user_id: str | None = None,
 ) -> None:
     """Delete document metadata + MinIO object."""
     settings = settings or get_settings()
@@ -392,6 +757,13 @@ def delete_document(
         session = factory()
         try:
             stmt = select(Document).where(Document.id == document_id).with_for_update()
+            visibility = _document_visibility_clause(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                write=True,
+            )
+            if visibility is not None:
+                stmt = stmt.where(visibility)
             document = session.execute(stmt).scalar_one_or_none()
             if document is None:
                 raise DocumentNotFound(f"Document {document_id} not found")
@@ -400,6 +772,18 @@ def delete_document(
 
             minio_key = document.minio_key
             filename = document.filename
+
+            if tenant_id is not None:
+                resource = session.execute(
+                    select(ResourceRecord).where(
+                        ResourceRecord.id == document_id,
+                        ResourceRecord.tenant_id == tenant_id,
+                        ResourceRecord.kind == "document",
+                    )
+                ).scalar_one_or_none()
+                if resource is not None:
+                    resource.state = "archived"
+                    resource.version += 1
 
             session.delete(document)
             session.commit()

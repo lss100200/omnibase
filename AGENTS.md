@@ -216,6 +216,27 @@ runtime evidence; then correct the stale documentation in the same change.
   deployment require separate evidence. Read INV-077 through INV-080 before
   changing these P6.3 boundaries.
 
+- P6.4 is the narrow personal Agent practice lane. It permits one or 3-6
+  separately metered, serial Model Gateway calls in one Owner-declared roster
+  while Planner, enterprise Multi-Agent and MCP remain false. Model output is
+  proposal-only: citations are scored locally, artifacts are rendered from a
+  closed schema, and Workspace writes require exact CAS and rollback inside a
+  disposable root. Read INV-081 and
+  `docs/architecture/p6-4-personal-agent-practice.md` before changing this lane.
+  The loopback live-matrix runner can never set `production_accepted=true`;
+  only the outer disposable-target controller may do so after the strict final
+  receipt validator proves all six journeys, Provider/document cleanup, canary
+  closure, every gate false and zero labeled Compose resources. If Docker is
+  not already healthy, stop before activation and do not start or repair
+  Docker Desktop, WSL, Hyper-V or VHDX to manufacture P6.4 evidence. A
+  Workspace-private Browser document is visible or deletable only through its
+  exact live membership binding; failed initial metadata commits must remove
+  the uploaded object or veto. Canonical v1 chunks take precedence over a v2
+  shadow for the same source document. Node invocation/task identities are
+  unique, streamed metadata order is fail-closed, and the outer controller
+  requires a clean unchanged source HEAD plus a read-only healthy Linux Docker
+  preflight before creating any disposable target material.
+
 ## Safe change workflow
 
 1. Locate the target module in `docs/maintainers/maintenance-map.json`.
