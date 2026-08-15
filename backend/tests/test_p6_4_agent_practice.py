@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from omnibase.agent_alpha.contracts import AlphaStreamEvent
+from omnibase.agent_alpha.service import AgentAlphaUnavailable
 from omnibase.agent_practice.alpha_coordinator import DurablePersonalPracticeCoordinator
 from omnibase.agent_practice.artifacts import render_clock_html, render_slide_deck_html
 from omnibase.agent_practice.changesets import (
@@ -275,6 +276,52 @@ def test_durable_coordinator_stops_after_unknown_member() -> None:
         )
 
     assert [call["employee_role_id"] for call in invoker.calls] == ["data", "qa"]
+
+
+class _SynchronousFailingAlphaInvoker(_AlphaInvoker):
+    def __init__(self, code: str) -> None:
+        super().__init__()
+        self.code = code
+
+    def invoke(self, **kwargs: object) -> Iterator[AlphaStreamEvent]:
+        self.calls.append(kwargs)
+        raise AgentAlphaUnavailable(self.code)
+
+
+@pytest.mark.parametrize(
+    ("code", "projected"),
+    [
+        ("personal_runtime_scope_mismatch", "personal_runtime_scope_mismatch"),
+        ("agent_alpha_context_unavailable", "agent_alpha_context_unavailable"),
+        ("unsafe-detail:C:/secret", "agent_alpha_error"),
+    ],
+)
+def test_durable_coordinator_projects_only_stable_synchronous_node_failures(
+    code: str,
+    projected: str,
+) -> None:
+    invoker = _SynchronousFailingAlphaInvoker(code)
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"^practice_node_terminal_failure:parent:{projected}$",
+    ):
+        list(
+            DurablePersonalPracticeCoordinator(invoker).run(
+                tenant_id="tenant",
+                tenant_schema="tenant_schema",
+                workspace_id="workspace",
+                actor_user_id="owner",
+                agent_version_id="version",
+                scenario="rag",
+                specialist_roles=(),
+                task="Answer from evidence.",
+                top_k=5,
+                idempotency_key="owner-request",
+            )
+        )
+
+    assert [call["employee_role_id"] for call in invoker.calls] == ["parent"]
 
 
 def test_durable_coordinator_rejects_duplicate_meta_before_next_member() -> None:

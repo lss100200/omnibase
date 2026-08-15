@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
 from omnibase.agent_alpha.contracts import AlphaStreamEvent
+from omnibase.agent_alpha.service import AgentAlphaError
 from omnibase.agent_practice.contracts import ParticipantRole, PracticeScenario
 from omnibase.model_gateway.adaptation import ReasoningGear
 
@@ -75,6 +77,10 @@ _ROLE_GUIDANCE: dict[ParticipantRole, str] = {
     "operations": "Check bounded execution, recovery and cleanup.",
     "docs": "Check exact citations and honest user-visible claims.",
 }
+
+_SAFE_NODE_ERROR = re.compile(
+    r"^(?:agent_alpha|personal_runtime|model_gateway|personal_model_gateway)_[a-z0-9_]{1,96}$"
+)
 
 _USAGE_FIELDS = (
     "input_tokens",
@@ -332,6 +338,13 @@ def _observe_node_event(
         raise RuntimeError(f"practice_node_event_unknown:{role}")
 
 
+def _stable_agent_error_code(exc: AgentAlphaError) -> str:
+    code = exc.code
+    if isinstance(code, str) and _SAFE_NODE_ERROR.fullmatch(code) is not None:
+        return code
+    return "agent_alpha_error"
+
+
 def _require_node_identity(
     meta: dict[str, object], *, role: ParticipantRole
 ) -> tuple[str, str, str]:
@@ -447,24 +460,30 @@ class DurablePersonalPracticeCoordinator:
                 kind="node_started",
                 payload={"ordinal": ordinal, "role": role},
             )
-            events = self._invoker.invoke(
-                tenant_id=tenant_id,
-                tenant_schema=tenant_schema,
-                workspace_id=workspace_id,
-                actor_user_id=actor_user_id,
-                agent_version_id=agent_version_id,
-                message=message,
-                top_k=top_k,
-                idempotency_key=_node_key(idempotency_key, ordinal, role),
-                retry_of=None,
-                employee_role_id=role,
-                reasoning_gear="audit" if role in {"parent", "qa", "security"} else "standard",
-            )
-            receipt, answer = yield from _consume_node(
-                events,
-                ordinal=ordinal,
-                role=role,
-            )
+            try:
+                events = self._invoker.invoke(
+                    tenant_id=tenant_id,
+                    tenant_schema=tenant_schema,
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    agent_version_id=agent_version_id,
+                    message=message,
+                    top_k=top_k,
+                    idempotency_key=_node_key(idempotency_key, ordinal, role),
+                    retry_of=None,
+                    employee_role_id=role,
+                    reasoning_gear=(
+                        "audit" if role in {"parent", "qa", "security"} else "standard"
+                    ),
+                )
+                receipt, answer = yield from _consume_node(
+                    events,
+                    ordinal=ordinal,
+                    role=role,
+                )
+            except AgentAlphaError as exc:
+                code = _stable_agent_error_code(exc)
+                raise RuntimeError(f"practice_node_terminal_failure:{role}:{code}") from exc
             if receipt.invocation_id in invocation_ids or receipt.task_id in task_ids:
                 raise RuntimeError(f"practice_node_identity_reused:{role}")
             invocation_ids.add(receipt.invocation_id)
