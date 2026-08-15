@@ -314,8 +314,11 @@ class _GatewayResolver:
 
 
 class _FailingGatewayResolver:
+    def __init__(self, code: str = "provider detail must not cross the Agent boundary") -> None:
+        self.code = code
+
     def resolve(self, **_: object) -> AlphaGatewaySelection:
-        raise RuntimeError("provider detail must not cross the Agent boundary")
+        raise RuntimeError(self.code)
 
 
 class _FailingPreferencesResolver:
@@ -377,6 +380,32 @@ def test_request_scoped_resolver_failure_is_stably_redacted() -> None:
         )
 
     assert "provider detail" not in str(raised.value)
+
+
+def test_request_scoped_resolver_preserves_only_a_namespaced_stable_code() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver("personal_model_gateway_test_required"),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_gateway_personal_model_gateway_test_required$",
+    ):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
 
 
 def test_preferences_resolver_failure_is_stably_redacted() -> None:

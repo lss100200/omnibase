@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -88,6 +89,19 @@ class UnavailableAgentAlpha:
 
     def cancel(self, **_: object) -> bool:
         raise AgentAlphaUnavailable("agent_alpha_unavailable")
+
+
+_SAFE_GATEWAY_RESOLVER_CODE = re.compile(
+    r"^(?:personal_model_gateway|model_gateway|agent_model|provider|tenant|user|"
+    r"workspace|agent_binding)_[a-z0-9_]{1,80}$"
+)
+
+
+def _gateway_resolver_error_code(exc: RuntimeError) -> str:
+    code = str(exc)
+    if _SAFE_GATEWAY_RESOLVER_CODE.fullmatch(code) is not None:
+        return f"agent_alpha_gateway_{code}"
+    return "agent_alpha_gateway_selection_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,7 +299,7 @@ class AgentAlphaService:
         except AgentAlphaError:
             raise
         except RuntimeError as exc:
-            raise AgentAlphaUnavailable("agent_alpha_gateway_selection_unavailable") from exc
+            raise AgentAlphaUnavailable(_gateway_resolver_error_code(exc)) from exc
         try:
             preferences = (
                 self._preferences_resolver.resolve_preferences(
