@@ -191,8 +191,11 @@ def _specialist_message(*, scenario: PracticeScenario, role: ParticipantRole, ta
         "[OmniBase P6.4 request-scoped specialist]\n"
         f"Scenario: {scenario}. Role: {role}.\n"
         f"{_ROLE_GUIDANCE[role]} You cannot wake or delegate to another Agent. "
-        "You have no shell, file, network, MCP or write authority. Return one compact JSON "
-        "object with keys observations, recommendations, blockers and references.\n\n"
+        "You have no shell, file, network, MCP or write authority. Return exactly one compact "
+        "JSON object with keys observations, recommendations, blockers and references. Each "
+        "value is an array of at most two strings, each string at most 160 characters; use no "
+        "prose outside JSON and keep the complete response under 1200 characters. References "
+        "may contain only supplied [n] evidence labels.\n\n"
         f"Owner task:\n{task}"
     )
 
@@ -252,6 +255,12 @@ def _parent_message(
     if len(message) > _MAX_PARENT_INPUT_CHARACTERS:
         raise ValueError("practice_parent_context_budget_exceeded")
     return message
+
+
+def _practice_reasoning_gear(*, scenario: PracticeScenario, role: ParticipantRole) -> ReasoningGear:
+    if role != "parent":
+        return "economy"
+    return "audit" if scenario == "rag" else "standard"
 
 
 @dataclass(slots=True)
@@ -480,9 +489,7 @@ class DurablePersonalPracticeCoordinator:
                     idempotency_key=_node_key(idempotency_key, ordinal, role),
                     retry_of=None,
                     employee_role_id=role,
-                    reasoning_gear=(
-                        "audit" if role in {"parent", "qa", "security"} else "standard"
-                    ),
+                    reasoning_gear=_practice_reasoning_gear(scenario=scenario, role=role),
                 )
                 receipt, answer = yield from _consume_node(
                     events,

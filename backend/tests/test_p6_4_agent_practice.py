@@ -249,10 +249,32 @@ def test_durable_coordinator_runs_three_existing_alpha_invocations_serially() ->
     )
 
     assert [call["employee_role_id"] for call in invoker.calls] == ["data", "qa", "parent"]
+    assert [call["reasoning_gear"] for call in invoker.calls] == ["economy", "economy", "audit"]
     assert len({str(call["idempotency_key"]) for call in invoker.calls}) == 3
     completed = [event for event in events if event.kind == "practice_completed"]
     assert completed[0].payload["provider_call_count"] == 3
     assert completed[0].payload["participant_count"] == 3
+
+
+def test_durable_artifact_parent_uses_standard_reasoning_without_specialists() -> None:
+    invoker = _AlphaInvoker()
+
+    list(
+        DurablePersonalPracticeCoordinator(invoker).run(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="owner",
+            agent_version_id="version",
+            scenario="artifact",
+            specialist_roles=(),
+            task="Return a bounded artifact proposal.",
+            top_k=5,
+            idempotency_key="owner-request",
+        )
+    )
+
+    assert invoker.calls[0]["reasoning_gear"] == "standard"
 
 
 def test_durable_coordinator_stops_after_unknown_member() -> None:
