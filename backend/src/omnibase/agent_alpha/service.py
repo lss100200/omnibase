@@ -91,10 +91,7 @@ class UnavailableAgentAlpha:
         raise AgentAlphaUnavailable("agent_alpha_unavailable")
 
 
-_SAFE_GATEWAY_RESOLVER_CODE = re.compile(
-    r"^(?:personal_model_gateway|model_gateway|agent_model|provider|tenant|user|"
-    r"workspace|agent_binding)_[a-z0-9_]{1,80}$"
-)
+_SAFE_GATEWAY_RESOLVER_CODE = re.compile(r"^[a-z][a-z0-9_]{2,80}$")
 
 
 def _gateway_resolver_error_code(exc: RuntimeError) -> str:

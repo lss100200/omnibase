@@ -408,6 +408,43 @@ def test_request_scoped_resolver_preserves_only_a_namespaced_stable_code() -> No
         )
 
 
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "provider_host_unreachable: private detail",
+        "C:/private/provider.json",
+        "https://private.invalid/provider",
+        "sk-not-a-code-token",
+    ],
+)
+def test_request_scoped_resolver_rejects_non_code_diagnostics(unsafe: str) -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver(unsafe),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_gateway_selection_unavailable$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert unsafe not in str(raised.value)
+
+
 def test_preferences_resolver_failure_is_stably_redacted() -> None:
     service = AgentAlphaService(
         profiles=_Profiles(),
