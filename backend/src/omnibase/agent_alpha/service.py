@@ -91,13 +91,17 @@ class UnavailableAgentAlpha:
         raise AgentAlphaUnavailable("agent_alpha_unavailable")
 
 
-_SAFE_GATEWAY_RESOLVER_CODE = re.compile(r"^[a-z][a-z0-9_]{2,80}$")
+_SAFE_GATEWAY_RESOLVER_CODE = re.compile(r"^[a-z][a-z0-9]*_[a-z0-9_]{1,80}$")
+_SAFE_GATEWAY_RESOLVER_CODE_PREFIX = re.compile(r"^([a-z][a-z0-9]*_[a-z0-9_]{1,80})(?=[:\s])")
 
 
 def _gateway_resolver_error_code(exc: RuntimeError) -> str:
     code = str(exc)
     if _SAFE_GATEWAY_RESOLVER_CODE.fullmatch(code) is not None:
         return f"agent_alpha_gateway_{code}"
+    match = _SAFE_GATEWAY_RESOLVER_CODE_PREFIX.match(code)
+    if match is not None:
+        return f"agent_alpha_gateway_{match.group(1)}"
     return "agent_alpha_gateway_selection_unavailable"
 
 
