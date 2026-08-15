@@ -344,8 +344,6 @@ def _observe_node_event(
 
 def _stable_agent_error_code(exc: AgentAlphaError) -> str:
     code = exc.code
-    if not isinstance(code, str):
-        return "agent_alpha_error"
     if _SAFE_NODE_ERROR.fullmatch(code) is not None:
         return code
     match = _SAFE_NODE_ERROR_PREFIX.match(code)
