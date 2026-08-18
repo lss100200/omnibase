@@ -193,10 +193,11 @@ class TestTenantIsolation:
                 return_value=lambda: session,
             ),
         ):
-            response = TestClient(app).get(
-                "/tenant",
-                headers={"Authorization": "Bearer token"},
-            )
+            with TestClient(app) as client:
+                response = client.get(
+                    "/tenant",
+                    headers={"Authorization": "Bearer token"},
+                )
 
         assert response.status_code == 200
         assert response.json() == {
