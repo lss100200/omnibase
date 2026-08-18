@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "product": "OmniBase",
+  "version": "1.0.0",
+  "channel": "stable",
+  "platform": "windows-x64",
+  "publisher": "lss100200/omnibase",
+  "runtime_profile": "personal-desktop-core",
+  "migration_compatibility": {
+    "minimum": "0001",
+    "current": "0001",
+    "maximum": "0001"
+  },
+  "feature_gates": {
+    "agent_runtime_enabled": false,
+    "agent_planner_enabled": false,
+    "multi_agent_enabled": false,
+    "mcp_runtime_enabled": false
+  },
+  "optional_components": [
+    { "id": "bge-m3", "bundled": false, "required": false },
+    { "id": "hardened-sandbox", "bundled": false, "required": false },
+    { "id": "postgresql-pgvector", "bundled": false, "required": false }
+  ],
+  "production_ready": false,
+  "limits": {
+    "max_files": 4096,
+    "max_file_bytes": 536870912,
+    "max_total_bytes": 2147483648
+  },
+  "expected_files": [
+    "OmniBase.exe"
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnibase.chat/schemas/windows/desktop-release-v2.json",
+  "title": "OmniBase Windows Desktop Release Manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product",
+    "version",
+    "channel",
+    "platform",
+    "source_commit",
+    "publisher",
+    "runtime_profile",
+    "migration_compatibility",
+    "feature_gates",
+    "optional_components",
+    "production_ready",
+    "publisher_signature_verified",
+    "authenticode_verified",
+    "total_size",
+    "files"
+  ],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "product": { "const": "OmniBase" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
+    "channel": { "enum": ["stable", "preview", "nightly"] },
+    "platform": { "enum": ["windows-x64", "windows-arm64"] },
+    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "publisher": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runtime_profile": { "const": "personal-desktop-core" },
+    "migration_compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "current", "maximum"],
+      "properties": {
+        "minimum": { "type": "string", "pattern": "^[0-9]{4}$" },
+        "current": { "type": "string", "pattern": "^[0-9]{4}$" },
+        "maximum": { "type": "string", "pattern": "^[0-9]{4}$" }
+      }
+    },
+    "feature_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_runtime_enabled",
+        "agent_planner_enabled",
+        "multi_agent_enabled",
+        "mcp_runtime_enabled"
+      ],
+      "properties": {
+        "agent_runtime_enabled": { "type": "boolean" },
+        "agent_planner_enabled": { "type": "boolean" },
+        "multi_agent_enabled": { "type": "boolean" },
+        "mcp_runtime_enabled": { "type": "boolean" }
+      }
+    },
+    "optional_components": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "bundled", "required"],
+        "properties": {
+          "id": { "enum": ["bge-m3", "postgresql-pgvector", "hardened-sandbox"] },
+          "bundled": { "type": "boolean" },
+          "required": { "const": false }
+        }
+      }
+    },
+    "production_ready": { "type": "boolean" },
+    "publisher_signature_verified": { "type": "boolean" },
+    "authenticode_verified": { "type": "boolean" },
+    "total_size": { "type": "integer", "minimum": 1, "maximum": 2147483648 },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*$"
+          },
+          "size": { "type": "integer", "minimum": 1, "maximum": 536870912 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "production_ready": { "const": true } },
+        "required": ["production_ready"]
+      },
+      "then": {
+        "properties": {
+          "publisher_signature_verified": { "const": true },
+          "authenticode_verified": { "const": true }
+        }
+      }
+    }
+  ]
+}
