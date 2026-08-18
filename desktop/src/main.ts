@@ -13,22 +13,46 @@ import { RuntimeManager } from "./runtime/runtime-manager.ts";
 import { PINNED_RUNTIME_MANIFEST_SHA256 } from "./runtime/trusted-manifest.ts";
 
 let mainWindow: BrowserWindow | null = null;
+let runtimeManager: RuntimeManager | null = null;
 
 const hasInstanceLock = enforceSingleInstance(app, () => mainWindow);
 
 if (hasInstanceLock) {
-  const runtimeManager = new RuntimeManager({
-    runtimeRoot: path.join(process.resourcesPath, "runtime"),
-    expectedManifestSha256: PINNED_RUNTIME_MANIFEST_SHA256,
-    uiOrigin: DESKTOP_UI_ORIGIN,
-  });
-
   app.whenReady().then(async () => {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (typeof localAppData !== "string" || !path.isAbsolute(localAppData)) {
+      dialog.showErrorBox(
+        "OmniBase data directory unavailable",
+        "desktop_local_app_data_unavailable",
+      );
+      app.quit();
+      return;
+    }
+    runtimeManager = new RuntimeManager({
+      runtimeRoot: path.join(process.resourcesPath, "runtime"),
+      expectedManifestSha256: PINNED_RUNTIME_MANIFEST_SHA256,
+      uiOrigin: DESKTOP_UI_ORIGIN,
+      dataRoot: path.join(localAppData, "OmniBase", "data"),
+      hostEnvironment: process.env,
+    });
     installFailClosedPermissionPolicy(session.defaultSession);
     registerClosedIpcHandlers(ipcMain, {
       getVersion: () => app.getVersion(),
-      getRuntimeStatus: () => runtimeManager.getStatus(),
-      retryRuntimeStartup: () => runtimeManager.start(),
+      getRuntimeStatus: () => runtimeManager?.getStatus() ?? {
+        phase: "failed",
+        attempts: 0,
+        lastError: "runtime_not_initialized",
+      },
+      retryRuntimeStartup: () => {
+        if (runtimeManager === null) {
+          return Promise.resolve({
+            phase: "failed",
+            attempts: 0,
+            lastError: "runtime_not_initialized",
+          });
+        }
+        return runtimeManager.start();
+      },
     });
 
     const runtimeStatus = await runtimeManager.start();
@@ -53,11 +77,11 @@ if (hasInstanceLock) {
   });
 
   app.on("window-all-closed", () => {
-    runtimeManager.stop();
+    runtimeManager?.stop();
     app.quit();
   });
 
   app.on("before-quit", () => {
-    runtimeManager.stop();
+    runtimeManager?.stop();
   });
 }

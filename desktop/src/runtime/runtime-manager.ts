@@ -9,6 +9,45 @@ export interface RuntimeManagerOptions {
   readonly runtimeRoot: string;
   readonly expectedManifestSha256: string;
   readonly uiOrigin: string;
+  readonly dataRoot: string;
+  readonly hostEnvironment?: Readonly<Record<string, string | undefined>>;
+}
+
+const SAFE_HOST_ENVIRONMENT_KEYS = Object.freeze([
+  "SystemRoot",
+  "WINDIR",
+  "TEMP",
+  "TMP",
+] as const);
+
+export function buildRuntimeEnvironment(
+  instanceToken: string,
+  dataRoot: string,
+  hostEnvironment: Readonly<Record<string, string | undefined>> = process.env,
+): Readonly<Record<string, string>> {
+  if (!/^[a-f0-9]{64}$/u.test(instanceToken) || !path.isAbsolute(dataRoot)) {
+    throw new Error("runtime_environment_invalid");
+  }
+  const environment: Record<string, string> = {
+    OMNIBASE_DESKTOP_MODE: "1",
+    OMNIBASE_BIND_HOST: "127.0.0.1",
+    OMNIBASE_DESKTOP_INSTANCE_TOKEN: instanceToken,
+    OMNIBASE_DESKTOP_DATA_ROOT: dataRoot,
+  };
+  for (const key of SAFE_HOST_ENVIRONMENT_KEYS) {
+    const value = hostEnvironment[key];
+    if (
+      typeof value === "string" &&
+      value.length > 0 &&
+      value.length <= 32_767 &&
+      !value.includes("\0") &&
+      !value.includes("\r") &&
+      !value.includes("\n")
+    ) {
+      environment[key] = value;
+    }
+  }
+  return Object.freeze(environment);
 }
 
 export function matchesRuntimeInstanceToken(
@@ -35,6 +74,9 @@ export class RuntimeManager {
   });
 
   constructor(options: RuntimeManagerOptions) {
+    if (!path.isAbsolute(options.dataRoot)) {
+      throw new Error("runtime_data_root_must_be_absolute");
+    }
     this.#options = options;
   }
 
@@ -59,11 +101,11 @@ export class RuntimeManager {
         command: bundle.command,
         args: bundle.args,
         cwd: bundle.root,
-        environment: Object.freeze({
-          OMNIBASE_DESKTOP_MODE: "1",
-          OMNIBASE_BIND_HOST: "127.0.0.1",
-          OMNIBASE_DESKTOP_INSTANCE_TOKEN: instanceToken,
-        }),
+        environment: buildRuntimeEnvironment(
+          instanceToken,
+          this.#options.dataRoot,
+          this.#options.hostEnvironment,
+        ),
         readinessProbe: async () => {
           const response = await fetch(`${this.#options.uiOrigin}/health`, {
             method: "GET",
