@@ -134,6 +134,24 @@ def test_bundle_is_one_embedded_vital_removable_per_user_msi() -> None:
 
 
 def test_rollback_probe_is_a_two_msi_transaction_with_an_intentional_blocker() -> None:
+    probe_project = _xml("tests/fixtures/RollbackProbe/OmniBase.RollbackProbe.wixproj")
+    blocker_project = _xml(
+        "tests/fixtures/RollbackProbe/OmniBase.RollbackBlocker.wixproj"
+    )
+    assert (
+        probe_project.findtext("./PropertyGroup/EnableDefaultCompileItems") == "false"
+    )
+    assert (
+        blocker_project.findtext("./PropertyGroup/EnableDefaultCompileItems") == "false"
+    )
+    assert [
+        item.attrib["Include"] for item in probe_project.findall("./ItemGroup/Compile")
+    ] == ["RollbackProbeBundle.wxs"]
+    assert [
+        item.attrib["Include"]
+        for item in blocker_project.findall("./ItemGroup/Compile")
+    ] == ["RollbackBlocker.wxs"]
+
     root = _xml("tests/fixtures/RollbackProbe/RollbackProbeBundle.wxs")
     chain = root.find("w:Bundle/w:Chain", NS)
     assert chain is not None

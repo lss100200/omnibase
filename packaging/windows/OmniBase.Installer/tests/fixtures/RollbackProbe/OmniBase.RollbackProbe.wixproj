@@ -4,10 +4,12 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
     <OutputName>OmniBase-$(ProductVersion)-rollback-probe</OutputName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="RollbackProbeBundle.wxs" />
     <PackageReference Include="WixToolset.Bal.wixext" Version="7.0.0" />
     <ProjectReference
       Include="..\..\..\package\OmniBase.Package.wixproj"

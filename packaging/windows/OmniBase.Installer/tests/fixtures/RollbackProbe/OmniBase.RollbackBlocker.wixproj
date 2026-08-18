@@ -4,6 +4,11 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
     <OutputName>OmniBase-RollbackBlocker-$(ProductVersion)</OutputName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="RollbackBlocker.wxs" />
+  </ItemGroup>
 </Project>
