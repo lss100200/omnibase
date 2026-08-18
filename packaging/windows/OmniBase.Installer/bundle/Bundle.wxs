@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+    Id="OmniBase.Desktop.Bundle"
+    Name="OmniBase"
+    Manufacturer="OmniBase Contributors"
+    Version="$(var.ProductVersion)"
+    Compressed="yes"
+    DisableModify="yes"
+    DisableRemove="no">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="hyperlinkLicense"
+        LicenseUrl=""
+        ShowVersion="yes"
+        SuppressOptionsUI="yes"
+        SuppressDowngradeFailure="no"
+        LaunchTarget="[LocalAppDataFolder]Programs\OmniBase\OmniBase.exe"
+        LaunchWorkingFolder="[LocalAppDataFolder]Programs\OmniBase" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <RollbackBoundary
+        Id="OmniBaseMsiTransaction"
+        Transaction="yes"
+        Vital="yes" />
+      <MsiPackage
+        Id="OmniBaseMsi"
+        SourceFile="$(var.OmniBasePackage.TargetPath)"
+        Compressed="yes"
+        Cache="keep"
+        DisplayInternalUI="no"
+        Visible="no"
+        Vital="yes"
+        Permanent="no">
+        <MsiProperty
+          Name="INSTALLFOLDER"
+          Value="[LocalAppDataFolder]Programs\OmniBase" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

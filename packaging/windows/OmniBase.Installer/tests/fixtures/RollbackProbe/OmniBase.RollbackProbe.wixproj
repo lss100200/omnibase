@@ -1,0 +1,21 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
+    <OutputName>OmniBase-$(ProductVersion)-rollback-probe</OutputName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="7.0.0" />
+    <ProjectReference
+      Include="..\..\..\package\OmniBase.Package.wixproj"
+      BindName="OmniBasePackage"
+      AdditionalProperties="PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion);PythonExecutable=$(PythonExecutable)" />
+    <ProjectReference
+      Include="OmniBase.RollbackBlocker.wixproj"
+      BindName="RollbackBlocker"
+      AdditionalProperties="ProductVersion=$(ProductVersion)" />
+  </ItemGroup>
+</Project>

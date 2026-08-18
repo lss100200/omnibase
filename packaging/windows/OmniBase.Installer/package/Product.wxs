@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="OmniBase"
+    Manufacturer="OmniBase Contributors"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="{BAD9DD0C-96C1-44A6-8C69-16592A11D4C9}"
+    Scope="perUser"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <MajorUpgrade
+      AllowDowngrades="no"
+      DowngradeErrorMessage="A newer version of OmniBase is already installed."
+      Schedule="afterInstallInitialize"
+      MigrateFeatures="yes"
+      IgnoreRemoveFailure="no" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/lss100200/omnibase" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
+
+    <Feature Id="OmniBaseFeature" Title="OmniBase" Level="1" Absent="disallow">
+      <ComponentGroupRef Id="OmniBasePayload" />
+      <ComponentRef Id="OmniBaseStartMenuShortcut" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="OmniBase" />
+      </Directory>
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="OmniBaseProgramMenuFolder" Name="OmniBase" />
+    </StandardDirectory>
+
+    <Component
+      Id="OmniBaseStartMenuShortcut"
+      Directory="OmniBaseProgramMenuFolder"
+      Guid="{CF649170-712B-4D00-B3E7-814E2FF2260C}">
+      <Shortcut
+        Id="OmniBaseStartMenuShortcutEntry"
+        Name="OmniBase"
+        Description="OmniBase personal AI workbench"
+        Target="[INSTALLFOLDER]OmniBase.exe"
+        WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder
+        Id="RemoveOmniBaseProgramMenuFolder"
+        Directory="OmniBaseProgramMenuFolder"
+        On="uninstall" />
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\OmniBase\Installer"
+        Name="StartMenuShortcut"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>
