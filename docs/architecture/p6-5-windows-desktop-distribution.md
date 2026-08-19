@@ -11,6 +11,15 @@ product journey, clean-Windows installer lifecycle and signature checks pass,
 all generated EXE/MSI files are unsigned engineering test artifacts and
 `production_ready=false`.
 
+The 2026-08-19 unsigned engineering artifact passed guarded install, upgrade,
+downgrade rejection, transaction rollback, uninstall/data-retention and closed
+runtime first-launch checks in offline Windows Sandbox runs under a fresh,
+non-elevated standard user. The native window, loopback process topology,
+health/readiness, backend authorization boundary, challenge-HMAC proof, SQLite
+creation and graceful shutdown were observed directly. This closes those
+engineering gates only; the artifact was built from `engineering-dirty` source,
+remains unsigned, and still lacks the required personal product journeys.
+
 ## Process topology
 
 ```text
@@ -139,6 +148,7 @@ A distributable 1.0.0 claim requires all of the following direct evidence:
 - Authenticode signing and post-signature verification on the distributed EXE
   and required executable payloads.
 
-Missing SDKs, network, certificates, clean-target evidence or product routes are
-release vetoes. They do not authorize Docker/WSL/Hyper-V repair, virtual-disk
-mutation, security-check removal or a production-ready label.
+Missing certificates, source/lock evidence, required product routes or any
+unpassed clean-target gate are release vetoes. They do not authorize
+Docker/WSL/Hyper-V repair, virtual-disk mutation, security-check removal or a
+production-ready label.

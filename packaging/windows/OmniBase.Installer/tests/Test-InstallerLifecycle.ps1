@@ -42,10 +42,24 @@ $DataRoot = Join-Path $env:LOCALAPPDATA "OmniBase"
 $DataMarker = Join-Path $DataRoot "installer-lifecycle-retained.marker"
 $InstalledExecutable = Join-Path $InstallRoot "OmniBase.exe"
 
+function Test-FullyQualifiedWindowsPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $driveRooted = [Text.RegularExpressions.Regex]::IsMatch(
+        $Path,
+        "\A[A-Za-z]:\\"
+    )
+    $uncRooted = [Text.RegularExpressions.Regex]::IsMatch(
+        $Path,
+        "\A\\\\[^\\]+\\[^\\]+(?:\\|\z)"
+    )
+    return $driveRooted -or $uncRooted
+}
+
 function Assert-OrdinaryBundle {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    if (-not [IO.Path]::IsPathFullyQualified($Path)) {
+    if (-not (Test-FullyQualifiedWindowsPath -Path $Path)) {
         throw "installer_e2e_bundle_path_must_be_absolute"
     }
     $item = Get-Item -LiteralPath $Path -Force
@@ -142,9 +156,13 @@ function Assert-RollbackExecutionEvidence {
     }
     $log = [IO.File]::ReadAllText($logPath)
     foreach ($required in @(
+        "Starting a new MSI transaction, id: OmniBaseRollbackProbeTransaction",
         "Applying execute package: OmniBaseUpgradeCandidate",
+        "Applied execute package: OmniBaseUpgradeCandidate, result: 0x0",
         "Applying execute package: IntentionalRollbackBlocker",
-        "Applied rollback package: OmniBaseUpgradeCandidate"
+        "Applied execute package: IntentionalRollbackBlocker, result: 0x80070643",
+        "Rolling back MSI transaction, id: OmniBaseRollbackProbeTransaction",
+        "package: OmniBaseUpgradeCandidate, install registration state: Absent, cache registration state: Absent"
     )) {
         if ($log.IndexOf($required, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
             throw "installer_e2e_rollback_execution_unproven"
@@ -155,7 +173,7 @@ function Assert-RollbackExecutionEvidence {
 foreach ($bundle in @($Version1Bundle, $Version2Bundle, $RollbackProbeBundle)) {
     Assert-OrdinaryBundle -Path $bundle
 }
-if ((Test-Path -LiteralPath $InstallRoot) -or (Get-OmniBaseRegistration).Count -ne 0) {
+if ((Test-Path -LiteralPath $InstallRoot) -or @(Get-OmniBaseRegistration).Count -ne 0) {
     throw "installer_e2e_requires_clean_product_state"
 }
 if (Test-Path -LiteralPath $DataRoot) {
@@ -192,7 +210,7 @@ Write-Output "STAGE UninstallVersion2"
 Assert-Success (
     Invoke-Bundle -Path $Version2Bundle -Action uninstall -LogName "05-uninstall-v2.log"
 )
-if ((Get-OmniBaseRegistration).Count -ne 0) {
+if (@(Get-OmniBaseRegistration).Count -ne 0) {
     throw "installer_e2e_registration_remained_after_uninstall"
 }
 if (Test-Path -LiteralPath $InstalledExecutable) {

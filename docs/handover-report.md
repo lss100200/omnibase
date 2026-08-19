@@ -6177,19 +6177,64 @@ production_ready = false
 This proves repeatable source-to-EXE engineering packaging, not distribution
 readiness. The current desktop-local Browser surface exposes health/readiness
 and Owner bootstrap/status only; required P6 personal product journeys remain
-to be wired and accepted. The guarded lifecycle harness was not executed
-because the current Cursor process is elevated and the harness correctly
-requires a disposable, non-elevated account. Authenticode and clean-Windows
-install/launch/upgrade/downgrade/rollback/uninstall evidence remain absent. On
-2026-08-19 the user explicitly chose to stop before system installation and
-retain only the unsigned engineering artifacts and test report.
+to be wired and accepted.
+
+After the user later authorized Windows Sandbox and rebooted the host, the
+unsigned engineering artifact passed two offline, disposable Windows runs.
+Each run created a fresh local `OmniBaseTester` standard user; the actual test
+process reported `elevated=false` and medium integrity. Installer/control inputs
+were mapped read-only, networking and clipboard redirection were disabled, and
+only a dedicated evidence directory was writable.
+
+The installer lifecycle run used the pinned 1.0.0 Burn EXE, a separately built
+1.0.1 upgrade EXE and an intentional 1.0.1 rollback-probe bundle. It passed:
+
+```text
+install 1.0.0
+upgrade to 1.0.1
+reject 1.0.0 downgrade
+execute candidate + intentional blocker + WiX MSI transaction rollback
+retain the pre-existing 1.0.1 registration and user-data marker
+uninstall 1.0.1
+remove install root and registration while retaining user data
+```
+
+The first-launch run installed 1.0.0 into a separate fresh account and reached
+the visible `OmniBase` Electron window in 7,917 ms. It observed
+`OmniBase.exe`, `OmniBase.RuntimeHost.exe`,
+`OmniBase.Desktop.Backend.exe` and `node.exe`; both listeners were IPv4
+loopback-only; Next health/readiness returned 200; direct unauthenticated
+backend health returned 401; the challenge-HMAC proof had the required closed
+shape; SQLite was created; window close reaped the process tree and ports while
+retaining the data root.
+
+```text
+acceptance root =
+  E:\Agent IDE\OmniBase Artifacts\p6-5-sandbox-acceptance-r0-20260819-1422
+acceptance report = acceptance root\acceptance-report.json
+acceptance report SHA-256 =
+  5abca2c82f8037ff6e7c48114ccf90a339fc9702ef25c5eb825659c4e2e9f077
+lifecycle evidence = acceptance root\standard-user-lifecycle-evidence-r4
+lifecycle evidence tree SHA-256 =
+  b9b4b3ac92af850a2a37754ac38c6f035da35e3b4d90bb72852b584db1d631c3
+first-launch evidence = acceptance root\standard-user-first-launch-evidence
+first-launch evidence tree SHA-256 =
+  75d2d293080a6928933180c0eb08a0226bb52397ef27a6ff9a548fabf904dafb
+```
+
+The clean run also exposed and fixed two Windows PowerShell 5.1 harness-only
+compatibility defects and aligned rollback evidence with WiX 7 transaction
+logging. These fixes do not change installer payload bytes. The original
+`desktop-build-report.json` remains an immutable pre-acceptance receipt and is
+not rewritten to claim later external evidence.
 
 The first maintainer-map check correctly rejected the newly discovered
 `create_desktop_local_app` entrypoint because P6.5 had not been added to the
 public maintenance contract. INV-082, the P6.5 architecture document and map
 coverage were then added, and both maintainer validators pass. An unsigned
 engineering Burn EXE now exists; no distributable, production-ready or
-installable-and-usable 1.0.0 EXE is claimed.
+complete installable-and-usable 1.0.0 product is claimed: Authenticode and the
+required P6 personal product journeys remain unproven.
 
 ```text
 P6_5_UNSIGNED_ENGINEERING_BUILD_COMPLETE
@@ -6198,10 +6243,12 @@ RUNTIMEHOST_PUBLISH_COMPLETE
 NEXT_STANDALONE_PAYLOAD_COMPLETE
 ELECTRON_PACKAGE_COMPLETE
 WIX_BURN_BUILD_PASSED
-INSTALLER_LIFECYCLE_REQUIRES_DISPOSABLE_NON_ELEVATED_WINDOWS_ACCOUNT
+INSTALLER_LIFECYCLE_SANDBOX_STANDARD_USER_PASSED
+FIRST_LAUNCH_NATIVE_RUNTIME_SANDBOX_STANDARD_USER_PASSED
 AUTHENTICODE_PENDING
-CLEAN_WINDOWS_REQUIRED_PRODUCT_JOURNEYS_NOT_PROVEN
+CLEAN_WINDOWS_REQUIRED_PERSONAL_PRODUCT_JOURNEYS_NOT_PROVEN
 root .env not read; business database not accessed or migrated
-Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+existing Hyper-V VMs/VHDX and Docker/WSL not started, repaired or mutated
+Windows Sandbox feature enabled and used with explicit user approval
 not pushed; not merged; not deployed
 ```

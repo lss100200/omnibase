@@ -280,6 +280,20 @@ def test_rollback_probe_is_test_only_and_lifecycle_harness_covers_all_states() -
     assert "OMNIBASE_INSTALLER_E2E" in harness
     assert "DisposableAccountAcknowledged" in harness
     assert "installer_e2e_requires_non_elevated_shell" in harness
+    assert "Test-FullyQualifiedWindowsPath" in harness
+    assert "IsPathFullyQualified" not in harness
+    assert "-or @(Get-OmniBaseRegistration).Count" in harness
+    assert "if (@(Get-OmniBaseRegistration).Count" in harness
+    assert "Starting a new MSI transaction, id: OmniBaseRollbackProbeTransaction" in harness
     assert "Applying execute package: OmniBaseUpgradeCandidate" in harness
+    assert "Applied execute package: OmniBaseUpgradeCandidate, result: 0x0" in harness
     assert "Applying execute package: IntentionalRollbackBlocker" in harness
-    assert "Applied rollback package: OmniBaseUpgradeCandidate" in harness
+    assert (
+        "Applied execute package: IntentionalRollbackBlocker, result: 0x80070643"
+        in harness
+    )
+    assert "Rolling back MSI transaction, id: OmniBaseRollbackProbeTransaction" in harness
+    assert (
+        "package: OmniBaseUpgradeCandidate, install registration state: Absent"
+        in harness
+    )

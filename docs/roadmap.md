@@ -251,18 +251,22 @@ not silently included in P6.0.
 > disposable Workspace CAS/rollback only. It does not authorize enterprise
 > Planner/Multi-Agent, MCP-to-Agent, P34.7 or a Windows desktop release.
 
-> **P6.5 Windows desktop distribution in progress (2026-08-18):** the selected
+> **P6.5 Windows desktop unsigned engineering acceptance (2026-08-19):** the
 > architecture is a per-user Electron shell over supervised loopback Next
 > standalone and an independent SQLite `desktop_local` FastAPI service. A
 > per-launch server-owned identity, challenge-HMAC native readiness,
 > digest-pinned RuntimeHost payload, minimal PyInstaller backend, Electron
-> packaging and WiX Burn + per-user MSI are engineering work in progress.
+> packaging and WiX Burn + per-user MSI now build as one unsigned engineering
+> EXE.
 > Install defaults to `%LOCALAPPDATA%\Programs\OmniBase`; application data is
 > `%LOCALAPPDATA%\OmniBase` and normal uninstall retains it. Docker, WSL,
-> PostgreSQL/pgvector, BGE-M3 and enhanced Sandbox remain optional. No complete
-> Electron payload, WiX lifecycle acceptance, Authenticode signature or
-> fresh-Windows required-product-journey evidence exists yet, so no
-> distributable or installable-and-usable OmniBase 1.0.0 EXE is claimed.
+> PostgreSQL/pgvector, BGE-M3 and enhanced Sandbox remain optional. Offline,
+> fresh-standard-user Windows Sandbox runs passed install/upgrade/downgrade
+> rejection/transaction rollback/uninstall and native first launch through
+> visible Electron, loopback health/readiness, challenge-HMAC, SQLite and
+> graceful shutdown. The artifact remains `engineering-dirty`, unsigned and
+> missing required personal product journeys, so no distributable or complete
+> installable-and-usable OmniBase 1.0.0 product is claimed.
 
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
