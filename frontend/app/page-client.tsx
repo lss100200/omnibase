@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { getDesktopBridge } from '@/lib/desktop-bridge'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -14,6 +15,10 @@ export default function HomeRedirect() {
   const { isAuthenticated, bootstrapStatus } = useAuth()
 
   useEffect(() => {
+    if (getDesktopBridge() !== null) {
+      router.replace('/desktop')
+      return
+    }
     // Only redirect once bootstrap has definitively resolved.
     // 'unavailable' means transient failure — keep showing the landing skeleton.
     if (bootstrapStatus !== 'ready') return

@@ -239,16 +239,26 @@ runtime evidence; then correct the stale documentation in the same change.
 - P6.5 is the per-user Windows desktop distribution lane. Read INV-082 and
   `docs/architecture/p6-5-windows-desktop-distribution.md` before changing its
   SQLite backend, Next desktop proxy, Electron shell, RuntimeHost, payload,
-  PyInstaller or WiX authoring. The native proof key and authorization token
-  are separate server-owned identities, neither is a Browser credential, and
-  readiness requires a fresh challenge-HMAC proof over a digest-pinned loopback
-  runtime. Installation is per-user under
+  PyInstaller or WiX authoring. The native proof, native control and
+  authorization tokens are separate per-launch identities; none is a Browser
+  credential, and readiness requires a fresh challenge-HMAC proof over a
+  digest-pinned loopback runtime. Installation is per-user under
   `%LOCALAPPDATA%\Programs\OmniBase`; `%LOCALAPPDATA%\OmniBase` is application
   data that normal uninstall must retain. Docker, WSL, PostgreSQL, BGE-M3 and
   enhanced Sandbox components remain optional and must not be silently
   installed or started. Unsigned, dirty-source, incomplete-product-journey or
   untested installer artifacts are engineering outputs, not a distributable
   OmniBase 1.0.0 EXE.
+- P6.6 is the desktop-local product-admission lane. Read INV-083 and
+  `docs/architecture/p6-6-desktop-local-product-admission.md` before changing
+  `/desktop`, Owner/Workspace SQLite transactions, native IPC or the desktop
+  proxy catalog. Next is product-blind in desktop mode: only exact
+  health/readiness hops remain and it is never Owner authority. All Owner and
+  Workspace operations use the exact IPC catalog plus the backend-only native
+  control token; the renderer receives typed results but no token. Do not add
+  JWT emulation, publish `/desktop/v1` through Next, expose `runtime_job`, or
+  start Provider/RAG/Agent/MCP/Docker/WSL/PostgreSQL paths to complete this
+  bounded journey.
 
 ## Safe change workflow
 

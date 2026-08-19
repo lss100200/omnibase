@@ -268,6 +268,19 @@ not silently included in P6.0.
 > missing required personal product journeys, so no distributable or complete
 > installable-and-usable OmniBase 1.0.0 product is claimed.
 
+> **P6.6 desktop-local product admission engineering R0 (2026-08-19):** the
+> desktop first-run path no longer falls into PostgreSQL JWT login. A complete
+> preload bridge routes Electron to `/desktop`, where the single local Owner can
+> be bootstrapped and can create, list and CAS-archive bounded SQLite
+> Workspaces. Mutations use origin-checked Electron IPC plus a separate
+> backend-only native control token; Next remains product-blind except exact
+> health/readiness hops. Owner/Workspace writes and append-only audit events share
+> transactions, survive restart and pull in no PostgreSQL, Docker/WSL, RAG,
+> Provider, Agent, Skill or MCP dependency. This is one offline product-admission
+> journey only. The source remains unsigned engineering work; clean-source
+> packaging, Authenticode and the remaining personal journeys are still release
+> vetoes.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

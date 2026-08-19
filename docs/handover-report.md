@@ -6252,3 +6252,102 @@ existing Hyper-V VMs/VHDX and Docker/WSL not started, repaired or mutated
 Windows Sandbox feature enabled and used with explicit user approval
 not pushed; not merged; not deployed
 ```
+
+### P6.6 desktop-local product admission engineering R0 (2026-08-19)
+
+P6.6 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-6-cursor-desktop-journeys` on branch
+`cursor/p6-6-desktop-personal-journeys-r0`, based on P6.5 integration commit
+`58840ff600db86f19da2fd54768aedb54cbd072f`. The P6.6 source remains
+uncommitted and unpushed.
+
+The bounded product scope is local Owner first-run plus durable Workspace
+create/list/archive. The Electron renderer detects the complete preload bridge
+and enters `/desktop` instead of PostgreSQL JWT login. It stores no access or
+refresh token. PostgreSQL Workspace DTOs, documents, RAG, Provider credentials,
+Agent Runtime, Skills, MCP, Sandbox, Planner and Multi-Agent are not emulated.
+
+P6.6 adds a third independent per-launch identity. Electron creates the native
+proof key and a native control token; RuntimeHost creates the separate
+authorization token. RuntimeHost passes proof/control only to the backend and
+authorization only to Next/backend. Next remains product-blind in desktop
+mode except exact health/readiness hops. Owner/Workspace reads and writes use
+exact origin-checked IPC and a direct Electron-main-to-backend `/desktop/v1`
+call; the native control token never enters Next, renderer JavaScript, argv,
+SQLite, logs or response DTOs. JWT bootstrap is skipped when the complete
+preload bridge exists.
+
+Owner bootstrap and audit append remain one singleton/idempotent SQLite
+transaction. Workspace creation is Owner-bound, limited to 256 rows and commits
+its audit event without the user-supplied name. Archive requires exact active
+state and `row_version` CAS; state/version and audit append commit or roll back
+together. Desktop schema version remains 1 and no migration was added.
+
+Focused verification completed after closing the Browser Owner catalog,
+rejecting noncanonical native-control identity, dropping Browser cookies,
+bounding native Workspace projections, and skipping JWT bootstrap when the
+desktop bridge is present:
+
+```text
+desktop-local foundation/safety/API = 65 passed
+release/payload/backend-freeze/installer contracts = 82 passed
+frontend = 209 passed; typecheck, lint and production build passed; 18 routes
+Electron = 32 passed; typecheck and source build passed
+RuntimeHost = 24/24 passed
+Ruff format/check = passed
+Mypy desktop_local = 7 source files, no issues
+maintainer map = valid: 73 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+```
+
+R1 remains retained but is superseded. The current unsigned engineering
+bytes are R2, built after the identity-catalog hardening:
+
+```text
+artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-6-desktop-local-admission-r2-20260819
+build report = artifact root\desktop-build-report.json
+installer payload = 2,199 files / 614,638,227 bytes
+installer payload SHA-256 =
+  9c1270d52d2a8b26dcedbff3eabad8680e1f6158b7043c5f97e53f2bb4727b4f
+
+Burn EXE = 203,756,573 bytes
+Burn EXE SHA-256 =
+  dad2dbfed2d55c6fcb195843a71df07d5d1553687f427b72856ac912617969b2
+MSI = 203,457,248 bytes
+MSI SHA-256 =
+  6851209a0854372ee5021c7c1686b86c55596960d3bd8b4f5233ebfa73b74f73
+Authenticode = NotSigned
+source mode = engineering-dirty
+production_ready = false
+required_product_journeys_verified = false
+source_commit recorded by the builder = 58840ff
+```
+
+The R2 frozen backend EXE was launched twice with independent launch
+identities and a fresh data root under the artifact directory. The probe
+proved public Owner mutation closed, wrong and uppercase native control
+rejected, Owner/Workspace create and CAS archive, and archived row/version
+persistence after backend restart. Probe data was not written to the user's
+normal OmniBase data directory.
+
+No system installation, installer lifecycle rerun, clean-Windows Electron UI
+journey or Authenticode stage was performed for these new bytes. The earlier
+P6.5 Sandbox evidence is not silently inherited by the P6.6 artifact. Therefore
+this build proves source-to-EXE engineering construction and the frozen local
+backend journey only; it is not a distributable or complete
+installable-and-usable OmniBase 1.0.0.
+
+```text
+P6_6_DESKTOP_LOCAL_PRODUCT_ADMISSION_ENGINEERING_R0
+OWNER_BOOTSTRAP_NATIVE_IPC_IMPLEMENTED
+WORKSPACE_CREATE_LIST_ARCHIVE_SQLITE_IMPLEMENTED
+NEXT_DESKTOP_MUTATION_PROXY_CLOSED
+FROZEN_BACKEND_OWNER_WORKSPACE_RESTART_PROBE_PASSED
+UNSIGNED_ENGINEERING_EXE_BUILT
+AUTHENTICODE_PENDING
+CLEAN_WINDOWS_P6_6_UI_AND_INSTALLER_LIFECYCLE_NOT_RUN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+committed locally on cursor/p6-6-desktop-personal-journeys-r0; not pushed; not merged; not deployed
+```

@@ -2385,12 +2385,13 @@ Read INV-082 and
 construction, PyInstaller or WiX authoring.
 
 The native chain is Electron -> RuntimeHost -> loopback backend/Next. Electron
-pins the runtime manifest, generates one 64-hex native proof key and verifies a
-fresh challenge-HMAC proof through Next before opening the window. RuntimeHost
-creates a separate 64-hex authorization token, passes the proof key only to the
-backend, and passes the authorization token only to Next and the backend. Next
-removes Browser-supplied desktop control headers, injects only the authorization
-token on the backend hop and removes reflected control headers. RuntimeHost
+pins the runtime manifest, generates independent 64-hex native proof and native
+control tokens, and verifies a fresh challenge-HMAC proof through Next before
+opening the window. RuntimeHost creates a separate 64-hex authorization token,
+passes the proof/control tokens only to the backend, and passes the
+authorization token only to Next and the backend. Next removes
+Browser-supplied desktop control headers, injects only the authorization token
+on the closed backend hop and removes reflected control headers. RuntimeHost
 accepts no argv, verifies every child immediately before launch and owns the
 children in a kill-on-close Job Object. Port-open alone is not readiness
 evidence.
@@ -2416,3 +2417,31 @@ personal product journeys and Authenticode verification. Missing SDK, network,
 certificate, route or clean-target evidence is a veto. It never authorizes
 starting or repairing Docker/WSL/Hyper-V, mutating a virtual disk, deleting a
 parent artifact directory or weakening manifest/identity/rollback checks.
+
+
+## P6.6 desktop-local product admission
+
+Read INV-083 and
+`docs/architecture/p6-6-desktop-local-product-admission.md` before changing the
+desktop Owner/Workspace journey, native control API, renderer bridge or Next
+desktop route catalog.
+
+P6.6 keeps Next product-blind in desktop mode. It may proxy only readiness,
+while `/health` retains the separate challenge path; the `/api/v1` catch-all
+rejects every desktop route. Owner status/bootstrap and Workspace
+list/create/archive use exact origin-checked Electron IPC and a direct backend
+`/desktop/v1` request authenticated by the native control token.
+That token reaches Electron main, RuntimeHost and the backend only; it must
+never reach Next, renderer JavaScript, argv, SQLite, logs or responses.
+
+Keep desktop schema version 1. Owner bootstrap is singleton/idempotent and
+transactionally audited. Workspace create is Owner-bound, limited to 256 rows
+and transactionally audited without recording the name. Archive is one-way,
+requires exact row-version CAS and rolls back if audit append fails. Do not
+invent PostgreSQL Workspace fields or expose `runtime_job`.
+
+The renderer enters `/desktop` only when the complete preload bridge exists and
+stores no JWT or launch identity. PostgreSQL auth, documents, RAG, Provider
+credentials, Agent Runtime, Skills, MCP and Sandbox remain closed. A green
+P6.6 offline gate is bounded product-admission evidence, not Authenticode,
+clean-Windows journey acceptance or a distributable 1.0.0 claim.

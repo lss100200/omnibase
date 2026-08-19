@@ -21,7 +21,10 @@ test("runtime health requires an HMAC proof without exposing the instance token"
     .update(challenge, "ascii")
     .digest("hex");
   assert.equal(matchesRuntimeInstanceProof(proof, challenge, token), true);
-  assert.equal(matchesRuntimeInstanceProof("c".repeat(64), challenge, token), false);
+  assert.equal(
+    matchesRuntimeInstanceProof("c".repeat(64), challenge, token),
+    false,
+  );
   assert.equal(matchesRuntimeInstanceProof(null, challenge, token), false);
   assert.equal(matchesRuntimeInstanceProof("not-hex", challenge, token), false);
   assert.equal(matchesRuntimeInstanceProof(proof, "not-hex", token), false);
@@ -29,24 +32,35 @@ test("runtime health requires an HMAC proof without exposing the instance token"
 });
 
 test("runtime environment is an explicit safe closed set", () => {
-  const token = "a".repeat(64);
+  const proofKey = "a".repeat(64);
+  const controlToken = "b".repeat(64);
   const dataRoot = path.resolve("C:/Users/Alice/AppData/Local/OmniBase");
-  const environment = buildRuntimeEnvironment(token, dataRoot, {
-    SystemRoot: "C:\\Windows",
-    TEMP: "C:\\Temp",
-    PATH: "C:\\attacker-controlled-bin",
-    OPENAI_API_KEY: "must-not-pass",
-  });
+  const environment = buildRuntimeEnvironment(
+    proofKey,
+    controlToken,
+    dataRoot,
+    {
+      SystemRoot: "C:\\Windows",
+      TEMP: "C:\\Temp",
+      PATH: "C:\\attacker-controlled-bin",
+      OPENAI_API_KEY: "must-not-pass",
+    },
+  );
   assert.deepEqual(environment, {
     OMNIBASE_DESKTOP_MODE: "1",
     OMNIBASE_BIND_HOST: "127.0.0.1",
-    OMNIBASE_DESKTOP_NATIVE_PROOF_KEY: token,
+    OMNIBASE_DESKTOP_NATIVE_PROOF_KEY: proofKey,
+    OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN: controlToken,
     OMNIBASE_DESKTOP_DATA_ROOT: dataRoot,
     SystemRoot: "C:\\Windows",
     TEMP: "C:\\Temp",
   });
   assert.equal("PATH" in environment, false);
   assert.equal("OPENAI_API_KEY" in environment, false);
+  assert.throws(
+    () => buildRuntimeEnvironment(proofKey, "invalid", dataRoot, {}),
+    /runtime_environment_invalid/u,
+  );
 });
 
 test("runtime data root is created once and must remain an ordinary directory", async () => {

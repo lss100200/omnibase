@@ -34,7 +34,10 @@ async function makeBundle(): Promise<{
   const payload = Buffer.from("deterministic-runtime-payload", "utf8");
   await writeFile(runtimePath, payload, { flag: "wx" });
   const configPath = path.join(root, "runtime-host.json");
-  const config = Buffer.from('{"startup_timeout_seconds":60}\n', "utf8");
+  const config = Buffer.from(
+    '{"startup_timeout_seconds":60,"backend_port":47431}\n',
+    "utf8",
+  );
   await writeFile(configPath, config, { flag: "wx" });
   const manifest = JSON.stringify({
     schemaVersion: 1,
@@ -96,6 +99,7 @@ test("runtime manifest and every declared payload require matching SHA-256", asy
     assert.equal(verified.command, bundle.runtimePath);
     assert.deepEqual(verified.args, ["serve"]);
     assert.equal(verified.startupTimeoutMs, 65_000);
+    assert.equal(verified.backendPort, 47_431);
 
     const handle = await open(bundle.runtimePath, "a");
     await handle.write("tamper");

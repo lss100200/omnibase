@@ -156,24 +156,33 @@ internal static class Tests
   private static void InstanceEnvironmentRequiresExplicitValidValues()
   {
     const string tokenName = "OMNIBASE_DESKTOP_NATIVE_PROOF_KEY";
+    const string controlName = "OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN";
     const string dataRootName = "OMNIBASE_DESKTOP_DATA_ROOT";
     const string token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const string control = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
     var oldToken = Environment.GetEnvironmentVariable(tokenName);
+    var oldControl = Environment.GetEnvironmentVariable(controlName);
     var oldDataRoot = Environment.GetEnvironmentVariable(dataRootName);
     try
     {
       Environment.SetEnvironmentVariable(tokenName, token);
+      Environment.SetEnvironmentVariable(controlName, control);
       Environment.SetEnvironmentVariable(dataRootName, Directory.GetCurrentDirectory());
       var loaded = InstanceEnvironment.Load();
       Equal(token, loaded.NativeProofKey);
+      Equal(control, loaded.NativeControlToken);
       Equal(Path.TrimEndingDirectorySeparator(Path.GetFullPath(Directory.GetCurrentDirectory())), loaded.DataRoot);
 
       Environment.SetEnvironmentVariable(tokenName, null);
       Throws("runtime_host_native_proof_key_invalid", () => InstanceEnvironment.Load());
+      Environment.SetEnvironmentVariable(tokenName, token);
+      Environment.SetEnvironmentVariable(controlName, null);
+      Throws("runtime_host_native_control_token_invalid", () => InstanceEnvironment.Load());
     }
     finally
     {
       Environment.SetEnvironmentVariable(tokenName, oldToken);
+      Environment.SetEnvironmentVariable(controlName, oldControl);
       Environment.SetEnvironmentVariable(dataRootName, oldDataRoot);
     }
   }
@@ -204,7 +213,7 @@ internal static class Tests
     AssertEnvironment(info, new[]
     {
       "SystemRoot", "WINDIR", "TEMP", "TMP", "OMNIBASE_DESKTOP_INSTANCE_TOKEN",
-      "OMNIBASE_DESKTOP_NATIVE_PROOF_KEY",
+      "OMNIBASE_DESKTOP_NATIVE_PROOF_KEY", "OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN",
       "OMNIBASE_DESKTOP_DATA_ROOT", "OMNIBASE_DESKTOP_MODE",
     });
     True(InstanceEnvironment.IsValidToken(info.Environment["OMNIBASE_DESKTOP_INSTANCE_TOKEN"]));
@@ -213,6 +222,12 @@ internal static class Tests
         info.Environment["OMNIBASE_DESKTOP_NATIVE_PROOF_KEY"]!);
     True(
         info.Environment["OMNIBASE_DESKTOP_INSTANCE_TOKEN"] !=
+        info.Environment["OMNIBASE_DESKTOP_NATIVE_PROOF_KEY"]);
+    Equal(
+        "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        info.Environment["OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN"]!);
+    True(
+        info.Environment["OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN"] !=
         info.Environment["OMNIBASE_DESKTOP_NATIVE_PROOF_KEY"]);
     var frontendInfo = supervisor.CreateFrontendStartInfo();
     Equal(
@@ -237,6 +252,7 @@ internal static class Tests
     });
     True(InstanceEnvironment.IsValidToken(info.Environment["OMNIBASE_DESKTOP_INSTANCE_TOKEN"]));
     True(!info.Environment.ContainsKey("OMNIBASE_DESKTOP_NATIVE_PROOF_KEY"));
+    True(!info.Environment.ContainsKey("OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN"));
   }
 
   private static void WindowsJobObjectCanBeConfigured()
@@ -302,6 +318,7 @@ internal static class Tests
         config,
         new InstanceEnvironment(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             "D:\\OmniBaseData"),
         artifacts);
   }
@@ -344,6 +361,7 @@ internal static class Tests
         config,
         new InstanceEnvironment(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             applicationRoot),
         artifacts);
     return (supervisor, backendPort, frontendPort);

@@ -20,20 +20,25 @@ creation and graceful shutdown were observed directly. This closes those
 engineering gates only; the artifact was built from `engineering-dirty` source,
 remains unsigned, and still lacks the required personal product journeys.
 
+P6.6 subsequently adds the bounded local Owner/Workspace admission described in
+`docs/architecture/p6-6-desktop-local-product-admission.md`. That source change
+does not rewrite the immutable P6.5 artifact or its acceptance receipt.
+
 ## Process topology
 
 ```text
 OmniBase.exe (Electron, one instance)
   -> verifies resources/runtime/runtime-manifest.json and every declared digest
   -> creates one 32-byte random native proof key
+  -> creates a separate 32-byte random native control token
   -> starts OmniBase.RuntimeHost.exe with a closed environment
 
 OmniBase.RuntimeHost.exe
   -> verifies runtime-host.json and the backend/Node/Next entrypoint digests
   -> creates a separate 32-byte random authorization token
   -> creates a kill-on-close Windows Job Object
-  -> starts backend with the authorization token and native proof key
-  -> starts Next with the authorization token, but never the proof key
+  -> starts backend with the authorization, native proof and native control tokens
+  -> starts Next with the authorization token, but never the proof/control tokens
 
 Electron readiness
   -> GET Next /health with a fresh 64-hex challenge
@@ -51,21 +56,25 @@ and bounds startup, shutdown and captured output.
 
 ## Desktop identity boundary
 
-`OMNIBASE_DESKTOP_NATIVE_PROOF_KEY` and
+`OMNIBASE_DESKTOP_NATIVE_PROOF_KEY`,
+`OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN` and
 `OMNIBASE_DESKTOP_INSTANCE_TOKEN` are independent 64-lowercase-hex values.
-Electron creates the proof key and passes it only to RuntimeHost; RuntimeHost
-passes it only to the backend. RuntimeHost creates the authorization token and
-passes it to Next and the backend. Electron and Next cannot generate a backend
-proof, while the backend never receives Electron's Browser surface.
+Electron creates the proof and control values and passes them only to
+RuntimeHost; RuntimeHost passes both only to the backend. RuntimeHost creates
+the authorization token and passes it to Next and the backend. Electron and
+Next cannot generate a backend readiness proof, while Next and the renderer
+cannot issue a native-control operation.
 
 Browser callers cannot supply this identity. The Next proxy removes
 `x-omnibase-desktop-instance`, `x-omnibase-desktop-challenge` and
-`x-omnibase-desktop-proof` from Browser requests and removes the same headers
-from ordinary upstream responses. It then injects the trusted authorization
-token on the server-side backend hop. Only `/health` forwards a canonical
+`x-omnibase-desktop-proof` plus `x-omnibase-desktop-native-control` from Browser
+requests and removes the same headers from ordinary upstream responses. It then
+injects the trusted authorization token only for the exact health/readiness
+server-side backend hops. It also drops Browser authorization and cookies.
+Only `/health` forwards a canonical
 challenge and a proof returned by the successfully authenticated backend.
 
-Neither secret may appear in argv, Browser JavaScript, local storage, response
+No launch secret may appear in argv, Browser JavaScript, local storage, response
 bodies, logs, diagnostics, manifests or installer authoring.
 
 ## Local storage
@@ -87,11 +96,13 @@ foreign keys, WAL/full synchronous durability, migration checksums, one Owner,
 append-only audit triggers and closed runtime-job transitions. Installer
 authoring never owns or removes this tree.
 
-The current desktop-local Browser surface contains health/readiness and Owner
-bootstrap/status only. Existing P6 Browser journeys that still depend on the
-PostgreSQL/Redis/MinIO application are not silently emulated. A packaged shell
-is not a usable OmniBase 1.0.0 release until every required personal journey is
-explicitly wired and accepted.
+The P6.5 artifact's Browser surface contains health/readiness and Owner
+bootstrap/status only. Current P6.6 source removes both Browser Owner routes,
+keeps Next product-blind with health/readiness only, and places bounded
+Owner/Workspace reads and mutations behind native IPC. Existing P6 Browser journeys that
+still depend on the PostgreSQL/Redis/MinIO application are not silently
+emulated. A packaged shell is not a usable OmniBase 1.0.0 release until every
+required personal journey is explicitly wired and accepted.
 
 ## Build layers
 

@@ -25,10 +25,12 @@ export const HOP_BY_HOP_HEADERS = [
 export const DESKTOP_INSTANCE_HEADER = 'x-omnibase-desktop-instance'
 export const DESKTOP_CHALLENGE_HEADER = 'x-omnibase-desktop-challenge'
 export const DESKTOP_PROOF_HEADER = 'x-omnibase-desktop-proof'
+export const DESKTOP_NATIVE_CONTROL_HEADER = 'x-omnibase-desktop-native-control'
 const DESKTOP_CONTROL_HEADERS = [
   DESKTOP_INSTANCE_HEADER,
   DESKTOP_CHALLENGE_HEADER,
   DESKTOP_PROOF_HEADER,
+  DESKTOP_NATIVE_CONTROL_HEADER,
 ] as const
 const DESKTOP_INSTANCE_TOKEN = /^[a-f0-9]{64}$/
 const DESKTOP_CHALLENGE = /^[a-f0-9]{64}$/
@@ -38,6 +40,7 @@ export interface ProxyRequestOptions {
   readonly desktopInstanceToken?: string | null
   readonly desktopChallenge?: string | null
   readonly forwardDesktopProof?: boolean
+  readonly dropBrowserCredentials?: boolean
 }
 
 export function stripHopByHopHeaders(headers: Headers): void {
@@ -98,6 +101,10 @@ export async function proxyRequest(
   headers.delete('content-length')
   for (const name of DESKTOP_CONTROL_HEADERS) {
     headers.delete(name)
+  }
+  if (options.dropBrowserCredentials === true) {
+    headers.delete('authorization')
+    headers.delete('cookie')
   }
   if (options.desktopInstanceToken !== undefined && options.desktopInstanceToken !== null) {
     if (!DESKTOP_INSTANCE_TOKEN.test(options.desktopInstanceToken)) {

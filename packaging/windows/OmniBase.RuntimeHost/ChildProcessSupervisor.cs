@@ -147,6 +147,8 @@ internal sealed class ChildProcessSupervisor : IDisposable
     startInfo.Environment["OMNIBASE_DESKTOP_INSTANCE_TOKEN"] = authorizationToken;
     startInfo.Environment["OMNIBASE_DESKTOP_NATIVE_PROOF_KEY"] =
         instanceEnvironment.NativeProofKey;
+    startInfo.Environment["OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN"] =
+        instanceEnvironment.NativeControlToken;
     return startInfo;
   }
 

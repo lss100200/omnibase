@@ -32,6 +32,7 @@ export interface VerifiedRuntimeBundle {
   readonly args: readonly string[];
   readonly manifestSha256: string;
   readonly startupTimeoutMs: number;
+  readonly backendPort: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -58,7 +59,8 @@ export function isSafeRuntimeRelativePath(value: string): boolean {
   }
   const parts = value.split("/");
   return parts.every(
-    (part) => part !== "" && part !== "." && part !== ".." && part.length <= 100,
+    (part) =>
+      part !== "" && part !== "." && part !== ".." && part.length <= 100,
   );
 }
 
@@ -88,7 +90,8 @@ function parseManifest(raw: Buffer): RuntimeManifest {
     !Array.isArray(parsed.entrypoint.args) ||
     parsed.entrypoint.args.length > 32 ||
     !parsed.entrypoint.args.every(
-      (arg) => typeof arg === "string" && arg.length <= 1024 && !arg.includes("\0"),
+      (arg) =>
+        typeof arg === "string" && arg.length <= 1024 && !arg.includes("\0"),
     )
   ) {
     throw new Error("runtime_manifest_entrypoint_invalid");
@@ -122,7 +125,10 @@ function parseManifest(raw: Buffer): RuntimeManifest {
       throw new Error("runtime_manifest_file_invalid");
     }
     totalSize += value.size;
-    if (!Number.isSafeInteger(totalSize) || totalSize > MAX_DECLARED_RUNTIME_BYTES) {
+    if (
+      !Number.isSafeInteger(totalSize) ||
+      totalSize > MAX_DECLARED_RUNTIME_BYTES
+    ) {
       throw new Error("runtime_manifest_total_size_invalid");
     }
     seen.add(value.path);
@@ -147,34 +153,51 @@ function safeEqualHex(actual: string, expected: string): boolean {
   if (!SHA256_PATTERN.test(actual) || !SHA256_PATTERN.test(expected)) {
     return false;
   }
-  return timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+  return timingSafeEqual(
+    Buffer.from(actual, "hex"),
+    Buffer.from(expected, "hex"),
+  );
 }
 
 function containedPath(root: string, relativePath: string): string {
   const candidate = path.resolve(root, ...relativePath.split("/"));
   const relation = path.relative(root, candidate);
-  if (relation === "" || relation.startsWith("..") || path.isAbsolute(relation)) {
+  if (
+    relation === "" ||
+    relation.startsWith("..") ||
+    path.isAbsolute(relation)
+  ) {
     throw new Error("runtime_file_outside_bundle");
   }
   return candidate;
 }
 
 function samePhysicalPath(left: string, right: string): boolean {
-  return path.normalize(left).toLowerCase() === path.normalize(right).toLowerCase();
+  return (
+    path.normalize(left).toLowerCase() === path.normalize(right).toLowerCase()
+  );
 }
 
 async function inventoryRuntimeTree(
   root: string,
-): Promise<{ readonly files: ReadonlySet<string>; readonly directories: ReadonlySet<string> }> {
+): Promise<{
+  readonly files: ReadonlySet<string>;
+  readonly directories: ReadonlySet<string>;
+}> {
   const files = new Set<string>();
   const directories = new Set<string>();
 
-  async function walk(directory: string, parts: readonly string[]): Promise<void> {
+  async function walk(
+    directory: string,
+    parts: readonly string[],
+  ): Promise<void> {
     const handle = await opendir(directory);
     const entries = [];
     for await (const entry of handle) entries.push(entry);
     entries.sort((left, right) => {
-      const folded = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
+      const folded = left.name
+        .toLowerCase()
+        .localeCompare(right.name.toLowerCase());
       return folded || left.name.localeCompare(right.name);
     });
     for (const entry of entries) {
@@ -218,7 +241,9 @@ async function inventoryRuntimeTree(
   };
 }
 
-function expectedRuntimeDirectories(files: ReadonlySet<string>): ReadonlySet<string> {
+function expectedRuntimeDirectories(
+  files: ReadonlySet<string>,
+): ReadonlySet<string> {
   const directories = new Set<string>();
   for (const file of files) {
     const parts = file.split("/");
@@ -229,11 +254,21 @@ function expectedRuntimeDirectories(files: ReadonlySet<string>): ReadonlySet<str
   return directories;
 }
 
-function exactSetEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
-  return left.size === right.size && [...left].every((value) => right.has(value));
+function exactSetEqual(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  return (
+    left.size === right.size && [...left].every((value) => right.has(value))
+  );
 }
 
-async function readStartupTimeoutMs(root: string): Promise<number> {
+async function readRuntimeHostLaunchConfig(
+  root: string,
+): Promise<{
+  readonly startupTimeoutMs: number;
+  readonly backendPort: number;
+}> {
   const raw = await readFile(containedPath(root, "runtime-host.json"));
   if (raw.byteLength === 0 || raw.byteLength > 16 * 1024) {
     throw new Error("runtime_host_config_size_invalid");
@@ -249,14 +284,23 @@ async function readStartupTimeoutMs(root: string): Promise<number> {
     typeof value.startup_timeout_seconds !== "number" ||
     !Number.isInteger(value.startup_timeout_seconds) ||
     value.startup_timeout_seconds < 1 ||
-    value.startup_timeout_seconds > 120
+    value.startup_timeout_seconds > 120 ||
+    typeof value.backend_port !== "number" ||
+    !Number.isInteger(value.backend_port) ||
+    value.backend_port < 1 ||
+    value.backend_port > 65_535
   ) {
-    throw new Error("runtime_host_startup_timeout_invalid");
+    throw new Error("runtime_host_launch_config_invalid");
   }
-  return value.startup_timeout_seconds * 1_000 + 5_000;
+  return Object.freeze({
+    startupTimeoutMs: value.startup_timeout_seconds * 1_000 + 5_000,
+    backendPort: value.backend_port,
+  });
 }
 
-async function digestFile(filePath: string): Promise<{ digest: string; size: number }> {
+async function digestFile(
+  filePath: string,
+): Promise<{ digest: string; size: number }> {
   const hash = createHash("sha256");
   let size = 0;
   await new Promise<void>((resolve, reject) => {
@@ -276,7 +320,10 @@ export async function verifyRuntimeBundle(options: {
   readonly manifestPath: string;
   readonly expectedManifestSha256: string;
 }): Promise<VerifiedRuntimeBundle> {
-  if (!path.isAbsolute(options.bundleRoot) || !path.isAbsolute(options.manifestPath)) {
+  if (
+    !path.isAbsolute(options.bundleRoot) ||
+    !path.isAbsolute(options.manifestPath)
+  ) {
     throw new Error("runtime_bundle_paths_must_be_absolute");
   }
   if (!SHA256_PATTERN.test(options.expectedManifestSha256)) {
@@ -346,7 +393,10 @@ export async function verifyRuntimeBundle(options: {
       throw new Error("runtime_file_identity_invalid");
     }
     const actual = await digestFile(realCandidate);
-    if (actual.size !== file.size || !safeEqualHex(actual.digest, file.sha256)) {
+    if (
+      actual.size !== file.size ||
+      !safeEqualHex(actual.digest, file.sha256)
+    ) {
       throw new Error("runtime_file_digest_mismatch");
     }
   }
@@ -355,12 +405,13 @@ export async function verifyRuntimeBundle(options: {
   if (!path.isAbsolute(command)) {
     throw new Error("runtime_entrypoint_not_absolute");
   }
-  const startupTimeoutMs = await readStartupTimeoutMs(root);
+  const launchConfig = await readRuntimeHostLaunchConfig(root);
   return Object.freeze({
     root,
     command,
     args: manifest.entrypoint.args,
     manifestSha256,
-    startupTimeoutMs,
+    startupTimeoutMs: launchConfig.startupTimeoutMs,
+    backendPort: launchConfig.backendPort,
   });
 }

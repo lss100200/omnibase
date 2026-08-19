@@ -4093,16 +4093,18 @@ MCP, Planner or enterprise Multi-Agent. Unsupported Browser API routes fail
 closed; a shell that opens while required product journeys remain unwired is
 not a usable or production-ready OmniBase release.
 
-Electron creates one 32-byte CSPRNG native proof key encoded as 64 lowercase
-hexadecimal characters and passes it to RuntimeHost in a closed child-process
-environment. RuntimeHost creates a separate 32-byte CSPRNG authorization token.
-It passes the proof key only to the backend and the authorization token only to
-Next and the backend. Neither secret enters argv, Browser JavaScript, response
-bodies, logs, diagnostics or installer authoring. Next removes caller-supplied
-desktop control headers, injects the authorization token only on the
-server-side backend hop and removes reflected control headers. Native readiness
-sends a fresh 64-hex challenge and accepts only a successful authenticated
-backend health response carrying
+Electron creates independent 32-byte CSPRNG native proof and native control
+tokens encoded as 64 lowercase hexadecimal characters and passes both to
+RuntimeHost in a closed child-process environment. RuntimeHost creates a third
+32-byte CSPRNG authorization token. It passes the proof and control tokens only
+to the backend and the authorization token only to Next and the backend. None
+enters argv, Browser JavaScript, response bodies, logs, diagnostics or installer
+authoring. Next removes caller-supplied desktop control headers, injects the
+authorization token only on exact health/readiness server-side backend hops,
+drops Browser authorization and cookies, and removes reflected control headers.
+Native readiness sends a fresh 64-hex
+challenge and accepts only a successful authenticated backend health response
+carrying
 `HMAC-SHA256(native_proof_key, challenge)` through Next. Missing, duplicate,
 malformed or drifted identity material fails closed.
 
@@ -4169,4 +4171,67 @@ uninstall only installer-owned files while preserving
 `%LOCALAPPDATA%\OmniBase`. A malformed manifest, identity failure, partial
 upgrade, missing toolchain, absent signing authority or incomplete product
 journey is a release veto, not permission to disable checks, start optional
-infrastructure, expose either secret or claim production readiness.
+infrastructure, expose any launch secret or claim production readiness.
+
+
+## INV-083 p66-desktop-local-product-admission-boundary
+
+P6.6 admits only one offline local product journey over the P6.5 runtime: the
+single Owner may be bootstrapped and may create, list and archive SQLite
+Workspaces. It does not emulate JWT, tenant membership, PostgreSQL Workspace
+templates/Runs, documents, RAG, Provider credentials, Agent Runtime, Skills,
+MCP, Sandbox, Planner or Multi-Agent. Those paths remain absent or return a
+stable redacted desktop denial. Desktop schema version 1 remains authoritative;
+P6.6 adds no business or desktop migration.
+
+Next is not an Owner authority. In desktop mode its catch-all proxy rejects
+every `/api/v1` route and may forward only exact `GET /health/ready`; `/health`
+remains the dedicated challenge-aware route. Query-bearing and every other path
+are rejected before upstream contact, the target must be an explicit HTTP
+IPv4-loopback origin with a nonzero port, Browser Authorization and Cookie are
+dropped, and all desktop control headers are stripped in both directions.
+
+Owner and Workspace reads and writes use the exact Electron IPC catalog and a direct
+Electron-main-to-backend `/desktop/v1` hop authenticated by the per-launch
+native control token. The token is not available to Next or the renderer.
+Electron main accepts only the fixed UI origin and exact bounded arguments. The
+native client validates the backend origin, response byte budget, 256-row
+Workspace bound, unique identifiers and closed DTO shape before returning a
+secret-free success/error union. Native routes reject
+missing, duplicate, malformed or wrong control identity and reject mixed
+instance/challenge/proof identity. Ordinary routes reject a native-control
+header.
+
+Owner bootstrap is singleton and idempotent. Owner creation and its append-only
+audit event are one `BEGIN IMMEDIATE` transaction. Workspace creation requires
+the Owner, has a 256-row lifetime capacity and atomically appends a
+`workspace_created` event without recording the user-supplied name. Archive is
+the only state transition, requires exact active state plus `row_version` CAS,
+increments the version and appends `workspace_archived` in the same
+transaction. An audit failure, stale version, wrong identity or malformed input
+must leave no partial mutation.
+
+The renderer routes to `/desktop` only when the complete preload bridge exists.
+It stores no JWT or launch identity and has no HTTP fallback. Direct Browser
+mode retains the existing JWT flow. P6.6 is an unsigned engineering product
+admission only; it does not prove the remaining personal journeys,
+Authenticode, clean-source reconstruction or clean-Windows release acceptance.
+
+**Required verification**
+
+- desktop-local Owner/Workspace/native-control tests plus Ruff check/format and
+  the existing import/freeze safety tests;
+- Electron IPC/native-client/runtime tests, typecheck and source build;
+- RuntimeHost closed-environment tests proving the control token reaches the
+  backend and not Next;
+- frontend proxy/bridge tests, typecheck, lint and production build;
+- release/payload/freeze contract tests and both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the exact child group, which invalidates
+all launch identities. Preserve `%LOCALAPPDATA%\OmniBase` and append-only audit
+evidence. Forward-fix application bytes; never delete or rewrite SQLite,
+weaken CAS/audit checks, publish a mutating Next route, expose a launch identity
+to the renderer, or start optional infrastructure to manufacture a successful
+journey.

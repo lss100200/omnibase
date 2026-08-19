@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import {
   DESKTOP_CHALLENGE_HEADER,
   DESKTOP_INSTANCE_HEADER,
+  DESKTOP_NATIVE_CONTROL_HEADER,
   DESKTOP_PROOF_HEADER,
   HOP_BY_HOP_HEADERS,
   proxyRequest,
@@ -149,14 +150,17 @@ test('desktop identity is injected only from trusted server options and never re
   let seenInstance = ''
   let seenChallenge = ''
   let seenProof = ''
+  let seenNativeControl = ''
   const upstream = await startUpstream((req, res) => {
     seenInstance = String(req.headers[DESKTOP_INSTANCE_HEADER] ?? '')
     seenChallenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '')
     seenProof = String(req.headers[DESKTOP_PROOF_HEADER] ?? '')
+    seenNativeControl = String(req.headers[DESKTOP_NATIVE_CONTROL_HEADER] ?? '')
     res.writeHead(200, {
       [DESKTOP_INSTANCE_HEADER]: 'must-not-reach-browser',
       [DESKTOP_CHALLENGE_HEADER]: 'must-not-reach-browser',
       [DESKTOP_PROOF_HEADER]: 'must-not-reach-browser',
+      [DESKTOP_NATIVE_CONTROL_HEADER]: 'must-not-reach-browser',
     })
     res.end('ok')
   })
@@ -168,6 +172,7 @@ test('desktop identity is injected only from trusted server options and never re
           [DESKTOP_INSTANCE_HEADER]: 'b'.repeat(64),
           [DESKTOP_CHALLENGE_HEADER]: 'c'.repeat(64),
           [DESKTOP_PROOF_HEADER]: 'd'.repeat(64),
+          [DESKTOP_NATIVE_CONTROL_HEADER]: 'e'.repeat(64),
         },
       }),
       { desktopInstanceToken: trustedToken },
@@ -176,9 +181,11 @@ test('desktop identity is injected only from trusted server options and never re
     assert.equal(seenInstance, trustedToken)
     assert.equal(seenChallenge, '')
     assert.equal(seenProof, '')
+    assert.equal(seenNativeControl, '')
     assert.equal(response.headers.get(DESKTOP_INSTANCE_HEADER), null)
     assert.equal(response.headers.get(DESKTOP_CHALLENGE_HEADER), null)
     assert.equal(response.headers.get(DESKTOP_PROOF_HEADER), null)
+    assert.equal(response.headers.get(DESKTOP_NATIVE_CONTROL_HEADER), null)
   } finally {
     await upstream.close()
   }

@@ -11,9 +11,19 @@ import {
 } from "./security/window-policy.ts";
 import { RuntimeManager } from "./runtime/runtime-manager.ts";
 import { PINNED_RUNTIME_MANIFEST_SHA256 } from "./runtime/trusted-manifest.ts";
+import type { DesktopOperationResult } from "./shared/ipc-contract.ts";
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeManager: RuntimeManager | null = null;
+
+function runtimeUnavailable<T>(): Promise<DesktopOperationResult<T>> {
+  return Promise.resolve(
+    Object.freeze({
+      ok: false,
+      error: Object.freeze({ code: "desktop_runtime_not_ready" }),
+    }),
+  );
+}
 
 const hasInstanceLock = enforceSingleInstance(app, () => mainWindow);
 
@@ -38,11 +48,12 @@ if (hasInstanceLock) {
     installFailClosedPermissionPolicy(session.defaultSession);
     registerClosedIpcHandlers(ipcMain, {
       getVersion: () => app.getVersion(),
-      getRuntimeStatus: () => runtimeManager?.getStatus() ?? {
-        phase: "failed",
-        attempts: 0,
-        lastError: "runtime_not_initialized",
-      },
+      getRuntimeStatus: () =>
+        runtimeManager?.getStatus() ?? {
+          phase: "failed",
+          attempts: 0,
+          lastError: "runtime_not_initialized",
+        },
       retryRuntimeStartup: () => {
         if (runtimeManager === null) {
           return Promise.resolve({
@@ -53,6 +64,16 @@ if (hasInstanceLock) {
         }
         return runtimeManager.start();
       },
+      getOwnerStatus: () =>
+        runtimeManager?.getOwnerStatus() ?? runtimeUnavailable(),
+      bootstrapOwner: (input) =>
+        runtimeManager?.bootstrapOwner(input) ?? runtimeUnavailable(),
+      listWorkspaces: () =>
+        runtimeManager?.listWorkspaces() ?? runtimeUnavailable(),
+      createWorkspace: (input) =>
+        runtimeManager?.createWorkspace(input) ?? runtimeUnavailable(),
+      archiveWorkspace: (input) =>
+        runtimeManager?.archiveWorkspace(input) ?? runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();

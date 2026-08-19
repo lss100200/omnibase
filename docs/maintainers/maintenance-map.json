@@ -1186,6 +1186,40 @@
         "scripts/release/test_build_p6_5_desktop_payload.py",
         "scripts/release/test_build_p6_5_windows_desktop.py"
       ]
+    },
+    {
+      "id": "INV-083",
+      "title": "P6.6 desktop-local Owner and Workspace admission is native-controlled, transactional and fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-083-p66-desktop-local-product-admission-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/manifest.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/app/desktop/**",
+        "frontend/app/page-client.tsx",
+        "frontend/app/api/v1/**",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-runtime.ts",
+        "frontend/lib/proxy.ts",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "docs/architecture/p6-6-desktop-local-product-admission.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_app.py",
+        "desktop/tests/ipc.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/runtime-manager.test.ts",
+        "desktop/tests/runtime-manifest.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-runtime.test.ts",
+        "frontend/lib/proxy.test.ts",
+        "packaging/windows/OmniBase.RuntimeHost.Tests/Program.cs"
+      ]
     }
   ],
   "modules": [
@@ -4199,7 +4233,7 @@
     },
     {
       "id": "p6-5-windows-desktop-distribution",
-      "name": "P6.5 per-user Windows desktop runtime, packaging and installer",
+      "name": "P6.5/P6.6 per-user Windows desktop runtime, local product admission, packaging and installer",
       "source_paths": [
         "backend/src/omnibase/desktop_local/**",
         "backend/tests/test_desktop_local_*.py",
@@ -4210,7 +4244,10 @@
         "desktop/pnpm-lock.yaml",
         "desktop/tsconfig*.json",
         "frontend/app/api/v1/**",
+        "frontend/app/desktop/**",
         "frontend/app/health/**",
+        "frontend/app/page-client.tsx",
+        "frontend/lib/desktop-bridge*.ts",
         "frontend/lib/desktop-runtime*.ts",
         "frontend/lib/proxy*.ts",
         "frontend/next.config.js",
@@ -4224,6 +4261,7 @@
         "scripts/release/test_build_p6_5_windows_desktop.py",
         "deployment/release/windows/desktop-release.template.json",
         "docs/architecture/p6-5-windows-desktop-distribution.md",
+        "docs/architecture/p6-6-desktop-local-product-admission.md",
         "docs/maintainers/security-invariants.md",
         "AGENTS.md"
       ],
@@ -4231,6 +4269,8 @@
         "backend/src/omnibase/desktop_local/app.py:create_desktop_local_app",
         "backend/src/omnibase/desktop_local/app.py:main",
         "desktop/src/main.ts:Electron main process",
+        "desktop/src/runtime/native-client.ts:DesktopNativeClient",
+        "frontend/app/desktop/page.tsx:DesktopAdmissionPage",
         "frontend/lib/desktop-runtime.ts:proxyRuntimeRequest",
         "frontend/lib/desktop-runtime.ts:proxyRuntimeHealthRequest",
         "packaging/windows/OmniBase.DesktopBackend/build_backend.py:build_backend",
@@ -4241,8 +4281,10 @@
       ],
       "public_interfaces": [
         "Per-user Electron application loading only the fixed loopback Next origin",
-        "Loopback-only SQLite FastAPI service with separate per-launch native-proof and authorization identities",
-        "Challenge-HMAC native readiness without exposing either secret to Browser JavaScript",
+        "Loopback-only SQLite FastAPI service with separate per-launch native-proof, native-control and authorization identities",
+        "Challenge-HMAC native readiness without exposing any launch identity to Browser JavaScript",
+        "Origin-checked native IPC for single-Owner bootstrap and audited Workspace create/list/archive",
+        "Read-only desktop Next proxy catalog that rejects unsupported routes before upstream contact",
         "Closed digest-pinned RuntimeHost/backend/Node/Next payload",
         "Single WiX Burn EXE containing one transactional per-user MSI",
         "Application data under %LOCALAPPDATA%\\OmniBase retained by normal uninstall"
@@ -4265,7 +4307,8 @@
         "INV-076",
         "INV-080",
         "INV-081",
-        "INV-082"
+        "INV-082",
+        "INV-083"
       ],
       "verification": [
         "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py -q",
