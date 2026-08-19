@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+    Id="OmniBase.Desktop.RollbackProbe.Bundle"
+    Name="OmniBase rollback probe"
+    Manufacturer="OmniBase Installer Tests"
+    Version="$(var.ProductVersion)"
+    Compressed="yes"
+    DisableModify="yes"
+    DisableRemove="no">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="hyperlinkLicense"
+        LicenseUrl=""
+        ShowVersion="yes"
+        SuppressOptionsUI="yes"
+        SuppressDowngradeFailure="no" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <RollbackBoundary
+        Id="OmniBaseRollbackProbeTransaction"
+        Transaction="yes"
+        Vital="yes" />
+      <MsiPackage
+        Id="OmniBaseUpgradeCandidate"
+        SourceFile="$(var.OmniBase.Package.TargetPath)"
+        Compressed="yes"
+        Visible="no"
+        Vital="yes"
+        Permanent="no">
+        <MsiProperty
+          Name="INSTALLFOLDER"
+          Value="[LocalAppDataFolder]Programs\OmniBase" />
+      </MsiPackage>
+      <MsiPackage
+        Id="IntentionalRollbackBlocker"
+        SourceFile="$(var.OmniBase.RollbackBlocker.TargetPath)"
+        Compressed="yes"
+        Visible="no"
+        Vital="yes"
+        Permanent="no" />
+    </Chain>
+  </Bundle>
+</Wix>

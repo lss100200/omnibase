@@ -236,6 +236,19 @@ runtime evidence; then correct the stale documentation in the same change.
   unique, streamed metadata order is fail-closed, and the outer controller
   requires a clean unchanged source HEAD plus a read-only healthy Linux Docker
   preflight before creating any disposable target material.
+- P6.5 is the per-user Windows desktop distribution lane. Read INV-082 and
+  `docs/architecture/p6-5-windows-desktop-distribution.md` before changing its
+  SQLite backend, Next desktop proxy, Electron shell, RuntimeHost, payload,
+  PyInstaller or WiX authoring. The native proof key and authorization token
+  are separate server-owned identities, neither is a Browser credential, and
+  readiness requires a fresh challenge-HMAC proof over a digest-pinned loopback
+  runtime. Installation is per-user under
+  `%LOCALAPPDATA%\Programs\OmniBase`; `%LOCALAPPDATA%\OmniBase` is application
+  data that normal uninstall must retain. Docker, WSL, PostgreSQL, BGE-M3 and
+  enhanced Sandbox components remain optional and must not be silently
+  installed or started. Unsigned, dirty-source, incomplete-product-journey or
+  untested installer artifacts are engineering outputs, not a distributable
+  OmniBase 1.0.0 EXE.
 
 ## Safe change workflow
 

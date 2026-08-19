@@ -131,6 +131,74 @@ test("supervisor stops after three attempts and exposes only a redacted error", 
   assert.match(status.lastError ?? "", /\[REDACTED\]|runtime_readiness_timeout/u);
 });
 
+test("stop cancels an in-flight startup without a late ready state or retry", async () => {
+  let resolveProbe: ((value: boolean) => void) | null = null;
+  const children: FakeChild[] = [];
+  const supervisor = new RuntimeSupervisor(
+    {
+      command,
+      cwd,
+      environment: { OMNIBASE_DESKTOP_MODE: "1" },
+      readinessProbe: () =>
+        new Promise<boolean>((resolve) => {
+          resolveProbe = resolve;
+        }),
+      maxAttempts: 3,
+      startupTimeoutMs: 1_000,
+      probeIntervalMs: 1,
+      retryDelayMs: 1,
+    },
+    {
+      spawnRuntime: () => {
+        const child = new FakeChild();
+        children.push(child);
+        return child;
+      },
+    },
+  );
+
+  const starting = supervisor.start();
+  await Promise.resolve();
+  assert.equal(children.length, 1);
+  assert.equal(supervisor.stop().phase, "stopped");
+  assert.equal(children[0]?.killed, true);
+  assert.notEqual(resolveProbe, null);
+  resolveProbe!(true);
+
+  assert.equal((await starting).phase, "stopped");
+  assert.equal(supervisor.getStatus().phase, "stopped");
+  assert.equal(children.length, 1);
+});
+
+test("a child exit racing a successful probe cannot produce ready", async () => {
+  let child: FakeChild | null = null;
+  const supervisor = new RuntimeSupervisor(
+    {
+      command,
+      cwd,
+      environment: { OMNIBASE_DESKTOP_MODE: "1" },
+      readinessProbe: async () => {
+        child!.emit("exit", 9, null);
+        return true;
+      },
+      maxAttempts: 1,
+      startupTimeoutMs: 10,
+      probeIntervalMs: 1,
+    },
+    {
+      spawnRuntime: () => {
+        child = new FakeChild();
+        return child;
+      },
+      sleep: async () => undefined,
+    },
+  );
+
+  const status = await supervisor.start();
+  assert.equal(status.phase, "failed");
+  assert.match(status.lastError ?? "", /runtime_exited_before_ready/u);
+});
+
 test("runtime error redaction removes bearer credentials, keys, URLs, and paths", () => {
   const raw = `Bearer abc.def api-key=secret https://user:pass@example.com ${command}`;
   const redacted = redactRuntimeError(raw, [command]);

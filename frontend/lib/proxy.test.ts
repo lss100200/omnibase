@@ -3,7 +3,14 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 
-import { HOP_BY_HOP_HEADERS, proxyRequest, stripHopByHopHeaders } from './proxy'
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_INSTANCE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  HOP_BY_HOP_HEADERS,
+  proxyRequest,
+  stripHopByHopHeaders,
+} from './proxy'
 
 function startUpstream(
   handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
@@ -135,6 +142,58 @@ test('method and body are forwarded; hop-by-hop headers are stripped', async () 
   } finally {
     await upstream.close()
   }
+})
+
+test('desktop identity is injected only from trusted server options and never reflected', async () => {
+  const trustedToken = 'a'.repeat(64)
+  let seenInstance = ''
+  let seenChallenge = ''
+  let seenProof = ''
+  const upstream = await startUpstream((req, res) => {
+    seenInstance = String(req.headers[DESKTOP_INSTANCE_HEADER] ?? '')
+    seenChallenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '')
+    seenProof = String(req.headers[DESKTOP_PROOF_HEADER] ?? '')
+    res.writeHead(200, {
+      [DESKTOP_INSTANCE_HEADER]: 'must-not-reach-browser',
+      [DESKTOP_CHALLENGE_HEADER]: 'must-not-reach-browser',
+      [DESKTOP_PROOF_HEADER]: 'must-not-reach-browser',
+    })
+    res.end('ok')
+  })
+  try {
+    const response = await proxyRequest(
+      upstream.url,
+      new Request('http://frontend.test/api/v1/owner', {
+        headers: {
+          [DESKTOP_INSTANCE_HEADER]: 'b'.repeat(64),
+          [DESKTOP_CHALLENGE_HEADER]: 'c'.repeat(64),
+          [DESKTOP_PROOF_HEADER]: 'd'.repeat(64),
+        },
+      }),
+      { desktopInstanceToken: trustedToken },
+    )
+    assert.equal(response.status, 200)
+    assert.equal(seenInstance, trustedToken)
+    assert.equal(seenChallenge, '')
+    assert.equal(seenProof, '')
+    assert.equal(response.headers.get(DESKTOP_INSTANCE_HEADER), null)
+    assert.equal(response.headers.get(DESKTOP_CHALLENGE_HEADER), null)
+    assert.equal(response.headers.get(DESKTOP_PROOF_HEADER), null)
+  } finally {
+    await upstream.close()
+  }
+})
+
+test('invalid trusted desktop identity fails before contacting upstream', async () => {
+  const response = await proxyRequest(
+    'http://127.0.0.1:1',
+    new Request('http://frontend.test/api/v1/owner'),
+    { desktopInstanceToken: 'not-a-token' },
+  )
+  assert.equal(response.status, 503)
+  assert.deepEqual(await response.json(), {
+    error: { code: 'desktop_runtime_configuration_invalid' },
+  })
 })
 
 test('response status/content-type pass through and hop-by-hop is stripped', async () => {

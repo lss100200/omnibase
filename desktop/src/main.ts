@@ -32,7 +32,7 @@ if (hasInstanceLock) {
       runtimeRoot: path.join(process.resourcesPath, "runtime"),
       expectedManifestSha256: PINNED_RUNTIME_MANIFEST_SHA256,
       uiOrigin: DESKTOP_UI_ORIGIN,
-      dataRoot: path.join(localAppData, "OmniBase", "data"),
+      dataRoot: path.join(localAppData, "OmniBase"),
       hostEnvironment: process.env,
     });
     installFailClosedPermissionPolicy(session.defaultSession);

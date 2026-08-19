@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Id="OmniBase.RollbackBlocker.Package"
+    Name="OmniBase rollback blocker"
+    Manufacturer="OmniBase Installer Tests"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    Scope="perUser"
+    InstallerVersion="500"
+    Compressed="yes">
+    <Launch
+      Condition="0"
+      Message="Intentional OmniBase installer transaction rollback probe." />
+  </Package>
+</Wix>

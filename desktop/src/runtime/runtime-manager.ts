@@ -1,4 +1,5 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { RuntimeStatus } from "../shared/ipc-contract.ts";
@@ -31,7 +32,7 @@ export function buildRuntimeEnvironment(
   const environment: Record<string, string> = {
     OMNIBASE_DESKTOP_MODE: "1",
     OMNIBASE_BIND_HOST: "127.0.0.1",
-    OMNIBASE_DESKTOP_INSTANCE_TOKEN: instanceToken,
+    OMNIBASE_DESKTOP_NATIVE_PROOF_KEY: instanceToken,
     OMNIBASE_DESKTOP_DATA_ROOT: dataRoot,
   };
   for (const key of SAFE_HOST_ENVIRONMENT_KEYS) {
@@ -50,23 +51,63 @@ export function buildRuntimeEnvironment(
   return Object.freeze(environment);
 }
 
-export function matchesRuntimeInstanceToken(
+export function matchesRuntimeInstanceProof(
   actual: string | null,
-  expected: string,
+  challenge: string,
+  instanceToken: string,
 ): boolean {
   if (
     actual === null ||
     !/^[a-f0-9]{64}$/u.test(actual) ||
-    !/^[a-f0-9]{64}$/u.test(expected)
+    !/^[a-f0-9]{64}$/u.test(challenge) ||
+    !/^[a-f0-9]{64}$/u.test(instanceToken)
   ) {
     return false;
   }
-  return timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+  const expected = createHmac("sha256", Buffer.from(instanceToken, "hex"))
+    .update(challenge, "ascii")
+    .digest();
+  return timingSafeEqual(Buffer.from(actual, "hex"), expected);
+}
+
+export async function prepareRuntimeDataRoot(dataRoot: string): Promise<void> {
+  if (
+    !path.isAbsolute(dataRoot) ||
+    path.normalize(dataRoot) === path.parse(dataRoot).root
+  ) {
+    throw new Error("runtime_data_root_invalid");
+  }
+  try {
+    await mkdir(dataRoot, { recursive: false, mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new Error("runtime_data_root_unavailable");
+    }
+  }
+  try {
+    const metadata = await lstat(dataRoot);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error("runtime_data_root_identity_invalid");
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "runtime_data_root_identity_invalid"
+    ) {
+      throw error;
+    }
+    throw new Error("runtime_data_root_unavailable");
+  }
 }
 
 export class RuntimeManager {
   readonly #options: RuntimeManagerOptions;
   #supervisor: RuntimeSupervisor | null = null;
+  #generation = 0;
+  #startOperation: {
+    readonly generation: number;
+    readonly promise: Promise<RuntimeStatus>;
+  } | null = null;
   #status: RuntimeStatus = Object.freeze({
     phase: "stopped",
     attempts: 0,
@@ -84,7 +125,27 @@ export class RuntimeManager {
     return this.#supervisor?.getStatus() ?? this.#status;
   }
 
-  async start(): Promise<RuntimeStatus> {
+  start(): Promise<RuntimeStatus> {
+    if (this.#supervisor?.getStatus().phase === "ready") {
+      return Promise.resolve(this.#supervisor.getStatus());
+    }
+    if (
+      this.#startOperation !== null &&
+      this.#startOperation.generation === this.#generation
+    ) {
+      return this.#startOperation.promise;
+    }
+    const generation = ++this.#generation;
+    const promise = this.#start(generation).finally(() => {
+      if (this.#startOperation?.generation === generation) {
+        this.#startOperation = null;
+      }
+    });
+    this.#startOperation = { generation, promise };
+    return promise;
+  }
+
+  async #start(generation: number): Promise<RuntimeStatus> {
     this.#status = Object.freeze({
       phase: "starting",
       attempts: 0,
@@ -96,8 +157,11 @@ export class RuntimeManager {
         manifestPath: path.join(this.#options.runtimeRoot, "runtime-manifest.json"),
         expectedManifestSha256: this.#options.expectedManifestSha256,
       });
+      if (generation !== this.#generation) return this.#status;
+      await prepareRuntimeDataRoot(this.#options.dataRoot);
+      if (generation !== this.#generation) return this.#status;
       const instanceToken = randomBytes(32).toString("hex");
-      this.#supervisor = new RuntimeSupervisor({
+      const supervisor = new RuntimeSupervisor({
         command: bundle.command,
         args: bundle.args,
         cwd: bundle.root,
@@ -107,23 +171,40 @@ export class RuntimeManager {
           this.#options.hostEnvironment,
         ),
         readinessProbe: async () => {
+          const challenge = randomBytes(32).toString("hex");
           const response = await fetch(`${this.#options.uiOrigin}/health`, {
             method: "GET",
+            headers: {
+              "x-omnibase-desktop-challenge": challenge,
+            },
             cache: "no-store",
             redirect: "error",
             signal: AbortSignal.timeout(1_000),
           });
           return (
             response.ok &&
-            matchesRuntimeInstanceToken(
-              response.headers.get("x-omnibase-desktop-instance"),
+            matchesRuntimeInstanceProof(
+              response.headers.get("x-omnibase-desktop-proof"),
+              challenge,
               instanceToken,
             )
           );
         },
+        startupTimeoutMs: bundle.startupTimeoutMs,
       });
-      this.#status = await this.#supervisor.start();
+      if (generation !== this.#generation) {
+        supervisor.stop();
+        return this.#status;
+      }
+      this.#supervisor = supervisor;
+      const status = await supervisor.start();
+      if (generation !== this.#generation) {
+        supervisor.stop();
+        return this.#status;
+      }
+      this.#status = status;
     } catch (error) {
+      if (generation !== this.#generation) return this.#status;
       this.#status = Object.freeze({
         phase: "failed",
         attempts: 0,
@@ -134,6 +215,7 @@ export class RuntimeManager {
   }
 
   stop(): RuntimeStatus {
+    this.#generation += 1;
     this.#status = this.#supervisor?.stop() ?? Object.freeze({
       phase: "stopped",
       attempts: this.#status.attempts,
