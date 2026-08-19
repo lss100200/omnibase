@@ -2385,12 +2385,15 @@ Read INV-082 and
 construction, PyInstaller or WiX authoring.
 
 The native chain is Electron -> RuntimeHost -> loopback backend/Next. Electron
-pins the runtime manifest, generates one 64-hex instance token and verifies a
-fresh challenge-HMAC proof through Next before opening the window. Next removes
-Browser-supplied desktop control headers, injects only the server-owned token
-on the backend hop and removes reflected control headers. RuntimeHost accepts no
-argv, verifies every child immediately before launch and owns the children in a
-kill-on-close Job Object. Port-open alone is not readiness evidence.
+pins the runtime manifest, generates one 64-hex native proof key and verifies a
+fresh challenge-HMAC proof through Next before opening the window. RuntimeHost
+creates a separate 64-hex authorization token, passes the proof key only to the
+backend, and passes the authorization token only to Next and the backend. Next
+removes Browser-supplied desktop control headers, injects only the authorization
+token on the backend hop and removes reflected control headers. RuntimeHost
+accepts no argv, verifies every child immediately before launch and owns the
+children in a kill-on-close Job Object. Port-open alone is not readiness
+evidence.
 
 The desktop-local backend is an independent SQLite composition. It must not
 load root `.env`, PostgreSQL settings or ambient Provider credentials, and it

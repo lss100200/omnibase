@@ -4093,14 +4093,17 @@ MCP, Planner or enterprise Multi-Agent. Unsupported Browser API routes fail
 closed; a shell that opens while required product journeys remain unwired is
 not a usable or production-ready OmniBase release.
 
-Electron creates exactly one 32-byte CSPRNG instance token encoded as 64
-lowercase hexadecimal characters and passes it only in a closed child-process
-environment. The token never enters argv, Browser JavaScript, response bodies,
-logs, diagnostics or installer authoring. Next removes caller-supplied desktop
-control headers, injects the trusted token only on the server-side backend hop
-and removes any reflected control headers. Native readiness sends a fresh
-64-hex challenge and accepts only a successful backend health response carrying
-`HMAC-SHA256(token, challenge)` from the Next process. Missing, duplicate,
+Electron creates one 32-byte CSPRNG native proof key encoded as 64 lowercase
+hexadecimal characters and passes it to RuntimeHost in a closed child-process
+environment. RuntimeHost creates a separate 32-byte CSPRNG authorization token.
+It passes the proof key only to the backend and the authorization token only to
+Next and the backend. Neither secret enters argv, Browser JavaScript, response
+bodies, logs, diagnostics or installer authoring. Next removes caller-supplied
+desktop control headers, injects the authorization token only on the
+server-side backend hop and removes reflected control headers. Native readiness
+sends a fresh 64-hex challenge and accepts only a successful authenticated
+backend health response carrying
+`HMAC-SHA256(native_proof_key, challenge)` through Next. Missing, duplicate,
 malformed or drifted identity material fails closed.
 
 The runtime payload is a closed ordinary-file tree. Electron pins the exact
@@ -4166,4 +4169,4 @@ uninstall only installer-owned files while preserving
 `%LOCALAPPDATA%\OmniBase`. A malformed manifest, identity failure, partial
 upgrade, missing toolchain, absent signing authority or incomplete product
 journey is a release veto, not permission to disable checks, start optional
-infrastructure, expose the instance token or claim production readiness.
+infrastructure, expose either secret or claim production readiness.

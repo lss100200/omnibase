@@ -4241,8 +4241,8 @@
       ],
       "public_interfaces": [
         "Per-user Electron application loading only the fixed loopback Next origin",
-        "Loopback-only SQLite FastAPI service with one per-launch server-owned instance identity",
-        "Challenge-HMAC native readiness without exposing the instance token to Browser JavaScript",
+        "Loopback-only SQLite FastAPI service with separate per-launch native-proof and authorization identities",
+        "Challenge-HMAC native readiness without exposing either secret to Browser JavaScript",
         "Closed digest-pinned RuntimeHost/backend/Node/Next payload",
         "Single WiX Burn EXE containing one transactional per-user MSI",
         "Application data under %LOCALAPPDATA%\\OmniBase retained by normal uninstall"
