@@ -231,3 +231,46 @@ test("native client accepts only a fixed IPv4-loopback origin and canonical toke
     /desktop_native_control_token_invalid/u,
   );
 });
+
+test("native client maps provider list without secret material", async () => {
+  const providerId = `provider_${"c".repeat(32)}`;
+  const seen: string[] = [];
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo) => {
+      seen.push(String(input));
+      return jsonResponse({
+        items: [
+          {
+            id: providerId,
+            display_name: "Loopback",
+            base_url: "http://127.0.0.1:9/v1",
+            model_name: "deepseek-chat",
+            family: "deepseek",
+            gear: "standard",
+            thinking_depth: "medium",
+            timeout_seconds: 30,
+            allow_loopback_http: true,
+            is_default: true,
+            is_enabled: true,
+            has_secret: true,
+            created_at: "2026-08-19T00:00:00Z",
+            updated_at: "2026-08-19T00:00:00Z",
+          },
+        ],
+      });
+    }) as typeof fetch,
+  });
+  const result = await client.listProviders();
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.items[0]?.id, providerId);
+  assert.equal(result.value.items[0]?.hasSecret, true);
+  assert.equal(
+    JSON.stringify(result.value).includes("encrypted"),
+    false,
+  );
+  assert.equal(JSON.stringify(result.value).includes("isolation"), false);
+  assert.equal(seen[0], "http://127.0.0.1:47431/desktop/v1/providers");
+});

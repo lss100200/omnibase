@@ -6259,8 +6259,9 @@ P6.6 is isolated in
 `E:\Agent IDE\OmniBase Worktrees\Active\p6-6-cursor-desktop-journeys` on branch
 `cursor/p6-6-desktop-personal-journeys-r0`, based on P6.5 integration commit
 `58840ff600db86f19da2fd54768aedb54cbd072f`. The P6.6 source is committed
-locally as `1be2b5f8c1b2fc8be63d58d6728d37ca5c6253d0` plus this handover
-correction, and is not pushed.
+and pushed as `9653cbd75dc2b66487b23312d60ede9944f63f5e` (product
+`1be2b5f8c1b2fc8be63d58d6728d37ca5c6253d0` plus the handover correction).
+It is not merged.
 
 The bounded product scope is local Owner first-run plus durable Workspace
 create/list/archive. The Electron renderer detects the complete preload bridge
@@ -6350,5 +6351,67 @@ AUTHENTICODE_PENDING
 CLEAN_WINDOWS_P6_6_UI_AND_INSTALLER_LIFECYCLE_NOT_RUN
 root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
-committed locally on cursor/p6-6-desktop-personal-journeys-r0; not pushed; not merged; not deployed
+pushed origin/cursor/p6-6-desktop-personal-journeys-r0 at 9653cbd75dc2b66487b23312d60ede9944f63f5e; not merged; not deployed
+```
+
+### P6.7 personal desktop single-agent core engineering R0 (2026-08-19)
+
+P6.7 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-desktop-agent-core` on branch
+`cursor/p6-7-desktop-single-agent-core-r0`, based on the P6.6 closeout HEAD
+`9653cbd75dc2b66487b23312d60ede9944f63f5e`.
+
+The bounded product scope is: configure a user-owned Provider into an Electron
+`safeStorage` vault, keep one parent Agent per Workspace, and run a cancellable
+recoverable streaming conversation in SQLite. Next stays product-blind except
+exact health/readiness. Mutations use native IPC plus `/desktop/v1`. The
+renderer never receives raw API keys, vault blobs or launch identities.
+
+Desktop schema version 2 is `desktop_0002_provider_conversation`. The frozen
+backend ports Model Gateway family grammar with stdlib HTTPS because the
+desktop freeze excludes `openai`, `httpx` and `cryptography`. Unrecognized
+model names become `generic-openai-compatible`.
+
+Files, RAG, citations, ChangeSet, Skills, MCP, child agents, PostgreSQL,
+pgvector, BGE-M3, enterprise Trust Policy, Authenticode and OmniBase 1.0.0
+remain closed.
+
+Focused verification completed after restoring the workspace-id parser
+constant, rejecting utf8-looking vault ciphertext, and keeping Next on the
+exact health/readiness catalog:
+
+```text
+desktop-local foundation/safety/API/provider/conversation = 80 passed
+Ruff format/check on desktop_local + those tests = passed
+Electron = 36 passed; typecheck passed
+frontend = 209 passed; typecheck and lint passed
+RuntimeHost = 24/24 passed
+maintainer map = valid: 74 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+git diff --check = passed after removing the trailing blank line
+```
+
+Hang-cancel through TestClient incremental SSE remains unproven. Adapter-level
+cancel, persisted API cancel of a running row, and restart recovery to
+`unknown` without auto-replay are proven with a loopback fake OpenAI-compatible
+server and isolation secrets only. Live paid Provider calls, Windows Sandbox
+UI, Authenticode and OmniBase 1.0.0 remain unproven.
+
+Unsigned engineering packaging receipts are recorded in a follow-up docs
+commit after a clean-HEAD rebuild, if that rebuild completes.
+
+```text
+P6_7_DESKTOP_SINGLE_AGENT_CORE_ENGINEERING_R0
+PROVIDER_VAULT_NATIVE_IPC_IMPLEMENTED
+PARENT_AGENT_STREAMING_IMPLEMENTED
+CONVERSATION_CANCEL_RETRY_RECOVERY_IMPLEMENTED
+NEXT_DESKTOP_MUTATION_PROXY_CLOSED
+FOCUSED_GATES_PASSED
+UNSIGNED_ENGINEERING_EXE_PENDING_CLEAN_HEAD_PACKAGING
+AUTHENTICODE_PENDING
+LIVE_PAID_PROVIDER_NOT_PROVEN
+WINDOWS_SANDBOX_UI_NOT_RUN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+not pushed; not merged; not deployed
 ```

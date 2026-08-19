@@ -1,0 +1,132 @@
+"""Fail-closed Provider URL policy for the personal desktop runtime."""
+
+from __future__ import annotations
+
+import ipaddress
+import socket
+from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+from omnibase.desktop_local.errors import DesktopLocalError
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+class DesktopEndpointError(DesktopLocalError):
+    """The configured Provider URL is unsafe or cannot be used."""
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedDesktopEndpoint:
+    scheme: str
+    hostname: str
+    port: int
+    path: str
+    connect_host: str
+    loopback: bool
+    chat_path: str
+
+
+def _reject(code: str) -> None:
+    raise DesktopEndpointError(code)
+
+
+def _hostname_is_loopback(hostname: str) -> bool:
+    if hostname in _LOOPBACK_HOSTS:
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _require_public_or_loopback(address: str, *, allow_loopback: bool) -> None:
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        _reject("desktop_provider_endpoint_invalid")
+    if parsed.is_loopback:
+        if not allow_loopback:
+            _reject("desktop_provider_endpoint_invalid")
+        return
+    if (
+        parsed.is_private
+        or parsed.is_link_local
+        or parsed.is_multicast
+        or parsed.is_reserved
+        or parsed.is_unspecified
+        or parsed.is_loopback
+    ):
+        _reject("desktop_provider_endpoint_invalid")
+    if not parsed.is_global:
+        _reject("desktop_provider_endpoint_invalid")
+
+
+def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF checks
+    base_url: str,
+    *,
+    allow_loopback_http: bool,
+) -> ResolvedDesktopEndpoint:
+    candidate = base_url.strip()
+    if not candidate or any(ch in candidate for ch in "\r\n\t"):
+        _reject("desktop_provider_endpoint_invalid")
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        _reject("desktop_provider_endpoint_invalid")
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or not hostname
+        or parsed.scheme not in {"http", "https"}
+    ):
+        _reject("desktop_provider_endpoint_invalid")
+    loopback = _hostname_is_loopback(hostname)
+    if parsed.scheme == "http":
+        if not allow_loopback_http or not loopback:
+            _reject("desktop_provider_endpoint_invalid")
+        port = parsed.port or 80
+        connect_host = "127.0.0.1" if hostname in {"127.0.0.1", "localhost"} else hostname
+    else:
+        if loopback and not allow_loopback_http:
+            _reject("desktop_provider_endpoint_invalid")
+        port = parsed.port or 443
+        if loopback:
+            connect_host = "127.0.0.1" if hostname != "::1" else "::1"
+        else:
+            try:
+                ipaddress.ip_address(hostname)
+            except ValueError:
+                connect_host = hostname
+            else:
+                _require_public_or_loopback(hostname, allow_loopback=False)
+                connect_host = hostname
+    if not 1 <= port <= 65535:
+        _reject("desktop_provider_endpoint_invalid")
+    if not loopback:
+        try:
+            answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except OSError:
+            _reject("desktop_provider_unreachable")
+        addresses = {str(item[4][0]) for item in answers}
+        if not addresses:
+            _reject("desktop_provider_unreachable")
+        for address in addresses:
+            _require_public_or_loopback(address, allow_loopback=False)
+        connect_host = hostname
+    path = parsed.path or "/"
+    chat_path = path.rstrip("/")
+    if not chat_path.endswith("/chat/completions"):
+        chat_path = f"{chat_path}/chat/completions"
+    return ResolvedDesktopEndpoint(
+        scheme=parsed.scheme,
+        hostname=hostname,
+        port=port,
+        path=path,
+        connect_host=connect_host,
+        loopback=loopback,
+        chat_path=chat_path or "/chat/completions",
+    )

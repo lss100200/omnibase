@@ -3,18 +3,39 @@ import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import type {
+  DesktopConversation,
+  DesktopConversationArchiveInput,
+  DesktopConversationCancelInput,
+  DesktopConversationCreateInput,
+  DesktopConversationDetail,
+  DesktopConversationEvent,
+  DesktopConversationGetInput,
+  DesktopConversationList,
+  DesktopConversationSendInput,
   DesktopOperationResult,
   DesktopOwnerBootstrapInput,
   DesktopOwnerBootstrapResult,
   DesktopOwnerStatus,
+  DesktopParentAgent,
+  DesktopProviderIdInput,
+  DesktopProviderList,
+  DesktopProviderMutationResult,
+  DesktopProviderTestResult,
+  DesktopProviderUpsertInput,
   DesktopWorkspaceArchiveInput,
   DesktopWorkspaceCreateInput,
+  DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
   RuntimeStatus,
 } from "../shared/ipc-contract.ts";
 import { verifyRuntimeBundle } from "./manifest.ts";
 import { DesktopNativeClient } from "./native-client.ts";
+import {
+  decryptProviderSecret,
+  encryptProviderSecret,
+  type DesktopSafeStorage,
+} from "./secret-vault.ts";
 import { redactRuntimeError, RuntimeSupervisor } from "./supervisor.ts";
 
 export interface RuntimeManagerOptions {
@@ -23,6 +44,7 @@ export interface RuntimeManagerOptions {
   readonly uiOrigin: string;
   readonly dataRoot: string;
   readonly hostEnvironment?: Readonly<Record<string, string | undefined>>;
+  readonly secretVault?: DesktopSafeStorage;
 }
 
 const SAFE_HOST_ENVIRONMENT_KEYS = Object.freeze([
@@ -121,6 +143,7 @@ export class RuntimeManager {
   readonly #options: RuntimeManagerOptions;
   #supervisor: RuntimeSupervisor | null = null;
   #nativeClient: DesktopNativeClient | null = null;
+  #streamAbort: AbortController | null = null;
   #generation = 0;
   #startOperation: {
     readonly generation: number;
@@ -186,6 +209,224 @@ export class RuntimeManager {
     return (
       client?.archiveWorkspace(input) ??
       Promise.resolve(this.#nativeUnavailable<DesktopWorkspaceMutationResult>())
+    );
+  }
+
+  getWorkspaceAgent(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getWorkspaceAgent(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly agent: DesktopParentAgent }>(),
+      )
+    );
+  }
+
+  listProviders(): Promise<DesktopOperationResult<DesktopProviderList>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.listProviders() ??
+      Promise.resolve(this.#nativeUnavailable<DesktopProviderList>())
+    );
+  }
+
+  upsertProvider(
+    input: DesktopProviderUpsertInput,
+  ): Promise<DesktopOperationResult<DesktopProviderMutationResult>> {
+    const client = this.#readyNativeClient();
+    const vault = this.#options.secretVault;
+    if (client === null) {
+      return Promise.resolve(
+        this.#nativeUnavailable<DesktopProviderMutationResult>(),
+      );
+    }
+    try {
+      const body: Record<string, unknown> = {
+        id: input.id,
+        display_name: input.displayName,
+        base_url: input.baseUrl,
+        model_name: input.modelName,
+        gear: input.gear,
+        thinking_depth: input.thinkingDepth,
+        timeout_seconds: input.timeoutSeconds,
+        allow_loopback_http: input.allowLoopbackHttp,
+        is_default: input.isDefault,
+        is_enabled: input.isEnabled,
+      };
+      if (input.apiKey !== undefined) {
+        if (vault === undefined) {
+          return Promise.resolve(this.#nativeUnavailable<DesktopProviderMutationResult>());
+        }
+        const encrypted = encryptProviderSecret(input.apiKey, vault);
+        body.credential_reference = encrypted.credentialReference;
+        body.encrypted_secret_blob = encrypted.encryptedSecretBlob;
+        body.secret_fingerprint = encrypted.secretFingerprint;
+      }
+      if (input.id === undefined) delete body.id;
+      return client.upsertProvider(body);
+    } catch {
+      return Promise.resolve(
+        Object.freeze({
+          ok: false,
+          error: Object.freeze({ code: "desktop_secret_vault_unavailable" }),
+        }),
+      );
+    }
+  }
+
+  deleteProvider(
+    input: DesktopProviderIdInput,
+  ): Promise<
+    DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.deleteProvider(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly deleted: true; readonly id: string }>(),
+      )
+    );
+  }
+
+  async testProvider(
+    input: DesktopProviderIdInput,
+  ): Promise<DesktopOperationResult<DesktopProviderTestResult>> {
+    const client = this.#readyNativeClient();
+    const vault = this.#options.secretVault;
+    if (client === null || vault === undefined) {
+      return this.#nativeUnavailable<DesktopProviderTestResult>();
+    }
+    const material = await client.getProviderVault(input.providerId);
+    if (!material.ok) return material;
+    try {
+      const secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
+      return await client.testProvider(input.providerId, secret);
+    } catch {
+      return Object.freeze({
+        ok: false,
+        error: Object.freeze({ code: "desktop_secret_vault_unavailable" }),
+      });
+    }
+  }
+
+  listConversations(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopConversationList>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.listConversations(input) ??
+      Promise.resolve(this.#nativeUnavailable<DesktopConversationList>())
+    );
+  }
+
+  createConversation(
+    input: DesktopConversationCreateInput,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly created: true;
+      readonly conversation: DesktopConversation;
+    }>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.createConversation(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{
+          readonly created: true;
+          readonly conversation: DesktopConversation;
+        }>(),
+      )
+    );
+  }
+
+  archiveConversation(
+    input: DesktopConversationArchiveInput,
+  ): Promise<
+    DesktopOperationResult<{ readonly conversation: DesktopConversation }>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.archiveConversation(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly conversation: DesktopConversation }>(),
+      )
+    );
+  }
+
+  getConversation(
+    input: DesktopConversationGetInput,
+  ): Promise<DesktopOperationResult<DesktopConversationDetail>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getConversation(input) ??
+      Promise.resolve(this.#nativeUnavailable<DesktopConversationDetail>())
+    );
+  }
+
+  async sendConversation(
+    input: DesktopConversationSendInput,
+    emit: (event: DesktopConversationEvent) => void,
+  ): Promise<DesktopOperationResult<DesktopConversationEvent>> {
+    const client = this.#readyNativeClient();
+    const vault = this.#options.secretVault;
+    if (client === null || vault === undefined) {
+      return this.#nativeUnavailable<DesktopConversationEvent>();
+    }
+    const providers = await client.listProviders();
+    if (!providers.ok) return providers;
+    const selected =
+      input.providerId === undefined
+        ? providers.value.items.find((item) => item.isDefault && item.isEnabled)
+        : providers.value.items.find((item) => item.id === input.providerId);
+    if (selected === undefined) {
+      return Object.freeze({
+        ok: false,
+        error: Object.freeze({ code: "desktop_provider_ambiguous" }),
+      });
+    }
+    const material = await client.getProviderVault(selected.id);
+    if (!material.ok) return material;
+    let secret: string;
+    try {
+      secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
+    } catch {
+      return Object.freeze({
+        ok: false,
+        error: Object.freeze({ code: "desktop_secret_vault_unavailable" }),
+      });
+    }
+    this.#streamAbort?.abort();
+    const controller = new AbortController();
+    this.#streamAbort = controller;
+    try {
+      return await client.sendConversation(input, secret, emit, controller.signal);
+    } finally {
+      if (this.#streamAbort === controller) this.#streamAbort = null;
+    }
+  }
+
+  async cancelConversation(
+    input: DesktopConversationCancelInput,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly cancelled: boolean;
+      readonly id: string;
+      readonly accepted: boolean;
+    }>
+  > {
+    this.#streamAbort?.abort();
+    const client = this.#readyNativeClient();
+    return (
+      client?.cancelInvocation(input.invocationId) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{
+          readonly cancelled: boolean;
+          readonly id: string;
+          readonly accepted: boolean;
+        }>(),
+      )
     );
   }
 

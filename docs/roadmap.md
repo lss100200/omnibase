@@ -281,6 +281,16 @@ not silently included in P6.0.
 > packaging, Authenticode and the remaining personal journeys are still release
 > vetoes.
 
+> **P6.7 personal desktop single-agent core engineering R0 (2026-08-19):** a
+> normal user can configure their own model (vaulted API key, never plaintext in
+> SQLite or the renderer) and have a cancellable, recoverable, durable streaming
+> conversation with one parent Agent inside a local Workspace. Next remains
+> product-blind except exact health/readiness; mutations stay on native IPC plus
+> `/desktop/v1`. The frozen backend ports Model Gateway family grammar with
+> stdlib HTTPS because `openai`/`httpx` are freeze-excluded. Files, RAG, Skills,
+> MCP, multi-agent, PostgreSQL and Authenticode remain closed. This is unsigned
+> engineering work, not OmniBase 1.0.0.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

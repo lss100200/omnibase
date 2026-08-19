@@ -1,21 +1,34 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type {
+  DesktopConversationArchiveInput,
+  DesktopConversationCancelInput,
+  DesktopConversationCreateInput,
+  DesktopConversationDetail,
+  DesktopConversationEvent,
+  DesktopConversationGetInput,
+  DesktopConversationList,
+  DesktopConversationSendInput,
+  DesktopConversation,
   DesktopOperationResult,
   DesktopOwnerBootstrapInput,
   DesktopOwnerBootstrapResult,
   DesktopOwnerStatus,
+  DesktopParentAgent,
+  DesktopProviderIdInput,
+  DesktopProviderList,
+  DesktopProviderMutationResult,
+  DesktopProviderTestResult,
+  DesktopProviderUpsertInput,
   DesktopWorkspaceArchiveInput,
   DesktopWorkspaceCreateInput,
+  DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
   OmniBaseDesktopApi,
   RuntimeStatus,
 } from "./shared/ipc-contract.ts";
 
-// A sandboxed Electron preload may use Electron's limited built-in bridge but
-// must not depend on a local CommonJS require chain. Keep this runtime object
-// self-contained; ipc.test.ts pins the corresponding main-process closed set.
 const PRELOAD_IPC_CHANNELS = Object.freeze({
   appGetVersion: "omnibase:app:get-version",
   runtimeGetStatus: "omnibase:runtime:get-status",
@@ -25,7 +38,20 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   workspacesList: "omnibase:workspaces:list",
   workspacesCreate: "omnibase:workspaces:create",
   workspacesArchive: "omnibase:workspaces:archive",
+  workspaceAgent: "omnibase:workspace:agent",
+  providersList: "omnibase:providers:list",
+  providersUpsert: "omnibase:providers:upsert",
+  providersDelete: "omnibase:providers:delete",
+  providersTest: "omnibase:providers:test",
+  conversationsList: "omnibase:conversations:list",
+  conversationsCreate: "omnibase:conversations:create",
+  conversationsArchive: "omnibase:conversations:archive",
+  conversationsGet: "omnibase:conversations:get",
+  conversationSend: "omnibase:conversation:send",
+  conversationCancel: "omnibase:conversation:cancel",
 } as const);
+
+const CONVERSATION_EVENT = "omnibase:conversation:event";
 
 const api: OmniBaseDesktopApi = Object.freeze({
   app: Object.freeze({
@@ -73,6 +99,123 @@ const api: OmniBaseDesktopApi = Object.freeze({
         PRELOAD_IPC_CHANNELS.workspacesArchive,
         input,
       ) as Promise<DesktopOperationResult<DesktopWorkspaceMutationResult>>,
+    agent: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<
+      DesktopOperationResult<{ readonly agent: DesktopParentAgent }>
+    > =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceAgent, input) as Promise<
+        DesktopOperationResult<{ readonly agent: DesktopParentAgent }>
+      >,
+  }),
+  providers: Object.freeze({
+    list: (): Promise<DesktopOperationResult<DesktopProviderList>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.providersList) as Promise<
+        DesktopOperationResult<DesktopProviderList>
+      >,
+    upsert: (
+      input: DesktopProviderUpsertInput,
+    ): Promise<DesktopOperationResult<DesktopProviderMutationResult>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.providersUpsert,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopProviderMutationResult>>,
+    delete: (
+      input: DesktopProviderIdInput,
+    ): Promise<
+      DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.providersDelete,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+      >,
+    test: (
+      input: DesktopProviderIdInput,
+    ): Promise<DesktopOperationResult<DesktopProviderTestResult>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.providersTest, input) as Promise<
+        DesktopOperationResult<DesktopProviderTestResult>
+      >,
+  }),
+  conversations: Object.freeze({
+    list: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<DesktopOperationResult<DesktopConversationList>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationsList,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopConversationList>>,
+    create: (
+      input: DesktopConversationCreateInput,
+    ): Promise<
+      DesktopOperationResult<{
+        readonly created: true;
+        readonly conversation: DesktopConversation;
+      }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationsCreate,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{
+          readonly created: true;
+          readonly conversation: DesktopConversation;
+        }>
+      >,
+    archive: (
+      input: DesktopConversationArchiveInput,
+    ): Promise<
+      DesktopOperationResult<{ readonly conversation: DesktopConversation }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationsArchive,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{ readonly conversation: DesktopConversation }>
+      >,
+    get: (
+      input: DesktopConversationGetInput,
+    ): Promise<DesktopOperationResult<DesktopConversationDetail>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationsGet,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopConversationDetail>>,
+    send: (
+      input: DesktopConversationSendInput,
+    ): Promise<DesktopOperationResult<DesktopConversationEvent>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationSend,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopConversationEvent>>,
+    cancel: (
+      input: DesktopConversationCancelInput,
+    ): Promise<
+      DesktopOperationResult<{
+        readonly cancelled: boolean;
+        readonly id: string;
+        readonly accepted: boolean;
+      }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationCancel,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{
+          readonly cancelled: boolean;
+          readonly id: string;
+          readonly accepted: boolean;
+        }>
+      >,
+    subscribe: (listener: (event: DesktopConversationEvent) => void) => {
+      const wrapped = (_event: unknown, payload: DesktopConversationEvent) => {
+        listener(payload);
+      };
+      ipcRenderer.on(CONVERSATION_EVENT, wrapped);
+      return () => {
+        ipcRenderer.removeListener(CONVERSATION_EVENT, wrapped);
+      };
+    },
   }),
 });
 

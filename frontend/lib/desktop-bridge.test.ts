@@ -18,6 +18,22 @@ function bridgeFixture() {
       list: async () => ({ ok: true, value: { items: [] } }),
       create: async () => ({ ok: false, error: { code: 'not-called' } }),
       archive: async () => ({ ok: false, error: { code: 'not-called' } }),
+      agent: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
+    providers: {
+      list: async () => ({ ok: true, value: { items: [] } }),
+      upsert: async () => ({ ok: false, error: { code: 'not-called' } }),
+      delete: async () => ({ ok: false, error: { code: 'not-called' } }),
+      test: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
+    conversations: {
+      list: async () => ({ ok: true, value: { items: [] } }),
+      create: async () => ({ ok: false, error: { code: 'not-called' } }),
+      archive: async () => ({ ok: false, error: { code: 'not-called' } }),
+      get: async () => ({ ok: false, error: { code: 'not-called' } }),
+      send: async () => ({ ok: false, error: { code: 'not-called' } }),
+      cancel: async () => ({ ok: false, error: { code: 'not-called' } }),
+      subscribe: () => () => undefined,
     },
   }
 }
@@ -34,11 +50,18 @@ test('desktop bridge detection requires the complete closed product surface', ()
     }),
     null,
   )
-  assert.equal(
-    resolveDesktopBridge({
-      ...complete,
-      owner: { ...complete.owner, bootstrap: 'not-a-function' },
-    }),
-    null,
-  )
+          assert.equal(
+            resolveDesktopBridge({
+              ...complete,
+              owner: { ...complete.owner, bootstrap: 'not-a-function' },
+            }),
+            null,
+          )
+          assert.equal(
+            resolveDesktopBridge({
+              ...complete,
+              conversations: { ...complete.conversations, subscribe: undefined },
+            }),
+            null,
+          )
 })

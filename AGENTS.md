@@ -259,6 +259,14 @@ runtime evidence; then correct the stale documentation in the same change.
   JWT emulation, publish `/desktop/v1` through Next, expose `runtime_job`, or
   start Provider/RAG/Agent/MCP/Docker/WSL/PostgreSQL paths to complete this
   bounded journey.
+- P6.7 is the desktop-local single-agent core. Read INV-084 and
+  `docs/architecture/p6-7-desktop-single-agent-core.md` before changing
+  Provider vault, family adapters, conversation IPC or `/desktop`. Next stays
+  product-blind except exact health/readiness. Mutations use native IPC plus
+  `/desktop/v1`. The renderer never receives raw API keys. Desktop schema
+  version 2 is `desktop_0002_provider_conversation`, never Alembic. Do not
+  import `openai`/`httpx`/PostgreSQL Settings into the freeze, and do not open
+  files, RAG, Skills, MCP or multi-agent to complete this journey.
 
 ## Safe change workflow
 

@@ -889,7 +889,7 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
-| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082 |
+| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
 跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
@@ -2445,3 +2445,27 @@ stores no JWT or launch identity. PostgreSQL auth, documents, RAG, Provider
 credentials, Agent Runtime, Skills, MCP and Sandbox remain closed. A green
 P6.6 offline gate is bounded product-admission evidence, not Authenticode,
 clean-Windows journey acceptance or a distributable 1.0.0 claim.
+
+
+## P6.7 personal desktop single-agent core
+
+Read INV-084 and
+`docs/architecture/p6-7-desktop-single-agent-core.md` before changing Provider
+vault, desktop family adapters, native conversation IPC or the `/desktop`
+workbench.
+
+P6.7 keeps Next product-blind. Provider, parent Agent and conversation
+mutations use origin-checked IPC plus `/desktop/v1` with the native control
+token. Electron `safeStorage` encrypts API keys; SQLite stores only the
+credential reference, encrypted blob and fingerprint. The renderer never reads
+the raw key. The frozen backend must not import `openai`, `httpx`,
+`cryptography` or PostgreSQL Settings.
+
+Each Workspace has one parent Agent. No tools, files, MCP, Skills or child
+agents. Streaming is consumed by Electron main. Cancel must abort the provider
+request and never auto-replay cancelled or unknown invocations. Retry is a new
+invocation. Desktop schema version 2 uses `desktop_0002_provider_conversation`,
+never Alembic 0013/0017.
+
+A green P6.7 focused gate is unsigned engineering evidence. It does not prove
+Authenticode, Sandbox UI, a live paid Provider or OmniBase 1.0.0.

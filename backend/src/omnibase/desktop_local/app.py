@@ -16,7 +16,7 @@ import sqlite3
 import sys
 import threading
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,13 +25,23 @@ from typing import cast
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
 from omnibase.desktop_local.config import DesktopLocalConfig
+from omnibase.desktop_local.conversations import (
+    archive_conversation,
+    cancel_invocation,
+    create_conversation,
+    get_conversation,
+    list_conversations,
+    prepare_send,
+    recover_interrupted_invocations,
+    stream_prepared_send,
+)
 from omnibase.desktop_local.database import (
     local_health,
     migrate_database,
@@ -39,6 +49,14 @@ from omnibase.desktop_local.database import (
     utc_now_text,
 )
 from omnibase.desktop_local.errors import DesktopLocalError
+from omnibase.desktop_local.providers import (
+    DesktopApiError,
+    delete_provider,
+    list_providers,
+    load_provider_secret_material,
+    test_provider,
+    upsert_provider,
+)
 from omnibase.desktop_local.repository import append_audit_event, create_owner, create_workspace
 
 DESKTOP_INSTANCE_HEADER = "x-omnibase-desktop-instance"
@@ -98,6 +116,7 @@ class DesktopLocalAppConfig:
 class _DesktopRuntime:
     connection: sqlite3.Connection
     lock: threading.RLock
+    cancel_events: dict[str, threading.Event]
 
 
 class OwnerBootstrapRequest(BaseModel):
@@ -134,10 +153,49 @@ class WorkspaceArchiveRequest(BaseModel):
     expected_row_version: int = Field(ge=1, le=2_147_483_647)
 
 
-class _DesktopApiError(DesktopLocalError):
-    def __init__(self, status_code: int, code: str) -> None:
-        self.status_code = status_code
-        super().__init__(code)
+class ProviderUpsertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    id: str | None = None
+    display_name: str = Field(min_length=1, max_length=256)
+    base_url: str = Field(min_length=8, max_length=2048)
+    model_name: str = Field(min_length=1, max_length=256)
+    gear: str = Field(min_length=3, max_length=32)
+    thinking_depth: str = Field(min_length=3, max_length=32)
+    timeout_seconds: int = Field(ge=5, le=120)
+    allow_loopback_http: bool
+    is_default: bool
+    is_enabled: bool
+    credential_reference: str | None = None
+    encrypted_secret_blob: str | None = None
+    secret_fingerprint: str | None = None
+
+
+class ProviderSecretRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    secret: str = Field(min_length=1, max_length=512)
+
+
+class ConversationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    title: str | None = Field(default=None, max_length=256)
+
+
+class ConversationArchiveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    expected_row_version: int = Field(ge=1, le=2_147_483_647)
+
+
+class ConversationSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    secret: str = Field(min_length=1, max_length=512)
+    content: str = Field(default="", max_length=16384)
+    provider_id: str | None = None
+    retry_of_message_id: str | None = None
 
 
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
@@ -229,7 +287,7 @@ def _bootstrap_owner(runtime: _DesktopRuntime, display_name: str) -> tuple[sqlit
 def _list_owner_workspaces(runtime: _DesktopRuntime) -> list[sqlite3.Row]:
     owner = _read_owner(runtime)
     if owner is None:
-        raise _DesktopApiError(409, "desktop_owner_not_initialized")
+        raise DesktopApiError(409, "desktop_owner_not_initialized")
     try:
         with runtime.lock:
             return list(
@@ -251,13 +309,13 @@ def _create_owner_workspace(runtime: _DesktopRuntime, name: str) -> sqlite3.Row:
             connection.execute("BEGIN IMMEDIATE")
             owner = connection.execute("SELECT id FROM owner WHERE singleton_key = 1").fetchone()
             if owner is None:
-                raise _DesktopApiError(409, "desktop_owner_not_initialized")
+                raise DesktopApiError(409, "desktop_owner_not_initialized")
             workspace_count = connection.execute(
                 "SELECT COUNT(*) FROM workspace WHERE owner_id = ?",
                 (owner["id"],),
             ).fetchone()
             if workspace_count is None or int(workspace_count[0]) >= _MAX_WORKSPACES:
-                raise _DesktopApiError(409, "desktop_workspace_capacity_reached")
+                raise DesktopApiError(409, "desktop_workspace_capacity_reached")
             workspace_id = f"workspace_{uuid.uuid4().hex}"
             create_workspace(connection, workspace_id, str(owner["id"]), name)
             append_audit_event(
@@ -277,7 +335,7 @@ def _create_owner_workspace(runtime: _DesktopRuntime, name: str) -> sqlite3.Row:
                 raise sqlite3.IntegrityError("workspace insert did not converge")
             connection.execute("COMMIT")
             return created
-        except _DesktopApiError:
+        except DesktopApiError:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
             raise
@@ -293,26 +351,26 @@ def _archive_owner_workspace(
     expected_row_version: int,
 ) -> sqlite3.Row:
     if not _WORKSPACE_ID_PATTERN.fullmatch(workspace_id):
-        raise _DesktopApiError(404, "desktop_workspace_not_found")
+        raise DesktopApiError(404, "desktop_workspace_not_found")
     with runtime.lock:
         connection = runtime.connection
         try:
             connection.execute("BEGIN IMMEDIATE")
             owner = connection.execute("SELECT id FROM owner WHERE singleton_key = 1").fetchone()
             if owner is None:
-                raise _DesktopApiError(409, "desktop_owner_not_initialized")
+                raise DesktopApiError(409, "desktop_owner_not_initialized")
             existing = connection.execute(
                 "SELECT id, owner_id, name, state, row_version, created_at, updated_at "
                 "FROM workspace WHERE id = ? AND owner_id = ?",
                 (workspace_id, owner["id"]),
             ).fetchone()
             if existing is None:
-                raise _DesktopApiError(404, "desktop_workspace_not_found")
+                raise DesktopApiError(404, "desktop_workspace_not_found")
             if (
                 str(existing["state"]) != "active"
                 or int(existing["row_version"]) != expected_row_version
             ):
-                raise _DesktopApiError(409, "desktop_workspace_version_conflict")
+                raise DesktopApiError(409, "desktop_workspace_version_conflict")
             updated_at = utc_now_text()
             archived = connection.execute(
                 "UPDATE workspace SET state = 'archived', row_version = row_version + 1, "
@@ -322,7 +380,7 @@ def _archive_owner_workspace(
                 (updated_at, workspace_id, owner["id"], expected_row_version),
             ).fetchone()
             if archived is None:
-                raise _DesktopApiError(409, "desktop_workspace_version_conflict")
+                raise DesktopApiError(409, "desktop_workspace_version_conflict")
             append_audit_event(
                 connection,
                 event_id=f"event_{uuid.uuid4().hex}",
@@ -338,7 +396,7 @@ def _archive_owner_workspace(
             )
             connection.execute("COMMIT")
             return archived
-        except _DesktopApiError:
+        except DesktopApiError:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
             raise
@@ -414,7 +472,7 @@ async def _instance_binding_middleware(
         request.state.desktop_challenge = challenges[0] if challenges else None
     try:
         response = await call_next(request)
-    except _DesktopApiError as exc:
+    except DesktopApiError as exc:
         response = _error_response(exc.status_code, exc.code, "Desktop request rejected")
     except DesktopLocalError as exc:
         response = _error_response(503, exc.code, "Desktop local service unavailable")
@@ -521,6 +579,161 @@ def _workspace_archive(
     }
 
 
+def _workspace_parent_agent(workspace_id: str, request: Request) -> dict[str, object]:
+    if not _WORKSPACE_ID_PATTERN.fullmatch(workspace_id):
+        raise DesktopApiError(404, "desktop_workspace_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        owner = runtime.connection.execute(
+            "SELECT id FROM owner WHERE singleton_key = 1"
+        ).fetchone()
+        if owner is None:
+            raise DesktopApiError(409, "desktop_owner_not_initialized")
+        row = runtime.connection.execute(
+            "SELECT id, workspace_id, role, display_name, created_at, updated_at "
+            "FROM workspace_agent WHERE workspace_id = ? AND owner_id = ? AND role = 'parent'",
+            (workspace_id, owner["id"]),
+        ).fetchone()
+    if row is None:
+        raise DesktopApiError(404, "desktop_workspace_not_found")
+    return {
+        "agent": {
+            "id": str(row["id"]),
+            "workspace_id": str(row["workspace_id"]),
+            "role": str(row["role"]),
+            "display_name": str(row["display_name"]),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+    }
+
+
+def _providers_list(request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return list_providers(runtime.connection)
+
+
+def _providers_upsert(payload: ProviderUpsertRequest, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return upsert_provider(runtime.connection, payload.model_dump())
+
+
+def _providers_delete(provider_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return delete_provider(runtime.connection, provider_id)
+
+
+def _providers_vault(provider_id: str, request: Request) -> dict[str, str]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return load_provider_secret_material(runtime.connection, provider_id)
+
+
+def _providers_test(
+    provider_id: str,
+    payload: ProviderSecretRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    cancelled = threading.Event()
+    runtime.cancel_events[f"test:{provider_id}"] = cancelled
+    try:
+        with runtime.lock:
+            connection = runtime.connection
+        return test_provider(connection, runtime.lock, provider_id, payload.secret, cancelled)
+    finally:
+        runtime.cancel_events.pop(f"test:{provider_id}", None)
+
+
+def _conversations_list(workspace_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return list_conversations(runtime.connection, workspace_id)
+
+
+def _conversations_create(
+    workspace_id: str,
+    payload: ConversationCreateRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_conversation(runtime.connection, workspace_id, payload.title)
+
+
+def _conversations_archive(
+    workspace_id: str,
+    conversation_id: str,
+    payload: ConversationArchiveRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return archive_conversation(
+            runtime.connection,
+            workspace_id,
+            conversation_id,
+            payload.expected_row_version,
+        )
+
+
+def _conversations_get(
+    workspace_id: str,
+    conversation_id: str,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_conversation(runtime.connection, workspace_id, conversation_id)
+
+
+def _conversations_send(
+    workspace_id: str,
+    conversation_id: str,
+    payload: ConversationSendRequest,
+    request: Request,
+) -> StreamingResponse:
+    runtime = _runtime(request)
+    prepared = prepare_send(
+        runtime.connection,
+        runtime.lock,
+        workspace_id=workspace_id,
+        conversation_id=conversation_id,
+        content=payload.content,
+        provider_id=payload.provider_id,
+        retry_of_message_id=payload.retry_of_message_id,
+    )
+    cancelled = threading.Event()
+    runtime.cancel_events[str(prepared["invocation_id"])] = cancelled
+
+    def generate() -> Iterator[str]:
+        try:
+            yield from stream_prepared_send(
+                runtime.connection,
+                runtime.lock,
+                prepared,
+                payload.secret,
+                cancelled,
+            )
+        finally:
+            runtime.cancel_events.pop(str(prepared["invocation_id"]), None)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+def _invocations_cancel(invocation_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return cancel_invocation(runtime.connection, runtime.cancel_events, invocation_id)
+
+
 def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     """Create an isolated desktop app without importing the server Settings singleton."""
 
@@ -532,7 +745,9 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
             app.state.desktop_runtime = _DesktopRuntime(
                 connection=connection,
                 lock=threading.RLock(),
+                cancel_events={},
             )
+            recover_interrupted_invocations(connection)
             yield
         finally:
             connection.close()
@@ -579,6 +794,58 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/workspaces/{workspace_id}/archive",
         _workspace_archive,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/agent",
+        _workspace_parent_agent,
+        methods=["GET"],
+    )
+    app.add_api_route("/desktop/v1/providers", _providers_list, methods=["GET"])
+    app.add_api_route("/desktop/v1/providers", _providers_upsert, methods=["POST"])
+    app.add_api_route(
+        "/desktop/v1/providers/{provider_id}",
+        _providers_delete,
+        methods=["DELETE"],
+    )
+    app.add_api_route(
+        "/desktop/v1/providers/{provider_id}/vault",
+        _providers_vault,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/providers/{provider_id}/test",
+        _providers_test,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/conversations",
+        _conversations_list,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/conversations",
+        _conversations_create,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/conversations/{conversation_id}",
+        _conversations_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/conversations/{conversation_id}/archive",
+        _conversations_archive,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages",
+        _conversations_send,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/invocations/{invocation_id}/cancel",
+        _invocations_cancel,
         methods=["POST"],
     )
 

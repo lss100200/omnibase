@@ -11,7 +11,26 @@ import {
   type RuntimeStatus,
 } from "../src/shared/ipc-contract.ts";
 
-test("preload/main IPC is a strict eight-channel closed set", async () => {
+const unused = async () => ({
+  ok: false as const,
+  error: { code: "must-not-run" },
+});
+
+const productStubs = {
+  getWorkspaceAgent: unused,
+  listProviders: async () => ({ ok: true as const, value: { items: [] } }),
+  upsertProvider: unused,
+  deleteProvider: unused,
+  testProvider: unused,
+  listConversations: unused,
+  createConversation: unused,
+  archiveConversation: unused,
+  getConversation: unused,
+  sendConversation: unused,
+  cancelConversation: unused,
+};
+
+test("preload/main IPC is a closed product channel set", async () => {
   const handlers = new Map<
     string,
     (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
@@ -81,11 +100,12 @@ test("preload/main IPC is a strict eight-channel closed set", async () => {
         },
       },
     }),
+    ...productStubs,
   });
 
   assert.deepEqual(new Set(handlers.keys()), IPC_CHANNEL_SET);
   assert.deepEqual(new Set(removed), IPC_CHANNEL_SET);
-  assert.equal(handlers.size, 8);
+  assert.equal(handlers.size, IPC_CHANNEL_SET.size);
 
   const trustedEvent = {
     senderFrame: { url: `${DESKTOP_UI_ORIGIN}/dashboard` },
@@ -174,6 +194,7 @@ test("IPC rejects unexpected arguments and non-loopback senders", async () => {
         ok: false,
         error: { code: "must-not-run" },
       }),
+      ...productStubs,
     },
   );
   const trustedEvent = {

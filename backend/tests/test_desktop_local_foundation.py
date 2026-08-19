@@ -64,12 +64,17 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "workspace",
             "audit_event",
             "runtime_job",
+            "provider",
+            "workspace_agent",
+            "conversation",
+            "invocation",
+            "message",
         ):
             assert table_sql[table].rstrip().endswith("STRICT")
 
         health = local_health(connection)
         assert health.status == "healthy"
-        assert health.schema_version == 1
+        assert health.schema_version == DESKTOP_SCHEMA_VERSION
         assert health.application_version == "1.0.0"
         assert health.application_id == DESKTOP_APPLICATION_ID
         assert health.journal_mode == "wal"
@@ -86,7 +91,10 @@ def test_restart_is_idempotent_and_preserves_application_migration_record(tmp_pa
         migration = restarted.execute(
             "SELECT version, migration_id, application_version FROM desktop_migration_history"
         ).fetchall()
-        assert [tuple(row) for row in migration] == [(1, "desktop_0001", "1.0.0")]
+        assert [tuple(row) for row in migration] == [
+            (1, "desktop_0001", "1.0.0"),
+            (2, "desktop_0002_provider_conversation", "1.0.0"),
+        ]
         assert restarted.execute("SELECT COUNT(*) FROM runtime_job").fetchone()[0] == 1
         assert local_health(restarted).status == "healthy"
 
@@ -141,7 +149,7 @@ def test_concurrent_first_launch_applies_migration_once(tmp_path: Path) -> None:
 
     with initialized_database(config) as connection:
         assert (
-            connection.execute("SELECT COUNT(*) FROM desktop_migration_history").fetchone()[0] == 1
+            connection.execute("SELECT COUNT(*) FROM desktop_migration_history").fetchone()[0] == 2
         )
 
 
@@ -254,3 +262,53 @@ def test_audit_events_are_database_enforced_append_only(tmp_path: Path) -> None:
         with pytest.raises(sqlite3.IntegrityError, match="desktop_audit_append_only"):
             connection.execute("DELETE FROM audit_event WHERE event_id = 'event-1'")
         assert connection.execute("SELECT COUNT(*) FROM audit_event").fetchone()[0] == 1
+
+
+def test_workspace_insert_creates_one_parent_agent(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with initialized_database(config) as connection:
+        create_owner(connection, "owner-local", "Local Owner")
+        create_workspace(connection, "workspace-1", "owner-local", "Personal Workspace")
+        agents = connection.execute("SELECT role, display_name FROM workspace_agent").fetchall()
+        assert [(row["role"], row["display_name"]) for row in agents] == [("parent", "父 Agent")]
+
+
+def test_schema_upgrades_from_desktop_0001_and_backfills_parent_agent(tmp_path: Path) -> None:
+    from omnibase.desktop_local.database import utc_now_text
+    from omnibase.desktop_local.schema import DESKTOP_0001
+
+    config = _config(tmp_path)
+    connection = open_database(config)
+    try:
+        applied_at = utc_now_text()
+        connection.execute("BEGIN EXCLUSIVE")
+        for statement in DESKTOP_0001.statements:
+            connection.execute(statement)
+        connection.execute(
+            "INSERT INTO desktop_migration_history "
+            "(version, migration_id, checksum_sha256, application_version, applied_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (1, DESKTOP_0001.migration_id, DESKTOP_0001.checksum, "1.0.0", applied_at),
+        )
+        connection.execute("PRAGMA user_version = 1")
+        connection.execute(f"PRAGMA application_id = {DESKTOP_APPLICATION_ID}")
+        connection.execute(
+            "INSERT INTO desktop_schema_metadata "
+            "(singleton_key, schema_version, application_version, updated_at) "
+            "VALUES (1, 1, '1.0.0', ?)",
+            (applied_at,),
+        )
+        create_owner(connection, "owner-local", "Local Owner")
+        create_workspace(connection, "workspace-1", "owner-local", "Personal Workspace")
+        connection.execute("COMMIT")
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert migrate_database(connection, config) == DESKTOP_SCHEMA_VERSION
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_agent WHERE role = 'parent'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert local_health(connection).schema_version == DESKTOP_SCHEMA_VERSION
+    finally:
+        connection.close()

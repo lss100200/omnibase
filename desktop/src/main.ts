@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron";
 
 import { enforceSingleInstance } from "./app-lifecycle.ts";
 import { registerClosedIpcHandlers } from "./ipc.ts";
@@ -44,6 +44,7 @@ if (hasInstanceLock) {
       uiOrigin: DESKTOP_UI_ORIGIN,
       dataRoot: path.join(localAppData, "OmniBase"),
       hostEnvironment: process.env,
+      secretVault: safeStorage,
     });
     installFailClosedPermissionPolicy(session.defaultSession);
     registerClosedIpcHandlers(ipcMain, {
@@ -74,6 +75,28 @@ if (hasInstanceLock) {
         runtimeManager?.createWorkspace(input) ?? runtimeUnavailable(),
       archiveWorkspace: (input) =>
         runtimeManager?.archiveWorkspace(input) ?? runtimeUnavailable(),
+      getWorkspaceAgent: (input) =>
+        runtimeManager?.getWorkspaceAgent(input) ?? runtimeUnavailable(),
+      listProviders: () =>
+        runtimeManager?.listProviders() ?? runtimeUnavailable(),
+      upsertProvider: (input) =>
+        runtimeManager?.upsertProvider(input) ?? runtimeUnavailable(),
+      deleteProvider: (input) =>
+        runtimeManager?.deleteProvider(input) ?? runtimeUnavailable(),
+      testProvider: (input) =>
+        runtimeManager?.testProvider(input) ?? runtimeUnavailable(),
+      listConversations: (input) =>
+        runtimeManager?.listConversations(input) ?? runtimeUnavailable(),
+      createConversation: (input) =>
+        runtimeManager?.createConversation(input) ?? runtimeUnavailable(),
+      archiveConversation: (input) =>
+        runtimeManager?.archiveConversation(input) ?? runtimeUnavailable(),
+      getConversation: (input) =>
+        runtimeManager?.getConversation(input) ?? runtimeUnavailable(),
+      sendConversation: (input, emit) =>
+        runtimeManager?.sendConversation(input, emit) ?? runtimeUnavailable(),
+      cancelConversation: (input) =>
+        runtimeManager?.cancelConversation(input) ?? runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();

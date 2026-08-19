@@ -4235,3 +4235,59 @@ evidence. Forward-fix application bytes; never delete or rewrite SQLite,
 weaken CAS/audit checks, publish a mutating Next route, expose a launch identity
 to the renderer, or start optional infrastructure to manufacture a successful
 journey.
+
+## INV-084 p67-desktop-single-agent-core-boundary
+
+P6.7 admits one additional local product journey over P6.6: the Owner may
+configure their own model Provider and have a cancellable, recoverable, durable
+streaming conversation with a single parent Agent inside a local Workspace.
+It does not open files, RAG, citations, ChangeSet, Skills, MCP, child agents,
+PostgreSQL, pgvector, BGE-M3 or enterprise Trust Policy. Next remains
+product-blind in desktop mode except exact health/readiness. Provider, Agent
+and conversation mutations use the exact Electron IPC catalog and a direct
+`/desktop/v1` hop authenticated by the native control token.
+
+Desktop schema version 2 is applied only by `desktop_0002_provider_conversation`.
+That is a desktop-namespace SQLite migration. It is not Alembic 0013/0017 and
+must not emulate PostgreSQL Settings. SQLite may store provider metadata,
+`credential_reference`, `encrypted_secret_blob` and `secret_fingerprint`. It
+must never store plaintext API keys, Authorization or Bearer values. Electron
+main encrypts with `safeStorage` (Windows DPAPI). The frozen backend never
+decrypts. The renderer never reads the blob, fingerprint or raw key. Vault GET
+is not an IPC channel.
+
+Family recognition is model-name-first. Unrecognized names become
+`generic-openai-compatible` rather than a hard reject. URL hostnames are an
+auxiliary hint only. The frozen desktop backend must not import `openai`,
+`httpx`, `cryptography` or PostgreSQL Settings; HTTPS uses the standard library.
+Remote Providers require HTTPS. HTTP is allowed only for loopback when the user
+explicitly enables it. LAN/private-network SSRF, URL userinfo and query
+credentials are rejected. Public errors must not contain secrets from URLs or
+response bodies.
+
+Each Workspace has exactly one parent Agent. Sending a message is personal
+approval by the local Owner. Streaming is consumed by Electron main, not by a
+buffering Next proxy. Cancel must stop the UI immediately, abort the in-flight
+request, mark the invocation cancelled, and never auto-replay cancelled or
+unknown records after restart. Retry is a new invocation that keeps the failed
+record. Interrupted running/streaming rows recover to `unknown`.
+
+P6.7 is unsigned engineering evidence only. It does not prove Authenticode,
+clean-Windows Sandbox UI, a live paid Provider, or OmniBase 1.0.0.
+
+**Required verification**
+
+- desktop-local foundation/safety/app plus provider and conversation tests;
+- Ruff check/format on desktop_local and those tests;
+- Electron IPC/native-client/vault/runtime tests and typecheck;
+- frontend bridge/proxy tests, typecheck and lint;
+- RuntimeHost closed-environment tests;
+- both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the child group. Preserve
+`%LOCALAPPDATA%\OmniBase`. Forward-fix application bytes. Never publish a
+mutating Next route, put secrets in git/argv/logs/SQLite plaintext, import the
+PostgreSQL Model Gateway stack into the freeze, or start Docker/WSL/PostgreSQL
+to manufacture this journey.

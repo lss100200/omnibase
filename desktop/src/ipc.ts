@@ -3,13 +3,30 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { isAllowedIpcSender } from "./security/origin-policy.ts";
 import {
   IPC_CHANNELS,
+  IPC_EVENT_CHANNELS,
   requireNoIpcArguments,
+  type DesktopConversationArchiveInput,
+  type DesktopConversationCancelInput,
+  type DesktopConversationCreateInput,
+  type DesktopConversationDetail,
+  type DesktopConversationEvent,
+  type DesktopConversationGetInput,
+  type DesktopConversationList,
+  type DesktopConversationSendInput,
+  type DesktopConversation,
   type DesktopOperationResult,
   type DesktopOwnerBootstrapInput,
   type DesktopOwnerBootstrapResult,
   type DesktopOwnerStatus,
+  type DesktopParentAgent,
+  type DesktopProviderIdInput,
+  type DesktopProviderList,
+  type DesktopProviderMutationResult,
+  type DesktopProviderTestResult,
+  type DesktopProviderUpsertInput,
   type DesktopWorkspaceArchiveInput,
   type DesktopWorkspaceCreateInput,
+  type DesktopWorkspaceIdInput,
   type DesktopWorkspaceList,
   type DesktopWorkspaceMutationResult,
   type RuntimeStatus,
@@ -42,9 +59,62 @@ export interface IpcDependencies {
   readonly archiveWorkspace: (
     input: DesktopWorkspaceArchiveInput,
   ) => Promise<DesktopOperationResult<DesktopWorkspaceMutationResult>>;
+  readonly getWorkspaceAgent: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>;
+  readonly listProviders: () => Promise<DesktopOperationResult<DesktopProviderList>>;
+  readonly upsertProvider: (
+    input: DesktopProviderUpsertInput,
+  ) => Promise<DesktopOperationResult<DesktopProviderMutationResult>>;
+  readonly deleteProvider: (
+    input: DesktopProviderIdInput,
+  ) => Promise<
+    DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+  >;
+  readonly testProvider: (
+    input: DesktopProviderIdInput,
+  ) => Promise<DesktopOperationResult<DesktopProviderTestResult>>;
+  readonly listConversations: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<DesktopConversationList>>;
+  readonly createConversation: (
+    input: DesktopConversationCreateInput,
+  ) => Promise<
+    DesktopOperationResult<{
+      readonly created: true;
+      readonly conversation: DesktopConversation;
+    }>
+  >;
+  readonly archiveConversation: (
+    input: DesktopConversationArchiveInput,
+  ) => Promise<
+    DesktopOperationResult<{ readonly conversation: DesktopConversation }>
+  >;
+  readonly getConversation: (
+    input: DesktopConversationGetInput,
+  ) => Promise<DesktopOperationResult<DesktopConversationDetail>>;
+  readonly sendConversation: (
+    input: DesktopConversationSendInput,
+    emit: (event: DesktopConversationEvent) => void,
+  ) => Promise<DesktopOperationResult<DesktopConversationEvent>>;
+  readonly cancelConversation: (
+    input: DesktopConversationCancelInput,
+  ) => Promise<
+    DesktopOperationResult<{
+      readonly cancelled: boolean;
+      readonly id: string;
+      readonly accepted: boolean;
+    }>
+  >;
 }
 
 const WORKSPACE_ID_PATTERN = /^workspace_[a-f0-9]{32}$/u;
+const PROVIDER_ID_PATTERN = /^provider_[a-f0-9]{32}$/u;
+const CONVERSATION_ID_PATTERN = /^conversation_[a-f0-9]{32}$/u;
+const MESSAGE_ID_PATTERN = /^message_[a-f0-9]{32}$/u;
+const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
+const GEARS = new Set(["economy", "standard", "deep", "audit"]);
+const DEPTHS = new Set(["disabled", "low", "medium", "high"]);
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 
 function requireTrustedSender(event: IpcMainInvokeEvent): void {
@@ -134,6 +204,230 @@ function parseWorkspaceArchiveInput(
   });
 }
 
+function parseWorkspaceIdInput(
+  args: readonly unknown[],
+): DesktopWorkspaceIdInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId)
+  ) {
+    return null;
+  }
+  return Object.freeze({ workspaceId: args[0].workspaceId });
+}
+
+function parseProviderIdInput(
+  args: readonly unknown[],
+): DesktopProviderIdInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["providerId"]) ||
+    typeof args[0].providerId !== "string" ||
+    !PROVIDER_ID_PATTERN.test(args[0].providerId)
+  ) {
+    return null;
+  }
+  return Object.freeze({ providerId: args[0].providerId });
+}
+
+function parseProviderUpsertInput(
+  args: readonly unknown[],
+): DesktopProviderUpsertInput | null {
+  if (args.length !== 1 || !isRecord(args[0])) return null;
+  const keys = Object.keys(args[0]);
+  const allowed = new Set([
+    "allowLoopbackHttp",
+    "apiKey",
+    "baseUrl",
+    "displayName",
+    "gear",
+    "id",
+    "isDefault",
+    "isEnabled",
+    "modelName",
+    "thinkingDepth",
+    "timeoutSeconds",
+  ]);
+  if (keys.some((key) => !allowed.has(key))) return null;
+  const displayName = normalizedName(args[0].displayName);
+  const modelName = normalizedName(args[0].modelName);
+  if (
+    displayName === null ||
+    modelName === null ||
+    typeof args[0].baseUrl !== "string" ||
+    args[0].baseUrl.length < 8 ||
+    args[0].baseUrl.length > 2048 ||
+    typeof args[0].gear !== "string" ||
+    !GEARS.has(args[0].gear) ||
+    typeof args[0].thinkingDepth !== "string" ||
+    !DEPTHS.has(args[0].thinkingDepth) ||
+    typeof args[0].timeoutSeconds !== "number" ||
+    !Number.isInteger(args[0].timeoutSeconds) ||
+    args[0].timeoutSeconds < 5 ||
+    args[0].timeoutSeconds > 120 ||
+    typeof args[0].allowLoopbackHttp !== "boolean" ||
+    typeof args[0].isDefault !== "boolean" ||
+    typeof args[0].isEnabled !== "boolean"
+  ) {
+    return null;
+  }
+  if (args[0].id !== undefined && (typeof args[0].id !== "string" || !PROVIDER_ID_PATTERN.test(args[0].id))) {
+    return null;
+  }
+  if (
+    args[0].apiKey !== undefined &&
+    (typeof args[0].apiKey !== "string" ||
+      args[0].apiKey.length < 1 ||
+      args[0].apiKey.length > 512 ||
+      CONTROL_CHARACTER_PATTERN.test(args[0].apiKey))
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    ...(args[0].id === undefined ? {} : { id: args[0].id }),
+    displayName,
+    baseUrl: args[0].baseUrl.trim(),
+    ...(args[0].apiKey === undefined ? {} : { apiKey: args[0].apiKey }),
+    modelName,
+    gear: args[0].gear as DesktopProviderUpsertInput["gear"],
+    thinkingDepth: args[0].thinkingDepth as DesktopProviderUpsertInput["thinkingDepth"],
+    timeoutSeconds: args[0].timeoutSeconds,
+    allowLoopbackHttp: args[0].allowLoopbackHttp,
+    isDefault: args[0].isDefault,
+    isEnabled: args[0].isEnabled,
+  });
+}
+
+function parseConversationCreateInput(
+  args: readonly unknown[],
+): DesktopConversationCreateInput | null {
+  if (args.length !== 1 || !isRecord(args[0])) return null;
+  if (
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId)
+  ) {
+    return null;
+  }
+  if (args[0].title !== undefined) {
+    const title = normalizedName(args[0].title);
+    if (title === null || !hasExactKeys(args[0], ["title", "workspaceId"])) return null;
+    return Object.freeze({ workspaceId: args[0].workspaceId, title });
+  }
+  if (!hasExactKeys(args[0], ["workspaceId"])) return null;
+  return Object.freeze({ workspaceId: args[0].workspaceId });
+}
+
+function parseConversationGetInput(
+  args: readonly unknown[],
+): DesktopConversationGetInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["conversationId", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].conversationId !== "string" ||
+    !CONVERSATION_ID_PATTERN.test(args[0].conversationId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    conversationId: args[0].conversationId,
+  });
+}
+
+function parseConversationArchiveInput(
+  args: readonly unknown[],
+): DesktopConversationArchiveInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["conversationId", "expectedRowVersion", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].conversationId !== "string" ||
+    !CONVERSATION_ID_PATTERN.test(args[0].conversationId) ||
+    typeof args[0].expectedRowVersion !== "number" ||
+    !Number.isInteger(args[0].expectedRowVersion) ||
+    args[0].expectedRowVersion < 1
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    conversationId: args[0].conversationId,
+    expectedRowVersion: args[0].expectedRowVersion,
+  });
+}
+
+function parseConversationSendInput(
+  args: readonly unknown[],
+): DesktopConversationSendInput | null {
+  if (args.length !== 1 || !isRecord(args[0])) return null;
+  if (
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].conversationId !== "string" ||
+    !CONVERSATION_ID_PATTERN.test(args[0].conversationId) ||
+    typeof args[0].content !== "string" ||
+    args[0].content.length > 16_384 ||
+    CONTROL_CHARACTER_PATTERN.test(args[0].content)
+  ) {
+    return null;
+  }
+  const allowed = new Set([
+    "content",
+    "conversationId",
+    "providerId",
+    "retryOfMessageId",
+    "workspaceId",
+  ]);
+  if (Object.keys(args[0]).some((key) => !allowed.has(key))) return null;
+  if (
+    args[0].providerId !== undefined &&
+    (typeof args[0].providerId !== "string" ||
+      !PROVIDER_ID_PATTERN.test(args[0].providerId))
+  ) {
+    return null;
+  }
+  if (
+    args[0].retryOfMessageId !== undefined &&
+    (typeof args[0].retryOfMessageId !== "string" ||
+      !MESSAGE_ID_PATTERN.test(args[0].retryOfMessageId))
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    conversationId: args[0].conversationId,
+    content: args[0].content,
+    ...(args[0].providerId === undefined ? {} : { providerId: args[0].providerId }),
+    ...(args[0].retryOfMessageId === undefined
+      ? {}
+      : { retryOfMessageId: args[0].retryOfMessageId }),
+  });
+}
+
+function parseConversationCancelInput(
+  args: readonly unknown[],
+): DesktopConversationCancelInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["invocationId"]) ||
+    typeof args[0].invocationId !== "string" ||
+    !INVOCATION_ID_PATTERN.test(args[0].invocationId)
+  ) {
+    return null;
+  }
+  return Object.freeze({ invocationId: args[0].invocationId });
+}
+
 export function registerClosedIpcHandlers(
   ipcMain: IpcMainLike | IpcMain,
   dependencies: IpcDependencies,
@@ -209,6 +503,123 @@ export function registerClosedIpcHandlers(
       return input === null
         ? invalidInput<DesktopWorkspaceMutationResult>()
         : dependencies.archiveWorkspace(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceAgent,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly agent: DesktopParentAgent }>()
+        : dependencies.getWorkspaceAgent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.providersList,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      requireNoIpcArguments(args);
+      return dependencies.listProviders();
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.providersUpsert,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseProviderUpsertInput(args);
+      return input === null
+        ? invalidInput<DesktopProviderMutationResult>()
+        : dependencies.upsertProvider(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.providersDelete,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseProviderIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly deleted: true; readonly id: string }>()
+        : dependencies.deleteProvider(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.providersTest,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseProviderIdInput(args);
+      return input === null
+        ? invalidInput<DesktopProviderTestResult>()
+        : dependencies.testProvider(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationsList,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopConversationList>()
+        : dependencies.listConversations(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationsCreate,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseConversationCreateInput(args);
+      return input === null
+        ? invalidInput<{
+            readonly created: true;
+            readonly conversation: DesktopConversation;
+          }>()
+        : dependencies.createConversation(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationsArchive,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseConversationArchiveInput(args);
+      return input === null
+        ? invalidInput<{ readonly conversation: DesktopConversation }>()
+        : dependencies.archiveConversation(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationsGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseConversationGetInput(args);
+      return input === null
+        ? invalidInput<DesktopConversationDetail>()
+        : dependencies.getConversation(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationSend,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseConversationSendInput(args);
+      return input === null
+        ? invalidInput<DesktopConversationEvent>()
+        : dependencies.sendConversation(input, (payload) => {
+            event.sender.send(IPC_EVENT_CHANNELS.conversationEvent, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationCancel,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseConversationCancelInput(args);
+      return input === null
+        ? invalidInput<{
+            readonly cancelled: boolean;
+            readonly id: string;
+            readonly accepted: boolean;
+          }>()
+        : dependencies.cancelConversation(input);
     },
   );
 }
