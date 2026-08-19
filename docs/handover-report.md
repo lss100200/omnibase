@@ -6258,8 +6258,9 @@ not pushed; not merged; not deployed
 P6.6 is isolated in
 `E:\Agent IDE\OmniBase Worktrees\Active\p6-6-cursor-desktop-journeys` on branch
 `cursor/p6-6-desktop-personal-journeys-r0`, based on P6.5 integration commit
-`58840ff600db86f19da2fd54768aedb54cbd072f`. The P6.6 source remains
-uncommitted and unpushed.
+`58840ff600db86f19da2fd54768aedb54cbd072f`. The P6.6 source is committed
+locally as `1be2b5f8c1b2fc8be63d58d6728d37ca5c6253d0` plus this handover
+correction, and is not pushed.
 
 The bounded product scope is local Owner first-run plus durable Workspace
 create/list/archive. The Electron renderer detects the complete preload bridge
