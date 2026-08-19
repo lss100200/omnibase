@@ -6397,8 +6397,43 @@ cancel, persisted API cancel of a running row, and restart recovery to
 server and isolation secrets only. Live paid Provider calls, Windows Sandbox
 UI, Authenticode and OmniBase 1.0.0 remain unproven.
 
-Unsigned engineering packaging receipts are recorded in a follow-up docs
-commit after a clean-HEAD rebuild, if that rebuild completes.
+The first packaging attempt used clean HEAD `9d6e3ad` and failed at
+`runtime-host-tests` because a leftover `OmniBase.RuntimeHost.Tests.exe`
+from an earlier `--nologo` invocation still locked the test EXE. That
+incomplete root was retained and not overwritten:
+
+```text
+failed artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-7-desktop-single-agent-r0-20260819
+```
+
+A second clean-HEAD rebuild completed after that process had exited:
+
+```text
+artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-7-desktop-single-agent-r0-20260819-2354
+build report = artifact root\desktop-build-report.json
+installer payload = 2,199 files / 614,755,643 bytes
+installer payload SHA-256 =
+  17622cdc24d3b95a9b8ad71f13560590b01c81835b5bbb5da519d61cbcf3e571
+
+Burn EXE = 203,794,415 bytes
+Burn EXE SHA-256 =
+  3797c1a64e79f6e00e6624e71d04ef853c775982e1e8e4127a38c43ff29e9024
+MSI = 203,494,145 bytes
+MSI SHA-256 =
+  557cc255b202a4e4549b49cfbc8e3248af3622fb4e7107b556de31db4113720c
+Authenticode = NotSigned
+source mode = clean-release
+source_clean = true
+production_ready = false
+required_product_journeys_verified = false
+source_commit recorded by the builder = 9d6e3ad1c50281e2ef39978720b008159b3c1de7
+```
+
+No host install, Sandbox UI, or Authenticode stage was run for these bytes.
+They prove source-to-EXE engineering construction from the P6.7 HEAD, not a
+distributable or complete installable-and-usable OmniBase 1.0.0.
 
 ```text
 P6_7_DESKTOP_SINGLE_AGENT_CORE_ENGINEERING_R0
@@ -6407,11 +6442,11 @@ PARENT_AGENT_STREAMING_IMPLEMENTED
 CONVERSATION_CANCEL_RETRY_RECOVERY_IMPLEMENTED
 NEXT_DESKTOP_MUTATION_PROXY_CLOSED
 FOCUSED_GATES_PASSED
-UNSIGNED_ENGINEERING_EXE_PENDING_CLEAN_HEAD_PACKAGING
+UNSIGNED_ENGINEERING_EXE_BUILT
 AUTHENTICODE_PENDING
 LIVE_PAID_PROVIDER_NOT_PROVEN
 WINDOWS_SANDBOX_UI_NOT_RUN
 root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
-not pushed; not merged; not deployed
+pushed origin/cursor/p6-7-desktop-single-agent-core-r0 at 9d6e3ad1c50281e2ef39978720b008159b3c1de7; packaging receipts follow in this docs commit; not merged; not deployed
 ```
