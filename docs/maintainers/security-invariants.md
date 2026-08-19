@@ -4080,3 +4080,90 @@ Linux Engine is healthy.
 - clean production-mode single/3/4/6-Agent live DeepSeek receipt;
 - exact upload-to-Workspace-RAG and ChangeSet rollback product journeys;
 - final Runtime/Planner/Multi-Agent/MCP false and disposable cleanup proof.
+
+## INV-082 p65-windows-desktop-distribution-boundary
+
+P6.5 is a source-reproducible Windows personal-desktop distribution boundary,
+not a new authority model. The application is one per-user Electron shell over
+an independently supervised loopback Next standalone server and a
+loopback-only `desktop_local` FastAPI service backed by SQLite. It must not
+import the PostgreSQL `Settings` singleton, load dotenv files, inspect provider
+configuration or silently activate Docker, WSL, PostgreSQL/pgvector, BGE-M3,
+MCP, Planner or enterprise Multi-Agent. Unsupported Browser API routes fail
+closed; a shell that opens while required product journeys remain unwired is
+not a usable or production-ready OmniBase release.
+
+Electron creates exactly one 32-byte CSPRNG instance token encoded as 64
+lowercase hexadecimal characters and passes it only in a closed child-process
+environment. The token never enters argv, Browser JavaScript, response bodies,
+logs, diagnostics or installer authoring. Next removes caller-supplied desktop
+control headers, injects the trusted token only on the server-side backend hop
+and removes any reflected control headers. Native readiness sends a fresh
+64-hex challenge and accepts only a successful backend health response carrying
+`HMAC-SHA256(token, challenge)` from the Next process. Missing, duplicate,
+malformed or drifted identity material fails closed.
+
+The runtime payload is a closed ordinary-file tree. Electron pins the exact
+SHA-256 of a canonical runtime manifest at compile time; the manifest binds
+every RuntimeHost, backend, Node and Next entrypoint byte. Payload builders and
+installers reject links, junctions/reparse points, hard links where identity
+cannot be proven, traversal/UNC/ADS/reserved Windows names, secret/key/database
+paths, virtual disks, file-count/size overflow and source identity drift.
+RuntimeHost accepts no argv, revalidates artifact paths and digests immediately
+before launch, uses fixed argument arrays and a closed environment, binds only
+IPv4 loopback, applies bounded startup/shutdown/output budgets and places every
+child in a kill-on-close Windows Job Object. A TCP listener alone is not native
+readiness evidence; the outer challenge-HMAC health check remains authoritative.
+
+The install contract is a WiX Burn single EXE containing one transactional,
+per-user MSI under `%LOCALAPPDATA%\Programs\OmniBase`. It requires no elevation,
+blocks downgrade and has no Docker/WSL/PostgreSQL chain package. User state is
+owned by the application under `%LOCALAPPDATA%\OmniBase`; MSI authoring must
+not create, enumerate, remove or take ownership of that tree, and normal
+uninstall preserves it. Upgrade, failed-upgrade rollback and uninstall may
+remove only installer-owned application bytes and registration/shortcut state.
+Recursive cleanup of build, install or data roots is still governed by INV-073.
+
+Backend freezing uses an isolated Python 3.12 x64 environment and a fully
+pinned minimal PyInstaller dependency set. Electron, its packager, WiX and the
+.NET SDK are pinned source build inputs. Generated `node_modules`, `.next`,
+virtualenvs, PyInstaller output, MSI/EXE files and signing material never become
+source truth. Release construction requires a clean declared source commit and
+must reproduce from declared inputs without root `.env`, business databases,
+private caches or ambient provider credentials. Authenticode occurs only in an
+external trusted signing stage; no certificate, PFX, private key or signing
+password belongs in the repository or payload.
+
+An unsigned or dirty-source artifact is a test artifact with
+`production_ready=false`, never a distributable 1.0.0 claim. Distribution
+requires direct evidence from a dedicated clean Windows target for install,
+first launch, challenge-HMAC readiness, required personal product journeys,
+data persistence, major upgrade, downgrade rejection, transactional rollback,
+normal uninstall with retained data, manifest verification and Authenticode
+verification. Clean-target acceptance must not start or repair Docker Desktop,
+WSL or Hyper-V and must not create, move, resize, compact or delete a VHD/VHDX.
+
+**Required verification**
+
+- all `backend/tests/test_desktop_local_*.py` tests plus explicit Ruff and
+  format checks for the desktop-local and release Python paths;
+- Electron tests, typecheck and source build; frontend tests, typecheck, lint
+  and production standalone build;
+- RuntimeHost tests and self-contained single-file `win-x64` publish with the
+  pinned .NET SDK;
+- payload-builder, desktop-backend packager, release-manifest and WiX contract
+  tests;
+- one real unsigned Electron payload and WiX Burn build outside the repository,
+  followed by the guarded install/upgrade/downgrade/rollback/uninstall harness;
+- maintainer map and benchmark validators.
+
+**Failure recovery**
+
+Stop the native shell and let the Job Object converge its exact children.
+Retain failed staging trees, build logs and unsigned artifacts for inspection;
+do not broaden cleanup to their parent. Forward-fix application bytes or
+uninstall only installer-owned files while preserving
+`%LOCALAPPDATA%\OmniBase`. A malformed manifest, identity failure, partial
+upgrade, missing toolchain, absent signing authority or incomplete product
+journey is a release veto, not permission to disable checks, start optional
+infrastructure, expose the instance token or claim production readiness.

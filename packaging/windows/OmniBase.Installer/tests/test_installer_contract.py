@@ -25,11 +25,41 @@ def test_wix_sdk_and_bal_extension_are_pinned_to_the_same_release() -> None:
 
     assert package.attrib["Sdk"] == "WixToolset.Sdk/7.0.0"
     assert bundle.attrib["Sdk"] == "WixToolset.Sdk/7.0.0"
+    assert package.findtext("./PropertyGroup/AcceptEula") == "wix7"
+    assert bundle.findtext("./PropertyGroup/AcceptEula") == "wix7"
+    assert (
+        package.findtext("./PropertyGroup/DefineConstants")
+        == "ProductVersion=$(ProductVersion)"
+    )
+    assert (
+        bundle.findtext("./PropertyGroup/DefineConstants")
+        == "ProductVersion=$(ProductVersion)"
+    )
     references = bundle.findall("./ItemGroup/PackageReference")
     assert [
         (reference.attrib["Include"], reference.attrib["Version"])
         for reference in references
     ] == [("WixToolset.Bal.wixext", "7.0.0")]
+
+
+def test_generated_payload_is_added_before_wix_core_compile() -> None:
+    package = _xml("package/OmniBase.Package.wixproj")
+    assert package.findtext("./PropertyGroup/EnableDefaultCompileItems") == "false"
+    assert [
+        item.attrib["Include"] for item in package.findall("./ItemGroup/Compile")
+    ] == ["Product.wxs"]
+    assert (
+        package.findtext("./PropertyGroup/GeneratedPayloadWxs")
+        == "$(MSBuildProjectDirectory)\\obj\\$(Configuration)\\OmniBase.Payload.g.wxs"
+    )
+    assert package.findtext("./PropertyGroup/SuppressIces") == "ICE64;ICE91"
+    target = package.find("./Target[@Name='ValidateOmniBasePayload']")
+    assert target is not None
+    assert target.attrib["BeforeTargets"] == "CoreCompile"
+    assert (
+        target.find("./ItemGroup/Compile[@Include='$(GeneratedPayloadWxs)']")
+        is not None
+    )
 
 
 def test_msi_is_fixed_current_user_scope_under_local_programs() -> None:
@@ -58,6 +88,17 @@ def test_msi_is_fixed_current_user_scope_under_local_programs() -> None:
     assert "CommonAppDataFolder" not in rendered
     assert "ALLUSERS" not in rendered
     assert "MSIINSTALLPERUSER" not in rendered
+    forced_location = root.find(
+        "w:Package/w:SetProperty[@Id='INSTALLFOLDER']",
+        NS,
+    )
+    assert forced_location is not None
+    assert forced_location.attrib == {
+        "Id": "INSTALLFOLDER",
+        "Value": "[LocalAppDataFolder]Programs\\OmniBase",
+        "Before": "CostFinalize",
+        "Sequence": "both",
+    }
 
 
 def test_msi_major_upgrade_is_transactional_and_blocks_downgrades() -> None:
@@ -72,7 +113,7 @@ def test_msi_major_upgrade_is_transactional_and_blocks_downgrades() -> None:
 
     feature = root.find("w:Package/w:Feature[@Id='OmniBaseFeature']", NS)
     assert feature is not None
-    assert feature.attrib["Absent"] == "disallow"
+    assert feature.attrib["AllowAbsent"] == "no"
     assert feature.find("w:ComponentGroupRef[@Id='OmniBasePayload']", NS) is not None
 
 
@@ -115,17 +156,15 @@ def test_bundle_is_one_embedded_vital_removable_per_user_msi() -> None:
     assert chain is not None
     children = list(chain)
     assert [child.tag.rsplit("}", 1)[-1] for child in children] == [
-        "RollbackBoundary",
         "MsiPackage",
     ]
-    boundary, msi = children
-    assert boundary.attrib["Transaction"] == "yes"
-    assert boundary.attrib["Vital"] == "yes"
-    assert msi.attrib["SourceFile"] == "$(var.OmniBasePackage.TargetPath)"
+    (msi,) = children
+    assert msi.attrib["SourceFile"] == "$(var.OmniBase.Package.TargetPath)"
     assert msi.attrib["Compressed"] == "yes"
     assert msi.attrib["Visible"] == "no"
     assert msi.attrib["Vital"] == "yes"
     assert msi.attrib["Permanent"] == "no"
+    assert "DisplayInternalUI" not in msi.attrib
     install_property = msi.find("w:MsiProperty[@Name='INSTALLFOLDER']", NS)
     assert install_property is not None
     assert install_property.attrib["Value"] == (
@@ -144,6 +183,20 @@ def test_rollback_probe_is_a_two_msi_transaction_with_an_intentional_blocker() -
     assert (
         blocker_project.findtext("./PropertyGroup/EnableDefaultCompileItems") == "false"
     )
+    assert probe_project.findtext("./PropertyGroup/AcceptEula") == "wix7"
+    assert blocker_project.findtext("./PropertyGroup/AcceptEula") == "wix7"
+    assert (
+        probe_project.findtext("./PropertyGroup/DefineConstants")
+        == "ProductVersion=$(ProductVersion)"
+    )
+    assert (
+        blocker_project.findtext("./PropertyGroup/DefineConstants")
+        == "ProductVersion=$(ProductVersion)"
+    )
+    assert (
+        probe_project.findtext("./PropertyGroup/SuppressSpecificWarnings") == "1151"
+    )
+    assert blocker_project.findtext("./PropertyGroup/SuppressIces") == "ICE71"
     assert [
         item.attrib["Include"] for item in probe_project.findall("./ItemGroup/Compile")
     ] == ["RollbackProbeBundle.wxs"]
@@ -163,8 +216,12 @@ def test_rollback_probe_is_a_two_msi_transaction_with_an_intentional_blocker() -
     ]
     assert children[0].attrib["Transaction"] == "yes"
     assert children[0].attrib["Vital"] == "yes"
-    assert children[1].attrib["SourceFile"] == "$(var.OmniBasePackage.TargetPath)"
-    assert children[2].attrib["SourceFile"] == "$(var.RollbackBlocker.TargetPath)"
+    assert children[1].attrib["SourceFile"] == "$(var.OmniBase.Package.TargetPath)"
+    assert (
+        children[2].attrib["SourceFile"]
+        == "$(var.OmniBase.RollbackBlocker.TargetPath)"
+    )
+    assert all("DisplayInternalUI" not in package.attrib for package in children[1:])
     assert all(package.attrib["Vital"] == "yes" for package in children[1:])
     assert all(package.attrib["Permanent"] == "no" for package in children[1:])
 
@@ -222,3 +279,7 @@ def test_rollback_probe_is_test_only_and_lifecycle_harness_covers_all_states() -
         assert stage in harness
     assert "OMNIBASE_INSTALLER_E2E" in harness
     assert "DisposableAccountAcknowledged" in harness
+    assert "installer_e2e_requires_non_elevated_shell" in harness
+    assert "Applying execute package: OmniBaseUpgradeCandidate" in harness
+    assert "Applying execute package: IntentionalRollbackBlocker" in harness
+    assert "Applied rollback package: OmniBaseUpgradeCandidate" in harness

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 
-import { proxyRequest } from '@/lib/proxy'
+import { proxyRuntimeRequest } from '@/lib/desktop-runtime'
 
 /**
  * Streaming reverse proxy for the OmniBase API.
@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
 const TARGET = process.env.API_PROXY_URL || 'http://backend:8000'
 
 function proxy(request: NextRequest) {
-  return proxyRequest(TARGET, request)
+  return proxyRuntimeRequest(TARGET, request, process.env)
 }
 
 export function GET(request: NextRequest) {

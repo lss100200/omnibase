@@ -244,6 +244,26 @@ not silently included in P6.0.
 > Live `omnibase.chat`, published OCI digests, Authenticode and clean-Windows VM
 > acceptance remain separate external evidence.
 
+> **P6.4 personal Agent practice accepted (2026-08-16):** the bounded personal
+> lane passed its clean-source six-journey DeepSeek acceptance for one and
+> three-to-six serial, separately metered participants. This acceptance covers
+> exact upload-to-Workspace RAG/citations, trusted offline artifacts and
+> disposable Workspace CAS/rollback only. It does not authorize enterprise
+> Planner/Multi-Agent, MCP-to-Agent, P34.7 or a Windows desktop release.
+
+> **P6.5 Windows desktop distribution in progress (2026-08-18):** the selected
+> architecture is a per-user Electron shell over supervised loopback Next
+> standalone and an independent SQLite `desktop_local` FastAPI service. A
+> per-launch server-owned identity, challenge-HMAC native readiness,
+> digest-pinned RuntimeHost payload, minimal PyInstaller backend, Electron
+> packaging and WiX Burn + per-user MSI are engineering work in progress.
+> Install defaults to `%LOCALAPPDATA%\Programs\OmniBase`; application data is
+> `%LOCALAPPDATA%\OmniBase` and normal uninstall retains it. Docker, WSL,
+> PostgreSQL/pgvector, BGE-M3 and enhanced Sandbox remain optional. No complete
+> Electron payload, WiX lifecycle acceptance, Authenticode signature or
+> fresh-Windows required-product-journey evidence exists yet, so no
+> distributable or installable-and-usable OmniBase 1.0.0 EXE is claimed.
+
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周
 > **目标**：让用户、Agent 和第三方在工作空间安全边界内扩展能力

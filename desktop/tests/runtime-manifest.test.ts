@@ -33,6 +33,9 @@ async function makeBundle(): Promise<{
   const runtimePath = path.join(bin, "omnibase-runtime.exe");
   const payload = Buffer.from("deterministic-runtime-payload", "utf8");
   await writeFile(runtimePath, payload, { flag: "wx" });
+  const configPath = path.join(root, "runtime-host.json");
+  const config = Buffer.from('{"startup_timeout_seconds":60}\n', "utf8");
+  await writeFile(configPath, config, { flag: "wx" });
   const manifest = JSON.stringify({
     schemaVersion: 1,
     entrypoint: { path: "bin/omnibase-runtime.exe", args: ["serve"] },
@@ -41,6 +44,11 @@ async function makeBundle(): Promise<{
         path: "bin/omnibase-runtime.exe",
         size: payload.byteLength,
         sha256: sha256(payload),
+      },
+      {
+        path: "runtime-host.json",
+        size: config.byteLength,
+        sha256: sha256(config),
       },
     ],
   });
@@ -53,6 +61,7 @@ async function makeBundle(): Promise<{
     runtimePath,
     dispose: async () => {
       await unlink(runtimePath);
+      await unlink(configPath);
       await unlink(manifestPath);
       await rmdir(bin);
       await rmdir(root);
@@ -86,6 +95,7 @@ test("runtime manifest and every declared payload require matching SHA-256", asy
     });
     assert.equal(verified.command, bundle.runtimePath);
     assert.deepEqual(verified.args, ["serve"]);
+    assert.equal(verified.startupTimeoutMs, 65_000);
 
     const handle = await open(bundle.runtimePath, "a");
     await handle.write("tamper");
@@ -123,6 +133,43 @@ test("an unpinned or tampered manifest fails before runtime execution", async ()
       /runtime_manifest_digest_mismatch/u,
     );
   } finally {
+    await bundle.dispose();
+  }
+});
+
+test("undeclared files and directories make the runtime tree fail closed", async () => {
+  const bundle = await makeBundle();
+  const undeclared = path.join(bundle.root, "unlisted.dll");
+  const emptyDirectory = path.join(bundle.root, "empty");
+  try {
+    await writeFile(undeclared, "sideload candidate", { flag: "wx" });
+    await assert.rejects(
+      verifyRuntimeBundle({
+        bundleRoot: bundle.root,
+        manifestPath: bundle.manifestPath,
+        expectedManifestSha256: bundle.manifestDigest,
+      }),
+      /runtime_tree_not_closed/u,
+    );
+    await unlink(undeclared);
+
+    await mkdir(emptyDirectory, { recursive: false });
+    await assert.rejects(
+      verifyRuntimeBundle({
+        bundleRoot: bundle.root,
+        manifestPath: bundle.manifestPath,
+        expectedManifestSha256: bundle.manifestDigest,
+      }),
+      /runtime_tree_not_closed/u,
+    );
+    await rmdir(emptyDirectory);
+  } finally {
+    try {
+      await unlink(undeclared);
+    } catch {}
+    try {
+      await rmdir(emptyDirectory);
+    } catch {}
     await bundle.dispose();
   }
 });

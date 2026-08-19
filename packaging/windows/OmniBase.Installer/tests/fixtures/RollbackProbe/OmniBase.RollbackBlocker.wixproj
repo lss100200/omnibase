@@ -1,10 +1,14 @@
 <Project Sdk="WixToolset.Sdk/7.0.0">
   <PropertyGroup>
     <OutputType>Package</OutputType>
+    <AcceptEula>wix7</AcceptEula>
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
+    <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>
     <OutputName>OmniBase-RollbackBlocker-$(ProductVersion)</OutputName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- This registry-only failure fixture intentionally has no media payload. -->
+    <SuppressIces>ICE71</SuppressIces>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 

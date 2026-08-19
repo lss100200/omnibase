@@ -1154,6 +1154,38 @@
         "docs/architecture/p6-4-personal-agent-practice.md"
       ],
       "test_paths": ["backend/tests/test_p6_4_agent_practice.py"]
+    },
+    {
+      "id": "INV-082",
+      "title": "P6.5 Windows desktop distribution is local, identity-bound, rollback-safe and honest about release evidence",
+      "document": "docs/maintainers/security-invariants.md#inv-082-p65-windows-desktop-distribution-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "desktop/src/**",
+        "desktop/scripts/**",
+        "desktop/package.json",
+        "desktop/pnpm-lock.yaml",
+        "desktop/tsconfig*.json",
+        "frontend/app/health/**",
+        "frontend/lib/desktop-runtime.ts",
+        "packaging/windows/OmniBase.DesktopBackend/**",
+        "packaging/windows/OmniBase.Installer/**",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "scripts/release/build_p6_5_desktop_payload.py",
+        "scripts/release/build_p6_5_windows_desktop.py",
+        "docs/architecture/p6-5-windows-desktop-distribution.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_foundation.py",
+        "backend/tests/test_desktop_local_safety.py",
+        "backend/tests/test_desktop_local_app.py",
+        "desktop/tests/runtime-manager.test.ts",
+        "frontend/lib/desktop-runtime.test.ts",
+        "packaging/windows/OmniBase.DesktopBackend/tests/test_backend_packaging.py",
+        "packaging/windows/OmniBase.Installer/tests/test_installer_contract.py",
+        "scripts/release/test_build_p6_5_desktop_payload.py",
+        "scripts/release/test_build_p6_5_windows_desktop.py"
+      ]
     }
   ],
   "modules": [
@@ -4163,6 +4195,98 @@
         "Revoke the run-scoped Provider credential and retain only the redacted digest/metric receipt.",
         "The matrix fragment is never production acceptance; only the outer controller may set production_accepted=true after strict receipt validation, canary closure, all gates false and zero labeled Compose resources.",
         "If Docker is not already healthy, stop before infrastructure activation; do not start or repair Docker Desktop, WSL, Hyper-V or a virtual disk to manufacture P6.4 evidence."
+      ]
+    },
+    {
+      "id": "p6-5-windows-desktop-distribution",
+      "name": "P6.5 per-user Windows desktop runtime, packaging and installer",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "backend/tests/test_desktop_local_*.py",
+        "desktop/src/**",
+        "desktop/tests/**",
+        "desktop/scripts/**",
+        "desktop/package.json",
+        "desktop/pnpm-lock.yaml",
+        "desktop/tsconfig*.json",
+        "frontend/app/api/v1/**",
+        "frontend/app/health/**",
+        "frontend/lib/desktop-runtime*.ts",
+        "frontend/lib/proxy*.ts",
+        "frontend/next.config.js",
+        "packaging/windows/OmniBase.DesktopBackend/**",
+        "packaging/windows/OmniBase.Installer/**",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "packaging/windows/OmniBase.RuntimeHost.Tests/**",
+        "scripts/release/build_p6_5_desktop_payload.py",
+        "scripts/release/test_build_p6_5_desktop_payload.py",
+        "scripts/release/build_p6_5_windows_desktop.py",
+        "scripts/release/test_build_p6_5_windows_desktop.py",
+        "deployment/release/windows/desktop-release.template.json",
+        "docs/architecture/p6-5-windows-desktop-distribution.md",
+        "docs/maintainers/security-invariants.md",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/desktop_local/app.py:create_desktop_local_app",
+        "backend/src/omnibase/desktop_local/app.py:main",
+        "desktop/src/main.ts:Electron main process",
+        "frontend/lib/desktop-runtime.ts:proxyRuntimeRequest",
+        "frontend/lib/desktop-runtime.ts:proxyRuntimeHealthRequest",
+        "packaging/windows/OmniBase.DesktopBackend/build_backend.py:build_backend",
+        "packaging/windows/OmniBase.RuntimeHost/Program.cs:Program.Main",
+        "scripts/release/build_p6_5_desktop_payload.py:build_desktop_payload",
+        "scripts/release/build_p6_5_windows_desktop.py:build_windows_desktop",
+        "desktop/scripts/package-windows.mjs:packageWindows"
+      ],
+      "public_interfaces": [
+        "Per-user Electron application loading only the fixed loopback Next origin",
+        "Loopback-only SQLite FastAPI service with one per-launch server-owned instance identity",
+        "Challenge-HMAC native readiness without exposing the instance token to Browser JavaScript",
+        "Closed digest-pinned RuntimeHost/backend/Node/Next payload",
+        "Single WiX Burn EXE containing one transactional per-user MSI",
+        "Application data under %LOCALAPPDATA%\\OmniBase retained by normal uninstall"
+      ],
+      "depends_on": [
+        "frontend",
+        "desktop-runtime",
+        "p6-4-personal-agent-practice",
+        "p6-1-native-skills-mcp-release"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-006",
+        "INV-010",
+        "INV-064",
+        "INV-067",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-076",
+        "INV-080",
+        "INV-081",
+        "INV-082"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py -q",
+        "python -m ruff check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "python -m ruff format --check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "dotnet run --project packaging/windows/OmniBase.RuntimeHost.Tests/OmniBase.RuntimeHost.Tests.csproj -c Release",
+        "dotnet publish packaging/windows/OmniBase.RuntimeHost/OmniBase.RuntimeHost.csproj -c Release -r win-x64 --self-contained true",
+        "python -m pytest scripts/release/test_build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_windows_desktop.py packaging/windows/OmniBase.DesktopBackend/tests/test_backend_packaging.py packaging/windows/OmniBase.Installer/tests/test_installer_contract.py packaging/windows/OmniBase.Installer/tests/test_validate_payload.py -q",
+        "dotnet build packaging/windows/OmniBase.Installer/bundle/OmniBase.Bundle.wixproj -c Release with an absolute verified PayloadRoot and ProductVersion=1.0.0",
+        "Run packaging/windows/OmniBase.Installer/tests/Test-InstallerLifecycle.ps1 only in an explicitly acknowledged disposable Windows account or dedicated clean VM",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Stop the Electron shell and let RuntimeHost close its Job Object; never leave unsupervised backend or Next children running.",
+        "Retain failed staging roots and logs for exact inspection; do not recursively delete their parent or any repository, worktree, user data or virtual disk.",
+        "Forward-fix or uninstall installer-owned application bytes only; preserve %LOCALAPPDATA%\\OmniBase and append-only SQLite audit evidence.",
+        "Treat unsigned, dirty-source, incomplete-product-journey, missing-toolchain and failed clean-Windows evidence as release vetoes rather than weakening manifest, identity, downgrade or rollback checks.",
+        "Do not start or repair Docker Desktop, WSL, Hyper-V or VHDX to manufacture desktop packaging or acceptance evidence."
       ]
     }
   ]

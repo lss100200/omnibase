@@ -21,9 +21,14 @@
 
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/lss100200/omnibase" />
     <Property Id="ARPNOREPAIR" Value="1" />
+    <SetProperty
+      Id="INSTALLFOLDER"
+      Value="[LocalAppDataFolder]Programs\OmniBase"
+      Before="CostFinalize"
+      Sequence="both" />
     <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
 
-    <Feature Id="OmniBaseFeature" Title="OmniBase" Level="1" Absent="disallow">
+    <Feature Id="OmniBaseFeature" Title="OmniBase" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="OmniBasePayload" />
       <ComponentRef Id="OmniBaseStartMenuShortcut" />
     </Feature>

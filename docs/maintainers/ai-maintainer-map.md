@@ -10,7 +10,7 @@
 
 1. `AGENTS.md`：仓库级维护契约、冻结边界和安全工作流。
 2. `docs/maintainers/maintenance-map.json`：机器可读模块、依赖、不变量、验证和恢复入口。
-3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-021 的权威维护约束。
+3. `docs/maintainers/security-invariants.md`：机器地图列出的全部权威维护约束。
 4. 本文：运行入口、调用方向、边界和影响矩阵。
 5. 目标模块源码，以及机器地图列出的迁移、契约和测试。
 6. `docs/handover-report.md`：当前阶段状态、最近验证证据和尚未授权的动作。
@@ -889,6 +889,7 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
+| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
 跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
@@ -2375,3 +2376,40 @@ credential/document cleanup, closed final gates and zero labeled Compose
 resources. Treat this as acceptance of the bounded personal P6.4 practice lane
 only. It does not authorize P34.7, enterprise P5, Planner, enterprise
 Multi-Agent, MCP-to-Agent, migration `0017`, deployment or release.
+
+## P6.5 per-user Windows desktop distribution boundary
+
+Read INV-082 and
+`docs/architecture/p6-5-windows-desktop-distribution.md` before changing
+`desktop_local`, the Next desktop proxy, Electron, RuntimeHost, payload
+construction, PyInstaller or WiX authoring.
+
+The native chain is Electron -> RuntimeHost -> loopback backend/Next. Electron
+pins the runtime manifest, generates one 64-hex instance token and verifies a
+fresh challenge-HMAC proof through Next before opening the window. Next removes
+Browser-supplied desktop control headers, injects only the server-owned token
+on the backend hop and removes reflected control headers. RuntimeHost accepts no
+argv, verifies every child immediately before launch and owns the children in a
+kill-on-close Job Object. Port-open alone is not readiness evidence.
+
+The desktop-local backend is an independent SQLite composition. It must not
+load root `.env`, PostgreSQL settings or ambient Provider credentials, and it
+must not silently substitute Docker/WSL/PostgreSQL services. Its data root is
+`%LOCALAPPDATA%\OmniBase`; installer ownership stops at
+`%LOCALAPPDATA%\Programs\OmniBase`. Normal uninstall retains user state and
+append-only audit evidence.
+
+Build outputs are external artifacts, not repository truth. Python dependencies,
+Electron/packager, .NET SDK and WiX are pinned; runtime payload and installer
+inputs are closed ordinary-file trees with digest and link/reparse guards. A
+generated but unsigned EXE, a dirty-source build or an Electron shell whose
+required P6 product routes are incomplete remains an engineering test artifact,
+not an installable-and-usable OmniBase 1.0.0 distribution claim.
+
+Release acceptance requires clean-source reconstruction, all component tests,
+one real Electron package, one WiX Burn build, guarded install/upgrade/
+downgrade/rollback/uninstall evidence, retained user data, successful required
+personal product journeys and Authenticode verification. Missing SDK, network,
+certificate, route or clean-target evidence is a veto. It never authorizes
+starting or repairing Docker/WSL/Hyper-V, mutating a virtual disk, deleting a
+parent artifact directory or weakening manifest/identity/rollback checks.

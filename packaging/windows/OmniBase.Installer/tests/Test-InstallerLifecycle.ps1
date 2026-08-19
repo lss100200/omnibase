@@ -28,6 +28,11 @@ $ErrorActionPreference = "Stop"
 if (-not $DisposableAccountAcknowledged -or $env:OMNIBASE_INSTALLER_E2E -ne "1") {
     throw "installer_e2e_requires_disposable_account_acknowledgement"
 }
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "installer_e2e_requires_non_elevated_shell"
+}
 if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
     throw "installer_e2e_local_app_data_unavailable"
 }
@@ -128,6 +133,25 @@ function Assert-Failure {
     }
 }
 
+function Assert-RollbackExecutionEvidence {
+    param([Parameter(Mandatory = $true)][string]$LogName)
+
+    $logPath = Join-Path $LogDirectory $LogName
+    if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+        throw "installer_e2e_rollback_log_missing"
+    }
+    $log = [IO.File]::ReadAllText($logPath)
+    foreach ($required in @(
+        "Applying execute package: OmniBaseUpgradeCandidate",
+        "Applying execute package: IntentionalRollbackBlocker",
+        "Applied rollback package: OmniBaseUpgradeCandidate"
+    )) {
+        if ($log.IndexOf($required, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "installer_e2e_rollback_execution_unproven"
+        }
+    }
+}
+
 foreach ($bundle in @($Version1Bundle, $Version2Bundle, $RollbackProbeBundle)) {
     Assert-OrdinaryBundle -Path $bundle
 }
@@ -160,6 +184,7 @@ Write-Output "STAGE RollbackFailedUpgrade"
 Assert-Failure (
     Invoke-Bundle -Path $RollbackProbeBundle -Action install -LogName "04-rollback-probe.log"
 )
+Assert-RollbackExecutionEvidence -LogName "04-rollback-probe.log"
 Assert-InstalledVersion -Expected $ExpectedVersion2
 Assert-RetainedData
 

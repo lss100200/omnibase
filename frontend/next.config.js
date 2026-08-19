@@ -6,23 +6,10 @@ const nextConfig = {
   // 强类型 + React 严格模式
   reactStrictMode: true,
 
-  // API 反向代理：/api/v1/* 由 app/api/v1/[...path]/route.ts 流式转发
-  // （rewrites 会缓冲响应体，破坏 SSE 流式输出）。/health 探针仍走 rewrites。
-  // 注意：转发在 Next.js 服务端执行（容器内），所以用 docker compose
-  // 的服务名 'backend'，不是 'localhost'
-  async rewrites() {
-    const apiBaseUrl = process.env.API_PROXY_URL || 'http://backend:8000'
-    return [
-      {
-        source: '/health',
-        destination: `${apiBaseUrl}/health`,
-      },
-      {
-        source: '/health/ready',
-        destination: `${apiBaseUrl}/health/ready`,
-      },
-    ]
-  },
+  // API 与健康检查均由 Route Handlers 转发。桌面模式在服务端注入
+  // 每次启动的实例令牌，并在 /health 上完成 challenge-HMAC 证明；
+  // 浏览器永远接触不到该令牌。不要恢复 rewrites，它既无法完成该身份
+  // 边界，也会缓冲 SSE 响应。
 
   // 允许的 image 域名（MinIO presigned URL 的 host）
   // Phase 0 暂留 localhost，Phase 1 接入对象预览时再扩展

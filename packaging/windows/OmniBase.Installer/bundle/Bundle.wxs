@@ -23,16 +23,11 @@
     </BootstrapperApplication>
 
     <Chain>
-      <RollbackBoundary
-        Id="OmniBaseMsiTransaction"
-        Transaction="yes"
-        Vital="yes" />
       <MsiPackage
         Id="OmniBaseMsi"
-        SourceFile="$(var.OmniBasePackage.TargetPath)"
+        SourceFile="$(var.OmniBase.Package.TargetPath)"
         Compressed="yes"
         Cache="keep"
-        DisplayInternalUI="no"
         Visible="no"
         Vital="yes"
         Permanent="no">

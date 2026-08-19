@@ -64,6 +64,7 @@ class PayloadValidationError(ValueError):
 class FileIdentity(NamedTuple):
     device: int
     inode: int
+    links: int
     size: int
     modified_ns: int
 
@@ -90,6 +91,7 @@ def _identity(metadata: os.stat_result) -> FileIdentity:
     return FileIdentity(
         device=metadata.st_dev,
         inode=metadata.st_ino,
+        links=metadata.st_nlink,
         size=metadata.st_size,
         modified_ns=metadata.st_mtime_ns,
     )
@@ -252,7 +254,7 @@ def validate_payload(payload_root: Path) -> PayloadSummary:
                 raise PayloadValidationError(
                     "installer_payload_link_reparse_or_hardlink_forbidden"
                 )
-            if metadata.st_size <= 0 or metadata.st_size > MAX_FILE_BYTES:
+            if metadata.st_size < 0 or metadata.st_size > MAX_FILE_BYTES:
                 raise PayloadValidationError("installer_payload_file_size_invalid")
             if len(inventory) >= MAX_FILES:
                 raise PayloadValidationError("installer_payload_file_count_over_budget")
@@ -292,6 +294,110 @@ def validate_payload(payload_root: Path) -> PayloadSummary:
     )
 
 
+def _safe_staging_destination(destination: Path, source_root: Path) -> Path:
+    if not destination.is_absolute():
+        raise PayloadValidationError("installer_payload_copy_root_must_be_absolute")
+    absolute = destination.absolute()
+    if absolute == Path(absolute.anchor):
+        raise PayloadValidationError("installer_payload_copy_root_invalid")
+    if os.name == "nt" and str(absolute).startswith("\\\\"):
+        raise PayloadValidationError("installer_payload_copy_root_invalid")
+    if absolute.exists() or absolute.is_symlink():
+        raise PayloadValidationError("installer_payload_copy_root_exists")
+    try:
+        absolute.relative_to(source_root)
+    except ValueError:
+        pass
+    else:
+        raise PayloadValidationError("installer_payload_copy_root_inside_source")
+    parent = absolute.parent
+    try:
+        metadata = os.stat(parent, follow_symlinks=False)
+        resolved = parent.resolve(strict=True)
+    except OSError:
+        raise PayloadValidationError("installer_payload_copy_parent_invalid") from None
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or _is_reparse(metadata)
+        or not _same_physical_path(parent, resolved)
+    ):
+        raise PayloadValidationError("installer_payload_copy_parent_invalid")
+    return absolute
+
+
+def _copy_payload_file(source: Path, destination: Path, expected: PayloadFile) -> None:
+    try:
+        metadata = os.stat(source, follow_symlinks=False)
+    except OSError:
+        raise PayloadValidationError("installer_payload_copy_source_changed") from None
+    identity = _identity(metadata)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or _is_reparse(metadata)
+        or metadata.st_nlink != 1
+        or metadata.st_size != expected.size
+    ):
+        raise PayloadValidationError("installer_payload_copy_source_changed")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    digest = hashlib.sha256()
+    copied = 0
+    try:
+        descriptor = os.open(source, flags)
+        with (
+            os.fdopen(descriptor, "rb", closefd=True) as input_file,
+            destination.open("xb") as output,
+        ):
+            if _identity(os.fstat(input_file.fileno())) != identity:
+                raise PayloadValidationError("installer_payload_copy_source_changed")
+            while chunk := input_file.read(1024 * 1024):
+                copied += len(chunk)
+                if copied > expected.size:
+                    raise PayloadValidationError(
+                        "installer_payload_copy_source_changed"
+                    )
+                digest.update(chunk)
+                output.write(chunk)
+            if _identity(os.fstat(input_file.fileno())) != identity:
+                raise PayloadValidationError("installer_payload_copy_source_changed")
+    except PayloadValidationError:
+        raise
+    except OSError:
+        raise PayloadValidationError("installer_payload_copy_failed") from None
+    if copied != expected.size or digest.hexdigest() != expected.sha256:
+        raise PayloadValidationError("installer_payload_copy_source_changed")
+
+
+def copy_validated_payload(payload_root: Path, destination: Path) -> PayloadSummary:
+    """Copy exactly the validated files into a new exclusive WiX bind tree."""
+
+    source_root = _safe_payload_root(payload_root)
+    summary = validate_payload(source_root)
+    copy_root = _safe_staging_destination(destination, source_root)
+    try:
+        copy_root.mkdir()
+        for payload_file in summary.files:
+            relative = PurePosixPath(payload_file.relative_path)
+            target = copy_root.joinpath(*relative.parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _copy_payload_file(
+                source_root.joinpath(*relative.parts),
+                target,
+                payload_file,
+            )
+    except PayloadValidationError:
+        raise
+    except OSError:
+        raise PayloadValidationError("installer_payload_copy_failed") from None
+    copied_summary = validate_payload(copy_root)
+    if copied_summary != summary:
+        raise PayloadValidationError("installer_payload_copy_digest_mismatch")
+    return copied_summary
+
+
 def _stable_identifier(prefix: str, relative_path: str) -> str:
     identifier = (
         f"{prefix}_{hashlib.sha256(relative_path.casefold().encode()).hexdigest()[:24]}"
@@ -312,7 +418,60 @@ def render_payload_wxs(summary: PayloadSummary) -> bytes:
         f"{{{WIX_NAMESPACE}}}ComponentGroup",
         {"Id": "OmniBasePayload"},
     )
-    remove_folder_authored: set[str] = set()
+    payload_directories = {""}
+    for payload_file in summary.files:
+        parent = PurePosixPath(payload_file.relative_path).parent
+        if parent == PurePosixPath("."):
+            continue
+        parts = parent.parts
+        for index in range(1, len(parts) + 1):
+            payload_directories.add("/".join(parts[:index]))
+    for directory in sorted(
+        payload_directories, key=lambda value: (value.casefold(), value)
+    ):
+        identity = directory if directory else "install-root"
+        attributes = {
+            "Id": _stable_identifier("dircmp", identity),
+            "Directory": "INSTALLFOLDER",
+            "Guid": (
+                "{"
+                + str(
+                    uuid.uuid5(
+                        COMPONENT_NAMESPACE,
+                        f"directory:{identity.casefold()}",
+                    )
+                ).upper()
+                + "}"
+            ),
+        }
+        if directory:
+            attributes["Subdirectory"] = directory.replace("/", "\\")
+        component = ET.SubElement(
+            group,
+            f"{{{WIX_NAMESPACE}}}Component",
+            attributes,
+        )
+        ET.SubElement(
+            component,
+            f"{{{WIX_NAMESPACE}}}RemoveFolder",
+            {
+                "Id": _stable_identifier("rmdir", identity),
+                "On": "uninstall",
+            },
+        )
+        ET.SubElement(
+            component,
+            f"{{{WIX_NAMESPACE}}}RegistryValue",
+            {
+                "Root": "HKCU",
+                "Key": "Software\\OmniBase\\Installer\\Directories",
+                "Name": hashlib.sha256(identity.casefold().encode("utf-8")).hexdigest(),
+                "Type": "integer",
+                "Value": "1",
+                "KeyPath": "yes",
+            },
+        )
+
     for payload_file in summary.files:
         relative = PurePosixPath(payload_file.relative_path)
         directory = (
@@ -347,19 +506,6 @@ def render_payload_wxs(summary: PayloadSummary) -> bytes:
                 "KeyPath": "no",
             },
         )
-        directory_key = directory.casefold()
-        if directory_key not in remove_folder_authored:
-            ET.SubElement(
-                component,
-                f"{{{WIX_NAMESPACE}}}RemoveFolder",
-                {
-                    "Id": _stable_identifier(
-                        "rmdir", directory if directory else "install-root"
-                    ),
-                    "On": "uninstall",
-                },
-            )
-            remove_folder_authored.add(directory_key)
         ET.SubElement(
             component,
             f"{{{WIX_NAMESPACE}}}RegistryValue",
@@ -402,15 +548,21 @@ def write_payload_wxs(output_path: Path, raw: bytes, payload_root: Path) -> None
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--payload-root", type=Path, required=True)
+    parser.add_argument("--copy-to", type=Path)
     parser.add_argument("--output-wxs", type=Path)
     args = parser.parse_args()
     try:
-        summary = validate_payload(args.payload_root)
+        effective_root = args.payload_root
+        if args.copy_to is None:
+            summary = validate_payload(effective_root)
+        else:
+            summary = copy_validated_payload(effective_root, args.copy_to)
+            effective_root = args.copy_to
         if args.output_wxs is not None:
             write_payload_wxs(
                 args.output_wxs,
                 render_payload_wxs(summary),
-                args.payload_root,
+                effective_root,
             )
     except PayloadValidationError as exc:
         print(json.dumps({"error": str(exc)}, sort_keys=True))
@@ -421,6 +573,7 @@ def main() -> int:
                 "file_count": summary.file_count,
                 "total_bytes": summary.total_bytes,
                 "tree_sha256": summary.tree_sha256,
+                "payload_copied": args.copy_to is not None,
                 "wix_authoring_written": args.output_wxs is not None,
             },
             sort_keys=True,

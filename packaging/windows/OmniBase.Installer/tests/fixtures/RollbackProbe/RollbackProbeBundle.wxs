@@ -27,9 +27,8 @@
         Vital="yes" />
       <MsiPackage
         Id="OmniBaseUpgradeCandidate"
-        SourceFile="$(var.OmniBasePackage.TargetPath)"
+        SourceFile="$(var.OmniBase.Package.TargetPath)"
         Compressed="yes"
-        DisplayInternalUI="no"
         Visible="no"
         Vital="yes"
         Permanent="no">
@@ -39,9 +38,8 @@
       </MsiPackage>
       <MsiPackage
         Id="IntentionalRollbackBlocker"
-        SourceFile="$(var.RollbackBlocker.TargetPath)"
+        SourceFile="$(var.OmniBase.RollbackBlocker.TargetPath)"
         Compressed="yes"
-        DisplayInternalUI="no"
         Visible="no"
         Vital="yes"
         Permanent="no" />

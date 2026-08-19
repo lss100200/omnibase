@@ -97,12 +97,17 @@ export class RuntimeSupervisor {
   readonly #now: () => number;
   readonly #sleep: (delayMs: number) => Promise<void>;
   #child: RuntimeChild | null = null;
+  #childGeneration = 0;
+  #generation = 0;
   #status: RuntimeStatus = Object.freeze({
     phase: "stopped",
     attempts: 0,
     lastError: null,
   });
-  #startPromise: Promise<RuntimeStatus> | null = null;
+  #startOperation: {
+    readonly generation: number;
+    readonly promise: Promise<RuntimeStatus>;
+  } | null = null;
 
   #sensitiveErrorValues(): readonly string[] {
     return [
@@ -131,7 +136,7 @@ export class RuntimeSupervisor {
       maxAttempts < 1 ||
       maxAttempts > 3 ||
       startupTimeoutMs < 1 ||
-      startupTimeoutMs > 120_000 ||
+      startupTimeoutMs > 125_000 ||
       probeIntervalMs < 1 ||
       retryDelayMs < 0
     ) {
@@ -159,16 +164,24 @@ export class RuntimeSupervisor {
     if (this.#status.phase === "ready") {
       return Promise.resolve(this.#status);
     }
-    if (this.#startPromise !== null) {
-      return this.#startPromise;
+    if (
+      this.#startOperation !== null &&
+      this.#startOperation.generation === this.#generation
+    ) {
+      return this.#startOperation.promise;
     }
-    this.#startPromise = this.#runStartLoop().finally(() => {
-      this.#startPromise = null;
+    const generation = ++this.#generation;
+    const promise = this.#runStartLoop(generation).finally(() => {
+      if (this.#startOperation?.generation === generation) {
+        this.#startOperation = null;
+      }
     });
-    return this.#startPromise;
+    this.#startOperation = { generation, promise };
+    return promise;
   }
 
   stop(): RuntimeStatus {
+    this.#generation += 1;
     this.#stopCurrentChild();
     this.#status = Object.freeze({
       phase: "stopped",
@@ -178,16 +191,23 @@ export class RuntimeSupervisor {
     return this.#status;
   }
 
-  async #runStartLoop(): Promise<RuntimeStatus> {
+  async #runStartLoop(generation: number): Promise<RuntimeStatus> {
     let finalError = "runtime_start_failed";
     for (let attempt = 1; attempt <= this.#options.maxAttempts; attempt += 1) {
+      if (generation !== this.#generation) {
+        return this.#status;
+      }
       this.#status = Object.freeze({
         phase: "starting",
         attempts: attempt,
         lastError: null,
       });
       try {
-        await this.#startAttempt();
+        await this.#startAttempt(generation);
+        if (generation !== this.#generation) {
+          this.#stopCurrentChild(generation);
+          return this.#status;
+        }
         this.#status = Object.freeze({
           phase: "ready",
           attempts: attempt,
@@ -195,12 +215,22 @@ export class RuntimeSupervisor {
         });
         return this.#status;
       } catch (error) {
+        if (generation !== this.#generation) {
+          this.#stopCurrentChild(generation);
+          return this.#status;
+        }
         finalError = redactRuntimeError(error, this.#sensitiveErrorValues());
-        this.#stopCurrentChild();
+        this.#stopCurrentChild(generation);
         if (attempt < this.#options.maxAttempts) {
           await this.#sleep(this.#options.retryDelayMs);
+          if (generation !== this.#generation) {
+            return this.#status;
+          }
         }
       }
+    }
+    if (generation !== this.#generation) {
+      return this.#status;
     }
     this.#status = Object.freeze({
       phase: "failed",
@@ -210,7 +240,10 @@ export class RuntimeSupervisor {
     return this.#status;
   }
 
-  async #startAttempt(): Promise<void> {
+  async #startAttempt(generation: number): Promise<void> {
+    if (generation !== this.#generation) {
+      throw new Error("runtime_start_cancelled");
+    }
     let stderr = "";
     let stdout = "";
     let childFailure: Error | null = null;
@@ -223,6 +256,7 @@ export class RuntimeSupervisor {
       stdio: "pipe",
     });
     this.#child = child;
+    this.#childGeneration = generation;
     child.stdout.on("data", (chunk) => {
       stdout = appendBounded(stdout, chunk);
     });
@@ -230,7 +264,11 @@ export class RuntimeSupervisor {
       stderr = appendBounded(stderr, chunk);
     });
     child.once("error", (error) => {
-      if (this.#child === child && this.#status.phase === "ready") {
+      if (
+        generation === this.#generation &&
+        this.#child === child &&
+        this.#status.phase === "ready"
+      ) {
         this.#child = null;
         this.#status = Object.freeze({
           phase: "failed",
@@ -245,7 +283,11 @@ export class RuntimeSupervisor {
       const error = new Error(
         `runtime_exited_before_ready code=${String(code)} signal=${String(signal)}`,
       );
-      if (this.#child === child && this.#status.phase === "ready") {
+      if (
+        generation === this.#generation &&
+        this.#child === child &&
+        this.#status.phase === "ready"
+      ) {
         this.#child = null;
         this.#status = Object.freeze({
           phase: "failed",
@@ -259,11 +301,21 @@ export class RuntimeSupervisor {
 
     const deadline = this.#now() + this.#options.startupTimeoutMs;
     while (this.#now() < deadline) {
+      if (generation !== this.#generation || this.#child !== child) {
+        throw new Error("runtime_start_cancelled");
+      }
       if (childFailure !== null) {
         throw childFailure;
       }
       try {
-        if (await this.#options.readinessProbe()) {
+        const ready = await this.#options.readinessProbe();
+        if (generation !== this.#generation || this.#child !== child) {
+          throw new Error("runtime_start_cancelled");
+        }
+        if (childFailure !== null) {
+          throw childFailure;
+        }
+        if (ready) {
           return;
         }
       } catch (error) {
@@ -280,9 +332,13 @@ export class RuntimeSupervisor {
     );
   }
 
-  #stopCurrentChild(): void {
+  #stopCurrentChild(generation?: number): void {
+    if (generation !== undefined && this.#childGeneration !== generation) {
+      return;
+    }
     const child = this.#child;
     this.#child = null;
+    this.#childGeneration = 0;
     if (child !== null && !child.killed) {
       child.kill();
     }
