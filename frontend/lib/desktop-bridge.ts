@@ -123,6 +123,8 @@ export interface DesktopMessage {
 export interface DesktopConversationEvent {
   readonly type: 'identity' | 'delta' | 'done' | 'cancelled' | 'error'
   readonly invocationId: string
+  readonly workspaceId?: string
+  readonly conversationId?: string
   readonly messageId?: string
   readonly text?: string
   readonly answer?: string
@@ -139,6 +141,90 @@ export interface DesktopConversationEvent {
   readonly totalTokens?: number | null
   readonly errorCode?: string
   readonly errorRedacted?: string
+}
+
+export interface DesktopProviderTestResult {
+  readonly ok: boolean
+  readonly providerId: string
+  readonly providerName: string
+  readonly requestedModel: string
+  readonly actualModel: string | null
+  readonly identityProven: boolean
+  readonly family: string
+  readonly latencyMs?: number
+  readonly errorCode?: string
+  readonly errorRedacted?: string
+}
+
+export interface DesktopLiveStreamState {
+  readonly workspaceId: string | null
+  readonly conversationId: string | null
+  readonly liveInvocation: string | null
+  readonly liveText: string
+  readonly liveMeta: DesktopConversationEvent | null
+  readonly streaming: boolean
+}
+
+export function beginDesktopLiveSend(state: DesktopLiveStreamState): DesktopLiveStreamState {
+  return {
+    ...state,
+    liveInvocation: null,
+    liveMeta: null,
+    liveText: '',
+    streaming: true,
+  }
+}
+
+export function switchDesktopLiveScope(
+  state: DesktopLiveStreamState,
+  workspaceId: string | null,
+  conversationId: string | null,
+): DesktopLiveStreamState {
+  if (state.workspaceId === workspaceId && state.conversationId === conversationId) {
+    return state
+  }
+  return {
+    ...state,
+    workspaceId,
+    conversationId,
+    liveText: '',
+    liveMeta: null,
+    streaming: false,
+  }
+}
+
+export function applyDesktopConversationEvent(
+  state: DesktopLiveStreamState,
+  event: DesktopConversationEvent,
+): DesktopLiveStreamState {
+  const scoped =
+    event.workspaceId === state.workspaceId && event.conversationId === state.conversationId
+  const ours = state.liveInvocation !== null && event.invocationId === state.liveInvocation
+  if (event.type === 'identity') {
+    if (!scoped) return state
+    return {
+      ...state,
+      liveInvocation: event.invocationId,
+      liveMeta: event,
+      liveText: '',
+      streaming: true,
+    }
+  }
+  if (event.type === 'delta') {
+    if (!scoped || !ours || !event.text) return state
+    return { ...state, liveText: state.liveText + event.text }
+  }
+  if (event.type === 'done' || event.type === 'cancelled' || event.type === 'error') {
+    if (!ours) return state
+    return {
+      ...state,
+      liveInvocation: null,
+      liveMeta: scoped ? event : null,
+      streaming: false,
+      liveText: scoped ? state.liveText : '',
+    }
+  }
+  return state
 }
 
 export interface OmniBaseDesktopBridge {
@@ -196,19 +282,7 @@ export interface OmniBaseDesktopBridge {
     }) => Promise<DesktopOperationResult<{ readonly deleted: true; readonly id: string }>>
     readonly test: (input: {
       readonly providerId: string
-    }) => Promise<
-      DesktopOperationResult<{
-        readonly ok: boolean
-        readonly providerId: string
-        readonly providerName: string
-        readonly requestedModel: string
-        readonly actualModel: string | null
-        readonly family: string
-        readonly latencyMs?: number
-        readonly errorCode?: string
-        readonly errorRedacted?: string
-      }>
-    >
+    }) => Promise<DesktopOperationResult<DesktopProviderTestResult>>
   }
   readonly conversations: {
     readonly list: (input: {

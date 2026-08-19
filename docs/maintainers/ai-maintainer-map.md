@@ -2462,10 +2462,13 @@ the raw key. The frozen backend must not import `openai`, `httpx`,
 `cryptography` or PostgreSQL Settings.
 
 Each Workspace has one parent Agent. No tools, files, MCP, Skills or child
-agents. Streaming is consumed by Electron main. Cancel must abort the provider
-request and never auto-replay cancelled or unknown invocations. Retry is a new
-invocation. Desktop schema version 2 uses `desktop_0002_provider_conversation`,
-never Alembic 0013/0017.
+agents. Streaming is consumed by Electron main. Provider connections pin to
+DNS-validated public IPs. Streams succeed only with explicit terminal proof;
+disconnect and truncated EOF become `unknown`. Cancel accept and success share
+one durable CAS winner. Renderer events are workspace/conversation scoped.
+Cancel must abort the provider request and never auto-replay cancelled or
+unknown invocations. Retry is a new invocation. Desktop schema version 2 uses
+`desktop_0002_provider_conversation`, never Alembic 0013/0017.
 
 A green P6.7 focused gate is unsigned engineering evidence. It does not prove
 Authenticode, Sandbox UI, a live paid Provider or OmniBase 1.0.0.

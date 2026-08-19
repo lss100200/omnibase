@@ -280,3 +280,87 @@ def test_provider_test_uses_loopback_fake_server_and_redacts_errors(tmp_path: Pa
     assert _ISOLATION_SECRET not in denied.text
     assert _FakeOpenAIHandler.last_authorization == f"Bearer {_ISOLATION_SECRET}"
     assert _FakeOpenAIHandler.last_path.endswith("/chat/completions")
+    assert ok.json()["identity_proven"] is True
+
+
+def test_dns_rebind_second_lookup_cannot_connect_to_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+
+    from omnibase.desktop_local.endpoint import resolve_provider_endpoint
+    from omnibase.desktop_local.provider_http import DesktopProviderCallError, _open_connection
+
+    lookups: list[str] = []
+    connected: list[str] = []
+
+    def fake_getaddrinfo(host: str, port: int, *args: object, **kwargs: object) -> list[tuple]:
+        lookups.append(str(host))
+        if lookups.count(str(host)) == 1:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", port))]
+
+    def fake_create_connection(
+        address: tuple[object, ...], timeout: object = None, **kwargs: object
+    ):
+        host = str(address[0])
+        connected.append(host)
+        if host.startswith(("192.168.", "10.", "172.16.")):
+            raise AssertionError("connected to private address after DNS rebind")
+        raise OSError("pinned public connect failed closed")
+
+    monkeypatch.setattr("omnibase.desktop_local.endpoint.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(
+        "omnibase.desktop_local.provider_http.socket.create_connection",
+        fake_create_connection,
+    )
+    endpoint = resolve_provider_endpoint("https://rebind.example/v1", allow_loopback_http=False)
+    assert endpoint.hostname == "rebind.example"
+    assert endpoint.connect_host == "93.184.216.34"
+    assert endpoint.connect_addrs == ("93.184.216.34",)
+    with pytest.raises(DesktopProviderCallError, match="desktop_provider_unreachable"):
+        _open_connection(endpoint, 1.0)
+    assert connected == ["93.184.216.34"]
+    assert "192.168.1.1" not in connected
+    assert lookups.count("rebind.example") == 1
+
+
+def test_provider_test_empty_json_object_is_not_success(tmp_path: Path) -> None:
+    _FakeOpenAIHandler.status = 200
+    _FakeOpenAIHandler.stream = False
+    _FakeOpenAIHandler.body = b"{}"
+    server = _serve(_FakeOpenAIHandler)
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+            _bootstrap(client)
+            created = client.post(
+                "/desktop/v1/providers",
+                headers=_native(),
+                json=_provider_payload(base_url=base_url),
+            )
+            provider_id = created.json()["provider"]["id"]
+            result = client.post(
+                f"/desktop/v1/providers/{provider_id}/test",
+                headers=_native(),
+                json={"secret": _ISOLATION_SECRET},
+            )
+            _FakeOpenAIHandler.body = json.dumps(
+                {"choices": [{"message": {"role": "assistant", "content": "pong"}}]}
+            ).encode("utf-8")
+            unproven = client.post(
+                f"/desktop/v1/providers/{provider_id}/test",
+                headers=_native(),
+                json={"secret": _ISOLATION_SECRET},
+            )
+    finally:
+        _stop(server)
+
+    assert result.status_code == 200
+    assert result.json()["ok"] is False
+    assert result.json()["error_code"] == "desktop_provider_response_invalid"
+    assert _ISOLATION_SECRET not in result.text
+    assert unproven.json()["ok"] is True
+    assert unproven.json()["identity_proven"] is False
+    assert unproven.json()["actual_model"] is None
+    assert unproven.json()["requested_model"] == "deepseek-chat"

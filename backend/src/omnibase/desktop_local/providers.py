@@ -401,6 +401,7 @@ def test_provider(
             "provider_name": str(row["display_name"]),
             "requested_model": str(row["model_name"]),
             "actual_model": None,
+            "identity_proven": False,
             "family": str(row["family"]),
             "error_code": exc.code,
             "error_redacted": public_error_message(exc.code, exc.public_message),

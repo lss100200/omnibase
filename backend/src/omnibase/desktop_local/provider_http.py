@@ -17,7 +17,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from omnibase.desktop_local.endpoint import ResolvedDesktopEndpoint
+from omnibase.desktop_local.endpoint import (
+    ResolvedDesktopEndpoint,
+    pinned_connect_addrs,
+)
 from omnibase.desktop_local.errors import DesktopLocalError
 from omnibase.desktop_local.family import DesktopModelAdaptation
 from omnibase.desktop_local.redaction import public_error_message, redact_public_text
@@ -59,27 +62,43 @@ def _status_code_to_error(status: int) -> str:
     return "desktop_provider_response_invalid"
 
 
-def _open_connection(
+def _connect_pinned(
     endpoint: ResolvedDesktopEndpoint,
+    address: str,
     timeout_seconds: float,
 ) -> http.client.HTTPConnection:
+    sock = socket.create_connection((address, endpoint.port), timeout_seconds)
     if endpoint.scheme == "http":
-        return http.client.HTTPConnection(
-            endpoint.connect_host,
+        connection = http.client.HTTPConnection(
+            address,
             endpoint.port,
             timeout=timeout_seconds,
         )
+        connection.sock = sock
+        return connection
     context = ssl.create_default_context()
     connection = http.client.HTTPSConnection(
-        endpoint.connect_host,
+        address,
         endpoint.port,
         timeout=timeout_seconds,
         context=context,
     )
-    if endpoint.connect_host != endpoint.hostname:
-        sock = socket.create_connection((endpoint.connect_host, endpoint.port), timeout_seconds)
-        connection.sock = context.wrap_socket(sock, server_hostname=endpoint.hostname)
+    connection.sock = context.wrap_socket(sock, server_hostname=endpoint.hostname)
     return connection
+
+
+def _open_connection(
+    endpoint: ResolvedDesktopEndpoint,
+    timeout_seconds: float,
+) -> http.client.HTTPConnection:
+    last_error: OSError | ssl.SSLError | None = None
+    for address in pinned_connect_addrs(endpoint):
+        try:
+            return _connect_pinned(endpoint, address, timeout_seconds)
+        except (OSError, ssl.SSLError) as exc:
+            last_error = exc
+            continue
+    raise DesktopProviderCallError("desktop_provider_unreachable") from last_error
 
 
 def _read_capped(response: http.client.HTTPResponse, limit: int) -> bytes:
@@ -119,6 +138,17 @@ def _usage_from_payload(payload: dict[str, Any]) -> tuple[int | None, int | None
     return _int("prompt_tokens"), _int("completion_tokens"), _int("total_tokens")
 
 
+def _peek_pending(fp: object) -> bytes:
+    peek = getattr(fp, "peek", None)
+    if not callable(peek):
+        return b""
+    try:
+        pending = peek(1)
+    except (OSError, ValueError):
+        return b""
+    return pending if isinstance(pending, (bytes, bytearray)) else b""
+
+
 def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
     response: http.client.HTTPResponse,
     sock: socket.socket | None,
@@ -130,6 +160,7 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
 ) -> Iterator[ProviderStreamEvent]:
     buffer = ""
     total = 0
+    terminal_proof = False
     fp = getattr(response, "fp", None)
     while True:
         if cancelled():
@@ -140,12 +171,7 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise DesktopProviderCallError("desktop_provider_timeout")
-        pending = b""
-        if fp is not None and hasattr(fp, "peek"):
-            try:
-                pending = fp.peek(1)
-            except OSError:
-                pending = b""
+        pending = _peek_pending(fp) if fp is not None else b""
         if not pending and sock is not None:
             readable, _, _ = select.select([sock], [], [], min(0.25, remaining))
             if not readable:
@@ -154,6 +180,8 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
             chunk = response.read(1024)
         except (TimeoutError, BlockingIOError):
             continue
+        except ValueError:
+            break
         except OSError as exc:
             if cancelled():
                 raise DesktopProviderCallError(
@@ -177,7 +205,10 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
             else:
                 raw, buffer = buffer.split("\n\n", 1)
             event_name, data = _parse_sse_block(raw.replace("\r\n", "\n"))
-            if not data or data == "[DONE]":
+            if data == "[DONE]":
+                terminal_proof = True
+                continue
+            if not data:
                 continue
             try:
                 payload = json.loads(data)
@@ -225,9 +256,12 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
                     )
             finish = choice.get("finish_reason")
             if isinstance(finish, str) and finish:
+                terminal_proof = True
                 yield ProviderStreamEvent(kind="finish", actual_model=actual_model)
             if event_name == "error":
                 raise DesktopProviderCallError("desktop_provider_response_invalid")
+    if not terminal_proof:
+        raise DesktopProviderCallError("desktop_provider_stream_incomplete")
 
 
 def _chat_payload(
@@ -250,6 +284,30 @@ def _chat_payload(
         payload["temperature"] = 0.2
     payload.update(adaptation.extra_payload)
     return payload
+
+
+def _json_media_type(content_type: str | None) -> bool:
+    media = (content_type or "").split(";", 1)[0].strip().lower()
+    return media == "application/json"
+
+
+def _usable_assistant_content(parsed: dict[str, Any]) -> str:
+    choices = parsed.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise DesktopProviderCallError("desktop_provider_response_invalid")
+    first = choices[0]
+    if not isinstance(first, dict):
+        raise DesktopProviderCallError("desktop_provider_response_invalid")
+    message = first.get("message")
+    if not isinstance(message, dict):
+        raise DesktopProviderCallError("desktop_provider_response_invalid")
+    role = message.get("role")
+    if role is not None and role != "assistant":
+        raise DesktopProviderCallError("desktop_provider_response_invalid")
+    content = message.get("content")
+    if not isinstance(content, str) or not content:
+        raise DesktopProviderCallError("desktop_provider_response_invalid")
+    return content
 
 
 def test_provider_endpoint(
@@ -294,19 +352,28 @@ def test_provider_endpoint(
             )
         if response.status >= 400:
             raise DesktopProviderCallError(_status_code_to_error(response.status))
+        if not _json_media_type(response.getheader("content-type")):
+            raise DesktopProviderCallError("desktop_provider_response_invalid")
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except (UnicodeError, json.JSONDecodeError):
             raise DesktopProviderCallError("desktop_provider_response_invalid") from None
         if not isinstance(parsed, dict):
             raise DesktopProviderCallError("desktop_provider_response_invalid")
+        _usable_assistant_content(parsed)
         actual = parsed.get("model")
-        actual_model = actual if isinstance(actual, str) and actual else model_name
+        if isinstance(actual, str) and actual.strip():
+            actual_model: str | None = actual.strip()
+            identity_proven = True
+        else:
+            actual_model = None
+            identity_proven = False
         latency_ms = int((time.monotonic() - started) * 1000)
         return {
             "ok": True,
             "requested_model": model_name,
             "actual_model": actual_model,
+            "identity_proven": identity_proven,
             "family": adaptation.family,
             "latency_ms": latency_ms,
         }

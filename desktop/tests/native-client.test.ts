@@ -274,3 +274,128 @@ test("native client maps provider list without secret material", async () => {
   assert.equal(JSON.stringify(result.value).includes("isolation"), false);
   assert.equal(seen[0], "http://127.0.0.1:47431/desktop/v1/providers");
 });
+
+const CONVERSATION_ID = `conversation_${"d".repeat(32)}`;
+const INVOCATION_ID = `invocation_${"e".repeat(32)}`;
+const MESSAGE_ID = `message_${"f".repeat(32)}`;
+
+function sseResponse(body: string): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+function scopedEvent(eventName: string, extra: Record<string, unknown> = {}): string {
+  return (
+    `event: ${eventName}\n` +
+    `data: ${JSON.stringify({
+      workspace_id: WORKSPACE_ID,
+      conversation_id: CONVERSATION_ID,
+      invocation_id: INVOCATION_ID,
+      message_id: MESSAGE_ID,
+      ...extra,
+    })}\n\n`
+  );
+}
+
+test("native client drops unscoped stream events and cancels the backend on abort", async () => {
+  const seen: string[] = [];
+  const emitted: Array<{ type: string; text?: string }> = [];
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seen.push(`${init?.method ?? "GET"} ${String(input)}`);
+      if (String(input).includes("/cancel")) {
+        return jsonResponse({
+          cancelled: true,
+          id: INVOCATION_ID,
+          accepted: true,
+        });
+      }
+      const unscoped =
+        'event: identity\ndata: {"invocation_id":"' +
+        INVOCATION_ID +
+        '"}\n\n' +
+        'event: delta\ndata: {"invocation_id":"' +
+        INVOCATION_ID +
+        '","text":"leak"}\n\n';
+      const scoped =
+        scopedEvent("identity") +
+        scopedEvent("delta", { text: "ok" }) +
+        scopedEvent("done", { status: "succeeded", answer: "ok" });
+      if (seen.some((item) => item.includes("/messages")) && seen.filter((item) => item.includes("/messages")).length === 1) {
+        return sseResponse(unscoped);
+      }
+      if (String(input).includes("/messages")) {
+        return sseResponse(scoped);
+      }
+      return jsonResponse({ ok: false });
+    }) as typeof fetch,
+  });
+
+  const unscoped = await client.sendConversation(
+    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    "isolation-secret",
+    (event) => emitted.push(event),
+    new AbortController().signal,
+  );
+  assert.equal(unscoped.ok, false);
+  assert.equal(emitted.length, 0);
+  assert.equal(
+    seen.some((item) => item.includes(`/desktop/v1/invocations/${INVOCATION_ID}/cancel`)),
+    false,
+  );
+
+  emitted.length = 0;
+  const scoped = await client.sendConversation(
+    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    "isolation-secret",
+    (event) => emitted.push(event),
+    new AbortController().signal,
+  );
+  assert.equal(scoped.ok, true);
+  assert.equal(emitted[0]?.type, "identity");
+  assert.equal(emitted[1]?.type, "delta");
+  assert.equal(emitted[1]?.text, "ok");
+
+  let cancelSeen = false;
+  const aborting = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo) => {
+      if (String(input).includes("/cancel")) {
+        cancelSeen = true;
+        return jsonResponse({
+          cancelled: true,
+          id: INVOCATION_ID,
+          accepted: true,
+        });
+      }
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(scopedEvent("identity")),
+            );
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }) as typeof fetch,
+  });
+  const controller = new AbortController();
+  const pending = aborting.sendConversation(
+    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    "isolation-secret",
+    () => {
+      controller.abort();
+    },
+    controller.signal,
+  );
+  const aborted = await pending;
+  assert.equal(aborted.ok, true);
+  if (aborted.ok) assert.equal(aborted.value.type, "cancelled");
+  assert.equal(cancelSeen, true);
+});

@@ -129,6 +129,7 @@ export interface DesktopProviderTestResult {
   readonly providerName: string;
   readonly requestedModel: string;
   readonly actualModel: string | null;
+  readonly identityProven: boolean;
   readonly family: string;
   readonly latencyMs?: number;
   readonly errorCode?: string;
@@ -247,6 +248,8 @@ export interface DesktopConversationCancelInput {
 export interface DesktopConversationEvent {
   readonly type: "identity" | "delta" | "done" | "cancelled" | "error";
   readonly invocationId: string;
+  readonly workspaceId?: string;
+  readonly conversationId?: string;
   readonly messageId?: string;
   readonly text?: string;
   readonly answer?: string;

@@ -309,6 +309,25 @@ def _sse(event: str, payload: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
+def _stream_scope(
+    prepared: dict[str, Any],
+    extra: dict[str, object],
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "workspace_id": str(prepared["workspace_id"]),
+        "conversation_id": str(prepared["conversation_id"]),
+        "invocation_id": str(prepared["invocation_id"]),
+        "message_id": str(prepared["message_id"]),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _cancelled_fields() -> tuple[str, str, str, str]:
+    public = public_error_message("desktop_invocation_cancelled")
+    return "cancelled", "cancelled", "desktop_invocation_cancelled", public
+
+
 def _finish_invocation(
     connection: sqlite3.Connection,
     lock: threading.RLock,
@@ -325,37 +344,107 @@ def _finish_invocation(
     error_code: str | None,
     error_redacted: str | None,
     message_status: str,
-) -> None:
+    cancelled: threading.Event | None = None,
+) -> str:
+    intended = status
+    intended_message = message_status
+    intended_error = error_code
+    intended_redacted = error_redacted
+    if intended == "succeeded" and cancelled is not None and cancelled.is_set():
+        intended, intended_message, intended_error, intended_redacted = _cancelled_fields()
     now = utc_now_text()
     with lock:
         connection.execute("BEGIN IMMEDIATE")
         try:
+            current = connection.execute(
+                "SELECT status FROM invocation WHERE id = ?",
+                (invocation_id,),
+            ).fetchone()
+            if current is None:
+                connection.execute("COMMIT")
+                return "unknown"
+            durable = str(current["status"])
+            if durable != "running":
+                connection.execute("COMMIT")
+                return durable
+            if intended == "succeeded" and cancelled is not None and cancelled.is_set():
+                intended, intended_message, intended_error, intended_redacted = _cancelled_fields()
             connection.execute(
                 "UPDATE invocation SET status = ?, actual_model = ?, duration_ms = ?, "
                 "input_tokens = ?, output_tokens = ?, total_tokens = ?, error_code = ?, "
                 "error_redacted = ?, updated_at = ? WHERE id = ? AND status = 'running'",
                 (
-                    status,
+                    intended,
                     actual_model,
                     duration_ms,
                     input_tokens,
                     output_tokens,
                     total_tokens,
-                    error_code,
-                    error_redacted,
+                    intended_error,
+                    intended_redacted,
                     now,
                     invocation_id,
                 ),
             )
             connection.execute(
-                "UPDATE message SET content = ?, status = ? WHERE id = ?",
-                (content, message_status, message_id),
+                "UPDATE message SET content = ?, status = ? WHERE id = ? AND status = 'streaming'",
+                (content, intended_message, message_id),
             )
             connection.execute("COMMIT")
+            return intended
         except sqlite3.Error:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
             raise
+
+
+def abandon_if_running(
+    connection: sqlite3.Connection,
+    lock: threading.RLock,
+    *,
+    invocation_id: str,
+    cancelled: threading.Event | None = None,
+) -> str:
+    now = utc_now_text()
+    status, message_status, error_code, error_redacted = (
+        _cancelled_fields()
+        if cancelled is not None and cancelled.is_set()
+        else (
+            "unknown",
+            "unknown",
+            "desktop_invocation_interrupted",
+            public_error_message("desktop_invocation_interrupted"),
+        )
+    )
+    with lock:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            current = connection.execute(
+                "SELECT status FROM invocation WHERE id = ?",
+                (invocation_id,),
+            ).fetchone()
+            if current is None:
+                connection.execute("COMMIT")
+                return "unknown"
+            durable = str(current["status"])
+            if durable != "running":
+                connection.execute("COMMIT")
+                return durable
+            connection.execute(
+                "UPDATE invocation SET status = ?, error_code = ?, error_redacted = ?, "
+                "updated_at = ? WHERE id = ? AND status = 'running'",
+                (status, error_code, error_redacted, now, invocation_id),
+            )
+            connection.execute(
+                "UPDATE message SET status = ? WHERE invocation_id = ? AND status = 'streaming'",
+                (message_status, invocation_id),
+            )
+            connection.execute("COMMIT")
+            return status
+        except sqlite3.Error:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise DesktopLocalError("desktop_invocation_abandon_failed") from None
 
 
 def prepare_send(  # noqa: C901 - retry, context compile and durable insert share one lock
@@ -539,7 +628,7 @@ def prepare_send(  # noqa: C901 - retry, context compile and durable insert shar
     }
 
 
-def stream_prepared_send(
+def stream_prepared_send(  # noqa: C901 - identity, provider, cancel and disconnect share one generator
     connection: sqlite3.Connection,
     lock: threading.RLock,
     prepared: dict[str, Any],
@@ -555,20 +644,99 @@ def stream_prepared_send(
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
-    yield _sse(
-        "identity",
-        {
-            "invocation_id": invocation_id,
-            "message_id": message_id,
-            "provider_id": str(provider["id"]),
-            "provider_name": str(provider["display_name"]),
-            "requested_model": str(provider["model_name"]),
-            "family": str(provider["family"]),
-            "gear": str(provider["gear"]),
-            "thinking_depth": str(provider["thinking_depth"]),
-        },
-    )
+    finished = False
+
+    def finish(
+        status: str,
+        message_status: str,
+        error_code: str | None,
+        error_redacted: str | None,
+    ) -> str:
+        nonlocal finished
+        durable = _finish_invocation(
+            connection,
+            lock,
+            invocation_id=invocation_id,
+            message_id=message_id,
+            status=status,
+            content=assembled,
+            actual_model=actual_model,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            error_code=error_code,
+            error_redacted=error_redacted,
+            message_status=message_status,
+            cancelled=cancelled,
+        )
+        finished = True
+        return durable
+
+    def yield_terminal(durable: str) -> str:
+        duration_ms = int((time.monotonic() - started) * 1000)
+        if durable == "succeeded":
+            return _sse(
+                "done",
+                _stream_scope(
+                    prepared,
+                    {
+                        "answer": assembled,
+                        "actual_model": actual_model,
+                        "status": "succeeded",
+                        "duration_ms": duration_ms,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                ),
+            )
+        if durable == "cancelled":
+            public = public_error_message("desktop_invocation_cancelled")
+            return _sse(
+                "cancelled",
+                _stream_scope(
+                    prepared,
+                    {
+                        "status": "cancelled",
+                        "error_code": "desktop_invocation_cancelled",
+                        "error_redacted": public,
+                    },
+                ),
+            )
+        code = (
+            "desktop_invocation_interrupted"
+            if durable == "unknown"
+            else "desktop_invocation_failed"
+        )
+        public = public_error_message(code)
+        return _sse(
+            "error",
+            _stream_scope(
+                prepared,
+                {
+                    "status": durable if durable in {"failed", "unknown"} else "unknown",
+                    "error_code": code,
+                    "error_redacted": public,
+                },
+            ),
+        )
+
     try:
+        yield _sse(
+            "identity",
+            _stream_scope(
+                prepared,
+                {
+                    "provider_id": str(provider["id"]),
+                    "provider_name": str(provider["display_name"]),
+                    "requested_model": str(provider["model_name"]),
+                    "family": str(provider["family"]),
+                    "gear": str(provider["gear"]),
+                    "thinking_depth": str(provider["thinking_depth"]),
+                },
+            ),
+        )
         endpoint = resolve_provider_endpoint(
             str(provider["base_url"]),
             allow_loopback_http=bool(provider["allow_loopback_http"]),
@@ -588,154 +756,118 @@ def stream_prepared_send(
                 assembled += event.text
                 yield _sse(
                     "delta",
-                    {
-                        "invocation_id": invocation_id,
-                        "message_id": message_id,
-                        "text": event.text,
-                    },
+                    _stream_scope(prepared, {"text": event.text}),
                 )
             elif event.kind == "usage":
                 input_tokens = event.input_tokens
                 output_tokens = event.output_tokens
                 total_tokens = event.total_tokens
-        duration_ms = int((time.monotonic() - started) * 1000)
-        _finish_invocation(
-            connection,
-            lock,
-            invocation_id=invocation_id,
-            message_id=message_id,
-            status="succeeded",
-            content=assembled,
-            actual_model=actual_model,
-            duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            error_code=None,
-            error_redacted=None,
-            message_status="completed",
-        )
-        yield _sse(
-            "done",
-            {
-                "invocation_id": invocation_id,
-                "message_id": message_id,
-                "answer": assembled,
-                "actual_model": actual_model,
-                "status": "succeeded",
-                "duration_ms": duration_ms,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-            },
-        )
+        durable = finish("succeeded", "completed", None, None)
+        yield yield_terminal(durable)
     except DesktopProviderCallError as exc:
-        duration_ms = int((time.monotonic() - started) * 1000)
         cancelled_call = exc.code == "desktop_invocation_cancelled"
-        status = "cancelled" if cancelled_call else "failed"
-        message_status = "cancelled" if cancelled_call else "failed"
-        public = (
-            public_error_message("desktop_invocation_cancelled")
-            if cancelled_call
-            else public_error_message(exc.code, exc.public_message)
-        )
-        _finish_invocation(
-            connection,
-            lock,
-            invocation_id=invocation_id,
-            message_id=message_id,
-            status=status,
-            content=assembled,
-            actual_model=actual_model,
-            duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            error_code=exc.code,
-            error_redacted=public,
-            message_status=message_status,
-        )
-        event_name = "cancelled" if cancelled_call else "error"
+        incomplete = exc.code in {
+            "desktop_provider_stream_incomplete",
+            "desktop_invocation_interrupted",
+        }
+        if cancelled_call:
+            status, message_status = "cancelled", "cancelled"
+        elif incomplete:
+            status, message_status = "unknown", "unknown"
+        else:
+            status, message_status = "failed", "failed"
+        public = public_error_message(exc.code, exc.public_message)
+        durable = finish(status, message_status, exc.code, public)
+        event_name = "cancelled" if durable == "cancelled" else "error"
         yield _sse(
             event_name,
-            {
-                "invocation_id": invocation_id,
-                "message_id": message_id,
-                "status": status,
-                "error_code": exc.code,
-                "error_redacted": public,
-            },
+            _stream_scope(
+                prepared,
+                {
+                    "status": durable,
+                    "error_code": exc.code
+                    if durable != "cancelled"
+                    else "desktop_invocation_cancelled",
+                    "error_redacted": (
+                        public_error_message("desktop_invocation_cancelled")
+                        if durable == "cancelled"
+                        else public
+                    ),
+                },
+            ),
         )
     except DesktopEndpointError as exc:
-        duration_ms = int((time.monotonic() - started) * 1000)
         public = public_error_message(exc.code)
-        _finish_invocation(
-            connection,
-            lock,
-            invocation_id=invocation_id,
-            message_id=message_id,
-            status="failed",
-            content=assembled,
-            actual_model=actual_model,
-            duration_ms=duration_ms,
-            input_tokens=None,
-            output_tokens=None,
-            total_tokens=None,
-            error_code=exc.code,
-            error_redacted=public,
-            message_status="failed",
-        )
+        finish("failed", "failed", exc.code, public)
         yield _sse(
             "error",
-            {
-                "invocation_id": invocation_id,
-                "message_id": message_id,
-                "status": "failed",
-                "error_code": exc.code,
-                "error_redacted": public,
-            },
+            _stream_scope(
+                prepared,
+                {
+                    "status": "failed",
+                    "error_code": exc.code,
+                    "error_redacted": public,
+                },
+            ),
         )
+    except GeneratorExit:
+        if not finished:
+            abandon_if_running(
+                connection,
+                lock,
+                invocation_id=invocation_id,
+                cancelled=cancelled,
+            )
+            finished = True
+        raise
+    except Exception:
+        if not finished:
+            public = public_error_message("desktop_invocation_interrupted")
+            finish(
+                "unknown",
+                "unknown",
+                "desktop_invocation_interrupted",
+                public,
+            )
+        raise
+    finally:
+        if not finished:
+            abandon_if_running(
+                connection,
+                lock,
+                invocation_id=invocation_id,
+                cancelled=cancelled,
+            )
 
 
 def cancel_invocation(
     connection: sqlite3.Connection,
+    lock: threading.RLock,
     cancel_events: dict[str, threading.Event],
     invocation_id: str,
 ) -> dict[str, object]:
     if not _INVOCATION_ID_PATTERN.fullmatch(invocation_id):
         raise DesktopApiError(404, "desktop_invocation_not_found")
     event = cancel_events.get(invocation_id)
-    if event is not None:
-        event.set()
-        return {"cancelled": True, "id": invocation_id, "accepted": True}
+    if event is None:
+        event = threading.Event()
+    event.set()
     row = connection.execute(
         "SELECT status FROM invocation WHERE id = ?",
         (invocation_id,),
     ).fetchone()
     if row is None:
         raise DesktopApiError(404, "desktop_invocation_not_found")
-    if str(row["status"]) != "running":
+    current = str(row["status"])
+    if current == "cancelled":
+        return {"cancelled": True, "id": invocation_id, "accepted": True}
+    if current != "running":
         return {"cancelled": False, "id": invocation_id, "accepted": False}
-    now = utc_now_text()
-    connection.execute("BEGIN IMMEDIATE")
-    try:
-        connection.execute(
-            "UPDATE invocation SET status = 'cancelled', error_code = ?, error_redacted = ?, "
-            "updated_at = ? WHERE id = ? AND status = 'running'",
-            (
-                "desktop_invocation_cancelled",
-                public_error_message("desktop_invocation_cancelled"),
-                now,
-                invocation_id,
-            ),
-        )
-        connection.execute(
-            "UPDATE message SET status = 'cancelled' WHERE invocation_id = ? AND status = 'streaming'",
-            (invocation_id,),
-        )
-        connection.execute("COMMIT")
-    except sqlite3.Error:
-        if connection.in_transaction:
-            connection.execute("ROLLBACK")
-        raise DesktopApiError(500, "desktop_invocation_cancel_failed") from None
-    return {"cancelled": True, "id": invocation_id, "accepted": True}
+    durable = abandon_if_running(
+        connection,
+        lock,
+        invocation_id=invocation_id,
+        cancelled=event,
+    )
+    accepted = durable == "cancelled"
+    return {"cancelled": accepted, "id": invocation_id, "accepted": accepted}

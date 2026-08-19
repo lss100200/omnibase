@@ -6450,3 +6450,36 @@ root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
 pushed origin/cursor/p6-7-desktop-single-agent-core-r0 at 9d6e3ad1c50281e2ef39978720b008159b3c1de7; packaging receipts follow in this docs commit; not merged; not deployed
 ```
+
+### P6.7 MASTER_REVIEW_FIX_ROUND_1 (2026-08-20)
+
+Independent Codex read-only audit of HEAD `b43a0cf` found four P1 stop-ships
+and two P2 issues. This round is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-master-review-fix-r1` on
+branch `cursor/p6-7-master-review-fix-r1`. It does not amend `9d6e3ad` /
+`b43a0cf`, does not edit P6.5 trees, and does not rebuild the unsigned
+installer. The previously recorded Burn/MSI bytes remain engineering-only and
+do not contain these six fixes.
+
+Fixes: (P1-1) pin TCP to DNS-validated public IPs with original SNI/Host;
+(P1-2) require `[DONE]` or `finish_reason` before `succeeded`, otherwise
+`unknown`; (P1-3) client disconnect / generator close / destroyed renderer
+durable-terminalize and abort the backend; (P1-4) cancel accept persists
+under the same CAS fence as success; (P2-1) stream events carry
+workspace/conversation identity and the renderer drops other-scope deltas and
+stale invocation IDs; (P2-2) Provider test rejects `{}` and does not forge
+missing `model`.
+
+```text
+P6_7_IMPLEMENTED_PENDING_REVIEW_FIX_ROUND_1
+INDEPENDENT_MASTER_REVIEW_FOUND_4_P1_STOP_SHIPS
+NOT_APPROVED_FOR_ENGINEERING_ACCEPTANCE
+UNSIGNED_INSTALLER_NOT_APPROVED_FOR_DISTRIBUTION
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+EXE_BYTES_DO_NOT_INCLUDE_MASTER_REVIEW_FIX_R1
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR; remaining human gate = installed send/stop after later review
+```

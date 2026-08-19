@@ -18,7 +18,10 @@ import {
   DesktopProvider,
   DesktopWorkspace,
   OmniBaseDesktopBridge,
-  type DesktopConversationEvent,
+  applyDesktopConversationEvent,
+  beginDesktopLiveSend,
+  switchDesktopLiveScope,
+  type DesktopLiveStreamState,
   type DesktopReasoningGear,
   type DesktopThinkingDepth,
 } from '@/lib/desktop-bridge'
@@ -115,10 +118,16 @@ export function DesktopWorkbench({
   const [providers, setProviders] = useState<readonly DesktopProvider[]>([])
   const [agentName, setAgentName] = useState('父 Agent')
   const [draft, setDraft] = useState('')
-  const [streaming, setStreaming] = useState(false)
-  const [liveText, setLiveText] = useState('')
-  const [liveInvocation, setLiveInvocation] = useState<string | null>(null)
-  const [liveMeta, setLiveMeta] = useState<DesktopConversationEvent | null>(null)
+  const [live, setLive] = useState<DesktopLiveStreamState>({
+    workspaceId: workspaces.find((item) => item.state === 'active')?.id ?? null,
+    conversationId: null,
+    liveInvocation: null,
+    liveText: '',
+    liveMeta: null,
+    streaming: false,
+  })
+  const liveRef = useRef(live)
+  liveRef.current = live
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [providerForm, setProviderForm] = useState({
@@ -178,26 +187,22 @@ export function DesktopWorkbench({
   }, [loadWorkspaceSurface, workspaceId])
 
   useEffect(() => {
+    setLive((current) => switchDesktopLiveScope(current, workspaceId, conversationId))
+  }, [conversationId, workspaceId])
+
+  useEffect(() => {
     return bridge.conversations.subscribe((event) => {
-      if (event.type === 'identity') {
-        setLiveInvocation(event.invocationId)
-        setLiveMeta(event)
-        setStreaming(true)
-      }
-      if (event.type === 'delta' && event.text) {
-        setLiveText((current) => current + event.text)
-      }
-      if (event.type === 'done' || event.type === 'cancelled' || event.type === 'error') {
-        setStreaming(false)
-        setLiveMeta(event)
-        if (event.type === 'cancelled') onError('生成已停止')
+      const current = liveRef.current
+      setLive((state) => applyDesktopConversationEvent(state, event))
+      if (event.type === 'cancelled' && event.invocationId === current.liveInvocation) {
+        onError('生成已停止')
       }
     })
   }, [bridge, onError])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages, liveText])
+  }, [messages, live.liveText])
 
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
@@ -261,19 +266,18 @@ export function DesktopWorkbench({
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault()
     const content = draft.trim()
-    if (workspaceId === null || content === '' || streaming) return
+    if (workspaceId === null || content === '' || live.streaming) return
     const target = await ensureConversation()
     if (target === null) return
     onError(null)
     setDraft('')
-    setLiveText('')
-    setStreaming(true)
+    setLive((current) => beginDesktopLiveSend({ ...current, workspaceId, conversationId: target }))
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId: target,
       content,
     })
-    setStreaming(false)
+    setLive((current) => ({ ...current, streaming: false, liveText: '' }))
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
@@ -285,29 +289,27 @@ export function DesktopWorkbench({
         current.map((item) => (item.id === detail.value.conversation.id ? detail.value.conversation : item)),
       )
     }
-    setLiveText('')
   }
 
   const stopGeneration = async () => {
-    if (liveInvocation === null) return
-    setStreaming(false)
+    if (live.liveInvocation === null || !live.streaming) return
+    setLive((current) => ({ ...current, streaming: false }))
     onError('生成已停止')
-    await bridge.conversations.cancel({ invocationId: liveInvocation })
+    await bridge.conversations.cancel({ invocationId: live.liveInvocation })
   }
 
   const retryLast = async () => {
     if (workspaceId === null || conversationId === null) return
     const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
-    setLiveText('')
-    setStreaming(true)
+    setLive((current) => beginDesktopLiveSend(current))
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId,
       content: '',
       retryOfMessageId: failed.id,
     })
-    setStreaming(false)
+    setLive((current) => ({ ...current, streaming: false, liveText: '' }))
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
@@ -354,7 +356,11 @@ export function DesktopWorkbench({
     }
     setTestResult(
       result.value.ok
-        ? `测试通过 · ${familyLabel(result.value.family)} · ${result.value.actualModel ?? result.value.requestedModel}`
+        ? `测试通过 · ${familyLabel(result.value.family)} · ${
+            result.value.identityProven
+              ? (result.value.actualModel ?? result.value.requestedModel)
+              : '模型身份未证明'
+          }`
         : result.value.errorRedacted ?? '测试失败',
     )
   }
@@ -473,7 +479,7 @@ export function DesktopWorkbench({
                   归档会话
                 </Button>
               )}
-              {streaming && (
+              {live.streaming && (
                 <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
                   <Square className="h-4 w-4" />
                   停止
@@ -502,8 +508,8 @@ export function DesktopWorkbench({
                 )}
               </div>
             ))}
-            {streaming && liveText !== '' && (
-              <div className="whitespace-pre-wrap break-words">{liveText}</div>
+            {live.streaming && live.liveText !== '' && (
+              <div className="whitespace-pre-wrap break-words">{live.liveText}</div>
             )}
             <div ref={bottomRef} />
           </div>
@@ -516,17 +522,17 @@ export function DesktopWorkbench({
               className="w-full resize-none border border-input bg-background p-3 text-[16px] outline-none"
             />
             <div className="mt-3 flex items-center justify-between gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => void retryLast()} disabled={streaming}>
+              <Button type="button" variant="outline" size="sm" onClick={() => void retryLast()} disabled={live.streaming}>
                 <RotateCcw className="h-4 w-4" />
                 重试
               </Button>
-              <Button type="submit" disabled={streaming || draft.trim() === ''}>
-                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button type="submit" disabled={live.streaming || draft.trim() === ''}>
+                {live.streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 发送
               </Button>
             </div>
           </form>
-          {liveMeta && (
+          {live.liveMeta && (
             <button
               type="button"
               className="border-t border-border px-4 py-2 text-left text-[13px]"
@@ -535,14 +541,14 @@ export function DesktopWorkbench({
               调用详情 {detailsOpen ? '收起' : '展开'}
               {detailsOpen && (
                 <div className="mt-2 space-y-1 text-foreground">
-                  <div>请求模型：{liveMeta.requestedModel ?? '—'}</div>
-                  <div>实际模型：{liveMeta.actualModel ?? '—'}</div>
-                  <div>Provider：{liveMeta.providerName ?? '—'}</div>
-                  <div>状态：{statusLabel(liveMeta.status ?? 'running')}</div>
-                  <div>耗时：{liveMeta.durationMs ?? '—'} ms</div>
-                  <div>Tokens：{liveMeta.totalTokens ?? '未提供'}</div>
-                  <div>思考深度：{liveMeta.thinkingDepth ?? '—'}</div>
-                  {liveMeta.errorRedacted && <div>错误：{liveMeta.errorRedacted}</div>}
+                  <div>请求模型：{live.liveMeta.requestedModel ?? '—'}</div>
+                  <div>实际模型：{live.liveMeta.actualModel ?? '—'}</div>
+                  <div>Provider：{live.liveMeta.providerName ?? '—'}</div>
+                  <div>状态：{statusLabel(live.liveMeta.status ?? 'running')}</div>
+                  <div>耗时：{live.liveMeta.durationMs ?? '—'} ms</div>
+                  <div>Tokens：{live.liveMeta.totalTokens ?? '未提供'}</div>
+                  <div>思考深度：{live.liveMeta.thinkingDepth ?? '—'}</div>
+                  {live.liveMeta.errorRedacted && <div>错误：{live.liveMeta.errorRedacted}</div>}
                 </div>
               )}
             </button>

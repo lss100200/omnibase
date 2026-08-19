@@ -225,3 +225,62 @@ test("IPC rejects unexpected arguments and non-loopback senders", async () => {
     { ok: false, error: { code: "desktop_native_input_invalid" } },
   );
 });
+
+test("destroyed renderer cannot receive conversation stream events", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  const ipcMain: IpcMainLike = {
+    handle: (channel, listener) => {
+      handlers.set(channel, listener);
+    },
+    removeHandler: () => undefined,
+  };
+  const ready: RuntimeStatus = Object.freeze({
+    phase: "ready",
+    attempts: 1,
+    lastError: null,
+  });
+  let sent = 0;
+  registerClosedIpcHandlers(ipcMain, {
+    getVersion: () => "1.0.0",
+    getRuntimeStatus: () => ready,
+    retryRuntimeStartup: async () => ready,
+    getOwnerStatus: unused,
+    bootstrapOwner: unused,
+    listWorkspaces: unused,
+    createWorkspace: unused,
+    archiveWorkspace: unused,
+    ...productStubs,
+    sendConversation: async (_input, emit) => {
+      emit({
+        type: "delta",
+        invocationId: `invocation_${"d".repeat(32)}`,
+        workspaceId: `workspace_${"b".repeat(32)}`,
+        conversationId: `conversation_${"c".repeat(32)}`,
+        text: "must-not-arrive",
+      });
+      return { ok: false as const, error: { code: "must-not-complete" } };
+    },
+  });
+  const destroyed = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+    sender: {
+      isDestroyed: () => true,
+      send: () => {
+        sent += 1;
+      },
+    },
+  } as unknown as IpcMainInvokeEvent;
+  await assert.rejects(
+    async () =>
+      handlers.get(IPC_CHANNELS.conversationSend)?.(destroyed, {
+        workspaceId: `workspace_${"b".repeat(32)}`,
+        conversationId: `conversation_${"c".repeat(32)}`,
+        content: "hello",
+      }),
+    /desktop_renderer_destroyed/u,
+  );
+  assert.equal(sent, 0);
+});

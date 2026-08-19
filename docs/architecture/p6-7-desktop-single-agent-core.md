@@ -58,8 +58,14 @@ control hop.
 Remote Providers require HTTPS. HTTP is allowed only for `127.0.0.1`,
 `localhost` and `::1` when the user explicitly enables loopback HTTP. LAN and
 other private-network targets are rejected. URL userinfo and query credentials
-are rejected and stripped from errors. Provider test has timeout, cancel and a
-response-size cap.
+are rejected and stripped from errors. After DNS validation the client pins
+TCP to the already-validated public IP set; TLS SNI and `Host` stay the
+original hostname. Provider test has timeout, cancel and a response-size cap,
+and requires usable assistant `choices` rather than any HTTP 200 JSON object.
+Streaming SSE requires explicit Provider terminal proof; truncated or
+disconnected streams durable-terminalize as `unknown` (or `cancelled`). Cancel
+accept is the CAS winner against success. Conversation events are scoped by
+workspace and conversation identity.
 
 ## Native-control surface added by P6.7
 

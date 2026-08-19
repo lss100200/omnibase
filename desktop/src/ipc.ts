@@ -604,6 +604,9 @@ export function registerClosedIpcHandlers(
       return input === null
         ? invalidInput<DesktopConversationEvent>()
         : dependencies.sendConversation(input, (payload) => {
+            if (event.sender.isDestroyed()) {
+              throw new Error("desktop_renderer_destroyed");
+            }
             event.sender.send(IPC_EVENT_CHANNELS.conversationEvent, payload);
           });
     },

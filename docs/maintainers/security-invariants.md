@@ -4262,15 +4262,30 @@ auxiliary hint only. The frozen desktop backend must not import `openai`,
 `httpx`, `cryptography` or PostgreSQL Settings; HTTPS uses the standard library.
 Remote Providers require HTTPS. HTTP is allowed only for loopback when the user
 explicitly enables it. LAN/private-network SSRF, URL userinfo and query
-credentials are rejected. Public errors must not contain secrets from URLs or
-response bodies.
+credentials are rejected. DNS is validated to public addresses, then the TCP
+connection is pinned to that already-validated set; TLS SNI and the HTTP Host
+header keep the original hostname. A later private/LAN rebind must not be
+used. Public errors must not contain secrets from URLs or response bodies.
+Provider test requires HTTP success, JSON Content-Type, non-empty usable
+assistant `choices`, and must not treat `{}` as success. Missing `model` is
+identity-unproven, never forged as the requested name.
 
 Each Workspace has exactly one parent Agent. Sending a message is personal
 approval by the local Owner. Streaming is consumed by Electron main, not by a
-buffering Next proxy. Cancel must stop the UI immediately, abort the in-flight
-request, mark the invocation cancelled, and never auto-replay cancelled or
-unknown records after restart. Retry is a new invocation that keeps the failed
-record. Interrupted running/streaming rows recover to `unknown`.
+buffering Next proxy. Stream events carry workspace and conversation identity;
+the renderer drops other-scope deltas and clears live invocation identity
+before send/retry and after terminal. A Provider stream is succeeded only with
+explicit terminal proof (`[DONE]` or `finish_reason`); truncated streams and
+client disconnect become `unknown` (or `cancelled` if cancel already won),
+never `succeeded`, and are not auto-replayed. Cancel accept and durable
+terminalization share one CAS fence: `accepted=true` matches durable
+`cancelled`, and an accepted cancel cannot commit `succeeded`. Cancel must
+stop the UI immediately, abort the in-flight request, mark the invocation
+cancelled, and never auto-replay cancelled or unknown records after restart.
+Retry is a new invocation that keeps the failed record. Interrupted
+running/streaming rows recover to `unknown`. Renderer destruction must not
+send IPC into a destroyed WebContents; the native reader must cancel and
+abandon the backend invocation.
 
 P6.7 is unsigned engineering evidence only. It does not prove Authenticode,
 clean-Windows Sandbox UI, a live paid Provider, or OmniBase 1.0.0.

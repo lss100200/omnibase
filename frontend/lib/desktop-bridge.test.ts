@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { resolveDesktopBridge } from './desktop-bridge'
+import {
+  applyDesktopConversationEvent,
+  beginDesktopLiveSend,
+  resolveDesktopBridge,
+  switchDesktopLiveScope,
+  type DesktopLiveStreamState,
+} from './desktop-bridge'
 
 function bridgeFixture() {
   return {
@@ -64,4 +70,92 @@ test('desktop bridge detection requires the complete closed product surface', ()
             }),
             null,
           )
+})
+
+const WORKSPACE_A = `workspace_${'a'.repeat(32)}`
+const WORKSPACE_B = `workspace_${'b'.repeat(32)}`
+const CONVERSATION_A = `conversation_${'a'.repeat(32)}`
+const CONVERSATION_B = `conversation_${'b'.repeat(32)}`
+const INVOCATION_OLD = `invocation_${'1'.repeat(32)}`
+const INVOCATION_NEW = `invocation_${'2'.repeat(32)}`
+
+test('send clears stale invocation so stop cannot cancel the previous call', () => {
+  const started = beginDesktopLiveSend({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    liveInvocation: INVOCATION_OLD,
+    liveText: 'stale',
+    liveMeta: {
+      type: 'identity',
+      invocationId: INVOCATION_OLD,
+      workspaceId: WORKSPACE_A,
+      conversationId: CONVERSATION_A,
+    },
+    streaming: true,
+  })
+  assert.equal(started.liveInvocation, null)
+  assert.equal(started.liveMeta, null)
+  assert.equal(started.liveText, '')
+  assert.equal(started.streaming, true)
+})
+
+test('cross-conversation deltas are dropped and other-scope streams are hidden', () => {
+  let state: DesktopLiveStreamState = {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    liveInvocation: INVOCATION_OLD,
+    liveText: 'hello',
+    liveMeta: {
+      type: 'identity',
+      invocationId: INVOCATION_OLD,
+      workspaceId: WORKSPACE_A,
+      conversationId: CONVERSATION_A,
+    },
+    streaming: true,
+  }
+  state = applyDesktopConversationEvent(state, {
+    type: 'delta',
+    invocationId: INVOCATION_OLD,
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_B,
+    text: ' leaked',
+  })
+  assert.equal(state.liveText, 'hello')
+  state = applyDesktopConversationEvent(state, {
+    type: 'delta',
+    invocationId: INVOCATION_NEW,
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    text: ' leaked-stale',
+  })
+  assert.equal(state.liveText, 'hello')
+  state = applyDesktopConversationEvent(state, {
+    type: 'delta',
+    invocationId: INVOCATION_OLD,
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    text: ' world',
+  })
+  assert.equal(state.liveText, 'hello world')
+  const switched = switchDesktopLiveScope(state, WORKSPACE_B, CONVERSATION_B)
+  assert.equal(switched.liveText, '')
+  assert.equal(switched.streaming, false)
+  assert.equal(switched.liveInvocation, INVOCATION_OLD)
+  const hiddenDelta = applyDesktopConversationEvent(switched, {
+    type: 'delta',
+    invocationId: INVOCATION_OLD,
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    text: ' hidden',
+  })
+  assert.equal(hiddenDelta.liveText, '')
+  const terminal = applyDesktopConversationEvent(hiddenDelta, {
+    type: 'done',
+    invocationId: INVOCATION_OLD,
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    status: 'succeeded',
+  })
+  assert.equal(terminal.liveInvocation, null)
+  assert.equal(terminal.streaming, false)
 })

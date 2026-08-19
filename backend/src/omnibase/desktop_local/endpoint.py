@@ -23,6 +23,7 @@ class ResolvedDesktopEndpoint:
     port: int
     path: str
     connect_host: str
+    connect_addrs: tuple[str, ...]
     loopback: bool
     chat_path: str
 
@@ -62,6 +63,31 @@ def _require_public_or_loopback(address: str, *, allow_loopback: bool) -> None:
         _reject("desktop_provider_endpoint_invalid")
 
 
+def _unique_addresses(answers: list[tuple[object, ...]]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in answers:
+        target = item[4]
+        if not isinstance(target, tuple) or not target:
+            continue
+        address = str(target[0])
+        if address in seen:
+            continue
+        seen.add(address)
+        ordered.append(address)
+    return tuple(ordered)
+
+
+def pinned_connect_addrs(endpoint: ResolvedDesktopEndpoint) -> tuple[str, ...]:
+    """Return the already-validated connect set; never re-resolve the hostname."""
+
+    if not endpoint.connect_addrs:
+        _reject("desktop_provider_endpoint_invalid")
+    for address in endpoint.connect_addrs:
+        _require_public_or_loopback(address, allow_loopback=endpoint.loopback)
+    return endpoint.connect_addrs
+
+
 def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF checks
     base_url: str,
     *,
@@ -90,12 +116,14 @@ def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF che
             _reject("desktop_provider_endpoint_invalid")
         port = parsed.port or 80
         connect_host = "127.0.0.1" if hostname in {"127.0.0.1", "localhost"} else hostname
+        connect_addrs = (connect_host,)
     else:
         if loopback and not allow_loopback_http:
             _reject("desktop_provider_endpoint_invalid")
         port = parsed.port or 443
         if loopback:
             connect_host = "127.0.0.1" if hostname != "::1" else "::1"
+            connect_addrs = (connect_host,)
         else:
             try:
                 ipaddress.ip_address(hostname)
@@ -104,6 +132,7 @@ def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF che
             else:
                 _require_public_or_loopback(hostname, allow_loopback=False)
                 connect_host = hostname
+            connect_addrs = (connect_host,)
     if not 1 <= port <= 65535:
         _reject("desktop_provider_endpoint_invalid")
     if not loopback:
@@ -111,12 +140,13 @@ def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF che
             answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
         except OSError:
             _reject("desktop_provider_unreachable")
-        addresses = {str(item[4][0]) for item in answers}
+        addresses = _unique_addresses(answers)
         if not addresses:
             _reject("desktop_provider_unreachable")
         for address in addresses:
             _require_public_or_loopback(address, allow_loopback=False)
-        connect_host = hostname
+        connect_host = addresses[0]
+        connect_addrs = addresses
     path = parsed.path or "/"
     chat_path = path.rstrip("/")
     if not chat_path.endswith("/chat/completions"):
@@ -127,6 +157,7 @@ def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF che
         port=port,
         path=path,
         connect_host=connect_host,
+        connect_addrs=connect_addrs,
         loopback=loopback,
         chat_path=chat_path or "/chat/completions",
     )

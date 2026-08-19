@@ -17,11 +17,13 @@ from omnibase.desktop_local.app import (
     create_desktop_local_app,
 )
 from omnibase.desktop_local.config import DesktopLocalConfig
+from omnibase.desktop_local.conversations import prepare_send, stream_prepared_send
 from omnibase.desktop_local.endpoint import resolve_provider_endpoint
 from omnibase.desktop_local.family import plan_desktop_adaptation
 from omnibase.desktop_local.provider_http import (
     ChatMessage,
     DesktopProviderCallError,
+    ProviderStreamEvent,
     stream_provider_chat,
 )
 
@@ -301,3 +303,154 @@ def test_cancel_stops_running_invocation_and_restart_does_not_replay(tmp_path: P
     assert recovered[0]["invocation"]["status"] == "unknown"
     assert recovered[0]["invocation"]["error_code"] == "desktop_invocation_interrupted"
     assert "AbortError" not in json.dumps(restored.json())
+
+
+class _TruncatedStreamHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *_args: object) -> None:
+        return
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(length)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')
+        self.wfile.flush()
+
+
+def test_truncated_sse_without_terminal_proof_is_unknown_not_succeeded(tmp_path: Path) -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _TruncatedStreamHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+            workspace_id, conversation_id = _start_workspace(client, base_url)
+            with client.stream(
+                "POST",
+                f"/desktop/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages",
+                headers=_native(),
+                json={"secret": _SECRET, "content": "请介绍你自己"},
+            ) as stream:
+                body = b"".join(stream.iter_bytes()).decode("utf-8")
+            restored = client.get(
+                f"/desktop/v1/workspaces/{workspace_id}/conversations/{conversation_id}",
+                headers=_native(),
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert "partial" in body
+    assert '"status":"succeeded"' not in body
+    message = restored.json()["messages"][1]
+    assert message["status"] == "unknown"
+    assert message["invocation"]["status"] == "unknown"
+    assert message["invocation"]["error_code"] == "desktop_provider_stream_incomplete"
+
+
+def test_closing_generator_after_identity_does_not_leave_running(tmp_path: Path) -> None:
+    _StreamHandler.hang = True
+    server = _serve()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+            workspace_id, conversation_id = _start_workspace(client, base_url)
+            runtime = client.app.state.desktop_runtime
+            prepared = prepare_send(
+                runtime.connection,
+                runtime.lock,
+                workspace_id=workspace_id,
+                conversation_id=conversation_id,
+                content="请介绍你自己",
+                provider_id=None,
+                retry_of_message_id=None,
+            )
+            cancelled = threading.Event()
+            generator = stream_prepared_send(
+                runtime.connection,
+                runtime.lock,
+                prepared,
+                _SECRET,
+                cancelled,
+            )
+            first = next(generator)
+            assert "event: identity" in first
+            generator.close()
+            invocation = runtime.connection.execute(
+                "SELECT status FROM invocation WHERE id = ?",
+                (prepared["invocation_id"],),
+            ).fetchone()
+            message = runtime.connection.execute(
+                "SELECT status FROM message WHERE id = ?",
+                (prepared["message_id"],),
+            ).fetchone()
+    finally:
+        _StreamHandler.hang = False
+        _stop(server)
+
+    assert invocation["status"] != "running"
+    assert message["status"] != "streaming"
+    assert invocation["status"] in {"unknown", "cancelled", "failed"}
+
+
+def test_cancel_flag_before_terminal_commit_is_cancelled_not_succeeded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _StreamHandler.hang = False
+    server = _serve()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+            workspace_id, conversation_id = _start_workspace(client, base_url)
+            runtime = client.app.state.desktop_runtime
+            prepared = prepare_send(
+                runtime.connection,
+                runtime.lock,
+                workspace_id=workspace_id,
+                conversation_id=conversation_id,
+                content="请介绍你自己",
+                provider_id=None,
+                retry_of_message_id=None,
+            )
+            cancelled = threading.Event()
+
+            def fake_stream(*_args: object, **_kwargs: object):
+                yield ProviderStreamEvent(kind="delta", text="partial")
+                yield ProviderStreamEvent(kind="finish")
+                cancelled.set()
+
+            monkeypatch.setattr(
+                "omnibase.desktop_local.conversations.stream_provider_chat",
+                fake_stream,
+            )
+            body = "".join(
+                stream_prepared_send(
+                    runtime.connection,
+                    runtime.lock,
+                    prepared,
+                    _SECRET,
+                    cancelled,
+                )
+            )
+            invocation = runtime.connection.execute(
+                "SELECT status FROM invocation WHERE id = ?",
+                (prepared["invocation_id"],),
+            ).fetchone()
+            message = runtime.connection.execute(
+                "SELECT status FROM message WHERE id = ?",
+                (prepared["message_id"],),
+            ).fetchone()
+    finally:
+        _stop(server)
+
+    assert invocation["status"] == "cancelled"
+    assert message["status"] == "cancelled"
+    assert "event: done" not in body
+    assert '"status":"succeeded"' not in body
+    assert "event: cancelled" in body

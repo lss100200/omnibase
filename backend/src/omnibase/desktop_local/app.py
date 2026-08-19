@@ -33,6 +33,7 @@ from starlette.responses import Response
 
 from omnibase.desktop_local.config import DesktopLocalConfig
 from omnibase.desktop_local.conversations import (
+    abandon_if_running,
     archive_conversation,
     cancel_invocation,
     create_conversation,
@@ -710,6 +711,7 @@ def _conversations_send(
     runtime.cancel_events[str(prepared["invocation_id"])] = cancelled
 
     def generate() -> Iterator[str]:
+        invocation_id = str(prepared["invocation_id"])
         try:
             yield from stream_prepared_send(
                 runtime.connection,
@@ -719,7 +721,15 @@ def _conversations_send(
                 cancelled,
             )
         finally:
-            runtime.cancel_events.pop(str(prepared["invocation_id"]), None)
+            try:
+                abandon_if_running(
+                    runtime.connection,
+                    runtime.lock,
+                    invocation_id=invocation_id,
+                    cancelled=cancelled,
+                )
+            finally:
+                runtime.cancel_events.pop(invocation_id, None)
 
     return StreamingResponse(
         generate(),
@@ -730,8 +740,16 @@ def _conversations_send(
 
 def _invocations_cancel(invocation_id: str, request: Request) -> dict[str, object]:
     runtime = _runtime(request)
+    in_flight = runtime.cancel_events.get(invocation_id)
+    if in_flight is not None:
+        in_flight.set()
     with runtime.lock:
-        return cancel_invocation(runtime.connection, runtime.cancel_events, invocation_id)
+        return cancel_invocation(
+            runtime.connection,
+            runtime.lock,
+            runtime.cancel_events,
+            invocation_id,
+        )
 
 
 def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:

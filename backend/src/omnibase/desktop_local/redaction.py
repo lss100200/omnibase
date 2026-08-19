@@ -28,6 +28,7 @@ _PUBLIC_STATUS_COPY = {
     "desktop_provider_response_invalid": "Provider 返回了无法使用的响应",
     "desktop_provider_response_too_large": "Provider 响应超过上限",
     "desktop_provider_endpoint_invalid": "Provider 地址不符合安全边界",
+    "desktop_provider_stream_incomplete": "调用状态未知",
 }
 
 

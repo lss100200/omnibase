@@ -476,17 +476,29 @@ function parseProviderTest(value: unknown): DesktopProviderTestResult | null {
   }
   if (value.ok) {
     if (
-      typeof value.actual_model !== "string" ||
+      typeof value.identity_proven !== "boolean" ||
       typeof value.latency_ms !== "number"
     ) {
       return null;
     }
+    if (value.identity_proven) {
+      if (typeof value.actual_model !== "string" || value.actual_model.length === 0) {
+        return null;
+      }
+    } else if (value.actual_model !== null) {
+      return null;
+    }
+    const provenModel =
+      value.identity_proven && typeof value.actual_model === "string"
+        ? value.actual_model
+        : null;
     return Object.freeze({
       ok: true,
       providerId: value.provider_id,
       providerName: value.provider_name,
       requestedModel: value.requested_model,
-      actualModel: value.actual_model,
+      actualModel: provenModel,
+      identityProven: value.identity_proven,
       family: value.family,
       latencyMs: value.latency_ms,
     });
@@ -502,7 +514,8 @@ function parseProviderTest(value: unknown): DesktopProviderTestResult | null {
     providerId: value.provider_id,
     providerName: value.provider_name,
     requestedModel: value.requested_model,
-    actualModel: value.actual_model === null ? null : null,
+    actualModel: null,
+    identityProven: false,
     family: value.family,
     errorCode: value.error_code,
     errorRedacted: value.error_redacted,
@@ -735,23 +748,34 @@ function parseStreamEvent(
   } catch {
     return null;
   }
-  if (!isRecord(payload) || typeof payload.invocation_id !== "string") {
+  if (
+    !isRecord(payload) ||
+    typeof payload.invocation_id !== "string" ||
+    typeof payload.workspace_id !== "string" ||
+    typeof payload.conversation_id !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(payload.workspace_id) ||
+    !CONVERSATION_ID_PATTERN.test(payload.conversation_id)
+  ) {
     return null;
   }
+  const scoped = {
+    workspaceId: payload.workspace_id,
+    conversationId: payload.conversation_id,
+    invocationId: payload.invocation_id,
+    messageId: typeof payload.message_id === "string" ? payload.message_id : undefined,
+  };
   if (eventName === "delta") {
     if (typeof payload.text !== "string") return null;
     return Object.freeze({
       type: "delta",
-      invocationId: payload.invocation_id,
-      messageId: typeof payload.message_id === "string" ? payload.message_id : undefined,
+      ...scoped,
       text: payload.text,
     });
   }
   if (eventName === "identity") {
     return Object.freeze({
       type: "identity",
-      invocationId: payload.invocation_id,
-      messageId: typeof payload.message_id === "string" ? payload.message_id : undefined,
+      ...scoped,
       providerName:
         typeof payload.provider_name === "string" ? payload.provider_name : undefined,
       requestedModel:
@@ -765,8 +789,7 @@ function parseStreamEvent(
   if (eventName === "done" || eventName === "cancelled" || eventName === "error") {
     return Object.freeze({
       type: eventName,
-      invocationId: payload.invocation_id,
-      messageId: typeof payload.message_id === "string" ? payload.message_id : undefined,
+      ...scoped,
       answer: typeof payload.answer === "string" ? payload.answer : undefined,
       actualModel:
         payload.actual_model === null || typeof payload.actual_model === "string"
@@ -794,17 +817,45 @@ function parseStreamEvent(
   return null;
 }
 
+async function releaseStreamReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch {
+    try {
+      reader.releaseLock();
+    } catch {
+      return;
+    }
+  }
+}
+
 async function readConversationStream(
   response: Response,
   emit: (event: DesktopConversationEvent) => void,
+  signal: AbortSignal,
+  abandon: (invocationId: string) => Promise<void>,
 ): Promise<DesktopOperationResult<DesktopConversationEvent>> {
   if (response.body === null) return failure("desktop_native_response_invalid");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let terminal: DesktopConversationEvent | null = null;
+  let invocationId: string | undefined;
+  const onAbort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
-    while (true) {
+    if (signal.aborted) {
+      return success(
+        Object.freeze({
+          type: "cancelled",
+          invocationId: "invocation_cancelled_locally",
+          errorRedacted: "生成已停止",
+        }) satisfies DesktopConversationEvent,
+      );
+    }
+    while (!signal.aborted) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -821,6 +872,7 @@ async function readConversationStream(
         }
         const parsed = parseStreamEvent(eventName, dataLines.join("\n"));
         if (parsed === null) continue;
+        if (parsed.type === "identity") invocationId = parsed.invocationId;
         emit(parsed);
         if (parsed.type === "done" || parsed.type === "cancelled" || parsed.type === "error") {
           terminal = parsed;
@@ -828,7 +880,24 @@ async function readConversationStream(
       }
     }
   } finally {
-    reader.releaseLock();
+    signal.removeEventListener("abort", onAbort);
+    await releaseStreamReader(reader);
+    if (terminal === null && invocationId !== undefined) {
+      try {
+        await abandon(invocationId);
+      } catch {
+        // Backend disconnect terminalization is the durable fallback.
+      }
+    }
+  }
+  if (signal.aborted && terminal === null) {
+    return success(
+      Object.freeze({
+        type: "cancelled",
+        invocationId: invocationId ?? "invocation_cancelled_locally",
+        errorRedacted: "生成已停止",
+      }) satisfies DesktopConversationEvent,
+    );
   }
   return terminal === null
     ? failure("desktop_native_request_failed")
@@ -1108,13 +1177,22 @@ export class DesktopNativeClient {
         const payload = await readBoundedJson(response, MAX_RESPONSE_BYTES);
         return failure(parseErrorCode(payload) ?? "desktop_native_request_failed");
       }
-      return await readConversationStream(response, emit);
+      return await readConversationStream(
+        response,
+        emit,
+        signal,
+        async (invocationId) => {
+          await this.cancelInvocation(invocationId);
+        },
+      );
     } catch {
       if (signal.aborted) {
         return success(
           Object.freeze({
             type: "cancelled",
             invocationId: "invocation_cancelled_locally",
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
             errorRedacted: "生成已停止",
           }) satisfies DesktopConversationEvent,
         );
