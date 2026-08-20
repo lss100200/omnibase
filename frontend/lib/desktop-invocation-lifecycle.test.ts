@@ -61,6 +61,7 @@ function deltaEvent(
   text: string,
   workspaceId = WORKSPACE_A,
   conversationId = CONVERSATION_A,
+  sendEpoch?: number,
 ) {
   return {
     type: 'delta' as const,
@@ -68,6 +69,7 @@ function deltaEvent(
     workspaceId,
     conversationId,
     text,
+    ...(sendEpoch === undefined ? {} : { sendEpoch }),
   }
 }
 
@@ -77,6 +79,7 @@ function terminalEvent(
   status = 'succeeded',
   workspaceId = WORKSPACE_A,
   conversationId = CONVERSATION_A,
+  sendEpoch?: number,
 ) {
   return {
     type,
@@ -84,7 +87,38 @@ function terminalEvent(
     workspaceId,
     conversationId,
     status,
+    ...(sendEpoch === undefined ? {} : { sendEpoch }),
   }
+}
+
+function deltaFor(
+  state: ReturnType<typeof createDesktopLiveStreamState>,
+  invocationId: string,
+  text: string,
+) {
+  return deltaEvent(
+    invocationId,
+    text,
+    state.originWorkspaceId ?? WORKSPACE_A,
+    state.originConversationId ?? CONVERSATION_A,
+    state.sendEpoch,
+  )
+}
+
+function terminalFor(
+  state: ReturnType<typeof createDesktopLiveStreamState>,
+  invocationId: string,
+  type: 'done' | 'cancelled' | 'error' = 'done',
+  status = 'succeeded',
+) {
+  return terminalEvent(
+    invocationId,
+    type,
+    status,
+    state.originWorkspaceId ?? WORKSPACE_A,
+    state.originConversationId ?? CONVERSATION_A,
+    state.sendEpoch,
+  )
 }
 
 function startSend(workspaceId = WORKSPACE_A, conversationId = CONVERSATION_A) {
@@ -131,7 +165,7 @@ test('P6.8-A1 send then Stop before identity then identity cancels exactly once'
 
   const cancelled = applyDesktopConversationEvent(
     first.state,
-    terminalEvent(INVOCATION_NEW, 'cancelled', 'cancelled'),
+    terminalFor(first.state, INVOCATION_NEW, 'cancelled', 'cancelled'),
   )
   assert.equal(cancelled.terminalStatus, 'cancelled')
   assert.equal(desktopInvocationCanSend(cancelled), false)
@@ -187,7 +221,7 @@ test('P6.8-A4 Send and Retry stay unavailable while cancel is pending', () => {
   assert.equal(desktopInvocationCanSend(afterDispatch), false)
   const afterTerminal = applyDesktopConversationEvent(
     afterDispatch,
-    terminalEvent(INVOCATION_NEW, 'cancelled', 'cancelled'),
+    terminalFor(afterDispatch, INVOCATION_NEW, 'cancelled', 'cancelled'),
   )
   assert.equal(desktopInvocationCanSend(afterTerminal), false)
   const secondSend = beginDesktopLiveSend(afterTerminal)
@@ -231,9 +265,9 @@ test('P6.8-A6 old identity cannot bind to a new send', () => {
 test('P6.8-A7 late delta after current terminal leaves transcript unchanged', () => {
   let state = startSend()
   state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
-  state = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, 'hello'))
+  state = applyDesktopConversationEvent(state, deltaFor(state, INVOCATION_NEW, 'hello'))
   assert.equal(state.liveText, 'hello')
-  state = applyDesktopConversationEvent(state, terminalEvent(INVOCATION_NEW, 'done', 'succeeded'))
+  state = applyDesktopConversationEvent(state, terminalFor(state, INVOCATION_NEW, 'done', 'succeeded'))
   const afterLate = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, ' leaked'))
   assert.equal(afterLate.liveText, 'hello')
   assert.equal(afterLate.phase, 'convergence')
@@ -248,7 +282,7 @@ test('P6.8-A8 duplicate identity or terminal neither recancels nor resurrects', 
   assert.equal(secondIdentity.cancelInvocationId, null)
   let next = applyDesktopConversationEvent(
     first.state,
-    terminalEvent(INVOCATION_NEW, 'cancelled', 'cancelled'),
+    terminalFor(first.state, INVOCATION_NEW, 'cancelled', 'cancelled'),
   )
   const before = next.phase
   next = applyDesktopConversationEvent(next, terminalEvent(INVOCATION_NEW, 'cancelled', 'cancelled'))
@@ -263,7 +297,7 @@ test('P6.8-A9 late success after accepted cancel must not display succeeded', ()
   state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
   state = requestDesktopLiveCancel(state)
   state = markDesktopInvocationCancelDispatched(state)
-  state = applyDesktopConversationEvent(state, terminalEvent(INVOCATION_NEW, 'done', 'succeeded'))
+  state = applyDesktopConversationEvent(state, terminalFor(state, INVOCATION_NEW, 'done', 'succeeded'))
   assert.equal(state.terminalStatus, 'cancelled')
   assert.equal(state.liveMeta?.status, 'cancelled')
   assert.notEqual(state.liveMeta?.status, 'succeeded')
@@ -288,7 +322,7 @@ test('P6.8-A10 send Promise failure with no identity returns to idle', () => {
 test('P6.8-A live projection compares origin to the current view, not parked flags', () => {
   let state = startSend()
   state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
-  state = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, 'origin-text'))
+  state = applyDesktopConversationEvent(state, deltaFor(state, INVOCATION_NEW, 'origin-text'))
   const onB = desktopInvocationLiveProjection(state, WORKSPACE_B, CONVERSATION_B)
   assert.equal(onB.visible, false)
   assert.equal(onB.liveText, '')
@@ -374,4 +408,48 @@ test('P6.8-A beginDesktopLiveSend refuses starting_identity and running', () => 
   assert.equal(refusedRunning.sendEpoch, running.sendEpoch)
   assert.equal(refusedRunning.invocationId, INVOCATION_NEW)
   assert.equal(desktopLiveSendBlocked(refusedRunning), true)
+})
+
+test('P6.8-A bound invocation omitted sendEpoch delta does not change live text', () => {
+  let state = startSend()
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
+  state = applyDesktopConversationEvent(state, deltaFor(state, INVOCATION_NEW, 'hello'))
+  assert.equal(state.liveText, 'hello')
+  const omitted = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, ' leaked'))
+  assert.equal(omitted.liveText, 'hello')
+  assert.equal(omitted.phase, 'running')
+  assert.equal(omitted.invocationId, INVOCATION_NEW)
+})
+
+test('P6.8-A bound invocation wrong sendEpoch terminal does not succeed', () => {
+  let state = startSend()
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
+  const wrong = applyDesktopConversationEvent(
+    state,
+    terminalEvent(
+      INVOCATION_NEW,
+      'done',
+      'succeeded',
+      WORKSPACE_A,
+      CONVERSATION_A,
+      state.sendEpoch + 1,
+    ),
+  )
+  assert.equal(wrong.phase, 'running')
+  assert.equal(wrong.invocationId, INVOCATION_NEW)
+  assert.notEqual(wrong.terminalStatus, 'succeeded')
+  assert.equal(wrong.liveText, '')
+})
+
+test('P6.8-A matching sendEpoch delta and terminal still apply', () => {
+  let state = startSend()
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
+  state = applyDesktopConversationEvent(state, deltaFor(state, INVOCATION_NEW, 'hello'))
+  assert.equal(state.liveText, 'hello')
+  assert.equal(state.phase, 'running')
+  state = applyDesktopConversationEvent(state, terminalFor(state, INVOCATION_NEW, 'done', 'succeeded'))
+  assert.equal(state.phase, 'convergence')
+  assert.equal(state.terminalStatus, 'succeeded')
+  assert.equal(state.liveText, 'hello')
+  assert.equal(state.invocationId, null)
 })

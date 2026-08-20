@@ -127,6 +127,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_B,
     text: ' leaked',
+    sendEpoch: state.sendEpoch,
   })
   assert.equal(state.liveText, 'hello')
   state = applyDesktopConversationEvent(state, {
@@ -135,6 +136,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: ' leaked-stale',
+    sendEpoch: state.sendEpoch,
   })
   assert.equal(state.liveText, 'hello')
   state = applyDesktopConversationEvent(state, {
@@ -143,6 +145,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: ' world',
+    sendEpoch: state.sendEpoch,
   })
   assert.equal(state.liveText, 'hello world')
   const switched = switchDesktopLiveScope(state, WORKSPACE_B, CONVERSATION_B)
@@ -155,6 +158,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: ' hidden',
+    sendEpoch: switched.sendEpoch,
   })
   assert.equal(hiddenDelta.liveText, '')
   const terminal = applyDesktopConversationEvent(hiddenDelta, {
@@ -163,6 +167,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     status: 'succeeded',
+    sendEpoch: hiddenDelta.sendEpoch,
   })
   assert.equal(terminal.liveInvocation, null)
   assert.equal(terminal.streaming, false)

@@ -531,7 +531,9 @@ function applyDelta(
     return state
   }
   if (TERMINAL_PHASES.has(state.phase)) return state
-  if (!eventMatchesOrigin(state, event) || !event.text) return state
+  if (!eventMatchesOrigin(state, event) || !eventMatchesSendEpoch(state, event) || !event.text) {
+    return state
+  }
   if (state.phase !== 'running' && state.phase !== 'identity' && state.phase !== 'cancelling') {
     return state
   }
@@ -555,6 +557,7 @@ function applyTerminal(
       retiredInvocationIds: retireInvocationId(state.retiredInvocationIds, event.invocationId),
     })
   }
+  if (!eventMatchesSendEpoch(state, event)) return state
   if (state.phase === 'idle') return state
   if (state.phase === 'cancelled' || state.phase === 'terminal' || state.phase === 'convergence') {
     return state

@@ -79,6 +79,7 @@ test('P6.8-B3 first render after switch B hides A liveText without waiting for s
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: 'streaming A',
+    sendEpoch: live.sendEpoch,
   })
   const firstRenderOnB = desktopInvocationLiveProjection(live, WORKSPACE_B, CONVERSATION_B)
   assert.equal(firstRenderOnB.visible, false)

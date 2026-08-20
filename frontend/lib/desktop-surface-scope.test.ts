@@ -43,6 +43,7 @@ test('returning to the original scope restores Stop and the running live invocat
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: 'hello',
+    sendEpoch: live.sendEpoch,
   })
   assert.equal(desktopLiveStopVisible(live), true)
   assert.equal(live.liveInvocation, INVOCATION_A)
@@ -60,6 +61,7 @@ test('returning to the original scope restores Stop and the running live invocat
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     text: ' world',
+    sendEpoch: onB.sendEpoch,
   })
   assert.equal(hiddenDelta.liveText, '')
   assert.equal(desktopLiveStopVisible(hiddenDelta), true)
