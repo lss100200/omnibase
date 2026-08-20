@@ -310,6 +310,25 @@ export interface DesktopTeamRunEvent {
   readonly planSummary?: string;
 }
 
+export function teamEventIdentityComplete(event: DesktopTeamRunEvent): boolean {
+  return (
+    typeof event.workspaceId === "string" &&
+    event.workspaceId.length > 0 &&
+    typeof event.conversationId === "string" &&
+    event.conversationId.length > 0 &&
+    typeof event.teamRunId === "string" &&
+    event.teamRunId.length > 0 &&
+    typeof event.rosterEpoch === "number" &&
+    Number.isInteger(event.rosterEpoch) &&
+    typeof event.planRevisionId === "string" &&
+    typeof event.waveId === "string" &&
+    typeof event.assignmentId === "string" &&
+    typeof event.nodeId === "string" &&
+    typeof event.sendEpoch === "number" &&
+    Number.isInteger(event.sendEpoch)
+  );
+}
+
 export interface DesktopTeamRunExecuteInput {
   readonly workspaceId: string;
   readonly conversationId: string;

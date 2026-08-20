@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import {
   SPECIALIST_EMPLOYEE_IDS,
+  teamEventIdentityComplete,
   type DesktopTeamPlanRevision,
   type DesktopTeamRun,
   type DesktopTeamRunEvent,
@@ -209,10 +210,18 @@ export class TeamAbortRegistry {
   #controllers = new Map<string, AbortController>();
   #pending = false;
 
+  reset(): void {
+    this.#controllers.clear();
+    this.#pending = false;
+  }
+
   arm(key: string): AbortController {
     this.#controllers.get(key)?.abort();
     const controller = new AbortController();
-    if (this.#pending) controller.abort();
+    if (this.#pending) {
+      this.#pending = false;
+      controller.abort();
+    }
     this.#controllers.set(key, controller);
     return controller;
   }
@@ -222,11 +231,13 @@ export class TeamAbortRegistry {
   }
 
   abortAll(): boolean {
-    const keys = [...this.#controllers.keys()];
+    this.#pending = true;
     for (const controller of this.#controllers.values()) controller.abort();
-    this.#pending = keys.length === 0 ? true : this.#pending;
-    if (keys.length === 0) return this.#pending;
     return true;
+  }
+
+  get pending(): boolean {
+    return this.#pending;
   }
 
   get size(): number {
@@ -259,31 +270,42 @@ interface StoredNode {
   report: EmployeeTeamReport | null;
 }
 
+export { teamEventIdentityComplete };
+
 export function eventMatchesTeamIdentity(
   current: {
     readonly workspaceId: string;
     readonly conversationId: string;
     readonly teamRunId: string;
     readonly rosterEpoch: number;
+    readonly planRevisionId?: string | null;
     readonly waveId?: string | null;
+    readonly assignmentId?: string | null;
     readonly nodeId?: string | null;
     readonly sendEpoch?: number | null;
     readonly invocationId?: string | null;
   },
   event: DesktopTeamRunEvent,
 ): boolean {
+  if (!teamEventIdentityComplete(event)) return false;
   if (event.workspaceId !== current.workspaceId) return false;
-  if (event.conversationId !== undefined && event.conversationId !== current.conversationId) {
+  if (event.conversationId !== current.conversationId) return false;
+  if (event.teamRunId !== current.teamRunId) return false;
+  if (event.rosterEpoch !== current.rosterEpoch) return false;
+  if (
+    current.planRevisionId !== undefined &&
+    current.planRevisionId !== null &&
+    current.planRevisionId !== "" &&
+    event.planRevisionId !== current.planRevisionId
+  ) {
     return false;
   }
-  if (event.teamRunId !== current.teamRunId) return false;
-  if (event.rosterEpoch !== undefined && event.rosterEpoch !== current.rosterEpoch) return false;
-  if (current.waveId && event.waveId !== undefined && event.waveId !== current.waveId) return false;
-  if (current.nodeId && event.nodeId !== undefined && event.nodeId !== current.nodeId) return false;
+  if (current.waveId && event.waveId !== current.waveId) return false;
+  if (current.assignmentId && event.assignmentId !== current.assignmentId) return false;
+  if (current.nodeId && event.nodeId !== current.nodeId) return false;
   if (
     current.sendEpoch !== undefined &&
     current.sendEpoch !== null &&
-    event.sendEpoch !== undefined &&
     event.sendEpoch !== current.sendEpoch
   ) {
     return false;
@@ -337,7 +359,7 @@ export class PersonalTeamCoordinator {
       throw Object.assign(new Error(budgetCheck.code), { code: budgetCheck.code });
     }
     this.#live = true;
-    this.#cancelled = false;
+    if (!this.#cancelled) this.abort.reset();
     const started = this.#now();
     const calls: TeamProviderCallRecord[] = [];
     const nodes: StoredNode[] = [];
@@ -354,9 +376,24 @@ export class PersonalTeamCoordinator {
         conversationId: input.conversationId,
         teamRunId: teamRun.id,
         rosterEpoch: input.rosterEpoch,
+        planRevisionId: "",
+        waveId: "",
+        assignmentId: "",
+        nodeId: "",
+        sendEpoch: 0,
       };
-      const emitBound = (event: Omit<DesktopTeamRunEvent, "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId">) => {
+      const emitBound = (
+        event: Omit<
+          DesktopTeamRunEvent,
+          "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId"
+        >,
+      ) => {
         emit({
+          planRevisionId: identity.planRevisionId,
+          waveId: identity.waveId,
+          assignmentId: identity.assignmentId,
+          nodeId: identity.nodeId,
+          sendEpoch: identity.sendEpoch,
           ...event,
           teamRunId: identity.teamRunId,
           workspaceId: identity.workspaceId,
@@ -403,6 +440,7 @@ export class PersonalTeamCoordinator {
         teamRunId: teamRun.id,
         proposal: (validated.ok ? validated.value : parsed) as ParentTeamDecision,
       });
+      identity.planRevisionId = submitted.planRevision.id;
       emitBound({
         type: "proposal",
         planRevisionId: submitted.planRevision.id,
@@ -454,6 +492,9 @@ export class PersonalTeamCoordinator {
         }
         const wave = pendingWaves.shift();
         if (wave === undefined) break;
+        identity.waveId = wave.waveId;
+        identity.assignmentId = "";
+        identity.nodeId = "";
         const completedIds = new Set(
           [...assignments.values()]
             .filter((item) => item.state === "completed" || item.state === "needs_collaboration")
@@ -508,6 +549,7 @@ export class PersonalTeamCoordinator {
           proposal: (replanValidated.ok ? replanValidated.value : replanParsed) as ParentReplanDecision,
         });
         lastPlan = replanSubmitted.planRevision;
+        identity.planRevisionId = lastPlan.id;
         emitBound({
           type: "proposal",
           planRevisionId: lastPlan.id,
@@ -716,6 +758,9 @@ export class PersonalTeamCoordinator {
     | { kind: "cancelled" | "unknown" | "failed" | "budget"; code?: string }
   > {
     if (this.#cancelled) return { kind: "cancelled" };
+    if (this.#now() - args.started > args.input.budget.maximumWallTimeMs) {
+      return { kind: "budget" };
+    }
     const stored = args.assignments.get(args.assignment.assignmentId);
     if (stored) stored.effectiveExecution = args.effectiveExecution;
     const invocationId = this.#newId("invocation");
@@ -743,23 +788,52 @@ export class PersonalTeamCoordinator {
         controller.signal,
       );
       if (isAborted(credentials) || controller.signal.aborted) return { kind: "cancelled" };
-      const created = await raceAbort(
-        this.#host.createNode({
+      const created = await this.#host.createNode({
+        workspaceId: args.input.workspaceId,
+        teamRunId: args.teamRun.id,
+        assignmentId: args.assignment.assignmentId,
+        employeeRoleId: args.assignment.employeeRoleId,
+        invocationId,
+        waveId: args.wave.waveId,
+        nodeEpoch,
+        sendEpoch,
+        providerId: credentials.providerId,
+        requestedModel: credentials.model,
+      });
+      createdId = created.node.id;
+      if (controller.signal.aborted || this.#cancelled) {
+        await this.#host.updateNode({
           workspaceId: args.input.workspaceId,
           teamRunId: args.teamRun.id,
-          assignmentId: args.assignment.assignmentId,
-          employeeRoleId: args.assignment.employeeRoleId,
-          invocationId,
-          waveId: args.wave.waveId,
-          nodeEpoch,
-          sendEpoch,
-          providerId: credentials.providerId,
-          requestedModel: credentials.model,
-        }),
-        controller.signal,
-      );
-      if (isAborted(created) || controller.signal.aborted) return { kind: "cancelled" };
-      createdId = created.node.id;
+          nodeId: created.node.id,
+          state: "cancelled",
+          actualModel: null,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          answerSha256: null,
+          errorCode: "desktop_invocation_cancelled",
+          durationMs: null,
+        });
+        return { kind: "cancelled" };
+      }
+      const remaining = args.input.budget.maximumWallTimeMs - (this.#now() - args.started);
+      if (remaining <= 0) {
+        await this.#host.updateNode({
+          workspaceId: args.input.workspaceId,
+          teamRunId: args.teamRun.id,
+          nodeId: created.node.id,
+          state: "cancelled",
+          actualModel: null,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          answerSha256: null,
+          errorCode: "desktop_team_wall_time_exceeded",
+          durationMs: null,
+        });
+        return { kind: "budget" };
+      }
       const node: StoredNode = {
         nodeId: created.node.id,
         assignmentId: args.assignment.assignmentId,
@@ -808,7 +882,7 @@ export class PersonalTeamCoordinator {
         sendEpoch,
         nodeEpoch,
       });
-      const started = this.#now();
+      const nodeStarted = this.#now();
       const chat = await raceAbort(
         this.#transport.complete(
           {
@@ -816,7 +890,7 @@ export class PersonalTeamCoordinator {
             secret: credentials.secret,
             model: credentials.model,
             messages: this.#employeeMessages(args.input, args.assignment, args.reports),
-            timeoutMs: credentials.timeoutMs,
+            timeoutMs: Math.max(1, Math.min(credentials.timeoutMs, remaining)),
             allowLoopbackHttp: credentials.allowLoopbackHttp,
           },
           controller.signal,
@@ -836,7 +910,7 @@ export class PersonalTeamCoordinator {
           totalTokens: null,
           answerSha256: null,
           errorCode: "desktop_invocation_cancelled",
-          durationMs: this.#now() - started,
+          durationMs: this.#now() - nodeStarted,
         });
         args.emit({
           type: "node_terminal",
@@ -851,7 +925,7 @@ export class PersonalTeamCoordinator {
         });
         return { kind: "cancelled" };
       }
-      const durationMs = this.#now() - started;
+      const durationMs = this.#now() - nodeStarted;
       assertRequestedModelIdentity(credentials.model, chat.actualModel);
       const report = this.#parseEmployeeReport(chat, args.assignment);
       node.durationMs = durationMs;
@@ -974,6 +1048,8 @@ export class PersonalTeamCoordinator {
         controller.signal,
       );
       if (isAborted(credentials) || controller.signal.aborted) return { kind: "cancelled" };
+      const remaining = args.input.budget.maximumWallTimeMs - (this.#now() - args.started);
+      if (remaining <= 0) return { kind: "budget" };
       args.calls.push({
         purpose: args.purpose,
         roleId: "parent",
@@ -996,7 +1072,7 @@ export class PersonalTeamCoordinator {
             secret: credentials.secret,
             model: credentials.model,
             messages: args.messages,
-            timeoutMs: credentials.timeoutMs,
+            timeoutMs: Math.max(1, Math.min(credentials.timeoutMs, remaining)),
             allowLoopbackHttp: credentials.allowLoopbackHttp,
           },
           controller.signal,

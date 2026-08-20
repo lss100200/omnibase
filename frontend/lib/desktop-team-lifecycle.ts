@@ -163,16 +163,48 @@ function viewingOrigin(state: DesktopTeamLiveState): boolean {
   )
 }
 
+function eventIdentityComplete(event: DesktopTeamRunEvent): boolean {
+  return (
+    typeof event.workspaceId === 'string' &&
+    event.workspaceId.length > 0 &&
+    typeof event.conversationId === 'string' &&
+    event.conversationId.length > 0 &&
+    typeof event.teamRunId === 'string' &&
+    event.teamRunId.length > 0 &&
+    typeof event.rosterEpoch === 'number' &&
+    Number.isInteger(event.rosterEpoch) &&
+    typeof event.planRevisionId === 'string' &&
+    typeof event.waveId === 'string' &&
+    typeof event.assignmentId === 'string' &&
+    typeof event.nodeId === 'string' &&
+    typeof event.sendEpoch === 'number' &&
+    Number.isInteger(event.sendEpoch)
+  )
+}
+
 function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): boolean {
+  if (!eventIdentityComplete(event)) return false
   if (state.teamRunId === null) return false
   if (event.teamRunId !== state.teamRunId) return false
   if (event.workspaceId !== state.originWorkspaceId) return false
-  if (event.conversationId !== undefined && event.conversationId !== state.originConversationId) {
+  if (event.conversationId !== state.originConversationId) return false
+  if (event.rosterEpoch !== state.rosterEpoch) return false
+  if (
+    state.planRevisionId !== null &&
+    state.planRevisionId !== '' &&
+    event.planRevisionId !== state.planRevisionId
+  ) {
     return false
   }
-  if (event.rosterEpoch !== undefined && event.rosterEpoch !== state.rosterEpoch) return false
-  if (state.waveId !== null && event.waveId !== undefined && event.waveId !== state.waveId) {
-    if (event.type !== 'wave_starting') return false
+  if (
+    (event.type === 'node_starting' ||
+      event.type === 'node_identity' ||
+      event.type === 'node_delta' ||
+      event.type === 'node_terminal') &&
+    state.waveId !== null &&
+    event.waveId !== state.waveId
+  ) {
+    return false
   }
   return true
 }
@@ -368,6 +400,7 @@ export function reduceDesktopTeamEvent(
   event: DesktopTeamRunEvent,
 ): DesktopTeamLiveState {
   if (state.phase === 'preparing' && event.type === 'snapshot' && event.rosterEpoch === state.rosterEpoch) {
+    if (!eventIdentityComplete(event)) return state
     return {
       ...state,
       teamRunId: event.teamRunId,

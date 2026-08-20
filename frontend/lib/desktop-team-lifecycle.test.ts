@@ -23,14 +23,20 @@ const CONVERSATION_B = `conversation_${'b'.repeat(32)}`
 const TEAM_RUN = `teamrun_${'e'.repeat(32)}`
 const NODE = `teamnode_${'f'.repeat(32)}`
 
-function snapshot(): DesktopTeamRunEvent {
+function snapshot(overrides: Partial<DesktopTeamRunEvent> = {}): DesktopTeamRunEvent {
   return {
     type: 'snapshot',
     teamRunId: TEAM_RUN,
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     rosterEpoch: 1,
+    planRevisionId: '',
+    waveId: '',
+    assignmentId: '',
+    nodeId: '',
+    sendEpoch: 0,
     state: 'preparing',
+    ...overrides,
   }
 }
 
@@ -46,21 +52,20 @@ test('team FSM is separate from single-invocation idle and keeps text statuses',
     maximumProviderCalls: 16,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, {
-    type: 'node_starting',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    waveId: 'wave-1',
-    assignmentId: 'frontend-review',
-    nodeId: NODE,
-    nodeOrdinal: 1,
-    employeeRoleId: 'frontend',
-    invocationId: `invocation_${'1'.repeat(32)}`,
-    sendEpoch: 2,
-    nodeEpoch: 1,
-  })
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'node_starting',
+      waveId: 'wave-1',
+      assignmentId: 'frontend-review',
+      nodeId: NODE,
+      nodeOrdinal: 1,
+      employeeRoleId: 'frontend',
+      invocationId: `invocation_${'1'.repeat(32)}`,
+      sendEpoch: 2,
+      nodeEpoch: 1,
+    }),
+  )
   const rows = projectDesktopTeamEmployees(state)
   assert.equal(rows.find((item) => item.roleId === 'frontend')?.statusText, '运行中')
   assert.equal(rows.find((item) => item.roleId === 'docs')?.statusText, '静默')
@@ -79,15 +84,7 @@ test('old team liveText does not paint a new workspace and Stop stays reachable'
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, { ...snapshot(), rosterEpoch: 4 })
-  state = reduceDesktopTeamEvent(state, {
-    type: 'node_delta',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 4,
-    employeeRoleId: 'parent',
-    text: '旧团队流',
-  })
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'node_delta', rosterEpoch: 4, employeeRoleId: 'parent', text: '旧团队流' }))
   state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
   const projection = desktopTeamLiveProjection(state, WORKSPACE_B, CONVERSATION_B)
   assert.equal(projection.visible, false)
@@ -109,23 +106,9 @@ test('events must match team/roster/node/send epoch or they are dropped', () => 
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, { ...snapshot(), rosterEpoch: 2 })
-  const drifted = reduceDesktopTeamEvent(state, {
-    type: 'completed',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 9,
-    parentFinalAnswer: 'should not appear',
-  })
+  const drifted = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', rosterEpoch: 9, parentFinalAnswer: 'should not appear' }))
   assert.equal(drifted.parentFinalAnswer, null)
-  const otherRun = reduceDesktopTeamEvent(state, {
-    type: 'completed',
-    teamRunId: `teamrun_${'9'.repeat(32)}`,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 2,
-    parentFinalAnswer: 'old run',
-  })
+  const otherRun = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', teamRunId: `teamrun_${'9'.repeat(32)}`, rosterEpoch: 2, parentFinalAnswer: 'old run' }))
   assert.equal(otherRun.parentFinalAnswer, null)
 })
 
@@ -141,14 +124,7 @@ test('parent final answer is the highlighted transcript on origin scope', () => 
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, {
-    type: 'completed',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    parentFinalAnswer: '父 Agent 汇总',
-  })
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', parentFinalAnswer: '父 Agent 汇总' }))
   assert.equal(
     desktopTeamTranscriptHighlight(state, WORKSPACE_A, CONVERSATION_A),
     '父 Agent 汇总',
@@ -184,24 +160,8 @@ test('old wave events are dropped after a new wave starts', () => {
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, {
-    type: 'wave_starting',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    waveId: 'wave-2',
-  })
-  const drifted = reduceDesktopTeamEvent(state, {
-    type: 'node_terminal',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    waveId: 'wave-1',
-    nodeId: NODE,
-    answer: 'old wave must not land',
-  })
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'wave_starting', waveId: 'wave-2' }))
+  const drifted = reduceDesktopTeamEvent(state, snapshot({ type: 'node_terminal', waveId: 'wave-1', nodeId: NODE, answer: 'old wave must not land' }))
   assert.equal(drifted.nodes.length, 0)
   assert.equal(drifted.waveId, 'wave-2')
 })
@@ -218,38 +178,9 @@ test('waiting specialist stays 等待 after Stop; running becomes 正在停止',
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, {
-    type: 'wave_starting',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    waveId: 'wave-1',
-    assignmentIds: ['frontend-review', 'backend-review'],
-    employeeRoleIds: ['frontend', 'backend'],
-  })
-  state = reduceDesktopTeamEvent(state, {
-    type: 'node_starting',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-    waveId: 'wave-1',
-    assignmentId: 'frontend-review',
-    nodeId: NODE,
-    nodeOrdinal: 1,
-    employeeRoleId: 'frontend',
-    invocationId: `invocation_${'1'.repeat(32)}`,
-    sendEpoch: 2,
-    nodeEpoch: 1,
-  })
-  state = reduceDesktopTeamEvent(state, {
-    type: 'cancelled',
-    teamRunId: TEAM_RUN,
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    rosterEpoch: 1,
-  })
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'wave_starting', waveId: 'wave-1', assignmentIds: ['frontend-review', 'backend-review'], employeeRoleIds: ['frontend', 'backend'] }))
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'node_starting', waveId: 'wave-1', assignmentId: 'frontend-review', nodeId: NODE, nodeOrdinal: 1, employeeRoleId: 'frontend', invocationId: `invocation_${'1'.repeat(32)}`, sendEpoch: 2, nodeEpoch: 1 }))
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'cancelled' }))
   const frontend = state.nodes.find((item) => item.assignmentId === 'frontend-review')
   const backend = state.nodes.find((item) => item.assignmentId === 'backend-review')
   assert.equal(frontend?.statusText, '正在停止')

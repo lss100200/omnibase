@@ -7,6 +7,7 @@ import {
   PERSONAL_EMPLOYEE_IDS,
   SPECIALIST_EMPLOYEE_IDS,
   requireNoIpcArguments,
+  teamEventIdentityComplete,
   type DesktopAgentRole,
   type DesktopAgentRoleIdInput,
   type DesktopAgentRoleList,
@@ -860,6 +861,9 @@ function emitTeamRunEvent(
   event: IpcMainInvokeEvent,
   payload: DesktopTeamRunEvent,
 ): void {
+  if (!teamEventIdentityComplete(payload)) {
+    return;
+  }
   if (event.sender.isDestroyed()) {
     throw new Error("desktop_renderer_destroyed");
   }

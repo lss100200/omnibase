@@ -50,6 +50,7 @@ import { DesktopNativeClient } from "./native-client.ts";
 import { PersonalTeamCoordinator } from "./personal-team-coordinator.ts";
 import { createNativePersonalTeamHost } from "./personal-team-native-host.ts";
 import { createOpenAiCompatibleTransport } from "./personal-team-provider.ts";
+
 import {
   decryptProviderSecret,
   encryptProviderSecret,
@@ -74,6 +75,25 @@ export interface RuntimeManagerOptions {
 }
 
 const SEND_ABORTED = Object.freeze({ aborted: true as const });
+
+function teamEventFromRun(
+  teamRun: DesktopTeamRun,
+  event: Omit<DesktopTeamRunEvent, "teamRunId" | "workspaceId"> &
+    Partial<Pick<DesktopTeamRunEvent, "teamRunId" | "workspaceId">>,
+): DesktopTeamRunEvent {
+  return {
+    planRevisionId: teamRun.currentPlanRevisionId ?? "",
+    waveId: teamRun.currentWaveId ?? "",
+    assignmentId: "",
+    nodeId: "",
+    sendEpoch: 0,
+    rosterEpoch: 0,
+    conversationId: teamRun.conversationId,
+    ...event,
+    teamRunId: teamRun.id,
+    workspaceId: teamRun.workspaceId,
+  };
+}
 
 function isSendAborted(
   value: unknown,
@@ -209,6 +229,8 @@ export class RuntimeManager {
   #sendInFlight = false;
   #pendingAbort = false;
   #teamCoordinator: PersonalTeamCoordinator | null = null;
+  #teamInFlight = false;
+  #pendingTeamAbort = false;
   #generation = 0;
   #startOperation: {
     readonly generation: number;
@@ -536,7 +558,11 @@ export class RuntimeManager {
   > {
     const sendAborted = this.#requestStreamAbort();
     this.#teamCoordinator?.requestStop();
-    const teamAborted = this.#teamCoordinator?.live === true;
+    let teamAborted = this.#teamCoordinator?.live === true;
+    if (!teamAborted && this.#teamInFlight) {
+      this.#pendingTeamAbort = true;
+      teamAborted = true;
+    }
     return Promise.resolve(
       Object.freeze({
         ok: true,
@@ -595,12 +621,13 @@ export class RuntimeManager {
     }
     const result = await client.startTeamRun(input);
     if (result.ok) {
-      emit({
-        type: "snapshot",
-        teamRunId: result.value.teamRun.id,
-        workspaceId: result.value.teamRun.workspaceId,
-        state: result.value.teamRun.state,
-      });
+      emit(
+        teamEventFromRun(result.value.teamRun, {
+          type: "snapshot",
+          conversationId: result.value.teamRun.conversationId,
+          state: result.value.teamRun.state,
+        }),
+      );
     }
     return result;
   }
@@ -626,12 +653,13 @@ export class RuntimeManager {
     this.#teamCoordinator?.requestStop();
     const result = await client.cancelTeamRun(input);
     if (result.ok) {
-      emit({
-        type: "cancelled",
-        teamRunId: result.value.teamRun.id,
-        workspaceId: result.value.teamRun.workspaceId,
-        state: result.value.teamRun.state,
-      });
+      emit(
+        teamEventFromRun(result.value.teamRun, {
+          type: "cancelled",
+          conversationId: result.value.teamRun.conversationId,
+          state: result.value.teamRun.state,
+        }),
+      );
     }
     return result;
   }
@@ -655,11 +683,16 @@ export class RuntimeManager {
     if (nativeClient === null) {
       return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
     }
+    this.#teamInFlight = true;
     const coordinator = new PersonalTeamCoordinator({
       host: createNativePersonalTeamHost({ client: nativeClient, vault }),
       transport: createOpenAiCompatibleTransport(),
     });
     this.#teamCoordinator = coordinator;
+    if (this.#pendingTeamAbort) {
+      this.#pendingTeamAbort = false;
+      coordinator.requestStop();
+    }
     try {
       const proof = await coordinator.execute(input, emit);
       return Object.freeze({ ok: true as const, value: Object.freeze({ proof }) });
@@ -673,6 +706,8 @@ export class RuntimeManager {
         error: Object.freeze({ code }),
       });
     } finally {
+      this.#teamInFlight = false;
+      this.#pendingTeamAbort = false;
       if (this.#teamCoordinator === coordinator) this.#teamCoordinator = null;
     }
   }
@@ -691,14 +726,15 @@ export class RuntimeManager {
     }
     const result = await client.appendTeamRunBudget(input);
     if (result.ok) {
-      emit({
-        type: "snapshot",
-        teamRunId: result.value.teamRun.id,
-        workspaceId: result.value.teamRun.workspaceId,
-        state: result.value.teamRun.state,
-        consumedProviderCalls: result.value.teamRun.consumedProviderCalls,
-        maximumProviderCalls: result.value.teamRun.maximumProviderCalls,
-      });
+      emit(
+        teamEventFromRun(result.value.teamRun, {
+          type: "snapshot",
+          conversationId: result.value.teamRun.conversationId,
+          state: result.value.teamRun.state,
+          consumedProviderCalls: result.value.teamRun.consumedProviderCalls,
+          maximumProviderCalls: result.value.teamRun.maximumProviderCalls,
+        }),
+      );
     }
     return result;
   }

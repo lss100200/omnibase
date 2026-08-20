@@ -62,6 +62,7 @@ export const IPC_EVENT_CHANNELS = Object.freeze({
 export {
   PERSONAL_EMPLOYEE_IDS,
   SPECIALIST_EMPLOYEE_IDS,
+  teamEventIdentityComplete,
   type DesktopAgentRole,
   type DesktopAgentRoleIdInput,
   type DesktopAgentRoleList,
