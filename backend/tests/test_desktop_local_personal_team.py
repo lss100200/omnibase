@@ -1022,3 +1022,187 @@ def test_create_node_binds_live_run_identity_and_forbids_epoch_reuse(tmp_path: P
         )
         assert terminal_create.status_code == 409
         assert terminal_create.json()["error"]["code"] == "desktop_team_run_terminal"
+
+
+def _report_body(
+    created: dict[str, str], report: str = "前端已完成桌面状态检查"
+) -> dict[str, object]:
+    return {
+        "assignment_id": "frontend-review",
+        "employee_role_id": "frontend",
+        "status": "completed",
+        "report": report,
+        "node_id": created["node_id"],
+        "invocation_id": created["invocation_id"],
+        "collaboration_requests": [],
+    }
+
+
+def test_cancel_team_run_cas_running_nodes_and_restart_keeps_cancelled(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        cancelled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/cancel",
+            headers=_native(),
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["team_run"]["state"] == "cancelled"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            run_state = db.execute(
+                "SELECT state FROM team_run WHERE id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+            node_states = [
+                row[0]
+                for row in db.execute(
+                    "SELECT state FROM team_node WHERE team_run_id = ?",
+                    (team_run_id,),
+                ).fetchall()
+            ]
+            running = db.execute(
+                "SELECT COUNT(*) FROM team_node WHERE team_run_id = ? AND state = 'running'",
+                (team_run_id,),
+            ).fetchone()[0]
+            assert run_state == "cancelled"
+            assert running == 0
+            assert node_states == ["cancelled"]
+            assert created["node_id"]
+        finally:
+            db.close()
+        again = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}",
+            headers=_native(),
+            json={"state": "cancelled", "error_code": "desktop_invocation_cancelled"},
+        )
+        assert again.status_code == 200
+        assert again.json()["state"] == "cancelled"
+        failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}",
+            headers=_native(),
+            json={"state": "failed", "error_code": "desktop_invocation_failed"},
+        )
+        assert failed.status_code == 409
+        assert failed.json()["error"]["code"] == "desktop_team_node_terminal"
+    with TestClient(create_desktop_local_app(config)) as client:
+        recovered = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}",
+            headers=_native(),
+        )
+        assert recovered.status_code == 200
+        assert recovered.json()["team_run"]["state"] == "cancelled"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            node_state = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            assert node_state == "cancelled"
+        finally:
+            db.close()
+
+
+def test_report_on_running_node_is_rejected_without_settled_audit(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        rejected = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/reports",
+            headers=_native(),
+            json=_report_body(created),
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["error"]["code"] == "desktop_team_report_requires_settle"
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        try:
+            node_state = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            reports = db.execute(
+                "SELECT COUNT(*) FROM team_employee_report WHERE node_id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            audits = db.execute(
+                "SELECT COUNT(*) FROM audit_event WHERE event_type = 'team_node_settled'"
+            ).fetchone()[0]
+            assert node_state == "running"
+            assert reports == 0
+            assert audits == 0
+        finally:
+            db.close()
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        replay = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/reports",
+            headers=_native(),
+            json=_report_body(created),
+        )
+        assert replay.status_code == 200
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        try:
+            reports = db.execute(
+                "SELECT COUNT(*) FROM team_employee_report WHERE node_id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            audits = db.execute(
+                "SELECT COUNT(*) FROM audit_event WHERE event_type = 'team_node_settled'"
+            ).fetchone()[0]
+            node_state = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            assert node_state == "succeeded"
+            assert reports == 1
+            assert audits == 1
+        finally:
+            db.close()
+
+
+def test_pin_endpoint_uses_python_is_global_unicast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "omnibase.desktop_local.endpoint.socket.getaddrinfo",
+        lambda *args, **kwargs: [(0, 0, 0, "", ("8.8.8.8", 443))],
+    )
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        pinned = client.post(
+            "/desktop/v1/provider-endpoints/pin",
+            headers=_native(),
+            json={
+                "base_url": "https://api.example.test/v1",
+                "allow_loopback_http": False,
+            },
+        )
+        assert pinned.status_code == 200
+        body = pinned.json()
+        assert body["hostname"] == "api.example.test"
+        assert body["connect_addrs"] == ["8.8.8.8"]
+        assert body["scheme"] == "https"
+    monkeypatch.setattr(
+        "omnibase.desktop_local.endpoint.socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (0, 0, 0, "", ("8.8.8.8", 443)),
+            (0, 0, 0, "", ("198.18.0.1", 443)),
+        ],
+    )
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        mixed = client.post(
+            "/desktop/v1/provider-endpoints/pin",
+            headers=_native(),
+            json={
+                "base_url": "https://api.example.test/v1",
+                "allow_loopback_http": False,
+            },
+        )
+        assert mixed.status_code == 400
+        assert mixed.json()["error"]["code"] == "desktop_provider_endpoint_invalid"

@@ -264,17 +264,38 @@ test("authoritative global-unicast rejects reserved CGNAT benchmark docs multica
   assert.equal(isGlobalUnicastAddress("2001:4860:4860::8888"), true);
 });
 
-test("team transport pin is the same global-unicast decision as endpoint.py", async () => {
+test("team transport pin hook uses backend connect addrs instead of the TS replica", async () => {
+  const pinned = await resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
+    pinEndpoint: async () => ({
+      scheme: "https",
+      hostname: "api.example.test",
+      port: 443,
+      chatPath: "/v1/chat/completions",
+      connectAddrs: ["8.8.8.8"],
+      loopback: false,
+    }),
+  });
+  assert.deepEqual(pinned.connectAddrs, ["8.8.8.8"]);
+  assert.equal(pinned.hostname, "api.example.test");
+});
+
+test("TS fallback replica still fail-closes mixed public and benchmark DNS", async () => {
   await rejectCode(
     resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
       lookup: async () => ["8.8.8.8", "198.18.0.1"],
     }),
     "desktop_provider_endpoint_invalid",
   );
-  const pinned = await resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
-    lookup: async () => ["8.8.8.8"],
-  });
-  assert.deepEqual(pinned.connectAddrs, ["8.8.8.8"]);
+});
+
+test("TS BlockList pin is not CPython is_global_unicast; remaining extra-rejects are named", () => {
+  // Production team HTTPS asks desktop-local pin (endpoint.py is_global_unicast).
+  // The TS replica extra-rejects these CPython-global addresses because it uses
+  // 2001::/23 instead of CPython's narrower TEREDO/ORCHID specials.
+  const tsExtraRejectsVsCpython = ["2001:1::1", "2001:3::1", "2001:20::1"];
+  for (const address of tsExtraRejectsVsCpython) {
+    assert.equal(isGlobalUnicastAddress(address), false, address);
+  }
 });
 
 test("independent wall AbortController expires to budget_exhausted without using Provider timeout", async () => {
@@ -467,6 +488,66 @@ test("legacy success update is rejected; settle is the only success path", async
       },
     }),
     "desktop_team_node_terminal",
+  );
+});
+
+test("POST report on a running in-memory node fails closed without a settle audit", async () => {
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials("http://127.0.0.1:9/v1"),
+  });
+  const started = await host.startTeamRun(executeInput());
+  await host.submitProposal({
+    workspaceId: WORKSPACE,
+    teamRunId: started.teamRun.id,
+    proposal: {
+      decision: "delegate",
+      objective: "review",
+      waves: [
+        {
+          waveId: "wave-1",
+          execution: "serial",
+          assignments: [
+            {
+              assignmentId: "frontend-review",
+              employeeRoleId: "frontend",
+              objective: "subtask",
+              dependsOnAssignmentIds: [],
+              expectedOutput: "report",
+              contextRequirements: [],
+            },
+          ],
+        },
+      ],
+      finalSynthesisRequired: true,
+    },
+  });
+  const created = await host.createNode({
+    workspaceId: WORKSPACE,
+    teamRunId: started.teamRun.id,
+    assignmentId: "frontend-review",
+    employeeRoleId: "frontend",
+    invocationId: `invocation_${"a".repeat(32)}`,
+    waveId: "wave-1",
+    nodeEpoch: 1,
+    sendEpoch: 1,
+    providerId: PROVIDER_ID,
+    requestedModel: "loopback-team",
+  });
+  await rejectCode(
+    host.recordReport({
+      workspaceId: WORKSPACE,
+      teamRunId: started.teamRun.id,
+      nodeId: created.node.id,
+      invocationId: `invocation_${"a".repeat(32)}`,
+      report: {
+        assignmentId: "frontend-review",
+        employeeRoleId: "frontend",
+        status: "completed",
+        report: "frontend completed frontend-review",
+        collaborationRequests: [],
+      },
+    }),
+    "desktop_team_report_requires_settle",
   );
 });
 

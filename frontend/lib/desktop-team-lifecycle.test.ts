@@ -14,6 +14,7 @@ import {
 } from './desktop-team-lifecycle'
 import {
   desktopTeamTranscriptHighlight,
+  projectDesktopTeamBudget,
   projectDesktopTeamEmployees,
 } from './desktop-team-surface'
 
@@ -395,4 +396,58 @@ test('leaving origin parks team buffers and returning restores delta/terminal/fi
   assert.equal(state.nodes[0]?.statusText, '已完成')
   assert.equal(state.nodes[0]?.report, 'specialist-parked')
   assert.deepEqual(state.collaborationLines, ['need ux'])
+})
+
+test('leaving origin parks phase plan and budget so B has no A team chrome', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = reduceDesktopTeamEvent(state, snapshot())
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'proposal',
+      planRevisionId: PLAN_A,
+      planSummary: 'frontend-review',
+      consumedProviderCalls: 4,
+      maximumProviderCalls: 8,
+    }),
+  )
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'parent_proposing',
+      planRevisionId: PLAN_A,
+      consumedProviderCalls: 4,
+      maximumProviderCalls: 8,
+    }),
+  )
+  assert.equal(state.phase, 'parent_proposing')
+  assert.equal(state.planRevisionId, PLAN_A)
+  assert.equal(state.planSummary, 'frontend-review')
+  assert.equal(projectDesktopTeamBudget(state), '已用 4 / 上限 8 次调用')
+  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '运行中')
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  assert.equal(state.phase, 'idle')
+  assert.equal(state.planRevisionId, null)
+  assert.equal(state.planSummary, null)
+  assert.equal(state.waveId, null)
+  assert.equal(state.consumedProviderCalls, 0)
+  assert.equal(state.maximumProviderCalls, 0)
+  assert.equal(projectDesktopTeamBudget(state), '已用 0 / 上限 0 次调用')
+  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '静默')
+  assert.equal(desktopTeamStopVisible(state), true)
+  state = switchDesktopTeamScope(state, WORKSPACE_A, CONVERSATION_A)
+  assert.equal(state.phase, 'parent_proposing')
+  assert.equal(state.planRevisionId, PLAN_A)
+  assert.equal(state.planSummary, 'frontend-review')
+  assert.equal(projectDesktopTeamBudget(state), '已用 4 / 上限 8 次调用')
+  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '运行中')
 })
