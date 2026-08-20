@@ -6724,3 +6724,34 @@ codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
 no push; no PR; no EXE/MSI
 root .env not read; business database not accessed or migrated
 ```
+
+### P6.8-D P1 forward-fix re-review R1 (2026-08-20)
+
+Canonical report: `docs/reviews/p6-8-p1-forward-fix-rereview-r0.md`.
+Visual: workspace canvas `p6-8-p1-forward-fix-rereview.canvas.tsx`.
+Prior review (unchanged): `docs/reviews/p6-8-independent-review-r0.md` (`ca4f160`).
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** Independent re-review of product `8e05265` still has an **open P1** on abort **pre-arm**. User「批准」does not override this. Do not announce `P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED`, `P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED`, `APPROVED_FOR_LATER_RELEASE_REPACKAGE`, `OMNIBASE_1_0_0`, Authenticode, live paid Provider, or P7 UX.
+
+P1-1 list isolation **CODE-CLOSED**. P1-2 `sendEpoch` **CODE-CLOSED**. P1-3 armed-stream abort works; **remaining P1** is `RuntimeManager.sendConversation` awaiting `listProviders` + `getProviderVault` before assigning `#streamAbort`. Concurrent `abortInFlightSend` returns `aborted: false` with no pending latch; Stop then hides; a later hung messages POST cannot be aborted.
+
+```text
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+REMAINING_P1_ABORT_PRE_ARM
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED (pre-arm abort hole)
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN (PARTIAL)
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = CODE-CLOSED; NOT LIVE-PROVEN
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = list P1-1 CODE-CLOSED; transcript/live already held
+P6_8_ASYNC_PROJECTION_ORDERING_PROVEN = create/mutation CODE-CLOSED for list
+P6_8_ARCHIVE_SCOPE_GATE_PROVEN = CODE-CLOSED for list+selection
+P6_8_PRODUCTION_BUILD_GATES_PASSED = NOT RE-RUN
+P6_7_R1_BACKEND_PROTOCOL_FIXES_NO_REGRESSION = no new regression observed; not live re-proof
+WORKTREE_CLEAN = true at review start
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no product/runtime code changed by this re-review
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
