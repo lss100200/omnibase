@@ -6672,9 +6672,9 @@ remains at `2d3b56e`.
 
 What changed:
 
-- Conversation **list** writes (create, archive, workspace load) are gated on
-  workspace identity plus a workspace-bound `listGeneration`. Switching
-  workspace invalidates in-flight create/archive list projections. Same-workspace
+- Conversation **list** writes: create/archive require matching `workspaceId` +
+  `listGeneration`; workspace load requires `workspaceId` + `workspaceLoadEpoch`.
+  Switching workspace invalidates in-flight create/archive list projections. Same-workspace
   archive-while-viewing-B still updates B's sidebar without jumping selection.
   Create and archive no longer share a single global mutation epoch that drops
   an earlier successful create on the current workspace.

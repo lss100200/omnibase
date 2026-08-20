@@ -87,13 +87,14 @@ These were the Cursor-found P1s. They are **code-closed and unit-locked** on `70
 
 ### P1-1 — cross-workspace conversation list isolation — CODE-CLOSED (`8e05265`)
 
-Create/archive/load list writes require matching `workspaceId` + `listGeneration`. Workspace switch increments `listGeneration`. Workbench applies the helper, then `setConversations(applied.conversations)` — it does not prepend before the gate.
+Create/archive list writes require matching `workspaceId` + `listGeneration`. Workspace load requires matching `workspaceId` + `workspaceLoadEpoch`. Workspace switch increments `listGeneration`. Workbench applies the helper, then `setConversations(applied.conversations)` — it does not prepend before the gate.
 
 | Location | Lines |
 |---|---|
 | `frontend/lib/desktop-conversation-surface.ts` `listMutationIsCurrent` | 138–147 |
 | same file `applyDesktopConversationCreate` | 194–211 |
 | same file `applyDesktopConversationArchive` | 214–221 |
+| same file `applyDesktopWorkspaceLoad` (`workspaceId` + `workspaceLoadEpoch`) | 173–191 |
 | `frontend/app/desktop/workbench-client.tsx` `createConversation` (gate inside apply, then set) | 333–357 |
 
 ### P1-2 — `sendEpoch` identity membership — CODE-CLOSED (`8e05265`)
@@ -137,10 +138,12 @@ The remaining hole on `8e05265` was **pre-arm**: `sendConversation` awaited `lis
 
 ## Tests that lock those races
 
-**Must fail without the pre-arm latch / abort race** (new in `70c99f2`):
+**Must fail without pre-arm `#armStreamAbort` before listProviders/getProviderVault + `raceAbort`** (new in `70c99f2`):
 
 - `abortInFlightSend during getProviderVault prevents later messages fetch and settles send` — abort while vault is pending; `{ aborted: true }`; messages POST never starts; send Promise settles cancelled with `sendEpoch`.
 - `abortInFlightSend during hung listProviders settles send without starting messages fetch` — Stop-before-identity cannot miss a hung provider lookup; send Promise still settles.
+
+`#pendingAbort` is defensive and untested. These tests do not lock that field.
 
 **Idle abort remains safe:**
 
