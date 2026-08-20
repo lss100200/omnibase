@@ -163,6 +163,58 @@ export interface DesktopLiveStreamState {
   readonly liveText: string
   readonly liveMeta: DesktopConversationEvent | null
   readonly streaming: boolean
+  readonly originWorkspaceId: string | null
+  readonly originConversationId: string | null
+  readonly parkedLiveText: string
+  readonly parkedLiveMeta: DesktopConversationEvent | null
+  readonly liveActive: boolean
+  readonly cancelRequested: boolean
+  readonly sendGeneration: number
+}
+
+export function createDesktopLiveStreamState(
+  input: Partial<DesktopLiveStreamState> = {},
+): DesktopLiveStreamState {
+  const workspaceId = input.workspaceId ?? null
+  const conversationId = input.conversationId ?? null
+  const liveInvocation = input.liveInvocation ?? null
+  const streaming = input.streaming ?? false
+  return {
+    workspaceId,
+    conversationId,
+    liveInvocation,
+    liveText: input.liveText ?? '',
+    liveMeta: input.liveMeta ?? null,
+    streaming,
+    originWorkspaceId: input.originWorkspaceId ?? workspaceId,
+    originConversationId: input.originConversationId ?? conversationId,
+    parkedLiveText: input.parkedLiveText ?? '',
+    parkedLiveMeta: input.parkedLiveMeta ?? null,
+    liveActive: input.liveActive ?? (streaming || liveInvocation !== null),
+    cancelRequested: input.cancelRequested ?? false,
+    sendGeneration: input.sendGeneration ?? 0,
+  }
+}
+
+export function desktopLiveStopVisible(state: DesktopLiveStreamState): boolean {
+  return state.liveActive
+}
+
+export function desktopLiveViewIsOrigin(state: DesktopLiveStreamState): boolean {
+  return (
+    state.workspaceId === state.originWorkspaceId &&
+    state.conversationId === state.originConversationId
+  )
+}
+
+function eventMatchesOrigin(
+  state: DesktopLiveStreamState,
+  event: DesktopConversationEvent,
+): boolean {
+  return (
+    event.workspaceId === state.originWorkspaceId &&
+    event.conversationId === state.originConversationId
+  )
 }
 
 export function beginDesktopLiveSend(state: DesktopLiveStreamState): DesktopLiveStreamState {
@@ -172,6 +224,13 @@ export function beginDesktopLiveSend(state: DesktopLiveStreamState): DesktopLive
     liveMeta: null,
     liveText: '',
     streaming: true,
+    liveActive: true,
+    cancelRequested: false,
+    originWorkspaceId: state.workspaceId,
+    originConversationId: state.conversationId,
+    parkedLiveText: '',
+    parkedLiveMeta: null,
+    sendGeneration: state.sendGeneration + 1,
   }
 }
 
@@ -183,6 +242,35 @@ export function switchDesktopLiveScope(
   if (state.workspaceId === workspaceId && state.conversationId === conversationId) {
     return state
   }
+  const leavingOrigin = desktopLiveViewIsOrigin(state) && state.liveActive
+  const enteringOrigin =
+    workspaceId === state.originWorkspaceId &&
+    conversationId === state.originConversationId &&
+    state.liveActive
+  if (leavingOrigin) {
+    return {
+      ...state,
+      workspaceId,
+      conversationId,
+      parkedLiveText: state.liveText,
+      parkedLiveMeta: state.liveMeta,
+      liveText: '',
+      liveMeta: null,
+      streaming: false,
+    }
+  }
+  if (enteringOrigin) {
+    return {
+      ...state,
+      workspaceId,
+      conversationId,
+      liveText: state.parkedLiveText,
+      liveMeta: state.parkedLiveMeta,
+      parkedLiveText: '',
+      parkedLiveMeta: null,
+      streaming: true,
+    }
+  }
   return {
     ...state,
     workspaceId,
@@ -193,35 +281,84 @@ export function switchDesktopLiveScope(
   }
 }
 
+export function requestDesktopLiveCancel(state: DesktopLiveStreamState): DesktopLiveStreamState {
+  if (!state.liveActive) return state
+  return {
+    ...state,
+    liveActive: false,
+    streaming: false,
+    cancelRequested: true,
+  }
+}
+
+export function completeDesktopLiveSend(
+  state: DesktopLiveStreamState,
+  sendGeneration: number,
+): DesktopLiveStreamState {
+  if (state.sendGeneration !== sendGeneration) return state
+  if (!state.liveActive && state.liveInvocation === null) return state
+  const scoped = desktopLiveViewIsOrigin(state)
+  return {
+    ...state,
+    liveActive: false,
+    streaming: false,
+    liveInvocation: null,
+    liveText: scoped ? '' : state.liveText,
+    liveMeta: scoped ? state.liveMeta : null,
+    parkedLiveText: '',
+    parkedLiveMeta: null,
+    cancelRequested: false,
+  }
+}
+
 export function applyDesktopConversationEvent(
   state: DesktopLiveStreamState,
   event: DesktopConversationEvent,
 ): DesktopLiveStreamState {
   const scoped =
     event.workspaceId === state.workspaceId && event.conversationId === state.conversationId
+  const originEvent = eventMatchesOrigin(state, event)
+  const viewingOrigin = desktopLiveViewIsOrigin(state)
   const ours = state.liveInvocation !== null && event.invocationId === state.liveInvocation
+  const pendingOurs = state.liveActive && state.liveInvocation === null && originEvent
   if (event.type === 'identity') {
-    if (!scoped) return state
+    if (state.liveActive) {
+      if (!originEvent) return state
+    } else if (!scoped) {
+      return state
+    }
     return {
       ...state,
       liveInvocation: event.invocationId,
-      liveMeta: event,
-      liveText: '',
-      streaming: true,
+      liveMeta: viewingOrigin ? event : null,
+      parkedLiveMeta: viewingOrigin ? null : event,
+      liveText: viewingOrigin ? '' : state.liveText,
+      parkedLiveText: viewingOrigin ? '' : state.parkedLiveText,
+      streaming: viewingOrigin,
+      liveActive: true,
+      originWorkspaceId: state.liveActive ? state.originWorkspaceId : state.workspaceId,
+      originConversationId: state.liveActive ? state.originConversationId : state.conversationId,
     }
   }
   if (event.type === 'delta') {
-    if (!scoped || !ours || !event.text) return state
-    return { ...state, liveText: state.liveText + event.text }
+    if (!ours || !originEvent || !event.text) return state
+    if (viewingOrigin) {
+      return { ...state, liveText: state.liveText + event.text }
+    }
+    return { ...state, parkedLiveText: state.parkedLiveText + event.text }
   }
   if (event.type === 'done' || event.type === 'cancelled' || event.type === 'error') {
-    if (!ours) return state
+    if (!ours && !pendingOurs) return state
     return {
       ...state,
       liveInvocation: null,
       liveMeta: scoped ? event : null,
       streaming: false,
       liveText: scoped ? state.liveText : '',
+      liveActive: false,
+      parkedLiveText: '',
+      parkedLiveMeta: null,
+      cancelRequested: false,
     }
   }
   return state

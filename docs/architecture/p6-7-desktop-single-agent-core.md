@@ -95,7 +95,12 @@ invocations become `unknown` on startup and are not auto-replayed.
 `/desktop` remains the only desktop product surface. After Owner admission the
 workbench lets the user configure a Provider, create/list/switch/archive
 sessions, stream, stop (`生成已停止` / `调用已取消`), and retry as a new
-invocation while keeping the failed record. Requested/actual model, Provider
+invocation while keeping the failed record. A live invocation keeps a global
+Stop after Workspace/Conversation switch; returning to the origin scope
+restores running/Stop and parked live text. Send, retry and list-detail
+completions apply only when the captured scope generation still matches, so
+a stale completion from scope A cannot overwrite workspace/conversation B.
+Requested/actual model, Provider
 name, status, duration, tokens when provided, thinking depth and redacted
 errors are folded, not dumped. Cost is omitted unless a reliable rate exists
 (P6.7 does not invent rates). Chinese-first copy follows system language;

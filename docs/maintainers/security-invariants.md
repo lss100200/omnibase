@@ -4273,8 +4273,13 @@ identity-unproven, never forged as the requested name.
 Each Workspace has exactly one parent Agent. Sending a message is personal
 approval by the local Owner. Streaming is consumed by Electron main, not by a
 buffering Next proxy. Stream events carry workspace and conversation identity;
-the renderer drops other-scope deltas and clears live invocation identity
-before send/retry and after terminal. A Provider stream is succeeded only with
+the renderer drops other-scope deltas from the visible transcript, retains
+live invocation identity across Workspace/Conversation switches until
+terminal, restores running/Stop and parked live text when returning to the
+origin scope, keeps a global Stop reachable while a live invocation is
+active, and applies send/retry/list-detail projections only when the
+captured scope generation still matches. Live invocation identity is
+cleared before send/retry and after terminal. A Provider stream is succeeded only with
 explicit terminal proof (`[DONE]` or `finish_reason`); truncated streams and
 client disconnect become `unknown` (or `cancelled` if cancel already won),
 never `succeeded`, and are not auto-replayed. Cancel accept and durable

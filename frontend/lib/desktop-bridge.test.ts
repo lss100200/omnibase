@@ -4,9 +4,9 @@ import { test } from 'node:test'
 import {
   applyDesktopConversationEvent,
   beginDesktopLiveSend,
+  createDesktopLiveStreamState,
   resolveDesktopBridge,
   switchDesktopLiveScope,
-  type DesktopLiveStreamState,
 } from './desktop-bridge'
 
 function bridgeFixture() {
@@ -80,19 +80,21 @@ const INVOCATION_OLD = `invocation_${'1'.repeat(32)}`
 const INVOCATION_NEW = `invocation_${'2'.repeat(32)}`
 
 test('send clears stale invocation so stop cannot cancel the previous call', () => {
-  const started = beginDesktopLiveSend({
-    workspaceId: WORKSPACE_A,
-    conversationId: CONVERSATION_A,
-    liveInvocation: INVOCATION_OLD,
-    liveText: 'stale',
-    liveMeta: {
-      type: 'identity',
-      invocationId: INVOCATION_OLD,
+  const started = beginDesktopLiveSend(
+    createDesktopLiveStreamState({
       workspaceId: WORKSPACE_A,
       conversationId: CONVERSATION_A,
-    },
-    streaming: true,
-  })
+      liveInvocation: INVOCATION_OLD,
+      liveText: 'stale',
+      liveMeta: {
+        type: 'identity',
+        invocationId: INVOCATION_OLD,
+        workspaceId: WORKSPACE_A,
+        conversationId: CONVERSATION_A,
+      },
+      streaming: true,
+    }),
+  )
   assert.equal(started.liveInvocation, null)
   assert.equal(started.liveMeta, null)
   assert.equal(started.liveText, '')
@@ -100,7 +102,7 @@ test('send clears stale invocation so stop cannot cancel the previous call', () 
 })
 
 test('cross-conversation deltas are dropped and other-scope streams are hidden', () => {
-  let state: DesktopLiveStreamState = {
+  let state = createDesktopLiveStreamState({
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     liveInvocation: INVOCATION_OLD,
@@ -112,7 +114,7 @@ test('cross-conversation deltas are dropped and other-scope streams are hidden',
       conversationId: CONVERSATION_A,
     },
     streaming: true,
-  }
+  })
   state = applyDesktopConversationEvent(state, {
     type: 'delta',
     invocationId: INVOCATION_OLD,

@@ -6483,3 +6483,52 @@ root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
 no push; no PR; remaining human gate = installed send/stop after later review
 ```
+
+### P6.7 MASTER_REVIEW_FIX_ROUND_2 (2026-08-20)
+
+Independent review of R1 `ebb211d` on `cursor/p6-7-master-review-fix-r1`
+partially accepted the original four P1 backend/protocol stop-ships and the
+R1 stream DTO / test-`{}` scoping work. Engineering acceptance stayed
+rejected because **frontend scope-return P1** and **async projection scope
+P2** remained. This round is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-master-review-fix-r2` on
+branch `cursor/p6-7-master-review-fix-r2` from `ebb211d`. It does not amend
+`9d6e3ad` / `b43a0cf` / `ebb211d`, does not reopen the original backend or
+protocol stop-ships, and does not rebuild the unsigned installer.
+
+Frontend-only forward-fix: keep a global Stop while a live invocation is
+active after Workspace/Conversation switch; A→B→A restores running/Stop and
+parked live text for the original invocation; send/retry/list-detail
+completions apply only when the captured scope generation still matches.
+
+Focused verification on this worktree (no Ruff; no Python edited):
+
+```text
+frontend pnpm test = 214 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+desktop pnpm test = 38 passed
+desktop pnpm typecheck = passed
+git diff --check = passed
+```
+
+```text
+P6_7_MASTER_REVIEW_FIX_R2_IMPLEMENTED_PENDING_REVIEW
+P6_7_MASTER_REVIEW_FIX_R1_PARTIALLY_ACCEPTED
+ORIGINAL_BACKEND_AND_PROTOCOL_STOP_SHIPS_CLOSED
+FRONTEND_SCOPE_RETURN_P1_FORWARD_FIXED_PENDING_REVIEW
+ASYNC_PROJECTION_SCOPE_P2_FORWARD_FIXED_PENDING_REVIEW
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+EXE_BYTES_DO_NOT_INCLUDE_MASTER_REVIEW_FIX_R1_OR_R2
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+HUMAN_SEND_STOP_NOT_PROVEN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR
+```

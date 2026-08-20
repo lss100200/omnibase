@@ -20,11 +20,22 @@ import {
   OmniBaseDesktopBridge,
   applyDesktopConversationEvent,
   beginDesktopLiveSend,
+  completeDesktopLiveSend,
+  createDesktopLiveStreamState,
+  desktopLiveStopVisible,
+  desktopLiveViewIsOrigin,
+  requestDesktopLiveCancel,
   switchDesktopLiveScope,
-  type DesktopLiveStreamState,
   type DesktopReasoningGear,
   type DesktopThinkingDepth,
 } from '@/lib/desktop-bridge'
+import {
+  advanceDesktopSurfaceScope,
+  applyDesktopScopedProjection,
+  createDesktopSurfaceScope,
+  desktopSurfaceProjectionIsCurrent,
+  type DesktopSurfaceScope,
+} from '@/lib/desktop-surface-scope'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -109,25 +120,37 @@ export function DesktopWorkbench({
     [],
   )
   const [zoom, setZoom] = useState(100)
-  const [workspaceId, setWorkspaceId] = useState<string | null>(
-    workspaces.find((item) => item.state === 'active')?.id ?? null,
-  )
+  const initialWorkspaceId = workspaces.find((item) => item.state === 'active')?.id ?? null
+  const [workspaceId, setWorkspaceId] = useState<string | null>(initialWorkspaceId)
   const [conversations, setConversations] = useState<readonly DesktopConversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<readonly DesktopMessage[]>([])
   const [providers, setProviders] = useState<readonly DesktopProvider[]>([])
   const [agentName, setAgentName] = useState('父 Agent')
   const [draft, setDraft] = useState('')
-  const [live, setLive] = useState<DesktopLiveStreamState>({
-    workspaceId: workspaces.find((item) => item.state === 'active')?.id ?? null,
-    conversationId: null,
-    liveInvocation: null,
-    liveText: '',
-    liveMeta: null,
-    streaming: false,
-  })
+  const [live, setLive] = useState(() =>
+    createDesktopLiveStreamState({
+      workspaceId: initialWorkspaceId,
+      conversationId: null,
+    }),
+  )
   const liveRef = useRef(live)
   liveRef.current = live
+  const surfaceScopeRef = useRef<DesktopSurfaceScope>(
+    createDesktopSurfaceScope(initialWorkspaceId, null),
+  )
+
+  const applyViewScope = useCallback((nextWorkspaceId: string | null, nextConversationId: string | null) => {
+    const next = advanceDesktopSurfaceScope(
+      surfaceScopeRef.current,
+      nextWorkspaceId,
+      nextConversationId,
+    )
+    surfaceScopeRef.current = next
+    setWorkspaceId(next.workspaceId)
+    setConversationId(next.conversationId)
+    return next
+  }, [])
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [providerForm, setProviderForm] = useState({
@@ -150,11 +173,13 @@ export function DesktopWorkbench({
 
   const loadWorkspaceSurface = useCallback(
     async (nextWorkspaceId: string) => {
+      const started = surfaceScopeRef.current
       const [conversationResult, providerResult, agentResult] = await Promise.all([
         bridge.conversations.list({ workspaceId: nextWorkspaceId }),
         bridge.providers.list(),
         bridge.workspaces.agent({ workspaceId: nextWorkspaceId }),
       ])
+      if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
       if (!conversationResult.ok) {
         onError(errorMessage(conversationResult.error.code))
         return
@@ -168,7 +193,7 @@ export function DesktopWorkbench({
       const active = conversationResult.value.items.filter((item) => item.state === 'active')
       setConversations(conversationResult.value.items)
       const selected = active[0]
-      setConversationId(selected?.id ?? null)
+      const selectedScope = applyViewScope(nextWorkspaceId, selected?.id ?? null)
       if (selected === undefined) {
         setMessages([])
         return
@@ -177,9 +202,12 @@ export function DesktopWorkbench({
         workspaceId: nextWorkspaceId,
         conversationId: selected.id,
       })
-      if (detail.ok) setMessages(detail.value.messages)
+      if (!detail.ok) return
+      setMessages((current) =>
+        applyDesktopScopedProjection(selectedScope, surfaceScopeRef.current, current, detail.value.messages),
+      )
     },
-    [bridge, onError],
+    [applyViewScope, bridge, onError],
   )
 
   useEffect(() => {
@@ -187,13 +215,22 @@ export function DesktopWorkbench({
   }, [loadWorkspaceSurface, workspaceId])
 
   useEffect(() => {
-    setLive((current) => switchDesktopLiveScope(current, workspaceId, conversationId))
+    setLive((current) => {
+      const next = switchDesktopLiveScope(current, workspaceId, conversationId)
+      liveRef.current = next
+      return next
+    })
   }, [conversationId, workspaceId])
 
   useEffect(() => {
     return bridge.conversations.subscribe((event) => {
       const current = liveRef.current
-      setLive((state) => applyDesktopConversationEvent(state, event))
+      const next = applyDesktopConversationEvent(current, event)
+      liveRef.current = next
+      setLive(next)
+      if (next.cancelRequested && event.type === 'identity' && next.liveInvocation !== null) {
+        void bridge.conversations.cancel({ invocationId: next.liveInvocation })
+      }
       if (event.type === 'cancelled' && event.invocationId === current.liveInvocation) {
         onError('生成已停止')
       }
@@ -206,13 +243,15 @@ export function DesktopWorkbench({
 
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
+    const started = surfaceScopeRef.current
     const created = await bridge.conversations.create({ workspaceId })
     if (!created.ok) {
       onError(errorMessage(created.error.code))
       return null
     }
+    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return null
     setConversations((current) => [created.value.conversation, ...current])
-    setConversationId(created.value.conversation.id)
+    applyViewScope(workspaceId, created.value.conversation.id)
     setMessages([])
     return created.value.conversation.id
   }
@@ -237,7 +276,9 @@ export function DesktopWorkbench({
       result.value.workspace,
     ]
     onWorkspacesChange(next)
-    setWorkspaceId(result.value.workspace.id)
+    applyViewScope(result.value.workspace.id, null)
+    setConversations([])
+    setMessages([])
     setWorkspaceName('')
   }
 
@@ -259,63 +300,87 @@ export function DesktopWorkbench({
     const remaining = conversations.filter(
       (item) => item.id !== current.id && item.state === 'active',
     )
-    setConversationId(remaining[0]?.id ?? null)
+    applyViewScope(workspaceId, remaining[0]?.id ?? null)
     setMessages([])
   }
 
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault()
     const content = draft.trim()
-    if (workspaceId === null || content === '' || live.streaming) return
+    if (workspaceId === null || content === '' || desktopLiveStopVisible(live)) return
     const target = await ensureConversation()
     if (target === null) return
+    const started = surfaceScopeRef.current
     onError(null)
     setDraft('')
-    setLive((current) => beginDesktopLiveSend({ ...current, workspaceId, conversationId: target }))
+    const nextLive = beginDesktopLiveSend({
+      ...liveRef.current,
+      workspaceId,
+      conversationId: target,
+    })
+    liveRef.current = nextLive
+    setLive(nextLive)
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId: target,
       content,
     })
-    setLive((current) => ({ ...current, streaming: false, liveText: '' }))
+    const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
+    liveRef.current = completed
+    setLive(completed)
+    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
     }
     const detail = await bridge.conversations.get({ workspaceId, conversationId: target })
-    if (detail.ok) {
-      setMessages(detail.value.messages)
-      setConversations((current) =>
-        current.map((item) => (item.id === detail.value.conversation.id ? detail.value.conversation : item)),
-      )
-    }
+    if (!detail.ok) return
+    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
+    setMessages(detail.value.messages)
+    setConversations((current) =>
+      current.map((item) => (item.id === detail.value.conversation.id ? detail.value.conversation : item)),
+    )
   }
 
   const stopGeneration = async () => {
-    if (live.liveInvocation === null || !live.streaming) return
-    setLive((current) => ({ ...current, streaming: false }))
+    const current = liveRef.current
+    if (!desktopLiveStopVisible(current) && current.liveInvocation === null) return
+    const cancelled = requestDesktopLiveCancel(current)
+    liveRef.current = cancelled
+    setLive(cancelled)
     onError('生成已停止')
-    await bridge.conversations.cancel({ invocationId: live.liveInvocation })
+    if (current.liveInvocation !== null) {
+      await bridge.conversations.cancel({ invocationId: current.liveInvocation })
+    }
   }
 
   const retryLast = async () => {
-    if (workspaceId === null || conversationId === null) return
+    if (workspaceId === null || conversationId === null || desktopLiveStopVisible(live)) return
     const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
-    setLive((current) => beginDesktopLiveSend(current))
+    const started = surfaceScopeRef.current
+    const nextLive = beginDesktopLiveSend(liveRef.current)
+    liveRef.current = nextLive
+    setLive(nextLive)
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId,
       content: '',
       retryOfMessageId: failed.id,
     })
-    setLive((current) => ({ ...current, streaming: false, liveText: '' }))
+    const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
+    liveRef.current = completed
+    setLive(completed)
+    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
     }
     const detail = await bridge.conversations.get({ workspaceId, conversationId })
-    if (detail.ok) setMessages(detail.value.messages)
+    if (!detail.ok) return
+    setMessages((current) =>
+      applyDesktopScopedProjection(started, surfaceScopeRef.current, current, detail.value.messages),
+    )
   }
 
   const saveProvider = async (event: FormEvent) => {
@@ -380,6 +445,12 @@ export function DesktopWorkbench({
               <ShieldCheck className="mr-1 h-3.5 w-3.5" />
               原生控制
             </Badge>
+            {desktopLiveStopVisible(live) && (
+              <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
+                <Square className="h-4 w-4" />
+                停止
+              </Button>
+            )}
             <Button type="button" variant="outline" size="sm" onClick={() => setZoom((value) => Math.max(90, value - 10))}>
               A-
             </Button>
@@ -415,7 +486,11 @@ export function DesktopWorkbench({
                   className={`w-full border px-3 py-2 text-left text-[15px] ${
                     workspace.id === workspaceId ? 'border-foreground bg-accent' : 'border-border'
                   }`}
-                  onClick={() => setWorkspaceId(workspace.id)}
+                  onClick={() => {
+                    applyViewScope(workspace.id, null)
+                    setConversations([])
+                    setMessages([])
+                  }}
                 >
                   {workspace.name}
                 </button>
@@ -449,14 +524,21 @@ export function DesktopWorkbench({
                       item.id === conversationId ? 'border-foreground bg-accent' : 'border-border'
                     }`}
                     onClick={() => {
-                      setConversationId(item.id)
-                      if (workspaceId !== null) {
-                        void bridge.conversations
-                          .get({ workspaceId, conversationId: item.id })
-                          .then((detail) => {
-                            if (detail.ok) setMessages(detail.value.messages)
-                          })
-                      }
+                      const started = applyViewScope(workspaceId, item.id)
+                      if (workspaceId === null) return
+                      void bridge.conversations
+                        .get({ workspaceId, conversationId: item.id })
+                        .then((detail) => {
+                          if (!detail.ok) return
+                          setMessages((current) =>
+                            applyDesktopScopedProjection(
+                              started,
+                              surfaceScopeRef.current,
+                              current,
+                              detail.value.messages,
+                            ),
+                          )
+                        })
                     }}
                   >
                     {item.title}
@@ -479,7 +561,7 @@ export function DesktopWorkbench({
                   归档会话
                 </Button>
               )}
-              {live.streaming && (
+              {desktopLiveStopVisible(live) && (
                 <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
                   <Square className="h-4 w-4" />
                   停止
@@ -508,7 +590,7 @@ export function DesktopWorkbench({
                 )}
               </div>
             ))}
-            {live.streaming && live.liveText !== '' && (
+            {desktopLiveViewIsOrigin(live) && live.streaming && live.liveText !== '' && (
               <div className="whitespace-pre-wrap break-words">{live.liveText}</div>
             )}
             <div ref={bottomRef} />
@@ -522,12 +604,22 @@ export function DesktopWorkbench({
               className="w-full resize-none border border-input bg-background p-3 text-[16px] outline-none"
             />
             <div className="mt-3 flex items-center justify-between gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => void retryLast()} disabled={live.streaming}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void retryLast()}
+                disabled={desktopLiveStopVisible(live)}
+              >
                 <RotateCcw className="h-4 w-4" />
                 重试
               </Button>
-              <Button type="submit" disabled={live.streaming || draft.trim() === ''}>
-                {live.streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button type="submit" disabled={desktopLiveStopVisible(live) || draft.trim() === ''}>
+                {desktopLiveStopVisible(live) ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
                 发送
               </Button>
             </div>

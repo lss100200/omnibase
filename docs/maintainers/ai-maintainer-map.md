@@ -2465,7 +2465,11 @@ Each Workspace has one parent Agent. No tools, files, MCP, Skills or child
 agents. Streaming is consumed by Electron main. Provider connections pin to
 DNS-validated public IPs. Streams succeed only with explicit terminal proof;
 disconnect and truncated EOF become `unknown`. Cancel accept and success share
-one durable CAS winner. Renderer events are workspace/conversation scoped.
+one durable CAS winner. Renderer events are workspace/conversation scoped;
+the visible transcript hides other-scope deltas, a global Stop stays
+reachable while a live invocation is active, returning to the origin scope
+restores running/Stop, and send/retry/list-detail projections are
+generation-gated.
 Cancel must abort the provider request and never auto-replay cancelled or
 unknown invocations. Retry is a new invocation. Desktop schema version 2 uses
 `desktop_0002_provider_conversation`, never Alembic 0013/0017.
