@@ -288,12 +288,13 @@ test("TS fallback replica still fail-closes mixed public and benchmark DNS", asy
   );
 });
 
-test("TS BlockList pin is not CPython is_global_unicast; remaining extra-rejects are named", () => {
+test("TS BlockList pin is not CPython is_global_unicast; extra-rejects are examples not an exhaustive IANA list", () => {
   // Production team HTTPS asks desktop-local pin (endpoint.py is_global_unicast).
-  // The TS replica extra-rejects these CPython-global addresses because it uses
-  // 2001::/23 instead of CPython's narrower TEREDO/ORCHID specials.
-  const tsExtraRejectsVsCpython = ["2001:1::1", "2001:3::1", "2001:20::1"];
-  for (const address of tsExtraRejectsVsCpython) {
+  // The TS replica is a fallback. These addresses are examples of extra-rejects
+  // vs CPython (2001::/23 vs narrower TEREDO/ORCHID specials), not a complete
+  // IANA disagreement inventory.
+  const exampleExtraRejectsVsCpython = ["2001:1::1", "2001:3::1", "2001:20::1"];
+  for (const address of exampleExtraRejectsVsCpython) {
     assert.equal(isGlobalUnicastAddress(address), false, address);
   }
 });

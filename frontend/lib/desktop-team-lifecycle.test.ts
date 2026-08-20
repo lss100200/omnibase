@@ -451,3 +451,56 @@ test('leaving origin parks phase plan and budget so B has no A team chrome', () 
   assert.equal(projectDesktopTeamBudget(state), '已用 4 / 上限 8 次调用')
   assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '运行中')
 })
+
+test('cancelled failed unknown and budget_exhausted stay latched against a late completed event', () => {
+  const terminals = [
+    { type: 'cancelled', phase: 'cancelled' },
+    { type: 'failed', phase: 'failed' },
+    { type: 'unknown', phase: 'unknown' },
+    { type: 'budget_exhausted', phase: 'budget_exhausted' },
+  ] as const
+  for (const terminal of terminals) {
+    let state = createDesktopTeamLiveState({
+      workspaceId: WORKSPACE_A,
+      conversationId: CONVERSATION_A,
+    })
+    state = beginDesktopTeamRun(state, {
+      workspaceId: WORKSPACE_A,
+      conversationId: CONVERSATION_A,
+      rosterEpoch: 1,
+      maximumProviderCalls: 8,
+    })
+    state = reduceDesktopTeamEvent(state, snapshot())
+    state = reduceDesktopTeamEvent(state, snapshot({ type: terminal.type }))
+    assert.equal(state.phase, terminal.phase, `${terminal.type} should land`)
+    const late = reduceDesktopTeamEvent(
+      state,
+      snapshot({ type: 'completed', parentFinalAnswer: 'late-success' }),
+    )
+    assert.equal(late.phase, terminal.phase, `${terminal.type} must not resurrect`)
+    assert.notEqual(late.runState, 'succeeded', `${terminal.type} must not become succeeded`)
+    assert.notEqual(late.parentFinalAnswer, 'late-success')
+  }
+})
+
+test('first snapshot from origin A does not bind while viewing workspace B', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(state.teamRunId, null)
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  const dropped = reduceDesktopTeamEvent(state, snapshot())
+  assert.equal(dropped.teamRunId, null)
+  assert.equal(dropped.phase, 'idle')
+  assert.equal(dropped.originWorkspaceId, WORKSPACE_A)
+  const stillB = desktopTeamLiveProjection(dropped, WORKSPACE_B, CONVERSATION_B)
+  assert.equal(stillB.visible, false)
+  assert.equal(stillB.parentLiveText, '')
+})
