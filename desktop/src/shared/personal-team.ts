@@ -260,6 +260,7 @@ export type DesktopTeamRunEventType =
   | "snapshot"
   | "cancelled"
   | "proposal"
+  | "plan_transition"
   | "blackboard"
   | "parent_proposing"
   | "host_validating"
@@ -282,6 +283,7 @@ export interface DesktopTeamRunEvent {
   readonly conversationId?: string;
   readonly state?: TeamRunState;
   readonly planRevisionId?: string | null;
+  readonly oldPlanRevisionId?: string | null;
   readonly waveId?: string | null;
   readonly assignmentId?: string;
   readonly rosterEpoch?: number;
@@ -310,7 +312,7 @@ export interface DesktopTeamRunEvent {
   readonly planSummary?: string;
 }
 
-export function teamEventIdentityComplete(event: DesktopTeamRunEvent): boolean {
+export function teamScopeIdentityComplete(event: DesktopTeamRunEvent): boolean {
   return (
     typeof event.workspaceId === "string" &&
     event.workspaceId.length > 0 &&
@@ -319,14 +321,54 @@ export function teamEventIdentityComplete(event: DesktopTeamRunEvent): boolean {
     typeof event.teamRunId === "string" &&
     event.teamRunId.length > 0 &&
     typeof event.rosterEpoch === "number" &&
-    Number.isInteger(event.rosterEpoch) &&
-    typeof event.planRevisionId === "string" &&
-    typeof event.waveId === "string" &&
-    typeof event.assignmentId === "string" &&
-    typeof event.nodeId === "string" &&
-    typeof event.sendEpoch === "number" &&
-    Number.isInteger(event.sendEpoch)
+    Number.isInteger(event.rosterEpoch)
   );
+}
+
+function isNodeScopedEvent(type: DesktopTeamRunEvent["type"]): boolean {
+  return (
+    type === "node_starting" ||
+    type === "node_identity" ||
+    type === "node_delta" ||
+    type === "node_terminal"
+  );
+}
+
+export function teamEventIdentityComplete(event: DesktopTeamRunEvent): boolean {
+  if (!teamScopeIdentityComplete(event)) return false;
+  if (event.type === "plan_transition") {
+    return (
+      typeof event.oldPlanRevisionId === "string" &&
+      event.oldPlanRevisionId.length > 0 &&
+      typeof event.planRevisionId === "string" &&
+      event.planRevisionId.length > 0 &&
+      event.oldPlanRevisionId !== event.planRevisionId
+    );
+  }
+  if (event.type === "wave_starting") {
+    return typeof event.planRevisionId === "string" && typeof event.waveId === "string" && event.waveId.length > 0;
+  }
+  if (isNodeScopedEvent(event.type) && event.employeeRoleId !== "parent") {
+    return (
+      typeof event.planRevisionId === "string" &&
+      event.planRevisionId.length > 0 &&
+      typeof event.waveId === "string" &&
+      event.waveId.length > 0 &&
+      typeof event.assignmentId === "string" &&
+      event.assignmentId.length > 0 &&
+      typeof event.nodeId === "string" &&
+      event.nodeId.length > 0 &&
+      typeof event.invocationId === "string" &&
+      event.invocationId.length > 0 &&
+      typeof event.employeeRoleId === "string" &&
+      event.employeeRoleId.length > 0 &&
+      typeof event.nodeEpoch === "number" &&
+      Number.isInteger(event.nodeEpoch) &&
+      typeof event.sendEpoch === "number" &&
+      Number.isInteger(event.sendEpoch)
+    );
+  }
+  return typeof event.planRevisionId === "string" && typeof event.waveId === "string";
 }
 
 export interface DesktopTeamRunExecuteInput {

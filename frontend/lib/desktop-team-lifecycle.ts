@@ -5,6 +5,7 @@ export type DesktopTeamRunEvent = {
   readonly conversationId?: string
   readonly state?: string
   readonly planRevisionId?: string | null
+  readonly oldPlanRevisionId?: string | null
   readonly waveId?: string | null
   readonly assignmentId?: string
   readonly rosterEpoch?: number
@@ -121,6 +122,8 @@ export interface DesktopTeamLiveState {
   readonly maximumProviderCalls: number
   readonly parkedParentLiveText: string
   readonly parkedParentFinalAnswer: string | null
+  readonly parkedNodes: readonly DesktopTeamNodeView[]
+  readonly parkedCollaborationLines: readonly string[]
   readonly planSummary: string | null
   readonly declaredExecution: 'serial' | 'parallel' | null
   readonly effectiveExecution: 'serial' | 'parallel' | null
@@ -150,6 +153,8 @@ export function createDesktopTeamLiveState(input: {
     maximumProviderCalls: 0,
     parkedParentLiveText: '',
     parkedParentFinalAnswer: null,
+    parkedNodes: [],
+    parkedCollaborationLines: [],
     planSummary: null,
     declaredExecution: null,
     effectiveExecution: null,
@@ -163,8 +168,64 @@ function viewingOrigin(state: DesktopTeamLiveState): boolean {
   )
 }
 
+function workingNodes(state: DesktopTeamLiveState): readonly DesktopTeamNodeView[] {
+  return viewingOrigin(state) ? state.nodes : state.parkedNodes
+}
+
+function workingCollaboration(state: DesktopTeamLiveState): readonly string[] {
+  return viewingOrigin(state) ? state.collaborationLines : state.parkedCollaborationLines
+}
+
+function workingParentLiveText(state: DesktopTeamLiveState): string {
+  return viewingOrigin(state) ? state.parentLiveText : state.parkedParentLiveText
+}
+
+function commitVisible(
+  state: DesktopTeamLiveState,
+  patch: {
+    readonly nodes?: readonly DesktopTeamNodeView[]
+    readonly parentLiveText?: string
+    readonly parentFinalAnswer?: string | null
+    readonly collaborationLines?: readonly string[]
+  },
+): Pick<
+  DesktopTeamLiveState,
+  | 'nodes'
+  | 'parentLiveText'
+  | 'parentFinalAnswer'
+  | 'collaborationLines'
+  | 'parkedParentLiveText'
+  | 'parkedParentFinalAnswer'
+  | 'parkedNodes'
+  | 'parkedCollaborationLines'
+> {
+  if (viewingOrigin(state)) {
+    return {
+      nodes: patch.nodes ?? state.nodes,
+      parentLiveText: patch.parentLiveText ?? state.parentLiveText,
+      parentFinalAnswer: patch.parentFinalAnswer !== undefined ? patch.parentFinalAnswer : state.parentFinalAnswer,
+      collaborationLines: patch.collaborationLines ?? state.collaborationLines,
+      parkedParentLiveText: state.parkedParentLiveText,
+      parkedParentFinalAnswer: state.parkedParentFinalAnswer,
+      parkedNodes: state.parkedNodes,
+      parkedCollaborationLines: state.parkedCollaborationLines,
+    }
+  }
+  return {
+    nodes: [],
+    parentLiveText: '',
+    parentFinalAnswer: null,
+    collaborationLines: [],
+    parkedParentLiveText: patch.parentLiveText ?? state.parkedParentLiveText,
+    parkedParentFinalAnswer:
+      patch.parentFinalAnswer !== undefined ? patch.parentFinalAnswer : state.parkedParentFinalAnswer,
+    parkedNodes: patch.nodes ?? state.parkedNodes,
+    parkedCollaborationLines: patch.collaborationLines ?? state.parkedCollaborationLines,
+  }
+}
+
 function eventIdentityComplete(event: DesktopTeamRunEvent): boolean {
-  return (
+  const scope =
     typeof event.workspaceId === 'string' &&
     event.workspaceId.length > 0 &&
     typeof event.conversationId === 'string' &&
@@ -172,14 +233,45 @@ function eventIdentityComplete(event: DesktopTeamRunEvent): boolean {
     typeof event.teamRunId === 'string' &&
     event.teamRunId.length > 0 &&
     typeof event.rosterEpoch === 'number' &&
-    Number.isInteger(event.rosterEpoch) &&
-    typeof event.planRevisionId === 'string' &&
-    typeof event.waveId === 'string' &&
-    typeof event.assignmentId === 'string' &&
-    typeof event.nodeId === 'string' &&
-    typeof event.sendEpoch === 'number' &&
-    Number.isInteger(event.sendEpoch)
-  )
+    Number.isInteger(event.rosterEpoch)
+  if (!scope) return false
+  if (event.type === 'plan_transition') {
+    return (
+      typeof event.oldPlanRevisionId === 'string' &&
+      event.oldPlanRevisionId.length > 0 &&
+      typeof event.planRevisionId === 'string' &&
+      event.planRevisionId.length > 0 &&
+      event.oldPlanRevisionId !== event.planRevisionId
+    )
+  }
+  if (
+    event.type === 'node_starting' ||
+    event.type === 'node_identity' ||
+    event.type === 'node_delta' ||
+    event.type === 'node_terminal'
+  ) {
+    if (event.employeeRoleId === 'parent') {
+      return typeof event.planRevisionId === 'string' && typeof event.waveId === 'string'
+    }
+    return (
+      typeof event.planRevisionId === 'string' &&
+      event.planRevisionId.length > 0 &&
+      typeof event.waveId === 'string' &&
+      event.waveId.length > 0 &&
+      typeof event.assignmentId === 'string' &&
+      event.assignmentId.length > 0 &&
+      typeof event.nodeId === 'string' &&
+      event.nodeId.length > 0 &&
+      typeof event.invocationId === 'string' &&
+      event.invocationId.length > 0 &&
+      typeof event.employeeRoleId === 'string' &&
+      typeof event.nodeEpoch === 'number' &&
+      Number.isInteger(event.nodeEpoch) &&
+      typeof event.sendEpoch === 'number' &&
+      Number.isInteger(event.sendEpoch)
+    )
+  }
+  return typeof event.planRevisionId === 'string' && typeof event.waveId === 'string'
 }
 
 function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): boolean {
@@ -189,6 +281,9 @@ function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): 
   if (event.workspaceId !== state.originWorkspaceId) return false
   if (event.conversationId !== state.originConversationId) return false
   if (event.rosterEpoch !== state.rosterEpoch) return false
+  if (event.type === 'plan_transition') {
+    return event.oldPlanRevisionId === state.planRevisionId && event.planRevisionId !== state.planRevisionId
+  }
   if (
     state.planRevisionId !== null &&
     state.planRevisionId !== '' &&
@@ -242,6 +337,8 @@ export function beginDesktopTeamRun(
     maximumProviderCalls: input.maximumProviderCalls,
     parkedParentLiveText: '',
     parkedParentFinalAnswer: null,
+    parkedNodes: [],
+    parkedCollaborationLines: [],
     planSummary: null,
     declaredExecution: null,
     effectiveExecution: null,
@@ -265,31 +362,37 @@ export function switchDesktopTeamScope(
   const leavingOrigin = viewingOrigin(state)
   const returningOrigin =
     workspaceId === state.originWorkspaceId && conversationId === state.originConversationId
-  return {
-    ...state,
-    workspaceId,
-    conversationId,
-    parentLiveText: leavingOrigin
-      ? ''
-      : returningOrigin
-        ? state.parkedParentLiveText
-        : state.parentLiveText,
-    parentFinalAnswer: leavingOrigin
-      ? null
-      : returningOrigin
-        ? state.parkedParentFinalAnswer
-        : state.parentFinalAnswer,
-    parkedParentLiveText: leavingOrigin
-      ? state.parentLiveText
-      : returningOrigin
-        ? ''
-        : state.parkedParentLiveText,
-    parkedParentFinalAnswer: leavingOrigin
-      ? state.parentFinalAnswer
-      : returningOrigin
-        ? null
-        : state.parkedParentFinalAnswer,
+  if (leavingOrigin) {
+    return {
+      ...state,
+      workspaceId,
+      conversationId,
+      parentLiveText: '',
+      parentFinalAnswer: null,
+      nodes: [],
+      collaborationLines: [],
+      parkedParentLiveText: state.parentLiveText,
+      parkedParentFinalAnswer: state.parentFinalAnswer,
+      parkedNodes: state.nodes,
+      parkedCollaborationLines: state.collaborationLines,
+    }
   }
+  if (returningOrigin) {
+    return {
+      ...state,
+      workspaceId,
+      conversationId,
+      parentLiveText: state.parkedParentLiveText,
+      parentFinalAnswer: state.parkedParentFinalAnswer,
+      nodes: state.parkedNodes,
+      collaborationLines: state.parkedCollaborationLines,
+      parkedParentLiveText: '',
+      parkedParentFinalAnswer: null,
+      parkedNodes: [],
+      parkedCollaborationLines: [],
+    }
+  }
+  return { ...state, workspaceId, conversationId }
 }
 
 export function desktopTeamStopVisible(state: DesktopTeamLiveState): boolean {
@@ -419,6 +522,13 @@ export function reduceDesktopTeamEvent(
   if (event.type === 'host_validating') {
     return { ...state, phase: 'host_validating', planRevisionId: event.planRevisionId ?? state.planRevisionId }
   }
+  if (event.type === 'plan_transition') {
+    return {
+      ...state,
+      planRevisionId: event.planRevisionId ?? state.planRevisionId,
+      waveId: null,
+    }
+  }
   if (event.type === 'proposal') {
     return {
       ...state,
@@ -428,20 +538,21 @@ export function reduceDesktopTeamEvent(
     }
   }
   if (event.type === 'wave_starting') {
+    const currentNodes = workingNodes(state)
     const waiting = (event.assignmentIds ?? []).flatMap((assignmentId, index) => {
-      if (state.nodes.some((item) => item.assignmentId === assignmentId && item.statusText !== '等待')) {
+      if (currentNodes.some((item) => item.assignmentId === assignmentId && item.statusText !== '等待')) {
         return []
       }
       const roleId = asRole(event.employeeRoleIds?.[index])
       if (roleId === undefined || event.waveId === undefined || event.waveId === null) return []
-      const existing = state.nodes.find((item) => item.assignmentId === assignmentId)
+      const existing = currentNodes.find((item) => item.assignmentId === assignmentId)
       if (existing !== undefined) return []
       const node: DesktopTeamNodeView = {
         nodeId: `pending:${assignmentId}`,
         assignmentId,
         invocationId: '',
         employeeRoleId: roleId,
-        ordinal: state.nodes.length + index + 1,
+        ordinal: currentNodes.length + index + 1,
         waveId: event.waveId,
         statusText: '等待',
         durationMs: null,
@@ -461,7 +572,7 @@ export function reduceDesktopTeamEvent(
       planSummary: event.planSummary ?? state.planSummary,
       declaredExecution: event.declaredExecution ?? state.declaredExecution,
       effectiveExecution: event.effectiveExecution ?? state.effectiveExecution,
-      nodes: [...state.nodes, ...waiting],
+      ...commitVisible(state, { nodes: [...currentNodes, ...waiting] }),
     }
   }
   if (event.type === 'node_starting' || event.type === 'node_identity') {
@@ -495,22 +606,29 @@ export function reduceDesktopTeamEvent(
       sendEpoch: event.sendEpoch,
       nodeEpoch: event.nodeEpoch,
     }
-    const withoutPending = state.nodes.filter(
+    const withoutPending = workingNodes(state).filter(
       (item) => item.nodeId !== `pending:${event.assignmentId}` && item.nodeId !== event.nodeId,
     )
     return withBudget(
-      { ...state, phase: 'node_running', nodes: upsertNode(withoutPending, node) },
+      { ...state, phase: 'node_running', ...commitVisible(state, { nodes: upsertNode(withoutPending, node) }) },
       event,
     )
   }
-  if (event.type === 'node_delta' && event.employeeRoleId === 'parent' && viewingOrigin(state)) {
-    return { ...state, parentLiveText: `${state.parentLiveText}${event.text ?? ''}` }
+  if (event.type === 'node_delta' && event.employeeRoleId === 'parent') {
+    return {
+      ...state,
+      ...commitVisible(state, { parentLiveText: `${workingParentLiveText(state)}${event.text ?? ''}` }),
+    }
   }
   if (event.type === 'node_terminal' && event.nodeId !== undefined) {
-    const existing = state.nodes.find((item) => item.nodeId === event.nodeId)
+    const existing = workingNodes(state).find((item) => item.nodeId === event.nodeId)
     if (existing === undefined) return state
-    if (event.sendEpoch !== undefined && event.sendEpoch !== existing.sendEpoch) return state
-    if (event.invocationId !== undefined && event.invocationId !== existing.invocationId) return state
+    if (event.assignmentId !== existing.assignmentId) return state
+    if (event.employeeRoleId !== existing.employeeRoleId) return state
+    if (event.invocationId !== existing.invocationId) return state
+    if (event.waveId !== existing.waveId) return state
+    if (event.nodeEpoch !== existing.nodeEpoch) return state
+    if (event.sendEpoch !== existing.sendEpoch) return state
     const statusText: DesktopTeamNodeStatusText =
       event.errorCode === 'desktop_invocation_cancelled'
         ? '正在停止'
@@ -521,21 +639,24 @@ export function reduceDesktopTeamEvent(
             : event.reportStatus === 'blocked'
               ? '失败'
               : '已完成'
+    const collaboration =
+      event.collaborationLine === undefined || event.collaborationLine === ''
+        ? workingCollaboration(state)
+        : [...workingCollaboration(state), event.collaborationLine]
     return withBudget(
       {
         ...state,
-        collaborationLines:
-          event.collaborationLine === undefined || event.collaborationLine === ''
-            ? state.collaborationLines
-            : [...state.collaborationLines, event.collaborationLine],
-        nodes: upsertNode(state.nodes, {
-          ...existing,
-          statusText,
-          durationMs: event.durationMs ?? existing.durationMs,
-          inputTokens: event.inputTokens ?? existing.inputTokens,
-          outputTokens: event.outputTokens ?? existing.outputTokens,
-          totalTokens: event.totalTokens ?? existing.totalTokens,
-          report: event.answer ?? existing.report,
+        ...commitVisible(state, {
+          collaborationLines: collaboration,
+          nodes: upsertNode(workingNodes(state), {
+            ...existing,
+            statusText,
+            durationMs: event.durationMs ?? existing.durationMs,
+            inputTokens: event.inputTokens ?? existing.inputTokens,
+            outputTokens: event.outputTokens ?? existing.outputTokens,
+            totalTokens: event.totalTokens ?? existing.totalTokens,
+            report: event.answer ?? existing.report,
+          }),
         }),
       },
       event,
@@ -551,14 +672,13 @@ export function reduceDesktopTeamEvent(
     return { ...state, phase: 'parent_synthesizing' }
   }
   if (event.type === 'completed') {
-    const finalAnswer = event.parentFinalAnswer ?? state.parentLiveText
+    const finalAnswer = event.parentFinalAnswer ?? workingParentLiveText(state)
     return withBudget(
       {
         ...state,
         phase: 'completed',
         runState: 'succeeded',
-        parentFinalAnswer: viewingOrigin(state) ? finalAnswer : state.parentFinalAnswer,
-        parentLiveText: viewingOrigin(state) ? finalAnswer : '',
+        ...commitVisible(state, { parentFinalAnswer: finalAnswer, parentLiveText: finalAnswer }),
       },
       event,
     )
@@ -571,9 +691,11 @@ export function reduceDesktopTeamEvent(
       ...state,
       phase: 'cancelled',
       runState: 'cancelled',
-      nodes: state.nodes.map((node) =>
-        node.statusText === '运行中' ? { ...node, statusText: '正在停止' } : node,
-      ),
+      ...commitVisible(state, {
+        nodes: workingNodes(state).map((node) =>
+          node.statusText === '运行中' ? { ...node, statusText: '正在停止' } : node,
+        ),
+      }),
     }
   }
   if (event.type === 'unknown') {
