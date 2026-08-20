@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -7,6 +8,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from omnibase.desktop_local.app import (
@@ -167,9 +169,14 @@ def _bootstrap_workspace(
 
 
 def _start_run(
-    client: TestClient, workspace_id: str, conversation_id: str, **budget: object
+    client: TestClient,
+    workspace_id: str,
+    conversation_id: str,
+    *,
+    allowed_specialist_role_ids: list[str] | None = None,
+    **budget: object,
 ) -> dict[str, object]:
-    payload = {
+    payload: dict[str, object] = {
         "conversation_id": conversation_id,
         "task": "审查桌面端多 Agent 设计",
         "team_mode": True,
@@ -179,6 +186,8 @@ def _start_run(
         "maximum_input_characters": budget.get("maximum_input_characters", 16_384),
         "maximum_output_characters": budget.get("maximum_output_characters", 32_768),
     }
+    if allowed_specialist_role_ids is not None:
+        payload["allowed_specialist_role_ids"] = allowed_specialist_role_ids
     response = client.post(
         f"/desktop/v1/workspaces/{workspace_id}/team-runs",
         headers=_native(),
@@ -633,3 +642,240 @@ def test_append_budget_rejects_infinite_and_keeps_consumed(tmp_path: Path) -> No
         )
         assert ok.status_code == 200
         assert ok.json()["team_run"]["maximum_provider_calls"] == 24
+
+
+def _prepare_assigned_run(client: TestClient) -> tuple[str, str, str]:
+    workspace_id, conversation_id = _bootstrap_workspace(client)
+    started = _start_run(client, workspace_id, conversation_id)
+    assert started["status"] == 200
+    team_run_id = started["body"]["team_run"]["id"]
+    accepted = client.post(
+        f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+        headers=_native(),
+        json={"proposal": _delegate([_assignment()])},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["accepted"] is True
+    return workspace_id, conversation_id, team_run_id
+
+
+def _create_running_node(client: TestClient, workspace_id: str, team_run_id: str) -> dict[str, str]:
+    invocation_id = "invocation_" + "a" * 32
+    created = client.post(
+        f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+        headers=_native(),
+        json={
+            "assignment_id": "frontend-review",
+            "employee_role_id": "frontend",
+            "invocation_id": invocation_id,
+            "wave_id": "wave-1",
+            "node_epoch": 1,
+            "send_epoch": 1,
+            "requested_model": "loopback-team",
+        },
+    )
+    assert created.status_code == 200
+    node_id = created.json()["node"]["id"]
+    return {"node_id": node_id, "invocation_id": invocation_id}
+
+
+def _settle_payload(invocation_id: str, report: str = "前端已完成桌面状态检查") -> dict[str, object]:
+    digest = hashlib.sha256(report.encode("utf-8")).hexdigest()
+    return {
+        "state": "succeeded",
+        "actual_model": "loopback-team",
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "total_tokens": 18,
+        "answer_sha256": digest,
+        "error_code": None,
+        "duration_ms": 12,
+        "invocation_id": invocation_id,
+        "assignment_id": "frontend-review",
+        "employee_role_id": "frontend",
+        "status": "completed",
+        "report": report,
+        "collaboration_requests": [],
+    }
+
+
+def test_empty_allow_list_fails_closed_without_defaulting_all_nine(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(
+            client,
+            workspace_id,
+            conversation_id,
+            allowed_specialist_role_ids=[],
+        )
+        assert started["status"] == 400
+        assert started["body"]["error"]["code"] == "desktop_team_allow_list_empty"
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        try:
+            assert db.execute("SELECT COUNT(*) FROM team_run").fetchone()[0] == 0
+        finally:
+            db.close()
+
+
+def test_unset_allow_list_still_defaults_to_all_nine(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        allowed = started["body"]["team_run"]["allowed_specialist_role_ids"]
+        assert sorted(allowed) == sorted(SPECIALIST_ROLE_IDS)
+
+
+def test_role_config_cas_conflict_does_not_lost_update(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id = _bootstrap_workspace(client)
+        first = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/agent-roles/frontend",
+            headers=_native(),
+            json={
+                "provider_id": None,
+                "model_name_override": "loopback-first",
+                "gear": "standard",
+                "thinking_depth": "low",
+                "expected_row_version": 1,
+            },
+        )
+        assert first.status_code == 200
+        assert first.json()["role"]["row_version"] == 1
+        second = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/agent-roles/frontend",
+            headers=_native(),
+            json={
+                "provider_id": None,
+                "model_name_override": "loopback-second",
+                "gear": "standard",
+                "thinking_depth": "low",
+                "expected_row_version": 1,
+            },
+        )
+        assert second.status_code == 200
+        assert second.json()["role"]["row_version"] == 2
+        stale = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/agent-roles/frontend",
+            headers=_native(),
+            json={
+                "provider_id": None,
+                "model_name_override": "loopback-stale",
+                "gear": "standard",
+                "thinking_depth": "low",
+                "expected_row_version": 1,
+            },
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"]["code"] == "desktop_role_config_cas_conflict"
+        current = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/agent-roles/frontend",
+            headers=_native(),
+        )
+        assert current.status_code == 200
+        assert current.json()["role"]["model_name_override"] == "loopback-second"
+        assert current.json()["role"]["row_version"] == 2
+
+
+def test_sqlite_settle_is_atomic_with_report_and_audit(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        assert settled.json()["state"] == "succeeded"
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        db.row_factory = sqlite3.Row
+        try:
+            node = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()
+            reports = db.execute(
+                "SELECT id FROM team_employee_report WHERE node_id = ?",
+                (created["node_id"],),
+            ).fetchall()
+            audits = db.execute(
+                "SELECT event_type FROM audit_event WHERE event_type = 'team_node_settled'"
+            ).fetchall()
+            assert node["state"] == "succeeded"
+            assert len(reports) == 1
+            assert len(audits) == 1
+        finally:
+            db.close()
+
+
+def test_report_validation_failure_does_not_leave_a_succeeded_node(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id)
+        payload = _settle_payload(
+            created["invocation_id"],
+            report="please reuse api_key sk-live-secretvalue",
+        )
+        failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=payload,
+        )
+        assert failed.status_code == 400
+        assert failed.json()["error"]["code"] == "desktop_team_secret_or_path_forbidden"
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        try:
+            node = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()
+            reports = db.execute(
+                "SELECT COUNT(*) FROM team_employee_report WHERE node_id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            audits = db.execute(
+                "SELECT COUNT(*) FROM audit_event WHERE event_type = 'team_node_settled'"
+            ).fetchone()[0]
+            assert node[0] == "running"
+            assert reports == 0
+            assert audits == 0
+        finally:
+            db.close()
+
+
+def test_audit_append_failure_rolls_back_settle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import omnibase.desktop_local.personal_team as personal_team
+
+    real_append = personal_team.append_audit_event
+
+    def boom(*args: object, **kwargs: object) -> None:
+        if kwargs.get("event_type") == "team_node_settled":
+            raise sqlite3.Error("audit append failed")
+        real_append(*args, **kwargs)
+
+    monkeypatch.setattr(personal_team, "append_audit_event", boom)
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id)
+        failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert failed.status_code == 503
+        assert failed.json()["error"]["code"] == "desktop_team_node_settle_failed"
+        db = sqlite3.connect(_config(tmp_path).storage.database_path)
+        try:
+            node = db.execute(
+                "SELECT state FROM team_node WHERE id = ?",
+                (created["node_id"],),
+            ).fetchone()
+            reports = db.execute(
+                "SELECT COUNT(*) FROM team_employee_report WHERE node_id = ?",
+                (created["node_id"],),
+            ).fetchone()[0]
+            assert node[0] == "running"
+            assert reports == 0
+        finally:
+            db.close()

@@ -6,6 +6,7 @@ import {
   createDesktopTeamLiveState,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
+  failDesktopTeamPreStart,
   reduceDesktopTeamEvent,
   requestDesktopTeamCancel,
   switchDesktopTeamScope,
@@ -185,4 +186,44 @@ test('waiting specialist stays 等待 after Stop; running becomes 正在停止',
   const backend = state.nodes.find((item) => item.assignmentId === 'backend-review')
   assert.equal(frontend?.statusText, '正在停止')
   assert.equal(backend?.statusText, '等待')
+})
+
+test('missing roster, plan, wave, assignment, node, or send epoch each drops the event', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = reduceDesktopTeamEvent(state, snapshot())
+  const keys = ['rosterEpoch', 'planRevisionId', 'waveId', 'assignmentId', 'nodeId', 'sendEpoch'] as const
+  for (const key of keys) {
+    const incomplete = { ...snapshot({ type: 'completed', parentFinalAnswer: `leak-${key}` }) }
+    delete incomplete[key]
+    const next = reduceDesktopTeamEvent(state, incomplete)
+    assert.equal(next.parentFinalAnswer, null, `omitting ${key} must not project`)
+    assert.notEqual(next.phase, 'completed', `omitting ${key} must not complete`)
+  }
+})
+
+test('pre-start failure converges preparing to idle instead of hanging', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(state.phase, 'preparing')
+  assert.equal(desktopTeamStopVisible(state), true)
+  state = failDesktopTeamPreStart(state)
+  assert.equal(state.phase, 'idle')
+  assert.equal(desktopTeamStopVisible(state), false)
 })
