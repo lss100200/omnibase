@@ -8,6 +8,8 @@
 > **Git 状态**：PR `#9` 已把 P34.5A1-A4/B/C/D 工程封板合入公开 `main`（当前 hardening 分支基线 `f16f3c567caefd6d0c6a348f75f7f65b92331572`）。post-seal hardening 的本地代码提交依次为 `ec2ac7861190539a0d89e3a8b850b2b71d2d1a04`、`3d05921d198af7ff5cb331c4c281ae9df429c36f`、`d6e888b4f9640cca3cdec27860915226dcf47c64` 与 `2621759024ddf9e5d84fc96e56d00140287c1db2`；本报告不硬编码后续 evidence/docs commit 的自身 hash，避免循环修订。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准。
 > **Round 5 Desktop Runtime review-fix（2026-08-07，分支 `external/cross-platform-desktop-runtime`，基线 `2f00e6f`）**：独立审查已复现并修复六项问题。(1) acronym camelCase key 泄漏：`_is_sensitive_key` 改为 acronym-aware 分词（同时处理 lower/digit→upper 与 acronym→CapitalizedWord），`stripeAPIKey`/`OPENAIApiKey`/`openAIApiKey`/`azureADAccessToken`/`myTOKEN`/`providerPASSWORD`/`xAPIKey` 全部脱敏，`sortKey`/`cacheID`/`apiVersion`/`foreignKey`/`keyboardLayout`/`monkey` 保留。(2) 敏感 Header 遇 `{`/`}` 提前停止：`_redact_colon_items` 改为消费到物理行尾，`{`/`}`/`;`/引号/逗号/空白均非提前停止边界，JSON 右花括号为防泄漏而牺牲。(3) quoted scanner 不识别转义引号：`_match_equals_value` 改为 escape-aware（仅在前面连续反斜杠为偶数时终止），未闭合/超长整项 fail-closed。(4) capability probe 返回裸 engine 名、lifecycle 再次 `shutil.which`：新增 `ExecutableIdentity`（dev/ino/size/mtime/ctime+symlink）、`ComposeProbe.executable_path/identity`、`EngineResolution.selected_executable_path/identity`、`resolve_engine_resolution()`/`verify_executable_identity()`；lifecycle 以验证后的规范绝对路径作为 `argv[0]` 并在构建命令前重新验证身份，绝不再次解析 PATH；TOCTOU（trusted-path→replacement-which）、删除、替换、identity drift 均 fail-closed。(5) sequence token-state parser 不识别 `--flag=value`：`_belongs_to_another_allowlisted_flag` 改为区分 allowlisted 结构 `--profile=lite`、敏感 inline `--token=value` 与普通 dash 值，未吞并结构、首项 fail-closed、第二项自身脱敏。(6) `capture_output=True`+timeout 只限时不限字节：`_probe_compose` 改为 stdout/stderr 定向 `DEVNULL`（只需 exit code）；lifecycle `_run_bounded` 改为线程化增量读取、每流 64 KiB、合计 128 KiB、超限终止进程并标记 truncated，绝不先无限缓冲到内存再截断；timeout 与 byte cap 独立。维护地图/安全不变量/AI maintainer map/Desktop doc 已同步并重算 P5.1A/2A/3A sealed digest chain。focused runtime tests 134 passed、mypy src/omnibase/runtime clean、ruff check/format clean。Desktop 仍 Lite/Local engineering-only；Hardened `blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；Production Runtime/Planner/Multi-Agent 保持 disabled；migration head 仍 `0012`，无 `0013`；根 `.env` 未读取；业务数据库未访问/迁移；未 push。
 
+> **P6.8 Codex（2026-08-20）**：Canonical dossier for Codex global acceptance is `docs/reviews/p6-8-codex-acceptance-package-r0.md`. Product latch `70c99f2`. Cursor is not the acceptance authority. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e`.
+
 ---
 
 ## 一、项目定位
@@ -6752,6 +6754,30 @@ P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
 APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
 codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
 no product/runtime code changed by this re-review
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
+
+### P6.8 Codex acceptance package (2026-08-20)
+
+**Open first:** `docs/reviews/p6-8-codex-acceptance-package-r0.md`.
+Prior Cursor reviews stay as history (`p6-8-independent-review-r0.md`, `p6-8-p1-forward-fix-rereview-r0.md`). This is not another failed independent-review report.
+
+Product latch `70c99f2` closes the remaining P1 (abort pre-arm). Chain: R2 `2d3b56e` → `99c54af` `467a4f5` `8e05265` `70c99f2`. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e`. Cursor is not the engineering-acceptance authority.
+
+This-run gates: frontend test 245 / typecheck / lint / build passed; desktop test 45 / typecheck / build passed; backend desktop_local 85 passed; git diff --check passed; RuntimeHost 24/24 on pinned SDK `dotnet-sdk-8.0.424` (`--nologo` not passed).
+
+```text
+P6_8_CURSOR_P1_FORWARD_FIXES_COMPLETE
+P6_8_ABORT_PRE_ARM_LATCH_IMPLEMENTED
+P6_8_READY_FOR_CODEX_GLOBAL_ACCEPTANCE_REVIEW
+ENGINEERING_ACCEPTANCE_RESERVED_FOR_CODEX
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT CLAIMED BY CURSOR
+OMNIBASE_1_0_0 / Authenticode / live paid Provider / P7 UX = not announced
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
 no push; no PR; no EXE/MSI
 root .env not read; business database not accessed or migrated
 ```
