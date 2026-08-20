@@ -549,6 +549,7 @@ function parseAgentRoleUpdateInput(
     args.length !== 1 ||
     !isRecord(args[0]) ||
     !hasExactKeys(args[0], [
+      "expectedRowVersion",
       "gear",
       "modelNameOverride",
       "providerId",
@@ -570,7 +571,11 @@ function parseAgentRoleUpdateInput(
     typeof args[0].gear !== "string" ||
     !GEARS.has(args[0].gear) ||
     typeof args[0].thinkingDepth !== "string" ||
-    !DEPTHS.has(args[0].thinkingDepth)
+    !DEPTHS.has(args[0].thinkingDepth) ||
+    typeof args[0].expectedRowVersion !== "number" ||
+    !Number.isInteger(args[0].expectedRowVersion) ||
+    args[0].expectedRowVersion < 1 ||
+    args[0].expectedRowVersion > 2_147_483_647
   ) {
     return null;
   }
@@ -581,6 +586,7 @@ function parseAgentRoleUpdateInput(
     modelNameOverride: args[0].modelNameOverride,
     gear: args[0].gear as DesktopAgentRoleUpdateInput["gear"],
     thinkingDepth: args[0].thinkingDepth as DesktopAgentRoleUpdateInput["thinkingDepth"],
+    expectedRowVersion: args[0].expectedRowVersion,
   });
 }
 

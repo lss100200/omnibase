@@ -952,6 +952,13 @@ def update_agent_role(  # noqa: C901 - inherit/override without copying secrets
         if normalized_model is None:
             raise DesktopApiError(400, "desktop_native_input_invalid")
         model_name_override = normalized_model
+    expected_row_version = payload.get("expected_row_version")
+    if (
+        not isinstance(expected_row_version, int)
+        or isinstance(expected_row_version, bool)
+        or expected_row_version < 1
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
     if (
@@ -968,6 +975,8 @@ def update_agent_role(  # noqa: C901 - inherit/override without copying secrets
             (workspace_id, role_id),
         ).fetchone()
         if existing is None:
+            if expected_row_version != 1:
+                raise DesktopApiError(409, "desktop_role_config_cas_conflict")
             connection.execute(
                 "INSERT INTO workspace_agent_role_config ("
                 "id, owner_id, workspace_id, employee_role_id, provider_id, "
@@ -988,12 +997,14 @@ def update_agent_role(  # noqa: C901 - inherit/override without copying secrets
                 ),
             )
         else:
-            connection.execute(
+            if int(existing["row_version"]) != expected_row_version:
+                raise DesktopApiError(409, "desktop_role_config_cas_conflict")
+            updated = connection.execute(
                 "UPDATE workspace_agent_role_config SET provider_id = ?, "
                 "model_name_override = ?, gear = ?, thinking_depth = ?, "
                 "row_version = row_version + 1, verification_state = 'unverified', "
                 "verified_actual_model = NULL, verification_digest = NULL, updated_at = ? "
-                "WHERE id = ?",
+                "WHERE id = ? AND row_version = ?",
                 (
                     provider_id,
                     model_name_override,
@@ -1001,8 +1012,11 @@ def update_agent_role(  # noqa: C901 - inherit/override without copying secrets
                     thinking_depth,
                     now,
                     existing["id"],
+                    expected_row_version,
                 ),
             )
+            if updated.rowcount != 1:
+                raise DesktopApiError(409, "desktop_role_config_cas_conflict")
         append_audit_event(
             connection,
             event_id=_new_id("event"),
@@ -2014,6 +2028,188 @@ def update_team_node(
     return {"updated": True, "id": node_id, "state": state}
 
 
+def _persist_report_collaboration_and_audit(
+    connection: sqlite3.Connection,
+    *,
+    owner_id: str,
+    workspace_id: str,
+    team_run_id: str,
+    node_id: str,
+    invocation_id: str,
+    normalized: dict[str, Any],
+    now: str,
+) -> tuple[str, str, list[dict[str, Any]]]:
+    report_id = _new_id("teamrpt")
+    body = str(normalized["report"])
+    connection.execute(
+        "INSERT INTO team_employee_report ("
+        "id, team_run_id, assignment_id, node_id, invocation_id, employee_role_id, "
+        "status, report, report_sha256, created_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            report_id,
+            team_run_id,
+            normalized["assignmentId"],
+            node_id,
+            invocation_id,
+            normalized["employeeRoleId"],
+            normalized["status"],
+            body,
+            _sha256_text(body),
+            now,
+        ),
+    )
+    assignment_state = str(normalized["status"])
+    connection.execute(
+        "UPDATE team_assignment SET state = ?, updated_at = ? "
+        "WHERE team_run_id = ? AND assignment_id = ?",
+        (assignment_state, now, team_run_id, normalized["assignmentId"]),
+    )
+    recorded: list[dict[str, Any]] = []
+    for item in normalized["collaborationRequests"]:
+        request_id = _new_id("teamcollab")
+        connection.execute(
+            "INSERT INTO team_collaboration_request ("
+            "id, team_run_id, from_assignment_id, from_employee_role_id, target_role_id, "
+            "question, reason, parent_decision, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (
+                request_id,
+                team_run_id,
+                normalized["assignmentId"],
+                normalized["employeeRoleId"],
+                item["targetRoleId"],
+                item["question"],
+                item["reason"],
+                now,
+                now,
+            ),
+        )
+        recorded.append(
+            {
+                "id": request_id,
+                "target_role_id": item["targetRoleId"],
+                "question": item["question"],
+                "reason": item["reason"],
+                "parent_decision": "pending",
+            }
+        )
+    audit_id = _new_id("event")
+    append_audit_event(
+        connection,
+        event_id=audit_id,
+        owner_id=owner_id,
+        workspace_id=workspace_id,
+        event_type="team_node_settled",
+        payload={
+            "team_run_id": team_run_id,
+            "node_id": node_id,
+            "invocation_id": invocation_id,
+            "assignment_id": normalized["assignmentId"],
+            "report_id": report_id,
+            "status": normalized["status"],
+        },
+    )
+    return report_id, body, recorded
+
+
+def settle_team_node(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    node_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    if not isinstance(node_id, str) or not re.fullmatch(r"teamnode_[0-9a-f]{32}\Z", node_id):
+        raise DesktopApiError(404, "desktop_team_node_not_found")
+    state = payload.get("state")
+    if state not in {"succeeded", "failed", "cancelled", "unknown"}:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    invocation_id = payload.get("invocation_id")
+    if not isinstance(invocation_id, str) or not re.fullmatch(
+        r"invocation_[0-9a-f]{32}\Z", invocation_id
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        existing = connection.execute(
+            "SELECT id, assignment_id, invocation_id, state FROM team_node "
+            "WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
+            (node_id, team_run_id, invocation_id),
+        ).fetchone()
+        if existing is None:
+            raise DesktopApiError(404, "desktop_team_node_not_found")
+        result = validate_employee_team_report(
+            {
+                "assignmentId": payload.get("assignment_id"),
+                "employeeRoleId": payload.get("employee_role_id"),
+                "status": payload.get("status"),
+                "report": payload.get("report"),
+                "collaborationRequests": payload.get("collaboration_requests") or [],
+            },
+            budget=_budget_from_run(run),
+            allowed_roles=_allowed_roles_from_run(run),
+            workspace_id=workspace_id,
+        )
+        if not result.ok or result.normalized is None:
+            raise DesktopApiError(400, result.code)
+        if str(result.normalized["assignmentId"]) != str(existing["assignment_id"]):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        connection.execute(
+            "UPDATE team_node SET state = ?, actual_model = ?, input_tokens = ?, "
+            "output_tokens = ?, total_tokens = ?, answer_sha256 = ?, error_code = ?, "
+            "duration_ms = ?, updated_at = ? WHERE id = ?",
+            (
+                state,
+                payload.get("actual_model"),
+                payload.get("input_tokens"),
+                payload.get("output_tokens"),
+                payload.get("total_tokens"),
+                payload.get("answer_sha256"),
+                payload.get("error_code"),
+                payload.get("duration_ms"),
+                now,
+                node_id,
+            ),
+        )
+        report_id, body, recorded = _persist_report_collaboration_and_audit(
+            connection,
+            owner_id=str(owner["id"]),
+            workspace_id=workspace_id,
+            team_run_id=team_run_id,
+            node_id=node_id,
+            invocation_id=invocation_id,
+            normalized=result.normalized,
+            now=now,
+        )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_node_settle_failed") from None
+    return {
+        "updated": True,
+        "id": node_id,
+        "state": state,
+        "report": {
+            "id": report_id,
+            "assignment_id": result.normalized["assignmentId"],
+            "employee_role_id": result.normalized["employeeRoleId"],
+            "status": result.normalized["status"],
+            "report": body,
+            "collaboration_requests": recorded,
+        },
+    }
+
+
 def record_employee_report(
     connection: sqlite3.Connection,
     workspace_id: str,
@@ -2050,63 +2246,16 @@ def record_employee_report(
         if node is None:
             raise DesktopApiError(404, "desktop_team_node_not_found")
         now = utc_now_text()
-        report_id = _new_id("teamrpt")
-        body = str(result.normalized["report"])
-        connection.execute(
-            "INSERT INTO team_employee_report ("
-            "id, team_run_id, assignment_id, node_id, invocation_id, employee_role_id, "
-            "status, report, report_sha256, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                report_id,
-                team_run_id,
-                result.normalized["assignmentId"],
-                node_id,
-                invocation_id,
-                result.normalized["employeeRoleId"],
-                result.normalized["status"],
-                body,
-                _sha256_text(body),
-                now,
-            ),
+        report_id, body, recorded = _persist_report_collaboration_and_audit(
+            connection,
+            owner_id=str(owner["id"]),
+            workspace_id=workspace_id,
+            team_run_id=team_run_id,
+            node_id=node_id,
+            invocation_id=invocation_id,
+            normalized=result.normalized,
+            now=now,
         )
-        assignment_state = str(result.normalized["status"])
-        if assignment_state == "completed":
-            assignment_state = "completed"
-        connection.execute(
-            "UPDATE team_assignment SET state = ?, updated_at = ? "
-            "WHERE team_run_id = ? AND assignment_id = ?",
-            (assignment_state, now, team_run_id, result.normalized["assignmentId"]),
-        )
-        recorded: list[dict[str, Any]] = []
-        for item in result.normalized["collaborationRequests"]:
-            request_id = _new_id("teamcollab")
-            connection.execute(
-                "INSERT INTO team_collaboration_request ("
-                "id, team_run_id, from_assignment_id, from_employee_role_id, target_role_id, "
-                "question, reason, parent_decision, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                (
-                    request_id,
-                    team_run_id,
-                    result.normalized["assignmentId"],
-                    result.normalized["employeeRoleId"],
-                    item["targetRoleId"],
-                    item["question"],
-                    item["reason"],
-                    now,
-                    now,
-                ),
-            )
-            recorded.append(
-                {
-                    "id": request_id,
-                    "target_role_id": item["targetRoleId"],
-                    "question": item["question"],
-                    "reason": item["reason"],
-                    "parent_decision": "pending",
-                }
-            )
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:

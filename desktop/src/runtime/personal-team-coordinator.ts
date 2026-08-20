@@ -111,6 +111,21 @@ export interface PersonalTeamHost {
     readonly errorCode: string | null;
     readonly durationMs: number | null;
   }): Promise<void>;
+  settleNode(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly nodeId: string;
+    readonly invocationId: string;
+    readonly state: "succeeded" | "failed" | "cancelled" | "unknown";
+    readonly actualModel: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly answerSha256: string | null;
+    readonly errorCode: string | null;
+    readonly durationMs: number | null;
+    readonly report: EmployeeTeamReport;
+  }): Promise<void>;
   recordReport(input: {
     readonly workspaceId: string;
     readonly teamRunId: string;
@@ -708,6 +723,7 @@ export class PersonalTeamCoordinator {
     const sendEpoch = args.calls.length + 1;
     const key = invocationId;
     const controller = this.abort.arm(key);
+    let createdId: string | null = null;
     try {
       if (controller.signal.aborted || this.#cancelled) return { kind: "cancelled" };
       const consumed = await raceAbort(
@@ -743,6 +759,7 @@ export class PersonalTeamCoordinator {
         controller.signal,
       );
       if (isAborted(created) || controller.signal.aborted) return { kind: "cancelled" };
+      createdId = created.node.id;
       const node: StoredNode = {
         nodeId: created.node.id,
         assignmentId: args.assignment.assignmentId,
@@ -841,14 +858,11 @@ export class PersonalTeamCoordinator {
       node.inputTokens = chat.inputTokens;
       node.outputTokens = chat.outputTokens;
       node.totalTokens = chat.totalTokens;
-      node.state = "succeeded";
-      node.report = report;
-      args.reports.push(report);
-      if (stored) stored.state = report.status === "completed" ? "completed" : report.status;
-      await this.#host.updateNode({
+      await this.#host.settleNode({
         workspaceId: args.input.workspaceId,
         teamRunId: args.teamRun.id,
         nodeId: created.node.id,
+        invocationId,
         state: "succeeded",
         actualModel: chat.actualModel,
         inputTokens: chat.inputTokens,
@@ -857,14 +871,12 @@ export class PersonalTeamCoordinator {
         answerSha256: sha256Text(chat.text),
         errorCode: null,
         durationMs,
-      });
-      await this.#host.recordReport({
-        workspaceId: args.input.workspaceId,
-        teamRunId: args.teamRun.id,
-        nodeId: created.node.id,
-        invocationId,
         report,
       });
+      node.state = "succeeded";
+      node.report = report;
+      args.reports.push(report);
+      if (stored) stored.state = report.status === "completed" ? "completed" : report.status;
       args.emit({
         type: "node_terminal",
         waveId: args.wave.waveId,
@@ -893,6 +905,29 @@ export class PersonalTeamCoordinator {
       return { kind: "ok", assignmentId: args.assignment.assignmentId };
     } catch (error) {
       const code = errorCode(error);
+      if (createdId !== null && !ABORT_CODES.has(code) && !this.#cancelled) {
+        const terminal =
+          code === "desktop_invocation_interrupted" ||
+          code === "desktop_provider_stream_incomplete" ||
+          code === "desktop_provider_response_invalid"
+            ? "unknown"
+            : "failed";
+        await this.#host
+          .updateNode({
+            workspaceId: args.input.workspaceId,
+            teamRunId: args.teamRun.id,
+            nodeId: createdId,
+            state: terminal,
+            actualModel: null,
+            inputTokens: null,
+            outputTokens: null,
+            totalTokens: null,
+            answerSha256: null,
+            errorCode: code,
+            durationMs: null,
+          })
+          .catch(() => undefined);
+      }
       if (ABORT_CODES.has(code) || this.#cancelled) return { kind: "cancelled" };
       if (
         code === "desktop_invocation_interrupted" ||
@@ -1253,10 +1288,13 @@ export function createInMemoryPersonalTeamHost(
   readonly runs: DesktopTeamRun[];
   readonly nodes: { id: string; invocationId: string; assignmentId: string }[];
   readonly reports: EmployeeTeamReport[];
+  readonly audits: readonly string[];
+  failNextSettle: string | null;
 } {
   const runs: DesktopTeamRun[] = [];
   const nodes: { id: string; invocationId: string; assignmentId: string }[] = [];
   const reports: EmployeeTeamReport[] = [];
+  const audits: string[] = [];
   const assignments = new Map<string, TeamAssignmentProposal>();
   let revision = 0;
   const allowed = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
@@ -1265,10 +1303,14 @@ export function createInMemoryPersonalTeamHost(
     readonly runs: DesktopTeamRun[];
     readonly nodes: { id: string; invocationId: string; assignmentId: string }[];
     readonly reports: EmployeeTeamReport[];
+    readonly audits: string[];
+    failNextSettle: string | null;
   } = {
     runs,
     nodes,
     reports,
+    audits,
+    failNextSettle: null,
     async startTeamRun(input) {
       if (runs.some((item) => item.state === "preparing" || item.state === "running" || item.state === "cancelling")) {
         throw Object.assign(new Error("desktop_team_run_already_active"), {
@@ -1436,6 +1478,21 @@ export function createInMemoryPersonalTeamHost(
     },
     async updateNode() {
       return;
+    },
+    async settleNode(input) {
+      const blob = JSON.stringify(input.report);
+      if (/api[_-]?key|\bsk-[A-Za-z0-9]{8,}|ciphertext|\bnonce\b|encrypted_secret_blob/iu.test(blob)) {
+        throw Object.assign(new Error("desktop_team_secret_or_path_forbidden"), {
+          code: "desktop_team_secret_or_path_forbidden",
+        });
+      }
+      if (host.failNextSettle !== null) {
+        const code = host.failNextSettle;
+        host.failNextSettle = null;
+        throw Object.assign(new Error(code), { code });
+      }
+      reports.push(input.report);
+      audits.push(`team_node_settled:${input.nodeId}:${input.invocationId}`);
     },
     async recordReport(input) {
       const blob = JSON.stringify(input.report);

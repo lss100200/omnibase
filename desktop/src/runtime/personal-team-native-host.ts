@@ -55,6 +55,9 @@ export function createNativePersonalTeamHost(options: {
     async updateNode(input) {
       unwrap(await options.client.updateTeamNode(input));
     },
+    async settleNode(input) {
+      unwrap(await options.client.settleTeamNode(input));
+    },
     async recordReport(input) {
       unwrap(await options.client.recordTeamReport(input));
     },

@@ -1847,6 +1847,7 @@ export class DesktopNativeClient {
         model_name_override: input.modelNameOverride,
         gear: input.gear,
         thinking_depth: input.thinkingDepth,
+        expected_row_version: input.expectedRowVersion,
       },
       parseAgentRoleWrapper,
     );
@@ -2134,6 +2135,48 @@ export class DesktopNativeClient {
         answer_sha256: input.answerSha256,
         error_code: input.errorCode,
         duration_ms: input.durationMs,
+      },
+      parseTeamNodeUpdate,
+    );
+  }
+
+  settleTeamNode(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly nodeId: string;
+    readonly invocationId: string;
+    readonly state: string;
+    readonly actualModel: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly answerSha256: string | null;
+    readonly errorCode: string | null;
+    readonly durationMs: number | null;
+    readonly report: EmployeeTeamReport;
+  }): Promise<DesktopOperationResult<{ readonly updated: true; readonly id: string; readonly state: string }>> {
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/nodes/${input.nodeId}/settle`,
+      {
+        state: input.state,
+        actual_model: input.actualModel,
+        input_tokens: input.inputTokens,
+        output_tokens: input.outputTokens,
+        total_tokens: input.totalTokens,
+        answer_sha256: input.answerSha256,
+        error_code: input.errorCode,
+        duration_ms: input.durationMs,
+        invocation_id: input.invocationId,
+        assignment_id: input.report.assignmentId,
+        employee_role_id: input.report.employeeRoleId,
+        status: input.report.status,
+        report: input.report.report,
+        collaboration_requests: input.report.collaborationRequests.map((item) => ({
+          targetRoleId: item.targetRoleId,
+          question: item.question,
+          reason: item.reason,
+        })),
       },
       parseTeamNodeUpdate,
     );

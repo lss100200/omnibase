@@ -67,6 +67,7 @@ from omnibase.desktop_local.personal_team import (
     resolve_collaboration_request,
     set_assignment_effective_execution,
     set_team_run_state,
+    settle_team_node,
     start_team_run,
     submit_parent_proposal,
     test_agent_role,
@@ -230,6 +231,7 @@ class AgentRoleUpdateRequest(BaseModel):
     model_name_override: str | None = Field(default=None, max_length=256)
     gear: str = Field(min_length=3, max_length=32)
     thinking_depth: str = Field(min_length=3, max_length=32)
+    expected_row_version: int = Field(ge=1, le=2_147_483_647)
 
 
 class TeamRunStartRequest(BaseModel):
@@ -328,6 +330,25 @@ class TeamEmployeeReportRequest(BaseModel):
     report: str = Field(min_length=1, max_length=131072)
     node_id: str = Field(min_length=1, max_length=128)
     invocation_id: str = Field(min_length=13, max_length=45)
+    collaboration_requests: list[dict[str, object]] = Field(default_factory=list)
+
+
+class TeamNodeSettleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    state: str = Field(min_length=4, max_length=16)
+    actual_model: str | None = Field(default=None, max_length=256)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    answer_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    error_code: str | None = Field(default=None, max_length=96)
+    duration_ms: int | None = Field(default=None, ge=0)
+    invocation_id: str = Field(min_length=13, max_length=45)
+    assignment_id: str = Field(min_length=1, max_length=128)
+    employee_role_id: str = Field(min_length=2, max_length=32)
+    status: str = Field(min_length=7, max_length=32)
+    report: str = Field(min_length=1, max_length=131072)
     collaboration_requests: list[dict[str, object]] = Field(default_factory=list)
 
 
@@ -1136,6 +1157,26 @@ def _team_runs_record_report(
         )
 
 
+def _team_runs_settle_node(
+    workspace_id: str,
+    team_run_id: str,
+    node_id: str,
+    payload: TeamNodeSettleRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return settle_team_node(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            node_id,
+            payload.model_dump(),
+        )
+
+
 def _team_runs_resolve_collaboration(
     workspace_id: str,
     team_run_id: str,
@@ -1355,6 +1396,11 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{node_id}",
         _team_runs_update_node,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{node_id}/settle",
+        _team_runs_settle_node,
         methods=["POST"],
     )
     app.add_api_route(

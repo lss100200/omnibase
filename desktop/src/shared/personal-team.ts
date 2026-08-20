@@ -130,6 +130,7 @@ export interface DesktopAgentRoleUpdateInput {
   readonly modelNameOverride: string | null;
   readonly gear: "economy" | "standard" | "deep" | "audit";
   readonly thinkingDepth: "disabled" | "low" | "medium" | "high";
+  readonly expectedRowVersion: number;
 }
 
 export interface DesktopAgentRoleIdInput {

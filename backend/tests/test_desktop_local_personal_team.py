@@ -415,6 +415,7 @@ def test_role_config_rejects_secret_columns_and_inherits_fingerprint_only(tmp_pa
                     "model_name_override": "loopback-specialist",
                     "gear": "standard",
                     "thinking_depth": "low",
+                    "expected_row_version": 1,
                 },
             )
             assert updated.status_code == 200

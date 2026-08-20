@@ -454,6 +454,7 @@ export interface OmniBaseDesktopBridge {
         readonly modelNameOverride: string | null
         readonly gear: DesktopReasoningGear
         readonly thinkingDepth: DesktopThinkingDepth
+        readonly expectedRowVersion: number
       }) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>
       readonly test: (input: {
         readonly workspaceId: string
