@@ -267,6 +267,16 @@ runtime evidence; then correct the stale documentation in the same change.
   version 2 is `desktop_0002_provider_conversation`, never Alembic. Do not
   import `openai`/`httpx`/PostgreSQL Settings into the freeze, and do not open
   files, RAG, Skills, MCP or multi-agent to complete this journey.
+- P6.9 is the personal parent-directed team contract on that same desktop
+  Agent. Read INV-085 and `docs/architecture/p6-9-multi-agent-planning.md`
+  before changing role config, team-run schema, Proposal validators or the
+  closed role/team IPC catalog. Parent emits a restricted structured
+  Proposal; the host validates and persists. Specialists do not launch peers.
+  Desktop schema version 3 is `desktop_0003_personal_agent_team`, never
+  Alembic 0017. Role config never stores API keys or vault material. Next
+  stays product-blind. Do not add workbench team UI, live coordinator waves,
+  tools, Sandbox, MCP, Skills or enterprise Planner to complete A2. Keep
+  `PERSONAL_MULTI_AGENT_PLANNED` until D; do not claim IMPLEMENTED.
 
 ## Safe change workflow
 

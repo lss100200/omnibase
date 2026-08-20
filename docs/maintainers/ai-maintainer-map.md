@@ -889,7 +889,7 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
-| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084 |
+| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、parent-directed personal team contract、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084, INV-085 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
 跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
@@ -2481,3 +2481,34 @@ unknown invocations. Retry is a new invocation. Desktop schema version 2 uses
 
 A green P6.7 focused gate is unsigned engineering evidence. It does not prove
 Authenticode, Sandbox UI, a live paid Provider or OmniBase 1.0.0.
+
+
+## P6.9 personal parent-directed team contract
+
+Read INV-085 and
+`docs/architecture/p6-9-multi-agent-planning.md` before changing
+`workspace_agent_role_config`, `team_run` / plan / assignment / node /
+collaboration tables, Proposal validators, or the closed
+`agents.roles.*` / `teamRuns.*` IPC catalog.
+
+P6.9-A2 keeps Next product-blind. Parent output is a restricted structured
+Proposal, never raw `dispatch(employee)`. The host validates identity,
+budget, dependencies and concurrency, then may persist a plan revision.
+Collaboration requests return to the parent through the Personal Team
+Blackboard. A specialist must not launch another specialist. The specialist
+set is closed at nine roles; parent is not a specialist. Serial, parallel
+and mixed waves are legal proposals; the host may serialize a parallel wave
+and must not parallelize declared dependencies.
+
+Desktop schema version 3 uses `desktop_0003_personal_agent_team`, never
+Alembic 0017. Role config may store a Provider id, model override, gear,
+thinking depth and a verification digest. It must never store API keys,
+ciphertext, nonce, DPAPI blobs or vault handles. Missing rows and null
+`provider_id` inherit the default Provider. Model override reuses that
+Provider's credentials and exposes only `secret_fingerprint`.
+
+A2 does not ship workbench team UI or a live Provider-wave coordinator.
+`PERSONAL_MULTI_AGENT_PLANNED` remains current.
+`PERSONAL_MULTI_AGENT_IMPLEMENTED` is reserved for P6.9-D. P6.8 single-agent
+send/Stop/epoch behavior must not regress. Enterprise Planner /
+`MULTI_AGENT_ENABLED` stay disabled.

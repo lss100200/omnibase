@@ -5,8 +5,10 @@ P6.9 Personal Multi-Agent Team R0
 P6.9 个人 AI 员工团队核心
 ```
 
-Status: **planned / not started**. This document is the official P6.9 R0
-product law. It does **not** implement schema, IPC, coordinator, or UI.
+Status: **planned; A2 contract/schema/IPC complete**. This document is the
+official P6.9 R0 product law. Coordinator live Provider waves and workbench
+team UI are **not** implemented. Do not claim
+`PERSONAL_MULTI_AGENT_IMPLEMENTED`.
 
 P6.9 adds Owner-started personal AI team collaboration on the already-accepted
 desktop single-parent Agent (P6.7/P6.8). It is not enterprise Planner/DAG, not
@@ -22,14 +24,13 @@ P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模
 
 ```text
 PERSONAL_MULTI_AGENT_PLANNED
-P6_9_NOT_STARTED
+P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
 ENTERPRISE_MULTI_AGENT_DISABLED
 ```
 
 `PERSONAL_MULTI_AGENT_PLANNED` is the **current** product-law flag, not a
-claim reserved for after P6.9-D. After the A2 contract/schema/IPC slice,
-replace `P6_9_NOT_STARTED` with A2-complete flags. Keep
-`PERSONAL_MULTI_AGENT_PLANNED` until D.
+claim reserved for after P6.9-D. Keep it until D. A2 replaces
+`P6_9_NOT_STARTED` with `P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`.
 
 **Only after P6.9-D engineering acceptance** may one consider:
 
@@ -46,18 +47,21 @@ Do **not** claim `PERSONAL_MULTI_AGENT_IMPLEMENTED` in A2.
 |---|---|
 | Official name (EN) | P6.9 Personal Multi-Agent Team R0 |
 | Official name (ZH) | P6.9 个人 AI 员工团队核心 |
-| Status | planned / not started |
+| Status | planned; A2 contract/schema/IPC complete |
 | P6.8 acceptance line | `cursor/p6-8-desktop-single-agent-hardening-r0` |
 | P6.8 HEAD (verified, unchanged) | `d2a2db04c0fbfc1ee5d398e40710495c388c21b4` (`d2a2db0`) |
 | P6.8 Codex pointer | `codex/p6-8-desktop-single-agent-hardening-r0` left at `2d3b56e` |
-| This planning branch | `cursor/p6-9-multi-agent-planning-r0` (docs only) |
+| Product-law source | `cursor/p6-9-multi-agent-planning-r0` (`01f9d3b`) |
+| Execution branch | `cursor/p6-9-personal-multi-agent-team-r0` |
 | Prior planning SHA | `95fa6d6` (Owner-loosened staffing; **superseded** by this Codex contract) |
-| P6.9 execution pointer | `codex/p6-9-personal-multi-agent-team-r0` at `d2a2db0` (empty; no files, no commits) |
-| Next execution | start from `d2a2db0` on the Codex pointer; **only P6.9-A first** |
+| P6.9 Codex pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (empty; not committed on) |
+| Next execution | P6.9-B coordinator (live waves). Not A2. |
 | Push / PR / EXE | not approved |
 
-This file is P6.9-A1 docs-only. A2 schema is not part of this recording.
-P6.8 product worktree and `d2a2db0` are not modified by this revision.
+This file remains product law. P6.9-A2 schema, typed Proposal contracts, closed
+IPC and host validators shipped on the execution branch. Coordinator live
+waves and workbench team UI are not part of A2. P6.8 product worktree and
+`d2a2db0` are not modified by A2.
 
 ---
 
@@ -1528,7 +1532,9 @@ and invocation is legal follow-up.
 为避免文档产生新的误解，必须诚实写明：
 
 P6.9 计划成为实际的个人多 Agent 协作，不再只是假角色或固定测试 roster。
-**今天**它仍是规划（`P6_9_NOT_STARTED`）。它仍不等于企业版。
+**今天**产品法仍是规划（`PERSONAL_MULTI_AGENT_PLANNED`）；A2 已完成合同、
+schema 与 IPC（`P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`）。它仍不等于企业版，
+也还不是 `PERSONAL_MULTI_AGENT_IMPLEMENTED`。
 
 | P6.9 个人团队 | 企业 Multi-Agent |
 |---|---|
@@ -1739,8 +1745,9 @@ P6_9_ENTERPRISE_PLANNER_GATE_REMAINS_FALSE
 P6_9_ENTERPRISE_MULTI_AGENT_GATE_REMAINS_FALSE
 P6_9_TOOL_AND_EXTERNAL_EFFECT_AUTHORITY_NOT_IMPLIED
 P6_9_PARENT_OUTPUT_IS_STRUCTURED_PROPOSAL_NOT_RAW_DISPATCH
-P6_9_NOT_STARTED
+P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
 P6_8_BASE_HEAD_D2A2DB0_UNCHANGED
+P6_8_SINGLE_AGENT_PATH_NOT_REGRESSED
 PERSONAL_MULTI_AGENT_PLANNED
 ENTERPRISE_MULTI_AGENT_DISABLED
 ```

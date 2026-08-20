@@ -4324,3 +4324,58 @@ Stop Electron and let RuntimeHost reap the child group. Preserve
 mutating Next route, put secrets in git/argv/logs/SQLite plaintext, import the
 PostgreSQL Model Gateway stack into the freeze, or start Docker/WSL/PostgreSQL
 to manufacture this journey.
+
+## INV-085 p69-personal-parent-directed-team-boundary
+
+P6.9-A2 admits a personal, parent-directed team **contract** on the already
+accepted desktop single-parent Agent. Parent output is a restricted structured
+Proposal, never a raw `dispatch(employee)` primitive. The host is the only
+runtime that may validate identity, budget, dependencies and concurrency, then
+persist a plan revision. Collaboration requests return to the parent through
+the Personal Team Blackboard; a specialist must not launch another specialist
+directly. The specialist set is closed at nine roles. Parent cannot appear as
+`employeeRoleId`. Serial, parallel and mixed waves are legal proposals; the
+host may serialize a parallel wave and must not parallelize declared
+dependencies. Next remains product-blind. Enterprise Planner /
+`MULTI_AGENT_ENABLED` stay disabled.
+
+Desktop schema version 3 is applied only by
+`desktop_0003_personal_agent_team`. That is a desktop-namespace SQLite
+migration. It is not Alembic 0016/0017. Role config may store a Provider id,
+model override, gear, thinking depth and a verification digest. It must never
+store API keys, ciphertext, nonce, DPAPI blobs or vault handles. Per-role
+Provider selection inherits the default Provider when the row is missing or
+`provider_id` is null. Model override reuses that Provider's credentials and
+exposes only `secret_fingerprint`.
+
+Closed IPC names are exact:
+
+- `agents.roles.list|get|update|test`
+- `teamRuns.start|cancel|get|list|subscribe`
+- extra closed channels for proposal submit, blackboard read and collaboration
+  record
+
+There is no `ipc.invoke(arbitrary)`. Renderer → origin-checked preload →
+Electron main → `/desktop/v1` → SQLite. No workbench team checkbox, timeline
+UI, live Provider wave coordinator, tools, Sandbox, MCP, Skills or enterprise
+DAG is implied by this invariant. P6.8 single-agent send/Stop/epoch behavior
+must not regress. `PERSONAL_MULTI_AGENT_PLANNED` is current.
+`PERSONAL_MULTI_AGENT_IMPLEMENTED` is reserved for P6.9-D engineering
+acceptance.
+
+**Required verification**
+
+- desktop-local foundation/safety/app plus provider, conversation and personal
+  team tests;
+- Ruff check/format on desktop_local and those tests;
+- Electron IPC/native-client tests and typecheck, including the closed role
+  and team-run catalog;
+- frontend bridge tests, typecheck and lint (no team UI);
+- both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the child group. Preserve
+`%LOCALAPPDATA%\OmniBase`. Forward-fix application bytes. Never treat an
+unvalidated model JSON blob as dispatch, copy Provider secrets into role
+config, open Alembic 0017, or claim personal multi-agent implemented before D.

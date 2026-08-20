@@ -1253,6 +1253,32 @@
         "frontend/lib/desktop-conversation-surface.test.ts",
         "frontend/lib/desktop-surface-scope.test.ts"
       ]
+    },
+    {
+      "id": "INV-085",
+      "title": "P6.9 personal parent-directed team is proposal-validated, SQLite-local and fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-085-p69-personal-parent-directed-team-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/personal_team.py",
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/app.py",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "desktop/src/shared/personal-team.ts",
+        "frontend/lib/desktop-bridge.ts",
+        "docs/architecture/p6-9-multi-agent-planning.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_personal_team.py",
+        "backend/tests/test_desktop_local_conversation.py",
+        "desktop/tests/personal-team-ipc.test.ts",
+        "desktop/tests/ipc.test.ts",
+        "frontend/lib/desktop-bridge.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -4299,6 +4325,7 @@
         "docs/architecture/p6-5-windows-desktop-distribution.md",
         "docs/architecture/p6-6-desktop-local-product-admission.md",
         "docs/architecture/p6-7-desktop-single-agent-core.md",
+        "docs/architecture/p6-9-multi-agent-planning.md",
         "docs/maintainers/security-invariants.md",
         "AGENTS.md"
       ],
@@ -4347,12 +4374,13 @@
         "INV-081",
         "INV-082",
         "INV-083",
-        "INV-084"
+        "INV-084",
+        "INV-085"
       ],
       "verification": [
-        "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py -q",
-        "python -m ruff check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
-        "python -m ruff format --check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py -q",
+        "python -m ruff check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "python -m ruff format --check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
         "cd desktop && pnpm test && pnpm typecheck && pnpm build",
         "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
         "dotnet run --project packaging/windows/OmniBase.RuntimeHost.Tests/OmniBase.RuntimeHost.Tests.csproj -c Release",

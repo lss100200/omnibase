@@ -6804,12 +6804,18 @@ reinvocation requires new assignment/node/invocation/epochs.
 
 一句话：P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模式。团队模式开启后，父 Agent可以自由判断、调动、组织和协调九名专业员工，OmniBase 只负责让这种协作在可见预算、严格身份、单一 Workspace、可取消、可恢复、无权限越界的环境中稳定运行。**Codex tightening：** 父 Agent 输出必须是受限结构化 Proposal，不是直接调度权限。
 
-**NOW (already true):** `PERSONAL_MULTI_AGENT_PLANNED` / `P6_9_NOT_STARTED` /
-`ENTERPRISE_MULTI_AGENT_DISABLED`. `PERSONAL_MULTI_AGENT_PLANNED` is current,
-not reserved for after D. After A2, replace `P6_9_NOT_STARTED` with A2-complete
-flags and keep `PLANNED` until D. **Only after P6.9-D engineering acceptance**
-may one consider `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Do not claim IMPLEMENTED
-in A2.
+**NOW (already true):** `PERSONAL_MULTI_AGENT_PLANNED` /
+`P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE` / `ENTERPRISE_MULTI_AGENT_DISABLED`.
+`PERSONAL_MULTI_AGENT_PLANNED` is current, not reserved for after D. A2
+replaced `P6_9_NOT_STARTED`. **Only after P6.9-D engineering acceptance**
+may one consider `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Do not claim
+IMPLEMENTED in A2.
+
+A2 on this execution branch ships desktop schema v3
+(`desktop_0003_personal_agent_team`), typed Proposal/report/blackboard
+contracts, closed role and team-run IPC, host validators, and attack tests.
+No workbench team UI. No live Provider-wave coordinator. No Alembic 0017.
+Codex review starts at `docs/reviews/p6-9-a2-codex-acceptance-package-r0.md`.
 
 ```text
 P6_9_DIRECTION_CHANGE_OWNER_APPROVED
@@ -6827,10 +6833,13 @@ P6_9_ENTERPRISE_PLANNER_GATE_REMAINS_FALSE
 P6_9_ENTERPRISE_MULTI_AGENT_GATE_REMAINS_FALSE
 P6_9_TOOL_AND_EXTERNAL_EFFECT_AUTHORITY_NOT_IMPLIED
 P6_9_PARENT_OUTPUT_IS_STRUCTURED_PROPOSAL_NOT_RAW_DISPATCH
-P6_9_NOT_STARTED
+P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
 P6_8_BASE_HEAD_D2A2DB0_UNCHANGED
+P6_8_SINGLE_AGENT_PATH_NOT_REGRESSED
 PERSONAL_MULTI_AGENT_PLANNED
 ENTERPRISE_MULTI_AGENT_DISABLED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
 WITHDRAWN: P6_9_OWNER_DECLARED_ROSTER_ONLY
 SUPERSEDED: P6_9_TEAM_MODE_PARENT_MAY_DISPATCH
 codex/p6-9-personal-multi-agent-team-r0 left at d2a2db0 (empty; not committed on)
