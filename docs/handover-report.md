@@ -6625,3 +6625,38 @@ root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
 no push; no PR
 ```
+
+### P6.8-D four-lane independent review R0 (2026-08-20)
+
+Canonical report: `docs/reviews/p6-8-independent-review-r0.md`.
+Visual: workspace canvas `p6-8-independent-review-r0.canvas.tsx`.
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** No P0. P1 = 3. P2 = 7.
+
+The implementer closure block above records `A1–A10 passed` / `B1–B10 passed` as focused `pnpm test` units. That is **not** current status for P6.8 completion. Independent review refuses to treat reducer 10/10 as workbench / Electron / native-abort proof. A1–A3/A6/A9 fail the required UI+native+epoch bar; B7 list isolation fails; neither suite mounts `DesktopWorkbench`.
+
+```text
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = NOT PROVEN
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = PARTIAL
+P6_8_ASYNC_PROJECTION_ORDERING_PROVEN = PARTIAL
+P6_8_ARCHIVE_SCOPE_GATE_PROVEN = PARTIAL
+P6_8_PRODUCTION_BUILD_GATES_PASSED = IMPLEMENTER-CLAIMED, NOT RE-RUN BY THIS REVIEW
+P6_7_R1_BACKEND_PROTOCOL_FIXES_NO_REGRESSION = NO DIFF vs ebb211d (git; not a live re-proof)
+WORKTREE_CLEAN = true at review start
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+INDEPENDENT_REVIEW_RECORDED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+OMNIBASE_1_0_0_DISTRIBUTABLE not announced
+AUTHENTICODE not announced
+LIVE_PAID_PROVIDER not announced
+P7 UX not announced
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no product/runtime code changed by this review
+no push; no PR; no EXE pack
+```
