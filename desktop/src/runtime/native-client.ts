@@ -2153,6 +2153,9 @@ export class DesktopNativeClient {
     readonly answerSha256: string | null;
     readonly errorCode: string | null;
     readonly durationMs: number | null;
+    readonly waveId: string;
+    readonly nodeEpoch: number;
+    readonly sendEpoch: number;
     readonly report: EmployeeTeamReport;
   }): Promise<DesktopOperationResult<{ readonly updated: true; readonly id: string; readonly state: string }>> {
     return this.#request(
@@ -2177,6 +2180,9 @@ export class DesktopNativeClient {
           question: item.question,
           reason: item.reason,
         })),
+        wave_id: input.waveId,
+        node_epoch: input.nodeEpoch,
+        send_epoch: input.sendEpoch,
       },
       parseTeamNodeUpdate,
     );

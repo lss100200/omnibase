@@ -199,6 +199,9 @@ _MAX_TEAM_RUNS = 64
 _MAX_WAVES = 16
 _MAX_ASSIGNMENTS = 128
 _MAX_PLAN_REVISIONS = 32
+_LIVE_TEAM_RUN_STATES = frozenset({"preparing", "running"})
+_TERMINAL_NODE_STATES = frozenset({"succeeded", "failed", "cancelled", "unknown"})
+_LEGACY_NODE_UPDATE_STATES = frozenset({"failed", "cancelled", "unknown"})
 _INFINITE_REPLAN_KEYS: frozenset[str] = frozenset(
     {
         "replanCap",
@@ -1856,7 +1859,7 @@ def set_assignment_effective_execution(
     return {"updated": True, "assignment_id": assignment_id}
 
 
-def create_team_node(
+def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniqueness share one insert
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
@@ -1878,6 +1881,8 @@ def create_team_node(
         raise DesktopApiError(400, "desktop_native_input_invalid")
     node_epoch = payload.get("node_epoch")
     send_epoch = payload.get("send_epoch")
+    provider_id = payload.get("provider_id")
+    requested_model = payload.get("requested_model")
     if (
         not isinstance(node_epoch, int)
         or isinstance(node_epoch, bool)
@@ -1887,26 +1892,60 @@ def create_team_node(
         or send_epoch < 1
     ):
         raise DesktopApiError(400, "desktop_native_input_invalid")
+    if not isinstance(provider_id, str) or not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if (
+        not isinstance(requested_model, str)
+        or not requested_model.strip()
+        or len(requested_model) > 256
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
     now = utc_now_text()
     node_id = _new_id("teamnode")
     try:
         connection.execute("BEGIN IMMEDIATE")
-        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
+        conversation_id = str(run["conversation_id"])
+        if not _CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
+            raise DesktopApiError(409, "desktop_team_conversation_identity_mismatch")
+        current_plan = run["current_plan_revision_id"]
+        if not isinstance(current_plan, str) or current_plan == "":
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
         assignment = connection.execute(
-            "SELECT assignment_id, employee_role_id FROM team_assignment "
-            "WHERE team_run_id = ? AND assignment_id = ? AND employee_role_id = ?",
+            "SELECT assignment_id, employee_role_id, wave_id, plan_revision_id "
+            "FROM team_assignment WHERE team_run_id = ? AND assignment_id = ? "
+            "AND employee_role_id = ?",
             (team_run_id, assignment_id, employee_role_id),
         ).fetchone()
         if assignment is None:
             raise DesktopApiError(404, "desktop_team_assignment_not_found")
+        if (
+            str(assignment["wave_id"]) != wave_id
+            or str(assignment["plan_revision_id"]) != current_plan
+        ):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        provider = connection.execute(
+            "SELECT id FROM provider WHERE id = ? AND owner_id = ?",
+            (provider_id, owner["id"]),
+        ).fetchone()
+        if provider is None:
+            raise DesktopApiError(404, "desktop_provider_not_found")
         duplicate = connection.execute(
             "SELECT id FROM team_node WHERE invocation_id = ?",
             (invocation_id,),
         ).fetchone()
         if duplicate is not None:
             raise DesktopApiError(409, "desktop_team_duplicate_invocation")
+        reused = connection.execute(
+            "SELECT id FROM team_node WHERE team_run_id = ? AND (node_epoch = ? OR send_epoch = ?)",
+            (team_run_id, node_epoch, send_epoch),
+        ).fetchone()
+        if reused is not None:
+            raise DesktopApiError(409, "desktop_team_epoch_reused")
         ordinal_row = connection.execute(
             "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM team_node WHERE team_run_id = ?",
             (team_run_id,),
@@ -1925,8 +1964,8 @@ def create_team_node(
                 ordinal,
                 employee_role_id,
                 invocation_id,
-                payload.get("provider_id"),
-                payload.get("requested_model"),
+                provider_id,
+                requested_model.strip(),
                 wave_id,
                 node_epoch,
                 send_epoch,
@@ -1944,6 +1983,10 @@ def create_team_node(
         if connection.in_transaction:
             connection.execute("ROLLBACK")
         raise
+    except sqlite3.IntegrityError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(409, "desktop_team_identity_conflict") from None
     except sqlite3.Error:
         if connection.in_transaction:
             connection.execute("ROLLBACK")
@@ -1960,6 +2003,8 @@ def create_team_node(
             "wave_id": wave_id,
             "node_epoch": node_epoch,
             "send_epoch": send_epoch,
+            "provider_id": provider_id,
+            "requested_model": requested_model.strip(),
         }
     }
 
@@ -1974,25 +2019,29 @@ def update_team_node(
     if not isinstance(node_id, str) or not re.fullmatch(r"teamnode_[0-9a-f]{32}\Z", node_id):
         raise DesktopApiError(404, "desktop_team_node_not_found")
     state = payload.get("state")
-    if state not in {"pending", "running", "succeeded", "failed", "cancelled", "unknown"}:
-        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if state not in _LEGACY_NODE_UPDATE_STATES:
+        raise DesktopApiError(400, "desktop_team_success_requires_settle")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
     now = utc_now_text()
     try:
         connection.execute("BEGIN IMMEDIATE")
-        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
         existing = connection.execute(
-            "SELECT id, assignment_id FROM team_node WHERE id = ? AND team_run_id = ?",
+            "SELECT id, assignment_id, state FROM team_node WHERE id = ? AND team_run_id = ?",
             (node_id, team_run_id),
         ).fetchone()
         if existing is None:
             raise DesktopApiError(404, "desktop_team_node_not_found")
+        if str(existing["state"]) in _TERMINAL_NODE_STATES:
+            raise DesktopApiError(409, "desktop_team_node_terminal")
         answer_sha = payload.get("answer_sha256")
-        connection.execute(
+        updated = connection.execute(
             "UPDATE team_node SET state = ?, actual_model = ?, input_tokens = ?, "
             "output_tokens = ?, total_tokens = ?, answer_sha256 = ?, error_code = ?, "
-            "duration_ms = ?, updated_at = ? WHERE id = ?",
+            "duration_ms = ?, updated_at = ? WHERE id = ? AND state = 'running' RETURNING id",
             (
                 state,
                 payload.get("actual_model"),
@@ -2005,19 +2054,19 @@ def update_team_node(
                 now,
                 node_id,
             ),
-        )
+        ).fetchone()
+        if updated is None:
+            raise DesktopApiError(409, "desktop_team_node_not_running")
         assignment_state = {
-            "succeeded": "completed",
             "failed": "failed",
             "cancelled": "cancelled",
             "unknown": "blocked",
-        }.get(str(state))
-        if assignment_state is not None:
-            connection.execute(
-                "UPDATE team_assignment SET state = ?, updated_at = ? "
-                "WHERE team_run_id = ? AND assignment_id = ?",
-                (assignment_state, now, team_run_id, existing["assignment_id"]),
-            )
+        }[str(state)]
+        connection.execute(
+            "UPDATE team_assignment SET state = ?, updated_at = ? "
+            "WHERE team_run_id = ? AND assignment_id = ?",
+            (assignment_state, now, team_run_id, existing["assignment_id"]),
+        )
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:
@@ -2115,7 +2164,7 @@ def _persist_report_collaboration_and_audit(
     return report_id, body, recorded
 
 
-def settle_team_node(
+def settle_team_node(  # noqa: C901 - success CAS, identity bind and report/audit share one transaction
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
@@ -2125,26 +2174,34 @@ def settle_team_node(
     if not isinstance(node_id, str) or not re.fullmatch(r"teamnode_[0-9a-f]{32}\Z", node_id):
         raise DesktopApiError(404, "desktop_team_node_not_found")
     state = payload.get("state")
-    if state not in {"succeeded", "failed", "cancelled", "unknown"}:
-        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if state != "succeeded":
+        raise DesktopApiError(400, "desktop_team_success_requires_settle")
     invocation_id = payload.get("invocation_id")
     if not isinstance(invocation_id, str) or not re.fullmatch(
         r"invocation_[0-9a-f]{32}\Z", invocation_id
     ):
         raise DesktopApiError(400, "desktop_native_input_invalid")
+    actual_model = payload.get("actual_model")
+    if not isinstance(actual_model, str) or not actual_model.strip():
+        raise DesktopApiError(400, "desktop_provider_model_identity_drift")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
     now = utc_now_text()
     try:
         connection.execute("BEGIN IMMEDIATE")
         run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
         existing = connection.execute(
-            "SELECT id, assignment_id, invocation_id, state FROM team_node "
-            "WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
+            "SELECT id, assignment_id, invocation_id, state, employee_role_id, "
+            "wave_id, node_epoch, send_epoch, provider_id, requested_model "
+            "FROM team_node WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
             (node_id, team_run_id, invocation_id),
         ).fetchone()
         if existing is None:
             raise DesktopApiError(404, "desktop_team_node_not_found")
+        if str(existing["state"]) in _TERMINAL_NODE_STATES:
+            raise DesktopApiError(409, "desktop_team_node_terminal")
         result = validate_employee_team_report(
             {
                 "assignmentId": payload.get("assignment_id"),
@@ -2161,13 +2218,36 @@ def settle_team_node(
             raise DesktopApiError(400, result.code)
         if str(result.normalized["assignmentId"]) != str(existing["assignment_id"]):
             raise DesktopApiError(409, "desktop_team_identity_mismatch")
-        connection.execute(
+        if str(result.normalized["employeeRoleId"]) != str(existing["employee_role_id"]):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        wave_id = payload.get("wave_id")
+        node_epoch = payload.get("node_epoch")
+        send_epoch = payload.get("send_epoch")
+        if (
+            not isinstance(wave_id, str)
+            or not _WAVE_ID_PATTERN.fullmatch(wave_id)
+            or not isinstance(node_epoch, int)
+            or isinstance(node_epoch, bool)
+            or not isinstance(send_epoch, int)
+            or isinstance(send_epoch, bool)
+        ):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        if (
+            wave_id != str(existing["wave_id"])
+            or node_epoch != int(existing["node_epoch"])
+            or send_epoch != int(existing["send_epoch"])
+        ):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        requested = existing["requested_model"]
+        if isinstance(requested, str) and requested != actual_model.strip():
+            raise DesktopApiError(409, "desktop_provider_model_identity_drift")
+        updated = connection.execute(
             "UPDATE team_node SET state = ?, actual_model = ?, input_tokens = ?, "
             "output_tokens = ?, total_tokens = ?, answer_sha256 = ?, error_code = ?, "
-            "duration_ms = ?, updated_at = ? WHERE id = ?",
+            "duration_ms = ?, updated_at = ? WHERE id = ? AND state = 'running' RETURNING id",
             (
                 state,
-                payload.get("actual_model"),
+                actual_model.strip(),
                 payload.get("input_tokens"),
                 payload.get("output_tokens"),
                 payload.get("total_tokens"),
@@ -2177,7 +2257,9 @@ def settle_team_node(
                 now,
                 node_id,
             ),
-        )
+        ).fetchone()
+        if updated is None:
+            raise DesktopApiError(409, "desktop_team_node_not_running")
         report_id, body, recorded = _persist_report_collaboration_and_audit(
             connection,
             owner_id=str(owner["id"]),

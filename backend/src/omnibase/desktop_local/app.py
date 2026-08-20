@@ -304,8 +304,8 @@ class TeamNodeCreateRequest(BaseModel):
     wave_id: str = Field(min_length=1, max_length=128)
     node_epoch: int = Field(ge=1, le=2_147_483_647)
     send_epoch: int = Field(ge=1, le=2_147_483_647)
-    provider_id: str | None = None
-    requested_model: str | None = Field(default=None, max_length=256)
+    provider_id: str = Field(min_length=13, max_length=45)
+    requested_model: str = Field(min_length=1, max_length=256)
 
 
 class TeamNodeUpdateRequest(BaseModel):
@@ -347,6 +347,9 @@ class TeamNodeSettleRequest(BaseModel):
     invocation_id: str = Field(min_length=13, max_length=45)
     assignment_id: str = Field(min_length=1, max_length=128)
     employee_role_id: str = Field(min_length=2, max_length=32)
+    wave_id: str | None = Field(default=None, min_length=1, max_length=128)
+    node_epoch: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    send_epoch: int | None = Field(default=None, ge=1, le=2_147_483_647)
     status: str = Field(min_length=7, max_length=32)
     report: str = Field(min_length=1, max_length=131072)
     collaboration_requests: list[dict[str, object]] = Field(default_factory=list)

@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 4
+DESKTOP_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -777,4 +777,29 @@ DESKTOP_0004 = DesktopMigration(
     ),
 )
 
-DESKTOP_MIGRATIONS = (DESKTOP_0001, DESKTOP_0002, DESKTOP_0003, DESKTOP_0004)
+DESKTOP_0005 = DesktopMigration(
+    version=5,
+    migration_id="desktop_0005_team_node_identity_epochs",
+    statements=(
+        """
+        CREATE UNIQUE INDEX team_node_node_epoch_unique
+        ON team_node(team_run_id, node_epoch)
+        WHERE node_epoch IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX team_node_send_epoch_unique
+        ON team_node(team_run_id, send_epoch)
+        WHERE send_epoch IS NOT NULL
+        """,
+        """
+        CREATE TRIGGER team_node_terminal_immutable
+        BEFORE UPDATE ON team_node
+        WHEN OLD.state IN ('succeeded', 'failed', 'cancelled', 'unknown')
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_node_terminal_immutable');
+        END
+        """,
+    ),
+)
+
+DESKTOP_MIGRATIONS = (DESKTOP_0001, DESKTOP_0002, DESKTOP_0003, DESKTOP_0004, DESKTOP_0005)
