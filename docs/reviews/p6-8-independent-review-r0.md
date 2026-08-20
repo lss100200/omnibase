@@ -159,3 +159,33 @@ Kept overlapping P6.8 items only:
 `P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED` is **not announced**.
 
 Implementer language that A1–A10 and B1–B10 “passed” therefore P6.8 is closed is **not current status**. Those unit results remain a record of reducer/helper tests only.
+
+---
+
+## Forward fix note (2026-08-20, pending re-review)
+
+P1-1, P1-2, and P1-3 were **forward-fixed** after this review on
+`cursor/p6-8-desktop-single-agent-hardening-r0` (`8e05265` on top of
+`ca4f160` / `385123b`; no amend). This note does **not** re-run independent
+review and does **not** announce engineering acceptance.
+
+Same-commit P2 items in the reliability slice: overlapping create/archive
+tokens on the current workspace; `beginDesktopLiveSend` refuses non-idle;
+`liveRef` is no longer written from render; `正在停止` clears when the send
+Promise settles to idle.
+
+Remaining P2 / evidence gaps from this review still stand: FSM leftover
+booleans; tests still do not mount `DesktopWorkbench`; live Electron window,
+human send/stop, vault-after-restart, hang-cancel through TestClient SSE,
+stale unsigned installer, and production build gates were not re-run here.
+
+```text
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+PENDING_INDEPENDENT_REVIEW
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no push; no PR; no EXE/MSI
+```

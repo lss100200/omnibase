@@ -6660,3 +6660,67 @@ codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
 no product/runtime code changed by this review
 no push; no PR; no EXE pack
 ```
+
+### P6.8-D forward fix (2026-08-20, pending re-review)
+
+Forward-only product fix of independent-review P1-1 / P1-2 / P1-3 on
+`cursor/p6-8-desktop-single-agent-hardening-r0` at `8e05265`. Does not amend `ca4f160` /
+`385123b` / R1 / R2. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0`
+remains at `2d3b56e`.
+
+What changed:
+
+- Conversation **list** writes (create, archive, workspace load) are gated on
+  workspace identity plus a workspace-bound `listGeneration`. Switching
+  workspace invalidates in-flight create/archive list projections. Same-workspace
+  archive-while-viewing-B still updates B's sidebar without jumping selection.
+  Create and archive no longer share a single global mutation epoch that drops
+  an earlier successful create on the current workspace.
+- Identity binds only the current awaiting-identity / cancelling-unbound epoch.
+  Missing `sendEpoch` is not a wildcard. Native emit stamps optional `sendEpoch`
+  from the owning send. Completing an unbound send retires that epoch so a late
+  origin identity cannot bind send N+1; if Stop had been requested, one precise
+  cancel still fires when that origin identity arrives.
+- Stop during `starting_identity` calls a dedicated abort-in-flight-send IPC
+  (`#streamAbort.abort()`) without an `invocation_[a-f0-9]{32}`. Durable
+  `conversations.cancel` still requires a valid invocation id. Deferred
+  cancel-on-identity is unchanged: exactly one cancel once identity binds.
+
+Same-slice P2: `beginDesktopLiveSend` refuses any non-idle phase; `liveRef` is
+subscribe/reducer-only; `正在停止` clears when the send Promise returns to idle;
+late cancelled send results do not keep the stopping banner.
+
+Focused verification on this worktree (no EXE/MSI; root `.env` not read;
+RuntimeHost not re-run):
+
+```text
+frontend pnpm test = 245 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+desktop pnpm test = 42 passed
+desktop pnpm typecheck = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+git diff --check = passed
+```
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** These P1s are forward-fixed pending
+independent re-review. Reducer/helper tests are still not a live Electron
+window proof. `DesktopWorkbench` is still not mounted in the frontend suite.
+
+```text
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+PENDING_INDEPENDENT_REVIEW
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN (native abort unit-tested; live window unproven)
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = NOT PROVEN (reducer + native stamp unit-tested; live window unproven)
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = PARTIAL (list gate in lib + workbench wiring; workbench unmounted)
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
