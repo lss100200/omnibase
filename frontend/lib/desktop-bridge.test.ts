@@ -59,6 +59,8 @@ function bridgeFixture() {
       submitProposal: async () => ({ ok: false, error: { code: 'not-called' } }),
       getBlackboard: async () => ({ ok: false, error: { code: 'not-called' } }),
       recordCollaboration: async () => ({ ok: false, error: { code: 'not-called' } }),
+      execute: async () => ({ ok: false, error: { code: 'not-called' } }),
+      appendBudget: async () => ({ ok: false, error: { code: 'not-called' } }),
       subscribe: () => () => undefined,
     },
   }

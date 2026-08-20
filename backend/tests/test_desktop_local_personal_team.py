@@ -21,6 +21,7 @@ from omnibase.desktop_local.personal_team import (
     SPECIALIST_ROLE_IDS,
     validate_collaboration_request,
     validate_employee_team_report,
+    validate_parent_replan_decision,
     validate_parent_team_decision,
     validate_team_run_budget,
 )
@@ -189,7 +190,7 @@ def _start_run(
 def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> None:
     with initialized_database(_config(tmp_path).storage) as connection:
         assert (
-            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 3
+            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 4
         )
         tables = {
             row["name"]: row["sql"]
@@ -204,6 +205,7 @@ def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> Non
             "team_assignment",
             "team_node",
             "team_collaboration_request",
+            "team_employee_report",
         ):
             assert name in tables
             assert tables[name].rstrip().endswith("STRICT")
@@ -216,7 +218,10 @@ def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> Non
                 "SELECT version, migration_id FROM desktop_migration_history ORDER BY version"
             )
         ]
-        assert history[-1] == (3, "desktop_0003_personal_agent_team")
+        assert history[-2:] == [
+            (3, "desktop_0003_personal_agent_team"),
+            (4, "desktop_0004_personal_team_runtime"),
+        ]
 
 
 def test_unknown_role_is_rejected() -> None:
@@ -518,3 +523,112 @@ def test_single_agent_send_path_still_works_with_team_schema(tmp_path: Path) -> 
     assert messages[0]["content"] == "hello parent"
     assert messages[1]["status"] == "completed"
     assert messages[1]["invocation"]["status"] == "succeeded"
+
+
+def test_infinite_replan_cap_is_rejected() -> None:
+    result = validate_parent_replan_decision(
+        {"decision": "finish", "reason": "done", "replanCap": None},
+        budget=_BUDGET,
+        allowed_roles=SPECIALIST_ROLE_IDS,
+        workspace_id=None,
+        known_assignment_ids=frozenset({"frontend-review"}),
+        revision_ordinal=1,
+    )
+    assert result.ok is False
+    assert result.code == "desktop_team_infinite_replan"
+    too_many = validate_parent_replan_decision(
+        {"decision": "finish", "reason": "done"},
+        budget=_BUDGET,
+        allowed_roles=SPECIALIST_ROLE_IDS,
+        workspace_id=None,
+        known_assignment_ids=frozenset({"frontend-review"}),
+        revision_ordinal=99,
+    )
+    assert too_many.ok is False
+    assert too_many.code == "desktop_team_infinite_replan"
+
+
+def test_continue_proposal_persists_new_assignments_without_overwriting(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        team_run_id = started["body"]["team_run"]["id"]
+        first = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+            headers=_native(),
+            json={"proposal": _delegate()},
+        )
+        assert first.status_code == 200
+        follow = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+            headers=_native(),
+            json={
+                "proposal": {
+                    "decision": "request_followup",
+                    "assignments": [
+                        _assignment("frontend-followup", "frontend", ["frontend-review"])
+                    ],
+                }
+            },
+        )
+        assert follow.status_code == 200
+        assert follow.json()["accepted"] is True
+        board = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/blackboard",
+            headers=_native(),
+        )
+        ids = [item["assignment_id"] for item in board.json()["blackboard"]["assignments"]]
+        assert "frontend-review" in ids
+        assert "frontend-followup" in ids
+
+
+def test_restart_marks_live_team_run_unknown_without_replay(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        team_run_id = started["body"]["team_run"]["id"]
+        assert started["body"]["team_run"]["state"] == "preparing"
+    with TestClient(create_desktop_local_app(config)) as client:
+        recovered = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}",
+            headers=_native(),
+        )
+        assert recovered.status_code == 200
+        assert recovered.json()["team_run"]["state"] == "unknown"
+        again = _start_run(client, workspace_id, conversation_id)
+        assert again["status"] == 200
+        assert again["body"]["team_run"]["id"] != team_run_id
+
+
+def test_append_budget_rejects_infinite_and_keeps_consumed(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        team_run_id = started["body"]["team_run"]["id"]
+        bad = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/budget",
+            headers=_native(),
+            json={
+                "maximum_provider_calls": 0,
+                "maximum_wall_time_ms": 600000,
+                "maximum_concurrent_calls": 2,
+                "maximum_input_characters": 16384,
+                "maximum_output_characters": 32768,
+            },
+        )
+        assert bad.status_code == 400
+        ok = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/budget",
+            headers=_native(),
+            json={
+                "maximum_provider_calls": 24,
+                "maximum_wall_time_ms": 600000,
+                "maximum_concurrent_calls": 3,
+                "maximum_input_characters": 16384,
+                "maximum_output_characters": 32768,
+            },
+        )
+        assert ok.status_code == 200
+        assert ok.json()["team_run"]["maximum_provider_calls"] == 24

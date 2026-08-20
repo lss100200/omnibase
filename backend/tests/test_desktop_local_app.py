@@ -22,6 +22,7 @@ from omnibase.desktop_local.app import (
     main,
 )
 from omnibase.desktop_local.config import DesktopLocalConfig
+from omnibase.desktop_local.schema import DESKTOP_SCHEMA_VERSION
 
 _TOKEN = "a" * 64
 _SECOND_TOKEN = "b" * 64
@@ -70,7 +71,7 @@ def test_lifespan_initializes_sqlite_and_health_is_redacted(tmp_path: Path) -> N
     assert ready.json() == {
         "status": "ready",
         "storage": "sqlite",
-        "schema_version": 3,
+        "schema_version": DESKTOP_SCHEMA_VERSION,
         "application_version": "1.0.0",
         "integrity": "ok",
     }
