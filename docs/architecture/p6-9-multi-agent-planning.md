@@ -5,10 +5,12 @@ P6.9 Personal Multi-Agent Team R0
 P6.9 个人 AI 员工团队核心
 ```
 
-Status: **planned; A2 contract/schema/IPC complete**. This document is the
-official P6.9 R0 product law. Coordinator live Provider waves and workbench
-team UI are **not** implemented. Do not claim
-`PERSONAL_MULTI_AGENT_IMPLEMENTED`.
+Status: **implemented (R0, loopback-proven)**. This document is the
+official P6.9 R0 product law. Coordinator live Provider waves, workbench
+team UI, and loopback D journeys shipped on the execution branch.
+`PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for that loopback
+proof. Paid Provider, Authenticode, EXE, and a live human window remain
+unproven.
 
 P6.9 adds Owner-started personal AI team collaboration on the already-accepted
 desktop single-parent Agent (P6.7/P6.8). It is not enterprise Planner/DAG, not
@@ -24,22 +26,22 @@ P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模
 
 ```text
 PERSONAL_MULTI_AGENT_PLANNED
-P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
-ENTERPRISE_MULTI_AGENT_DISABLED
-```
-
-`PERSONAL_MULTI_AGENT_PLANNED` is the **current** product-law flag, not a
-claim reserved for after P6.9-D. Keep it until D. A2 replaces
-`P6_9_NOT_STARTED` with `P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`.
-
-**Only after P6.9-D engineering acceptance** may one consider:
-
-```text
 PERSONAL_MULTI_AGENT_IMPLEMENTED
+P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
+P6_9_B_COORDINATOR_COMPLETE
+P6_9_C_TEAM_UI_COMPLETE
+P6_9_D_JOURNEYS_PROVEN
 ENTERPRISE_MULTI_AGENT_DISABLED
 ```
 
-Do **not** claim `PERSONAL_MULTI_AGENT_IMPLEMENTED` in A2.
+`PERSONAL_MULTI_AGENT_PLANNED` remains on this page as the pre-D current
+flag (A2/B/C were not allowed to claim IMPLEMENTED). After loopback D
+journeys and unique-invocation proof, this recording also claims
+`PERSONAL_MULTI_AGENT_IMPLEMENTED`. Do not read PLANNED as “B/C/D did not
+ship.” A2 still must not be read as IMPLEMENTED by itself.
+
+Paid Provider, Authenticode, EXE, and a live human window remain unproven.
+Keep `ENTERPRISE_MULTI_AGENT_DISABLED`.
 
 ## Recording status (2026-08-20)
 
@@ -47,7 +49,7 @@ Do **not** claim `PERSONAL_MULTI_AGENT_IMPLEMENTED` in A2.
 |---|---|
 | Official name (EN) | P6.9 Personal Multi-Agent Team R0 |
 | Official name (ZH) | P6.9 个人 AI 员工团队核心 |
-| Status | planned; A2 contract/schema/IPC complete |
+| Status | implemented (R0); loopback D journeys proven; paid Provider / EXE / Authenticode / live window unproven |
 | P6.8 acceptance line | `cursor/p6-8-desktop-single-agent-hardening-r0` |
 | P6.8 HEAD (verified, unchanged) | `d2a2db04c0fbfc1ee5d398e40710495c388c21b4` (`d2a2db0`) |
 | P6.8 Codex pointer | `codex/p6-8-desktop-single-agent-hardening-r0` left at `2d3b56e` |
@@ -55,13 +57,14 @@ Do **not** claim `PERSONAL_MULTI_AGENT_IMPLEMENTED` in A2.
 | Execution branch | `cursor/p6-9-personal-multi-agent-team-r0` |
 | Prior planning SHA | `95fa6d6` (Owner-loosened staffing; **superseded** by this Codex contract) |
 | P6.9 Codex pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (empty; not committed on) |
-| Next execution | P6.9-B coordinator (live waves). Not A2. |
+| Primary Codex package | `docs/reviews/p6-9-codex-acceptance-package-r0.md` (whole R0 slice; supersedes A2 drip) |
+| Next execution | Codex review of the whole R0 slice. Not another A-only drip. |
 | Push / PR / EXE | not approved |
 
 This file remains product law. P6.9-A2 schema, typed Proposal contracts, closed
-IPC and host validators shipped on the execution branch. Coordinator live
-waves and workbench team UI are not part of A2. P6.8 product worktree and
-`d2a2db0` are not modified by A2.
+IPC and host validators shipped first. P6.9-B coordinator, P6.9-C workbench
+team surface, and P6.9-D loopback journeys shipped after A2 on this execution
+branch. P6.8 product worktree and `d2a2db0` are not modified.
 
 ---
 
@@ -1531,10 +1534,11 @@ and invocation is legal follow-up.
 
 为避免文档产生新的误解，必须诚实写明：
 
-P6.9 计划成为实际的个人多 Agent 协作，不再只是假角色或固定测试 roster。
-**今天**产品法仍是规划（`PERSONAL_MULTI_AGENT_PLANNED`）；A2 已完成合同、
-schema 与 IPC（`P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`）。它仍不等于企业版，
-也还不是 `PERSONAL_MULTI_AGENT_IMPLEMENTED`。
+P6.9 是实际的个人多 Agent 协作（loopback D 已证明独立 invocation），不再只是
+假角色或固定测试 roster。**今天**产品法同时保留 `PERSONAL_MULTI_AGENT_PLANNED`
+（A2 当时的当前旗）并在 loopback 证据上声明
+`PERSONAL_MULTI_AGENT_IMPLEMENTED`。A2 合同、schema 与 IPC 仍记为
+`P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`。它仍不等于企业版。
 
 | P6.9 个人团队 | 企业 Multi-Agent |
 |---|---|
@@ -1553,11 +1557,12 @@ schema 与 IPC（`P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE`）。它仍不等于企�
 
 ```text
 PERSONAL_MULTI_AGENT_PLANNED
+PERSONAL_MULTI_AGENT_IMPLEMENTED
 ENTERPRISE_MULTI_AGENT_DISABLED
 ```
 
-二者不冲突。`PERSONAL_MULTI_AGENT_IMPLEMENTED` 是 P6.9-D 之后的未来产品声明，
-不是本规划修订的当前事实。
+二者不冲突。`PERSONAL_MULTI_AGENT_IMPLEMENTED` 仅覆盖 loopback 证明的 R0
+团队运行；不覆盖付费 Provider、Authenticode、EXE 或企业 Planner。
 
 ---
 
@@ -1682,7 +1687,7 @@ test(p6.9): prove validated parent-Proposal independent invocations
 
 P6.9-D2
 docs(p6.9): record personal multi-agent engineering acceptance
-  (only then may PERSONAL_MULTI_AGENT_IMPLEMENTED be considered)
+  (loopback D proved unique invocations; IMPLEMENTED claimed for that proof)
 ```
 
 不建议在同一个提交里同时做 migration、协调器、UI 和验收文档。
@@ -1746,9 +1751,13 @@ P6_9_ENTERPRISE_MULTI_AGENT_GATE_REMAINS_FALSE
 P6_9_TOOL_AND_EXTERNAL_EFFECT_AUTHORITY_NOT_IMPLIED
 P6_9_PARENT_OUTPUT_IS_STRUCTURED_PROPOSAL_NOT_RAW_DISPATCH
 P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
+P6_9_B_COORDINATOR_COMPLETE
+P6_9_C_TEAM_UI_COMPLETE
+P6_9_D_JOURNEYS_PROVEN
 P6_8_BASE_HEAD_D2A2DB0_UNCHANGED
 P6_8_SINGLE_AGENT_PATH_NOT_REGRESSED
 PERSONAL_MULTI_AGENT_PLANNED
+PERSONAL_MULTI_AGENT_IMPLEMENTED
 ENTERPRISE_MULTI_AGENT_DISABLED
 ```
 
@@ -1780,19 +1789,13 @@ P6_9_DISPATCH_AND_COLLABORATION_NOT_ARTIFICIALLY_CAPPED
                                          → kept in spirit; restated as
                                            host identity/budget/authority envelope,
                                            not a frozen Owner roster
-PERSONAL_MULTI_AGENT_IMPLEMENTED         → reserved for after P6.9-D
-                                           engineering acceptance; PLANNED is
-                                           already current during A/B/C
+PERSONAL_MULTI_AGENT_IMPLEMENTED         → claimed for loopback D journeys
+                                           and unique-invocation proof; not
+                                           paid Provider / EXE / Authenticode
 ```
 
-下一次开始执行时，从已验收的 P6.8 HEAD `d2a2db0` 使用独立空指针分支：
-
-```text
-codex/p6-9-personal-multi-agent-team-r0
-```
-
-并先只完成 P6.9-A 的合同、schema 和关闭式 IPC。合同必须是 **parent structured
-Proposal + host validation + Personal Team Blackboard + replan**，不得把撤回
-的 closed Owner roster 写进 schema 当唯一合法 start，也不得把未校验模型输出
-当成 raw dispatch。P6.9-A implementation is **not started** by this docs
-recording.
+Execution of A2+B+C+D happened on `cursor/p6-9-personal-multi-agent-team-r0`
+from P6.8 HEAD `d2a2db0`. The empty Codex pointer
+`codex/p6-9-personal-multi-agent-team-r0` remains at `d2a2db0` (not committed
+on). Primary Codex package:
+`docs/reviews/p6-9-codex-acceptance-package-r0.md`.

@@ -1,12 +1,20 @@
+# SUPERSEDED as the primary Codex dossier
+
+**Do not open this file first.** The whole P6.9 R0 slice (A2 + B + C + D)
+is recorded in `docs/reviews/p6-9-codex-acceptance-package-r0.md`. This A2
+drip remains historical evidence for contract/schema/IPC only.
+
+---
+
 # P6.9-A2 Codex slice acceptance package R0
 
-**Open this file first.** It is the Cursor-produced **completed A2** dossier
-for one Codex slice review. It is not a planning memo, not a fail memo, and
-not P6.9-D engineering acceptance.
+**Historical A2 drip only.** It is the Cursor-produced **completed A2**
+dossier for contract/schema/IPC. It is not the primary Codex package, not a
+planning memo, and not the whole-slice engineering acceptance.
 
-Codex should review **this package** and the A2 product commits below. Do not
-re-derive P6.9 planning history except the PLANNED-vs-IMPLEMENTED wording
-fix already applied in the first docs commit.
+Codex should review the primary package
+`docs/reviews/p6-9-codex-acceptance-package-r0.md`. This file remains
+evidence for the A2 commits below.
 
 Cursor is **not** the acceptance authority. Cursor claims only the flags in
 the status block below.
