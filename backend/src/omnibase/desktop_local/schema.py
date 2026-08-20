@@ -514,7 +514,7 @@ DESKTOP_0003 = DesktopMigration(
         ON team_run(conversation_id)
         WHERE state IN ('preparing', 'running', 'cancelling')
         """,
-        f"""
+        """
         CREATE TABLE team_plan_revision (
             id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
             team_run_id TEXT NOT NULL,

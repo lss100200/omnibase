@@ -265,7 +265,13 @@ def _walk_forbidden_keys(value: object) -> str | None:
     if isinstance(value, dict):
         for key, child in value.items():
             if isinstance(key, str) and key in FORBIDDEN_STRUCTURAL_KEYS:
-                if key in {"dispatch", "direct_launch", "directLaunch", "launch_employee", "launchEmployee"}:
+                if key in {
+                    "dispatch",
+                    "direct_launch",
+                    "directLaunch",
+                    "launch_employee",
+                    "launchEmployee",
+                }:
                     return "desktop_team_employee_direct_launch"
                 if key in {
                     "tools",
@@ -356,13 +362,18 @@ def validate_team_run_budget(budget: object) -> TeamValidationResult:
     normalized: dict[str, int] = {}
     for key, (minimum, maximum) in BUDGET_BOUNDS.items():
         value = budget[key]
-        if isinstance(value, bool) or not isinstance(value, int) or value < minimum or value > maximum:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < minimum
+            or value > maximum
+        ):
             return TeamValidationResult(False, "desktop_team_infinite_budget")
         normalized[key] = value
     return TeamValidationResult(True, None, normalized)
 
 
-def _validate_assignment(
+def _validate_assignment(  # noqa: C901 - closed-role, budget and secret checks share one gate
     assignment: object,
     *,
     budget: dict[str, int],
@@ -400,9 +411,7 @@ def _validate_assignment(
     if role_id not in allowed_roles:
         return TeamValidationResult(False, "desktop_team_unknown_role")
     objective = _bounded_text(assignment["objective"], budget["maximumInputCharacters"])
-    expected_output = _bounded_text(
-        assignment["expectedOutput"], budget["maximumOutputCharacters"]
-    )
+    expected_output = _bounded_text(assignment["expectedOutput"], budget["maximumOutputCharacters"])
     if objective is None:
         return TeamValidationResult(False, "desktop_team_input_budget_exceeded")
     if expected_output is None:
@@ -413,7 +422,9 @@ def _validate_assignment(
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
     if len(depends) > _MAX_ASSIGNMENTS or len(context) > _MAX_ASSIGNMENTS:
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
-    if not all(isinstance(item, str) and _ASSIGNMENT_ID_PATTERN.fullmatch(item) for item in depends):
+    if not all(
+        isinstance(item, str) and _ASSIGNMENT_ID_PATTERN.fullmatch(item) for item in depends
+    ):
         return TeamValidationResult(False, "desktop_team_missing_dependency")
     if not all(isinstance(item, str) and len(item) <= 256 for item in context):
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
@@ -518,10 +529,12 @@ def _validate_delegate_waves(
         return TeamValidationResult(False, "desktop_team_dependency_cycle")
     if len(assignment_ids) > budget["maximumProviderCalls"]:
         return TeamValidationResult(False, "desktop_team_call_budget_exceeded")
-    return TeamValidationResult(True, None, {"waves": normalized_waves, "assignmentIds": assignment_ids})
+    return TeamValidationResult(
+        True, None, {"waves": normalized_waves, "assignmentIds": assignment_ids}
+    )
 
 
-def validate_parent_team_decision(
+def validate_parent_team_decision(  # noqa: C901 - answer/delegate identity gates stay together
     proposal: object,
     *,
     budget: dict[str, int],
@@ -583,7 +596,7 @@ def validate_parent_team_decision(
     )
 
 
-def validate_parent_replan_decision(
+def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish share known-id checks
     proposal: object,
     *,
     budget: dict[str, int],
@@ -619,9 +632,9 @@ def validate_parent_replan_decision(
         if not wave.ok or wave.normalized is None:
             return wave
         assignment_ids = [item["assignmentId"] for item in wave.normalized["assignments"]]
-        if any(item in known_assignment_ids for item in assignment_ids) or len(set(assignment_ids)) != len(
-            assignment_ids
-        ):
+        if any(item in known_assignment_ids for item in assignment_ids) or len(
+            set(assignment_ids)
+        ) != len(assignment_ids):
             return TeamValidationResult(False, "desktop_team_duplicate_assignment_id")
         graph = {
             item["assignmentId"]: tuple(item["dependsOnAssignmentIds"])
@@ -635,7 +648,9 @@ def validate_parent_replan_decision(
                 return TeamValidationResult(False, "desktop_team_dependency_cycle")
         if _has_assignment_cycle({**{key: () for key in known_assignment_ids}, **graph}):
             return TeamValidationResult(False, "desktop_team_dependency_cycle")
-        return TeamValidationResult(True, None, {"decision": "continue", "nextWave": wave.normalized})
+        return TeamValidationResult(
+            True, None, {"decision": "continue", "nextWave": wave.normalized}
+        )
     if decision != "request_followup":
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
     if set(proposal) != {"decision", "assignments"}:
@@ -662,10 +677,12 @@ def validate_parent_replan_decision(
             return TeamValidationResult(False, "desktop_team_missing_dependency")
         seen.add(assignment_id)
         normalized.append(result.normalized)
-    return TeamValidationResult(True, None, {"decision": "request_followup", "assignments": normalized})
+    return TeamValidationResult(
+        True, None, {"decision": "request_followup", "assignments": normalized}
+    )
 
 
-def validate_employee_team_report(
+def validate_employee_team_report(  # noqa: C901 - report and collaboration requests fail closed
     report: object,
     *,
     budget: dict[str, int],
@@ -785,7 +802,9 @@ def _allowed_roles_from_run(row: sqlite3.Row) -> frozenset[str]:
     return frozenset(raw)
 
 
-def _role_config_payload(role: dict[str, str], config: sqlite3.Row | None, resolved: dict[str, Any]) -> dict[str, Any]:
+def _role_config_payload(
+    role: dict[str, str], config: sqlite3.Row | None, resolved: dict[str, Any]
+) -> dict[str, Any]:
     return {
         "id": role["id"],
         "display_name": role["display_name"],
@@ -863,8 +882,7 @@ def list_agent_roles(connection: sqlite3.Connection, workspace_id: str) -> dict[
     configs = {
         str(row["employee_role_id"]): row
         for row in connection.execute(
-            "SELECT * FROM workspace_agent_role_config "
-            "WHERE owner_id = ? AND workspace_id = ?",
+            "SELECT * FROM workspace_agent_role_config " "WHERE owner_id = ? AND workspace_id = ?",
             (owner["id"], workspace_id),
         ).fetchall()
     }
@@ -888,7 +906,7 @@ def get_agent_role(
     raise DesktopApiError(404, "desktop_agent_role_not_found")
 
 
-def update_agent_role(
+def update_agent_role(  # noqa: C901 - inherit/override without copying secrets
     connection: sqlite3.Connection,
     workspace_id: str,
     role_id: str,
@@ -916,7 +934,10 @@ def update_agent_role(
         model_name_override = normalized_model
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
-    if provider_id is not None and _load_provider(connection, str(owner["id"]), provider_id) is None:
+    if (
+        provider_id is not None
+        and _load_provider(connection, str(owner["id"]), provider_id) is None
+    ):
         raise DesktopApiError(404, "desktop_provider_not_found")
     now = utc_now_text()
     try:
@@ -1082,7 +1103,7 @@ def _team_run_payload(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def start_team_run(
+def start_team_run(  # noqa: C901 - budget, live-run and conversation binding share one insert
     connection: sqlite3.Connection,
     workspace_id: str,
     payload: dict[str, Any],
@@ -1092,7 +1113,9 @@ def start_team_run(
     team_mode = payload.get("team_mode")
     if team_mode is not True:
         raise DesktopApiError(400, "desktop_native_input_invalid")
-    if not isinstance(conversation_id, str) or not _CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
+    if not isinstance(conversation_id, str) or not _CONVERSATION_ID_PATTERN.fullmatch(
+        conversation_id
+    ):
         raise DesktopApiError(404, "desktop_conversation_not_found")
     normalized_task = _bounded_text(task, 16_384)
     if normalized_task is None:
@@ -1208,7 +1231,11 @@ def get_team_run(
 ) -> dict[str, object]:
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=False)
-    return {"team_run": _team_run_payload(_load_team_run(connection, str(owner["id"]), workspace_id, team_run_id))}
+    return {
+        "team_run": _team_run_payload(
+            _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        )
+    }
 
 
 def list_team_runs(connection: sqlite3.Connection, workspace_id: str) -> dict[str, object]:
@@ -1231,7 +1258,13 @@ def cancel_team_run(
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
-        if str(row["state"]) in {"succeeded", "failed", "cancelled", "budget_exhausted", "cannot_complete"}:
+        if str(row["state"]) in {
+            "succeeded",
+            "failed",
+            "cancelled",
+            "budget_exhausted",
+            "cannot_complete",
+        }:
             connection.execute("COMMIT")
             return {"cancelled": False, "accepted": False, "team_run": _team_run_payload(row)}
         target = "cancelled" if str(row["state"]) == "preparing" else "cancelling"
@@ -1378,7 +1411,11 @@ def submit_parent_proposal(
                 now,
             ),
         )
-        if result.ok and result.normalized is not None and result.normalized.get("decision") == "delegate":
+        if (
+            result.ok
+            and result.normalized is not None
+            and result.normalized.get("decision") == "delegate"
+        ):
             _persist_assignments(
                 connection,
                 team_run_id=team_run_id,
