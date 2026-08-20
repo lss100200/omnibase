@@ -6781,3 +6781,60 @@ codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
 no push; no PR; no EXE/MSI
 root .env not read; business database not accessed or migrated
 ```
+
+### P6.9 Personal Multi-Agent Team R0 (adopted onto execution branch, 2026-08-20)
+
+Canonical plan: `docs/architecture/p6-9-multi-agent-planning.md` copied from
+`cursor/p6-9-multi-agent-planning-r0` (`01f9d3b`) onto
+`cursor/p6-9-personal-multi-agent-team-r0` from P6.8 HEAD `d2a2db0`.
+P6.8 product/acceptance remains at `d2a2db0`
+(`P6_8_BASE_HEAD_D2A2DB0_UNCHANGED`). Empty Codex pointer
+`codex/p6-9-personal-multi-agent-team-r0` stays at `d2a2db0` and is not
+committed on.
+
+**Honest history:** (1) Cursor first draft = Owner-declared 2–5 UI roster,
+serial-only, 3–6 calls, no A2A. (2) Owner change = parent may staff/collaborate;
+host only runtime safety (`95fa6d6`). (3) **Now-authoritative Codex contract:**
+parent does not get raw dispatch; parent emits a restricted structured
+Proposal; host validates identity/budget/deps/concurrency; collaboration via
+Personal Team Blackboard; parent remains the dispatch center and may replan;
+serial and parallel and mixed waves; host may serialize a parallel wave but
+must not parallelize declared deps; all nine specialists may participate;
+reinvocation requires new assignment/node/invocation/epochs.
+
+一句话：P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模式。团队模式开启后，父 Agent可以自由判断、调动、组织和协调九名专业员工，OmniBase 只负责让这种协作在可见预算、严格身份、单一 Workspace、可取消、可恢复、无权限越界的环境中稳定运行。**Codex tightening：** 父 Agent 输出必须是受限结构化 Proposal，不是直接调度权限。
+
+**NOW (already true):** `PERSONAL_MULTI_AGENT_PLANNED` / `P6_9_NOT_STARTED` /
+`ENTERPRISE_MULTI_AGENT_DISABLED`. `PERSONAL_MULTI_AGENT_PLANNED` is current,
+not reserved for after D. After A2, replace `P6_9_NOT_STARTED` with A2-complete
+flags and keep `PLANNED` until D. **Only after P6.9-D engineering acceptance**
+may one consider `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Do not claim IMPLEMENTED
+in A2.
+
+```text
+P6_9_DIRECTION_CHANGE_OWNER_APPROVED
+P6_9_PARENT_DYNAMIC_DELEGATION_AUTHORIZED
+P6_9_PARENT_SELECTS_EMPLOYEE_COUNT_AND_ROSTER
+P6_9_PARENT_MAY_REPLAN_AND_REQUEST_FOLLOWUP
+P6_9_EMPLOYEE_COLLABORATION_ALLOWED
+P6_9_SERIAL_PARALLEL_AND_MIXED_WAVES_ALLOWED
+P6_9_ALL_NINE_SPECIALISTS_MAY_PARTICIPATE
+P6_9_EMPLOYEE_REINVOCATION_ALLOWED_WITH_NEW_IDENTITY
+P6_9_OWNER_TEAM_MODE_IS_TASK_LEVEL_DELEGATION_APPROVAL
+P6_9_HOST_ENFORCES_IDENTITY_BUDGET_AUTHORITY_AND_RECOVERY
+P6_9_HOST_DOES_NOT_MICROMANAGE_COLLABORATION_TOPOLOGY
+P6_9_ENTERPRISE_PLANNER_GATE_REMAINS_FALSE
+P6_9_ENTERPRISE_MULTI_AGENT_GATE_REMAINS_FALSE
+P6_9_TOOL_AND_EXTERNAL_EFFECT_AUTHORITY_NOT_IMPLIED
+P6_9_PARENT_OUTPUT_IS_STRUCTURED_PROPOSAL_NOT_RAW_DISPATCH
+P6_9_NOT_STARTED
+P6_8_BASE_HEAD_D2A2DB0_UNCHANGED
+PERSONAL_MULTI_AGENT_PLANNED
+ENTERPRISE_MULTI_AGENT_DISABLED
+WITHDRAWN: P6_9_OWNER_DECLARED_ROSTER_ONLY
+SUPERSEDED: P6_9_TEAM_MODE_PARENT_MAY_DISPATCH
+codex/p6-9-personal-multi-agent-team-r0 left at d2a2db0 (empty; not committed on)
+cursor/p6-9-personal-multi-agent-team-r0 is the Cursor execution line
+no push; no PR; no EXE/MSI
+root .env not read
+```
