@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   applyDesktopConversationEvent,
   beginDesktopLiveSend,
+  completeDesktopLiveSend,
   createDesktopLiveStreamState,
   resolveDesktopBridge,
   switchDesktopLiveScope,
@@ -39,6 +40,7 @@ function bridgeFixture() {
       get: async () => ({ ok: false, error: { code: 'not-called' } }),
       send: async () => ({ ok: false, error: { code: 'not-called' } }),
       cancel: async () => ({ ok: false, error: { code: 'not-called' } }),
+      abortInFlightSend: async () => ({ ok: false, error: { code: 'not-called' } }),
       subscribe: () => () => undefined,
     },
   }
@@ -79,26 +81,30 @@ const CONVERSATION_B = `conversation_${'b'.repeat(32)}`
 const INVOCATION_OLD = `invocation_${'1'.repeat(32)}`
 const INVOCATION_NEW = `invocation_${'2'.repeat(32)}`
 
-test('send clears stale invocation so stop cannot cancel the previous call', () => {
-  const started = beginDesktopLiveSend(
-    createDesktopLiveStreamState({
+test('beginDesktopLiveSend refuses an in-flight invocation instead of replacing it', () => {
+  const running = createDesktopLiveStreamState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    liveInvocation: INVOCATION_OLD,
+    liveText: 'stale',
+    liveMeta: {
+      type: 'identity',
+      invocationId: INVOCATION_OLD,
       workspaceId: WORKSPACE_A,
       conversationId: CONVERSATION_A,
-      liveInvocation: INVOCATION_OLD,
-      liveText: 'stale',
-      liveMeta: {
-        type: 'identity',
-        invocationId: INVOCATION_OLD,
-        workspaceId: WORKSPACE_A,
-        conversationId: CONVERSATION_A,
-      },
-      streaming: true,
-    }),
-  )
+    },
+    streaming: true,
+  })
+  const refused = beginDesktopLiveSend(running)
+  assert.equal(refused.liveInvocation, INVOCATION_OLD)
+  assert.equal(refused.sendEpoch, running.sendEpoch)
+  const idle = completeDesktopLiveSend(running, running.sendEpoch)
+  const started = beginDesktopLiveSend(idle)
   assert.equal(started.liveInvocation, null)
   assert.equal(started.liveMeta, null)
   assert.equal(started.liveText, '')
   assert.equal(started.streaming, true)
+  assert.equal(started.retiredInvocationIds.includes(INVOCATION_OLD), true)
 })
 
 test('cross-conversation deltas are dropped and other-scope streams are hidden', () => {

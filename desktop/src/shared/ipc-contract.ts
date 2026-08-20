@@ -18,6 +18,7 @@ export const IPC_CHANNELS = Object.freeze({
   conversationsGet: "omnibase:conversations:get",
   conversationSend: "omnibase:conversation:send",
   conversationCancel: "omnibase:conversation:cancel",
+  conversationAbortInFlightSend: "omnibase:conversation:abort-in-flight-send",
 } as const);
 
 export const IPC_EVENT_CHANNELS = Object.freeze({
@@ -239,6 +240,7 @@ export interface DesktopConversationSendInput {
   readonly content: string;
   readonly providerId?: string;
   readonly retryOfMessageId?: string;
+  readonly sendEpoch?: number;
 }
 
 export interface DesktopConversationCancelInput {
@@ -266,6 +268,7 @@ export interface DesktopConversationEvent {
   readonly totalTokens?: number | null;
   readonly errorCode?: string;
   readonly errorRedacted?: string;
+  readonly sendEpoch?: number;
 }
 
 export interface OmniBaseDesktopApi {
@@ -327,6 +330,9 @@ export interface OmniBaseDesktopApi {
     readonly cancel: (
       input: DesktopConversationCancelInput,
     ) => Promise<DesktopOperationResult<{ readonly cancelled: boolean; readonly id: string; readonly accepted: boolean }>>;
+    readonly abortInFlightSend: () => Promise<
+      DesktopOperationResult<{ readonly aborted: boolean }>
+    >;
     readonly subscribe: (
       listener: (event: DesktopConversationEvent) => void,
     ) => () => void;

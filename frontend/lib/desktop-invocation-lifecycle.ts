@@ -8,8 +8,11 @@
  *   → Stop → cancelling → cancelled|terminal → convergence → idle
  *
  * Membership of identity, delta and terminal events is by sendEpoch plus the
- * bound invocation id. Workspace or conversation identity alone never ends or
- * rebinds a call. Scope switches do not move origin*.
+ * bound invocation id. An event that omits sendEpoch does not match the current
+ * send. Workspace or conversation identity alone never ends or rebinds a call.
+ * Scope switches do not move origin*. Stop during starting_identity aborts the
+ * native stream; precise conversations.cancel still fires once if origin
+ * identity later binds or arrives for a retired unbound cancel epoch.
  */
 
 export type DesktopInvocationPhase =
@@ -62,6 +65,8 @@ export interface DesktopLiveStreamState {
   readonly terminalStatus: string | null
   readonly promiseOpen: boolean
   readonly retiredInvocationIds: readonly string[]
+  readonly retiredSendEpochs: readonly number[]
+  readonly unboundCancelTokens: readonly DesktopUnboundCancelToken[]
   readonly liveText: string
   readonly liveMeta: DesktopInvocationStreamEvent | null
   readonly parkedLiveText: string
@@ -81,7 +86,15 @@ export interface DesktopInvocationLiveProjection {
   readonly visible: boolean
 }
 
+export interface DesktopUnboundCancelToken {
+  readonly sendEpoch: number
+  readonly originWorkspaceId: string | null
+  readonly originConversationId: string | null
+}
+
 const MAX_RETIRED_INVOCATION_IDS = 32
+const MAX_RETIRED_SEND_EPOCHS = 32
+const MAX_UNBOUND_CANCEL_TOKENS = 32
 
 const AWAITING_IDENTITY: ReadonlySet<DesktopInvocationPhase> = new Set([
   'send',
@@ -151,11 +164,39 @@ function eventMatchesOrigin(
   )
 }
 
+function retireSendEpoch(epochs: readonly number[], sendEpoch: number): readonly number[] {
+  if (epochs.includes(sendEpoch)) return epochs
+  const next = [...epochs, sendEpoch]
+  return next.length > MAX_RETIRED_SEND_EPOCHS
+    ? next.slice(next.length - MAX_RETIRED_SEND_EPOCHS)
+    : next
+}
+
+function rememberUnboundCancel(
+  tokens: readonly DesktopUnboundCancelToken[],
+  token: DesktopUnboundCancelToken,
+): readonly DesktopUnboundCancelToken[] {
+  if (
+    tokens.some(
+      (item) =>
+        item.sendEpoch === token.sendEpoch &&
+        item.originWorkspaceId === token.originWorkspaceId &&
+        item.originConversationId === token.originConversationId,
+    )
+  ) {
+    return tokens
+  }
+  const next = [...tokens, token]
+  return next.length > MAX_UNBOUND_CANCEL_TOKENS
+    ? next.slice(next.length - MAX_UNBOUND_CANCEL_TOKENS)
+    : next
+}
+
 function eventMatchesSendEpoch(
   state: DesktopLiveStreamState,
   event: DesktopInvocationStreamEvent,
 ): boolean {
-  return event.sendEpoch === undefined || event.sendEpoch === state.sendEpoch
+  return event.sendEpoch !== undefined && event.sendEpoch === state.sendEpoch
 }
 
 function isRetired(state: DesktopLiveStreamState, invocationId: string): boolean {
@@ -219,6 +260,8 @@ export function createDesktopLiveStreamState(
     terminalStatus: input.terminalStatus ?? null,
     promiseOpen: input.promiseOpen ?? LIVE.has(phase),
     retiredInvocationIds: input.retiredInvocationIds ?? [],
+    retiredSendEpochs: input.retiredSendEpochs ?? [],
+    unboundCancelTokens: input.unboundCancelTokens ?? [],
     liveText: input.liveText ?? '',
     liveMeta: input.liveMeta ?? null,
     parkedLiveText: input.parkedLiveText ?? '',
@@ -289,11 +332,12 @@ export function markDesktopInvocationCancelDispatched(
   })
 }
 
+export function desktopInvocationNeedsStreamAbort(state: DesktopLiveStreamState): boolean {
+  return state.cancelRequested && state.invocationId === null && LIVE.has(state.phase)
+}
+
 export function beginDesktopLiveSend(state: DesktopLiveStreamState): DesktopLiveStreamState {
-  if (state.phase === 'cancelling' || state.phase === 'convergence') {
-    return state
-  }
-  if (state.cancelRequested && state.phase !== 'idle') {
+  if (state.phase !== 'idle') {
     return state
   }
   const retired = retireInvocationId(state.retiredInvocationIds, state.invocationId)
@@ -310,6 +354,8 @@ export function beginDesktopLiveSend(state: DesktopLiveStreamState): DesktopLive
     terminalStatus: null,
     promiseOpen: true,
     retiredInvocationIds: retired,
+    retiredSendEpochs: state.retiredSendEpochs,
+    unboundCancelTokens: state.unboundCancelTokens,
     liveText: '',
     liveMeta: null,
     parkedLiveText: '',
@@ -382,6 +428,14 @@ export function completeDesktopLiveSend(
   const originView = viewingOrigin(state)
   const cancelled = state.cancelRequested || state.phase === 'cancelling' || state.phase === 'cancelled'
   const retired = retireInvocationId(state.retiredInvocationIds, state.invocationId)
+  const unboundCancelTokens =
+    cancelled && state.invocationId === null
+      ? rememberUnboundCancel(state.unboundCancelTokens, {
+          sendEpoch: state.sendEpoch,
+          originWorkspaceId: state.originWorkspaceId,
+          originConversationId: state.originConversationId,
+        })
+      : state.unboundCancelTokens
   return finalize({
     ...state,
     phase: 'idle',
@@ -393,11 +447,35 @@ export function completeDesktopLiveSend(
       ? 'cancelled'
       : state.terminalStatus,
     retiredInvocationIds: retired,
+    retiredSendEpochs: retireSendEpoch(state.retiredSendEpochs, state.sendEpoch),
+    unboundCancelTokens,
     liveText: originView ? '' : state.liveText,
     liveMeta: originView ? state.liveMeta : null,
     parkedLiveText: '',
     parkedLiveMeta: null,
   })
+}
+
+function takeUnboundCancel(
+  state: DesktopLiveStreamState,
+  event: DesktopInvocationStreamEvent,
+): DesktopInvocationEventResult | null {
+  if (event.sendEpoch === undefined) return null
+  const token = state.unboundCancelTokens.find(
+    (item) =>
+      item.sendEpoch === event.sendEpoch &&
+      item.originWorkspaceId === event.workspaceId &&
+      item.originConversationId === event.conversationId,
+  )
+  if (token === undefined) return null
+  return {
+    state: finalize({
+      ...state,
+      unboundCancelTokens: state.unboundCancelTokens.filter((item) => item !== token),
+      retiredInvocationIds: retireInvocationId(state.retiredInvocationIds, event.invocationId),
+    }),
+    cancelInvocationId: event.invocationId,
+  }
 }
 
 function bindIdentity(
@@ -531,6 +609,8 @@ export function reduceDesktopInvocationEvent(
         cancelInvocationId: null,
       }
     }
+    const lateUnbound = takeUnboundCancel(state, event)
+    if (lateUnbound !== null) return lateUnbound
     return bindIdentity(state, event)
   }
   if (event.type === 'delta') {

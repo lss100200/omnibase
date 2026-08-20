@@ -118,3 +118,18 @@ test("runtime manager start is single-flight and stop cancels verification", asy
   assert.equal((await first).phase, "stopped");
   assert.equal(manager.getStatus().phase, "stopped");
 });
+
+test("abortInFlightSend without a live stream does not require an invocation id", async () => {
+  const missingRoot = path.resolve(
+    `C:/omnibase-missing-runtime-abort-${process.pid}-${Date.now()}`,
+  );
+  const manager = new RuntimeManager({
+    runtimeRoot: missingRoot,
+    expectedManifestSha256: "0".repeat(64),
+    uiOrigin: "http://127.0.0.1:3000",
+    dataRoot: path.resolve("C:/Users/Alice/AppData/Local/OmniBase"),
+  });
+  const result = await manager.abortInFlightSend();
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.value.aborted, false);
+});

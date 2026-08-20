@@ -400,8 +400,25 @@ export class RuntimeManager {
     this.#streamAbort?.abort();
     const controller = new AbortController();
     this.#streamAbort = controller;
+    const emitWithEpoch = (event: DesktopConversationEvent) => {
+      emit(
+        input.sendEpoch === undefined
+          ? event
+          : Object.freeze({ ...event, sendEpoch: input.sendEpoch }),
+      );
+    };
     try {
-      return await client.sendConversation(input, secret, emit, controller.signal);
+      const result = await client.sendConversation(
+        input,
+        secret,
+        emitWithEpoch,
+        controller.signal,
+      );
+      if (!result.ok || input.sendEpoch === undefined) return result;
+      return Object.freeze({
+        ok: true as const,
+        value: Object.freeze({ ...result.value, sendEpoch: input.sendEpoch }),
+      });
     } finally {
       if (this.#streamAbort === controller) this.#streamAbort = null;
     }
@@ -427,6 +444,27 @@ export class RuntimeManager {
           readonly accepted: boolean;
         }>(),
       )
+    );
+  }
+
+  abortInFlightSend(): Promise<
+    DesktopOperationResult<{ readonly aborted: boolean }>
+  > {
+    const controller = this.#streamAbort;
+    if (controller === null) {
+      return Promise.resolve(
+        Object.freeze({
+          ok: true,
+          value: Object.freeze({ aborted: false }),
+        }),
+      );
+    }
+    controller.abort();
+    return Promise.resolve(
+      Object.freeze({
+        ok: true,
+        value: Object.freeze({ aborted: true }),
+      }),
     );
   }
 

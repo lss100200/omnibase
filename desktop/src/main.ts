@@ -97,6 +97,8 @@ if (hasInstanceLock) {
         runtimeManager?.sendConversation(input, emit) ?? runtimeUnavailable(),
       cancelConversation: (input) =>
         runtimeManager?.cancelConversation(input) ?? runtimeUnavailable(),
+      abortInFlightSend: () =>
+        runtimeManager?.abortInFlightSend() ?? runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();

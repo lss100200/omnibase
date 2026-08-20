@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   applyDesktopConversationArchive,
   applyDesktopConversationCompletion,
+  applyDesktopConversationCreate,
   applyDesktopConversationDetail,
   applyDesktopWorkspaceLoad,
   beginDesktopSurfaceDetailRequest,
@@ -70,6 +71,7 @@ test('P6.8-B3 first render after switch B hides A liveText without waiting for s
     conversationId: CONVERSATION_A,
     providerName: 'loopback',
     requestedModel: 'fake-model',
+    sendEpoch: live.sendEpoch,
   })
   live = applyDesktopConversationEvent(live, {
     type: 'delta',
@@ -97,6 +99,7 @@ test('P6.8-B4 first render after switch B hides A liveMeta Provider and model', 
     conversationId: CONVERSATION_A,
     providerName: 'loopback-A',
     requestedModel: 'model-A',
+    sendEpoch: live.sendEpoch,
   })
   const firstRenderOnB = desktopInvocationLiveProjection(live, WORKSPACE_B, CONVERSATION_B)
   assert.equal(firstRenderOnB.visible, false)
@@ -157,7 +160,7 @@ test('P6.8-B7 archive A completing after switch B leaves the view on B', () => {
   surface = selectDesktopConversation(archive.surface, WORKSPACE_A, CONVERSATION_B)
   const afterArchive = applyDesktopConversationArchive(
     surface,
-    archive.epoch,
+    archive,
     CONVERSATION_A,
     [
       { id: CONVERSATION_A },
@@ -220,7 +223,12 @@ test('P6.8-B10 unmount drops later UI projection', () => {
     ok: true,
     messages: ['should not paint'],
   })
-  const afterLoad = applyDesktopWorkspaceLoad(afterDetail, load.epoch, [{ id: CONVERSATION_A }], CONVERSATION_A)
+  const afterLoad = applyDesktopWorkspaceLoad(
+    afterDetail,
+    load,
+    [{ id: CONVERSATION_A }],
+    CONVERSATION_A,
+  )
   const afterComplete = applyDesktopConversationCompletion(afterLoad, detail.epoch, CONVERSATION_A, [
     'should not paint',
   ])
@@ -229,4 +237,105 @@ test('P6.8-B10 unmount drops later UI projection', () => {
   assert.deepEqual(afterLoad.messages, [])
   assert.deepEqual(afterComplete.messages, [])
   assert.equal(afterComplete.messagesStatus, 'loading')
+})
+
+test('P6.8-B11 late create on A does not mutate workspace B list', () => {
+  let surface = selectDesktopConversation(
+    createDesktopConversationSurface<string, { id: string }>(WORKSPACE_A, CONVERSATION_A),
+    WORKSPACE_A,
+    CONVERSATION_A,
+  )
+  surface = {
+    ...surface,
+    conversations: [{ id: CONVERSATION_A }],
+  }
+  const create = beginDesktopSurfaceMutation(surface)
+  surface = selectDesktopConversation(create.surface, WORKSPACE_B, CONVERSATION_B)
+  assert.deepEqual(surface.conversations, [])
+  const afterCreate = applyDesktopConversationCreate(surface, create, { id: `conversation_${'c'.repeat(32)}` })
+  assert.equal(afterCreate.workspaceId, WORKSPACE_B)
+  assert.equal(afterCreate.conversationId, CONVERSATION_B)
+  assert.deepEqual(afterCreate.conversations, [])
+})
+
+test('P6.8-B12 late archive on workspace A does not mutate workspace B list or selection', () => {
+  let surface = selectDesktopConversation(
+    createDesktopConversationSurface<string, { id: string }>(WORKSPACE_A, CONVERSATION_A),
+    WORKSPACE_A,
+    CONVERSATION_A,
+  )
+  surface = {
+    ...surface,
+    conversations: [{ id: CONVERSATION_A }, { id: CONVERSATION_B }],
+  }
+  const archive = beginDesktopSurfaceMutation(surface)
+  surface = selectDesktopConversation(archive.surface, WORKSPACE_B, CONVERSATION_B)
+  const afterArchive = applyDesktopConversationArchive(
+    surface,
+    archive,
+    CONVERSATION_A,
+    [{ id: CONVERSATION_A }],
+    CONVERSATION_A,
+  )
+  assert.equal(afterArchive.workspaceId, WORKSPACE_B)
+  assert.equal(afterArchive.conversationId, CONVERSATION_B)
+  assert.deepEqual(afterArchive.conversations, [])
+})
+
+test('P6.8-B same-workspace archive while viewing B updates the sidebar without jumping', () => {
+  let surface = selectDesktopConversation(
+    createDesktopConversationSurface<string, { id: string }>(WORKSPACE_A, CONVERSATION_A),
+    WORKSPACE_A,
+    CONVERSATION_A,
+  )
+  const archive = beginDesktopSurfaceMutation(surface)
+  surface = selectDesktopConversation(archive.surface, WORKSPACE_A, CONVERSATION_B)
+  const afterArchive = applyDesktopConversationArchive(
+    surface,
+    archive,
+    CONVERSATION_A,
+    [{ id: CONVERSATION_B }],
+    CONVERSATION_A,
+  )
+  assert.equal(afterArchive.conversationId, CONVERSATION_B)
+  assert.deepEqual(afterArchive.conversations, [{ id: CONVERSATION_B }])
+})
+
+test('P6.8-B overlapping create and archive on the current workspace both apply', () => {
+  let surface = selectDesktopConversation(
+    createDesktopConversationSurface<string, { id: string }>(WORKSPACE_A, CONVERSATION_A),
+    WORKSPACE_A,
+    CONVERSATION_A,
+  )
+  surface = { ...surface, conversations: [{ id: CONVERSATION_A }] }
+  const create = beginDesktopSurfaceMutation(surface)
+  const archive = beginDesktopSurfaceMutation(create.surface)
+  const createdId = `conversation_${'c'.repeat(32)}`
+  const afterCreate = applyDesktopConversationCreate(archive.surface, create, { id: createdId })
+  assert.equal(afterCreate.conversations.some((item) => item.id === createdId), true)
+  const afterArchive = applyDesktopConversationArchive(
+    afterCreate,
+    archive,
+    CONVERSATION_A,
+    afterCreate.conversations.filter((item) => item.id !== CONVERSATION_A),
+    createdId,
+  )
+  assert.equal(afterArchive.conversations.some((item) => item.id === createdId), true)
+  assert.equal(afterArchive.conversations.some((item) => item.id === CONVERSATION_A), false)
+})
+
+test('P6.8-B late workspace A load does not replace workspace B list', () => {
+  let surface = selectDesktopConversation(
+    createDesktopConversationSurface<string, { id: string }>(WORKSPACE_A, CONVERSATION_A),
+    WORKSPACE_A,
+    CONVERSATION_A,
+  )
+  const loadA = beginDesktopSurfaceWorkspaceLoad(surface)
+  surface = selectDesktopConversation(loadA.surface, WORKSPACE_B, CONVERSATION_B)
+  const loadB = beginDesktopSurfaceWorkspaceLoad(surface)
+  const afterLateA = applyDesktopWorkspaceLoad(loadB.surface, loadA, [{ id: CONVERSATION_A }], CONVERSATION_A)
+  assert.equal(afterLateA.workspaceId, WORKSPACE_B)
+  assert.deepEqual(afterLateA.conversations, [])
+  const afterB = applyDesktopWorkspaceLoad(afterLateA, loadB, [{ id: CONVERSATION_B }], CONVERSATION_B)
+  assert.deepEqual(afterB.conversations, [{ id: CONVERSATION_B }])
 })

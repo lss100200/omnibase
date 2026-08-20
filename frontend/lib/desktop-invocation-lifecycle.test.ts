@@ -10,6 +10,7 @@ import {
   desktopInvocationCancelTarget,
   desktopInvocationIsStopping,
   desktopInvocationLiveProjection,
+  desktopInvocationNeedsStreamAbort,
   desktopLiveSendBlocked,
   desktopLiveStopVisible,
   markDesktopInvocationCancelDispatched,
@@ -29,6 +30,7 @@ function identityEvent(
   invocationId: string,
   workspaceId = WORKSPACE_A,
   conversationId = CONVERSATION_A,
+  sendEpoch?: number,
 ) {
   return {
     type: 'identity' as const,
@@ -38,7 +40,20 @@ function identityEvent(
     providerName: 'loopback',
     requestedModel: 'fake-model',
     status: 'running',
+    ...(sendEpoch === undefined ? {} : { sendEpoch }),
   }
+}
+
+function identityFor(
+  state: ReturnType<typeof createDesktopLiveStreamState>,
+  invocationId: string,
+) {
+  return identityEvent(
+    invocationId,
+    state.originWorkspaceId ?? WORKSPACE_A,
+    state.originConversationId ?? CONVERSATION_A,
+    state.sendEpoch,
+  )
 }
 
 function deltaEvent(
@@ -99,15 +114,17 @@ test('P6.8-A1 send then Stop before identity then identity cancels exactly once'
   assert.equal(desktopLiveSendBlocked(state), true)
   assert.equal(desktopInvocationIsStopping(state), true)
   assert.equal(desktopInvocationCancelTarget(state), null)
+  assert.equal(desktopInvocationNeedsStreamAbort(state), true)
 
-  const first = reduceDesktopInvocationEvent(state, identityEvent(INVOCATION_NEW))
+  const first = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW))
   assert.equal(first.cancelInvocationId, INVOCATION_NEW)
   assert.equal(first.state.invocationId, INVOCATION_NEW)
   assert.equal(first.state.cancelDispatched, true)
   assert.equal(first.state.phase, 'cancelling')
   assert.equal(desktopInvocationCanSend(first.state), false)
+  assert.equal(desktopInvocationNeedsStreamAbort(first.state), false)
 
-  const duplicate = reduceDesktopInvocationEvent(first.state, identityEvent(INVOCATION_NEW))
+  const duplicate = reduceDesktopInvocationEvent(first.state, identityFor(first.state, INVOCATION_NEW))
   assert.equal(duplicate.cancelInvocationId, null)
   assert.equal(duplicate.state.cancelDispatched, true)
 
@@ -135,13 +152,13 @@ test('P6.8-A2 send then switch B then Stop before identity still cancels A once'
   assert.equal(state.phase, 'cancelling')
   assert.equal(desktopInvocationCanSend(state), false)
 
-  const reduced = reduceDesktopInvocationEvent(state, identityEvent(INVOCATION_NEW))
+  const reduced = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW))
   assert.equal(reduced.cancelInvocationId, INVOCATION_NEW)
   assert.equal(reduced.state.originWorkspaceId, WORKSPACE_A)
   assert.equal(reduced.state.originConversationId, CONVERSATION_A)
   assert.equal(reduced.state.workspaceId, WORKSPACE_B)
   assert.equal(
-    reduceDesktopInvocationEvent(reduced.state, identityEvent(INVOCATION_NEW)).cancelInvocationId,
+    reduceDesktopInvocationEvent(reduced.state, identityFor(reduced.state, INVOCATION_NEW)).cancelInvocationId,
     null,
   )
 })
@@ -153,7 +170,7 @@ test('P6.8-A3 send then Stop then switch B still cancels A once', () => {
   assert.equal(state.originWorkspaceId, WORKSPACE_A)
   assert.equal(state.cancelRequested, true)
   assert.equal(desktopInvocationCanSend(state), false)
-  const reduced = reduceDesktopInvocationEvent(state, identityEvent(INVOCATION_NEW))
+  const reduced = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW))
   assert.equal(reduced.cancelInvocationId, INVOCATION_NEW)
   assert.equal(reduced.state.phase, 'cancelling')
 })
@@ -163,7 +180,7 @@ test('P6.8-A4 Send and Retry stay unavailable while cancel is pending', () => {
   state = requestDesktopLiveCancel(state)
   assert.equal(desktopInvocationCanSend(state), false)
   assert.equal(desktopLiveSendBlocked(state), true)
-  const bound = reduceDesktopInvocationEvent(state, identityEvent(INVOCATION_NEW)).state
+  const bound = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW)).state
   assert.equal(desktopInvocationCanSend(bound), false)
   const afterDispatch = markDesktopInvocationCancelDispatched(bound)
   assert.equal(desktopInvocationCanSend(afterDispatch), false)
@@ -179,7 +196,8 @@ test('P6.8-A4 Send and Retry stay unavailable while cancel is pending', () => {
 
 test('P6.8-A5 old terminal cannot end a new send that has no identity yet', () => {
   let state = startSend()
-  state = applyDesktopConversationEvent(state, identityEvent(INVOCATION_OLD))
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_OLD))
+  state = completeDesktopLiveSend(state, state.sendEpoch)
   state = beginDesktopLiveSend(state)
   assert.equal(state.phase, 'starting_identity')
   assert.equal(state.invocationId, null)
@@ -195,18 +213,23 @@ test('P6.8-A5 old terminal cannot end a new send that has no identity yet', () =
 
 test('P6.8-A6 old identity cannot bind to a new send', () => {
   let state = startSend()
-  state = applyDesktopConversationEvent(state, identityEvent(INVOCATION_OLD))
+  const firstEpoch = state.sendEpoch
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_OLD))
+  state = completeDesktopLiveSend(state, state.sendEpoch)
   state = beginDesktopLiveSend(state)
-  const afterOldIdentity = applyDesktopConversationEvent(state, identityEvent(INVOCATION_OLD))
+  const afterOldIdentity = applyDesktopConversationEvent(
+    state,
+    identityEvent(INVOCATION_OLD, WORKSPACE_A, CONVERSATION_A, firstEpoch),
+  )
   assert.equal(afterOldIdentity.invocationId, null)
   assert.equal(afterOldIdentity.phase, 'starting_identity')
-  const bound = applyDesktopConversationEvent(afterOldIdentity, identityEvent(INVOCATION_NEW))
+  const bound = applyDesktopConversationEvent(afterOldIdentity, identityFor(afterOldIdentity, INVOCATION_NEW))
   assert.equal(bound.invocationId, INVOCATION_NEW)
 })
 
 test('P6.8-A7 late delta after current terminal leaves transcript unchanged', () => {
   let state = startSend()
-  state = applyDesktopConversationEvent(state, identityEvent(INVOCATION_NEW))
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
   state = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, 'hello'))
   assert.equal(state.liveText, 'hello')
   state = applyDesktopConversationEvent(state, terminalEvent(INVOCATION_NEW, 'done', 'succeeded'))
@@ -218,9 +241,9 @@ test('P6.8-A7 late delta after current terminal leaves transcript unchanged', ()
 test('P6.8-A8 duplicate identity or terminal neither recancels nor resurrects', () => {
   let state = startSend()
   state = requestDesktopLiveCancel(state)
-  const first = reduceDesktopInvocationEvent(state, identityEvent(INVOCATION_NEW))
+  const first = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW))
   assert.equal(first.cancelInvocationId, INVOCATION_NEW)
-  const secondIdentity = reduceDesktopInvocationEvent(first.state, identityEvent(INVOCATION_NEW))
+  const secondIdentity = reduceDesktopInvocationEvent(first.state, identityFor(first.state, INVOCATION_NEW))
   assert.equal(secondIdentity.cancelInvocationId, null)
   let next = applyDesktopConversationEvent(
     first.state,
@@ -229,14 +252,14 @@ test('P6.8-A8 duplicate identity or terminal neither recancels nor resurrects', 
   const before = next.phase
   next = applyDesktopConversationEvent(next, terminalEvent(INVOCATION_NEW, 'cancelled', 'cancelled'))
   assert.equal(next.phase, before)
-  next = applyDesktopConversationEvent(next, identityEvent(INVOCATION_NEW))
+  next = applyDesktopConversationEvent(next, identityFor(next, INVOCATION_NEW))
   assert.notEqual(next.phase, 'running')
   assert.equal(next.invocationId, null)
 })
 
 test('P6.8-A9 late success after accepted cancel must not display succeeded', () => {
   let state = startSend()
-  state = applyDesktopConversationEvent(state, identityEvent(INVOCATION_NEW))
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
   state = requestDesktopLiveCancel(state)
   state = markDesktopInvocationCancelDispatched(state)
   state = applyDesktopConversationEvent(state, terminalEvent(INVOCATION_NEW, 'done', 'succeeded'))
@@ -263,7 +286,7 @@ test('P6.8-A10 send Promise failure with no identity returns to idle', () => {
 
 test('P6.8-A live projection compares origin to the current view, not parked flags', () => {
   let state = startSend()
-  state = applyDesktopConversationEvent(state, identityEvent(INVOCATION_NEW))
+  state = applyDesktopConversationEvent(state, identityFor(state, INVOCATION_NEW))
   state = applyDesktopConversationEvent(state, deltaEvent(INVOCATION_NEW, 'origin-text'))
   const onB = desktopInvocationLiveProjection(state, WORKSPACE_B, CONVERSATION_B)
   assert.equal(onB.visible, false)
@@ -273,4 +296,79 @@ test('P6.8-A live projection compares origin to the current view, not parked fla
   assert.equal(onA.visible, true)
   assert.equal(onA.liveText, 'origin-text')
   assert.equal(onA.liveMeta?.providerName, 'loopback')
+})
+
+test('P6.8-A omitted sendEpoch identity cannot bind a newer pending send', () => {
+  const state = startSend()
+  const omitted = applyDesktopConversationEvent(state, identityEvent(INVOCATION_OLD))
+  assert.equal(omitted.invocationId, null)
+  assert.equal(omitted.phase, 'starting_identity')
+  assert.equal(desktopLiveSendBlocked(omitted), true)
+  const bound = applyDesktopConversationEvent(omitted, identityFor(omitted, INVOCATION_NEW))
+  assert.equal(bound.invocationId, INVOCATION_NEW)
+})
+
+test('P6.8-A unbound complete then late identity cannot bind send 2', () => {
+  const first = startSend()
+  const idle = completeDesktopLiveSend(first, first.sendEpoch)
+  assert.equal(idle.phase, 'idle')
+  assert.equal(idle.retiredSendEpochs.includes(first.sendEpoch), true)
+  const second = beginDesktopLiveSend(idle)
+  assert.equal(second.phase, 'starting_identity')
+  assert.notEqual(second.sendEpoch, first.sendEpoch)
+  const lateOmitted = applyDesktopConversationEvent(second, identityEvent(INVOCATION_OLD))
+  assert.equal(lateOmitted.invocationId, null)
+  assert.equal(lateOmitted.phase, 'starting_identity')
+  const lateOldEpoch = applyDesktopConversationEvent(
+    second,
+    identityEvent(INVOCATION_OLD, WORKSPACE_A, CONVERSATION_A, first.sendEpoch),
+  )
+  assert.equal(lateOldEpoch.invocationId, null)
+  assert.equal(lateOldEpoch.phase, 'starting_identity')
+  const bound = applyDesktopConversationEvent(lateOldEpoch, identityFor(lateOldEpoch, INVOCATION_NEW))
+  assert.equal(bound.invocationId, INVOCATION_NEW)
+})
+
+test('P6.8-A Stop before identity then aborted send Promise returns to idle', () => {
+  let state = startSend()
+  state = requestDesktopLiveCancel(state)
+  assert.equal(desktopInvocationNeedsStreamAbort(state), true)
+  assert.equal(desktopLiveSendBlocked(state), true)
+  const idle = completeDesktopLiveSend(state, state.sendEpoch)
+  assert.equal(idle.phase, 'idle')
+  assert.equal(idle.terminalStatus, 'cancelled')
+  assert.equal(desktopInvocationCanSend(idle), true)
+  assert.equal(desktopInvocationNeedsStreamAbort(idle), false)
+})
+
+test('P6.8-A identity after unbound Stop still cancels exactly once', () => {
+  let state = startSend()
+  const originEpoch = state.sendEpoch
+  state = requestDesktopLiveCancel(state)
+  assert.equal(desktopInvocationNeedsStreamAbort(state), true)
+  const idle = completeDesktopLiveSend(state, originEpoch)
+  const late = reduceDesktopInvocationEvent(
+    idle,
+    identityEvent(INVOCATION_NEW, WORKSPACE_A, CONVERSATION_A, originEpoch),
+  )
+  assert.equal(late.cancelInvocationId, INVOCATION_NEW)
+  assert.equal(late.state.invocationId, null)
+  assert.equal(late.state.phase, 'idle')
+  const duplicate = reduceDesktopInvocationEvent(
+    late.state,
+    identityEvent(INVOCATION_NEW, WORKSPACE_A, CONVERSATION_A, originEpoch),
+  )
+  assert.equal(duplicate.cancelInvocationId, null)
+})
+
+test('P6.8-A beginDesktopLiveSend refuses starting_identity and running', () => {
+  const starting = startSend()
+  const refusedStarting = beginDesktopLiveSend(starting)
+  assert.equal(refusedStarting.sendEpoch, starting.sendEpoch)
+  assert.equal(refusedStarting.phase, 'starting_identity')
+  const running = applyDesktopConversationEvent(starting, identityFor(starting, INVOCATION_NEW))
+  const refusedRunning = beginDesktopLiveSend(running)
+  assert.equal(refusedRunning.sendEpoch, running.sendEpoch)
+  assert.equal(refusedRunning.invocationId, INVOCATION_NEW)
+  assert.equal(desktopLiveSendBlocked(refusedRunning), true)
 })

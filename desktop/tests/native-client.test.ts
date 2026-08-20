@@ -399,3 +399,80 @@ test("native client drops unscoped stream events and cancels the backend on abor
   if (aborted.ok) assert.equal(aborted.value.type, "cancelled");
   assert.equal(cancelSeen, true);
 });
+
+test("abort before identity does not call invocation cancel and stamps sendEpoch", async () => {
+  let cancelSeen = false;
+  const emitted: Array<{ type: string; sendEpoch?: number }> = [];
+  const hanging = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo) => {
+      if (String(input).includes("/cancel")) {
+        cancelSeen = true;
+        return jsonResponse({
+          cancelled: true,
+          id: INVOCATION_ID,
+          accepted: true,
+        });
+      }
+      return new Response(
+        new ReadableStream({
+          start() {
+            return;
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }) as typeof fetch,
+  });
+  const controller = new AbortController();
+  const pending = hanging.sendConversation(
+    {
+      workspaceId: WORKSPACE_ID,
+      conversationId: CONVERSATION_ID,
+      content: "hi",
+      sendEpoch: 7,
+    },
+    "isolation-secret",
+    (event) => emitted.push(event),
+    controller.signal,
+  );
+  queueMicrotask(() => controller.abort());
+  const aborted = await pending;
+  assert.equal(aborted.ok, true);
+  if (aborted.ok) {
+    assert.equal(aborted.value.type, "cancelled");
+    assert.equal(aborted.value.sendEpoch, 7);
+  }
+  assert.equal(cancelSeen, false);
+});
+
+test("native stream identity events carry the sendEpoch from the owning send", async () => {
+  const emitted: Array<{ type: string; sendEpoch?: number }> = [];
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async () =>
+      sseResponse(
+        scopedEvent("identity") +
+          scopedEvent("delta", { text: "ok" }) +
+          scopedEvent("done", { status: "succeeded", answer: "ok" }),
+      )) as typeof fetch,
+  });
+  const result = await client.sendConversation(
+    {
+      workspaceId: WORKSPACE_ID,
+      conversationId: CONVERSATION_ID,
+      content: "hi",
+      sendEpoch: 3,
+    },
+    "isolation-secret",
+    (event) => emitted.push(event),
+    new AbortController().signal,
+  );
+  assert.equal(result.ok, true);
+  assert.equal(emitted[0]?.type, "identity");
+  assert.equal(emitted[0]?.sendEpoch, 3);
+  assert.equal(emitted[1]?.sendEpoch, 3);
+  if (result.ok) assert.equal(result.value.sendEpoch, 3);
+});

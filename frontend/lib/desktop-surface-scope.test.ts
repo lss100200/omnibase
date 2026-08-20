@@ -35,6 +35,7 @@ test('returning to the original scope restores Stop and the running live invocat
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
     status: 'running',
+    sendEpoch: live.sendEpoch,
   })
   live = applyDesktopConversationEvent(live, {
     type: 'delta',
@@ -93,6 +94,7 @@ test('stale send completion does not overwrite the current workspace', () => {
     invocationId: INVOCATION_A,
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
+    sendEpoch: live.sendEpoch,
   })
   live = switchDesktopLiveScope(live, WORKSPACE_B, CONVERSATION_B)
   const completedAway = completeDesktopLiveSend(live, sendGeneration)

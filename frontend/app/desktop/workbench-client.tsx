@@ -24,6 +24,7 @@ import {
   desktopInvocationCancelTarget,
   desktopInvocationIsStopping,
   desktopInvocationLiveProjection,
+  desktopInvocationNeedsStreamAbort,
   desktopLiveSendBlocked,
   desktopLiveStopVisible,
   markDesktopInvocationCancelDispatched,
@@ -36,6 +37,7 @@ import {
 import {
   applyDesktopConversationArchive,
   applyDesktopConversationCompletion,
+  applyDesktopConversationCreate,
   applyDesktopConversationDetail,
   applyDesktopSurfaceError,
   applyDesktopWorkspaceLoad,
@@ -153,7 +155,6 @@ export function DesktopWorkbench({
     }),
   )
   const liveRef = useRef(live)
-  liveRef.current = live
   const surfaceScopeRef = useRef<DesktopSurfaceScope>(
     createDesktopSurfaceScope(initialWorkspaceId, null),
   )
@@ -210,13 +211,19 @@ export function DesktopWorkbench({
       if (load.epoch !== conversationSurfaceRef.current.workspaceLoadEpoch) return
       if (!desktopSurfaceProjectionIsCurrent(startedScope, surfaceScopeRef.current)) return
       if (!conversationResult.ok) {
-        if (applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')) {
+        if (
+          conversationSurfaceRef.current.workspaceId === nextWorkspaceId &&
+          applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')
+        ) {
           onError(errorMessage(conversationResult.error.code))
         }
         return
       }
       if (!providerResult.ok) {
-        if (applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')) {
+        if (
+          conversationSurfaceRef.current.workspaceId === nextWorkspaceId &&
+          applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')
+        ) {
           onError(errorMessage(providerResult.error.code))
         }
         return
@@ -230,7 +237,7 @@ export function DesktopWorkbench({
           : active[0]
       const loaded = applyDesktopWorkspaceLoad(
         conversationSurfaceRef.current,
-        load.epoch,
+        { epoch: load.epoch, workspaceId: nextWorkspaceId },
         conversationResult.value.items,
         selected?.id ?? null,
       )
@@ -326,31 +333,37 @@ export function DesktopWorkbench({
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
     const startedScope = surfaceScopeRef.current
+    const startedWorkspaceId = workspaceId
     const mutation = beginDesktopSurfaceMutation(conversationSurfaceRef.current)
     conversationSurfaceRef.current = mutation.surface
-    const created = await bridge.conversations.create({ workspaceId })
+    const created = await bridge.conversations.create({ workspaceId: startedWorkspaceId })
     if (!mountedRef.current) return null
-    if (mutation.epoch !== conversationSurfaceRef.current.mutationEpoch) return null
     if (!created.ok) {
-      if (applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')) {
+      if (
+        conversationSurfaceRef.current.workspaceId === mutation.workspaceId &&
+        conversationSurfaceRef.current.listGeneration === mutation.listGeneration &&
+        applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')
+      ) {
         onError(errorMessage(created.error.code))
       }
       return null
     }
-    const nextConversations = [created.value.conversation, ...conversationSurfaceRef.current.conversations]
-    conversationSurfaceRef.current = {
-      ...conversationSurfaceRef.current,
-      conversations: nextConversations,
-    }
-    setConversations(nextConversations)
+    const applied = applyDesktopConversationCreate(
+      conversationSurfaceRef.current,
+      mutation,
+      created.value.conversation,
+    )
+    conversationSurfaceRef.current = applied
+    setConversations(applied.conversations)
     if (!desktopSurfaceProjectionIsCurrent(startedScope, surfaceScopeRef.current)) return null
+    if (applied.workspaceId !== startedWorkspaceId) return null
     const selected = selectDesktopConversation(
       conversationSurfaceRef.current,
-      workspaceId,
+      startedWorkspaceId,
       created.value.conversation.id,
     )
     conversationSurfaceRef.current = selected
-    applyViewScope(workspaceId, created.value.conversation.id)
+    applyViewScope(startedWorkspaceId, created.value.conversation.id)
     setMessages([])
     setMessagesStatus('empty')
     setMessagesError(null)
@@ -404,7 +417,11 @@ export function DesktopWorkbench({
     })
     if (!mountedRef.current) return
     if (!result.ok) {
-      if (applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')) {
+      if (
+        conversationSurfaceRef.current.workspaceId === mutation.workspaceId &&
+        conversationSurfaceRef.current.listGeneration === mutation.listGeneration &&
+        applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')
+      ) {
         onError(errorMessage(result.error.code))
       }
       return
@@ -415,7 +432,7 @@ export function DesktopWorkbench({
     const remaining = updated.filter((item) => item.id !== archivedId && item.state === 'active')
     const applied = applyDesktopConversationArchive(
       conversationSurfaceRef.current,
-      mutation.epoch,
+      mutation,
       archivedId,
       updated,
       remaining[0]?.id ?? null,
@@ -453,7 +470,7 @@ export function DesktopWorkbench({
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault()
     const content = draft.trim()
-    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live)) return
+    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current)) return
     const target = await ensureConversation()
     if (target === null) return
     const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
@@ -465,24 +482,34 @@ export function DesktopWorkbench({
       workspaceId,
       conversationId: target,
     })
+    if (nextLive.phase !== 'starting_identity') return
     liveRef.current = nextLive
     setLive(nextLive)
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId: target,
       content,
+      sendEpoch: nextLive.sendEpoch,
     })
     const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
     liveRef.current = completed
     setLive(completed)
     if (!mountedRef.current) return
+    if (completed.phase === 'idle' && (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))) {
+      onError('生成已停止')
+    }
     if (!result.ok) {
-      if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+      if (completed.terminalStatus === 'cancelled') {
+        onError('生成已停止')
+      } else if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
         onError(errorMessage(result.error.code))
       }
       return
     }
-    const detail = await bridge.conversations.get({ workspaceId, conversationId: target })
+    const detail = await bridge.conversations.get({
+      workspaceId,
+      conversationId: target,
+    })
     if (!mountedRef.current) return
     if (!detail.ok) return
     const updatedConversations = conversationSurfaceRef.current.conversations.map((item) =>
@@ -508,6 +535,7 @@ export function DesktopWorkbench({
     const current = liveRef.current
     if (!desktopLiveStopVisible(current) && current.invocationId === null) return
     let cancelled = requestDesktopLiveCancel(current)
+    const abortStream = desktopInvocationNeedsStreamAbort(cancelled)
     const target = desktopInvocationCancelTarget(cancelled)
     if (target !== null) {
       cancelled = markDesktopInvocationCancelDispatched(cancelled)
@@ -515,19 +543,23 @@ export function DesktopWorkbench({
     liveRef.current = cancelled
     setLive(cancelled)
     if (mountedRef.current) onError('正在停止')
+    if (abortStream) {
+      await bridge.conversations.abortInFlightSend()
+    }
     if (target !== null) {
       await bridge.conversations.cancel({ invocationId: target })
     }
   }
 
   const retryLast = async () => {
-    if (workspaceId === null || conversationId === null || desktopLiveSendBlocked(live)) return
+    if (workspaceId === null || conversationId === null || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current)) return
     const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
     const target = conversationId
     const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
     conversationSurfaceRef.current = completion.surface
     const nextLive = beginDesktopLiveSend(liveRef.current)
+    if (nextLive.phase !== 'starting_identity') return
     liveRef.current = nextLive
     setLive(nextLive)
     const result = await bridge.conversations.send({
@@ -535,13 +567,19 @@ export function DesktopWorkbench({
       conversationId: target,
       content: '',
       retryOfMessageId: failed.id,
+      sendEpoch: nextLive.sendEpoch,
     })
     const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
     liveRef.current = completed
     setLive(completed)
     if (!mountedRef.current) return
+    if (completed.phase === 'idle' && (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))) {
+      onError('生成已停止')
+    }
     if (!result.ok) {
-      if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+      if (completed.terminalStatus === 'cancelled') {
+        onError('生成已停止')
+      } else if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
         onError(errorMessage(result.error.code))
       }
       return

@@ -106,6 +106,9 @@ export interface IpcDependencies {
       readonly accepted: boolean;
     }>
   >;
+  readonly abortInFlightSend: () => Promise<
+    DesktopOperationResult<{ readonly aborted: boolean }>
+  >;
 }
 
 const WORKSPACE_ID_PATTERN = /^workspace_[a-f0-9]{32}$/u;
@@ -385,6 +388,7 @@ function parseConversationSendInput(
     "conversationId",
     "providerId",
     "retryOfMessageId",
+    "sendEpoch",
     "workspaceId",
   ]);
   if (Object.keys(args[0]).some((key) => !allowed.has(key))) return null;
@@ -402,6 +406,14 @@ function parseConversationSendInput(
   ) {
     return null;
   }
+  if (
+    args[0].sendEpoch !== undefined &&
+    (typeof args[0].sendEpoch !== "number" ||
+      !Number.isSafeInteger(args[0].sendEpoch) ||
+      args[0].sendEpoch < 0)
+  ) {
+    return null;
+  }
   return Object.freeze({
     workspaceId: args[0].workspaceId,
     conversationId: args[0].conversationId,
@@ -410,6 +422,7 @@ function parseConversationSendInput(
     ...(args[0].retryOfMessageId === undefined
       ? {}
       : { retryOfMessageId: args[0].retryOfMessageId }),
+    ...(args[0].sendEpoch === undefined ? {} : { sendEpoch: args[0].sendEpoch }),
   });
 }
 
@@ -623,6 +636,14 @@ export function registerClosedIpcHandlers(
             readonly accepted: boolean;
           }>()
         : dependencies.cancelConversation(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.conversationAbortInFlightSend,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      requireNoIpcArguments(args);
+      return dependencies.abortInFlightSend();
     },
   );
 }

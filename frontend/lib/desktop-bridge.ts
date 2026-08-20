@@ -172,6 +172,7 @@ export {
   desktopInvocationCancelTarget,
   desktopInvocationIsStopping,
   desktopInvocationLiveProjection,
+  desktopInvocationNeedsStreamAbort,
   desktopInvocationStopVisible,
   desktopLiveSendBlocked,
   desktopLiveStopVisible,
@@ -269,6 +270,7 @@ export interface OmniBaseDesktopBridge {
       readonly content: string
       readonly providerId?: string
       readonly retryOfMessageId?: string
+      readonly sendEpoch?: number
     }) => Promise<DesktopOperationResult<DesktopConversationEvent>>
     readonly cancel: (input: {
       readonly invocationId: string
@@ -277,6 +279,11 @@ export interface OmniBaseDesktopBridge {
         readonly cancelled: boolean
         readonly id: string
         readonly accepted: boolean
+      }>
+    >
+    readonly abortInFlightSend: () => Promise<
+      DesktopOperationResult<{
+        readonly aborted: boolean
       }>
     >
     readonly subscribe: (listener: (event: DesktopConversationEvent) => void) => () => void
@@ -325,6 +332,7 @@ export function resolveDesktopBridge(value: unknown): OmniBaseDesktopBridge | nu
     !hasFunction(value.conversations, 'get') ||
     !hasFunction(value.conversations, 'send') ||
     !hasFunction(value.conversations, 'cancel') ||
+    !hasFunction(value.conversations, 'abortInFlightSend') ||
     !hasFunction(value.conversations, 'subscribe')
   ) {
     return null

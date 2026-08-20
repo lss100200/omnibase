@@ -817,6 +817,15 @@ function parseStreamEvent(
   return null;
 }
 
+function stampSendEpoch(
+  event: DesktopConversationEvent,
+  sendEpoch: number | undefined,
+): DesktopConversationEvent {
+  return sendEpoch === undefined
+    ? event
+    : Object.freeze({ ...event, sendEpoch });
+}
+
 async function releaseStreamReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
   try {
     await reader.cancel();
@@ -834,6 +843,7 @@ async function readConversationStream(
   emit: (event: DesktopConversationEvent) => void,
   signal: AbortSignal,
   abandon: (invocationId: string) => Promise<void>,
+  sendEpoch?: number,
 ): Promise<DesktopOperationResult<DesktopConversationEvent>> {
   if (response.body === null) return failure("desktop_native_response_invalid");
   const reader = response.body.getReader();
@@ -848,11 +858,14 @@ async function readConversationStream(
   try {
     if (signal.aborted) {
       return success(
-        Object.freeze({
-          type: "cancelled",
-          invocationId: "invocation_cancelled_locally",
-          errorRedacted: "生成已停止",
-        }) satisfies DesktopConversationEvent,
+        stampSendEpoch(
+          Object.freeze({
+            type: "cancelled",
+            invocationId: "invocation_cancelled_locally",
+            errorRedacted: "生成已停止",
+          }) satisfies DesktopConversationEvent,
+          sendEpoch,
+        ),
       );
     }
     while (!signal.aborted) {
@@ -872,10 +885,11 @@ async function readConversationStream(
         }
         const parsed = parseStreamEvent(eventName, dataLines.join("\n"));
         if (parsed === null) continue;
-        if (parsed.type === "identity") invocationId = parsed.invocationId;
-        emit(parsed);
-        if (parsed.type === "done" || parsed.type === "cancelled" || parsed.type === "error") {
-          terminal = parsed;
+        const stamped = stampSendEpoch(parsed, sendEpoch);
+        if (stamped.type === "identity") invocationId = stamped.invocationId;
+        emit(stamped);
+        if (stamped.type === "done" || stamped.type === "cancelled" || stamped.type === "error") {
+          terminal = stamped;
         }
       }
     }
@@ -892,11 +906,14 @@ async function readConversationStream(
   }
   if (signal.aborted && terminal === null) {
     return success(
-      Object.freeze({
-        type: "cancelled",
-        invocationId: invocationId ?? "invocation_cancelled_locally",
-        errorRedacted: "生成已停止",
-      }) satisfies DesktopConversationEvent,
+      stampSendEpoch(
+        Object.freeze({
+          type: "cancelled",
+          invocationId: invocationId ?? "invocation_cancelled_locally",
+          errorRedacted: "生成已停止",
+        }) satisfies DesktopConversationEvent,
+        sendEpoch,
+      ),
     );
   }
   return terminal === null
@@ -1184,17 +1201,21 @@ export class DesktopNativeClient {
         async (invocationId) => {
           await this.cancelInvocation(invocationId);
         },
+        input.sendEpoch,
       );
     } catch {
       if (signal.aborted) {
         return success(
-          Object.freeze({
-            type: "cancelled",
-            invocationId: "invocation_cancelled_locally",
-            workspaceId: input.workspaceId,
-            conversationId: input.conversationId,
-            errorRedacted: "生成已停止",
-          }) satisfies DesktopConversationEvent,
+          stampSendEpoch(
+            Object.freeze({
+              type: "cancelled",
+              invocationId: "invocation_cancelled_locally",
+              workspaceId: input.workspaceId,
+              conversationId: input.conversationId,
+              errorRedacted: "生成已停止",
+            }) satisfies DesktopConversationEvent,
+            input.sendEpoch,
+          ),
         );
       }
       return failure("desktop_native_request_failed");

@@ -49,6 +49,7 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   conversationsGet: "omnibase:conversations:get",
   conversationSend: "omnibase:conversation:send",
   conversationCancel: "omnibase:conversation:cancel",
+  conversationAbortInFlightSend: "omnibase:conversation:abort-in-flight-send",
 } as const);
 
 const CONVERSATION_EVENT = "omnibase:conversation:event";
@@ -207,6 +208,12 @@ const api: OmniBaseDesktopApi = Object.freeze({
           readonly accepted: boolean;
         }>
       >,
+    abortInFlightSend: (): Promise<
+      DesktopOperationResult<{ readonly aborted: boolean }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.conversationAbortInFlightSend,
+      ) as Promise<DesktopOperationResult<{ readonly aborted: boolean }>>,
     subscribe: (listener: (event: DesktopConversationEvent) => void) => {
       const wrapped = (_event: unknown, payload: DesktopConversationEvent) => {
         listener(payload);

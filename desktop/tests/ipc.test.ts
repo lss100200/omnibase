@@ -28,6 +28,7 @@ const productStubs = {
   getConversation: unused,
   sendConversation: unused,
   cancelConversation: unused,
+  abortInFlightSend: unused,
 };
 
 test("preload/main IPC is a closed product channel set", async () => {
@@ -283,4 +284,66 @@ test("destroyed renderer cannot receive conversation stream events", async () =>
     /desktop_renderer_destroyed/u,
   );
   assert.equal(sent, 0);
+});
+
+test("abort-in-flight send does not require an invocation id; durable cancel still does", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  let aborted = 0;
+  registerClosedIpcHandlers(
+    {
+      handle: (
+        channel: string,
+        listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+      ) => {
+        handlers.set(channel, listener);
+      },
+      removeHandler: () => undefined,
+    },
+    {
+      getVersion: () => "1.0.0",
+      getRuntimeStatus: () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      retryRuntimeStartup: async () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      getOwnerStatus: unused,
+      bootstrapOwner: unused,
+      listWorkspaces: unused,
+      createWorkspace: unused,
+      archiveWorkspace: unused,
+      ...productStubs,
+      abortInFlightSend: async () => {
+        aborted += 1;
+        return { ok: true as const, value: { aborted: true } };
+      },
+    },
+  );
+  const trustedEvent = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+  } as IpcMainInvokeEvent;
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.conversationCancel)?.(trustedEvent, {}),
+    { ok: false, error: { code: "desktop_native_input_invalid" } },
+  );
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.conversationCancel)?.(trustedEvent, {
+      invocationId: "not-an-invocation",
+    }),
+    { ok: false, error: { code: "desktop_native_input_invalid" } },
+  );
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.conversationAbortInFlightSend)?.(
+      trustedEvent,
+    ),
+    { ok: true, value: { aborted: true } },
+  );
+  assert.equal(aborted, 1);
 });

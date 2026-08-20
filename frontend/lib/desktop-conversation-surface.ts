@@ -2,9 +2,11 @@
  * Conversation-surface projection fence (P6.8-B).
  *
  * Scope generation still isolates A↔B view identity. Request epochs isolate
- * out-of-order responses for the same conversation. A new detail/send/retry
- * or workspace/mutation request invalidates older promises even when the
- * visible scope has not changed.
+ * out-of-order responses for the same conversation. List writes (create,
+ * archive, workspace load) are gated on workspace identity plus a
+ * workspace-bound list generation so a late reply cannot paint another
+ * workspace's sidebar. Per-request mutation tokens do not invalidate each
+ * other while they still target the current workspace.
  */
 
 export type DesktopConversationMessagesStatus = 'empty' | 'loading' | 'ready' | 'error'
@@ -19,12 +21,24 @@ export interface DesktopConversationSurface<TMessage = unknown, TConversation ex
   readonly detailRequestEpoch: number
   readonly workspaceLoadEpoch: number
   readonly mutationEpoch: number
+  readonly listGeneration: number
   readonly mounted: boolean
 }
 
 export type DesktopConversationDetailResult<TMessage> =
   | Readonly<{ ok: true; messages: readonly TMessage[] }>
   | Readonly<{ ok: false; error: string }>
+
+export interface DesktopSurfaceMutationStart {
+  readonly epoch: number
+  readonly workspaceId: string | null
+  readonly listGeneration: number
+}
+
+export interface DesktopSurfaceWorkspaceLoadStart {
+  readonly epoch: number
+  readonly workspaceId: string | null
+}
 
 export function createDesktopConversationSurface<TMessage, TConversation extends { readonly id: string }>(
   workspaceId: string | null,
@@ -40,6 +54,7 @@ export function createDesktopConversationSurface<TMessage, TConversation extends
     detailRequestEpoch: 0,
     workspaceLoadEpoch: 0,
     mutationEpoch: 0,
+    listGeneration: 0,
     mounted: true,
   }
 }
@@ -55,6 +70,7 @@ export function selectDesktopConversation<TMessage, TConversation extends { read
   workspaceId: string | null,
   conversationId: string | null,
 ): DesktopConversationSurface<TMessage, TConversation> {
+  const workspaceChanged = surface.workspaceId !== workspaceId
   return {
     ...surface,
     workspaceId,
@@ -62,7 +78,10 @@ export function selectDesktopConversation<TMessage, TConversation extends { read
     messages: [] as readonly TMessage[],
     messagesStatus: conversationId === null ? 'empty' : 'loading',
     messagesError: null,
+    conversations: workspaceChanged ? [] : surface.conversations,
     detailRequestEpoch: surface.detailRequestEpoch + 1,
+    listGeneration: workspaceChanged ? surface.listGeneration + 1 : surface.listGeneration,
+    workspaceLoadEpoch: workspaceChanged ? surface.workspaceLoadEpoch + 1 : surface.workspaceLoadEpoch,
   }
 }
 
@@ -81,9 +100,14 @@ export function beginDesktopSurfaceWorkspaceLoad<TMessage, TConversation extends
 ): {
   readonly surface: DesktopConversationSurface<TMessage, TConversation>
   readonly epoch: number
+  readonly workspaceId: string | null
 } {
   const epoch = surface.workspaceLoadEpoch + 1
-  return { surface: { ...surface, workspaceLoadEpoch: epoch }, epoch }
+  return {
+    surface: { ...surface, workspaceLoadEpoch: epoch },
+    epoch,
+    workspaceId: surface.workspaceId,
+  }
 }
 
 export function beginDesktopSurfaceMutation<TMessage, TConversation extends { readonly id: string }>(
@@ -91,9 +115,16 @@ export function beginDesktopSurfaceMutation<TMessage, TConversation extends { re
 ): {
   readonly surface: DesktopConversationSurface<TMessage, TConversation>
   readonly epoch: number
+  readonly workspaceId: string | null
+  readonly listGeneration: number
 } {
   const epoch = surface.mutationEpoch + 1
-  return { surface: { ...surface, mutationEpoch: epoch }, epoch }
+  return {
+    surface: { ...surface, mutationEpoch: epoch },
+    epoch,
+    workspaceId: surface.workspaceId,
+    listGeneration: surface.listGeneration,
+  }
 }
 
 function rejectIfStale<TMessage, TConversation extends { readonly id: string }>(
@@ -102,6 +133,17 @@ function rejectIfStale<TMessage, TConversation extends { readonly id: string }>(
   currentEpoch: number,
 ): boolean {
   return !surface.mounted || startedEpoch !== currentEpoch
+}
+
+function listMutationIsCurrent<TMessage, TConversation extends { readonly id: string }>(
+  surface: DesktopConversationSurface<TMessage, TConversation>,
+  started: Pick<DesktopSurfaceMutationStart, 'workspaceId' | 'listGeneration'>,
+): boolean {
+  return (
+    surface.mounted &&
+    surface.workspaceId === started.workspaceId &&
+    surface.listGeneration === started.listGeneration
+  )
 }
 
 export function applyDesktopConversationDetail<TMessage, TConversation extends { readonly id: string }>(
@@ -130,11 +172,12 @@ export function applyDesktopConversationDetail<TMessage, TConversation extends {
 
 export function applyDesktopWorkspaceLoad<TMessage, TConversation extends { readonly id: string }>(
   surface: DesktopConversationSurface<TMessage, TConversation>,
-  startedEpoch: number,
+  started: DesktopSurfaceWorkspaceLoadStart,
   conversations: readonly TConversation[],
   selectedConversationId: string | null,
 ): DesktopConversationSurface<TMessage, TConversation> {
-  if (rejectIfStale(surface, startedEpoch, surface.workspaceLoadEpoch)) return surface
+  if (rejectIfStale(surface, started.epoch, surface.workspaceLoadEpoch)) return surface
+  if (surface.workspaceId !== started.workspaceId) return surface
   if (surface.conversationId !== null) {
     return { ...surface, conversations }
   }
@@ -148,17 +191,34 @@ export function applyDesktopWorkspaceLoad<TMessage, TConversation extends { read
   }
 }
 
+export function applyDesktopConversationCreate<TMessage, TConversation extends { readonly id: string }>(
+  surface: DesktopConversationSurface<TMessage, TConversation>,
+  started: DesktopSurfaceMutationStart,
+  conversation: TConversation,
+): DesktopConversationSurface<TMessage, TConversation> {
+  if (!listMutationIsCurrent(surface, started)) return surface
+  if (surface.conversations.some((item) => item.id === conversation.id)) {
+    return {
+      ...surface,
+      conversations: surface.conversations.map((item) =>
+        item.id === conversation.id ? conversation : item,
+      ),
+    }
+  }
+  return {
+    ...surface,
+    conversations: [conversation, ...surface.conversations],
+  }
+}
+
 export function applyDesktopConversationArchive<TMessage, TConversation extends { readonly id: string }>(
   surface: DesktopConversationSurface<TMessage, TConversation>,
-  startedEpoch: number,
+  started: DesktopSurfaceMutationStart,
   archivedId: string,
   conversations: readonly TConversation[],
   nextConversationId: string | null,
 ): DesktopConversationSurface<TMessage, TConversation> {
-  if (!surface.mounted) return surface
-  if (startedEpoch !== surface.mutationEpoch) {
-    return { ...surface, conversations }
-  }
+  if (!listMutationIsCurrent(surface, started)) return surface
   if (surface.conversationId !== archivedId) {
     return { ...surface, conversations }
   }
