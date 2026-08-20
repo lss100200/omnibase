@@ -282,7 +282,10 @@ export function desktopLiveSendBlocked(state: DesktopLiveStreamState): boolean {
 }
 
 export function desktopInvocationStopVisible(state: DesktopLiveStreamState): boolean {
-  return STOPPABLE.has(state.phase)
+  return (
+    STOPPABLE.has(state.phase) ||
+    (state.phase === 'cancelling' && state.invocationId === null)
+  )
 }
 
 export function desktopLiveStopVisible(state: DesktopLiveStreamState): boolean {

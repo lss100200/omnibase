@@ -115,6 +115,7 @@ test('P6.8-A1 send then Stop before identity then identity cancels exactly once'
   assert.equal(desktopInvocationIsStopping(state), true)
   assert.equal(desktopInvocationCancelTarget(state), null)
   assert.equal(desktopInvocationNeedsStreamAbort(state), true)
+  assert.equal(desktopLiveStopVisible(state), true)
 
   const first = reduceDesktopInvocationEvent(state, identityFor(state, INVOCATION_NEW))
   assert.equal(first.cancelInvocationId, INVOCATION_NEW)
@@ -334,11 +335,13 @@ test('P6.8-A Stop before identity then aborted send Promise returns to idle', ()
   state = requestDesktopLiveCancel(state)
   assert.equal(desktopInvocationNeedsStreamAbort(state), true)
   assert.equal(desktopLiveSendBlocked(state), true)
+  assert.equal(desktopLiveStopVisible(state), true)
   const idle = completeDesktopLiveSend(state, state.sendEpoch)
   assert.equal(idle.phase, 'idle')
   assert.equal(idle.terminalStatus, 'cancelled')
   assert.equal(desktopInvocationCanSend(idle), true)
   assert.equal(desktopInvocationNeedsStreamAbort(idle), false)
+  assert.equal(desktopLiveStopVisible(idle), false)
 })
 
 test('P6.8-A identity after unbound Stop still cancels exactly once', () => {

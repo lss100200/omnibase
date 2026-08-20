@@ -38,6 +38,12 @@ import {
 } from "./secret-vault.ts";
 import { redactRuntimeError, RuntimeSupervisor } from "./supervisor.ts";
 
+export interface RuntimeManagerNativeSendClient {
+  readonly listProviders: DesktopNativeClient["listProviders"];
+  readonly getProviderVault: DesktopNativeClient["getProviderVault"];
+  readonly sendConversation: DesktopNativeClient["sendConversation"];
+}
+
 export interface RuntimeManagerOptions {
   readonly runtimeRoot: string;
   readonly expectedManifestSha256: string;
@@ -45,6 +51,43 @@ export interface RuntimeManagerOptions {
   readonly dataRoot: string;
   readonly hostEnvironment?: Readonly<Record<string, string | undefined>>;
   readonly secretVault?: DesktopSafeStorage;
+  readonly nativeClientForTests?: RuntimeManagerNativeSendClient;
+}
+
+const SEND_ABORTED = Object.freeze({ aborted: true as const });
+
+function isSendAborted(
+  value: unknown,
+): value is typeof SEND_ABORTED {
+  return value === SEND_ABORTED;
+}
+
+async function raceAbort<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T | typeof SEND_ABORTED> {
+  if (signal.aborted) {
+    void promise.catch(() => undefined);
+    return SEND_ABORTED;
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      void promise.catch(() => undefined);
+      resolve(SEND_ABORTED);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 const SAFE_HOST_ENVIRONMENT_KEYS = Object.freeze([
@@ -144,6 +187,8 @@ export class RuntimeManager {
   #supervisor: RuntimeSupervisor | null = null;
   #nativeClient: DesktopNativeClient | null = null;
   #streamAbort: AbortController | null = null;
+  #sendInFlight = false;
+  #pendingAbort = false;
   #generation = 0;
   #startOperation: {
     readonly generation: number;
@@ -369,45 +414,64 @@ export class RuntimeManager {
     input: DesktopConversationSendInput,
     emit: (event: DesktopConversationEvent) => void,
   ): Promise<DesktopOperationResult<DesktopConversationEvent>> {
-    const client = this.#readyNativeClient();
+    const client = this.#readySendClient();
     const vault = this.#options.secretVault;
     if (client === null || vault === undefined) {
       return this.#nativeUnavailable<DesktopConversationEvent>();
     }
-    const providers = await client.listProviders();
-    if (!providers.ok) return providers;
-    const selected =
-      input.providerId === undefined
-        ? providers.value.items.find((item) => item.isDefault && item.isEnabled)
-        : providers.value.items.find((item) => item.id === input.providerId);
-    if (selected === undefined) {
-      return Object.freeze({
-        ok: false,
-        error: Object.freeze({ code: "desktop_provider_ambiguous" }),
-      });
-    }
-    const material = await client.getProviderVault(selected.id);
-    if (!material.ok) return material;
-    let secret: string;
+    const controller = this.#armStreamAbort();
     try {
-      secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
-    } catch {
-      return Object.freeze({
-        ok: false,
-        error: Object.freeze({ code: "desktop_secret_vault_unavailable" }),
-      });
-    }
-    this.#streamAbort?.abort();
-    const controller = new AbortController();
-    this.#streamAbort = controller;
-    const emitWithEpoch = (event: DesktopConversationEvent) => {
-      emit(
-        input.sendEpoch === undefined
-          ? event
-          : Object.freeze({ ...event, sendEpoch: input.sendEpoch }),
+      if (controller.signal.aborted) {
+        return this.#cancelledSendResult(input);
+      }
+      const providers = await raceAbort(client.listProviders(), controller.signal);
+      if (isSendAborted(providers)) {
+        return this.#cancelledSendResult(input);
+      }
+      if (controller.signal.aborted) {
+        return this.#cancelledSendResult(input);
+      }
+      if (!providers.ok) return providers;
+      const selected =
+        input.providerId === undefined
+          ? providers.value.items.find((item) => item.isDefault && item.isEnabled)
+          : providers.value.items.find((item) => item.id === input.providerId);
+      if (selected === undefined) {
+        return Object.freeze({
+          ok: false,
+          error: Object.freeze({ code: "desktop_provider_ambiguous" }),
+        });
+      }
+      const material = await raceAbort(
+        client.getProviderVault(selected.id),
+        controller.signal,
       );
-    };
-    try {
+      if (isSendAborted(material)) {
+        return this.#cancelledSendResult(input);
+      }
+      if (controller.signal.aborted) {
+        return this.#cancelledSendResult(input);
+      }
+      if (!material.ok) return material;
+      let secret: string;
+      try {
+        secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
+      } catch {
+        return Object.freeze({
+          ok: false,
+          error: Object.freeze({ code: "desktop_secret_vault_unavailable" }),
+        });
+      }
+      if (controller.signal.aborted) {
+        return this.#cancelledSendResult(input);
+      }
+      const emitWithEpoch = (event: DesktopConversationEvent) => {
+        emit(
+          input.sendEpoch === undefined
+            ? event
+            : Object.freeze({ ...event, sendEpoch: input.sendEpoch }),
+        );
+      };
       const result = await client.sendConversation(
         input,
         secret,
@@ -420,7 +484,7 @@ export class RuntimeManager {
         value: Object.freeze({ ...result.value, sendEpoch: input.sendEpoch }),
       });
     } finally {
-      if (this.#streamAbort === controller) this.#streamAbort = null;
+      this.#releaseStreamAbort(controller);
     }
   }
 
@@ -433,7 +497,7 @@ export class RuntimeManager {
       readonly accepted: boolean;
     }>
   > {
-    this.#streamAbort?.abort();
+    this.#requestStreamAbort();
     const client = this.#readyNativeClient();
     return (
       client?.cancelInvocation(input.invocationId) ??
@@ -450,20 +514,10 @@ export class RuntimeManager {
   abortInFlightSend(): Promise<
     DesktopOperationResult<{ readonly aborted: boolean }>
   > {
-    const controller = this.#streamAbort;
-    if (controller === null) {
-      return Promise.resolve(
-        Object.freeze({
-          ok: true,
-          value: Object.freeze({ aborted: false }),
-        }),
-      );
-    }
-    controller.abort();
     return Promise.resolve(
       Object.freeze({
         ok: true,
-        value: Object.freeze({ aborted: true }),
+        value: Object.freeze({ aborted: this.#requestStreamAbort() }),
       }),
     );
   }
@@ -591,11 +645,62 @@ export class RuntimeManager {
     });
   }
 
+  #readySendClient(): RuntimeManagerNativeSendClient | null {
+    return this.#options.nativeClientForTests ?? this.#readyNativeClient();
+  }
+
   #readyNativeClient(): DesktopNativeClient | null {
     if (this.#supervisor?.getStatus().phase !== "ready") {
       this.#nativeClient = null;
       return null;
     }
     return this.#nativeClient;
+  }
+
+  #armStreamAbort(): AbortController {
+    this.#streamAbort?.abort();
+    this.#sendInFlight = true;
+    const controller = new AbortController();
+    if (this.#pendingAbort) {
+      this.#pendingAbort = false;
+      controller.abort();
+    }
+    this.#streamAbort = controller;
+    return controller;
+  }
+
+  #releaseStreamAbort(controller: AbortController): void {
+    if (this.#streamAbort === controller) this.#streamAbort = null;
+    this.#sendInFlight = false;
+    this.#pendingAbort = false;
+  }
+
+  #requestStreamAbort(): boolean {
+    const controller = this.#streamAbort;
+    if (controller !== null) {
+      controller.abort();
+      return true;
+    }
+    if (this.#sendInFlight) {
+      this.#pendingAbort = true;
+      return true;
+    }
+    return false;
+  }
+
+  #cancelledSendResult(
+    input: DesktopConversationSendInput,
+  ): DesktopOperationResult<DesktopConversationEvent> {
+    return Object.freeze({
+      ok: true as const,
+      value: Object.freeze({
+        type: "cancelled" as const,
+        invocationId: "invocation_cancelled_locally",
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        errorRedacted: "生成已停止",
+        ...(input.sendEpoch === undefined ? {} : { sendEpoch: input.sendEpoch }),
+      }),
+    });
   }
 }

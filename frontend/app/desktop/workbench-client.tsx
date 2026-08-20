@@ -544,7 +544,14 @@ export function DesktopWorkbench({
     setLive(cancelled)
     if (mountedRef.current) onError('正在停止')
     if (abortStream) {
-      await bridge.conversations.abortInFlightSend()
+      const abortResult = await bridge.conversations.abortInFlightSend()
+      if (!abortResult.ok || !abortResult.value.aborted) {
+        queueMicrotask(() => {
+          if (!mountedRef.current) return
+          if (!desktopInvocationNeedsStreamAbort(liveRef.current)) return
+          void bridge.conversations.abortInFlightSend()
+        })
+      }
     }
     if (target !== null) {
       await bridge.conversations.cancel({ invocationId: target })
