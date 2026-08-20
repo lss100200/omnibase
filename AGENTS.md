@@ -267,16 +267,20 @@ runtime evidence; then correct the stale documentation in the same change.
   version 2 is `desktop_0002_provider_conversation`, never Alembic. Do not
   import `openai`/`httpx`/PostgreSQL Settings into the freeze, and do not open
   files, RAG, Skills, MCP or multi-agent to complete this journey.
-- P6.9 is the personal parent-directed team contract on that same desktop
-  Agent. Read INV-085 and `docs/architecture/p6-9-multi-agent-planning.md`
-  before changing role config, team-run schema, Proposal validators or the
-  closed role/team IPC catalog. Parent emits a restricted structured
-  Proposal; the host validates and persists. Specialists do not launch peers.
-  Desktop schema version 3 is `desktop_0003_personal_agent_team`, never
-  Alembic 0017. Role config never stores API keys or vault material. Next
-  stays product-blind. Do not add workbench team UI, live coordinator waves,
-  tools, Sandbox, MCP, Skills or enterprise Planner to complete A2. Keep
-  `PERSONAL_MULTI_AGENT_PLANNED` until D; do not claim IMPLEMENTED.
+- P6.9 is the personal parent-directed team on that same desktop Agent. Read
+  INV-085 and `docs/architecture/p6-9-multi-agent-planning.md` before changing
+  role config, team-run schema, Proposal validators, the closed role/team IPC
+  catalog, the coordinator, pinned Provider transport, or the workbench team
+  FSM. Parent emits a restricted structured Proposal; the host validates and
+  persists. Specialists do not launch peers. Desktop schema version 4 is
+  `desktop_0004_personal_team_runtime` (A2 was v3
+  `desktop_0003_personal_agent_team`), never Alembic 0017. Role config never
+  stores API keys or vault material; explicit disabled Providers fail closed;
+  role-config writes CAS on `row_version`. Team HTTPS pins validated public
+  IPs with SNI/Host still the hostname. Next stays product-blind. Keep
+  `ENTERPRISE_MULTI_AGENT_DISABLED`. Loopback D may claim
+  `PERSONAL_MULTI_AGENT_IMPLEMENTED`; paid/live Provider window is still
+  unproven. Do not announce 1.0.0, Authenticode, or EXE.
 
 ## Safe change workflow
 

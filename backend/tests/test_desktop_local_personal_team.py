@@ -679,7 +679,9 @@ def _create_running_node(client: TestClient, workspace_id: str, team_run_id: str
     return {"node_id": node_id, "invocation_id": invocation_id}
 
 
-def _settle_payload(invocation_id: str, report: str = "前端已完成桌面状态检查") -> dict[str, object]:
+def _settle_payload(
+    invocation_id: str, report: str = "前端已完成桌面状态检查"
+) -> dict[str, object]:
     digest = hashlib.sha256(report.encode("utf-8")).hexdigest()
     return {
         "state": "succeeded",
@@ -844,7 +846,9 @@ def test_report_validation_failure_does_not_leave_a_succeeded_node(tmp_path: Pat
             db.close()
 
 
-def test_audit_append_failure_rolls_back_settle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_audit_append_failure_rolls_back_settle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import omnibase.desktop_local.personal_team as personal_team
 
     real_append = personal_team.append_audit_event

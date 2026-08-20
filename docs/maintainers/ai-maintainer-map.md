@@ -2491,7 +2491,7 @@ Read INV-085 and
 collaboration tables, Proposal validators, or the closed
 `agents.roles.*` / `teamRuns.*` IPC catalog.
 
-P6.9-A2 keeps Next product-blind. Parent output is a restricted structured
+P6.9 keeps Next product-blind. Parent output is a restricted structured
 Proposal, never raw `dispatch(employee)`. The host validates identity,
 budget, dependencies and concurrency, then may persist a plan revision.
 Collaboration requests return to the parent through the Personal Team
@@ -2500,15 +2500,25 @@ set is closed at nine roles; parent is not a specialist. Serial, parallel
 and mixed waves are legal proposals; the host may serialize a parallel wave
 and must not parallelize declared dependencies.
 
-Desktop schema version 3 uses `desktop_0003_personal_agent_team`, never
-Alembic 0017. Role config may store a Provider id, model override, gear,
-thinking depth and a verification digest. It must never store API keys,
-ciphertext, nonce, DPAPI blobs or vault handles. Missing rows and null
-`provider_id` inherit the default Provider. Model override reuses that
-Provider's credentials and exposes only `secret_fingerprint`.
+Desktop schema version 4 uses `desktop_0004_personal_team_runtime` (A2
+introduced v3 `desktop_0003_personal_agent_team`), never Alembic 0017. Role
+config may store a Provider id, model override, gear, thinking depth and a
+verification digest. It must never store API keys, ciphertext, nonce, DPAPI
+blobs or vault handles. Missing rows and null `provider_id` inherit the
+default Provider. An explicit disabled Provider fails closed. Model override
+reuses that Provider's credentials and exposes only `secret_fingerprint`.
+Role-config writes CAS on `row_version`.
 
-A2 does not ship workbench team UI or a live Provider-wave coordinator.
-`PERSONAL_MULTI_AGENT_PLANNED` remains current.
-`PERSONAL_MULTI_AGENT_IMPLEMENTED` is reserved for P6.9-D. P6.8 single-agent
-send/Stop/epoch behavior must not regress. Enterprise Planner /
-`MULTI_AGENT_ENABLED` stay disabled.
+Team HTTPS reuses the P6.8 pin (validated public IPs; SNI/Host stay the
+hostname). Node/report/collaboration/audit settle atomically. Team events
+require complete identity. Strict wall-time and Stop-during-createNode latch
+like P6.8. An explicit empty allow-list fails closed; default-all remains
+when unset.
+
+Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closes the
+named attack holes; paid/live Provider window is still unproven. P6.8
+single-agent send/Stop/epoch behavior must not regress. Enterprise Planner /
+`MULTI_AGENT_ENABLED` stay disabled. Do not announce 1.0.0, Authenticode, or
+EXE. The P34.3 maintainer-map benchmark suite
+(`docs/maintainers/benchmark/benchmark-suite.json`) remains MMB-001–008 and
+does not score P6.9; INV-085 still appears on the desktop impact row.

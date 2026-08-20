@@ -4327,50 +4327,77 @@ to manufacture this journey.
 
 ## INV-085 p69-personal-parent-directed-team-boundary
 
-P6.9-A2 admits a personal, parent-directed team **contract** on the already
-accepted desktop single-parent Agent. Parent output is a restricted structured
-Proposal, never a raw `dispatch(employee)` primitive. The host is the only
-runtime that may validate identity, budget, dependencies and concurrency, then
-persist a plan revision. Collaboration requests return to the parent through
-the Personal Team Blackboard; a specialist must not launch another specialist
-directly. The specialist set is closed at nine roles. Parent cannot appear as
+P6.9 admits a personal, parent-directed team on the already accepted desktop
+single-parent Agent. Product law remains parent Proposal + host validation +
+blackboard. Parent output is a restricted structured Proposal, never a raw
+`dispatch(employee)` primitive. The host is the only runtime that may validate
+identity, budget, dependencies and concurrency, then persist a plan revision.
+Collaboration requests return to the parent through the Personal Team
+Blackboard; a specialist must not launch another specialist directly. The
+specialist set is closed at nine roles. Parent cannot appear as
 `employeeRoleId`. Serial, parallel and mixed waves are legal proposals; the
 host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
-`MULTI_AGENT_ENABLED` stay disabled.
+`MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 3 is applied only by
-`desktop_0003_personal_agent_team`. That is a desktop-namespace SQLite
-migration. It is not Alembic 0016/0017. Role config may store a Provider id,
-model override, gear, thinking depth and a verification digest. It must never
-store API keys, ciphertext, nonce, DPAPI blobs or vault handles. Per-role
-Provider selection inherits the default Provider when the row is missing or
-`provider_id` is null. Model override reuses that Provider's credentials and
-exposes only `secret_fingerprint`.
+Desktop schema version 4 (`desktop_0004_personal_team_runtime`) is current.
+Version 3 (`desktop_0003_personal_agent_team`) remains the A2 contract
+migration. These are desktop-namespace SQLite migrations, not Alembic
+0016/0017. Role config may store a Provider id, model override, gear, thinking
+depth and a verification digest. It must never store API keys, ciphertext,
+nonce, DPAPI blobs or vault handles. Per-role Provider selection inherits the
+default Provider when the row is missing or `provider_id` is null. An
+**explicit** `provider_id` that is disabled must fail closed (`desktop_provider_disabled`);
+it must not silently inherit another Provider. Model override reuses that
+Provider's credentials and exposes only `secret_fingerprint`. Role-config
+writes compare-and-swap `row_version` (`desktop_role_config_cas_conflict`).
+
+Team HTTPS reuses the P6.8 pin: DNS is resolved once, connect addresses must
+be validated public IPs (loopback / private / link-local / multicast /
+reserved fail closed unless allowed loopback HTTP), and SNI/`Host` stay the
+original hostname. A missing or mismatched actual vs requested model fails the
+node (`desktop_provider_model_identity_drift`). `{}` or a non-chat-completions
+body is not success.
+
+Node create + employee report + collaboration request + audit append settle in
+one SQLite transaction. Partial node-without-report or report-without-audit is
+fail-stop, not success. Team stream/IPC events must carry workspace,
+conversation, teamRun, roster/plan revision, wave, assignment, node and
+sendEpoch; missing any field is dropped and not projected. Strict team
+wall-time (`maximumWallTimeMs`) stops further nodes and reports
+`budget_exhausted` without fake success. Stop during `createNode` latches
+abort like P6.8 (arm before vault/provider await; no identity emit). An
+explicit empty specialist allow-list fails closed
+(`desktop_team_allow_list_empty`); default-all remains only when the list is
+unset. A start bound to conversation A must not attach to B.
 
 Closed IPC names are exact:
 
 - `agents.roles.list|get|update|test`
-- `teamRuns.start|cancel|get|list|subscribe`
+- `teamRuns.start|cancel|get|list|subscribe|execute|append-budget`
 - extra closed channels for proposal submit, blackboard read and collaboration
   record
 
 There is no `ipc.invoke(arbitrary)`. Renderer → origin-checked preload →
-Electron main → `/desktop/v1` → SQLite. No workbench team checkbox, timeline
-UI, live Provider wave coordinator, tools, Sandbox, MCP, Skills or enterprise
-DAG is implied by this invariant. P6.8 single-agent send/Stop/epoch behavior
-must not regress. `PERSONAL_MULTI_AGENT_PLANNED` is current.
-`PERSONAL_MULTI_AGENT_IMPLEMENTED` is reserved for P6.9-D engineering
-acceptance.
+Electron main → `/desktop/v1` → SQLite. Practical workbench team controls
+exist (checkbox, allow-list, timeline, text statuses). That is not a P7 visual
+rewrite and is not a return to a fixed Owner roster. Tools, Sandbox, MCP,
+Skills and enterprise DAG stay out. P6.8 single-agent send/Stop/epoch behavior
+must not regress.
+
+`PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback** D
+journeys. Round 1 closes the attack holes named above. Paid / live Provider
+window, Authenticode, EXE/MSI and a human Electron soak remain unproven. Do
+not announce OmniBase 1.0.0.
 
 **Required verification**
 
 - desktop-local foundation/safety/app plus provider, conversation and personal
   team tests;
 - Ruff check/format on desktop_local and those tests;
-- Electron IPC/native-client tests and typecheck, including the closed role
-  and team-run catalog;
-- frontend bridge tests, typecheck and lint (no team UI);
+- Electron IPC/native-client/coordinator/provider tests and typecheck,
+  including Round 1 attacks;
+- frontend bridge and team-lifecycle tests, typecheck and lint;
 - both maintainer validators.
 
 **Failure recovery**
@@ -4378,4 +4405,5 @@ acceptance.
 Stop Electron and let RuntimeHost reap the child group. Preserve
 `%LOCALAPPDATA%\OmniBase`. Forward-fix application bytes. Never treat an
 unvalidated model JSON blob as dispatch, copy Provider secrets into role
-config, open Alembic 0017, or claim personal multi-agent implemented before D.
+config, open Alembic 0017, skip CAS on role config, or claim a paid/live
+multi-agent window from loopback evidence.

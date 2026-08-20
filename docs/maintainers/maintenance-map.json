@@ -1267,17 +1267,24 @@
         "desktop/src/preload.ts",
         "desktop/src/runtime/native-client.ts",
         "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/runtime/personal-team-coordinator.ts",
+        "desktop/src/runtime/personal-team-provider.ts",
+        "desktop/src/runtime/personal-team-native-host.ts",
         "desktop/src/shared/ipc-contract.ts",
         "desktop/src/shared/personal-team.ts",
         "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-team-lifecycle.ts",
         "docs/architecture/p6-9-multi-agent-planning.md"
       ],
       "test_paths": [
         "backend/tests/test_desktop_local_personal_team.py",
         "backend/tests/test_desktop_local_conversation.py",
         "desktop/tests/personal-team-ipc.test.ts",
+        "desktop/tests/personal-team-coordinator.test.ts",
+        "desktop/tests/personal-team-round1-attacks.test.ts",
         "desktop/tests/ipc.test.ts",
-        "frontend/lib/desktop-bridge.test.ts"
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-team-lifecycle.test.ts"
       ]
     }
   ],
@@ -4308,6 +4315,8 @@
         "frontend/app/page-client.tsx",
         "frontend/lib/desktop-bridge*.ts",
         "frontend/lib/desktop-invocation-lifecycle*.ts",
+        "frontend/lib/desktop-team-lifecycle*.ts",
+        "frontend/lib/desktop-team-surface*.ts",
         "frontend/lib/desktop-conversation-surface*.ts",
         "frontend/lib/desktop-surface-scope*.ts",
         "frontend/lib/desktop-runtime*.ts",
