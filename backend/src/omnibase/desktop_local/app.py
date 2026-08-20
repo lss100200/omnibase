@@ -277,6 +277,8 @@ class TeamCollaborationCreateRequest(BaseModel):
     target_role_id: str = Field(min_length=2, max_length=32)
     question: str = Field(min_length=1, max_length=16384)
     reason: str = Field(min_length=1, max_length=16384)
+    node_id: str = Field(min_length=1, max_length=128)
+    report_id: str = Field(min_length=1, max_length=128)
 
 
 class TeamRunBudgetAppendRequest(BaseModel):
@@ -1002,7 +1004,7 @@ def _team_runs_get(workspace_id: str, team_run_id: str, request: Request) -> dic
 
 def _team_runs_cancel(workspace_id: str, team_run_id: str, request: Request) -> dict[str, object]:
     if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
-        raise DesktopApiError(404, "desktop_team_run_not_found")
+        raise DesktopApiError(409, "desktop_team_run_not_found")
     runtime = _runtime(request)
     with runtime.lock:
         return cancel_team_run(runtime.connection, workspace_id, team_run_id)
@@ -1056,6 +1058,8 @@ def _team_runs_collaboration(
                 "targetRoleId": payload.target_role_id,
                 "question": payload.question,
                 "reason": payload.reason,
+                "node_id": payload.node_id,
+                "report_id": payload.report_id,
             },
         )
 

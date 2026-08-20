@@ -167,6 +167,8 @@ _WORKSPACE_ID_PATTERN = re.compile(r"workspace_[0-9a-f]{32}\Z")
 _CONVERSATION_ID_PATTERN = re.compile(r"conversation_[0-9a-f]{32}\Z")
 _PROVIDER_ID_PATTERN = re.compile(r"provider_[0-9a-f]{32}\Z")
 _TEAM_RUN_ID_PATTERN = re.compile(r"teamrun_[0-9a-f]{32}\Z")
+_NODE_ID_PATTERN = re.compile(r"teamnode_[0-9a-f]{32}\Z")
+_REPORT_ID_PATTERN = re.compile(r"teamrpt_[0-9a-f]{32}\Z")
 _ASSIGNMENT_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,127}\Z")
 _WAVE_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,127}\Z")
 _CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
@@ -201,6 +203,9 @@ _MAX_ASSIGNMENTS = 128
 _MAX_PLAN_REVISIONS = 32
 _LIVE_TEAM_RUN_STATES = frozenset({"preparing", "running"})
 _OWNER_STOP_RUN_STATES = frozenset({"cancelling", "cancelled"})
+_QUIET_TERMINAL_RUN_STATES = frozenset(
+    {"succeeded", "failed", "budget_exhausted", "cannot_complete"}
+)
 _TERMINAL_NODE_STATES = frozenset({"succeeded", "failed", "cancelled", "unknown"})
 _LEGACY_NODE_UPDATE_STATES = frozenset({"failed", "cancelled", "unknown"})
 _LIVE_ASSIGNMENT_STATES = frozenset({"pending", "ready", "running"})
@@ -1348,23 +1353,43 @@ def cancel_team_run(
 ) -> dict[str, object]:
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(409, "desktop_team_run_not_found")
     now = utc_now_text()
     try:
         connection.execute("BEGIN IMMEDIATE")
-        row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
-        if str(row["state"]) in {
-            "succeeded",
-            "failed",
-            "cancelled",
-            "budget_exhausted",
-            "cannot_complete",
-        }:
+        row = connection.execute(
+            "SELECT * FROM team_run WHERE id = ? AND owner_id = ? AND workspace_id = ?",
+            (team_run_id, owner["id"], workspace_id),
+        ).fetchone()
+        if row is None:
+            raise DesktopApiError(409, "desktop_team_run_not_found")
+        state = str(row["state"])
+        if state == "unknown":
+            raise DesktopApiError(409, "desktop_team_run_unknown")
+        if state == "cancelled":
+            _cas_cancel_live_nodes_for_run(connection, team_run_id, now)
+            updated = connection.execute(
+                "SELECT * FROM team_run WHERE id = ?",
+                (team_run_id,),
+            ).fetchone()
             connection.execute("COMMIT")
-            return {"cancelled": False, "accepted": False, "team_run": _team_run_payload(row)}
-        target = "cancelled" if str(row["state"]) == "preparing" else "cancelling"
+            return {
+                "cancelled": False,
+                "accepted": True,
+                "team_run": _team_run_payload(updated),
+            }
+        if state in _QUIET_TERMINAL_RUN_STATES:
+            connection.execute("COMMIT")
+            return {
+                "cancelled": False,
+                "accepted": False,
+                "team_run": _team_run_payload(row),
+            }
+        target = "cancelled" if state == "preparing" else "cancelling"
         updated = connection.execute(
             "UPDATE team_run SET state = ?, updated_at = ? WHERE id = ? AND state = ? RETURNING *",
-            (target, now, team_run_id, row["state"]),
+            (target, now, team_run_id, state),
         ).fetchone()
         if updated is None:
             raise DesktopApiError(409, "desktop_team_run_state_conflict")
@@ -1575,6 +1600,51 @@ def submit_parent_proposal(  # noqa: C901 - first-pass and replan persist share 
     }
 
 
+def _require_live_collaboration_identity(
+    connection: sqlite3.Connection,
+    *,
+    team_run_id: str,
+    from_assignment: str,
+    from_role: str,
+    node_id: object,
+    report_id: object,
+) -> None:
+    if not isinstance(node_id, str) or not _NODE_ID_PATTERN.fullmatch(node_id):
+        raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+    if not isinstance(report_id, str) or not _REPORT_ID_PATTERN.fullmatch(report_id):
+        raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+    assignment = connection.execute(
+        "SELECT assignment_id FROM team_assignment "
+        "WHERE team_run_id = ? AND assignment_id = ? AND employee_role_id = ?",
+        (team_run_id, from_assignment, from_role),
+    ).fetchone()
+    if assignment is None:
+        raise DesktopApiError(404, "desktop_team_assignment_not_found")
+    node = connection.execute(
+        "SELECT id, assignment_id, employee_role_id FROM team_node "
+        "WHERE id = ? AND team_run_id = ?",
+        (node_id, team_run_id),
+    ).fetchone()
+    if (
+        node is None
+        or str(node["assignment_id"]) != from_assignment
+        or str(node["employee_role_id"]) != from_role
+    ):
+        raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+    report = connection.execute(
+        "SELECT id, node_id, assignment_id, employee_role_id FROM team_employee_report "
+        "WHERE id = ? AND team_run_id = ?",
+        (report_id, team_run_id),
+    ).fetchone()
+    if (
+        report is None
+        or str(report["node_id"]) != node_id
+        or str(report["assignment_id"]) != from_assignment
+        or str(report["employee_role_id"]) != from_role
+    ):
+        raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+
+
 def record_collaboration_request(
     connection: sqlite3.Connection,
     workspace_id: str,
@@ -1586,8 +1656,16 @@ def record_collaboration_request(
     try:
         connection.execute("BEGIN IMMEDIATE")
         run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
         result = validate_collaboration_request(
-            payload,
+            {
+                "fromAssignmentId": payload.get("fromAssignmentId"),
+                "fromEmployeeRoleId": payload.get("fromEmployeeRoleId"),
+                "targetRoleId": payload.get("targetRoleId"),
+                "question": payload.get("question"),
+                "reason": payload.get("reason"),
+            },
             budget=_budget_from_run(run),
             allowed_roles=_allowed_roles_from_run(run),
             workspace_id=workspace_id,
@@ -1600,13 +1678,14 @@ def record_collaboration_request(
             raise DesktopApiError(400, "desktop_native_input_invalid")
         if from_role not in SPECIALIST_ROLE_IDS:
             raise DesktopApiError(400, "desktop_team_unknown_role")
-        assignment = connection.execute(
-            "SELECT assignment_id FROM team_assignment "
-            "WHERE team_run_id = ? AND assignment_id = ? AND employee_role_id = ?",
-            (team_run_id, from_assignment, from_role),
-        ).fetchone()
-        if assignment is None:
-            raise DesktopApiError(404, "desktop_team_assignment_not_found")
+        _require_live_collaboration_identity(
+            connection,
+            team_run_id=team_run_id,
+            from_assignment=from_assignment,
+            from_role=from_role,
+            node_id=payload.get("node_id"),
+            report_id=payload.get("report_id"),
+        )
         now = utc_now_text()
         request_id = _new_id("teamcollab")
         connection.execute(
@@ -1722,18 +1801,33 @@ def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
     connection.execute("BEGIN IMMEDIATE")
     try:
         connection.execute(
+            "UPDATE team_node SET state = 'cancelled', "
+            "error_code = 'desktop_invocation_cancelled', updated_at = ? "
+            "WHERE state IN ('pending', 'running') AND team_run_id IN ("
+            "SELECT id FROM team_run WHERE state = 'cancelled')",
+            (now,),
+        )
+        connection.execute(
+            "UPDATE team_assignment SET state = 'cancelled', updated_at = ? "
+            "WHERE state IN ('pending', 'ready', 'running') AND team_run_id IN ("
+            "SELECT id FROM team_run WHERE state = 'cancelled')",
+            (now,),
+        )
+        connection.execute(
             "UPDATE team_run SET state = 'unknown', updated_at = ? "
             "WHERE state IN ('preparing', 'running', 'cancelling')",
             (now,),
         )
         connection.execute(
             "UPDATE team_node SET state = 'unknown', updated_at = ? "
-            "WHERE state IN ('pending', 'running')",
+            "WHERE state IN ('pending', 'running') AND team_run_id IN ("
+            "SELECT id FROM team_run WHERE state = 'unknown')",
             (now,),
         )
         connection.execute(
             "UPDATE team_assignment SET state = 'blocked', updated_at = ? "
-            "WHERE state IN ('pending', 'ready', 'running')",
+            "WHERE state IN ('pending', 'ready', 'running') AND team_run_id IN ("
+            "SELECT id FROM team_run WHERE state = 'unknown')",
             (now,),
         )
         connection.execute("COMMIT")
@@ -2429,12 +2523,21 @@ def record_employee_report(
         if str(node["state"]) != "succeeded":
             raise DesktopApiError(409, "desktop_team_report_requires_settle")
         existing = connection.execute(
-            "SELECT id, assignment_id, employee_role_id, status, report "
+            "SELECT id, assignment_id, employee_role_id, status, report, report_sha256 "
             "FROM team_employee_report WHERE node_id = ? AND invocation_id = ?",
             (node_id, invocation_id),
         ).fetchone()
         if existing is None:
             raise DesktopApiError(409, "desktop_team_report_requires_settle")
+        body = str(result.normalized["report"])
+        if (
+            str(existing["assignment_id"]) != str(result.normalized["assignmentId"])
+            or str(existing["employee_role_id"]) != str(result.normalized["employeeRoleId"])
+            or str(existing["status"]) != str(result.normalized["status"])
+            or str(existing["report"]) != body
+            or str(existing["report_sha256"]) != _sha256_text(body)
+        ):
+            raise DesktopApiError(409, "desktop_team_report_replay_mismatch")
         recorded = [
             {
                 "id": str(row["id"]),
