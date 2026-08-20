@@ -67,17 +67,28 @@ export function createNativePersonalTeamHost(options: {
       const role = unwrap(
         await options.client.getAgentRole({ workspaceId, roleId }),
       ).role;
-      const providerId = role.resolvedProviderId;
+      const listed = unwrap(await options.client.listProviders());
+      const explicitId = role.providerId;
+      const providerId = explicitId ?? role.resolvedProviderId;
       if (providerId === null || role.resolvedModelName === null) {
         throw Object.assign(new Error("desktop_role_provider_unresolved"), {
           code: "desktop_role_provider_unresolved",
         });
       }
-      const listed = unwrap(await options.client.listProviders());
       const provider = listed.items.find((item) => item.id === providerId);
       if (provider === undefined) {
         throw Object.assign(new Error("desktop_provider_not_found"), {
           code: "desktop_provider_not_found",
+        });
+      }
+      if (!provider.isEnabled) {
+        throw Object.assign(new Error("desktop_provider_disabled"), {
+          code: "desktop_provider_disabled",
+        });
+      }
+      if (explicitId !== null && explicitId !== provider.id) {
+        throw Object.assign(new Error("desktop_provider_disabled"), {
+          code: "desktop_provider_disabled",
         });
       }
       const material = unwrap(await options.client.getProviderVault(providerId));

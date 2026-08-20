@@ -20,7 +20,12 @@ import {
   type TeamWaveExecution,
   type TeamWaveProposal,
 } from "../shared/personal-team.ts";
-import type { TeamChatMessage, TeamChatResult, TeamChatTransport } from "./personal-team-provider.ts";
+import {
+  assertRequestedModelIdentity,
+  type TeamChatMessage,
+  type TeamChatResult,
+  type TeamChatTransport,
+} from "./personal-team-provider.ts";
 import {
   extractJsonObject,
   validateParentReplanDecision,
@@ -830,6 +835,7 @@ export class PersonalTeamCoordinator {
         return { kind: "cancelled" };
       }
       const durationMs = this.#now() - started;
+      assertRequestedModelIdentity(credentials.model, chat.actualModel);
       const report = this.#parseEmployeeReport(chat, args.assignment);
       node.durationMs = durationMs;
       node.inputTokens = chat.inputTokens;
@@ -888,7 +894,11 @@ export class PersonalTeamCoordinator {
     } catch (error) {
       const code = errorCode(error);
       if (ABORT_CODES.has(code) || this.#cancelled) return { kind: "cancelled" };
-      if (code === "desktop_invocation_interrupted" || code === "desktop_provider_stream_incomplete") {
+      if (
+        code === "desktop_invocation_interrupted" ||
+        code === "desktop_provider_stream_incomplete" ||
+        code === "desktop_provider_response_invalid"
+      ) {
         return { kind: "unknown", code };
       }
       if (code === "desktop_team_call_budget_exceeded") return { kind: "budget", code };
@@ -961,6 +971,7 @@ export class PersonalTeamCoordinator {
       if (isAborted(chat) || controller.signal.aborted || this.#cancelled) {
         return { kind: "cancelled" };
       }
+      assertRequestedModelIdentity(credentials.model, chat.actualModel);
       if (args.purpose === "parent-synthesize" && this.#cancelled) {
         return { kind: "cancelled" };
       }
@@ -975,7 +986,11 @@ export class PersonalTeamCoordinator {
     } catch (error) {
       const code = errorCode(error);
       if (ABORT_CODES.has(code) || this.#cancelled) return { kind: "cancelled" };
-      if (code === "desktop_invocation_interrupted" || code === "desktop_provider_stream_incomplete") {
+      if (
+        code === "desktop_invocation_interrupted" ||
+        code === "desktop_provider_stream_incomplete" ||
+        code === "desktop_provider_response_invalid"
+      ) {
         return { kind: "unknown", code };
       }
       if (code === "desktop_team_call_budget_exceeded") return { kind: "budget", code };
