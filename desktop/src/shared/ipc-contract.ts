@@ -1,3 +1,20 @@
+import type {
+  DesktopAgentRole,
+  DesktopAgentRoleIdInput,
+  DesktopAgentRoleList,
+  DesktopAgentRoleTestResult,
+  DesktopAgentRoleUpdateInput,
+  DesktopTeamCollaborationInput,
+  DesktopTeamCollaborationRequest,
+  DesktopTeamRun,
+  DesktopTeamRunEvent,
+  DesktopTeamRunIdInput,
+  DesktopTeamRunProposalResult,
+  DesktopTeamRunStartInput,
+  DesktopTeamRunSubmitProposalInput,
+  PersonalTeamBlackboard,
+} from "./personal-team.ts";
+
 export const IPC_CHANNELS = Object.freeze({
   appGetVersion: "omnibase:app:get-version",
   runtimeGetStatus: "omnibase:runtime:get-status",
@@ -19,11 +36,52 @@ export const IPC_CHANNELS = Object.freeze({
   conversationSend: "omnibase:conversation:send",
   conversationCancel: "omnibase:conversation:cancel",
   conversationAbortInFlightSend: "omnibase:conversation:abort-in-flight-send",
+  agentsRolesList: "omnibase:agents:roles:list",
+  agentsRolesGet: "omnibase:agents:roles:get",
+  agentsRolesUpdate: "omnibase:agents:roles:update",
+  agentsRolesTest: "omnibase:agents:roles:test",
+  teamRunsStart: "omnibase:team-runs:start",
+  teamRunsCancel: "omnibase:team-runs:cancel",
+  teamRunsGet: "omnibase:team-runs:get",
+  teamRunsList: "omnibase:team-runs:list",
+  teamRunsSubmitProposal: "omnibase:team-runs:submit-proposal",
+  teamRunsGetBlackboard: "omnibase:team-runs:get-blackboard",
+  teamRunsRecordCollaboration: "omnibase:team-runs:record-collaboration",
 } as const);
 
 export const IPC_EVENT_CHANNELS = Object.freeze({
   conversationEvent: "omnibase:conversation:event",
+  teamRunEvent: "omnibase:team-runs:event",
 } as const);
+
+export {
+  PERSONAL_EMPLOYEE_IDS,
+  SPECIALIST_EMPLOYEE_IDS,
+  type DesktopAgentRole,
+  type DesktopAgentRoleIdInput,
+  type DesktopAgentRoleList,
+  type DesktopAgentRoleTestResult,
+  type DesktopAgentRoleUpdateInput,
+  type DesktopTeamCollaborationInput,
+  type DesktopTeamCollaborationRequest,
+  type DesktopTeamPlanRevision,
+  type DesktopTeamRun,
+  type DesktopTeamRunEvent,
+  type DesktopTeamRunIdInput,
+  type DesktopTeamRunProposalResult,
+  type DesktopTeamRunStartInput,
+  type DesktopTeamRunSubmitProposalInput,
+  type EmployeeTeamReport,
+  type ParentReplanDecision,
+  type ParentTeamDecision,
+  type PersonalEmployeeId,
+  type PersonalTeamBlackboard,
+  type SpecialistEmployeeId,
+  type TeamAssignmentProposal,
+  type TeamRunBudget,
+  type TeamRunState,
+  type TeamWaveProposal,
+} from "./personal-team.ts";
 
 export type RuntimePhase = "stopped" | "starting" | "ready" | "failed";
 
@@ -336,6 +394,56 @@ export interface OmniBaseDesktopApi {
     readonly subscribe: (
       listener: (event: DesktopConversationEvent) => void,
     ) => () => void;
+  };
+  readonly agents: {
+    readonly roles: {
+      readonly list: (
+        input: DesktopWorkspaceIdInput,
+      ) => Promise<DesktopOperationResult<DesktopAgentRoleList>>;
+      readonly get: (
+        input: DesktopAgentRoleIdInput,
+      ) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>;
+      readonly update: (
+        input: DesktopAgentRoleUpdateInput,
+      ) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>;
+      readonly test: (
+        input: DesktopAgentRoleIdInput,
+      ) => Promise<DesktopOperationResult<DesktopAgentRoleTestResult>>;
+    };
+  };
+  readonly teamRuns: {
+    readonly start: (
+      input: DesktopTeamRunStartInput,
+    ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
+    readonly cancel: (
+      input: DesktopTeamRunIdInput,
+    ) => Promise<
+      DesktopOperationResult<{
+        readonly cancelled: boolean;
+        readonly accepted: boolean;
+        readonly teamRun: DesktopTeamRun;
+      }>
+    >;
+    readonly get: (
+      input: DesktopTeamRunIdInput,
+    ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
+    readonly list: (
+      input: DesktopWorkspaceIdInput,
+    ) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>>;
+    readonly submitProposal: (
+      input: DesktopTeamRunSubmitProposalInput,
+    ) => Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>;
+    readonly getBlackboard: (
+      input: DesktopTeamRunIdInput,
+    ) => Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>>;
+    readonly recordCollaboration: (
+      input: DesktopTeamCollaborationInput,
+    ) => Promise<
+      DesktopOperationResult<{
+        readonly collaborationRequest: DesktopTeamCollaborationRequest;
+      }>
+    >;
+    readonly subscribe: (listener: (event: DesktopTeamRunEvent) => void) => () => void;
   };
 }
 

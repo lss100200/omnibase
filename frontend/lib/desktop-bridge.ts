@@ -157,6 +157,111 @@ export interface DesktopProviderTestResult {
   readonly errorRedacted?: string
 }
 
+export interface DesktopAgentRole {
+  readonly id: string
+  readonly displayName: string
+  readonly responsibility: string
+  readonly defaultState: 'active' | 'dormant'
+  readonly mayJoinTeam: boolean
+  readonly providerId: string | null
+  readonly modelNameOverride: string | null
+  readonly gear: string
+  readonly thinkingDepth: string
+  readonly rowVersion: number
+  readonly verificationState: 'unverified' | 'binding_recorded' | 'stale'
+  readonly verifiedActualModel: string | null
+  readonly inheritedProvider: boolean
+  readonly resolvedProviderId: string | null
+  readonly resolvedModelName: string | null
+  readonly secretFingerprint: string | null
+  readonly hasSecret: boolean
+}
+
+export interface DesktopAgentRoleTestResult {
+  readonly ok: true
+  readonly roleId: string
+  readonly workspaceId: string
+  readonly providerId: string
+  readonly inheritedProvider: boolean
+  readonly requestedModel: string
+  readonly secretFingerprint: string
+  readonly verificationDigest: string
+  readonly identityProven: false
+}
+
+export interface DesktopTeamRunBudget {
+  readonly maximumProviderCalls: number
+  readonly maximumWallTimeMs: number
+  readonly maximumConcurrentCalls: number
+  readonly maximumInputCharacters: number
+  readonly maximumOutputCharacters: number
+}
+
+export interface DesktopTeamRun {
+  readonly id: string
+  readonly workspaceId: string
+  readonly conversationId: string
+  readonly mode: 'single' | 'team'
+  readonly state: string
+  readonly staffingAuthority: 'parent_proposal'
+  readonly currentPlanRevisionId: string | null
+  readonly currentWaveId: string | null
+  readonly dispatchedParticipantCount: number | null
+  readonly maximumProviderCalls: number
+  readonly maximumWallTimeMs: number
+  readonly maximumConcurrentCalls: number
+  readonly maximumInputCharacters: number
+  readonly maximumOutputCharacters: number
+  readonly consumedProviderCalls: number
+  readonly task: string
+  readonly allowedSpecialistRoleIds: readonly string[]
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+export interface DesktopTeamRunProposalResult {
+  readonly accepted: boolean
+  readonly validationErrorCode: string | null
+  readonly teamRun: DesktopTeamRun
+  readonly planRevision: {
+    readonly id: string
+    readonly revisionOrdinal: number
+    readonly decision: string
+    readonly proposalJsonSha256: string
+    readonly validated: boolean
+    readonly validationErrorCode: string | null
+    readonly createdAt: string
+  }
+}
+
+export interface DesktopTeamCollaborationRequest {
+  readonly id?: string
+  readonly fromAssignmentId: string
+  readonly fromEmployeeRoleId: string
+  readonly targetRoleId: string
+  readonly question: string
+  readonly reason: string
+  readonly parentDecision: string
+  readonly resolvedAssignmentId: string | null
+}
+
+export interface PersonalTeamBlackboard {
+  readonly teamRunId: string
+  readonly workspaceId: string
+  readonly ownerObjective: string
+  readonly currentPlanRevisionId: string | null
+  readonly assignments: readonly Record<string, unknown>[]
+  readonly reports: readonly Record<string, unknown>[]
+  readonly collaborationRequests: readonly DesktopTeamCollaborationRequest[]
+}
+
+export interface DesktopTeamRunEvent {
+  readonly type: 'snapshot' | 'cancelled' | 'proposal' | 'blackboard'
+  readonly teamRunId: string
+  readonly workspaceId: string
+  readonly state?: string
+}
+
 export type {
   DesktopInvocationEventResult,
   DesktopInvocationLiveProjection,
@@ -288,6 +393,75 @@ export interface OmniBaseDesktopBridge {
     >
     readonly subscribe: (listener: (event: DesktopConversationEvent) => void) => () => void
   }
+  readonly agents: {
+    readonly roles: {
+      readonly list: (input: {
+        readonly workspaceId: string
+      }) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopAgentRole[] }>>
+      readonly get: (input: {
+        readonly workspaceId: string
+        readonly roleId: string
+      }) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>
+      readonly update: (input: {
+        readonly workspaceId: string
+        readonly roleId: string
+        readonly providerId: string | null
+        readonly modelNameOverride: string | null
+        readonly gear: DesktopReasoningGear
+        readonly thinkingDepth: DesktopThinkingDepth
+      }) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>
+      readonly test: (input: {
+        readonly workspaceId: string
+        readonly roleId: string
+      }) => Promise<DesktopOperationResult<DesktopAgentRoleTestResult>>
+    }
+  }
+  readonly teamRuns: {
+    readonly start: (input: {
+      readonly workspaceId: string
+      readonly conversationId: string
+      readonly task: string
+      readonly teamMode: true
+      readonly budget: DesktopTeamRunBudget
+      readonly allowedSpecialistRoleIds?: readonly string[]
+    }) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>
+    readonly cancel: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+    }) => Promise<
+      DesktopOperationResult<{
+        readonly cancelled: boolean
+        readonly accepted: boolean
+        readonly teamRun: DesktopTeamRun
+      }>
+    >
+    readonly get: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+    }) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>
+    readonly list: (input: {
+      readonly workspaceId: string
+    }) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>>
+    readonly submitProposal: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+      readonly proposal: Record<string, unknown>
+    }) => Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>
+    readonly getBlackboard: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+    }) => Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>>
+    readonly recordCollaboration: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+      readonly fromAssignmentId: string
+      readonly fromEmployeeRoleId: string
+      readonly targetRoleId: string
+      readonly question: string
+      readonly reason: string
+    }) => Promise<DesktopOperationResult<{ readonly collaborationRequest: DesktopTeamCollaborationRequest }>>
+    readonly subscribe: (listener: (event: DesktopTeamRunEvent) => void) => () => void
+  }
 }
 
 declare global {
@@ -333,7 +507,22 @@ export function resolveDesktopBridge(value: unknown): OmniBaseDesktopBridge | nu
     !hasFunction(value.conversations, 'send') ||
     !hasFunction(value.conversations, 'cancel') ||
     !hasFunction(value.conversations, 'abortInFlightSend') ||
-    !hasFunction(value.conversations, 'subscribe')
+    !hasFunction(value.conversations, 'subscribe') ||
+    !isRecord(value.agents) ||
+    !isRecord(value.agents.roles) ||
+    !hasFunction(value.agents.roles, 'list') ||
+    !hasFunction(value.agents.roles, 'get') ||
+    !hasFunction(value.agents.roles, 'update') ||
+    !hasFunction(value.agents.roles, 'test') ||
+    !isRecord(value.teamRuns) ||
+    !hasFunction(value.teamRuns, 'start') ||
+    !hasFunction(value.teamRuns, 'cancel') ||
+    !hasFunction(value.teamRuns, 'get') ||
+    !hasFunction(value.teamRuns, 'list') ||
+    !hasFunction(value.teamRuns, 'submitProposal') ||
+    !hasFunction(value.teamRuns, 'getBlackboard') ||
+    !hasFunction(value.teamRuns, 'recordCollaboration') ||
+    !hasFunction(value.teamRuns, 'subscribe')
   ) {
     return null
   }

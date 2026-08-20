@@ -22,11 +22,25 @@ import type {
   DesktopProviderMutationResult,
   DesktopProviderTestResult,
   DesktopProviderUpsertInput,
+  DesktopAgentRole,
+  DesktopAgentRoleIdInput,
+  DesktopAgentRoleList,
+  DesktopAgentRoleTestResult,
+  DesktopAgentRoleUpdateInput,
+  DesktopTeamCollaborationInput,
+  DesktopTeamCollaborationRequest,
+  DesktopTeamRun,
+  DesktopTeamRunEvent,
+  DesktopTeamRunIdInput,
+  DesktopTeamRunProposalResult,
+  DesktopTeamRunStartInput,
+  DesktopTeamRunSubmitProposalInput,
   DesktopWorkspaceArchiveInput,
   DesktopWorkspaceCreateInput,
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
+  PersonalTeamBlackboard,
   RuntimeStatus,
 } from "../shared/ipc-contract.ts";
 import { verifyRuntimeBundle } from "./manifest.ts";
@@ -520,6 +534,175 @@ export class RuntimeManager {
         value: Object.freeze({ aborted: this.#requestStreamAbort() }),
       }),
     );
+  }
+
+  listAgentRoles(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopAgentRoleList>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.listAgentRoles(input) ??
+      Promise.resolve(this.#nativeUnavailable<DesktopAgentRoleList>())
+    );
+  }
+
+  getAgentRole(
+    input: DesktopAgentRoleIdInput,
+  ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getAgentRole(input) ??
+      Promise.resolve(this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>())
+    );
+  }
+
+  updateAgentRole(
+    input: DesktopAgentRoleUpdateInput,
+  ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.updateAgentRole(input) ??
+      Promise.resolve(this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>())
+    );
+  }
+
+  testAgentRole(
+    input: DesktopAgentRoleIdInput,
+  ): Promise<DesktopOperationResult<DesktopAgentRoleTestResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.testAgentRole(input) ??
+      Promise.resolve(this.#nativeUnavailable<DesktopAgentRoleTestResult>())
+    );
+  }
+
+  async startTeamRun(
+    input: DesktopTeamRunStartInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> {
+    const client = this.#readyNativeClient();
+    if (client === null) {
+      return this.#nativeUnavailable<{ readonly teamRun: DesktopTeamRun }>();
+    }
+    const result = await client.startTeamRun(input);
+    if (result.ok) {
+      emit({
+        type: "snapshot",
+        teamRunId: result.value.teamRun.id,
+        workspaceId: result.value.teamRun.workspaceId,
+        state: result.value.teamRun.state,
+      });
+    }
+    return result;
+  }
+
+  async cancelTeamRun(
+    input: DesktopTeamRunIdInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly cancelled: boolean;
+      readonly accepted: boolean;
+      readonly teamRun: DesktopTeamRun;
+    }>
+  > {
+    const client = this.#readyNativeClient();
+    if (client === null) {
+      return this.#nativeUnavailable<{
+        readonly cancelled: boolean;
+        readonly accepted: boolean;
+        readonly teamRun: DesktopTeamRun;
+      }>();
+    }
+    const result = await client.cancelTeamRun(input);
+    if (result.ok) {
+      emit({
+        type: "cancelled",
+        teamRunId: result.value.teamRun.id,
+        workspaceId: result.value.teamRun.workspaceId,
+        state: result.value.teamRun.state,
+      });
+    }
+    return result;
+  }
+
+  getTeamRun(
+    input: DesktopTeamRunIdInput,
+  ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getTeamRun(input) ??
+      Promise.resolve(this.#nativeUnavailable<{ readonly teamRun: DesktopTeamRun }>())
+    );
+  }
+
+  listTeamRuns(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.listTeamRuns(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly items: readonly DesktopTeamRun[] }>(),
+      )
+    );
+  }
+
+  async submitTeamProposal(
+    input: DesktopTeamRunSubmitProposalInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<DesktopOperationResult<DesktopTeamRunProposalResult>> {
+    const client = this.#readyNativeClient();
+    if (client === null) {
+      return this.#nativeUnavailable<DesktopTeamRunProposalResult>();
+    }
+    const result = await client.submitTeamProposal(input);
+    if (result.ok) {
+      emit({
+        type: "proposal",
+        teamRunId: result.value.teamRun.id,
+        workspaceId: result.value.teamRun.workspaceId,
+        state: result.value.teamRun.state,
+      });
+    }
+    return result;
+  }
+
+  getTeamBlackboard(
+    input: DesktopTeamRunIdInput,
+  ): Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getTeamBlackboard(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly blackboard: PersonalTeamBlackboard }>(),
+      )
+    );
+  }
+
+  async recordTeamCollaboration(
+    input: DesktopTeamCollaborationInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly collaborationRequest: DesktopTeamCollaborationRequest;
+    }>
+  > {
+    const client = this.#readyNativeClient();
+    if (client === null) {
+      return this.#nativeUnavailable<{
+        readonly collaborationRequest: DesktopTeamCollaborationRequest;
+      }>();
+    }
+    const result = await client.recordTeamCollaboration(input);
+    if (result.ok) {
+      emit({
+        type: "blackboard",
+        teamRunId: input.teamRunId,
+        workspaceId: input.workspaceId,
+      });
+    }
+    return result;
   }
 
   start(): Promise<RuntimeStatus> {

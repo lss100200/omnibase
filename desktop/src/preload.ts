@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type {
+  DesktopAgentRole,
+  DesktopAgentRoleIdInput,
+  DesktopAgentRoleList,
+  DesktopAgentRoleTestResult,
+  DesktopAgentRoleUpdateInput,
   DesktopConversationArchiveInput,
   DesktopConversationCancelInput,
   DesktopConversationCreateInput,
@@ -20,12 +25,21 @@ import type {
   DesktopProviderMutationResult,
   DesktopProviderTestResult,
   DesktopProviderUpsertInput,
+  DesktopTeamCollaborationInput,
+  DesktopTeamCollaborationRequest,
+  DesktopTeamRun,
+  DesktopTeamRunEvent,
+  DesktopTeamRunIdInput,
+  DesktopTeamRunProposalResult,
+  DesktopTeamRunStartInput,
+  DesktopTeamRunSubmitProposalInput,
   DesktopWorkspaceArchiveInput,
   DesktopWorkspaceCreateInput,
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
   OmniBaseDesktopApi,
+  PersonalTeamBlackboard,
   RuntimeStatus,
 } from "./shared/ipc-contract.ts";
 
@@ -50,9 +64,21 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   conversationSend: "omnibase:conversation:send",
   conversationCancel: "omnibase:conversation:cancel",
   conversationAbortInFlightSend: "omnibase:conversation:abort-in-flight-send",
+  agentsRolesList: "omnibase:agents:roles:list",
+  agentsRolesGet: "omnibase:agents:roles:get",
+  agentsRolesUpdate: "omnibase:agents:roles:update",
+  agentsRolesTest: "omnibase:agents:roles:test",
+  teamRunsStart: "omnibase:team-runs:start",
+  teamRunsCancel: "omnibase:team-runs:cancel",
+  teamRunsGet: "omnibase:team-runs:get",
+  teamRunsList: "omnibase:team-runs:list",
+  teamRunsSubmitProposal: "omnibase:team-runs:submit-proposal",
+  teamRunsGetBlackboard: "omnibase:team-runs:get-blackboard",
+  teamRunsRecordCollaboration: "omnibase:team-runs:record-collaboration",
 } as const);
 
 const CONVERSATION_EVENT = "omnibase:conversation:event";
+const TEAM_RUN_EVENT = "omnibase:team-runs:event";
 
 const api: OmniBaseDesktopApi = Object.freeze({
   app: Object.freeze({
@@ -221,6 +247,115 @@ const api: OmniBaseDesktopApi = Object.freeze({
       ipcRenderer.on(CONVERSATION_EVENT, wrapped);
       return () => {
         ipcRenderer.removeListener(CONVERSATION_EVENT, wrapped);
+      };
+    },
+  }),
+  agents: Object.freeze({
+    roles: Object.freeze({
+      list: (
+        input: DesktopWorkspaceIdInput,
+      ): Promise<DesktopOperationResult<DesktopAgentRoleList>> =>
+        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesList, input) as Promise<
+          DesktopOperationResult<DesktopAgentRoleList>
+        >,
+      get: (
+        input: DesktopAgentRoleIdInput,
+      ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> =>
+        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesGet, input) as Promise<
+          DesktopOperationResult<{ readonly role: DesktopAgentRole }>
+        >,
+      update: (
+        input: DesktopAgentRoleUpdateInput,
+      ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> =>
+        ipcRenderer.invoke(
+          PRELOAD_IPC_CHANNELS.agentsRolesUpdate,
+          input,
+        ) as Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>,
+      test: (
+        input: DesktopAgentRoleIdInput,
+      ): Promise<DesktopOperationResult<DesktopAgentRoleTestResult>> =>
+        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesTest, input) as Promise<
+          DesktopOperationResult<DesktopAgentRoleTestResult>
+        >,
+    }),
+  }),
+  teamRuns: Object.freeze({
+    start: (
+      input: DesktopTeamRunStartInput,
+    ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsStart, input) as Promise<
+        DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>
+      >,
+    cancel: (
+      input: DesktopTeamRunIdInput,
+    ): Promise<
+      DesktopOperationResult<{
+        readonly cancelled: boolean;
+        readonly accepted: boolean;
+        readonly teamRun: DesktopTeamRun;
+      }>
+    > =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsCancel, input) as Promise<
+        DesktopOperationResult<{
+          readonly cancelled: boolean;
+          readonly accepted: boolean;
+          readonly teamRun: DesktopTeamRun;
+        }>
+      >,
+    get: (
+      input: DesktopTeamRunIdInput,
+    ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsGet, input) as Promise<
+        DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>
+      >,
+    list: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<
+      DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+    > =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsList, input) as Promise<
+        DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+      >,
+    submitProposal: (
+      input: DesktopTeamRunSubmitProposalInput,
+    ): Promise<DesktopOperationResult<DesktopTeamRunProposalResult>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.teamRunsSubmitProposal,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>,
+    getBlackboard: (
+      input: DesktopTeamRunIdInput,
+    ): Promise<
+      DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.teamRunsGetBlackboard,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+      >,
+    recordCollaboration: (
+      input: DesktopTeamCollaborationInput,
+    ): Promise<
+      DesktopOperationResult<{
+        readonly collaborationRequest: DesktopTeamCollaborationRequest;
+      }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.teamRunsRecordCollaboration,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{
+          readonly collaborationRequest: DesktopTeamCollaborationRequest;
+        }>
+      >,
+    subscribe: (listener: (event: DesktopTeamRunEvent) => void) => {
+      const wrapped = (_event: unknown, payload: DesktopTeamRunEvent) => {
+        listener(payload);
+      };
+      ipcRenderer.on(TEAM_RUN_EVENT, wrapped);
+      return () => {
+        ipcRenderer.removeListener(TEAM_RUN_EVENT, wrapped);
       };
     },
   }),

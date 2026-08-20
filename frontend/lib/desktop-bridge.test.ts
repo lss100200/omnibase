@@ -43,6 +43,24 @@ function bridgeFixture() {
       abortInFlightSend: async () => ({ ok: false, error: { code: 'not-called' } }),
       subscribe: () => () => undefined,
     },
+    agents: {
+      roles: {
+        list: async () => ({ ok: true, value: { items: [] } }),
+        get: async () => ({ ok: false, error: { code: 'not-called' } }),
+        update: async () => ({ ok: false, error: { code: 'not-called' } }),
+        test: async () => ({ ok: false, error: { code: 'not-called' } }),
+      },
+    },
+    teamRuns: {
+      start: async () => ({ ok: false, error: { code: 'not-called' } }),
+      cancel: async () => ({ ok: false, error: { code: 'not-called' } }),
+      get: async () => ({ ok: false, error: { code: 'not-called' } }),
+      list: async () => ({ ok: true, value: { items: [] } }),
+      submitProposal: async () => ({ ok: false, error: { code: 'not-called' } }),
+      getBlackboard: async () => ({ ok: false, error: { code: 'not-called' } }),
+      recordCollaboration: async () => ({ ok: false, error: { code: 'not-called' } }),
+      subscribe: () => () => undefined,
+    },
   }
 }
 

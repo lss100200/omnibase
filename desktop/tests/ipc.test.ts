@@ -29,6 +29,17 @@ const productStubs = {
   sendConversation: unused,
   cancelConversation: unused,
   abortInFlightSend: unused,
+  listAgentRoles: unused,
+  getAgentRole: unused,
+  updateAgentRole: unused,
+  testAgentRole: unused,
+  startTeamRun: unused,
+  cancelTeamRun: unused,
+  getTeamRun: unused,
+  listTeamRuns: unused,
+  submitTeamProposal: unused,
+  getTeamBlackboard: unused,
+  recordTeamCollaboration: unused,
 };
 
 test("preload/main IPC is a closed product channel set", async () => {

@@ -99,6 +99,29 @@ if (hasInstanceLock) {
         runtimeManager?.cancelConversation(input) ?? runtimeUnavailable(),
       abortInFlightSend: () =>
         runtimeManager?.abortInFlightSend() ?? runtimeUnavailable(),
+      listAgentRoles: (input) =>
+        runtimeManager?.listAgentRoles(input) ?? runtimeUnavailable(),
+      getAgentRole: (input) =>
+        runtimeManager?.getAgentRole(input) ?? runtimeUnavailable(),
+      updateAgentRole: (input) =>
+        runtimeManager?.updateAgentRole(input) ?? runtimeUnavailable(),
+      testAgentRole: (input) =>
+        runtimeManager?.testAgentRole(input) ?? runtimeUnavailable(),
+      startTeamRun: (input, emit) =>
+        runtimeManager?.startTeamRun(input, emit) ?? runtimeUnavailable(),
+      cancelTeamRun: (input, emit) =>
+        runtimeManager?.cancelTeamRun(input, emit) ?? runtimeUnavailable(),
+      getTeamRun: (input) =>
+        runtimeManager?.getTeamRun(input) ?? runtimeUnavailable(),
+      listTeamRuns: (input) =>
+        runtimeManager?.listTeamRuns(input) ?? runtimeUnavailable(),
+      submitTeamProposal: (input, emit) =>
+        runtimeManager?.submitTeamProposal(input, emit) ?? runtimeUnavailable(),
+      getTeamBlackboard: (input) =>
+        runtimeManager?.getTeamBlackboard(input) ?? runtimeUnavailable(),
+      recordTeamCollaboration: (input, emit) =>
+        runtimeManager?.recordTeamCollaboration(input, emit) ??
+        runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();

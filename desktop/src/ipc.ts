@@ -4,7 +4,14 @@ import { isAllowedIpcSender } from "./security/origin-policy.ts";
 import {
   IPC_CHANNELS,
   IPC_EVENT_CHANNELS,
+  PERSONAL_EMPLOYEE_IDS,
+  SPECIALIST_EMPLOYEE_IDS,
   requireNoIpcArguments,
+  type DesktopAgentRole,
+  type DesktopAgentRoleIdInput,
+  type DesktopAgentRoleList,
+  type DesktopAgentRoleTestResult,
+  type DesktopAgentRoleUpdateInput,
   type DesktopConversationArchiveInput,
   type DesktopConversationCancelInput,
   type DesktopConversationCreateInput,
@@ -24,12 +31,24 @@ import {
   type DesktopProviderMutationResult,
   type DesktopProviderTestResult,
   type DesktopProviderUpsertInput,
+  type DesktopTeamCollaborationInput,
+  type DesktopTeamCollaborationRequest,
+  type DesktopTeamRun,
+  type DesktopTeamRunEvent,
+  type DesktopTeamRunIdInput,
+  type DesktopTeamRunProposalResult,
+  type DesktopTeamRunStartInput,
+  type DesktopTeamRunSubmitProposalInput,
   type DesktopWorkspaceArchiveInput,
   type DesktopWorkspaceCreateInput,
   type DesktopWorkspaceIdInput,
   type DesktopWorkspaceList,
   type DesktopWorkspaceMutationResult,
+  type PersonalEmployeeId,
+  type PersonalTeamBlackboard,
   type RuntimeStatus,
+  type SpecialistEmployeeId,
+  type TeamRunBudget,
 } from "./shared/ipc-contract.ts";
 
 export interface IpcMainLike {
@@ -109,6 +128,53 @@ export interface IpcDependencies {
   readonly abortInFlightSend: () => Promise<
     DesktopOperationResult<{ readonly aborted: boolean }>
   >;
+  readonly listAgentRoles: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<DesktopAgentRoleList>>;
+  readonly getAgentRole: (
+    input: DesktopAgentRoleIdInput,
+  ) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>;
+  readonly updateAgentRole: (
+    input: DesktopAgentRoleUpdateInput,
+  ) => Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>;
+  readonly testAgentRole: (
+    input: DesktopAgentRoleIdInput,
+  ) => Promise<DesktopOperationResult<DesktopAgentRoleTestResult>>;
+  readonly startTeamRun: (
+    input: DesktopTeamRunStartInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
+  readonly cancelTeamRun: (
+    input: DesktopTeamRunIdInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<
+    DesktopOperationResult<{
+      readonly cancelled: boolean;
+      readonly accepted: boolean;
+      readonly teamRun: DesktopTeamRun;
+    }>
+  >;
+  readonly getTeamRun: (
+    input: DesktopTeamRunIdInput,
+  ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
+  readonly listTeamRuns: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>>;
+  readonly submitTeamProposal: (
+    input: DesktopTeamRunSubmitProposalInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>;
+  readonly getTeamBlackboard: (
+    input: DesktopTeamRunIdInput,
+  ) => Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>>;
+  readonly recordTeamCollaboration: (
+    input: DesktopTeamCollaborationInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<
+    DesktopOperationResult<{
+      readonly collaborationRequest: DesktopTeamCollaborationRequest;
+    }>
+  >;
 }
 
 const WORKSPACE_ID_PATTERN = /^workspace_[a-f0-9]{32}$/u;
@@ -116,6 +182,10 @@ const PROVIDER_ID_PATTERN = /^provider_[a-f0-9]{32}$/u;
 const CONVERSATION_ID_PATTERN = /^conversation_[a-f0-9]{32}$/u;
 const MESSAGE_ID_PATTERN = /^message_[a-f0-9]{32}$/u;
 const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
+const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
+const ASSIGNMENT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
+const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
+const SPECIALIST_ROLE_SET = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
 const GEARS = new Set(["economy", "standard", "deep", "audit"]);
 const DEPTHS = new Set(["disabled", "low", "medium", "high"]);
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
@@ -441,6 +511,296 @@ function parseConversationCancelInput(
   return Object.freeze({ invocationId: args[0].invocationId });
 }
 
+function parseAgentRoleIdInput(
+  args: readonly unknown[],
+): DesktopAgentRoleIdInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["roleId", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].roleId !== "string" ||
+    !EMPLOYEE_ROLE_SET.has(args[0].roleId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    roleId: args[0].roleId as PersonalEmployeeId,
+  });
+}
+
+function parseAgentRoleUpdateInput(
+  args: readonly unknown[],
+): DesktopAgentRoleUpdateInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "gear",
+      "modelNameOverride",
+      "providerId",
+      "roleId",
+      "thinkingDepth",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].roleId !== "string" ||
+    !EMPLOYEE_ROLE_SET.has(args[0].roleId) ||
+    (args[0].providerId !== null &&
+      (typeof args[0].providerId !== "string" ||
+        !PROVIDER_ID_PATTERN.test(args[0].providerId))) ||
+    (args[0].modelNameOverride !== null &&
+      (typeof args[0].modelNameOverride !== "string" ||
+        args[0].modelNameOverride.length < 1 ||
+        args[0].modelNameOverride.length > 256)) ||
+    typeof args[0].gear !== "string" ||
+    !GEARS.has(args[0].gear) ||
+    typeof args[0].thinkingDepth !== "string" ||
+    !DEPTHS.has(args[0].thinkingDepth)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    roleId: args[0].roleId as PersonalEmployeeId,
+    providerId: args[0].providerId,
+    modelNameOverride: args[0].modelNameOverride,
+    gear: args[0].gear as DesktopAgentRoleUpdateInput["gear"],
+    thinkingDepth: args[0].thinkingDepth as DesktopAgentRoleUpdateInput["thinkingDepth"],
+  });
+}
+
+function parseTeamRunBudget(value: unknown): TeamRunBudget | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "maximumConcurrentCalls",
+      "maximumInputCharacters",
+      "maximumOutputCharacters",
+      "maximumProviderCalls",
+      "maximumWallTimeMs",
+    ])
+  ) {
+    return null;
+  }
+  const maximumProviderCalls = value.maximumProviderCalls;
+  const maximumWallTimeMs = value.maximumWallTimeMs;
+  const maximumConcurrentCalls = value.maximumConcurrentCalls;
+  const maximumInputCharacters = value.maximumInputCharacters;
+  const maximumOutputCharacters = value.maximumOutputCharacters;
+  if (
+    typeof maximumProviderCalls !== "number" ||
+    !Number.isInteger(maximumProviderCalls) ||
+    maximumProviderCalls < 1 ||
+    maximumProviderCalls > 128 ||
+    typeof maximumWallTimeMs !== "number" ||
+    !Number.isInteger(maximumWallTimeMs) ||
+    maximumWallTimeMs < 1000 ||
+    maximumWallTimeMs > 3_600_000 ||
+    typeof maximumConcurrentCalls !== "number" ||
+    !Number.isInteger(maximumConcurrentCalls) ||
+    maximumConcurrentCalls < 1 ||
+    maximumConcurrentCalls > 9 ||
+    typeof maximumInputCharacters !== "number" ||
+    !Number.isInteger(maximumInputCharacters) ||
+    maximumInputCharacters < 1 ||
+    maximumInputCharacters > 131_072 ||
+    typeof maximumOutputCharacters !== "number" ||
+    !Number.isInteger(maximumOutputCharacters) ||
+    maximumOutputCharacters < 1 ||
+    maximumOutputCharacters > 131_072
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    maximumProviderCalls,
+    maximumWallTimeMs,
+    maximumConcurrentCalls,
+    maximumInputCharacters,
+    maximumOutputCharacters,
+  });
+}
+
+function parseTeamRunStartInput(
+  args: readonly unknown[],
+): DesktopTeamRunStartInput | null {
+  if (args.length !== 1 || !isRecord(args[0])) return null;
+  const keys = Object.keys(args[0]).sort();
+  const withoutAllow = [
+    "budget",
+    "conversationId",
+    "task",
+    "teamMode",
+    "workspaceId",
+  ];
+  const withAllow = [
+    "allowedSpecialistRoleIds",
+    "budget",
+    "conversationId",
+    "task",
+    "teamMode",
+    "workspaceId",
+  ];
+  if (
+    !(
+      keys.length === withoutAllow.length &&
+      keys.every((key, index) => key === withoutAllow[index])
+    ) &&
+    !(
+      keys.length === withAllow.length &&
+      keys.every((key, index) => key === withAllow[index])
+    )
+  ) {
+    return null;
+  }
+  const budget = parseTeamRunBudget(args[0].budget);
+  if (
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].conversationId !== "string" ||
+    !CONVERSATION_ID_PATTERN.test(args[0].conversationId) ||
+    typeof args[0].task !== "string" ||
+    CONTROL_CHARACTER_PATTERN.test(args[0].task) ||
+    args[0].task.trim().length < 1 ||
+    args[0].task.trim().length > 16384 ||
+    args[0].teamMode !== true ||
+    budget === null
+  ) {
+    return null;
+  }
+  let allowed: readonly SpecialistEmployeeId[] | undefined;
+  if (args[0].allowedSpecialistRoleIds !== undefined) {
+    if (
+      !Array.isArray(args[0].allowedSpecialistRoleIds) ||
+      args[0].allowedSpecialistRoleIds.length < 1 ||
+      args[0].allowedSpecialistRoleIds.length > 9 ||
+      args[0].allowedSpecialistRoleIds.some(
+        (role) => typeof role !== "string" || !SPECIALIST_ROLE_SET.has(role),
+      )
+    ) {
+      return null;
+    }
+    allowed = args[0].allowedSpecialistRoleIds as SpecialistEmployeeId[];
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    conversationId: args[0].conversationId,
+    task: args[0].task.trim(),
+    teamMode: true as const,
+    budget,
+    ...(allowed === undefined ? {} : { allowedSpecialistRoleIds: allowed }),
+  });
+}
+
+function parseTeamRunIdInput(
+  args: readonly unknown[],
+): DesktopTeamRunIdInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["teamRunId", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].teamRunId !== "string" ||
+    !TEAM_RUN_ID_PATTERN.test(args[0].teamRunId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    teamRunId: args[0].teamRunId,
+  });
+}
+
+function parseTeamRunSubmitProposalInput(
+  args: readonly unknown[],
+): DesktopTeamRunSubmitProposalInput | null {
+  const identity = parseTeamRunIdInput(
+    args.length === 1 && isRecord(args[0])
+      ? [
+          {
+            workspaceId: args[0].workspaceId,
+            teamRunId: args[0].teamRunId,
+          },
+        ]
+      : args,
+  );
+  if (
+    identity === null ||
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["proposal", "teamRunId", "workspaceId"]) ||
+    !isRecord(args[0].proposal)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: identity.workspaceId,
+    teamRunId: identity.teamRunId,
+    proposal: args[0].proposal as DesktopTeamRunSubmitProposalInput["proposal"],
+  });
+}
+
+function parseTeamCollaborationInput(
+  args: readonly unknown[],
+): DesktopTeamCollaborationInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "fromAssignmentId",
+      "fromEmployeeRoleId",
+      "question",
+      "reason",
+      "targetRoleId",
+      "teamRunId",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].teamRunId !== "string" ||
+    !TEAM_RUN_ID_PATTERN.test(args[0].teamRunId) ||
+    typeof args[0].fromAssignmentId !== "string" ||
+    !ASSIGNMENT_ID_PATTERN.test(args[0].fromAssignmentId) ||
+    typeof args[0].fromEmployeeRoleId !== "string" ||
+    !SPECIALIST_ROLE_SET.has(args[0].fromEmployeeRoleId) ||
+    typeof args[0].targetRoleId !== "string" ||
+    !SPECIALIST_ROLE_SET.has(args[0].targetRoleId) ||
+    typeof args[0].question !== "string" ||
+    CONTROL_CHARACTER_PATTERN.test(args[0].question) ||
+    args[0].question.trim().length < 1 ||
+    args[0].question.trim().length > 16384 ||
+    typeof args[0].reason !== "string" ||
+    CONTROL_CHARACTER_PATTERN.test(args[0].reason) ||
+    args[0].reason.trim().length < 1 ||
+    args[0].reason.trim().length > 16384
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    teamRunId: args[0].teamRunId,
+    fromAssignmentId: args[0].fromAssignmentId,
+    fromEmployeeRoleId: args[0].fromEmployeeRoleId as SpecialistEmployeeId,
+    targetRoleId: args[0].targetRoleId as SpecialistEmployeeId,
+    question: args[0].question.trim(),
+    reason: args[0].reason.trim(),
+  });
+}
+
+function emitTeamRunEvent(
+  event: IpcMainInvokeEvent,
+  payload: DesktopTeamRunEvent,
+): void {
+  if (event.sender.isDestroyed()) {
+    throw new Error("desktop_renderer_destroyed");
+  }
+  event.sender.send(IPC_EVENT_CHANNELS.teamRunEvent, payload);
+}
+
 export function registerClosedIpcHandlers(
   ipcMain: IpcMainLike | IpcMain,
   dependencies: IpcDependencies,
@@ -644,6 +1004,130 @@ export function registerClosedIpcHandlers(
       requireTrustedSender(event);
       requireNoIpcArguments(args);
       return dependencies.abortInFlightSend();
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.agentsRolesList,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopAgentRoleList>()
+        : dependencies.listAgentRoles(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.agentsRolesGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseAgentRoleIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly role: DesktopAgentRole }>()
+        : dependencies.getAgentRole(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.agentsRolesUpdate,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseAgentRoleUpdateInput(args);
+      return input === null
+        ? invalidInput<{ readonly role: DesktopAgentRole }>()
+        : dependencies.updateAgentRole(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.agentsRolesTest,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseAgentRoleIdInput(args);
+      return input === null
+        ? invalidInput<DesktopAgentRoleTestResult>()
+        : dependencies.testAgentRole(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsStart,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunStartInput(args);
+      return input === null
+        ? invalidInput<{ readonly teamRun: DesktopTeamRun }>()
+        : dependencies.startTeamRun(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsCancel,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunIdInput(args);
+      return input === null
+        ? invalidInput<{
+            readonly cancelled: boolean;
+            readonly accepted: boolean;
+            readonly teamRun: DesktopTeamRun;
+          }>()
+        : dependencies.cancelTeamRun(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly teamRun: DesktopTeamRun }>()
+        : dependencies.getTeamRun(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsList,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly items: readonly DesktopTeamRun[] }>()
+        : dependencies.listTeamRuns(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsSubmitProposal,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunSubmitProposalInput(args);
+      return input === null
+        ? invalidInput<DesktopTeamRunProposalResult>()
+        : dependencies.submitTeamProposal(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsGetBlackboard,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunIdInput(args);
+      return input === null
+        ? invalidInput<{ readonly blackboard: PersonalTeamBlackboard }>()
+        : dependencies.getTeamBlackboard(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsRecordCollaboration,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamCollaborationInput(args);
+      return input === null
+        ? invalidInput<{
+            readonly collaborationRequest: DesktopTeamCollaborationRequest;
+          }>()
+        : dependencies.recordTeamCollaboration(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
     },
   );
 }
