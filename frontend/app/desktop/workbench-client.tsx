@@ -34,8 +34,20 @@ import {
   type DesktopThinkingDepth,
 } from '@/lib/desktop-bridge'
 import {
+  applyDesktopConversationArchive,
+  applyDesktopConversationCompletion,
+  applyDesktopConversationDetail,
+  applyDesktopSurfaceError,
+  applyDesktopWorkspaceLoad,
+  beginDesktopSurfaceDetailRequest,
+  beginDesktopSurfaceMutation,
+  beginDesktopSurfaceWorkspaceLoad,
+  createDesktopConversationSurface,
+  selectDesktopConversation,
+  unmountDesktopConversationSurface,
+} from '@/lib/desktop-conversation-surface'
+import {
   advanceDesktopSurfaceScope,
-  applyDesktopScopedProjection,
   createDesktopSurfaceScope,
   desktopSurfaceProjectionIsCurrent,
   type DesktopSurfaceScope,
@@ -129,6 +141,8 @@ export function DesktopWorkbench({
   const [conversations, setConversations] = useState<readonly DesktopConversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<readonly DesktopMessage[]>([])
+  const [messagesStatus, setMessagesStatus] = useState<'empty' | 'loading' | 'ready' | 'error'>('empty')
+  const [messagesError, setMessagesError] = useState<string | null>(null)
   const [providers, setProviders] = useState<readonly DesktopProvider[]>([])
   const [agentName, setAgentName] = useState('父 Agent')
   const [draft, setDraft] = useState('')
@@ -143,6 +157,10 @@ export function DesktopWorkbench({
   const surfaceScopeRef = useRef<DesktopSurfaceScope>(
     createDesktopSurfaceScope(initialWorkspaceId, null),
   )
+  const conversationSurfaceRef = useRef(
+    createDesktopConversationSurface<DesktopMessage, DesktopConversation>(initialWorkspaceId, null),
+  )
+  const mountedRef = useRef(true)
 
   const applyViewScope = useCallback((nextWorkspaceId: string | null, nextConversationId: string | null) => {
     const next = advanceDesktopSurfaceScope(
@@ -180,42 +198,94 @@ export function DesktopWorkbench({
 
   const loadWorkspaceSurface = useCallback(
     async (nextWorkspaceId: string) => {
-      const started = surfaceScopeRef.current
+      const startedScope = surfaceScopeRef.current
+      const load = beginDesktopSurfaceWorkspaceLoad(conversationSurfaceRef.current)
+      conversationSurfaceRef.current = load.surface
       const [conversationResult, providerResult, agentResult] = await Promise.all([
         bridge.conversations.list({ workspaceId: nextWorkspaceId }),
         bridge.providers.list(),
         bridge.workspaces.agent({ workspaceId: nextWorkspaceId }),
       ])
-      if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
+      if (!mountedRef.current) return
+      if (load.epoch !== conversationSurfaceRef.current.workspaceLoadEpoch) return
+      if (!desktopSurfaceProjectionIsCurrent(startedScope, surfaceScopeRef.current)) return
       if (!conversationResult.ok) {
-        onError(errorMessage(conversationResult.error.code))
+        if (applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')) {
+          onError(errorMessage(conversationResult.error.code))
+        }
         return
       }
       if (!providerResult.ok) {
-        onError(errorMessage(providerResult.error.code))
+        if (applyDesktopSurfaceError(conversationSurfaceRef.current, load.epoch, 'workspace')) {
+          onError(errorMessage(providerResult.error.code))
+        }
         return
       }
       if (agentResult.ok) setAgentName(agentResult.value.agent.displayName)
       setProviders(providerResult.value.items)
       const active = conversationResult.value.items.filter((item) => item.state === 'active')
-      setConversations(conversationResult.value.items)
-      const selected = active[0]
-      const selectedScope = applyViewScope(nextWorkspaceId, selected?.id ?? null)
+      const selected =
+        conversationSurfaceRef.current.conversationId !== null
+          ? active.find((item) => item.id === conversationSurfaceRef.current.conversationId) ?? active[0]
+          : active[0]
+      const loaded = applyDesktopWorkspaceLoad(
+        conversationSurfaceRef.current,
+        load.epoch,
+        conversationResult.value.items,
+        selected?.id ?? null,
+      )
+      conversationSurfaceRef.current = loaded
+      setConversations(loaded.conversations)
+      if (loaded.conversationId !== surfaceScopeRef.current.conversationId) {
+        applyViewScope(nextWorkspaceId, loaded.conversationId)
+      }
       if (selected === undefined) {
         setMessages([])
+        setMessagesStatus('empty')
+        setMessagesError(null)
         return
       }
+      if (loaded.conversationId !== selected.id) {
+        return
+      }
+      const detailReq = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+      conversationSurfaceRef.current = detailReq.surface
+      setMessages([])
+      setMessagesStatus('loading')
+      setMessagesError(null)
       const detail = await bridge.conversations.get({
         workspaceId: nextWorkspaceId,
         conversationId: selected.id,
       })
-      if (!detail.ok) return
-      setMessages((current) =>
-        applyDesktopScopedProjection(selectedScope, surfaceScopeRef.current, current, detail.value.messages),
+      const applied = applyDesktopConversationDetail(
+        conversationSurfaceRef.current,
+        detailReq.epoch,
+        selected.id,
+        detail.ok
+          ? { ok: true, messages: detail.value.messages }
+          : { ok: false, error: errorMessage(detail.error.code) },
       )
+      conversationSurfaceRef.current = applied
+      if (!applied.mounted || applied.detailRequestEpoch !== detailReq.epoch) return
+      if (applied.conversationId !== selected.id) return
+      setMessages(applied.messages)
+      setMessagesStatus(applied.messagesStatus)
+      setMessagesError(applied.messagesError)
+      if (applied.messagesStatus === 'error' && applied.messagesError !== null) {
+        onError(applied.messagesError)
+      }
     },
     [applyViewScope, bridge, onError],
   )
+
+  useEffect(() => {
+    mountedRef.current = true
+    conversationSurfaceRef.current = { ...conversationSurfaceRef.current, mounted: true }
+    return () => {
+      mountedRef.current = false
+      conversationSurfaceRef.current = unmountDesktopConversationSurface(conversationSurfaceRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (workspaceId !== null) void loadWorkspaceSurface(workspaceId)
@@ -239,6 +309,7 @@ export function DesktopWorkbench({
         void bridge.conversations.cancel({ invocationId: reduced.cancelInvocationId })
       }
       if (
+        mountedRef.current &&
         event.type === 'cancelled' &&
         current.invocationId !== null &&
         event.invocationId === current.invocationId
@@ -254,16 +325,35 @@ export function DesktopWorkbench({
 
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
-    const started = surfaceScopeRef.current
+    const startedScope = surfaceScopeRef.current
+    const mutation = beginDesktopSurfaceMutation(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = mutation.surface
     const created = await bridge.conversations.create({ workspaceId })
+    if (!mountedRef.current) return null
+    if (mutation.epoch !== conversationSurfaceRef.current.mutationEpoch) return null
     if (!created.ok) {
-      onError(errorMessage(created.error.code))
+      if (applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')) {
+        onError(errorMessage(created.error.code))
+      }
       return null
     }
-    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return null
-    setConversations((current) => [created.value.conversation, ...current])
+    const nextConversations = [created.value.conversation, ...conversationSurfaceRef.current.conversations]
+    conversationSurfaceRef.current = {
+      ...conversationSurfaceRef.current,
+      conversations: nextConversations,
+    }
+    setConversations(nextConversations)
+    if (!desktopSurfaceProjectionIsCurrent(startedScope, surfaceScopeRef.current)) return null
+    const selected = selectDesktopConversation(
+      conversationSurfaceRef.current,
+      workspaceId,
+      created.value.conversation.id,
+    )
+    conversationSurfaceRef.current = selected
     applyViewScope(workspaceId, created.value.conversation.id)
     setMessages([])
+    setMessagesStatus('empty')
+    setMessagesError(null)
     return created.value.conversation.id
   }
 
@@ -278,6 +368,7 @@ export function DesktopWorkbench({
     const name = workspaceName.trim()
     if (name === '') return
     const result = await bridge.workspaces.create({ name })
+    if (!mountedRef.current) return
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
@@ -288,31 +379,75 @@ export function DesktopWorkbench({
     ]
     onWorkspacesChange(next)
     applyViewScope(result.value.workspace.id, null)
+    conversationSurfaceRef.current = selectDesktopConversation(
+      conversationSurfaceRef.current,
+      result.value.workspace.id,
+      null,
+    )
     setConversations([])
     setMessages([])
+    setMessagesStatus('empty')
+    setMessagesError(null)
     setWorkspaceName('')
   }
 
   const archiveCurrentConversation = async () => {
     const current = conversations.find((item) => item.id === conversationId)
     if (workspaceId === null || current === undefined) return
+    const archivedId = current.id
+    const mutation = beginDesktopSurfaceMutation(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = mutation.surface
     const result = await bridge.conversations.archive({
       workspaceId,
-      conversationId: current.id,
+      conversationId: archivedId,
       expectedRowVersion: current.rowVersion,
     })
+    if (!mountedRef.current) return
     if (!result.ok) {
-      onError(errorMessage(result.error.code))
+      if (applyDesktopSurfaceError(conversationSurfaceRef.current, mutation.epoch, 'mutation')) {
+        onError(errorMessage(result.error.code))
+      }
       return
     }
-    setConversations((items) =>
-      items.map((item) => (item.id === result.value.conversation.id ? result.value.conversation : item)),
+    const updated = conversationSurfaceRef.current.conversations.map((item) =>
+      item.id === result.value.conversation.id ? result.value.conversation : item,
     )
-    const remaining = conversations.filter(
-      (item) => item.id !== current.id && item.state === 'active',
+    const remaining = updated.filter((item) => item.id !== archivedId && item.state === 'active')
+    const applied = applyDesktopConversationArchive(
+      conversationSurfaceRef.current,
+      mutation.epoch,
+      archivedId,
+      updated,
+      remaining[0]?.id ?? null,
     )
-    applyViewScope(workspaceId, remaining[0]?.id ?? null)
-    setMessages([])
+    conversationSurfaceRef.current = applied
+    setConversations(applied.conversations)
+    if (applied.conversationId === archivedId) return
+    if (applied.conversationId === surfaceScopeRef.current.conversationId) return
+    applyViewScope(workspaceId, applied.conversationId)
+    setMessages(applied.messages)
+    setMessagesStatus(applied.messagesStatus)
+    setMessagesError(applied.messagesError)
+    if (applied.conversationId === null) return
+    const detailReq = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = detailReq.surface
+    const nextId = applied.conversationId
+    void bridge.conversations.get({ workspaceId, conversationId: nextId }).then((detail) => {
+      const next = applyDesktopConversationDetail(
+        conversationSurfaceRef.current,
+        detailReq.epoch,
+        nextId,
+        detail.ok
+          ? { ok: true, messages: detail.value.messages }
+          : { ok: false, error: errorMessage(detail.error.code) },
+      )
+      conversationSurfaceRef.current = next
+      if (!next.mounted || next.detailRequestEpoch !== detailReq.epoch) return
+      if (next.conversationId !== nextId) return
+      setMessages(next.messages)
+      setMessagesStatus(next.messagesStatus)
+      setMessagesError(next.messagesError)
+    })
   }
 
   const sendMessage = async (event: FormEvent) => {
@@ -321,7 +456,8 @@ export function DesktopWorkbench({
     if (workspaceId === null || content === '' || desktopLiveSendBlocked(live)) return
     const target = await ensureConversation()
     if (target === null) return
-    const started = surfaceScopeRef.current
+    const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = completion.surface
     onError(null)
     setDraft('')
     const nextLive = beginDesktopLiveSend({
@@ -339,18 +475,33 @@ export function DesktopWorkbench({
     const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
     liveRef.current = completed
     setLive(completed)
-    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
+    if (!mountedRef.current) return
     if (!result.ok) {
-      onError(errorMessage(result.error.code))
+      if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+        onError(errorMessage(result.error.code))
+      }
       return
     }
     const detail = await bridge.conversations.get({ workspaceId, conversationId: target })
+    if (!mountedRef.current) return
     if (!detail.ok) return
-    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
-    setMessages(detail.value.messages)
-    setConversations((current) =>
-      current.map((item) => (item.id === detail.value.conversation.id ? detail.value.conversation : item)),
+    const updatedConversations = conversationSurfaceRef.current.conversations.map((item) =>
+      item.id === detail.value.conversation.id ? detail.value.conversation : item,
     )
+    const applied = applyDesktopConversationCompletion(
+      conversationSurfaceRef.current,
+      completion.epoch,
+      target,
+      detail.value.messages,
+      updatedConversations,
+    )
+    conversationSurfaceRef.current = applied
+    if (!applied.mounted || applied.detailRequestEpoch !== completion.epoch) return
+    if (applied.conversationId !== target) return
+    setMessages(applied.messages)
+    setMessagesStatus(applied.messagesStatus)
+    setMessagesError(null)
+    setConversations(applied.conversations)
   }
 
   const stopGeneration = async () => {
@@ -363,7 +514,7 @@ export function DesktopWorkbench({
     }
     liveRef.current = cancelled
     setLive(cancelled)
-    onError('正在停止')
+    if (mountedRef.current) onError('正在停止')
     if (target !== null) {
       await bridge.conversations.cancel({ invocationId: target })
     }
@@ -373,29 +524,42 @@ export function DesktopWorkbench({
     if (workspaceId === null || conversationId === null || desktopLiveSendBlocked(live)) return
     const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
-    const started = surfaceScopeRef.current
+    const target = conversationId
+    const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = completion.surface
     const nextLive = beginDesktopLiveSend(liveRef.current)
     liveRef.current = nextLive
     setLive(nextLive)
     const result = await bridge.conversations.send({
       workspaceId,
-      conversationId,
+      conversationId: target,
       content: '',
       retryOfMessageId: failed.id,
     })
     const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
     liveRef.current = completed
     setLive(completed)
-    if (!desktopSurfaceProjectionIsCurrent(started, surfaceScopeRef.current)) return
+    if (!mountedRef.current) return
     if (!result.ok) {
-      onError(errorMessage(result.error.code))
+      if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+        onError(errorMessage(result.error.code))
+      }
       return
     }
-    const detail = await bridge.conversations.get({ workspaceId, conversationId })
-    if (!detail.ok) return
-    setMessages((current) =>
-      applyDesktopScopedProjection(started, surfaceScopeRef.current, current, detail.value.messages),
+    const detail = await bridge.conversations.get({ workspaceId, conversationId: target })
+    if (!mountedRef.current || !detail.ok) return
+    const applied = applyDesktopConversationCompletion(
+      conversationSurfaceRef.current,
+      completion.epoch,
+      target,
+      detail.value.messages,
     )
+    conversationSurfaceRef.current = applied
+    if (!applied.mounted || applied.detailRequestEpoch !== completion.epoch) return
+    if (applied.conversationId !== target) return
+    setMessages(applied.messages)
+    setMessagesStatus(applied.messagesStatus)
+    setMessagesError(null)
   }
 
   const saveProvider = async (event: FormEvent) => {
@@ -415,11 +579,13 @@ export function DesktopWorkbench({
         isDefault: providerForm.isDefault,
         isEnabled: providerForm.isEnabled,
       })
+      if (!mountedRef.current) return
       if (!result.ok) {
         onError(errorMessage(result.error.code))
         return
       }
       const listed = await bridge.providers.list()
+      if (!mountedRef.current) return
       if (listed.ok) setProviders(listed.value.items)
       setProviderForm((current) => ({ ...current, apiKey: '' }))
       setTestResult('Provider 已保存。API Key 不会回读到界面。')
@@ -430,6 +596,7 @@ export function DesktopWorkbench({
 
   const testSelected = async (providerId: string) => {
     const result = await bridge.providers.test({ providerId })
+    if (!mountedRef.current) return
     if (!result.ok) {
       onError(errorMessage(result.error.code))
       return
@@ -508,8 +675,15 @@ export function DesktopWorkbench({
                   }`}
                   onClick={() => {
                     applyViewScope(workspace.id, null)
+                    conversationSurfaceRef.current = selectDesktopConversation(
+                      conversationSurfaceRef.current,
+                      workspace.id,
+                      null,
+                    )
                     setConversations([])
                     setMessages([])
+                    setMessagesStatus('empty')
+                    setMessagesError(null)
                   }}
                 >
                   {workspace.name}
@@ -544,20 +718,38 @@ export function DesktopWorkbench({
                       item.id === conversationId ? 'border-foreground bg-accent' : 'border-border'
                     }`}
                     onClick={() => {
-                      const started = applyViewScope(workspaceId, item.id)
                       if (workspaceId === null) return
+                      applyViewScope(workspaceId, item.id)
+                      const selected = selectDesktopConversation(
+                        conversationSurfaceRef.current,
+                        workspaceId,
+                        item.id,
+                      )
+                      conversationSurfaceRef.current = selected
+                      setMessages([])
+                      setMessagesStatus('loading')
+                      setMessagesError(null)
+                      const epoch = selected.detailRequestEpoch
                       void bridge.conversations
                         .get({ workspaceId, conversationId: item.id })
                         .then((detail) => {
-                          if (!detail.ok) return
-                          setMessages((current) =>
-                            applyDesktopScopedProjection(
-                              started,
-                              surfaceScopeRef.current,
-                              current,
-                              detail.value.messages,
-                            ),
+                          const applied = applyDesktopConversationDetail(
+                            conversationSurfaceRef.current,
+                            epoch,
+                            item.id,
+                            detail.ok
+                              ? { ok: true, messages: detail.value.messages }
+                              : { ok: false, error: errorMessage(detail.error.code) },
                           )
+                          conversationSurfaceRef.current = applied
+                          if (!applied.mounted || applied.detailRequestEpoch !== epoch) return
+                          if (applied.conversationId !== item.id) return
+                          setMessages(applied.messages)
+                          setMessagesStatus(applied.messagesStatus)
+                          setMessagesError(applied.messagesError)
+                          if (applied.messagesStatus === 'error' && applied.messagesError !== null) {
+                            onError(applied.messagesError)
+                          }
                         })
                     }}
                   >
@@ -591,6 +783,12 @@ export function DesktopWorkbench({
             </div>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto p-4 text-[16px] leading-7">
+            {messagesStatus === 'loading' && messages.length === 0 && (
+              <div className="text-[13px] text-foreground/80">加载中</div>
+            )}
+            {messagesStatus === 'error' && messagesError !== null && (
+              <div className="text-[13px]">{messagesError}</div>
+            )}
             {messages.map((message) => (
               <div key={message.id} className="space-y-1">
                 <div className="text-[13px] font-medium text-foreground">
