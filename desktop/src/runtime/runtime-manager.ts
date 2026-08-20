@@ -31,7 +31,9 @@ import type {
   DesktopTeamCollaborationRequest,
   DesktopTeamRun,
   DesktopTeamRunEvent,
+  DesktopTeamRunExecuteInput,
   DesktopTeamRunIdInput,
+  DesktopTeamRunProof,
   DesktopTeamRunProposalResult,
   DesktopTeamRunStartInput,
   DesktopTeamRunSubmitProposalInput,
@@ -45,6 +47,9 @@ import type {
 } from "../shared/ipc-contract.ts";
 import { verifyRuntimeBundle } from "./manifest.ts";
 import { DesktopNativeClient } from "./native-client.ts";
+import { PersonalTeamCoordinator } from "./personal-team-coordinator.ts";
+import { createNativePersonalTeamHost } from "./personal-team-native-host.ts";
+import { createOpenAiCompatibleTransport } from "./personal-team-provider.ts";
 import {
   decryptProviderSecret,
   encryptProviderSecret,
@@ -203,6 +208,7 @@ export class RuntimeManager {
   #streamAbort: AbortController | null = null;
   #sendInFlight = false;
   #pendingAbort = false;
+  #teamCoordinator: PersonalTeamCoordinator | null = null;
   #generation = 0;
   #startOperation: {
     readonly generation: number;
@@ -528,10 +534,13 @@ export class RuntimeManager {
   abortInFlightSend(): Promise<
     DesktopOperationResult<{ readonly aborted: boolean }>
   > {
+    const sendAborted = this.#requestStreamAbort();
+    this.#teamCoordinator?.requestStop();
+    const teamAborted = this.#teamCoordinator?.live === true;
     return Promise.resolve(
       Object.freeze({
         ok: true,
-        value: Object.freeze({ aborted: this.#requestStreamAbort() }),
+        value: Object.freeze({ aborted: sendAborted || teamAborted }),
       }),
     );
   }
@@ -614,6 +623,7 @@ export class RuntimeManager {
         readonly teamRun: DesktopTeamRun;
       }>();
     }
+    this.#teamCoordinator?.requestStop();
     const result = await client.cancelTeamRun(input);
     if (result.ok) {
       emit({
@@ -621,6 +631,73 @@ export class RuntimeManager {
         teamRunId: result.value.teamRun.id,
         workspaceId: result.value.teamRun.workspaceId,
         state: result.value.teamRun.state,
+      });
+    }
+    return result;
+  }
+
+  async executeTeamRun(
+    input: DesktopTeamRunExecuteInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>> {
+    const client = this.#readySendClient();
+    const vault = this.#options.secretVault;
+    if (client === null || vault === undefined || !("startTeamRun" in client)) {
+      return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
+    }
+    if (this.#teamCoordinator?.live === true) {
+      return Object.freeze({
+        ok: false,
+        error: Object.freeze({ code: "desktop_team_run_already_active" }),
+      });
+    }
+    const nativeClient = this.#readyNativeClient();
+    if (nativeClient === null) {
+      return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
+    }
+    const coordinator = new PersonalTeamCoordinator({
+      host: createNativePersonalTeamHost({ client: nativeClient, vault }),
+      transport: createOpenAiCompatibleTransport(),
+    });
+    this.#teamCoordinator = coordinator;
+    try {
+      const proof = await coordinator.execute(input, emit);
+      return Object.freeze({ ok: true as const, value: Object.freeze({ proof }) });
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code ?? "desktop_team_run_failed")
+          : "desktop_team_run_failed";
+      return Object.freeze({
+        ok: false,
+        error: Object.freeze({ code }),
+      });
+    } finally {
+      if (this.#teamCoordinator === coordinator) this.#teamCoordinator = null;
+    }
+  }
+
+  async appendTeamRunBudget(
+    input: {
+      readonly workspaceId: string;
+      readonly teamRunId: string;
+      readonly budget: DesktopTeamRunExecuteInput["budget"];
+    },
+    emit: (event: DesktopTeamRunEvent) => void,
+  ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> {
+    const client = this.#readyNativeClient();
+    if (client === null) {
+      return this.#nativeUnavailable<{ readonly teamRun: DesktopTeamRun }>();
+    }
+    const result = await client.appendTeamRunBudget(input);
+    if (result.ok) {
+      emit({
+        type: "snapshot",
+        teamRunId: result.value.teamRun.id,
+        workspaceId: result.value.teamRun.workspaceId,
+        state: result.value.teamRun.state,
+        consumedProviderCalls: result.value.teamRun.consumedProviderCalls,
+        maximumProviderCalls: result.value.teamRun.maximumProviderCalls,
       });
     }
     return result;

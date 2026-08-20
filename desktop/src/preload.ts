@@ -28,8 +28,11 @@ import type {
   DesktopTeamCollaborationInput,
   DesktopTeamCollaborationRequest,
   DesktopTeamRun,
+  DesktopTeamRunAppendBudgetInput,
   DesktopTeamRunEvent,
+  DesktopTeamRunExecuteInput,
   DesktopTeamRunIdInput,
+  DesktopTeamRunProof,
   DesktopTeamRunProposalResult,
   DesktopTeamRunStartInput,
   DesktopTeamRunSubmitProposalInput,
@@ -75,6 +78,8 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   teamRunsSubmitProposal: "omnibase:team-runs:submit-proposal",
   teamRunsGetBlackboard: "omnibase:team-runs:get-blackboard",
   teamRunsRecordCollaboration: "omnibase:team-runs:record-collaboration",
+  teamRunsExecute: "omnibase:team-runs:execute",
+  teamRunsAppendBudget: "omnibase:team-runs:append-budget",
 } as const);
 
 const CONVERSATION_EVENT = "omnibase:conversation:event";
@@ -349,6 +354,19 @@ const api: OmniBaseDesktopApi = Object.freeze({
           readonly collaborationRequest: DesktopTeamCollaborationRequest;
         }>
       >,
+    execute: (
+      input: DesktopTeamRunExecuteInput,
+    ): Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsExecute, input) as Promise<
+        DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>
+      >,
+    appendBudget: (
+      input: DesktopTeamRunAppendBudgetInput,
+    ): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.teamRunsAppendBudget,
+        input,
+      ) as Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>,
     subscribe: (listener: (event: DesktopTeamRunEvent) => void) => {
       const wrapped = (_event: unknown, payload: DesktopTeamRunEvent) => {
         listener(payload);

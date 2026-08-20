@@ -198,6 +198,17 @@ _ALLOWED_DEPTHS = frozenset({"disabled", "low", "medium", "high"})
 _MAX_TEAM_RUNS = 64
 _MAX_WAVES = 16
 _MAX_ASSIGNMENTS = 128
+_MAX_PLAN_REVISIONS = 32
+_INFINITE_REPLAN_KEYS: frozenset[str] = frozenset(
+    {
+        "replanCap",
+        "replan_cap",
+        "unlimitedReplan",
+        "unlimited_replan",
+        "infiniteReplan",
+        "infinite_replan",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -603,7 +614,12 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
     allowed_roles: frozenset[str],
     workspace_id: str | None,
     known_assignment_ids: frozenset[str],
+    revision_ordinal: int | None = None,
 ) -> TeamValidationResult:
+    if isinstance(proposal, dict) and (set(proposal) & _INFINITE_REPLAN_KEYS):
+        return TeamValidationResult(False, "desktop_team_infinite_replan")
+    if revision_ordinal is not None and revision_ordinal > _MAX_PLAN_REVISIONS:
+        return TeamValidationResult(False, "desktop_team_infinite_replan")
     forbidden = _walk_forbidden_keys(proposal)
     if forbidden is not None:
         return TeamValidationResult(False, forbidden)
@@ -648,6 +664,8 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
                 return TeamValidationResult(False, "desktop_team_dependency_cycle")
         if _has_assignment_cycle({**{key: () for key in known_assignment_ids}, **graph}):
             return TeamValidationResult(False, "desktop_team_dependency_cycle")
+        if len(known_assignment_ids) + len(assignment_ids) > budget["maximumProviderCalls"]:
+            return TeamValidationResult(False, "desktop_team_call_budget_exceeded")
         return TeamValidationResult(
             True, None, {"decision": "continue", "nextWave": wave.normalized}
         )
@@ -677,6 +695,8 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
             return TeamValidationResult(False, "desktop_team_missing_dependency")
         seen.add(assignment_id)
         normalized.append(result.normalized)
+    if len(known_assignment_ids) + len(normalized) > budget["maximumProviderCalls"]:
+        return TeamValidationResult(False, "desktop_team_call_budget_exceeded")
     return TeamValidationResult(
         True, None, {"decision": "request_followup", "assignments": normalized}
     )
@@ -1310,7 +1330,7 @@ def _persist_assignments(
 ) -> None:
     for wave in waves:
         declared = str(wave["execution"])
-        effective = "serial" if declared == "parallel" else declared
+        effective = declared
         for assignment in wave["assignments"]:
             connection.execute(
                 "INSERT INTO team_assignment ("
@@ -1337,7 +1357,7 @@ def _persist_assignments(
             )
 
 
-def submit_parent_proposal(
+def submit_parent_proposal(  # noqa: C901 - first-pass and replan persist share one transaction
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
@@ -1360,6 +1380,10 @@ def submit_parent_proposal(
                 (team_run_id,),
             ).fetchall()
         }
+        ordinal = connection.execute(
+            "SELECT COALESCE(MAX(revision_ordinal), 0) + 1 FROM team_plan_revision WHERE team_run_id = ?",
+            (team_run_id,),
+        ).fetchone()[0]
         if not known:
             result = validate_parent_team_decision(
                 proposal,
@@ -1374,13 +1398,10 @@ def submit_parent_proposal(
                 allowed_roles=allowed,
                 workspace_id=workspace_id,
                 known_assignment_ids=frozenset(known),
+                revision_ordinal=int(ordinal),
             )
         encoded = _canonical_json(proposal)
         digest = _sha256_text(encoded)
-        ordinal = connection.execute(
-            "SELECT COALESCE(MAX(revision_ordinal), 0) + 1 FROM team_plan_revision WHERE team_run_id = ?",
-            (team_run_id,),
-        ).fetchone()[0]
         decision = "cannot_complete"
         if isinstance(proposal, dict) and isinstance(proposal.get("decision"), str):
             decision = str(proposal["decision"])
@@ -1411,34 +1432,45 @@ def submit_parent_proposal(
                 now,
             ),
         )
-        if (
-            result.ok
-            and result.normalized is not None
-            and result.normalized.get("decision") == "delegate"
-        ):
-            _persist_assignments(
-                connection,
-                team_run_id=team_run_id,
-                revision_id=revision_id,
-                waves=list(result.normalized["waves"]),
-                now=now,
-            )
-            connection.execute(
-                "UPDATE team_run SET current_plan_revision_id = ?, current_wave_id = ?, "
-                "dispatched_participant_count = ?, updated_at = ? WHERE id = ?",
-                (
-                    revision_id,
-                    result.normalized["waves"][0]["waveId"],
-                    len(result.normalized["waves"][0]["assignments"]) + 1,
-                    now,
-                    team_run_id,
-                ),
-            )
-        elif result.ok:
-            connection.execute(
-                "UPDATE team_run SET current_plan_revision_id = ?, updated_at = ? WHERE id = ?",
-                (revision_id, now, team_run_id),
-            )
+        if result.ok and result.normalized is not None:
+            decision_name = str(result.normalized.get("decision"))
+            persist_waves: list[dict[str, Any]] = []
+            if decision_name == "delegate":
+                persist_waves = list(result.normalized["waves"])
+            elif decision_name == "continue":
+                persist_waves = [result.normalized["nextWave"]]
+            elif decision_name == "request_followup":
+                persist_waves = [
+                    {
+                        "waveId": f"followup-{int(ordinal)}",
+                        "execution": "serial",
+                        "assignments": list(result.normalized["assignments"]),
+                    }
+                ]
+            if persist_waves:
+                _persist_assignments(
+                    connection,
+                    team_run_id=team_run_id,
+                    revision_id=revision_id,
+                    waves=persist_waves,
+                    now=now,
+                )
+                connection.execute(
+                    "UPDATE team_run SET current_plan_revision_id = ?, current_wave_id = ?, "
+                    "dispatched_participant_count = ?, updated_at = ? WHERE id = ?",
+                    (
+                        revision_id,
+                        persist_waves[0]["waveId"],
+                        len(persist_waves[0]["assignments"]) + 1,
+                        now,
+                        team_run_id,
+                    ),
+                )
+            else:
+                connection.execute(
+                    "UPDATE team_run SET current_plan_revision_id = ?, updated_at = ? WHERE id = ?",
+                    (revision_id, now, team_run_id),
+                )
         run = connection.execute("SELECT * FROM team_run WHERE id = ?", (team_run_id,)).fetchone()
         revision = connection.execute(
             "SELECT * FROM team_plan_revision WHERE id = ?", (revision_id,)
@@ -1555,6 +1587,11 @@ def get_team_blackboard(
         "FROM team_assignment WHERE team_run_id = ? ORDER BY created_at, id",
         (team_run_id,),
     ).fetchall()
+    reports = connection.execute(
+        "SELECT assignment_id, employee_role_id, status, report "
+        "FROM team_employee_report WHERE team_run_id = ? ORDER BY created_at, id",
+        (team_run_id,),
+    ).fetchall()
     requests = connection.execute(
         "SELECT from_assignment_id, from_employee_role_id, target_role_id, question, "
         "reason, parent_decision, resolved_assignment_id "
@@ -1579,7 +1616,16 @@ def get_team_blackboard(
                 }
                 for row in assignments
             ],
-            "reports": [],
+            "reports": [
+                {
+                    "assignment_id": str(row["assignment_id"]),
+                    "employee_role_id": str(row["employee_role_id"]),
+                    "status": str(row["status"]),
+                    "report": str(row["report"]),
+                    "collaboration_requests": [],
+                }
+                for row in reports
+            ],
             "collaboration_requests": [
                 {
                     "from_assignment_id": str(row["from_assignment_id"]),
@@ -1592,5 +1638,536 @@ def get_team_blackboard(
                 }
                 for row in requests
             ],
+        }
+    }
+
+
+def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
+    now = utc_now_text()
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            "UPDATE team_run SET state = 'unknown', updated_at = ? "
+            "WHERE state IN ('preparing', 'running', 'cancelling')",
+            (now,),
+        )
+        connection.execute(
+            "UPDATE team_node SET state = 'unknown', updated_at = ? "
+            "WHERE state IN ('pending', 'running')",
+            (now,),
+        )
+        connection.execute(
+            "UPDATE team_assignment SET state = 'blocked', updated_at = ? "
+            "WHERE state IN ('pending', 'ready', 'running')",
+            (now,),
+        )
+        connection.execute("COMMIT")
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_recovery_failed") from None
+
+
+def set_team_run_state(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    state: str,
+    *,
+    parent_final_answer: str | None = None,
+) -> dict[str, object]:
+    allowed = {
+        "preparing",
+        "running",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "unknown",
+        "budget_exhausted",
+        "cannot_complete",
+    }
+    if state not in allowed:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if parent_final_answer is not None:
+            bounded = _bounded_text(parent_final_answer, int(row["maximum_output_characters"]))
+            if bounded is None:
+                raise DesktopApiError(400, "desktop_team_output_budget_exceeded")
+            updated = connection.execute(
+                "UPDATE team_run SET state = ?, parent_final_answer = ?, updated_at = ? "
+                "WHERE id = ? AND state = ? RETURNING *",
+                (state, bounded, now, team_run_id, row["state"]),
+            ).fetchone()
+        else:
+            updated = connection.execute(
+                "UPDATE team_run SET state = ?, updated_at = ? WHERE id = ? AND state = ? RETURNING *",
+                (state, now, team_run_id, row["state"]),
+            ).fetchone()
+        if updated is None:
+            raise DesktopApiError(409, "desktop_team_run_state_conflict")
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_run_state_failed") from None
+    return {"team_run": _team_run_payload(updated)}
+
+
+def append_team_run_budget(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    budget: object,
+) -> dict[str, object]:
+    result = validate_team_run_budget(budget)
+    if not result.ok or result.normalized is None:
+        raise DesktopApiError(400, result.code)
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if int(row["consumed_provider_calls"]) > result.normalized["maximumProviderCalls"]:
+            raise DesktopApiError(400, "desktop_team_call_budget_exceeded")
+        updated = connection.execute(
+            "UPDATE team_run SET maximum_provider_calls = ?, maximum_wall_time_ms = ?, "
+            "maximum_concurrent_calls = ?, maximum_input_characters = ?, "
+            "maximum_output_characters = ?, updated_at = ? WHERE id = ? RETURNING *",
+            (
+                result.normalized["maximumProviderCalls"],
+                result.normalized["maximumWallTimeMs"],
+                result.normalized["maximumConcurrentCalls"],
+                result.normalized["maximumInputCharacters"],
+                result.normalized["maximumOutputCharacters"],
+                now,
+                team_run_id,
+            ),
+        ).fetchone()
+        append_audit_event(
+            connection,
+            event_id=_new_id("event"),
+            owner_id=str(owner["id"]),
+            workspace_id=workspace_id,
+            event_type="team_run_budget_appended",
+            payload={"team_run_id": team_run_id},
+        )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_budget_append_failed") from None
+    return {"team_run": _team_run_payload(updated)}
+
+
+def consume_provider_call(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+) -> dict[str, object]:
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(row["state"]) not in {"preparing", "running"}:
+            raise DesktopApiError(409, "desktop_team_run_not_accepting_proposals")
+        if int(row["consumed_provider_calls"]) >= int(row["maximum_provider_calls"]):
+            raise DesktopApiError(409, "desktop_team_call_budget_exceeded")
+        updated = connection.execute(
+            "UPDATE team_run SET consumed_provider_calls = consumed_provider_calls + 1, "
+            "updated_at = ? WHERE id = ? RETURNING *",
+            (now, team_run_id),
+        ).fetchone()
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_consume_call_failed") from None
+    return {"team_run": _team_run_payload(updated)}
+
+
+def set_assignment_effective_execution(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    assignment_id: str,
+    effective_execution: str,
+) -> dict[str, object]:
+    if effective_execution not in {"serial", "parallel"}:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        updated = connection.execute(
+            "UPDATE team_assignment SET effective_execution = ?, updated_at = ? "
+            "WHERE team_run_id = ? AND assignment_id = ? RETURNING assignment_id",
+            (effective_execution, now, team_run_id, assignment_id),
+        ).fetchone()
+        if updated is None:
+            raise DesktopApiError(404, "desktop_team_assignment_not_found")
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_assignment_update_failed") from None
+    return {"updated": True, "assignment_id": assignment_id}
+
+
+def create_team_node(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    assignment_id = payload.get("assignment_id")
+    employee_role_id = payload.get("employee_role_id")
+    invocation_id = payload.get("invocation_id")
+    wave_id = payload.get("wave_id")
+    if not isinstance(assignment_id, str) or not _ASSIGNMENT_ID_PATTERN.fullmatch(assignment_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if employee_role_id not in SPECIALIST_ROLE_IDS:
+        raise DesktopApiError(400, "desktop_team_unknown_role")
+    if not isinstance(invocation_id, str) or not re.fullmatch(
+        r"invocation_[0-9a-f]{32}\Z", invocation_id
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if not isinstance(wave_id, str) or not _WAVE_ID_PATTERN.fullmatch(wave_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    node_epoch = payload.get("node_epoch")
+    send_epoch = payload.get("send_epoch")
+    if (
+        not isinstance(node_epoch, int)
+        or isinstance(node_epoch, bool)
+        or node_epoch < 1
+        or not isinstance(send_epoch, int)
+        or isinstance(send_epoch, bool)
+        or send_epoch < 1
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    node_id = _new_id("teamnode")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        assignment = connection.execute(
+            "SELECT assignment_id, employee_role_id FROM team_assignment "
+            "WHERE team_run_id = ? AND assignment_id = ? AND employee_role_id = ?",
+            (team_run_id, assignment_id, employee_role_id),
+        ).fetchone()
+        if assignment is None:
+            raise DesktopApiError(404, "desktop_team_assignment_not_found")
+        duplicate = connection.execute(
+            "SELECT id FROM team_node WHERE invocation_id = ?",
+            (invocation_id,),
+        ).fetchone()
+        if duplicate is not None:
+            raise DesktopApiError(409, "desktop_team_duplicate_invocation")
+        ordinal_row = connection.execute(
+            "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM team_node WHERE team_run_id = ?",
+            (team_run_id,),
+        ).fetchone()
+        ordinal = int(ordinal_row[0])
+        connection.execute(
+            "INSERT INTO team_node ("
+            "id, team_run_id, assignment_id, ordinal, employee_role_id, invocation_id, "
+            "state, provider_id, requested_model, wave_id, node_epoch, send_epoch, "
+            "created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)",
+            (
+                node_id,
+                team_run_id,
+                assignment_id,
+                ordinal,
+                employee_role_id,
+                invocation_id,
+                payload.get("provider_id"),
+                payload.get("requested_model"),
+                wave_id,
+                node_epoch,
+                send_epoch,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            "UPDATE team_assignment SET state = 'running', updated_at = ? "
+            "WHERE team_run_id = ? AND assignment_id = ?",
+            (now, team_run_id, assignment_id),
+        )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_node_create_failed") from None
+    return {
+        "node": {
+            "id": node_id,
+            "team_run_id": team_run_id,
+            "assignment_id": assignment_id,
+            "ordinal": ordinal,
+            "employee_role_id": employee_role_id,
+            "invocation_id": invocation_id,
+            "state": "running",
+            "wave_id": wave_id,
+            "node_epoch": node_epoch,
+            "send_epoch": send_epoch,
+        }
+    }
+
+
+def update_team_node(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    node_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    if not isinstance(node_id, str) or not re.fullmatch(r"teamnode_[0-9a-f]{32}\Z", node_id):
+        raise DesktopApiError(404, "desktop_team_node_not_found")
+    state = payload.get("state")
+    if state not in {"pending", "running", "succeeded", "failed", "cancelled", "unknown"}:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        existing = connection.execute(
+            "SELECT id, assignment_id FROM team_node WHERE id = ? AND team_run_id = ?",
+            (node_id, team_run_id),
+        ).fetchone()
+        if existing is None:
+            raise DesktopApiError(404, "desktop_team_node_not_found")
+        answer_sha = payload.get("answer_sha256")
+        connection.execute(
+            "UPDATE team_node SET state = ?, actual_model = ?, input_tokens = ?, "
+            "output_tokens = ?, total_tokens = ?, answer_sha256 = ?, error_code = ?, "
+            "duration_ms = ?, updated_at = ? WHERE id = ?",
+            (
+                state,
+                payload.get("actual_model"),
+                payload.get("input_tokens"),
+                payload.get("output_tokens"),
+                payload.get("total_tokens"),
+                answer_sha,
+                payload.get("error_code"),
+                payload.get("duration_ms"),
+                now,
+                node_id,
+            ),
+        )
+        assignment_state = {
+            "succeeded": "completed",
+            "failed": "failed",
+            "cancelled": "cancelled",
+            "unknown": "blocked",
+        }.get(str(state))
+        if assignment_state is not None:
+            connection.execute(
+                "UPDATE team_assignment SET state = ?, updated_at = ? "
+                "WHERE team_run_id = ? AND assignment_id = ?",
+                (assignment_state, now, team_run_id, existing["assignment_id"]),
+            )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_node_update_failed") from None
+    return {"updated": True, "id": node_id, "state": state}
+
+
+def record_employee_report(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        result = validate_employee_team_report(
+            {
+                "assignmentId": payload.get("assignment_id"),
+                "employeeRoleId": payload.get("employee_role_id"),
+                "status": payload.get("status"),
+                "report": payload.get("report"),
+                "collaborationRequests": payload.get("collaboration_requests") or [],
+            },
+            budget=_budget_from_run(run),
+            allowed_roles=_allowed_roles_from_run(run),
+            workspace_id=workspace_id,
+        )
+        if not result.ok or result.normalized is None:
+            raise DesktopApiError(400, result.code)
+        node_id = payload.get("node_id")
+        invocation_id = payload.get("invocation_id")
+        if not isinstance(node_id, str) or not isinstance(invocation_id, str):
+            raise DesktopApiError(400, "desktop_native_input_invalid")
+        node = connection.execute(
+            "SELECT id FROM team_node WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
+            (node_id, team_run_id, invocation_id),
+        ).fetchone()
+        if node is None:
+            raise DesktopApiError(404, "desktop_team_node_not_found")
+        now = utc_now_text()
+        report_id = _new_id("teamrpt")
+        body = str(result.normalized["report"])
+        connection.execute(
+            "INSERT INTO team_employee_report ("
+            "id, team_run_id, assignment_id, node_id, invocation_id, employee_role_id, "
+            "status, report, report_sha256, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                report_id,
+                team_run_id,
+                result.normalized["assignmentId"],
+                node_id,
+                invocation_id,
+                result.normalized["employeeRoleId"],
+                result.normalized["status"],
+                body,
+                _sha256_text(body),
+                now,
+            ),
+        )
+        assignment_state = str(result.normalized["status"])
+        if assignment_state == "completed":
+            assignment_state = "completed"
+        connection.execute(
+            "UPDATE team_assignment SET state = ?, updated_at = ? "
+            "WHERE team_run_id = ? AND assignment_id = ?",
+            (assignment_state, now, team_run_id, result.normalized["assignmentId"]),
+        )
+        recorded: list[dict[str, Any]] = []
+        for item in result.normalized["collaborationRequests"]:
+            request_id = _new_id("teamcollab")
+            connection.execute(
+                "INSERT INTO team_collaboration_request ("
+                "id, team_run_id, from_assignment_id, from_employee_role_id, target_role_id, "
+                "question, reason, parent_decision, created_at, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (
+                    request_id,
+                    team_run_id,
+                    result.normalized["assignmentId"],
+                    result.normalized["employeeRoleId"],
+                    item["targetRoleId"],
+                    item["question"],
+                    item["reason"],
+                    now,
+                    now,
+                ),
+            )
+            recorded.append(
+                {
+                    "id": request_id,
+                    "target_role_id": item["targetRoleId"],
+                    "question": item["question"],
+                    "reason": item["reason"],
+                    "parent_decision": "pending",
+                }
+            )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_report_persist_failed") from None
+    return {
+        "report": {
+            "id": report_id,
+            "assignment_id": result.normalized["assignmentId"],
+            "employee_role_id": result.normalized["employeeRoleId"],
+            "status": result.normalized["status"],
+            "report": body,
+            "collaboration_requests": recorded,
+        }
+    }
+
+
+def resolve_collaboration_request(
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    request_id: str,
+    parent_decision: str,
+    resolved_assignment_id: str | None,
+) -> dict[str, object]:
+    if parent_decision not in {"accept_start", "handle_self", "merge_existing", "decline"}:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        existing = connection.execute(
+            "SELECT id FROM team_collaboration_request WHERE id = ? AND team_run_id = ?",
+            (request_id, team_run_id),
+        ).fetchone()
+        if existing is None:
+            raise DesktopApiError(404, "desktop_team_collaboration_not_found")
+        connection.execute(
+            "UPDATE team_collaboration_request SET parent_decision = ?, "
+            "resolved_assignment_id = ?, updated_at = ? WHERE id = ?",
+            (parent_decision, resolved_assignment_id, now, request_id),
+        )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_collaboration_resolve_failed") from None
+    return {
+        "collaboration_request": {
+            "id": request_id,
+            "parent_decision": parent_decision,
+            "resolved_assignment_id": resolved_assignment_id,
         }
     }

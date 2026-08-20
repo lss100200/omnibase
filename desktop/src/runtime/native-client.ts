@@ -43,11 +43,13 @@ import type {
   PersonalEmployeeId,
   PersonalTeamBlackboard,
   SpecialistEmployeeId,
+  TeamRunBudget,
   TeamRunState,
 } from "../shared/ipc-contract.ts";
 import {
   PERSONAL_EMPLOYEE_IDS,
   SPECIALIST_EMPLOYEE_IDS,
+  type EmployeeTeamReport,
 } from "../shared/personal-team.ts";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/u;
@@ -1383,6 +1385,30 @@ function parseBlackboard(
       }),
     );
   }
+  const reports: EmployeeTeamReport[] = [];
+  for (const row of board.reports) {
+    if (
+      !isRecord(row) ||
+      typeof row.assignment_id !== "string" ||
+      typeof row.employee_role_id !== "string" ||
+      !SPECIALIST_ROLE_SET.has(row.employee_role_id) ||
+      (row.status !== "completed" &&
+        row.status !== "needs_collaboration" &&
+        row.status !== "blocked") ||
+      !isBoundedString(row.report, 131072)
+    ) {
+      return null;
+    }
+    reports.push(
+      Object.freeze({
+        assignmentId: row.assignment_id,
+        employeeRoleId: row.employee_role_id as SpecialistEmployeeId,
+        status: row.status,
+        report: row.report,
+        collaborationRequests: Object.freeze([]),
+      }),
+    );
+  }
   return Object.freeze({
     blackboard: Object.freeze({
       teamRunId: board.team_run_id,
@@ -1390,9 +1416,55 @@ function parseBlackboard(
       ownerObjective: board.owner_objective,
       currentPlanRevisionId: board.current_plan_revision_id,
       assignments: Object.freeze(assignments),
-      reports: Object.freeze([]),
+      reports: Object.freeze(reports),
       collaborationRequests: Object.freeze(collaborationRequests),
     }),
+  });
+}
+
+function parseTeamReportAck(value: unknown): { readonly recorded: true } | null {
+  if (!isRecord(value) || !isRecord(value.report)) return null;
+  return Object.freeze({ recorded: true as const });
+}
+
+function parseTeamNodeCreate(value: unknown): {
+  readonly node: { readonly id: string; readonly ordinal: number; readonly invocationId: string };
+} | null {
+  if (!isRecord(value) || !isRecord(value.node)) return null;
+  const node = value.node;
+  if (
+    typeof node.id !== "string" ||
+    typeof node.ordinal !== "number" ||
+    typeof node.invocation_id !== "string"
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    node: Object.freeze({
+      id: node.id,
+      ordinal: node.ordinal,
+      invocationId: node.invocation_id,
+    }),
+  });
+}
+
+function parseTeamNodeUpdate(value: unknown): {
+  readonly updated: true;
+  readonly id: string;
+  readonly state: string;
+} | null {
+  if (
+    !isRecord(value) ||
+    value.updated !== true ||
+    typeof value.id !== "string" ||
+    typeof value.state !== "string"
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    updated: true as const,
+    id: value.id,
+    state: value.state,
   });
 }
 
@@ -1928,6 +2000,169 @@ export class DesktopNativeClient {
         reason: input.reason,
       },
       parseCollaborationWrapper,
+    );
+  }
+
+  appendTeamRunBudget(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly budget: TeamRunBudget;
+  }): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/budget`,
+      {
+        maximum_provider_calls: input.budget.maximumProviderCalls,
+        maximum_wall_time_ms: input.budget.maximumWallTimeMs,
+        maximum_concurrent_calls: input.budget.maximumConcurrentCalls,
+        maximum_input_characters: input.budget.maximumInputCharacters,
+        maximum_output_characters: input.budget.maximumOutputCharacters,
+      },
+      parseTeamRunWrapper,
+    );
+  }
+
+  setTeamRunState(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly state: string;
+    readonly parentFinalAnswer?: string;
+  }): Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/state`,
+      {
+        state: input.state,
+        ...(input.parentFinalAnswer === undefined
+          ? {}
+          : { parent_final_answer: input.parentFinalAnswer }),
+      },
+      parseTeamRunWrapper,
+    );
+  }
+
+  consumeTeamProviderCall(input: DesktopTeamRunIdInput): Promise<
+    DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/consume-call`,
+      undefined,
+      parseTeamRunWrapper,
+    );
+  }
+
+  createTeamNode(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly assignmentId: string;
+    readonly employeeRoleId: SpecialistEmployeeId;
+    readonly invocationId: string;
+    readonly waveId: string;
+    readonly nodeEpoch: number;
+    readonly sendEpoch: number;
+    readonly providerId: string;
+    readonly requestedModel: string;
+  }): Promise<
+    DesktopOperationResult<{
+      readonly node: { readonly id: string; readonly ordinal: number; readonly invocationId: string };
+    }>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/nodes`,
+      {
+        assignment_id: input.assignmentId,
+        employee_role_id: input.employeeRoleId,
+        invocation_id: input.invocationId,
+        wave_id: input.waveId,
+        node_epoch: input.nodeEpoch,
+        send_epoch: input.sendEpoch,
+        provider_id: input.providerId,
+        requested_model: input.requestedModel,
+      },
+      parseTeamNodeCreate,
+    );
+  }
+
+  updateTeamNode(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly nodeId: string;
+    readonly state: string;
+    readonly actualModel: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly answerSha256: string | null;
+    readonly errorCode: string | null;
+    readonly durationMs: number | null;
+  }): Promise<DesktopOperationResult<{ readonly updated: true; readonly id: string; readonly state: string }>> {
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/nodes/${input.nodeId}`,
+      {
+        state: input.state,
+        actual_model: input.actualModel,
+        input_tokens: input.inputTokens,
+        output_tokens: input.outputTokens,
+        total_tokens: input.totalTokens,
+        answer_sha256: input.answerSha256,
+        error_code: input.errorCode,
+        duration_ms: input.durationMs,
+      },
+      parseTeamNodeUpdate,
+    );
+  }
+
+  recordTeamReport(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly nodeId: string;
+    readonly invocationId: string;
+    readonly report: EmployeeTeamReport;
+  }): Promise<DesktopOperationResult<{ readonly recorded: true }>> {
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/reports`,
+      {
+        assignment_id: input.report.assignmentId,
+        employee_role_id: input.report.employeeRoleId,
+        status: input.report.status,
+        report: input.report.report,
+        node_id: input.nodeId,
+        invocation_id: input.invocationId,
+        collaboration_requests: input.report.collaborationRequests.map((item) => ({
+          targetRoleId: item.targetRoleId,
+          question: item.question,
+          reason: item.reason,
+        })),
+      },
+      parseTeamReportAck,
     );
   }
 

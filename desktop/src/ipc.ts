@@ -34,8 +34,11 @@ import {
   type DesktopTeamCollaborationInput,
   type DesktopTeamCollaborationRequest,
   type DesktopTeamRun,
+  type DesktopTeamRunAppendBudgetInput,
   type DesktopTeamRunEvent,
+  type DesktopTeamRunExecuteInput,
   type DesktopTeamRunIdInput,
+  type DesktopTeamRunProof,
   type DesktopTeamRunProposalResult,
   type DesktopTeamRunStartInput,
   type DesktopTeamRunSubmitProposalInput,
@@ -175,6 +178,14 @@ export interface IpcDependencies {
       readonly collaborationRequest: DesktopTeamCollaborationRequest;
     }>
   >;
+  readonly executeTeamRun: (
+    input: DesktopTeamRunExecuteInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>>;
+  readonly appendTeamRunBudget: (
+    input: DesktopTeamRunAppendBudgetInput,
+    emit: (event: DesktopTeamRunEvent) => void,
+  ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
 }
 
 const WORKSPACE_ID_PATTERN = /^workspace_[a-f0-9]{32}$/u;
@@ -695,6 +706,54 @@ function parseTeamRunStartInput(
   });
 }
 
+function parseTeamRunExecuteInput(
+  args: readonly unknown[],
+): DesktopTeamRunExecuteInput | null {
+  if (args.length !== 1 || !isRecord(args[0])) return null;
+  const started = parseTeamRunStartInput([
+    {
+      workspaceId: args[0].workspaceId,
+      conversationId: args[0].conversationId,
+      task: args[0].task,
+      teamMode: args[0].teamMode,
+      budget: args[0].budget,
+      ...(args[0].allowedSpecialistRoleIds === undefined
+        ? {}
+        : { allowedSpecialistRoleIds: args[0].allowedSpecialistRoleIds }),
+    },
+  ]);
+  if (started === null) return null;
+  if (
+    typeof args[0].rosterEpoch !== "number" ||
+    !Number.isInteger(args[0].rosterEpoch) ||
+    args[0].rosterEpoch < 1
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    ...started,
+    rosterEpoch: args[0].rosterEpoch,
+  });
+}
+
+function parseTeamRunAppendBudgetInput(
+  args: readonly unknown[],
+): DesktopTeamRunAppendBudgetInput | null {
+  const identity = parseTeamRunIdInput(
+    args.length === 1 && isRecord(args[0])
+      ? [{ workspaceId: args[0].workspaceId, teamRunId: args[0].teamRunId }]
+      : args,
+  );
+  if (identity === null || !isRecord(args[0])) return null;
+  const budget = parseTeamRunBudget(args[0].budget);
+  if (budget === null) return null;
+  return Object.freeze({
+    workspaceId: identity.workspaceId,
+    teamRunId: identity.teamRunId,
+    budget,
+  });
+}
+
 function parseTeamRunIdInput(
   args: readonly unknown[],
 ): DesktopTeamRunIdInput | null {
@@ -1126,6 +1185,30 @@ export function registerClosedIpcHandlers(
             readonly collaborationRequest: DesktopTeamCollaborationRequest;
           }>()
         : dependencies.recordTeamCollaboration(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsExecute,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunExecuteInput(args);
+      return input === null
+        ? invalidInput<{ readonly proof: DesktopTeamRunProof }>()
+        : dependencies.executeTeamRun(input, (payload) => {
+            emitTeamRunEvent(event, payload);
+          });
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.teamRunsAppendBudget,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseTeamRunAppendBudgetInput(args);
+      return input === null
+        ? invalidInput<{ readonly teamRun: DesktopTeamRun }>()
+        : dependencies.appendTeamRunBudget(input, (payload) => {
             emitTeamRunEvent(event, payload);
           });
     },

@@ -247,9 +247,94 @@ export interface PersonalTeamBlackboard {
   readonly collaborationRequests: readonly DesktopTeamCollaborationRequest[];
 }
 
+export const DEFAULT_TEAM_RUN_BUDGET: TeamRunBudget = Object.freeze({
+  maximumProviderCalls: 16,
+  maximumWallTimeMs: 600_000,
+  maximumConcurrentCalls: 3,
+  maximumInputCharacters: 16_384,
+  maximumOutputCharacters: 32_768,
+});
+
+export type DesktopTeamRunEventType =
+  | "snapshot"
+  | "cancelled"
+  | "proposal"
+  | "blackboard"
+  | "parent_proposing"
+  | "host_validating"
+  | "wave_starting"
+  | "node_starting"
+  | "node_identity"
+  | "node_delta"
+  | "node_terminal"
+  | "parent_replanning"
+  | "parent_synthesizing"
+  | "budget_exhausted"
+  | "completed"
+  | "unknown"
+  | "failed";
+
 export interface DesktopTeamRunEvent {
-  readonly type: "snapshot" | "cancelled" | "proposal" | "blackboard";
+  readonly type: DesktopTeamRunEventType;
   readonly teamRunId: string;
   readonly workspaceId: string;
+  readonly conversationId?: string;
   readonly state?: TeamRunState;
+  readonly planRevisionId?: string | null;
+  readonly waveId?: string | null;
+  readonly assignmentId?: string;
+  readonly rosterEpoch?: number;
+  readonly nodeId?: string;
+  readonly nodeOrdinal?: number;
+  readonly employeeRoleId?: PersonalEmployeeId;
+  readonly invocationId?: string;
+  readonly sendEpoch?: number;
+  readonly nodeEpoch?: number;
+  readonly text?: string;
+  readonly answer?: string;
+  readonly durationMs?: number;
+  readonly inputTokens?: number | null;
+  readonly outputTokens?: number | null;
+  readonly totalTokens?: number | null;
+  readonly errorCode?: string;
+  readonly parentFinalAnswer?: string;
+  readonly declaredExecution?: TeamWaveExecution;
+  readonly effectiveExecution?: TeamWaveExecution;
+  readonly consumedProviderCalls?: number;
+  readonly maximumProviderCalls?: number;
+  readonly collaborationLine?: string;
+  readonly reportStatus?: "completed" | "needs_collaboration" | "blocked";
+  readonly assignmentIds?: readonly string[];
+  readonly employeeRoleIds?: readonly PersonalEmployeeId[];
+  readonly planSummary?: string;
+}
+
+export interface DesktopTeamRunExecuteInput {
+  readonly workspaceId: string;
+  readonly conversationId: string;
+  readonly task: string;
+  readonly teamMode: true;
+  readonly rosterEpoch: number;
+  readonly budget: TeamRunBudget;
+  readonly allowedSpecialistRoleIds?: readonly SpecialistEmployeeId[];
+}
+
+export interface DesktopTeamRunAppendBudgetInput {
+  readonly workspaceId: string;
+  readonly teamRunId: string;
+  readonly budget: TeamRunBudget;
+}
+
+export interface DesktopTeamRunProof {
+  readonly teamRunId: string;
+  readonly state: TeamRunState;
+  readonly providerCallCount: number;
+  readonly executedNodeCount: number;
+  readonly parentCallCount: number;
+  readonly uniqueInvocationIds: readonly string[];
+  readonly uniqueNodeIds: readonly string[];
+  readonly uniqueAssignmentIds: readonly string[];
+  readonly parentWasLastWhenSynthesizing: boolean;
+  readonly hiddenCalls: false;
+  readonly parentFinalAnswer: string | null;
 }

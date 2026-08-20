@@ -40,6 +40,8 @@ const productStubs = {
   submitTeamProposal: unused,
   getTeamBlackboard: unused,
   recordTeamCollaboration: unused,
+  executeTeamRun: unused,
+  appendTeamRunBudget: unused,
 };
 
 function register(): Map<
@@ -93,6 +95,8 @@ test("closed IPC catalog includes role and team-run channels and still has send"
   assert.equal(handlers.has(IPC_CHANNELS.teamRunsSubmitProposal), true);
   assert.equal(handlers.has(IPC_CHANNELS.teamRunsGetBlackboard), true);
   assert.equal(handlers.has(IPC_CHANNELS.teamRunsRecordCollaboration), true);
+  assert.equal(handlers.has(IPC_CHANNELS.teamRunsExecute), true);
+  assert.equal(handlers.has(IPC_CHANNELS.teamRunsAppendBudget), true);
   assert.equal(handlers.has(IPC_CHANNELS.conversationSend), true);
 });
 

@@ -122,6 +122,10 @@ if (hasInstanceLock) {
       recordTeamCollaboration: (input, emit) =>
         runtimeManager?.recordTeamCollaboration(input, emit) ??
         runtimeUnavailable(),
+      executeTeamRun: (input, emit) =>
+        runtimeManager?.executeTeamRun(input, emit) ?? runtimeUnavailable(),
+      appendTeamRunBudget: (input, emit) =>
+        runtimeManager?.appendTeamRunBudget(input, emit) ?? runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();

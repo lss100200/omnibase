@@ -7,8 +7,11 @@ import type {
   DesktopTeamCollaborationInput,
   DesktopTeamCollaborationRequest,
   DesktopTeamRun,
+  DesktopTeamRunAppendBudgetInput,
   DesktopTeamRunEvent,
+  DesktopTeamRunExecuteInput,
   DesktopTeamRunIdInput,
+  DesktopTeamRunProof,
   DesktopTeamRunProposalResult,
   DesktopTeamRunStartInput,
   DesktopTeamRunSubmitProposalInput,
@@ -47,6 +50,8 @@ export const IPC_CHANNELS = Object.freeze({
   teamRunsSubmitProposal: "omnibase:team-runs:submit-proposal",
   teamRunsGetBlackboard: "omnibase:team-runs:get-blackboard",
   teamRunsRecordCollaboration: "omnibase:team-runs:record-collaboration",
+  teamRunsExecute: "omnibase:team-runs:execute",
+  teamRunsAppendBudget: "omnibase:team-runs:append-budget",
 } as const);
 
 export const IPC_EVENT_CHANNELS = Object.freeze({
@@ -66,8 +71,11 @@ export {
   type DesktopTeamCollaborationRequest,
   type DesktopTeamPlanRevision,
   type DesktopTeamRun,
+  type DesktopTeamRunAppendBudgetInput,
   type DesktopTeamRunEvent,
+  type DesktopTeamRunExecuteInput,
   type DesktopTeamRunIdInput,
+  type DesktopTeamRunProof,
   type DesktopTeamRunProposalResult,
   type DesktopTeamRunStartInput,
   type DesktopTeamRunSubmitProposalInput,
@@ -443,6 +451,12 @@ export interface OmniBaseDesktopApi {
         readonly collaborationRequest: DesktopTeamCollaborationRequest;
       }>
     >;
+    readonly execute: (
+      input: DesktopTeamRunExecuteInput,
+    ) => Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>>;
+    readonly appendBudget: (
+      input: DesktopTeamRunAppendBudgetInput,
+    ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
     readonly subscribe: (listener: (event: DesktopTeamRunEvent) => void) => () => void;
   };
 }

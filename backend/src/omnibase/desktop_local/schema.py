@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 3
+DESKTOP_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -711,4 +711,70 @@ DESKTOP_0003 = DesktopMigration(
     ),
 )
 
-DESKTOP_MIGRATIONS = (DESKTOP_0001, DESKTOP_0002, DESKTOP_0003)
+DESKTOP_0004 = DesktopMigration(
+    version=4,
+    migration_id="desktop_0004_personal_team_runtime",
+    statements=(
+        """
+        ALTER TABLE team_node ADD COLUMN wave_id TEXT
+        """,
+        """
+        ALTER TABLE team_node ADD COLUMN node_epoch INTEGER
+        """,
+        """
+        ALTER TABLE team_node ADD COLUMN send_epoch INTEGER
+        """,
+        """
+        ALTER TABLE team_node ADD COLUMN duration_ms INTEGER
+        """,
+        """
+        ALTER TABLE team_run ADD COLUMN parent_final_answer TEXT
+        """,
+        """
+        CREATE UNIQUE INDEX team_node_invocation_unique
+        ON team_node(invocation_id)
+        WHERE invocation_id IS NOT NULL
+        """,
+        f"""
+        CREATE TABLE team_employee_report (
+            id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+            team_run_id TEXT NOT NULL,
+            assignment_id TEXT NOT NULL CHECK (length(assignment_id) BETWEEN 1 AND 128),
+            node_id TEXT NOT NULL CHECK (length(node_id) BETWEEN 1 AND 128),
+            invocation_id TEXT NOT NULL CHECK (length(invocation_id) BETWEEN 1 AND 128),
+            employee_role_id TEXT NOT NULL CHECK (
+                employee_role_id IN ({_SPECIALIST_ROLE_SQL})
+            ),
+            status TEXT NOT NULL CHECK (
+                status IN ('completed', 'needs_collaboration', 'blocked')
+            ),
+            report TEXT NOT NULL CHECK (length(report) BETWEEN 1 AND 131072),
+            report_sha256 TEXT NOT NULL CHECK (
+                length(report_sha256) = 64
+                AND report_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL,
+            UNIQUE (team_run_id, assignment_id, node_id),
+            UNIQUE (invocation_id),
+            FOREIGN KEY (team_run_id) REFERENCES team_run(id) ON DELETE RESTRICT,
+            FOREIGN KEY (node_id) REFERENCES team_node(id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TRIGGER team_employee_report_immutable
+        BEFORE UPDATE ON team_employee_report
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_employee_report_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER team_employee_report_delete_forbidden
+        BEFORE DELETE ON team_employee_report
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_employee_report_immutable');
+        END
+        """,
+    ),
+)
+
+DESKTOP_MIGRATIONS = (DESKTOP_0001, DESKTOP_0002, DESKTOP_0003, DESKTOP_0004)

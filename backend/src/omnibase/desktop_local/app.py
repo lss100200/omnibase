@@ -52,17 +52,26 @@ from omnibase.desktop_local.database import (
 from omnibase.desktop_local.errors import DesktopLocalError
 from omnibase.desktop_local.personal_team import (
     EMPLOYEE_ROLE_IDS,
+    append_team_run_budget,
     cancel_team_run,
+    consume_provider_call,
+    create_team_node,
     get_agent_role,
     get_team_blackboard,
     get_team_run,
     list_agent_roles,
     list_team_runs,
     record_collaboration_request,
+    record_employee_report,
+    recover_interrupted_team_runs,
+    resolve_collaboration_request,
+    set_assignment_effective_execution,
+    set_team_run_state,
     start_team_run,
     submit_parent_proposal,
     test_agent_role,
     update_agent_role,
+    update_team_node,
 )
 from omnibase.desktop_local.providers import (
     DesktopApiError,
@@ -258,6 +267,75 @@ class TeamCollaborationCreateRequest(BaseModel):
     target_role_id: str = Field(min_length=2, max_length=32)
     question: str = Field(min_length=1, max_length=16384)
     reason: str = Field(min_length=1, max_length=16384)
+
+
+class TeamRunBudgetAppendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    maximum_provider_calls: int = Field(ge=0, le=2_147_483_647)
+    maximum_wall_time_ms: int = Field(ge=0, le=2_147_483_647)
+    maximum_concurrent_calls: int = Field(ge=0, le=2_147_483_647)
+    maximum_input_characters: int = Field(ge=0, le=2_147_483_647)
+    maximum_output_characters: int = Field(ge=0, le=2_147_483_647)
+
+
+class TeamRunStateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    state: str = Field(min_length=4, max_length=32)
+    parent_final_answer: str | None = Field(default=None, max_length=131072)
+
+
+class TeamAssignmentExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    assignment_id: str = Field(min_length=1, max_length=128)
+    effective_execution: str = Field(min_length=6, max_length=8)
+
+
+class TeamNodeCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    assignment_id: str = Field(min_length=1, max_length=128)
+    employee_role_id: str = Field(min_length=2, max_length=32)
+    invocation_id: str = Field(min_length=13, max_length=45)
+    wave_id: str = Field(min_length=1, max_length=128)
+    node_epoch: int = Field(ge=1, le=2_147_483_647)
+    send_epoch: int = Field(ge=1, le=2_147_483_647)
+    provider_id: str | None = None
+    requested_model: str | None = Field(default=None, max_length=256)
+
+
+class TeamNodeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    state: str = Field(min_length=4, max_length=16)
+    actual_model: str | None = Field(default=None, max_length=256)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    answer_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    error_code: str | None = Field(default=None, max_length=96)
+    duration_ms: int | None = Field(default=None, ge=0)
+
+
+class TeamEmployeeReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    assignment_id: str = Field(min_length=1, max_length=128)
+    employee_role_id: str = Field(min_length=2, max_length=32)
+    status: str = Field(min_length=7, max_length=32)
+    report: str = Field(min_length=1, max_length=131072)
+    node_id: str = Field(min_length=1, max_length=128)
+    invocation_id: str = Field(min_length=13, max_length=45)
+    collaboration_requests: list[dict[str, object]] = Field(default_factory=list)
+
+
+class TeamCollaborationResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    parent_decision: str = Field(min_length=6, max_length=32)
+    resolved_assignment_id: str | None = Field(default=None, max_length=128)
 
 
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
@@ -930,6 +1008,155 @@ def _team_runs_collaboration(
         )
 
 
+def _team_runs_append_budget(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamRunBudgetAppendRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return append_team_run_budget(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            {
+                "maximumProviderCalls": payload.maximum_provider_calls,
+                "maximumWallTimeMs": payload.maximum_wall_time_ms,
+                "maximumConcurrentCalls": payload.maximum_concurrent_calls,
+                "maximumInputCharacters": payload.maximum_input_characters,
+                "maximumOutputCharacters": payload.maximum_output_characters,
+            },
+        )
+
+
+def _team_runs_set_state(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamRunStateRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return set_team_run_state(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.state,
+            parent_final_answer=payload.parent_final_answer,
+        )
+
+
+def _team_runs_consume_call(
+    workspace_id: str, team_run_id: str, request: Request
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return consume_provider_call(runtime.connection, workspace_id, team_run_id)
+
+
+def _team_runs_assignment_execution(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamAssignmentExecutionRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return set_assignment_effective_execution(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.assignment_id,
+            payload.effective_execution,
+        )
+
+
+def _team_runs_create_node(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamNodeCreateRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_team_node(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.model_dump(),
+        )
+
+
+def _team_runs_update_node(
+    workspace_id: str,
+    team_run_id: str,
+    node_id: str,
+    payload: TeamNodeUpdateRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return update_team_node(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            node_id,
+            payload.model_dump(),
+        )
+
+
+def _team_runs_record_report(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamEmployeeReportRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return record_employee_report(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.model_dump(),
+        )
+
+
+def _team_runs_resolve_collaboration(
+    workspace_id: str,
+    team_run_id: str,
+    request_id: str,
+    payload: TeamCollaborationResolveRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return resolve_collaboration_request(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            request_id,
+            payload.parent_decision,
+            payload.resolved_assignment_id,
+        )
+
+
 def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     """Create an isolated desktop app without importing the server Settings singleton."""
 
@@ -944,6 +1171,7 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
                 cancel_events={},
             )
             recover_interrupted_invocations(connection)
+            recover_interrupted_team_runs(connection)
             yield
         finally:
             connection.close()
@@ -1097,6 +1325,46 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/collaboration-requests",
         _team_runs_collaboration,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/budget",
+        _team_runs_append_budget,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+        _team_runs_set_state,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/consume-call",
+        _team_runs_consume_call,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/assignments/execution",
+        _team_runs_assignment_execution,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+        _team_runs_create_node,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{node_id}",
+        _team_runs_update_node,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/reports",
+        _team_runs_record_report,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/collaboration-requests/{request_id}/resolve",
+        _team_runs_resolve_collaboration,
         methods=["POST"],
     )
 

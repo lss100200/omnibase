@@ -40,6 +40,8 @@ const productStubs = {
   submitTeamProposal: unused,
   getTeamBlackboard: unused,
   recordTeamCollaboration: unused,
+  executeTeamRun: unused,
+  appendTeamRunBudget: unused,
 };
 
 test("preload/main IPC is a closed product channel set", async () => {
