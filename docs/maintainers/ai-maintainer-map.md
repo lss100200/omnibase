@@ -2469,7 +2469,12 @@ one durable CAS winner. Renderer events are workspace/conversation scoped;
 the visible transcript hides other-scope deltas, a global Stop stays
 reachable while a live invocation is active, returning to the origin scope
 restores running/Stop, and send/retry/list-detail projections are
-generation-gated.
+generation-gated. P6.8 adds
+`frontend/lib/desktop-invocation-lifecycle.ts` as the single live-invocation
+state machine and `frontend/lib/desktop-conversation-surface.ts` as the
+request-epoch fence; `workbench-client.tsx` must not reintroduce loose
+`liveActive`/`streaming`/`cancelRequested` combinations or apply stale
+detail/send/retry/archive completions after a newer epoch or unmount.
 Cancel must abort the provider request and never auto-replay cancelled or
 unknown invocations. Retry is a new invocation. Desktop schema version 2 uses
 `desktop_0002_provider_conversation`, never Alembic 0013/0017.

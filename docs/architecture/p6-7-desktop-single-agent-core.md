@@ -97,9 +97,16 @@ workbench lets the user configure a Provider, create/list/switch/archive
 sessions, stream, stop (`生成已停止` / `调用已取消`), and retry as a new
 invocation while keeping the failed record. A live invocation keeps a global
 Stop after Workspace/Conversation switch; returning to the origin scope
-restores running/Stop and parked live text. Send, retry and list-detail
-completions apply only when the captured scope generation still matches, so
-a stale completion from scope A cannot overwrite workspace/conversation B.
+restores running/Stop and parked live text. P6.8 represents that invocation as
+a finite state rather than a loose flag combo: `sendEpoch` increments on every
+send/retry, origin workspace/conversation freeze at send start, `invocationId`
+binds once, Stop before identity stays in `cancelling` until a precise cancel
+and terminal or send-promise convergence, and stale identity/delta/terminal
+events cannot bind or end a newer epoch. Visible live text/meta compare
+`origin*` to the current view at render time. Send, retry, list/detail, archive
+and workspace-load completions are request-epoch gated even when the visible
+scope has not changed, so a stale completion from scope A cannot overwrite
+workspace/conversation B and a later same-conversation request wins.
 Requested/actual model, Provider
 name, status, duration, tokens when provided, thinking depth and redacted
 errors are folded, not dumped. Cost is omitted unless a reliable rate exists

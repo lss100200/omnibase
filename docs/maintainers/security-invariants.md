@@ -4278,7 +4278,18 @@ live invocation identity across Workspace/Conversation switches until
 terminal, restores running/Stop and parked live text when returning to the
 origin scope, keeps a global Stop reachable while a live invocation is
 active, and applies send/retry/list-detail projections only when the
-captured scope generation still matches. Live invocation identity is
+captured scope generation still matches. P6.8 keeps at most one personal live
+invocation as a finite state (`idle → send → starting_identity → identity →
+running → cancelling → cancelled|terminal → convergence → idle`) with
+`sendEpoch`, frozen `originWorkspaceId`/`originConversationId`, one-time
+`invocationId` bind, `cancelRequested`, `cancelDispatched` and
+`terminalStatus`. Stop before identity must not return to idle or re-enable
+Send/Retry; origin identity still arrives and cancel is dispatched exactly
+once. Event membership is by epoch plus bound invocation id, never by
+workspace/conversation alone. Conversation-surface live text/meta compare
+origin to the current view at render time; detail, workspace load, archive,
+send and retry use request epochs so a newer same-scope request invalidates
+older promises. Live invocation identity is
 cleared before send/retry and after terminal. A Provider stream is succeeded only with
 explicit terminal proof (`[DONE]` or `finish_reason`); truncated streams and
 client disconnect become `unknown` (or `cancelled` if cancel already won),
@@ -4292,15 +4303,17 @@ running/streaming rows recover to `unknown`. Renderer destruction must not
 send IPC into a destroyed WebContents; the native reader must cancel and
 abandon the backend invocation.
 
-P6.7 is unsigned engineering evidence only. It does not prove Authenticode,
-clean-Windows Sandbox UI, a live paid Provider, or OmniBase 1.0.0.
+P6.7 remains unsigned engineering evidence for the original core journey. P6.8
+records renderer reliability implementation and production-code gates only;
+it is not independent-review acceptance, Authenticode, Sandbox UI, a live
+paid Provider, or OmniBase 1.0.0.
 
 **Required verification**
 
 - desktop-local foundation/safety/app plus provider and conversation tests;
 - Ruff check/format on desktop_local and those tests;
 - Electron IPC/native-client/vault/runtime tests and typecheck;
-- frontend bridge/proxy tests, typecheck and lint;
+- frontend bridge/lifecycle/surface/proxy tests, typecheck and lint;
 - RuntimeHost closed-environment tests;
 - both maintainer validators.
 

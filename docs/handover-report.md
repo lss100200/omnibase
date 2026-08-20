@@ -6532,3 +6532,96 @@ root .env not read; business database not accessed or migrated
 Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
 no push; no PR
 ```
+
+### P6.8 desktop single-agent reliability closure R0 (2026-08-20)
+
+P6.8 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-8-cursor-desktop-hardening-r0` on
+branch `cursor/p6-8-desktop-single-agent-hardening-r0`, created forward-only
+from frozen R2 HEAD `2d3b56e56721cbc450cd664eca052b74a7bfe95c`. It does not
+amend `9d6e3ad` / `b43a0cf` / `ebb211d` / `2d3b56e`. The local Codex pointer
+`codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e` and was
+not committed, reset or pushed.
+
+This phase productionizes P6.7 under races, switching, failure, restart and
+production-build verification. It is not a product UX, file-tree or installer
+phase. Independent review was not performed.
+
+Implemented slices:
+
+- P6.8-A: one personal invocation is a finite state
+  (`idle → send → starting_identity → identity → running → cancelling →
+  cancelled|terminal → convergence → idle`) with `sendEpoch`, frozen origin
+  scope, one-time `invocationId` bind, `cancelRequested`, `cancelDispatched`
+  and `terminalStatus`. Stop before identity shows `正在停止`, keeps Send/Retry
+  disabled, and fires exactly one cancel when origin identity arrives.
+- P6.8-B: conversation selection isolates the old transcript immediately;
+  live text/meta compare origin to the current view at render time; detail,
+  workspace load, archive, send and retry completions are request-epoch gated
+  even on the same conversation; unmount drops later UI projection.
+- P6.8-C: production-code gates below. No EXE/MSI/Burn was generated.
+
+Focused verification on this worktree:
+
+```text
+frontend pnpm test = 235 passed
+  P6.8-A attack tests = A1–A10 passed
+  P6.8-B attack tests = B1–B10 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+frontend pnpm build = passed
+desktop pnpm test = 38 passed
+desktop pnpm typecheck = passed
+desktop pnpm build = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+Ruff check/format on desktop_local + those tests = passed
+RuntimeHost = 24/24 passed
+  pinned SDK = C:\Users\Administrator\AppData\Local\OmniBaseBuildTools\dotnet-sdk-8.0.424\dotnet.exe
+  command = dotnet run --project packaging/windows/OmniBase.RuntimeHost.Tests/OmniBase.RuntimeHost.Tests.csproj -c Release
+  --nologo was not passed
+maintainer map = valid: 74 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+git diff --check = passed
+```
+
+Loopback fake OpenAI-compatible Provider coverage already present in
+desktop-local conversation/provider tests plus the renderer unit machines
+proves, without paid keys: Owner/workspace/provider save, secret not echoed,
+provider test, conversation send, identity, deltas, terminal, durable
+transcript, cancel CAS, truncated/disconnect as `unknown`, restart
+running/streaming to `unknown`, and no auto-replay of cancelled/unknown.
+Renderer Stop-before-identity, first-paint isolation and same-scope out-of-order
+detail are proven only as `pnpm test` units, not as a live Electron window
+against a disposable app-data directory.
+
+Unproven this round:
+
+- live Electron production-mode window journey (no installer, no paid key)
+- human send/stop after identity in a real desktop window
+- vault usable after an Electron process restart in that window
+- Hang-cancel through TestClient incremental SSE (still unproven from P6.7)
+- Authenticode, Sandbox UI, EXE/MSI/Burn rebuild, live paid Provider
+
+```text
+P6_8_IN_PROGRESS
+P6_8_A_STREAM_STOP_STATE_MACHINE_IMPLEMENTED
+P6_8_B_CONVERSATION_SURFACE_FENCE_IMPLEMENTED
+P6_8_C_PRODUCTION_CODE_GATES_RECORDED
+P6_7_R1_BACKEND_PROTOCOL_FIXES
+P6_7_MASTER_REVIEW_FIX_R2_IMPLEMENTED_PENDING_REVIEW
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+PENDING_INDEPENDENT_REVIEW
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+STALE_ENGINEERING_ARTIFACT
+DOES_NOT_INCLUDE_R1_R2_OR_P6_8
+NOT_FOR_DISTRIBUTION
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+HUMAN_SEND_STOP_NOT_PROVEN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR
+```

@@ -1236,6 +1236,9 @@
         "desktop/src/shared/ipc-contract.ts",
         "frontend/app/desktop/**",
         "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-invocation-lifecycle.ts",
+        "frontend/lib/desktop-conversation-surface.ts",
+        "frontend/lib/desktop-surface-scope.ts",
         "docs/architecture/p6-7-desktop-single-agent-core.md"
       ],
       "test_paths": [
@@ -1245,7 +1248,10 @@
         "desktop/tests/ipc.test.ts",
         "desktop/tests/native-client.test.ts",
         "desktop/tests/secret-vault.test.ts",
-        "frontend/lib/desktop-bridge.test.ts"
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-invocation-lifecycle.test.ts",
+        "frontend/lib/desktop-conversation-surface.test.ts",
+        "frontend/lib/desktop-surface-scope.test.ts"
       ]
     }
   ],
@@ -4275,6 +4281,9 @@
         "frontend/app/health/**",
         "frontend/app/page-client.tsx",
         "frontend/lib/desktop-bridge*.ts",
+        "frontend/lib/desktop-invocation-lifecycle*.ts",
+        "frontend/lib/desktop-conversation-surface*.ts",
+        "frontend/lib/desktop-surface-scope*.ts",
         "frontend/lib/desktop-runtime*.ts",
         "frontend/lib/proxy*.ts",
         "frontend/next.config.js",
