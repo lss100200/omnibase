@@ -4340,10 +4340,13 @@ host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 4 (`desktop_0004_personal_team_runtime`) is current.
-Version 3 (`desktop_0003_personal_agent_team`) remains the A2 contract
-migration. These are desktop-namespace SQLite migrations, not Alembic
-0016/0017. Role config may store a Provider id, model override, gear, thinking
+Desktop schema version 5 (`desktop_0005_team_node_identity_epochs`) is current.
+Version 4 (`desktop_0004_personal_team_runtime`) remains the Round 1 runtime
+migration; version 3 (`desktop_0003_personal_agent_team`) remains the A2
+contract migration. These are desktop-namespace SQLite migrations, not Alembic
+0016/0017. Unique indexes forbid reused `node_epoch` / `send_epoch` on a Team
+Run. A trigger forbids writing back a terminal node. Role config may store a
+Provider id, model override, gear, thinking
 depth and a verification digest. It must never store API keys, ciphertext,
 nonce, DPAPI blobs or vault handles. Per-role Provider selection inherits the
 default Provider when the row is missing or `provider_id` is null. An
@@ -4352,24 +4355,48 @@ it must not silently inherit another Provider. Model override reuses that
 Provider's credentials and exposes only `secret_fingerprint`. Role-config
 writes compare-and-swap `row_version` (`desktop_role_config_cas_conflict`).
 
-Team HTTPS reuses the P6.8 pin: DNS is resolved once, connect addresses must
-be validated public IPs (loopback / private / link-local / multicast /
-reserved fail closed unless allowed loopback HTTP), and SNI/`Host` stay the
-original hostname. A missing or mismatched actual vs requested model fails the
-node (`desktop_provider_model_identity_drift`). `{}` or a non-chat-completions
-body is not success.
+Team HTTPS reuses the P6.8 pin through one authoritative **global-unicast**
+decision (IPv4 + IPv6, including reserved / CGNAT / benchmark / documentation /
+link-local / multicast). DNS is resolved once. Loopback is allowed only when
+loopback HTTP is opted in. SNI/`Host` stay the original hostname. A missing or
+mismatched actual vs requested model fails the node
+(`desktop_provider_model_identity_drift`). **Every SSE chunk that contains
+`model` is validated immediately**; mid-stream drift fails the node, not
+success. `{}` or a non-chat-completions body is not success.
+
+Vault material is bound to `is_enabled` in the same SQLite snapshot
+(`BEGIN IMMEDIATE`). A Provider that is disabled cannot yield a blob
+(`desktop_provider_disabled`). List-then-vault TOCTOU fails closed.
+
+Success settle is a unique API. Legacy node `update` may only transition
+`running → failed|cancelled|unknown` with `WHERE state='running'` CAS.
+`succeeded` must not use generic update. Node create/settle run in one
+transaction and bind Team Run, Conversation, plan, wave, assignment, role,
+node, invocation, node/send epoch, Provider, requested/actual model and live
+status. Creating a node on a terminal run, writing back a terminal node, or
+reusing epochs is fail-stop.
+
+Replan emits an explicit validated `plan_transition` (old plan → new plan).
+The old-plan filter must not reject a legal new proposal after that event.
+Later events match the new plan revision / roster epoch. Per event-type
+identity: terminal/node events must match **each** of assignment, role,
+invocation, wave, nodeEpoch and sendEpoch as stored on the node; missing or
+mismatch drops the event.
+
+Team Run data updates are decoupled from the currently viewed scope. Leaving
+the origin workspace/conversation keeps writing a parked buffer. Returning
+restores full delta/terminal/final (A→B→A). First render on B must not paint
+A team live text.
 
 Node create + employee report + collaboration request + audit append settle in
 one SQLite transaction. Partial node-without-report or report-without-audit is
-fail-stop, not success. Team stream/IPC events must carry workspace,
-conversation, teamRun, roster/plan revision, wave, assignment, node and
-sendEpoch; missing any field is dropped and not projected. Strict team
-wall-time (`maximumWallTimeMs`) stops further nodes and reports
-`budget_exhausted` without fake success. Stop during `createNode` latches
-abort like P6.8 (arm before vault/provider await; no identity emit). An
-explicit empty specialist allow-list fails closed
-(`desktop_team_allow_list_empty`); default-all remains only when the list is
-unset. A start bound to conversation A must not attach to B.
+fail-stop, not success. Strict team wall-time is an independent
+timer/`AbortController`, not the Provider HTTP timeout. Wall expiry stably
+converges to `budget_exhausted`. Stop during `createNode` latches abort like
+P6.8 (arm before vault/provider await; no identity emit). An explicit empty
+specialist allow-list fails closed (`desktop_team_allow_list_empty`);
+default-all remains only when the list is unset. A start bound to conversation
+A must not attach to B.
 
 Closed IPC names are exact:
 
@@ -4386,9 +4413,15 @@ Skills and enterprise DAG stay out. P6.8 single-agent send/Stop/epoch behavior
 must not regress.
 
 `PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback** D
-journeys. Round 1 closes the attack holes named above. Paid / live Provider
-window, Authenticode, EXE/MSI and a human Electron soak remain unproven. Do
-not announce OmniBase 1.0.0.
+journeys. Round 1 closed the named attack holes of that drip. Round 2 is the
+forward-fix for global-unicast pinning, unique success-settle, transactional
+node identity, independent wall-time, per-chunk SSE model checks, replan
+transition events, parked team buffers, and vault/enabled snapshot bind.
+Round 1's `RuntimeManager plus loopback Provider` test was an **in-memory host
+wrapped as a fake DesktopNativeClient**, not a native HTTP→SQLite journey.
+Round 2 adds `RuntimeManager → DesktopNativeClient → desktop-local HTTP →
+SQLite → report/audit`. Paid / live Provider window, Authenticode, EXE/MSI
+and a human Electron soak remain unproven. Do not announce OmniBase 1.0.0.
 
 **Required verification**
 
@@ -4396,7 +4429,7 @@ not announce OmniBase 1.0.0.
   team tests;
 - Ruff check/format on desktop_local and those tests;
 - Electron IPC/native-client/coordinator/provider tests and typecheck,
-  including Round 1 attacks;
+  including Round 1 and Round 2 attacks;
 - frontend bridge and team-lifecycle tests, typecheck and lint;
 - both maintainer validators.
 

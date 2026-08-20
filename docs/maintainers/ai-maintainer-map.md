@@ -2500,23 +2500,31 @@ set is closed at nine roles; parent is not a specialist. Serial, parallel
 and mixed waves are legal proposals; the host may serialize a parallel wave
 and must not parallelize declared dependencies.
 
-Desktop schema version 4 uses `desktop_0004_personal_team_runtime` (A2
-introduced v3 `desktop_0003_personal_agent_team`), never Alembic 0017. Role
+Desktop schema version 5 uses `desktop_0005_team_node_identity_epochs`
+(Round 1 bumped v4 `desktop_0004_personal_team_runtime`; A2 introduced v3
+`desktop_0003_personal_agent_team`), never Alembic 0017. Role
 config may store a Provider id, model override, gear, thinking depth and a
 verification digest. It must never store API keys, ciphertext, nonce, DPAPI
 blobs or vault handles. Missing rows and null `provider_id` inherit the
-default Provider. An explicit disabled Provider fails closed. Model override
+default Provider. Vault material is bound to `is_enabled` in the same
+snapshot. An explicit disabled Provider fails closed. Model override
 reuses that Provider's credentials and exposes only `secret_fingerprint`.
 Role-config writes CAS on `row_version`.
 
-Team HTTPS reuses the P6.8 pin (validated public IPs; SNI/Host stay the
-hostname). Node/report/collaboration/audit settle atomically. Team events
-require complete identity. Strict wall-time and Stop-during-createNode latch
-like P6.8. An explicit empty allow-list fails closed; default-all remains
-when unset.
+Team HTTPS reuses the P6.8 pin via an authoritative global-unicast decision
+(validated public unicast IPs; SNI/Host stay the hostname). Success settle is
+a unique API; create/settle bind identity in one transaction. Replan emits
+`plan_transition`. Team events use a per-type identity schema. Off-origin
+views park Team Run buffers instead of dropping them. Node/report/collaboration/audit
+settle atomically. Strict wall-time is independent of Provider HTTP timeout.
+Stop-during-createNode latches like P6.8. An explicit empty allow-list fails
+closed; default-all remains when unset.
 
-Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closes the
-named attack holes; paid/live Provider window is still unproven. P6.8
+Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closed the
+named attack holes of that drip. Round 1's RuntimeManager journey was an
+in-memory host wrapped as a fake native client. Round 2 adds a true
+`RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite` loopback
+journey. Paid/live Provider window is still unproven. P6.8
 single-agent send/Stop/epoch behavior must not regress. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled. Do not announce 1.0.0, Authenticode, or
 EXE. The P34.3 maintainer-map benchmark suite

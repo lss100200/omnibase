@@ -22,6 +22,7 @@ P6_9_B_COORDINATOR_COMPLETE
 P6_9_C_TEAM_UI_COMPLETE
 P6_9_D_JOURNEYS_PROVEN
 P6_9_ROUND1_ATTACK_HOLES_CLOSED
+P6_9_ROUND2_FORWARD_FIX
 P6_8_SINGLE_AGENT_PATH_NOT_REGRESSED
 REPACKAGE_NOT_APPROVED
 PUSH_PR_NOT_APPROVED
@@ -38,6 +39,13 @@ proof passed on a **loopback fake OpenAI-compatible Provider**.
 identity, wall-time, Stop-during-createNode, empty allow-list,
 conversation bind, role-config CAS) have automated fail-closed tests.
 It does **not** mean a paid/live Provider window.
+
+`P6_9_ROUND2_FORWARD_FIX` means the ten Round 2 items below have
+production code and tests that fail without them. Round 1's
+`RuntimeManager plus loopback Provider completes a parent-directed team
+journey` test is **not** a native HTTP→SQLite journey; it wraps an
+in-memory host as a fake `DesktopNativeClient`. Round 2 adds the true
+path.
 
 Cursor does **not** claim:
 
@@ -60,11 +68,12 @@ Cursor does **not** claim:
 | Base (do not amend) | `d2a2db04c0fbfc1ee5d398e40710495c388c21b4` (`d2a2db0`) |
 | A2 complete | `0097955ebd94e0455b769f3903c0e105eafb74d1` (`0097955`) |
 | B/C/D package (do not amend) | `2af6c1e3ad306334988af9d458134d2b9c1c4805` (`2af6c1e`) |
-| Round 1 docs | lands last on the same branch (HEAD after this file) |
+| Round 1 docs (do not amend) | `01210364fcc9b2b739003f6af64ef08903422f14` (`0121036`) |
+| Round 2 docs | lands last on the same branch (HEAD after this file) |
 | Product-law source | `cursor/p6-9-multi-agent-planning-r0` @ `01f9d3b` |
 | P6.8 worktree | `p6-8-cursor-desktop-hardening-r0` left at `d2a2db0` |
 | Codex empty pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (**untouched**) |
-| Method | Forward-only. No amend of `d2a2db0` / `0097955` / `2af6c1e`. No UI redo. No fixed Owner roster. No push. No PR. No EXE/MSI. Root `.env` not read. |
+| Method | Forward-only. No amend of `d2a2db0` / `0097955` / `2af6c1e` / `0121036`. No UI redo. No fixed Owner roster. No push. No PR. No EXE/MSI. Root `.env` not read. |
 
 ---
 
@@ -99,9 +108,17 @@ Stop/scope restoration lives in commit 7 (team FSM) and commit 8 (workbench Stop
 13. `38dfcbf72bddb3c37545ca45dda6eec66784b799` — `fix(desktop): require complete team event identity and enforce wall deadline`
 14. `6cc087de562b103b635cef6ff7fca62d2d7df74e` — `fix(workbench): converge pre-start failures and empty allow-list behavior`
 15. `eae25b833b2dcbec02a2a3bbd285260ae1be6c49` — `test(p6.9): add native-host SQLite journey and missing D2/D4 attacks`
-16. This file — `docs(p6.9): update INV-085, AGENTS, maps, handover and acceptance package`
+16. `01210364fcc9b2b739003f6af64ef08903422f14` — `docs(p6.9): update INV-085, AGENTS, maps, handover and acceptance package`
 
 Round 1 did not redo workbench UI and did not return to a fixed Owner roster.
+
+**Round 2 (after `0121036`; do not amend Round 1):**
+
+17. `12dbe2109b793bc346b71424988aae8b0cd0a51e` — `fix(desktop): use authoritative global-unicast pin and bind vault to enabled Provider`
+18. `7b401775537badb7bc7fcb3e864d3e1e85e84017` — `fix(desktop-local): unique settle API, transactional node identity, and replan transition events`
+19. `f26f28df506ff1ae313edccaad05a059192e0839` — `fix(desktop): independent team wall-time, per-chunk model check, and parked team buffers`
+20. `e0cac2743ff1c5b9dfc92bbddfe65ba3ead94598` — `test(p6.9): add RuntimeManager native SQLite HTTP journey and Round-2 attacks`
+21. This file — `docs(p6.9): correct INV-085 handover maps and Codex package overclaims`
 
 ---
 
@@ -337,7 +354,7 @@ Tests in commit 15 fail without commits 11–14.
 | Strict team wall-time | `strict team wall-time stops further nodes without fake success` (round1 desktop) |
 | Multi-conversation raw start | `raw start bound to conversation A cannot attach to conversation B` (round1 desktop) |
 | Empty allow-list | `empty specialist allow-list fails closed before any team run`; `IPC forwards an explicit empty allow-list instead of parse-failing it`; `test_empty_allow_list_fails_closed_without_defaulting_all_nine`; `test_unset_allow_list_still_defaults_to_all_nine`; `pre-start failure converges preparing to idle instead of hanging` |
-| Native SQLite + RuntimeManager + loopback journey | `test_sqlite_settle_is_atomic_with_report_and_audit`; `RuntimeManager plus loopback Provider completes a parent-directed team journey` |
+| Native SQLite + RuntimeManager + loopback journey | Round 1 `RuntimeManager plus loopback Provider…` is an **in-memory host wrapped as a fake DesktopNativeClient** (IPC-mock-shaped). Round 2 `RuntimeManager DesktopNativeClient desktop-local HTTP SQLite journey records report and audit` is the true HTTP→SQLite path. `test_sqlite_settle_is_atomic_with_report_and_audit` remains the Python settle atomicity test. |
 | Role config CAS conflict | `test_role_config_cas_conflict_does_not_lost_update` |
 
 ## Gate counts from B/C/D (`2af6c1e`)
@@ -409,14 +426,57 @@ RuntimeHost              = optional; not faked
 | Renderer destroy as a real BrowserWindow | `mountedRef` only |
 | Cross-workspace live native SQLite isolation beyond validators | validator + IPC; not a two-window soak |
 | Round 1 named attack holes | closed in automated tests; paid/live still unproven |
+| Round 1 "native SQLite journey" wording | overclaim; the RuntimeManager test was in-memory. Round 2 closes this. |
+| Round 1 in-memory RuntimeManager test | still in the suite as historical/weaker evidence; item 10 is the true path |
+
+---
+
+## Round 2 forward-fix (after Round 1 `0121036`; do not amend Round 1)
+
+Layered commits on `cursor/p6-9-personal-multi-agent-team-r0`. Fewer than ten
+micro-rounds. No UI redo. No fixed Owner roster. No push, PR, or EXE.
+
+### Round 2 tests mapped to the ten items
+
+| Item | What landed | Tests that fail without it |
+|---|---|---|
+| 1 Global-unicast pin | `desktop/src/runtime/global-unicast.ts`; Python `is_global_unicast()`; team transport reuses the same pin | `authoritative global-unicast rejects…`; expanded DNS rebind list in round1; `test_reserved_cgnat_benchmark_docs_and_link_local_are_not_global_unicast`; `test_dns_rebind_to_non_global_ranges_fails_closed`; mixed public+CGNAT |
+| 2 Independent wall | Coordinator `AbortController` + timer, Provider `timeoutMs` not min(wall) | `independent wall AbortController expires to budget_exhausted…`; inverse `Provider HTTP timeout is not reported as team wall budget_exhausted` |
+| 3 SSE per-chunk model | `readSseText` and `_iter_sse_events` validate every `model` immediately | `SSE model drift mid-stream fails the node instead of succeeding`; `test_sse_model_drift_mid_stream_fails_closed_not_success` |
+| 4 Unique success-settle | Legacy update only `failed\|cancelled\|unknown` + CAS | `legacy success update is rejected…`; `test_legacy_update_cannot_succeed_or_resurrect_a_settled_node` |
+| 5 Transactional identity | Schema v5 unique epochs + terminal trigger; create/settle bind live run, plan, wave, assignment, role, node, invocation, epochs, Provider, models; omitted settle identity fails | `test_create_node_binds_live_run_identity_and_forbids_epoch_reuse` |
+| 6 Replan transition | Coordinator emits `plan_transition`; frontend accepts new plan after it | `replan plan_transition accepts the new proposal…` |
+| 7 Per-type identity | Terminal/node events must match assignment, role, invocation, wave, nodeEpoch, sendEpoch | `node_terminal missing or mismatched identity fields are dropped`; round1 node_delta completeness |
+| 8 Parked buffers | Leave origin parks nodes/collaboration/text; A→B→A restores; first B render empty | `leaving origin parks team buffers and returning restores delta/terminal/final` |
+| 9 Vault+enabled snapshot | `load_provider_secret_material` SELECT includes `is_enabled` | `test_disabled_provider_vault_is_bound_to_the_same_snapshot`; `stale list-enabled then vault-disabled fails closed without decrypt` |
+| 10 True e2e | Spawn `python -m omnibase.desktop_local.app`, real `DesktopNativeClient`, `RuntimeManager.executeTeamRun`, query SQLite report+audit | `RuntimeManager DesktopNativeClient desktop-local HTTP SQLite journey records report and audit` |
+
+### Round 2 gate counts
+
+Recorded after the Round 2 layered commits. Same constraints as Round 1.
+No Docker/WSL/PostgreSQL. No paid keys. No installer. Root `.env` not read.
+PowerShell: no `&&`. RuntimeHost optional; not faked.
+
+```text
+frontend pnpm test       = 262 passed
+frontend pnpm typecheck  = passed
+frontend pnpm lint       = passed
+desktop  pnpm test       = 86 passed
+desktop  pnpm typecheck  = passed
+pytest desktop_local     = 147 passed
+ruff (touched Python)    = passed
+git diff --check         = passed
+validate_maintainer_map  = passed (75 invariants, 51 modules)
+RuntimeHost              = optional; not faked
+```
 
 ---
 
 ## What Codex should review
 
 The whole R0 slice on `cursor/p6-9-personal-multi-agent-team-r0` from
-`d2a2db0` through this HEAD, including Round 1. Product law:
+`d2a2db0` through this HEAD, including Round 1 and Round 2. Product law:
 `docs/architecture/p6-9-multi-agent-planning.md`. Do not reopen A2 as a
 separate drip. Do not drip a new A-only memo. Do not announce OmniBase
-1.0.0, Authenticode, EXE, or enterprise multi-agent. Round 1 closes the
-named attack holes; it does not prove a paid/live window.
+1.0.0, Authenticode, EXE, or enterprise multi-agent. Round 2 closes the
+ten named items; it does not prove a paid/live window.
