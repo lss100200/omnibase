@@ -256,10 +256,38 @@ export interface PersonalTeamBlackboard {
 }
 
 export interface DesktopTeamRunEvent {
-  readonly type: 'snapshot' | 'cancelled' | 'proposal' | 'blackboard'
+  readonly type: string
   readonly teamRunId: string
   readonly workspaceId: string
+  readonly conversationId?: string
   readonly state?: string
+  readonly planRevisionId?: string | null
+  readonly waveId?: string | null
+  readonly assignmentId?: string
+  readonly rosterEpoch?: number
+  readonly nodeId?: string
+  readonly nodeOrdinal?: number
+  readonly employeeRoleId?: string
+  readonly invocationId?: string
+  readonly sendEpoch?: number
+  readonly nodeEpoch?: number
+  readonly text?: string
+  readonly answer?: string
+  readonly durationMs?: number
+  readonly inputTokens?: number | null
+  readonly outputTokens?: number | null
+  readonly totalTokens?: number | null
+  readonly errorCode?: string
+  readonly parentFinalAnswer?: string
+  readonly consumedProviderCalls?: number
+  readonly maximumProviderCalls?: number
+  readonly collaborationLine?: string
+  readonly reportStatus?: string
+  readonly assignmentIds?: readonly string[]
+  readonly employeeRoleIds?: readonly string[]
+  readonly planSummary?: string
+  readonly declaredExecution?: 'serial' | 'parallel'
+  readonly effectiveExecution?: 'serial' | 'parallel'
 }
 
 export type {
@@ -287,6 +315,23 @@ export {
   requestDesktopLiveCancel,
   switchDesktopLiveScope,
 } from './desktop-invocation-lifecycle'
+export {
+  beginDesktopTeamRun,
+  completeDesktopTeamRun,
+  createDesktopTeamLiveState,
+  desktopTeamLiveProjection,
+  desktopTeamStopVisible,
+  reduceDesktopTeamEvent,
+  requestDesktopTeamCancel,
+  switchDesktopTeamScope,
+} from './desktop-team-lifecycle'
+export {
+  TEAM_ROLE_LABELS,
+  desktopTeamTranscriptHighlight,
+  projectDesktopTeamBudget,
+  projectDesktopTeamEmployees,
+  projectDesktopTeamTimeline,
+} from './desktop-team-surface'
 
 export interface OmniBaseDesktopBridge {
   readonly app: {
@@ -460,6 +505,32 @@ export interface OmniBaseDesktopBridge {
       readonly question: string
       readonly reason: string
     }) => Promise<DesktopOperationResult<{ readonly collaborationRequest: DesktopTeamCollaborationRequest }>>
+    readonly execute: (input: {
+      readonly workspaceId: string
+      readonly conversationId: string
+      readonly task: string
+      readonly teamMode: true
+      readonly rosterEpoch: number
+      readonly budget: DesktopTeamRunBudget
+      readonly allowedSpecialistRoleIds?: readonly string[]
+    }) => Promise<DesktopOperationResult<{ readonly proof: {
+      readonly teamRunId: string
+      readonly state: string
+      readonly providerCallCount: number
+      readonly executedNodeCount: number
+      readonly parentCallCount: number
+      readonly uniqueInvocationIds: readonly string[]
+      readonly uniqueNodeIds: readonly string[]
+      readonly uniqueAssignmentIds: readonly string[]
+      readonly parentWasLastWhenSynthesizing: boolean
+      readonly hiddenCalls: false
+      readonly parentFinalAnswer: string | null
+    } }>>
+    readonly appendBudget: (input: {
+      readonly workspaceId: string
+      readonly teamRunId: string
+      readonly budget: DesktopTeamRunBudget
+    }) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>
     readonly subscribe: (listener: (event: DesktopTeamRunEvent) => void) => () => void
   }
 }
@@ -522,6 +593,8 @@ export function resolveDesktopBridge(value: unknown): OmniBaseDesktopBridge | nu
     !hasFunction(value.teamRuns, 'submitProposal') ||
     !hasFunction(value.teamRuns, 'getBlackboard') ||
     !hasFunction(value.teamRuns, 'recordCollaboration') ||
+    !hasFunction(value.teamRuns, 'execute') ||
+    !hasFunction(value.teamRuns, 'appendBudget') ||
     !hasFunction(value.teamRuns, 'subscribe')
   ) {
     return null

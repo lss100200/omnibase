@@ -31,9 +31,20 @@ import {
   reduceDesktopInvocationEvent,
   requestDesktopLiveCancel,
   switchDesktopLiveScope,
+  beginDesktopTeamRun,
+  createDesktopTeamLiveState,
+  desktopTeamLiveProjection,
+  desktopTeamStopVisible,
+  projectDesktopTeamBudget,
+  projectDesktopTeamEmployees,
+  projectDesktopTeamTimeline,
+  reduceDesktopTeamEvent,
+  requestDesktopTeamCancel,
+  switchDesktopTeamScope,
   type DesktopReasoningGear,
   type DesktopThinkingDepth,
 } from '@/lib/desktop-bridge'
+import { parseEmployeeInvocation, prepareEmployeeRoleMessage } from '@/lib/p6-workbench'
 import {
   applyDesktopConversationArchive,
   applyDesktopConversationCompletion,
@@ -118,6 +129,26 @@ function statusLabel(status: string): string {
   }
 }
 
+const TEAM_SPECIALISTS = [
+  'product',
+  'ux',
+  'frontend',
+  'backend',
+  'data',
+  'security',
+  'qa',
+  'operations',
+  'docs',
+] as const
+
+const DEFAULT_TEAM_BUDGET = {
+  maximumProviderCalls: 16,
+  maximumWallTimeMs: 600_000,
+  maximumConcurrentCalls: 3,
+  maximumInputCharacters: 16_384,
+  maximumOutputCharacters: 32_768,
+}
+
 export function DesktopWorkbench({
   bridge,
   owner,
@@ -155,6 +186,18 @@ export function DesktopWorkbench({
     }),
   )
   const liveRef = useRef(live)
+  const [teamLive, setTeamLive] = useState(() =>
+    createDesktopTeamLiveState({
+      workspaceId: initialWorkspaceId,
+      conversationId: null,
+    }),
+  )
+  const teamLiveRef = useRef(teamLive)
+  const [teamMode, setTeamMode] = useState(false)
+  const [allowedSpecialists, setAllowedSpecialists] = useState<readonly string[]>([...TEAM_SPECIALISTS])
+  const [teamBudget, setTeamBudget] = useState(DEFAULT_TEAM_BUDGET)
+  const [appendCalls, setAppendCalls] = useState('20')
+  const rosterEpochRef = useRef(1)
   const surfaceScopeRef = useRef<DesktopSurfaceScope>(
     createDesktopSurfaceScope(initialWorkspaceId, null),
   )
@@ -172,6 +215,12 @@ export function DesktopWorkbench({
     surfaceScopeRef.current = next
     setWorkspaceId(next.workspaceId)
     setConversationId(next.conversationId)
+    const nextLive = switchDesktopLiveScope(liveRef.current, next.workspaceId, next.conversationId)
+    liveRef.current = nextLive
+    setLive(nextLive)
+    const nextTeam = switchDesktopTeamScope(teamLiveRef.current, next.workspaceId, next.conversationId)
+    teamLiveRef.current = nextTeam
+    setTeamLive(nextTeam)
     return next
   }, [])
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -194,8 +243,9 @@ export function DesktopWorkbench({
 
   const activeWorkspaces = workspaces.filter((item) => item.state === 'active')
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
-  const sendBlocked = desktopLiveSendBlocked(live)
-  const stopping = desktopInvocationIsStopping(live)
+  const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
+  const sendBlocked = desktopLiveSendBlocked(live) || desktopTeamStopVisible(teamLive)
+  const stopping = desktopInvocationIsStopping(live) || teamLive.phase === 'cancelling'
 
   const loadWorkspaceSurface = useCallback(
     async (nextWorkspaceId: string) => {
@@ -304,6 +354,11 @@ export function DesktopWorkbench({
       liveRef.current = next
       return next
     })
+    setTeamLive((current) => {
+      const next = switchDesktopTeamScope(current, workspaceId, conversationId)
+      teamLiveRef.current = next
+      return next
+    })
   }, [conversationId, workspaceId])
 
   useEffect(() => {
@@ -327,8 +382,16 @@ export function DesktopWorkbench({
   }, [bridge, onError])
 
   useEffect(() => {
+    return bridge.teamRuns.subscribe((event) => {
+      const next = reduceDesktopTeamEvent(teamLiveRef.current, event)
+      teamLiveRef.current = next
+      setTeamLive(next)
+    })
+  }, [bridge])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages, live.liveText])
+  }, [messages, live.liveText, teamLive.parentLiveText, teamLive.parentFinalAnswer])
 
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
@@ -470,9 +533,55 @@ export function DesktopWorkbench({
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault()
     const content = draft.trim()
-    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current)) return
+    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current) || desktopTeamStopVisible(teamLiveRef.current)) return
+    const routed = parseEmployeeInvocation(content)
+    if (!routed.ok) {
+      onError(routed.message)
+      return
+    }
     const target = await ensureConversation()
     if (target === null) return
+    if (teamMode && !routed.explicitMention) {
+      onError(null)
+      setDraft('')
+      const rosterEpoch = rosterEpochRef.current
+      rosterEpochRef.current += 1
+      const started = beginDesktopTeamRun(teamLiveRef.current, {
+        workspaceId,
+        conversationId: target,
+        rosterEpoch,
+        maximumProviderCalls: teamBudget.maximumProviderCalls,
+      })
+      teamLiveRef.current = started
+      setTeamLive(started)
+      const allowed =
+        allowedSpecialists.length === TEAM_SPECIALISTS.length
+          ? undefined
+          : allowedSpecialists
+      const result = await bridge.teamRuns.execute({
+        workspaceId,
+        conversationId: target,
+        task: routed.message,
+        teamMode: true,
+        rosterEpoch,
+        budget: teamBudget,
+        ...(allowed === undefined ? {} : { allowedSpecialistRoleIds: allowed }),
+      })
+      if (!mountedRef.current) return
+      if (!result.ok) {
+        onError(errorMessage(result.error.code))
+        return
+      }
+      if (result.value.proof.state === 'budget_exhausted') {
+        onError('团队已经使用完本次协作预算；未伪造完成。')
+      }
+      return
+    }
+    const prepared = prepareEmployeeRoleMessage(routed.employee, routed.message)
+    if (!prepared.ok) {
+      onError(prepared.code === 'message_too_long' ? '消息过长。' : '无法发送。')
+      return
+    }
     const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
     conversationSurfaceRef.current = completion.surface
     onError(null)
@@ -488,7 +597,7 @@ export function DesktopWorkbench({
     const result = await bridge.conversations.send({
       workspaceId,
       conversationId: target,
-      content,
+      content: prepared.roleMessage,
       sendEpoch: nextLive.sendEpoch,
     })
     const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
@@ -533,6 +642,22 @@ export function DesktopWorkbench({
 
   const stopGeneration = async () => {
     const current = liveRef.current
+    const teamCurrent = teamLiveRef.current
+    const teamStop = desktopTeamStopVisible(teamCurrent)
+    if (!desktopLiveStopVisible(current) && current.invocationId === null && !teamStop) return
+    if (teamStop) {
+      const cancelledTeam = requestDesktopTeamCancel(teamCurrent)
+      teamLiveRef.current = cancelledTeam
+      setTeamLive(cancelledTeam)
+      if (mountedRef.current) onError('正在停止')
+      await bridge.conversations.abortInFlightSend()
+      if (cancelledTeam.teamRunId !== null) {
+        await bridge.teamRuns.cancel({
+          workspaceId: cancelledTeam.originWorkspaceId ?? workspaceId ?? '',
+          teamRunId: cancelledTeam.teamRunId,
+        })
+      }
+    }
     if (!desktopLiveStopVisible(current) && current.invocationId === null) return
     let cancelled = requestDesktopLiveCancel(current)
     const abortStream = desktopInvocationNeedsStreamAbort(cancelled)
@@ -819,7 +944,7 @@ export function DesktopWorkbench({
                 </Button>
               )}
               {stopping && <span className="text-[13px] text-foreground/80">正在停止</span>}
-              {desktopLiveStopVisible(live) && (
+              {(desktopLiveStopVisible(live) || desktopTeamStopVisible(teamLive)) && (
                 <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
                   <Square className="h-4 w-4" />
                   停止
@@ -827,6 +952,59 @@ export function DesktopWorkbench({
               )}
             </div>
           </div>
+          {teamMode && (
+            <div className="grid gap-3 border-b border-border p-3 text-[13px] md:grid-cols-2">
+              <div>
+                <div className="mb-1 font-medium">AI 员工</div>
+                {projectDesktopTeamEmployees(teamLive).map((row) => (
+                  <div key={row.roleId} className="flex justify-between gap-2">
+                    <span>{row.label}</span>
+                    <span>{row.statusText}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="mb-1 font-medium">节点时间线</div>
+                {teamLive.planRevisionId !== null && (
+                  <div>当前计划：{teamLive.planRevisionId}</div>
+                )}
+                {teamLive.waveId !== null && (
+                  <div>
+                    当前 wave：{teamLive.waveId}
+                    {teamLive.declaredExecution !== null
+                      ? `（声明 ${teamLive.declaredExecution}${
+                          teamLive.effectiveExecution !== null &&
+                          teamLive.effectiveExecution !== teamLive.declaredExecution
+                            ? `，宿主降为 ${teamLive.effectiveExecution}`
+                            : ''
+                        }）`
+                      : ''}
+                  </div>
+                )}
+                {teamLive.planSummary !== null && teamLive.planSummary !== '' && (
+                  <div>依赖：{teamLive.planSummary}</div>
+                )}
+                {projectDesktopTeamTimeline(teamLive).map((node) => (
+                  <details key={node.nodeId} className="border border-border p-1">
+                    <summary>
+                      #{node.ordinal} {node.employeeRoleId} {node.statusText}{' '}
+                      {node.durationMs !== null ? `${Math.round(node.durationMs / 100) / 10}s` : ''}{' '}
+                      {node.totalTokens !== null ? `${node.totalTokens} tokens` : ''}
+                    </summary>
+                    <pre className="whitespace-pre-wrap break-words">{node.report ?? '尚无报告'}</pre>
+                  </details>
+                ))}
+                {teamLive.collaborationLines.length > 0 && (
+                  <div className="mt-2">
+                    <div className="font-medium">协作请求</div>
+                    {teamLive.collaborationLines.map((line) => (
+                      <div key={line}>{line}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex-1 space-y-4 overflow-y-auto p-4 text-[16px] leading-7">
             {messagesStatus === 'loading' && messages.length === 0 && (
               <div className="text-[13px] text-foreground/80">加载中</div>
@@ -854,8 +1032,14 @@ export function DesktopWorkbench({
                 )}
               </div>
             ))}
-            {liveProjection.visible && liveProjection.liveText !== '' && (
-              <div className="whitespace-pre-wrap break-words">{liveProjection.liveText}</div>
+            {teamProjection.visible && teamProjection.parentFinalAnswer && (
+              <div className="space-y-1 border border-foreground/40 p-3">
+                <div className="text-[13px] font-medium text-foreground">父 Agent 最终回答</div>
+                <div className="whitespace-pre-wrap break-words">{teamProjection.parentFinalAnswer}</div>
+              </div>
+            )}
+            {teamProjection.visible && teamProjection.parentLiveText !== '' && !teamProjection.parentFinalAnswer && (
+              <div className="whitespace-pre-wrap break-words">{teamProjection.parentLiveText}</div>
             )}
             {stopping && liveProjection.visible && liveProjection.liveText === '' && (
               <div className="text-[13px] text-foreground/80">正在停止</div>
@@ -863,6 +1047,68 @@ export function DesktopWorkbench({
             <div ref={bottomRef} />
           </div>
           <form className="border-t border-border p-4" onSubmit={(event) => void sendMessage(event)}>
+            <label className="mb-2 flex items-center gap-2 text-[13px]">
+              <input
+                type="checkbox"
+                checked={teamMode}
+                onChange={(event) => setTeamMode(event.target.checked)}
+              />
+              团队协作（Owner 任务级委托：父 Agent 判断编制，宿主校验后执行）
+            </label>
+            {teamMode && (
+              <div className="mb-3 space-y-2 text-[13px]">
+                <div>{projectDesktopTeamBudget(teamLive)}</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={appendCalls}
+                    onChange={(event) => setAppendCalls(event.target.value)}
+                    className="h-8 w-24 rounded-none text-[13px]"
+                    aria-label="追加调用预算"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={teamLive.teamRunId === null}
+                    onClick={() => {
+                      if (workspaceId === null || teamLive.teamRunId === null) return
+                      const nextCalls = Number.parseInt(appendCalls, 10)
+                      if (!Number.isInteger(nextCalls)) return
+                      const next = { ...teamBudget, maximumProviderCalls: nextCalls }
+                      setTeamBudget(next)
+                      void bridge.teamRuns.appendBudget({
+                        workspaceId,
+                        teamRunId: teamLive.teamRunId,
+                        budget: next,
+                      })
+                    }}
+                  >
+                    追加预算
+                  </Button>
+                </div>
+                <details>
+                  <summary>允许父 Agent 使用的员工（默认全部允许，非每次任务编制）</summary>
+                  <div className="mt-2 grid grid-cols-2 gap-1">
+                    {TEAM_SPECIALISTS.map((role) => (
+                      <label key={role} className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={allowedSpecialists.includes(role)}
+                          onChange={(event) => {
+                            setAllowedSpecialists((current) =>
+                              event.target.checked
+                                ? [...current, role]
+                                : current.filter((item) => item !== role),
+                            )
+                          }}
+                        />
+                        {role}
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
