@@ -2511,22 +2511,27 @@ snapshot. An explicit disabled Provider fails closed. Model override
 reuses that Provider's credentials and exposes only `secret_fingerprint`.
 Role-config writes CAS on `row_version`.
 
-Team HTTPS reuses the P6.8 pin via an authoritative global-unicast decision
-(validated public unicast IPs; SNI/Host stay the hostname). Success settle is
-a unique API; create/settle bind identity in one transaction. Replan emits
-`plan_transition`. Team events use a per-type identity schema. Off-origin
-views park Team Run buffers instead of dropping them. Node/report/collaboration/audit
-settle atomically. Strict wall-time is independent of Provider HTTP timeout.
-Stop-during-createNode latches like P6.8. An explicit empty allow-list fails
-closed; default-all remains when unset.
+Team HTTPS production pinning asks desktop-local `is_global_unicast`
+(validated public unicast IPs; SNI/Host stay the hostname). The TypeScript
+BlockList is a fallback replica with named extra-rejects vs CPython. Success
+settle is a unique API; `/reports` is not a second success path. Create and
+settle remain two transactions; each re-binds live Conversation, plan, and
+Provider `is_enabled`. Owner Stop CAS-cancels `pending|running` nodes in the
+same transaction as the run. Replan emits `plan_transition`. Team events use a
+per-type identity schema. Off-origin views park Team Run buffers including
+phase, plan, and budgets. Node/report/collaboration/audit settle atomically
+after unique success. Strict wall-time is independent of Provider HTTP
+timeout. Stop-during-createNode latches like P6.8. An explicit empty
+allow-list fails closed; default-all remains when unset.
 
 Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closed the
 named attack holes of that drip. Round 1's RuntimeManager journey was an
 in-memory host wrapped as a fake native client. Round 2 adds a true
 `RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite` loopback
-journey. Paid/live Provider window is still unproven. P6.8
-single-agent send/Stop/epoch behavior must not regress. Enterprise Planner /
-`MULTI_AGENT_ENABLED` stay disabled. Do not announce 1.0.0, Authenticode, or
-EXE. The P34.3 maintainer-map benchmark suite
+journey. Round 2 did not close all ten items in one pass; Stop/node CAS and
+`/reports` P1s are forward-fixed after `5321aa7`. Paid/live Provider window is
+still unproven. P6.8 single-agent send/Stop/epoch behavior must not regress.
+Enterprise Planner / `MULTI_AGENT_ENABLED` stay disabled. Do not announce
+1.0.0, Authenticode, or EXE. The P34.3 maintainer-map benchmark suite
 (`docs/maintainers/benchmark/benchmark-suite.json`) remains MMB-001–008 and
 does not score P6.9; INV-085 still appears on the desktop impact row.

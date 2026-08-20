@@ -6805,10 +6805,12 @@ reinvocation requires new assignment/node/invocation/epochs.
 一句话：P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模式。团队模式开启后，父 Agent可以自由判断、调动、组织和协调九名专业员工，OmniBase 只负责让这种协作在可见预算、严格身份、单一 Workspace、可取消、可恢复、无权限越界的环境中稳定运行。**Codex tightening：** 父 Agent 输出必须是受限结构化 Proposal，不是直接调度权限。
 
 **NOW (already true):** A2+B+C+D on this execution branch, plus Round 1
-attack-hole closure and Round 2 forward-fix. `PERSONAL_MULTI_AGENT_IMPLEMENTED`
-is claimed only for **loopback** D journeys. `ENTERPRISE_MULTI_AGENT_DISABLED`
-remains. Paid/live Provider window, Authenticode, EXE/MSI and a human Electron
-soak are still unproven. Do not announce OmniBase 1.0.0.
+attack-hole closure, Round 2 forward-fix, and the Stop/reports P1s after
+`5321aa7`. `PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback**
+D journeys. `ENTERPRISE_MULTI_AGENT_DISABLED` remains. Paid/live Provider
+window, Authenticode, EXE/MSI and a human Electron soak are still unproven.
+Do not announce OmniBase 1.0.0. Round 2 did **not** close all ten items in one
+pass.
 
 A2 shipped desktop schema v3 then B bumped v4
 (`desktop_0004_personal_team_runtime`), typed Proposal/report/blackboard
@@ -6821,15 +6823,21 @@ polling, converged pre-start failures, and fail-closed empty allow-list /
 conversation mismatch. Round 1's RuntimeManager journey was an in-memory host
 wrapped as a fake `DesktopNativeClient`, not HTTP→SQLite.
 
-Round 2 (do not amend Round 1) replaces that pin with an authoritative
-global-unicast decision, unique success-settle + transactional node identity
-(schema v5), independent wall `AbortController`, per-chunk SSE model checks,
-`plan_transition`, parked team buffers, vault/`is_enabled` snapshot bind, and
+Round 2 (do not amend Round 1) replaces that pin with production HTTPS asking
+desktop-local `is_global_unicast` (TS BlockList remains a fallback replica),
+unique success-settle + schema v5 identity, independent wall
+`AbortController`, per-chunk SSE model checks, `plan_transition`, parked team
+buffers (including phase/plan/budget), vault/`is_enabled` snapshot bind, and
 a true `RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite`
-loopback journey.
+loopback journey. Create/settle remain two transactions; settle re-binds live
+Conversation, plan, and Provider `is_enabled`. Owner Stop CAS-cancels live
+nodes in the same transaction as the run. `/reports` is not a second success
+path. Those last two were P1s after `5321aa7`, not closed in the original
+Round 2 docs pass.
 
 Codex review starts at `docs/reviews/p6-9-codex-acceptance-package-r0.md`
-(whole slice + Round 1 + Round 2). Do not reopen the A2-only drip.
+(whole slice + Round 1 + Round 2 + Stop/reports P1s). Do not reopen the
+A2-only drip. Do not claim Round 2 closed all ten items.
 
 ```text
 P6_9_DIRECTION_CHANGE_OWNER_APPROVED

@@ -4355,11 +4355,14 @@ it must not silently inherit another Provider. Model override reuses that
 Provider's credentials and exposes only `secret_fingerprint`. Role-config
 writes compare-and-swap `row_version` (`desktop_role_config_cas_conflict`).
 
-Team HTTPS reuses the P6.8 pin through one authoritative **global-unicast**
-decision (IPv4 + IPv6, including reserved / CGNAT / benchmark / documentation /
-link-local / multicast). DNS is resolved once. Loopback is allowed only when
-loopback HTTP is opted in. SNI/`Host` stay the original hostname. A missing or
-mismatched actual vs requested model fails the node
+Team HTTPS production pinning asks desktop-local
+`POST /desktop/v1/provider-endpoints/pin`, which uses Python
+`is_global_unicast` (IPv4 + IPv6, including reserved / CGNAT / benchmark /
+documentation / link-local / multicast). DNS is resolved once. Loopback is
+allowed only when loopback HTTP is opted in. SNI/`Host` stay the original
+hostname. The TypeScript BlockList is a test/fallback replica and extra-rejects
+some CPython-global IPv6 specials; it is not claimed to match `endpoint.py`.
+A missing or mismatched actual vs requested model fails the node
 (`desktop_provider_model_identity_drift`). **Every SSE chunk that contains
 `model` is validated immediately**; mid-stream drift fails the node, not
 success. `{}` or a non-chat-completions body is not success.
@@ -4370,11 +4373,19 @@ Vault material is bound to `is_enabled` in the same SQLite snapshot
 
 Success settle is a unique API. Legacy node `update` may only transition
 `running → failed|cancelled|unknown` with `WHERE state='running'` CAS.
-`succeeded` must not use generic update. Node create/settle run in one
-transaction and bind Team Run, Conversation, plan, wave, assignment, role,
-node, invocation, node/send epoch, Provider, requested/actual model and live
-status. Creating a node on a terminal run, writing back a terminal node, or
-reusing epochs is fail-stop.
+`succeeded` must not use generic update. Employee `/reports` is not a second
+success path: a still-`running` node must not mint `team_employee_report` or
+`team_node_settled`. Node create and settle are **two** transactions (Provider
+HTTP between them). Each bind Team Run, live Conversation, current plan, wave,
+assignment, role, node, invocation, node/send epoch, Provider `is_enabled`,
+requested/actual model and live status. Creating a node on a terminal run,
+writing back a terminal node, or reusing epochs is fail-stop.
+
+Owner Stop commits the Team Run to `cancelled` and, in the same transaction,
+CAS every `pending|running` node on that run to `cancelled`. After the run is
+already `cancelling|cancelled`, node update may only CAS `running→cancelled`
+(or no-op an already-cancelled node). Restart recovery must not rewrite a
+node that is already `cancelled` into `unknown`.
 
 Replan emits an explicit validated `plan_transition` (old plan → new plan).
 The old-plan filter must not reject a legal new proposal after that event.
@@ -4384,13 +4395,15 @@ invocation, wave, nodeEpoch and sendEpoch as stored on the node; missing or
 mismatch drops the event.
 
 Team Run data updates are decoupled from the currently viewed scope. Leaving
-the origin workspace/conversation keeps writing a parked buffer. Returning
-restores full delta/terminal/final (A→B→A). First render on B must not paint
-A team live text.
+the origin workspace/conversation parks live text, nodes, collab, **and**
+phase, planRevisionId, waveId, planSummary, execution, and budgets. Returning
+restores full delta/terminal/final **and** plan/phase (A→B→A). First render on
+B must not paint A team chrome (parent 运行中, plan, budget).
 
-Node create + employee report + collaboration request + audit append settle in
-one SQLite transaction. Partial node-without-report or report-without-audit is
-fail-stop, not success. Strict team wall-time is an independent
+Unique success-settle writes node success plus employee report,
+collaboration request, and audit in one SQLite transaction. Partial
+node-without-report or report-without-audit is fail-stop, not success.
+Standalone `/reports` on a still-`running` node is rejected. Strict team wall-time is an independent
 timer/`AbortController`, not the Provider HTTP timeout. Wall expiry stably
 converges to `budget_exhausted`. Stop during `createNode` latches abort like
 P6.8 (arm before vault/provider await; no identity emit). An explicit empty
@@ -4413,15 +4426,19 @@ Skills and enterprise DAG stay out. P6.8 single-agent send/Stop/epoch behavior
 must not regress.
 
 `PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback** D
-journeys. Round 1 closed the named attack holes of that drip. Round 2 is the
+journeys. Round 1 closed the named attack holes of that drip. Round 2 is a
 forward-fix for global-unicast pinning, unique success-settle, transactional
 node identity, independent wall-time, per-chunk SSE model checks, replan
 transition events, parked team buffers, and vault/enabled snapshot bind.
-Round 1's `RuntimeManager plus loopback Provider` test was an **in-memory host
-wrapped as a fake DesktopNativeClient**, not a native HTTP→SQLite journey.
-Round 2 adds `RuntimeManager → DesktopNativeClient → desktop-local HTTP →
-SQLite → report/audit`. Paid / live Provider window, Authenticode, EXE/MSI
-and a human Electron soak remain unproven. Do not announce OmniBase 1.0.0.
+It did **not** close all ten items in one pass: Stop/node CAS and `/reports`
+bypass were forward-fixed after `5321aa7`. Create/settle remain two
+transactions; production pin shares Python `is_global_unicast` while the TS
+replica extra-rejects named IPv6 specials. Round 1's `RuntimeManager plus
+loopback Provider` test was an **in-memory host wrapped as a fake
+DesktopNativeClient**, not a native HTTP→SQLite journey. Round 2 adds
+`RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite →
+report/audit`. Paid / live Provider window, Authenticode, EXE/MSI and a human
+Electron soak remain unproven. Do not announce OmniBase 1.0.0.
 
 **Required verification**
 

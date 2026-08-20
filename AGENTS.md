@@ -278,8 +278,8 @@ runtime evidence; then correct the stale documentation in the same change.
   `desktop_0003_personal_agent_team`), never Alembic 0017. Role config never
   stores API keys or vault material; vault reads are bound to `is_enabled` in
   the same snapshot; explicit disabled Providers fail closed;
-  role-config writes CAS on `row_version`. Team HTTPS pins **global-unicast**
-  addresses with SNI/Host still the hostname. Next stays product-blind. Keep
+  role-config writes CAS on `row_version`. Team HTTPS production pinning asks
+  desktop-local `is_global_unicast`; SNI/Host stay the hostname. Next stays product-blind. Keep
   `ENTERPRISE_MULTI_AGENT_DISABLED`. Loopback D may claim
   `PERSONAL_MULTI_AGENT_IMPLEMENTED`; paid/live Provider window is still
   unproven. Do not announce 1.0.0, Authenticode, or EXE.
