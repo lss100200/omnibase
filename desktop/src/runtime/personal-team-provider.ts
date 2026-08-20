@@ -44,6 +44,10 @@ export interface PinnedTeamEndpoint {
 
 export interface TeamTransportHooks {
   readonly lookup?: (hostname: string, port: number) => Promise<readonly string[]>;
+  readonly pinEndpoint?: (
+    baseUrl: string,
+    allowLoopbackHttp: boolean,
+  ) => Promise<PinnedTeamEndpoint>;
 }
 
 const MAX_BODY = 2 * 1024 * 1024;
@@ -98,6 +102,9 @@ export async function resolvePinnedTeamEndpoint(
   allowLoopbackHttp: boolean,
   hooks: TeamTransportHooks = {},
 ): Promise<PinnedTeamEndpoint> {
+  if (hooks.pinEndpoint !== undefined) {
+    return hooks.pinEndpoint(baseUrl, allowLoopbackHttp);
+  }
   const candidate = baseUrl.trim();
   if (candidate.length === 0 || /[\r\n\t]/u.test(candidate)) {
     throw coded("desktop_provider_endpoint_invalid");

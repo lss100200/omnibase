@@ -560,6 +560,46 @@ function parseProviderTest(value: unknown): DesktopProviderTestResult | null {
   });
 }
 
+function parsePinnedEndpoint(value: unknown): {
+  readonly scheme: "http" | "https";
+  readonly hostname: string;
+  readonly port: number;
+  readonly chatPath: string;
+  readonly connectAddrs: readonly string[];
+  readonly loopback: boolean;
+} | null {
+  if (
+    !isRecord(value) ||
+    (value.scheme !== "http" && value.scheme !== "https") ||
+    typeof value.hostname !== "string" ||
+    value.hostname.length === 0 ||
+    typeof value.port !== "number" ||
+    !Number.isInteger(value.port) ||
+    value.port < 1 ||
+    value.port > 65535 ||
+    typeof value.chat_path !== "string" ||
+    value.chat_path.length === 0 ||
+    !Array.isArray(value.connect_addrs) ||
+    value.connect_addrs.length === 0 ||
+    typeof value.loopback !== "boolean"
+  ) {
+    return null;
+  }
+  const connectAddrs: string[] = [];
+  for (const item of value.connect_addrs) {
+    if (typeof item !== "string" || item.length === 0) return null;
+    connectAddrs.push(item);
+  }
+  return Object.freeze({
+    scheme: value.scheme,
+    hostname: value.hostname,
+    port: value.port,
+    chatPath: value.chat_path,
+    connectAddrs: Object.freeze(connectAddrs),
+    loopback: value.loopback,
+  });
+}
+
 function parseConversation(value: unknown): DesktopConversation | null {
   if (
     !isRecord(value) ||
@@ -1641,6 +1681,30 @@ export class DesktopNativeClient {
       { secret },
       parseProviderTest,
       120_000,
+    );
+  }
+
+  pinProviderEndpoint(input: {
+    readonly baseUrl: string;
+    readonly allowLoopbackHttp: boolean;
+  }): Promise<
+    DesktopOperationResult<{
+      readonly scheme: "http" | "https";
+      readonly hostname: string;
+      readonly port: number;
+      readonly chatPath: string;
+      readonly connectAddrs: readonly string[];
+      readonly loopback: boolean;
+    }>
+  > {
+    return this.#request(
+      "POST",
+      "/desktop/v1/provider-endpoints/pin",
+      {
+        base_url: input.baseUrl,
+        allow_loopback_http: input.allowLoopbackHttp,
+      },
+      parsePinnedEndpoint,
     );
   }
 

@@ -49,6 +49,7 @@ from omnibase.desktop_local.database import (
     open_database,
     utc_now_text,
 )
+from omnibase.desktop_local.endpoint import DesktopEndpointError, resolve_provider_endpoint
 from omnibase.desktop_local.errors import DesktopLocalError
 from omnibase.desktop_local.personal_team import (
     EMPLOYEE_ROLE_IDS,
@@ -201,6 +202,13 @@ class ProviderSecretRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     secret: str = Field(min_length=1, max_length=512)
+
+
+class ProviderEndpointPinRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    base_url: str = Field(min_length=8, max_length=2048)
+    allow_loopback_http: bool
 
 
 class ConversationCreateRequest(BaseModel):
@@ -796,6 +804,26 @@ def _providers_vault(provider_id: str, request: Request) -> dict[str, str]:
         return load_provider_secret_material(runtime.connection, provider_id)
 
 
+def _providers_pin_endpoint(
+    payload: ProviderEndpointPinRequest, request: Request
+) -> dict[str, object]:
+    _runtime(request)
+    try:
+        endpoint = resolve_provider_endpoint(
+            payload.base_url, allow_loopback_http=payload.allow_loopback_http
+        )
+    except DesktopEndpointError as exc:
+        raise DesktopApiError(400, exc.code) from exc
+    return {
+        "scheme": endpoint.scheme,
+        "hostname": endpoint.hostname,
+        "port": endpoint.port,
+        "chat_path": endpoint.chat_path,
+        "connect_addrs": list(endpoint.connect_addrs),
+        "loopback": endpoint.loopback,
+    }
+
+
 def _providers_test(
     provider_id: str,
     payload: ProviderSecretRequest,
@@ -1271,6 +1299,11 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     )
     app.add_api_route("/desktop/v1/providers", _providers_list, methods=["GET"])
     app.add_api_route("/desktop/v1/providers", _providers_upsert, methods=["POST"])
+    app.add_api_route(
+        "/desktop/v1/provider-endpoints/pin",
+        _providers_pin_endpoint,
+        methods=["POST"],
+    )
     app.add_api_route(
         "/desktop/v1/providers/{provider_id}",
         _providers_delete,

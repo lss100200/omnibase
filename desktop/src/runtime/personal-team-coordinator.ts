@@ -379,6 +379,40 @@ export class PersonalTeamCoordinator {
     this.abort.abortAll();
   }
 
+  async #markNodeCancelled(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly nodeId: string;
+    readonly errorCode: string;
+    readonly durationMs: number | null;
+  }): Promise<void> {
+    try {
+      await this.#host.updateNode({
+        workspaceId: input.workspaceId,
+        teamRunId: input.teamRunId,
+        nodeId: input.nodeId,
+        state: "cancelled",
+        actualModel: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        answerSha256: null,
+        errorCode: input.errorCode,
+        durationMs: input.durationMs,
+      });
+    } catch (error) {
+      const code = errorCode(error);
+      if (
+        code === "desktop_team_run_terminal" ||
+        code === "desktop_team_node_terminal" ||
+        code === "desktop_team_node_not_running"
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
+
   #armWall(ms: number): void {
     this.#clearWall();
     this.#wall = new AbortController();
@@ -915,16 +949,10 @@ export class PersonalTeamCoordinator {
       createdId = created.node.id;
       if (controller.signal.aborted || this.#cancelled || this.#wallExceeded()) {
         const kind = this.#abortKind();
-        await this.#host.updateNode({
+        await this.#markNodeCancelled({
           workspaceId: args.input.workspaceId,
           teamRunId: args.teamRun.id,
           nodeId: created.node.id,
-          state: "cancelled",
-          actualModel: null,
-          inputTokens: null,
-          outputTokens: null,
-          totalTokens: null,
-          answerSha256: null,
           errorCode: kind === "budget" ? "desktop_team_wall_time_exceeded" : "desktop_invocation_cancelled",
           durationMs: null,
         });
@@ -996,16 +1024,10 @@ export class PersonalTeamCoordinator {
       if (isAborted(chat) || controller.signal.aborted || this.#cancelled || this.#wallExceeded()) {
         const kind = this.#abortKind();
         node.state = "cancelled";
-        await this.#host.updateNode({
+        await this.#markNodeCancelled({
           workspaceId: args.input.workspaceId,
           teamRunId: args.teamRun.id,
           nodeId: created.node.id,
-          state: "cancelled",
-          actualModel: null,
-          inputTokens: null,
-          outputTokens: null,
-          totalTokens: null,
-          answerSha256: null,
           errorCode: kind === "budget" ? "desktop_team_wall_time_exceeded" : "desktop_invocation_cancelled",
           durationMs: this.#now() - nodeStarted,
         });
@@ -1079,6 +1101,16 @@ export class PersonalTeamCoordinator {
       return { kind: "ok", assignmentId: args.assignment.assignmentId };
     } catch (error) {
       const code = errorCode(error);
+      if (createdId !== null && (ABORT_CODES.has(code) || this.#cancelled || this.#wallExceeded())) {
+        await this.#markNodeCancelled({
+          workspaceId: args.input.workspaceId,
+          teamRunId: args.teamRun.id,
+          nodeId: createdId,
+          errorCode:
+            this.#wallExceeded() ? "desktop_team_wall_time_exceeded" : "desktop_invocation_cancelled",
+          durationMs: null,
+        }).catch(() => undefined);
+      }
       if (createdId !== null && !ABORT_CODES.has(code) && !this.#cancelled && !this.#wallExceeded()) {
         const terminal =
           code === "desktop_invocation_interrupted" ||
@@ -1706,6 +1738,12 @@ export function createInMemoryPersonalTeamHost(
       if (node) node.state = "succeeded";
     },
     async recordReport(input) {
+      const node = nodes.find((item) => item.id === input.nodeId);
+      if (node === undefined || node.state !== "succeeded") {
+        throw Object.assign(new Error("desktop_team_report_requires_settle"), {
+          code: "desktop_team_report_requires_settle",
+        });
+      }
       const blob = JSON.stringify(input.report);
       if (/api[_-]?key|\bsk-[A-Za-z0-9]{8,}|ciphertext|\bnonce\b|encrypted_secret_blob/iu.test(blob)) {
         throw Object.assign(new Error("desktop_team_secret_or_path_forbidden"), {

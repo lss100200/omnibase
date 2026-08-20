@@ -688,9 +688,24 @@ export class RuntimeManager {
       return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
     }
     this.#teamInFlight = true;
+    const pinEndpoint =
+      typeof hostClient.pinProviderEndpoint === "function"
+        ? async (baseUrl: string, allowLoopbackHttp: boolean) => {
+            const pinned = await hostClient.pinProviderEndpoint({
+              baseUrl,
+              allowLoopbackHttp,
+            });
+            if (!pinned.ok) {
+              throw Object.assign(new Error(pinned.error.code), { code: pinned.error.code });
+            }
+            return pinned.value;
+          }
+        : undefined;
     const coordinator = new PersonalTeamCoordinator({
       host: createNativePersonalTeamHost({ client: hostClient, vault }),
-      transport: createOpenAiCompatibleTransport(),
+      transport: createOpenAiCompatibleTransport(
+        pinEndpoint === undefined ? {} : { pinEndpoint },
+      ),
     });
     this.#teamCoordinator = coordinator;
     if (this.#pendingTeamAbort) {

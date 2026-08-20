@@ -1,10 +1,13 @@
 import { BlockList, isIP } from "node:net";
 
 /**
- * Authoritative global-unicast decision matching CPython 3.12+
- * ``ipaddress`` IANA special-purpose registries, plus unicast-only
- * constraints Python's ``is_global`` does not apply (multicast, IPv6
- * space outside 2000::/3). This replaces handwritten RFC1918 octet lists.
+ * Local fail-closed replica of CPython ``ipaddress`` special-purpose
+ * ranges plus unicast-only constraints. Production team HTTPS asks
+ * desktop-local ``POST /desktop/v1/provider-endpoints/pin`` so the
+ * connect set is the same ``is_global_unicast`` helper as endpoint.py.
+ * This table is the test/fallback path when that pin hook is absent.
+ * It is not a guaranteed CPython match; remaining disagreements are
+ * named in the Round-2 attack tests.
  */
 const IPV4_NON_GLOBAL = new BlockList();
 const IPV6_NON_GLOBAL = new BlockList();

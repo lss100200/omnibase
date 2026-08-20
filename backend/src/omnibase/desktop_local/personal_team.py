@@ -200,8 +200,10 @@ _MAX_WAVES = 16
 _MAX_ASSIGNMENTS = 128
 _MAX_PLAN_REVISIONS = 32
 _LIVE_TEAM_RUN_STATES = frozenset({"preparing", "running"})
+_OWNER_STOP_RUN_STATES = frozenset({"cancelling", "cancelled"})
 _TERMINAL_NODE_STATES = frozenset({"succeeded", "failed", "cancelled", "unknown"})
 _LEGACY_NODE_UPDATE_STATES = frozenset({"failed", "cancelled", "unknown"})
+_LIVE_ASSIGNMENT_STATES = frozenset({"pending", "ready", "running"})
 _INFINITE_REPLAN_KEYS: frozenset[str] = frozenset(
     {
         "replanCap",
@@ -244,6 +246,59 @@ def _require_owner(connection: sqlite3.Connection) -> sqlite3.Row:
     if owner is None:
         raise DesktopApiError(409, "desktop_owner_not_initialized")
     return owner
+
+
+def _require_live_conversation(
+    connection: sqlite3.Connection,
+    owner_id: str,
+    workspace_id: str,
+    conversation_id: str,
+) -> sqlite3.Row:
+    if not isinstance(conversation_id, str) or not _CONVERSATION_ID_PATTERN.fullmatch(
+        conversation_id
+    ):
+        raise DesktopApiError(409, "desktop_team_conversation_identity_mismatch")
+    row = connection.execute(
+        "SELECT id, state FROM conversation WHERE id = ? AND owner_id = ? AND workspace_id = ?",
+        (conversation_id, owner_id, workspace_id),
+    ).fetchone()
+    if row is None:
+        raise DesktopApiError(409, "desktop_team_conversation_identity_mismatch")
+    if str(row["state"]) != "active":
+        raise DesktopApiError(409, "desktop_conversation_archived")
+    return row
+
+
+def _require_enabled_provider(
+    connection: sqlite3.Connection, owner_id: str, provider_id: str
+) -> sqlite3.Row:
+    if not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise DesktopApiError(404, "desktop_provider_not_found")
+    row = connection.execute(
+        "SELECT id, is_enabled FROM provider WHERE id = ? AND owner_id = ?",
+        (provider_id, owner_id),
+    ).fetchone()
+    if row is None:
+        raise DesktopApiError(404, "desktop_provider_not_found")
+    if int(row["is_enabled"]) != 1:
+        raise DesktopApiError(409, "desktop_provider_disabled")
+    return row
+
+
+def _cas_cancel_live_nodes_for_run(
+    connection: sqlite3.Connection, team_run_id: str, now: str
+) -> None:
+    connection.execute(
+        "UPDATE team_node SET state = 'cancelled', "
+        "error_code = 'desktop_invocation_cancelled', updated_at = ? "
+        "WHERE team_run_id = ? AND state IN ('pending', 'running')",
+        (now, team_run_id),
+    )
+    connection.execute(
+        "UPDATE team_assignment SET state = 'cancelled', updated_at = ? "
+        "WHERE team_run_id = ? AND state IN ('pending', 'ready', 'running')",
+        (now, team_run_id),
+    )
 
 
 def _require_workspace(
@@ -1319,6 +1374,7 @@ def cancel_team_run(
                 "WHERE id = ? AND state = 'cancelling' RETURNING *",
                 (now, team_run_id),
             ).fetchone()
+        _cas_cancel_live_nodes_for_run(connection, team_run_id, now)
         append_audit_event(
             connection,
             event_id=_new_id("event"),
@@ -1910,13 +1966,12 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
         if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
             raise DesktopApiError(409, "desktop_team_run_terminal")
         conversation_id = str(run["conversation_id"])
-        if not _CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
-            raise DesktopApiError(409, "desktop_team_conversation_identity_mismatch")
+        _require_live_conversation(connection, str(owner["id"]), workspace_id, conversation_id)
         current_plan = run["current_plan_revision_id"]
         if not isinstance(current_plan, str) or current_plan == "":
             raise DesktopApiError(409, "desktop_team_identity_mismatch")
         assignment = connection.execute(
-            "SELECT assignment_id, employee_role_id, wave_id, plan_revision_id "
+            "SELECT assignment_id, employee_role_id, wave_id, plan_revision_id, state "
             "FROM team_assignment WHERE team_run_id = ? AND assignment_id = ? "
             "AND employee_role_id = ?",
             (team_run_id, assignment_id, employee_role_id),
@@ -1928,12 +1983,9 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
             or str(assignment["plan_revision_id"]) != current_plan
         ):
             raise DesktopApiError(409, "desktop_team_identity_mismatch")
-        provider = connection.execute(
-            "SELECT id FROM provider WHERE id = ? AND owner_id = ?",
-            (provider_id, owner["id"]),
-        ).fetchone()
-        if provider is None:
-            raise DesktopApiError(404, "desktop_provider_not_found")
+        if str(assignment["state"]) not in _LIVE_ASSIGNMENT_STATES:
+            raise DesktopApiError(409, "desktop_team_assignment_not_live")
+        _require_enabled_provider(connection, str(owner["id"]), provider_id)
         duplicate = connection.execute(
             "SELECT id FROM team_node WHERE invocation_id = ?",
             (invocation_id,),
@@ -1973,11 +2025,14 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
                 now,
             ),
         )
-        connection.execute(
+        claimed = connection.execute(
             "UPDATE team_assignment SET state = 'running', updated_at = ? "
-            "WHERE team_run_id = ? AND assignment_id = ?",
+            "WHERE team_run_id = ? AND assignment_id = ? "
+            "AND state IN ('pending', 'ready', 'running') RETURNING assignment_id",
             (now, team_run_id, assignment_id),
-        )
+        ).fetchone()
+        if claimed is None:
+            raise DesktopApiError(409, "desktop_team_assignment_not_live")
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:
@@ -2009,6 +2064,26 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
     }
 
 
+def _owner_stop_node_update_is_idempotent(
+    run_state: str, requested: object, existing_state: str
+) -> bool:
+    if (
+        run_state in _OWNER_STOP_RUN_STATES
+        and requested == "cancelled"
+        and existing_state == "cancelled"
+    ):
+        return True
+    if existing_state in _TERMINAL_NODE_STATES:
+        raise DesktopApiError(409, "desktop_team_node_terminal")
+    if run_state in _OWNER_STOP_RUN_STATES:
+        if requested != "cancelled":
+            raise DesktopApiError(409, "desktop_team_run_terminal")
+        return False
+    if run_state not in _LIVE_TEAM_RUN_STATES:
+        raise DesktopApiError(409, "desktop_team_run_terminal")
+    return False
+
+
 def update_team_node(
     connection: sqlite3.Connection,
     workspace_id: str,
@@ -2027,16 +2102,17 @@ def update_team_node(
     try:
         connection.execute("BEGIN IMMEDIATE")
         run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
-        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
-            raise DesktopApiError(409, "desktop_team_run_terminal")
+        run_state = str(run["state"])
         existing = connection.execute(
             "SELECT id, assignment_id, state FROM team_node WHERE id = ? AND team_run_id = ?",
             (node_id, team_run_id),
         ).fetchone()
         if existing is None:
             raise DesktopApiError(404, "desktop_team_node_not_found")
-        if str(existing["state"]) in _TERMINAL_NODE_STATES:
-            raise DesktopApiError(409, "desktop_team_node_terminal")
+        existing_state = str(existing["state"])
+        if _owner_stop_node_update_is_idempotent(run_state, state, existing_state):
+            connection.execute("COMMIT")
+            return {"updated": True, "id": node_id, "state": "cancelled"}
         answer_sha = payload.get("answer_sha256")
         updated = connection.execute(
             "UPDATE team_node SET state = ?, actual_model = ?, input_tokens = ?, "
@@ -2192,6 +2268,9 @@ def settle_team_node(  # noqa: C901 - success CAS, identity bind and report/audi
         run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
         if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
             raise DesktopApiError(409, "desktop_team_run_terminal")
+        _require_live_conversation(
+            connection, str(owner["id"]), workspace_id, str(run["conversation_id"])
+        )
         existing = connection.execute(
             "SELECT id, assignment_id, invocation_id, state, employee_role_id, "
             "wave_id, node_epoch, send_epoch, provider_id, requested_model "
@@ -2202,6 +2281,23 @@ def settle_team_node(  # noqa: C901 - success CAS, identity bind and report/audi
             raise DesktopApiError(404, "desktop_team_node_not_found")
         if str(existing["state"]) in _TERMINAL_NODE_STATES:
             raise DesktopApiError(409, "desktop_team_node_terminal")
+        current_plan = run["current_plan_revision_id"]
+        if not isinstance(current_plan, str) or current_plan == "":
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        assignment = connection.execute(
+            "SELECT assignment_id, plan_revision_id, state "
+            "FROM team_assignment WHERE team_run_id = ? AND assignment_id = ?",
+            (team_run_id, existing["assignment_id"]),
+        ).fetchone()
+        if assignment is None:
+            raise DesktopApiError(404, "desktop_team_assignment_not_found")
+        if str(assignment["plan_revision_id"]) != current_plan:
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
+        if str(assignment["state"]) not in _LIVE_ASSIGNMENT_STATES:
+            raise DesktopApiError(409, "desktop_team_assignment_not_live")
+        provider_id = existing["provider_id"]
+        if isinstance(provider_id, str) and provider_id != "":
+            _require_enabled_provider(connection, str(owner["id"]), provider_id)
         result = validate_employee_team_report(
             {
                 "assignmentId": payload.get("assignment_id"),
@@ -2324,22 +2420,36 @@ def record_employee_report(
         if not isinstance(node_id, str) or not isinstance(invocation_id, str):
             raise DesktopApiError(400, "desktop_native_input_invalid")
         node = connection.execute(
-            "SELECT id FROM team_node WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
+            "SELECT id, state FROM team_node "
+            "WHERE id = ? AND team_run_id = ? AND invocation_id = ?",
             (node_id, team_run_id, invocation_id),
         ).fetchone()
         if node is None:
             raise DesktopApiError(404, "desktop_team_node_not_found")
-        now = utc_now_text()
-        report_id, body, recorded = _persist_report_collaboration_and_audit(
-            connection,
-            owner_id=str(owner["id"]),
-            workspace_id=workspace_id,
-            team_run_id=team_run_id,
-            node_id=node_id,
-            invocation_id=invocation_id,
-            normalized=result.normalized,
-            now=now,
-        )
+        if str(node["state"]) != "succeeded":
+            raise DesktopApiError(409, "desktop_team_report_requires_settle")
+        existing = connection.execute(
+            "SELECT id, assignment_id, employee_role_id, status, report "
+            "FROM team_employee_report WHERE node_id = ? AND invocation_id = ?",
+            (node_id, invocation_id),
+        ).fetchone()
+        if existing is None:
+            raise DesktopApiError(409, "desktop_team_report_requires_settle")
+        recorded = [
+            {
+                "id": str(row["id"]),
+                "target_role_id": str(row["target_role_id"]),
+                "question": str(row["question"]),
+                "reason": str(row["reason"]),
+                "parent_decision": str(row["parent_decision"]),
+            }
+            for row in connection.execute(
+                "SELECT id, target_role_id, question, reason, parent_decision "
+                "FROM team_collaboration_request WHERE team_run_id = ? "
+                "AND from_assignment_id = ? ORDER BY created_at, id",
+                (team_run_id, existing["assignment_id"]),
+            ).fetchall()
+        ]
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:
@@ -2351,11 +2461,11 @@ def record_employee_report(
         raise DesktopApiError(503, "desktop_team_report_persist_failed") from None
     return {
         "report": {
-            "id": report_id,
-            "assignment_id": result.normalized["assignmentId"],
-            "employee_role_id": result.normalized["employeeRoleId"],
-            "status": result.normalized["status"],
-            "report": body,
+            "id": str(existing["id"]),
+            "assignment_id": str(existing["assignment_id"]),
+            "employee_role_id": str(existing["employee_role_id"]),
+            "status": str(existing["status"]),
+            "report": str(existing["report"]),
             "collaboration_requests": recorded,
         }
     }
