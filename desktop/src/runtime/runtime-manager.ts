@@ -668,9 +668,9 @@ export class RuntimeManager {
     input: DesktopTeamRunExecuteInput,
     emit: (event: DesktopTeamRunEvent) => void,
   ): Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>> {
-    const client = this.#readySendClient();
+    const sendClient = this.#readySendClient();
     const vault = this.#options.secretVault;
-    if (client === null || vault === undefined || !("startTeamRun" in client)) {
+    if (sendClient === null || vault === undefined) {
       return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
     }
     if (this.#teamCoordinator?.live === true) {
@@ -679,13 +679,17 @@ export class RuntimeManager {
         error: Object.freeze({ code: "desktop_team_run_already_active" }),
       });
     }
-    const nativeClient = this.#readyNativeClient();
-    if (nativeClient === null) {
+    const hostClient =
+      "startTeamRun" in sendClient &&
+      typeof (sendClient as { startTeamRun?: unknown }).startTeamRun === "function"
+        ? (sendClient as unknown as DesktopNativeClient)
+        : this.#readyNativeClient();
+    if (hostClient === null || !("startTeamRun" in hostClient)) {
       return this.#nativeUnavailable<{ readonly proof: DesktopTeamRunProof }>();
     }
     this.#teamInFlight = true;
     const coordinator = new PersonalTeamCoordinator({
-      host: createNativePersonalTeamHost({ client: nativeClient, vault }),
+      host: createNativePersonalTeamHost({ client: hostClient, vault }),
       transport: createOpenAiCompatibleTransport(),
     });
     this.#teamCoordinator = coordinator;

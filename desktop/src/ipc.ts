@@ -693,7 +693,6 @@ function parseTeamRunStartInput(
   if (args[0].allowedSpecialistRoleIds !== undefined) {
     if (
       !Array.isArray(args[0].allowedSpecialistRoleIds) ||
-      args[0].allowedSpecialistRoleIds.length < 1 ||
       args[0].allowedSpecialistRoleIds.length > 9 ||
       args[0].allowedSpecialistRoleIds.some(
         (role) => typeof role !== "string" || !SPECIALIST_ROLE_SET.has(role),

@@ -598,3 +598,14 @@ export function completeDesktopTeamRun(state: DesktopTeamLiveState): DesktopTeam
   }
   return state
 }
+
+export function failDesktopTeamPreStart(state: DesktopTeamLiveState): DesktopTeamLiveState {
+  if (state.phase === 'idle') return state
+  const terminal = completeDesktopTeamRun(state)
+  if (terminal.phase === 'idle') return terminal
+  return completeDesktopTeamRun({
+    ...state,
+    phase: 'failed',
+    runState: 'failed',
+  })
+}

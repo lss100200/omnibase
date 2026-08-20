@@ -1169,8 +1169,10 @@ def start_team_run(  # noqa: C901 - budget, live-run and conversation binding sh
     if allowed is None:
         allowed_roles = tuple(sorted(SPECIALIST_ROLE_IDS))
     else:
-        if not isinstance(allowed, list) or not allowed:
+        if not isinstance(allowed, list):
             raise DesktopApiError(400, "desktop_native_input_invalid")
+        if len(allowed) == 0:
+            raise DesktopApiError(400, "desktop_team_allow_list_empty")
         if any(role not in SPECIALIST_ROLE_IDS for role in allowed):
             raise DesktopApiError(400, "desktop_team_unknown_role")
         allowed_roles = tuple(dict.fromkeys(allowed))

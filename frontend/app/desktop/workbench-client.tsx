@@ -35,6 +35,7 @@ import {
   createDesktopTeamLiveState,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
+  failDesktopTeamPreStart,
   projectDesktopTeamBudget,
   projectDesktopTeamEmployees,
   projectDesktopTeamTimeline,
@@ -88,6 +89,8 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   desktop_conversation_not_found: '会话不存在。',
   desktop_invocation_in_progress: '当前仍有生成进行中。',
   desktop_invocation_cancelled: '生成已停止',
+  desktop_team_allow_list_empty: '已开启团队协作，但允许名单为空；未默认调用全部专员。',
+  desktop_team_conversation_identity_mismatch: '团队启动绑定的会话与当前会话不一致。',
 }
 
 function errorMessage(code: string): string {
@@ -569,8 +572,16 @@ export function DesktopWorkbench({
       })
       if (!mountedRef.current) return
       if (!result.ok) {
+        const failed = failDesktopTeamPreStart(teamLiveRef.current)
+        teamLiveRef.current = failed
+        setTeamLive(failed)
         onError(errorMessage(result.error.code))
         return
+      }
+      if (desktopTeamStopVisible(teamLiveRef.current)) {
+        const failed = failDesktopTeamPreStart(teamLiveRef.current)
+        teamLiveRef.current = failed
+        setTeamLive(failed)
       }
       if (result.value.proof.state === 'budget_exhausted') {
         onError('团队已经使用完本次协作预算；未伪造完成。')

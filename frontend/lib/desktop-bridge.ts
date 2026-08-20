@@ -321,6 +321,7 @@ export {
   createDesktopTeamLiveState,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
+  failDesktopTeamPreStart,
   reduceDesktopTeamEvent,
   requestDesktopTeamCancel,
   switchDesktopTeamScope,

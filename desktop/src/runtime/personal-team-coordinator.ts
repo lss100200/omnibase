@@ -354,6 +354,14 @@ export class PersonalTeamCoordinator {
         code: "desktop_team_run_already_active",
       });
     }
+    if (
+      input.allowedSpecialistRoleIds !== undefined &&
+      input.allowedSpecialistRoleIds.length === 0
+    ) {
+      throw Object.assign(new Error("desktop_team_allow_list_empty"), {
+        code: "desktop_team_allow_list_empty",
+      });
+    }
     const budgetCheck = validateTeamRunBudget(input.budget);
     if (!budgetCheck.ok) {
       throw Object.assign(new Error(budgetCheck.code), { code: budgetCheck.code });
@@ -371,6 +379,21 @@ export class PersonalTeamCoordinator {
     try {
       const startedRun = await this.#host.startTeamRun(input);
       teamRun = startedRun.teamRun;
+      if (
+        teamRun.workspaceId !== input.workspaceId ||
+        teamRun.conversationId !== input.conversationId
+      ) {
+        await this.#host
+          .setRunState({
+            workspaceId: teamRun.workspaceId,
+            teamRunId: teamRun.id,
+            state: "failed",
+          })
+          .catch(() => undefined);
+        throw Object.assign(new Error("desktop_team_conversation_identity_mismatch"), {
+          code: "desktop_team_conversation_identity_mismatch",
+        });
+      }
       const identity = {
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
@@ -1388,6 +1411,11 @@ export function createInMemoryPersonalTeamHost(
     audits,
     failNextSettle: null,
     async startTeamRun(input) {
+      if (input.allowedSpecialistRoleIds !== undefined && input.allowedSpecialistRoleIds.length === 0) {
+        throw Object.assign(new Error("desktop_team_allow_list_empty"), {
+          code: "desktop_team_allow_list_empty",
+        });
+      }
       if (runs.some((item) => item.state === "preparing" || item.state === "running" || item.state === "cancelling")) {
         throw Object.assign(new Error("desktop_team_run_already_active"), {
           code: "desktop_team_run_already_active",
