@@ -193,9 +193,7 @@ def test_rollback_probe_is_a_two_msi_transaction_with_an_intentional_blocker() -
         blocker_project.findtext("./PropertyGroup/DefineConstants")
         == "ProductVersion=$(ProductVersion)"
     )
-    assert (
-        probe_project.findtext("./PropertyGroup/SuppressSpecificWarnings") == "1151"
-    )
+    assert probe_project.findtext("./PropertyGroup/SuppressSpecificWarnings") == "1151"
     assert blocker_project.findtext("./PropertyGroup/SuppressIces") == "ICE71"
     assert [
         item.attrib["Include"] for item in probe_project.findall("./ItemGroup/Compile")
@@ -218,8 +216,7 @@ def test_rollback_probe_is_a_two_msi_transaction_with_an_intentional_blocker() -
     assert children[0].attrib["Vital"] == "yes"
     assert children[1].attrib["SourceFile"] == "$(var.OmniBase.Package.TargetPath)"
     assert (
-        children[2].attrib["SourceFile"]
-        == "$(var.OmniBase.RollbackBlocker.TargetPath)"
+        children[2].attrib["SourceFile"] == "$(var.OmniBase.RollbackBlocker.TargetPath)"
     )
     assert all("DisplayInternalUI" not in package.attrib for package in children[1:])
     assert all(package.attrib["Vital"] == "yes" for package in children[1:])
@@ -284,7 +281,10 @@ def test_rollback_probe_is_test_only_and_lifecycle_harness_covers_all_states() -
     assert "IsPathFullyQualified" not in harness
     assert "-or @(Get-OmniBaseRegistration).Count" in harness
     assert "if (@(Get-OmniBaseRegistration).Count" in harness
-    assert "Starting a new MSI transaction, id: OmniBaseRollbackProbeTransaction" in harness
+    assert (
+        "Starting a new MSI transaction, id: OmniBaseRollbackProbeTransaction"
+        in harness
+    )
     assert "Applying execute package: OmniBaseUpgradeCandidate" in harness
     assert "Applied execute package: OmniBaseUpgradeCandidate, result: 0x0" in harness
     assert "Applying execute package: IntentionalRollbackBlocker" in harness
@@ -292,7 +292,9 @@ def test_rollback_probe_is_test_only_and_lifecycle_harness_covers_all_states() -
         "Applied execute package: IntentionalRollbackBlocker, result: 0x80070643"
         in harness
     )
-    assert "Rolling back MSI transaction, id: OmniBaseRollbackProbeTransaction" in harness
+    assert (
+        "Rolling back MSI transaction, id: OmniBaseRollbackProbeTransaction" in harness
+    )
     assert (
         "package: OmniBaseUpgradeCandidate, install registration state: Absent"
         in harness
