@@ -5,6 +5,8 @@ import https from "node:https";
 import { isIP } from "node:net";
 import { URL } from "node:url";
 
+import { isGlobalUnicastAddress, isLoopbackConnectAddress, unwrapIpv4MappedAddress } from "./global-unicast.ts";
+
 export interface TeamChatMessage {
   readonly role: "system" | "user" | "assistant";
   readonly content: string;
@@ -52,46 +54,24 @@ function coded(code: string): Error {
 }
 
 export function classifyConnectAddress(address: string): "loopback" | "private" | "link-local" | "unsafe" | "public" {
-  const raw = address.trim().toLowerCase();
-  if (raw.startsWith("::ffff:")) {
-    return classifyConnectAddress(raw.slice("::ffff:".length));
-  }
-  if (isIP(raw) === 4) {
-    const parts = raw.split(".").map((item) => Number(item));
-    const [a, b] = parts;
-    if (a === undefined || b === undefined || parts.some((item) => !Number.isInteger(item) || item < 0 || item > 255)) {
-      return "unsafe";
-    }
-    if (a === 127) return "loopback";
-    if (a === 10) return "private";
-    if (a === 192 && b === 168) return "private";
-    if (a === 172 && b >= 16 && b <= 31) return "private";
-    if (a === 169 && b === 254) return "link-local";
-    if (a === 0 || a >= 224) return "unsafe";
-    return "public";
-  }
-  if (isIP(raw) === 6) {
-    if (raw === "::1") return "loopback";
-    if (raw === "::" || raw.startsWith("ff")) return "unsafe";
-    if (raw.startsWith("fe80:")) return "link-local";
-    if (raw.startsWith("fc") || raw.startsWith("fd")) return "private";
-    return "public";
-  }
+  const raw = unwrapIpv4MappedAddress(address);
+  if (isLoopbackConnectAddress(raw)) return "loopback";
+  if (isGlobalUnicastAddress(raw)) return "public";
   return "unsafe";
 }
 
 export function assertPinnedConnectAddress(address: string, allowLoopback: boolean): void {
-  const kind = classifyConnectAddress(address);
-  if (kind === "loopback") {
+  const raw = unwrapIpv4MappedAddress(address);
+  if (isLoopbackConnectAddress(raw)) {
     if (!allowLoopback) throw coded("desktop_provider_endpoint_invalid");
     return;
   }
-  if (kind !== "public") throw coded("desktop_provider_endpoint_invalid");
+  if (!isGlobalUnicastAddress(raw)) throw coded("desktop_provider_endpoint_invalid");
 }
 
 function hostnameIsLoopback(hostname: string): boolean {
   if (LOOPBACK_HOSTS.has(hostname)) return true;
-  return classifyConnectAddress(hostname) === "loopback";
+  return isLoopbackConnectAddress(hostname);
 }
 
 async function defaultLookup(hostname: string, port: number): Promise<readonly string[]> {
@@ -290,7 +270,12 @@ function readSseText(body: string, requestedModel: string): TeamChatResult {
       choices?: { delta?: { content?: string }; message?: { content?: string } }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
-    if (typeof record.model === "string" && record.model.trim().length > 0) model = record.model;
+    if (typeof record.model === "string" && record.model.trim().length > 0) {
+      if (record.model !== requestedModel || (model !== null && model !== record.model)) {
+        throw coded("desktop_provider_model_identity_drift");
+      }
+      model = record.model;
+    }
     if (Array.isArray(record.choices) && record.choices.length > 0) {
       sawChoice = true;
       const delta = record.choices[0]?.delta?.content ?? record.choices[0]?.message?.content;

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from omnibase.desktop_local.errors import DesktopLocalError
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_IPV6_GLOBAL_UNICAST = ipaddress.IPv6Network("2000::/3")
 
 
 class DesktopEndpointError(DesktopLocalError):
@@ -41,25 +42,49 @@ def _hostname_is_loopback(hostname: str) -> bool:
         return False
 
 
-def _require_public_or_loopback(address: str, *, allow_loopback: bool) -> None:
+def _parse_connect_address(address: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     try:
         parsed = ipaddress.ip_address(address)
     except ValueError:
         _reject("desktop_provider_endpoint_invalid")
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+        return parsed.ipv4_mapped
+    return parsed
+
+
+def is_global_unicast(address: str) -> bool:
+    """Return whether *address* is a globally reachable unicast IP.
+
+    Authority is CPython ``ipaddress`` IANA special-purpose registries
+    (private/documentation/benchmark/CGNAT/reserved) plus unicast-only
+    constraints: multicast, unspecified, loopback, link-local, and IPv6
+    space outside ``2000::/3`` fail closed. IPv4-mapped IPv6 is unwrapped.
+    """
+
+    try:
+        parsed = _parse_connect_address(address)
+    except DesktopEndpointError:
+        return False
+    if (
+        parsed.is_unspecified
+        or parsed.is_loopback
+        or parsed.is_link_local
+        or parsed.is_multicast
+        or parsed.is_reserved
+    ):
+        return False
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed not in _IPV6_GLOBAL_UNICAST:
+        return False
+    return bool(parsed.is_global)
+
+
+def _require_public_or_loopback(address: str, *, allow_loopback: bool) -> None:
+    parsed = _parse_connect_address(address)
     if parsed.is_loopback:
         if not allow_loopback:
             _reject("desktop_provider_endpoint_invalid")
         return
-    if (
-        parsed.is_private
-        or parsed.is_link_local
-        or parsed.is_multicast
-        or parsed.is_reserved
-        or parsed.is_unspecified
-        or parsed.is_loopback
-    ):
-        _reject("desktop_provider_endpoint_invalid")
-    if not parsed.is_global:
+    if not is_global_unicast(str(parsed)):
         _reject("desktop_provider_endpoint_invalid")
 
 

@@ -81,18 +81,32 @@ def load_provider_secret_material(
     if not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
         raise DesktopApiError(404, "desktop_provider_not_found")
     owner = _require_owner(connection)
-    row = connection.execute(
-        "SELECT id, credential_reference, encrypted_secret_blob FROM provider "
-        "WHERE id = ? AND owner_id = ?",
-        (provider_id, owner["id"]),
-    ).fetchone()
-    if row is None:
-        raise DesktopApiError(404, "desktop_provider_not_found")
-    return {
-        "id": str(row["id"]),
-        "credential_reference": str(row["credential_reference"]),
-        "encrypted_secret_blob": str(row["encrypted_secret_blob"]),
-    }
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT id, credential_reference, encrypted_secret_blob, is_enabled "
+            "FROM provider WHERE id = ? AND owner_id = ?",
+            (provider_id, owner["id"]),
+        ).fetchone()
+        if row is None:
+            raise DesktopApiError(404, "desktop_provider_not_found")
+        if int(row["is_enabled"]) != 1:
+            raise DesktopApiError(409, "desktop_provider_disabled")
+        material = {
+            "id": str(row["id"]),
+            "credential_reference": str(row["credential_reference"]),
+            "encrypted_secret_blob": str(row["encrypted_secret_blob"]),
+        }
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_provider_vault_unavailable") from None
+    return material
 
 
 def _validate_upsert(payload: dict[str, Any]) -> dict[str, Any]:

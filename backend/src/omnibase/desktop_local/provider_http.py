@@ -8,6 +8,7 @@ caps, and secret-free errors.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import select
 import socket
@@ -19,6 +20,7 @@ from typing import Any
 
 from omnibase.desktop_local.endpoint import (
     ResolvedDesktopEndpoint,
+    is_global_unicast,
     pinned_connect_addrs,
 )
 from omnibase.desktop_local.errors import DesktopLocalError
@@ -67,6 +69,16 @@ def _connect_pinned(
     address: str,
     timeout_seconds: float,
 ) -> http.client.HTTPConnection:
+    if endpoint.loopback:
+        parsed_loopback = False
+        try:
+            parsed_loopback = ipaddress.ip_address(address).is_loopback
+        except ValueError:
+            parsed_loopback = address in {"127.0.0.1", "::1"}
+        if not parsed_loopback:
+            raise DesktopProviderCallError("desktop_provider_endpoint_invalid")
+    elif not is_global_unicast(address):
+        raise DesktopProviderCallError("desktop_provider_endpoint_invalid")
     sock = socket.create_connection((address, endpoint.port), timeout_seconds)
     if endpoint.scheme == "http":
         connection = http.client.HTTPConnection(
@@ -154,6 +166,7 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
     sock: socket.socket | None,
     *,
     secret: str,
+    requested_model: str,
     limit: int,
     cancelled: Callable[[], bool],
     deadline: float,
@@ -161,6 +174,7 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
     buffer = ""
     total = 0
     terminal_proof = False
+    seen_model: str | None = None
     fp = getattr(response, "fp", None)
     while True:
         if cancelled():
@@ -230,6 +244,12 @@ def _iter_sse_events(  # noqa: C901 - cancel, timeout and bounded SSE parse
                 )
             actual = payload.get("model")
             actual_model = actual if isinstance(actual, str) and actual else None
+            if actual_model is not None:
+                if actual_model != requested_model or (
+                    seen_model is not None and seen_model != actual_model
+                ):
+                    raise DesktopProviderCallError("desktop_provider_model_identity_drift")
+                seen_model = actual_model
             input_tokens, output_tokens, total_tokens = _usage_from_payload(payload)
             if input_tokens is not None or output_tokens is not None:
                 yield ProviderStreamEvent(
@@ -431,6 +451,7 @@ def stream_provider_chat(
             response,
             connection.sock if connection is not None else None,
             secret=secret,
+            requested_model=model_name,
             limit=_MAX_STREAM_BYTES,
             cancelled=cancelled,
             deadline=time.monotonic() + timeout_seconds,
