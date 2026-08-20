@@ -18,12 +18,16 @@ import {
   DesktopProvider,
   DesktopWorkspace,
   OmniBaseDesktopBridge,
-  applyDesktopConversationEvent,
   beginDesktopLiveSend,
   completeDesktopLiveSend,
   createDesktopLiveStreamState,
+  desktopInvocationCancelTarget,
+  desktopInvocationIsStopping,
+  desktopInvocationLiveProjection,
+  desktopLiveSendBlocked,
   desktopLiveStopVisible,
-  desktopLiveViewIsOrigin,
+  markDesktopInvocationCancelDispatched,
+  reduceDesktopInvocationEvent,
   requestDesktopLiveCancel,
   switchDesktopLiveScope,
   type DesktopReasoningGear,
@@ -170,6 +174,9 @@ export function DesktopWorkbench({
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
   const activeWorkspaces = workspaces.filter((item) => item.state === 'active')
+  const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
+  const sendBlocked = desktopLiveSendBlocked(live)
+  const stopping = desktopInvocationIsStopping(live)
 
   const loadWorkspaceSurface = useCallback(
     async (nextWorkspaceId: string) => {
@@ -225,13 +232,17 @@ export function DesktopWorkbench({
   useEffect(() => {
     return bridge.conversations.subscribe((event) => {
       const current = liveRef.current
-      const next = applyDesktopConversationEvent(current, event)
-      liveRef.current = next
-      setLive(next)
-      if (next.cancelRequested && event.type === 'identity' && next.liveInvocation !== null) {
-        void bridge.conversations.cancel({ invocationId: next.liveInvocation })
+      const reduced = reduceDesktopInvocationEvent(current, event)
+      liveRef.current = reduced.state
+      setLive(reduced.state)
+      if (reduced.cancelInvocationId !== null) {
+        void bridge.conversations.cancel({ invocationId: reduced.cancelInvocationId })
       }
-      if (event.type === 'cancelled' && event.invocationId === current.liveInvocation) {
+      if (
+        event.type === 'cancelled' &&
+        current.invocationId !== null &&
+        event.invocationId === current.invocationId
+      ) {
         onError('生成已停止')
       }
     })
@@ -307,7 +318,7 @@ export function DesktopWorkbench({
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault()
     const content = draft.trim()
-    if (workspaceId === null || content === '' || desktopLiveStopVisible(live)) return
+    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live)) return
     const target = await ensureConversation()
     if (target === null) return
     const started = surfaceScopeRef.current
@@ -344,18 +355,22 @@ export function DesktopWorkbench({
 
   const stopGeneration = async () => {
     const current = liveRef.current
-    if (!desktopLiveStopVisible(current) && current.liveInvocation === null) return
-    const cancelled = requestDesktopLiveCancel(current)
+    if (!desktopLiveStopVisible(current) && current.invocationId === null) return
+    let cancelled = requestDesktopLiveCancel(current)
+    const target = desktopInvocationCancelTarget(cancelled)
+    if (target !== null) {
+      cancelled = markDesktopInvocationCancelDispatched(cancelled)
+    }
     liveRef.current = cancelled
     setLive(cancelled)
-    onError('生成已停止')
-    if (current.liveInvocation !== null) {
-      await bridge.conversations.cancel({ invocationId: current.liveInvocation })
+    onError('正在停止')
+    if (target !== null) {
+      await bridge.conversations.cancel({ invocationId: target })
     }
   }
 
   const retryLast = async () => {
-    if (workspaceId === null || conversationId === null || desktopLiveStopVisible(live)) return
+    if (workspaceId === null || conversationId === null || desktopLiveSendBlocked(live)) return
     const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
     const started = surfaceScopeRef.current
@@ -445,6 +460,11 @@ export function DesktopWorkbench({
               <ShieldCheck className="mr-1 h-3.5 w-3.5" />
               原生控制
             </Badge>
+            {stopping && (
+              <Badge variant="outline" className="rounded-none">
+                正在停止
+              </Badge>
+            )}
             {desktopLiveStopVisible(live) && (
               <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
                 <Square className="h-4 w-4" />
@@ -561,6 +581,7 @@ export function DesktopWorkbench({
                   归档会话
                 </Button>
               )}
+              {stopping && <span className="text-[13px] text-foreground/80">正在停止</span>}
               {desktopLiveStopVisible(live) && (
                 <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
                   <Square className="h-4 w-4" />
@@ -590,8 +611,11 @@ export function DesktopWorkbench({
                 )}
               </div>
             ))}
-            {desktopLiveViewIsOrigin(live) && live.streaming && live.liveText !== '' && (
-              <div className="whitespace-pre-wrap break-words">{live.liveText}</div>
+            {liveProjection.visible && liveProjection.liveText !== '' && (
+              <div className="whitespace-pre-wrap break-words">{liveProjection.liveText}</div>
+            )}
+            {stopping && liveProjection.visible && liveProjection.liveText === '' && (
+              <div className="text-[13px] text-foreground/80">正在停止</div>
             )}
             <div ref={bottomRef} />
           </div>
@@ -609,13 +633,13 @@ export function DesktopWorkbench({
                 variant="outline"
                 size="sm"
                 onClick={() => void retryLast()}
-                disabled={desktopLiveStopVisible(live)}
+                disabled={sendBlocked}
               >
                 <RotateCcw className="h-4 w-4" />
                 重试
               </Button>
-              <Button type="submit" disabled={desktopLiveStopVisible(live) || draft.trim() === ''}>
-                {desktopLiveStopVisible(live) ? (
+              <Button type="submit" disabled={sendBlocked || draft.trim() === ''}>
+                {sendBlocked ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />
@@ -624,7 +648,7 @@ export function DesktopWorkbench({
               </Button>
             </div>
           </form>
-          {live.liveMeta && (
+          {liveProjection.visible && liveProjection.liveMeta && (
             <button
               type="button"
               className="border-t border-border px-4 py-2 text-left text-[13px]"
@@ -633,14 +657,16 @@ export function DesktopWorkbench({
               调用详情 {detailsOpen ? '收起' : '展开'}
               {detailsOpen && (
                 <div className="mt-2 space-y-1 text-foreground">
-                  <div>请求模型：{live.liveMeta.requestedModel ?? '—'}</div>
-                  <div>实际模型：{live.liveMeta.actualModel ?? '—'}</div>
-                  <div>Provider：{live.liveMeta.providerName ?? '—'}</div>
-                  <div>状态：{statusLabel(live.liveMeta.status ?? 'running')}</div>
-                  <div>耗时：{live.liveMeta.durationMs ?? '—'} ms</div>
-                  <div>Tokens：{live.liveMeta.totalTokens ?? '未提供'}</div>
-                  <div>思考深度：{live.liveMeta.thinkingDepth ?? '—'}</div>
-                  {live.liveMeta.errorRedacted && <div>错误：{live.liveMeta.errorRedacted}</div>}
+                  <div>请求模型：{liveProjection.liveMeta.requestedModel ?? '—'}</div>
+                  <div>实际模型：{liveProjection.liveMeta.actualModel ?? '—'}</div>
+                  <div>Provider：{liveProjection.liveMeta.providerName ?? '—'}</div>
+                  <div>状态：{statusLabel(liveProjection.liveMeta.status ?? 'running')}</div>
+                  <div>耗时：{liveProjection.liveMeta.durationMs ?? '—'} ms</div>
+                  <div>Tokens：{liveProjection.liveMeta.totalTokens ?? '未提供'}</div>
+                  <div>思考深度：{liveProjection.liveMeta.thinkingDepth ?? '—'}</div>
+                  {liveProjection.liveMeta.errorRedacted && (
+                    <div>错误：{liveProjection.liveMeta.errorRedacted}</div>
+                  )}
                 </div>
               )}
             </button>
