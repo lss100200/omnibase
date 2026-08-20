@@ -364,3 +364,75 @@ def test_provider_test_empty_json_object_is_not_success(tmp_path: Path) -> None:
     assert unproven.json()["identity_proven"] is False
     assert unproven.json()["actual_model"] is None
     assert unproven.json()["requested_model"] == "deepseek-chat"
+
+
+def test_disabled_provider_vault_is_bound_to_the_same_snapshot(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        _bootstrap(client)
+        created = client.post(
+            "/desktop/v1/providers",
+            headers=_native(),
+            json=_provider_payload(),
+        )
+        provider_id = created.json()["provider"]["id"]
+        enabled_vault = client.get(
+            f"/desktop/v1/providers/{provider_id}/vault",
+            headers=_native(),
+        )
+        listed = client.get("/desktop/v1/providers", headers=_native())
+        assert listed.json()["items"][0]["is_enabled"] is True
+        disabled = client.post(
+            "/desktop/v1/providers",
+            headers=_native(),
+            json=_provider_payload(id=provider_id, is_enabled=False),
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["provider"]["is_enabled"] is False
+        vault = client.get(
+            f"/desktop/v1/providers/{provider_id}/vault",
+            headers=_native(),
+        )
+    assert enabled_vault.status_code == 200
+    assert enabled_vault.json()["encrypted_secret_blob"] == _BLOB
+    assert vault.status_code == 409
+    assert vault.json()["error"]["code"] == "desktop_provider_disabled"
+    assert "encrypted_secret_blob" not in vault.text
+    assert _BLOB not in vault.text
+
+
+def test_sse_model_drift_mid_stream_fails_closed_not_success() -> None:
+    _FakeOpenAIHandler.status = 200
+    _FakeOpenAIHandler.stream = True
+    _FakeOpenAIHandler.body = (
+        b'data: {"model":"deepseek-chat","choices":[{"delta":{"content":"hel"}}]}\n\n'
+        b'data: {"model":"other-model","choices":[{"delta":{"content":"lo"}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    server = _serve(_FakeOpenAIHandler)
+    try:
+        from omnibase.desktop_local.endpoint import resolve_provider_endpoint
+        from omnibase.desktop_local.family import plan_desktop_adaptation
+        from omnibase.desktop_local.provider_http import (
+            ChatMessage,
+            DesktopProviderCallError,
+            stream_provider_chat,
+        )
+
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        endpoint = resolve_provider_endpoint(base_url, allow_loopback_http=True)
+        adaptation = plan_desktop_adaptation("deepseek-chat", base_url, "standard", "medium")
+        with pytest.raises(DesktopProviderCallError, match="desktop_provider_model_identity_drift"):
+            list(
+                stream_provider_chat(
+                    endpoint,
+                    secret=_ISOLATION_SECRET,
+                    model_name="deepseek-chat",
+                    messages=(ChatMessage(role="user", content="hi"),),
+                    adaptation=adaptation,
+                    timeout_seconds=5.0,
+                    cancelled=lambda: False,
+                )
+            )
+    finally:
+        _stop(server)
+        _FakeOpenAIHandler.stream = False

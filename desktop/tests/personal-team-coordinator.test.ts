@@ -653,6 +653,8 @@ test("team events missing roster/node/send epoch must not match the live identit
     assignmentId: "frontend-review",
     nodeId: current.nodeId,
     sendEpoch: 4,
+    nodeEpoch: 1,
+    employeeRoleId: "frontend",
     invocationId: current.invocationId,
     text: "ok",
   };

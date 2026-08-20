@@ -224,7 +224,19 @@ test("DNS rebinding to loopback, private, or link-local is rejected and public p
     "192.168.1.20",
     "172.16.0.4",
     "169.254.10.2",
+    "100.64.0.1",
+    "192.0.2.1",
+    "198.51.100.1",
+    "203.0.113.1",
+    "198.18.0.1",
+    "240.0.0.1",
+    "224.0.0.1",
     "fe80::1",
+    "fc00::1",
+    "2001:db8::1",
+    "ff02::1",
+    "::ffff:10.0.0.1",
+    "::ffff:100.64.0.1",
   ];
   for (const address of rejected) {
     await rejectCode(
@@ -234,6 +246,12 @@ test("DNS rebinding to loopback, private, or link-local is rejected and public p
       "desktop_provider_endpoint_invalid",
     );
   }
+  await rejectCode(
+    resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
+      lookup: async () => ["8.8.8.8", "100.64.0.1"],
+    }),
+    "desktop_provider_endpoint_invalid",
+  );
   await rejectCode(
     resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
       lookup: async () => ["8.8.8.8", "127.0.0.1"],
@@ -521,10 +539,13 @@ test("missing roster, plan, wave, assignment, node, or send epoch each fails ide
     assignmentId: "frontend-review",
     nodeId: current.nodeId,
     sendEpoch: 4,
+    nodeEpoch: 1,
+    invocationId: `invocation_${"1".repeat(32)}`,
+    employeeRoleId: "frontend",
     text: "ok",
   };
   assert.equal(eventMatchesTeamIdentity(current, valid), true);
-  const keys = ["rosterEpoch", "planRevisionId", "waveId", "assignmentId", "nodeId", "sendEpoch"] as const;
+  const keys = ["rosterEpoch", "planRevisionId", "waveId", "assignmentId", "nodeId", "sendEpoch", "nodeEpoch", "invocationId", "employeeRoleId"] as const;
   for (const key of keys) {
     const incomplete = { ...valid } as DesktopTeamRunEvent & Record<string, unknown>;
     delete incomplete[key];

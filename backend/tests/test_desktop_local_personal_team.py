@@ -199,7 +199,7 @@ def _start_run(
 def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> None:
     with initialized_database(_config(tmp_path).storage) as connection:
         assert (
-            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 4
+            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 5
         )
         tables = {
             row["name"]: row["sql"]
@@ -227,10 +227,17 @@ def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> Non
                 "SELECT version, migration_id FROM desktop_migration_history ORDER BY version"
             )
         ]
-        assert history[-2:] == [
+        assert history[-3:] == [
             (3, "desktop_0003_personal_agent_team"),
             (4, "desktop_0004_personal_team_runtime"),
+            (5, "desktop_0005_team_node_identity_epochs"),
         ]
+        indexes = {
+            row["name"]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        }
+        assert "team_node_node_epoch_unique" in indexes
+        assert "team_node_send_epoch_unique" in indexes
 
 
 def test_unknown_role_is_rejected() -> None:
@@ -644,8 +651,13 @@ def test_append_budget_rejects_infinite_and_keeps_consumed(tmp_path: Path) -> No
         assert ok.json()["team_run"]["maximum_provider_calls"] == 24
 
 
-def _prepare_assigned_run(client: TestClient) -> tuple[str, str, str]:
-    workspace_id, conversation_id = _bootstrap_workspace(client)
+def _prepare_assigned_run(client: TestClient) -> tuple[str, str, str, str]:
+    workspace_id, conversation_id = _bootstrap_workspace(
+        client, with_provider=True, base_url="http://127.0.0.1:9/v1"
+    )
+    listed = client.get("/desktop/v1/providers", headers=_native())
+    assert listed.status_code == 200
+    provider_id = listed.json()["items"][0]["id"]
     started = _start_run(client, workspace_id, conversation_id)
     assert started["status"] == 200
     team_run_id = started["body"]["team_run"]["id"]
@@ -656,11 +668,19 @@ def _prepare_assigned_run(client: TestClient) -> tuple[str, str, str]:
     )
     assert accepted.status_code == 200
     assert accepted.json()["accepted"] is True
-    return workspace_id, conversation_id, team_run_id
+    return workspace_id, conversation_id, team_run_id, provider_id
 
 
-def _create_running_node(client: TestClient, workspace_id: str, team_run_id: str) -> dict[str, str]:
-    invocation_id = "invocation_" + "a" * 32
+def _create_running_node(
+    client: TestClient,
+    workspace_id: str,
+    team_run_id: str,
+    provider_id: str,
+    *,
+    invocation_id: str = "invocation_" + "a" * 32,
+    node_epoch: int = 1,
+    send_epoch: int = 1,
+) -> dict[str, str]:
     created = client.post(
         f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
         headers=_native(),
@@ -669,9 +689,10 @@ def _create_running_node(client: TestClient, workspace_id: str, team_run_id: str
             "employee_role_id": "frontend",
             "invocation_id": invocation_id,
             "wave_id": "wave-1",
-            "node_epoch": 1,
-            "send_epoch": 1,
-            "requested_model": "loopback-team",
+            "node_epoch": node_epoch,
+            "send_epoch": send_epoch,
+            "provider_id": provider_id,
+            "requested_model": "loopback-chat",
         },
     )
     assert created.status_code == 200
@@ -685,7 +706,7 @@ def _settle_payload(
     digest = hashlib.sha256(report.encode("utf-8")).hexdigest()
     return {
         "state": "succeeded",
-        "actual_model": "loopback-team",
+        "actual_model": "loopback-chat",
         "input_tokens": 11,
         "output_tokens": 7,
         "total_tokens": 18,
@@ -698,6 +719,9 @@ def _settle_payload(
         "status": "completed",
         "report": report,
         "collaboration_requests": [],
+        "wave_id": "wave-1",
+        "node_epoch": 1,
+        "send_epoch": 1,
     }
 
 
@@ -781,8 +805,8 @@ def test_role_config_cas_conflict_does_not_lost_update(tmp_path: Path) -> None:
 
 def test_sqlite_settle_is_atomic_with_report_and_audit(tmp_path: Path) -> None:
     with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
-        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
-        created = _create_running_node(client, workspace_id, team_run_id)
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
         settled = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
             headers=_native(),
@@ -813,8 +837,8 @@ def test_sqlite_settle_is_atomic_with_report_and_audit(tmp_path: Path) -> None:
 
 def test_report_validation_failure_does_not_leave_a_succeeded_node(tmp_path: Path) -> None:
     with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
-        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
-        created = _create_running_node(client, workspace_id, team_run_id)
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
         payload = _settle_payload(
             created["invocation_id"],
             report="please reuse api_key sk-live-secretvalue",
@@ -860,8 +884,8 @@ def test_audit_append_failure_rolls_back_settle(
 
     monkeypatch.setattr(personal_team, "append_audit_event", boom)
     with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
-        workspace_id, _conversation_id, team_run_id = _prepare_assigned_run(client)
-        created = _create_running_node(client, workspace_id, team_run_id)
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
         failed = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
             headers=_native(),
@@ -883,3 +907,118 @@ def test_audit_append_failure_rolls_back_settle(
             assert reports == 0
         finally:
             db.close()
+
+
+def test_legacy_update_cannot_succeed_or_resurrect_a_settled_node(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        forbidden = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}",
+            headers=_native(),
+            json={"state": "succeeded", "actual_model": "loopback-chat"},
+        )
+        assert forbidden.status_code == 400
+        assert forbidden.json()["error"]["code"] == "desktop_team_success_requires_settle"
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        resurrect = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}",
+            headers=_native(),
+            json={"state": "failed", "error_code": "desktop_invocation_failed"},
+        )
+        assert resurrect.status_code == 409
+        assert resurrect.json()["error"]["code"] == "desktop_team_node_terminal"
+        again = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert again.status_code == 409
+        assert again.json()["error"]["code"] == "desktop_team_node_terminal"
+
+
+def test_create_node_binds_live_run_identity_and_forbids_epoch_reuse(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        missing_provider = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+            headers=_native(),
+            json={
+                "assignment_id": "frontend-review",
+                "employee_role_id": "frontend",
+                "invocation_id": "invocation_" + "b" * 32,
+                "wave_id": "wave-1",
+                "node_epoch": 1,
+                "send_epoch": 1,
+                "requested_model": "loopback-chat",
+            },
+        )
+        assert missing_provider.status_code == 422
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        reused = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+            headers=_native(),
+            json={
+                "assignment_id": "frontend-review",
+                "employee_role_id": "frontend",
+                "invocation_id": "invocation_" + "c" * 32,
+                "wave_id": "wave-1",
+                "node_epoch": 1,
+                "send_epoch": 2,
+                "provider_id": provider_id,
+                "requested_model": "loopback-chat",
+            },
+        )
+        assert reused.status_code == 409
+        assert reused.json()["error"]["code"] == "desktop_team_epoch_reused"
+        mismatched = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload(created["invocation_id"]),
+                "wave_id": "wave-9",
+                "node_epoch": 9,
+                "send_epoch": 9,
+            },
+        )
+        assert mismatched.status_code == 409
+        assert mismatched.json()["error"]["code"] == "desktop_team_identity_mismatch"
+        omitted_identity = dict(_settle_payload(created["invocation_id"]))
+        omitted_identity.pop("wave_id")
+        omitted_identity.pop("node_epoch")
+        omitted_identity.pop("send_epoch")
+        omitted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/{created['node_id']}/settle",
+            headers=_native(),
+            json=omitted_identity,
+        )
+        assert omitted.status_code == 409
+        assert omitted.json()["error"]["code"] == "desktop_team_identity_mismatch"
+        marked = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "failed"},
+        )
+        assert marked.status_code == 200, marked.text
+        assert marked.json()["team_run"]["state"] == "failed"
+        terminal_create = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+            headers=_native(),
+            json={
+                "assignment_id": "frontend-review",
+                "employee_role_id": "frontend",
+                "invocation_id": "invocation_" + "d" * 32,
+                "wave_id": "wave-1",
+                "node_epoch": 9,
+                "send_epoch": 9,
+                "provider_id": provider_id,
+                "requested_model": "loopback-chat",
+            },
+        )
+        assert terminal_create.status_code == 409
+        assert terminal_create.json()["error"]["code"] == "desktop_team_run_terminal"
