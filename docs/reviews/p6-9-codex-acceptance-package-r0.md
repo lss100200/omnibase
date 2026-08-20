@@ -43,15 +43,27 @@ It does **not** mean a paid/live Provider window.
 `P6_9_ROUND2_FORWARD_FIX` means Round 2 shipped production code and tests
 for the named items, **not** that all ten were closed in one pass. Two-lane
 audit P1s on Stop/node CAS and `/reports` bypass were forward-fixed after
-`5321aa7`. Item 1 pin match is honest: production team HTTPS asks
-desktop-local `is_global_unicast`; the TS BlockList is a fallback replica
-with named extra-rejects. Item 5 create/settle remains **two** transactions
+`5321aa7`. A later concentrated P6.9 forward-fix (this file) closes residual
+Stop/recovery/collab/latch/snapshot/`/reports` replay holes. Item 1 pin match
+is honest: production team HTTPS asks desktop-local `is_global_unicast`; the
+TS BlockList is a fallback replica; remaining extra-rejects are **examples**,
+not an exhaustive IANA list. Item 5 create/settle remains **two** transactions
 (create before Provider HTTP, settle after); settle re-binds live
 Conversation, current plan, and Provider `is_enabled`. Round 1's
 `RuntimeManager plus loopback Provider completes a parent-directed team
 journey` test is **not** a native HTTP→SQLite journey; it wraps an
 in-memory host as a fake `DesktopNativeClient`. Round 2 adds the true
 path. Paid / EXE / live window remain unproven.
+
+Publish boundary flags (unchanged; do not claim otherwise):
+
+```text
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+EXE_MSI_REPACKAGE_NOT_APPROVED
+LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+```
 
 Cursor does **not** claim:
 
@@ -79,11 +91,15 @@ Cursor does **not** claim:
 | Stop/reports P1s | `b756a6c96341d52ef41d5192291ae96952aa589e` (`b756a6c`) |
 | Parked chrome | `afd39ecd28634954aae60edba51eb4a59f53ca3b` (`afd39ec`) |
 | P1 tests | `5cfbca4f171a0c9f69de16f8314026d28c3529e0` (`5cfbca4`) |
-| This honesty pass | lands last on the same branch (HEAD after this file) |
+| Honesty after P1s (do not amend) | `476297afd77bdb51e6f3a0a55f333813350468c6` (`476297a`) |
+| Backend residual Stop/collab | `80170a22160355c4b749fea237b2f3e0a16f0bfe` (`80170a2`) |
+| Frontend latch/snapshot | `e1910a4016430308206491014a46b7ed20dc93ce` (`e1910a4`) |
+| Negative tests | `9dcc46b511b817571f5414925ab31afa4fd94b46` (`9dcc46b`) |
+| This concentrated forward-fix | lands last on the same branch (HEAD after this file) |
 | Product-law source | `cursor/p6-9-multi-agent-planning-r0` @ `01f9d3b` |
 | P6.8 worktree | `p6-8-cursor-desktop-hardening-r0` left at `d2a2db0` |
 | Codex empty pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (**untouched**) |
-| Method | Forward-only. No amend of `d2a2db0` / `0097955` / `2af6c1e` / `0121036`. No UI redo. No fixed Owner roster. No push. No PR. No EXE/MSI. Root `.env` not read. |
+| Method | Forward-only. No amend of `d2a2db0` / `0097955` / `2af6c1e` / `0121036` / `5321aa7` / `476297a`. No UI redo. No fixed Owner roster. No push. No PR. No EXE/MSI. Root `.env` not read. |
 
 ---
 
@@ -135,7 +151,14 @@ Round 1 did not redo workbench UI and did not return to a fixed Owner roster.
 22. `b756a6c96341d52ef41d5192291ae96952aa589e` — `fix(desktop-local): cancel running nodes with the team run and close report settle bypass`
 23. `afd39ecd28634954aae60edba51eb4a59f53ca3b` — `fix(workbench): park full team chrome off origin`
 24. `5cfbca4f171a0c9f69de16f8314026d28c3529e0` — `test(p6.9): cover Stop node CAS and reports-without-success`
-25. This file — `docs(p6.9): correct Round-2 overclaims after Stop and reports P1s`
+25. `476297afd77bdb51e6f3a0a55f333813350468c6` — `docs(p6.9): correct Round-2 overclaims after Stop and reports P1s`
+
+**Concentrated P6.9 forward-fix (after `476297a`; do not amend it / `5321aa7` / `d2a2db0`):**
+
+26. `80170a22160355c4b749fea237b2f3e0a16f0bfe` — `fix(desktop-local): CAS residual nodes on cancelled Stop and bind collab/reports`
+27. `e1910a4016430308206491014a46b7ed20dc93ce` — `fix(workbench): latch team terminals and bind first snapshot to origin view`
+28. `9dcc46b511b817571f5414925ab31afa4fd94b46` — `test(p6.9): cover residual Stop, recovery-by-parent, and terminal latch`
+29. This file + INV-085 honesty (pin examples, not an exhaustive IANA list)
 
 ---
 
@@ -445,7 +468,7 @@ RuntimeHost              = optional; not faked
 | Round 1 named attack holes | closed in automated tests; paid/live still unproven |
 | Round 1 "native SQLite journey" wording | overclaim; the RuntimeManager test was in-memory. Round 2 closes this. |
 | Round 1 in-memory RuntimeManager test | still in the suite as historical/weaker evidence; item 10 is the true path |
-| Item 1 pin dual-impl | Production asks desktop-local `is_global_unicast`. TS `BlockList` is fallback/tests only; extra-rejects vs CPython named (`2001:1::1`, `2001:3::1`, `2001:20::1`) |
+| Item 1 pin dual-impl | Production asks desktop-local `is_global_unicast`. TS `BlockList` is fallback/tests only; extra-rejects vs CPython (`2001:1::1`, `2001:3::1`, `2001:20::1`) are examples, not an exhaustive IANA list |
 | Item 5 create/settle | Still **two** SQLite transactions (create before Provider HTTP, settle after). Settle re-binds live Conversation, plan, Provider `is_enabled` |
 | Round 2 "closed all ten" | Overclaim on `5321aa7`. Stop/node CAS and `/reports` P1s are forward-fixed after that SHA |
 
@@ -460,7 +483,7 @@ micro-rounds. No UI redo. No fixed Owner roster. No push, PR, or EXE.
 
 | Item | What landed | Tests that fail without it |
 |---|---|---|
-| 1 Global-unicast pin | Production team HTTPS asks `POST /desktop/v1/provider-endpoints/pin` (`endpoint.py` `is_global_unicast`). TS `BlockList` remains a test/fallback replica and extra-rejects CPython-global `2001:1::1`, `2001:3::1`, `2001:20::1` | `team transport pin hook uses backend connect addrs…`; `TS BlockList pin is not CPython is_global_unicast; remaining extra-rejects are named`; `test_pin_endpoint_uses_python_is_global_unicast` |
+| 1 Global-unicast pin | Production team HTTPS asks `POST /desktop/v1/provider-endpoints/pin` (`endpoint.py` `is_global_unicast`). TS `BlockList` remains a test/fallback replica. Extra-rejects vs CPython (`2001:1::1`, `2001:3::1`, `2001:20::1`) are examples, not an exhaustive IANA list | `team transport pin hook uses backend connect addrs…`; `TS BlockList pin is not CPython is_global_unicast; extra-rejects are examples not an exhaustive IANA list`; `test_pin_endpoint_uses_python_is_global_unicast` |
 | 2 Independent wall | Coordinator `AbortController` + timer, Provider `timeoutMs` not min(wall) | `independent wall AbortController expires to budget_exhausted…`; inverse `Provider HTTP timeout is not reported as team wall budget_exhausted` |
 | 3 SSE per-chunk model | `readSseText` and `_iter_sse_events` validate every `model` immediately | `SSE model drift mid-stream fails the node instead of succeeding`; `test_sse_model_drift_mid_stream_fails_closed_not_success` |
 | 4 Unique success-settle | Legacy update only `failed\|cancelled\|unknown` + CAS. `/reports` is **not** a second success path | `legacy success update is rejected…`; `test_legacy_update_cannot_succeed_or_resurrect_a_settled_node`; **P1-2** `test_report_on_running_node_is_rejected_without_settled_audit`; `POST report on a running in-memory node fails closed without a settle audit` |
@@ -511,13 +534,66 @@ RuntimeHost              = optional; not faked
 
 ---
 
+## Concentrated P6.9 forward-fix (after `476297a`; do not amend)
+
+Small round. Not a UI redo. Not a new mega-round. Product law unchanged:
+parent Proposal, host validation, blackboard. Codex pointer and P6.8 remain
+at `d2a2db0`.
+
+### Tests that fail if the fix is deleted
+
+| Item | What landed | Negative test |
+|---|---|---|
+| 1 Second Stop / residual CAS | Already-cancelled Stop is idempotent 200 and still CAS-cancels leftover `pending\|running` nodes/assignments | `test_second_stop_on_cancelled_run_cas_residual_live_nodes` |
+| 2 Recovery by parent Run | Cancelled parent → residual live `cancelled`; crash/`unknown` parent → residual live `unknown`; already-`cancelled` nodes stay `cancelled` | `test_recovery_maps_residual_nodes_from_parent_run_state` |
+| 3 Collab write identity | Independent collab requires live Run + matching node/report. Terminal run or wrong id fails closed | `test_collaboration_write_requires_live_run_and_node_report_identity` |
+| 4 Frontend terminal latch | `cancelled\|failed\|unknown\|budget_exhausted` not resurrected by late `completed` | `cancelled failed unknown and budget_exhausted stay latched against a late completed event` |
+| 5 First snapshot origin bind | Snapshot for origin A does not bind while the current view is B | `first snapshot from origin A does not bind while viewing workspace B` |
+| 6 Unknown / missing Stop | Missing id and already-unknown run are 409 no-ops; unrelated live run stays preparing | `test_stop_missing_and_unknown_run_are_conflict_noops` |
+| 7 `/reports` exact replay | Mutated text/status against a settled node is `desktop_team_report_replay_mismatch`; identical replay is idempotent | `test_report_replay_rejects_mutated_body_and_accepts_exact_match` |
+| 8 Pin enumeration honesty | TS fallback replica; production pin is desktop-local `is_global_unicast`; extra-rejects are examples, not an exhaustive IANA list | `TS BlockList pin is not CPython is_global_unicast; extra-rejects are examples not an exhaustive IANA list` |
+| 9 This table | Every item above has a delete-the-fix-and-fail test named here | this section |
+
+### Concentrated forward-fix gate counts
+
+Recorded after Stop residual CAS, recovery-by-parent, collab identity,
+terminal latch, snapshot origin bind, unknown Stop 409, `/reports` exact
+replay, and pin-enumeration honesty. Same constraints. No Docker/WSL/PostgreSQL.
+No paid keys. No installer. Root `.env` not read. PowerShell: no `&&`.
+RuntimeHost optional; not faked.
+
+```text
+frontend pnpm test       = 265 passed
+frontend pnpm typecheck  = passed
+frontend pnpm lint       = passed
+desktop  pnpm test       = 89 passed
+desktop  pnpm typecheck  = passed
+pytest desktop_local     = 155 passed
+ruff (touched Python)    = passed
+git diff --check         = passed
+RuntimeHost              = optional; not faked
+```
+
+Publish boundary (unchanged):
+
+```text
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+EXE_MSI_REPACKAGE_NOT_APPROVED
+LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+```
+
+---
+
 ## What Codex should review
 
 The whole R0 slice on `cursor/p6-9-personal-multi-agent-team-r0` from
-`d2a2db0` through this HEAD, including Round 1, Round 2, and the Stop/reports
-P1 forward-fix. Product law: `docs/architecture/p6-9-multi-agent-planning.md`.
+`d2a2db0` through this HEAD, including Round 1, Round 2, the Stop/reports
+P1 forward-fix, and this concentrated P6.9 forward-fix. Product law:
+`docs/architecture/p6-9-multi-agent-planning.md`.
 Do not reopen A2 as a separate drip. Do not drip a new A-only memo. Do not
 announce OmniBase 1.0.0, Authenticode, EXE, or enterprise multi-agent. Round 2
-did **not** close all ten items in one pass. The P1s above are forward-fixed;
-item 1 pin match and item 5 one-transaction status are honest; paid/EXE/live
-window still unproven.
+did **not** close all ten items in one pass. The P1s and this concentrated
+round are forward-fixed; item 1 pin match and item 5 one-transaction status
+are honest; paid/EXE/live window still unproven.

@@ -4360,8 +4360,10 @@ Team HTTPS production pinning asks desktop-local
 `is_global_unicast` (IPv4 + IPv6, including reserved / CGNAT / benchmark /
 documentation / link-local / multicast). DNS is resolved once. Loopback is
 allowed only when loopback HTTP is opted in. SNI/`Host` stay the original
-hostname. The TypeScript BlockList is a test/fallback replica and extra-rejects
-some CPython-global IPv6 specials; it is not claimed to match `endpoint.py`.
+hostname. The TypeScript BlockList is a test/fallback replica. Extra-rejects
+versus CPython (`2001:1::1`, `2001:3::1`, `2001:20::1`) are **examples**, not
+an exhaustive IANA disagreement list; production pin is desktop-local
+`is_global_unicast`. It is not claimed to match `endpoint.py`.
 A missing or mismatched actual vs requested model fails the node
 (`desktop_provider_model_identity_drift`). **Every SSE chunk that contains
 `model` is validated immediately**; mid-stream drift fails the node, not
@@ -4382,10 +4384,24 @@ requested/actual model and live status. Creating a node on a terminal run,
 writing back a terminal node, or reusing epochs is fail-stop.
 
 Owner Stop commits the Team Run to `cancelled` and, in the same transaction,
-CAS every `pending|running` node on that run to `cancelled`. After the run is
+CAS every `pending|running` node on that run to `cancelled`. A second Stop on
+an already-`cancelled` run is idempotent (no error-hang) and still CAS-cancels
+any residual `pending|running` nodes/assignments. Stop on a missing run id or
+an already-`unknown` run is a stable 409 no-op (`desktop_team_run_not_found` /
+`desktop_team_run_unknown`) and must not flip unrelated runs. After the run is
 already `cancelling|cancelled`, node update may only CAS `running→cancelled`
-(or no-op an already-cancelled node). Restart recovery must not rewrite a
-node that is already `cancelled` into `unknown`.
+(or no-op an already-cancelled node). Restart recovery maps residual live
+nodes from the **parent Run** state: `cancelled` parent → residual live
+`cancelled`; crash/`unknown` parent → residual live `unknown`. Recovery must
+not rewrite a node that is already `cancelled` into `unknown`.
+
+Independent collaboration writes require a live Team Run (`preparing|running`)
+and a matching node/report identity on that run. A cancelled/unknown run, or a
+wrong node/report id, fails closed (`desktop_team_run_terminal` /
+`desktop_team_collaboration_identity_mismatch`). Standalone `/reports` replay
+must exact-match the stored assignment/role/status/text/digest; mutated replay
+fails closed (`desktop_team_report_replay_mismatch`). Identical replay may be
+idempotent.
 
 Replan emits an explicit validated `plan_transition` (old plan → new plan).
 The old-plan filter must not reject a legal new proposal after that event.
@@ -4398,7 +4414,11 @@ Team Run data updates are decoupled from the currently viewed scope. Leaving
 the origin workspace/conversation parks live text, nodes, collab, **and**
 phase, planRevisionId, waveId, planSummary, execution, and budgets. Returning
 restores full delta/terminal/final **and** plan/phase (A→B→A). First render on
-B must not paint A team chrome (parent 运行中, plan, budget).
+B must not paint A team chrome (parent 运行中, plan, budget). First snapshot
+bind verifies the current view is the exact origin workspace/conversation;
+a snapshot for A must not bind while the view is B. Frontend team terminals
+`cancelled|failed|unknown|budget_exhausted` must not be resurrected by a late
+`completed` / success terminal.
 
 Unique success-settle writes node success plus employee report,
 collaboration request, and audit in one SQLite transaction. Partial
@@ -4433,7 +4453,8 @@ transition events, parked team buffers, and vault/enabled snapshot bind.
 It did **not** close all ten items in one pass: Stop/node CAS and `/reports`
 bypass were forward-fixed after `5321aa7`. Create/settle remain two
 transactions; production pin shares Python `is_global_unicast` while the TS
-replica extra-rejects named IPv6 specials. Round 1's `RuntimeManager plus
+replica extra-rejects **example** IPv6 specials (not an exhaustive IANA list).
+Round 1's `RuntimeManager plus
 loopback Provider` test was an **in-memory host wrapped as a fake
 DesktopNativeClient**, not a native HTTP→SQLite journey. Round 2 adds
 `RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite →
