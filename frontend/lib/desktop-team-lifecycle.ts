@@ -124,6 +124,15 @@ export interface DesktopTeamLiveState {
   readonly parkedParentFinalAnswer: string | null
   readonly parkedNodes: readonly DesktopTeamNodeView[]
   readonly parkedCollaborationLines: readonly string[]
+  readonly parkedPhase: DesktopTeamPhase
+  readonly parkedRunState: TeamRunState | null
+  readonly parkedPlanRevisionId: string | null
+  readonly parkedWaveId: string | null
+  readonly parkedPlanSummary: string | null
+  readonly parkedDeclaredExecution: 'serial' | 'parallel' | null
+  readonly parkedEffectiveExecution: 'serial' | 'parallel' | null
+  readonly parkedConsumedProviderCalls: number
+  readonly parkedMaximumProviderCalls: number
   readonly planSummary: string | null
   readonly declaredExecution: 'serial' | 'parallel' | null
   readonly effectiveExecution: 'serial' | 'parallel' | null
@@ -155,6 +164,15 @@ export function createDesktopTeamLiveState(input: {
     parkedParentFinalAnswer: null,
     parkedNodes: [],
     parkedCollaborationLines: [],
+    parkedPhase: 'idle',
+    parkedRunState: null,
+    parkedPlanRevisionId: null,
+    parkedWaveId: null,
+    parkedPlanSummary: null,
+    parkedDeclaredExecution: null,
+    parkedEffectiveExecution: null,
+    parkedConsumedProviderCalls: 0,
+    parkedMaximumProviderCalls: 0,
     planSummary: null,
     declaredExecution: null,
     effectiveExecution: null,
@@ -166,6 +184,129 @@ function viewingOrigin(state: DesktopTeamLiveState): boolean {
     state.workspaceId === state.originWorkspaceId &&
     state.conversationId === state.originConversationId
   )
+}
+
+function originPhase(state: DesktopTeamLiveState): DesktopTeamPhase {
+  return viewingOrigin(state) ? state.phase : state.parkedPhase
+}
+
+function originPlanRevisionId(state: DesktopTeamLiveState): string | null {
+  return viewingOrigin(state) ? state.planRevisionId : state.parkedPlanRevisionId
+}
+
+function originWaveId(state: DesktopTeamLiveState): string | null {
+  return viewingOrigin(state) ? state.waveId : state.parkedWaveId
+}
+
+function originConsumedProviderCalls(state: DesktopTeamLiveState): number {
+  return viewingOrigin(state) ? state.consumedProviderCalls : state.parkedConsumedProviderCalls
+}
+
+function originMaximumProviderCalls(state: DesktopTeamLiveState): number {
+  return viewingOrigin(state) ? state.maximumProviderCalls : state.parkedMaximumProviderCalls
+}
+
+function originRunState(state: DesktopTeamLiveState): TeamRunState | null {
+  return viewingOrigin(state) ? state.runState : state.parkedRunState
+}
+
+function originPlanSummary(state: DesktopTeamLiveState): string | null {
+  return viewingOrigin(state) ? state.planSummary : state.parkedPlanSummary
+}
+
+function originDeclaredExecution(state: DesktopTeamLiveState): 'serial' | 'parallel' | null {
+  return viewingOrigin(state) ? state.declaredExecution : state.parkedDeclaredExecution
+}
+
+function originEffectiveExecution(state: DesktopTeamLiveState): 'serial' | 'parallel' | null {
+  return viewingOrigin(state) ? state.effectiveExecution : state.parkedEffectiveExecution
+}
+
+const HIDDEN_ORIGIN_CHROME = {
+  phase: 'idle' as const,
+  runState: null,
+  planRevisionId: null,
+  waveId: null,
+  planSummary: null,
+  declaredExecution: null,
+  effectiveExecution: null,
+  consumedProviderCalls: 0,
+  maximumProviderCalls: 0,
+}
+
+function withOriginChrome(
+  state: DesktopTeamLiveState,
+  patch: {
+    readonly phase?: DesktopTeamPhase
+    readonly runState?: TeamRunState | null
+    readonly planRevisionId?: string | null
+    readonly waveId?: string | null
+    readonly planSummary?: string | null
+    readonly declaredExecution?: 'serial' | 'parallel' | null
+    readonly effectiveExecution?: 'serial' | 'parallel' | null
+    readonly consumedProviderCalls?: number
+    readonly maximumProviderCalls?: number
+  },
+): Pick<
+  DesktopTeamLiveState,
+  | 'phase'
+  | 'runState'
+  | 'planRevisionId'
+  | 'waveId'
+  | 'planSummary'
+  | 'declaredExecution'
+  | 'effectiveExecution'
+  | 'consumedProviderCalls'
+  | 'maximumProviderCalls'
+  | 'parkedPhase'
+  | 'parkedRunState'
+  | 'parkedPlanRevisionId'
+  | 'parkedWaveId'
+  | 'parkedPlanSummary'
+  | 'parkedDeclaredExecution'
+  | 'parkedEffectiveExecution'
+  | 'parkedConsumedProviderCalls'
+  | 'parkedMaximumProviderCalls'
+> {
+  const next = {
+    phase: patch.phase ?? originPhase(state),
+    runState: patch.runState !== undefined ? patch.runState : originRunState(state),
+    planRevisionId: patch.planRevisionId !== undefined ? patch.planRevisionId : originPlanRevisionId(state),
+    waveId: patch.waveId !== undefined ? patch.waveId : originWaveId(state),
+    planSummary: patch.planSummary !== undefined ? patch.planSummary : originPlanSummary(state),
+    declaredExecution:
+      patch.declaredExecution !== undefined ? patch.declaredExecution : originDeclaredExecution(state),
+    effectiveExecution:
+      patch.effectiveExecution !== undefined ? patch.effectiveExecution : originEffectiveExecution(state),
+    consumedProviderCalls: patch.consumedProviderCalls ?? originConsumedProviderCalls(state),
+    maximumProviderCalls: patch.maximumProviderCalls ?? originMaximumProviderCalls(state),
+  }
+  if (viewingOrigin(state)) {
+    return {
+      ...next,
+      parkedPhase: state.parkedPhase,
+      parkedRunState: state.parkedRunState,
+      parkedPlanRevisionId: state.parkedPlanRevisionId,
+      parkedWaveId: state.parkedWaveId,
+      parkedPlanSummary: state.parkedPlanSummary,
+      parkedDeclaredExecution: state.parkedDeclaredExecution,
+      parkedEffectiveExecution: state.parkedEffectiveExecution,
+      parkedConsumedProviderCalls: state.parkedConsumedProviderCalls,
+      parkedMaximumProviderCalls: state.parkedMaximumProviderCalls,
+    }
+  }
+  return {
+    ...HIDDEN_ORIGIN_CHROME,
+    parkedPhase: next.phase,
+    parkedRunState: next.runState,
+    parkedPlanRevisionId: next.planRevisionId,
+    parkedWaveId: next.waveId,
+    parkedPlanSummary: next.planSummary,
+    parkedDeclaredExecution: next.declaredExecution,
+    parkedEffectiveExecution: next.effectiveExecution,
+    parkedConsumedProviderCalls: next.consumedProviderCalls,
+    parkedMaximumProviderCalls: next.maximumProviderCalls,
+  }
 }
 
 function workingNodes(state: DesktopTeamLiveState): readonly DesktopTeamNodeView[] {
@@ -282,22 +423,24 @@ function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): 
   if (event.conversationId !== state.originConversationId) return false
   if (event.rosterEpoch !== state.rosterEpoch) return false
   if (event.type === 'plan_transition') {
-    return event.oldPlanRevisionId === state.planRevisionId && event.planRevisionId !== state.planRevisionId
+    return event.oldPlanRevisionId === originPlanRevisionId(state) && event.planRevisionId !== originPlanRevisionId(state)
   }
+  const planRevisionId = originPlanRevisionId(state)
   if (
-    state.planRevisionId !== null &&
-    state.planRevisionId !== '' &&
-    event.planRevisionId !== state.planRevisionId
+    planRevisionId !== null &&
+    planRevisionId !== '' &&
+    event.planRevisionId !== planRevisionId
   ) {
     return false
   }
+  const waveId = originWaveId(state)
   if (
     (event.type === 'node_starting' ||
       event.type === 'node_identity' ||
       event.type === 'node_delta' ||
       event.type === 'node_terminal') &&
-    state.waveId !== null &&
-    event.waveId !== state.waveId
+    waveId !== null &&
+    event.waveId !== waveId
   ) {
     return false
   }
@@ -313,7 +456,15 @@ export function beginDesktopTeamRun(
     readonly maximumProviderCalls: number
   },
 ): DesktopTeamLiveState {
-  if (state.phase !== 'idle' && state.phase !== 'completed' && state.phase !== 'cancelled' && state.phase !== 'failed' && state.phase !== 'budget_exhausted' && state.phase !== 'cannot_complete' && state.phase !== 'unknown') {
+  if (
+    originPhase(state) !== 'idle' &&
+    originPhase(state) !== 'completed' &&
+    originPhase(state) !== 'cancelled' &&
+    originPhase(state) !== 'failed' &&
+    originPhase(state) !== 'budget_exhausted' &&
+    originPhase(state) !== 'cannot_complete' &&
+    originPhase(state) !== 'unknown'
+  ) {
     return state
   }
   return {
@@ -339,6 +490,15 @@ export function beginDesktopTeamRun(
     parkedParentFinalAnswer: null,
     parkedNodes: [],
     parkedCollaborationLines: [],
+    parkedPhase: 'idle',
+    parkedRunState: null,
+    parkedPlanRevisionId: null,
+    parkedWaveId: null,
+    parkedPlanSummary: null,
+    parkedDeclaredExecution: null,
+    parkedEffectiveExecution: null,
+    parkedConsumedProviderCalls: 0,
+    parkedMaximumProviderCalls: 0,
     planSummary: null,
     declaredExecution: null,
     effectiveExecution: null,
@@ -346,10 +506,11 @@ export function beginDesktopTeamRun(
 }
 
 export function requestDesktopTeamCancel(state: DesktopTeamLiveState): DesktopTeamLiveState {
-  if (state.phase === 'idle' || state.phase === 'completed' || state.phase === 'cancelled') {
+  const phase = originPhase(state)
+  if (phase === 'idle' || phase === 'completed' || phase === 'cancelled') {
     return state
   }
-  return { ...state, cancelRequested: true, phase: 'cancelling' }
+  return { ...state, cancelRequested: true, ...withOriginChrome(state, { phase: 'cancelling' }) }
 }
 
 export function switchDesktopTeamScope(
@@ -375,6 +536,16 @@ export function switchDesktopTeamScope(
       parkedParentFinalAnswer: state.parentFinalAnswer,
       parkedNodes: state.nodes,
       parkedCollaborationLines: state.collaborationLines,
+      parkedPhase: state.phase,
+      parkedRunState: state.runState,
+      parkedPlanRevisionId: state.planRevisionId,
+      parkedWaveId: state.waveId,
+      parkedPlanSummary: state.planSummary,
+      parkedDeclaredExecution: state.declaredExecution,
+      parkedEffectiveExecution: state.effectiveExecution,
+      parkedConsumedProviderCalls: state.consumedProviderCalls,
+      parkedMaximumProviderCalls: state.maximumProviderCalls,
+      ...HIDDEN_ORIGIN_CHROME,
     }
   }
   if (returningOrigin) {
@@ -386,25 +557,44 @@ export function switchDesktopTeamScope(
       parentFinalAnswer: state.parkedParentFinalAnswer,
       nodes: state.parkedNodes,
       collaborationLines: state.parkedCollaborationLines,
+      phase: state.parkedPhase,
+      runState: state.parkedRunState,
+      planRevisionId: state.parkedPlanRevisionId,
+      waveId: state.parkedWaveId,
+      planSummary: state.parkedPlanSummary,
+      declaredExecution: state.parkedDeclaredExecution,
+      effectiveExecution: state.parkedEffectiveExecution,
+      consumedProviderCalls: state.parkedConsumedProviderCalls,
+      maximumProviderCalls: state.parkedMaximumProviderCalls,
       parkedParentLiveText: '',
       parkedParentFinalAnswer: null,
       parkedNodes: [],
       parkedCollaborationLines: [],
+      parkedPhase: 'idle',
+      parkedRunState: null,
+      parkedPlanRevisionId: null,
+      parkedWaveId: null,
+      parkedPlanSummary: null,
+      parkedDeclaredExecution: null,
+      parkedEffectiveExecution: null,
+      parkedConsumedProviderCalls: 0,
+      parkedMaximumProviderCalls: 0,
     }
   }
   return { ...state, workspaceId, conversationId }
 }
 
 export function desktopTeamStopVisible(state: DesktopTeamLiveState): boolean {
+  const phase = originPhase(state)
   return (
-    state.phase === 'preparing' ||
-    state.phase === 'parent_proposing' ||
-    state.phase === 'host_validating' ||
-    state.phase === 'wave_starting' ||
-    state.phase === 'node_running' ||
-    state.phase === 'parent_replanning' ||
-    state.phase === 'parent_synthesizing' ||
-    state.phase === 'cancelling'
+    phase === 'preparing' ||
+    phase === 'parent_proposing' ||
+    phase === 'host_validating' ||
+    phase === 'wave_starting' ||
+    phase === 'node_running' ||
+    phase === 'parent_replanning' ||
+    phase === 'parent_synthesizing' ||
+    phase === 'cancelling'
   )
 }
 
@@ -430,6 +620,7 @@ export function desktopTeamStatusForRole(
   state: DesktopTeamLiveState,
   roleId: PersonalEmployeeId,
 ): DesktopTeamNodeStatusText {
+  if (!viewingOrigin(state)) return '静默'
   if (state.cancelRequested) {
     const live = state.nodes.find((node) => node.employeeRoleId === roleId && node.statusText === '运行中')
     if (live) return '正在停止'
@@ -490,11 +681,22 @@ function asRunState(value: string | undefined, fallback: TeamRunState | null): T
   return fallback
 }
 
-function withBudget(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): DesktopTeamLiveState {
+function withBudget(state: DesktopTeamLiveState, event: DesktopTeamRunEvent, chrome: {
+  readonly phase?: DesktopTeamPhase
+  readonly runState?: TeamRunState | null
+  readonly planRevisionId?: string | null
+  readonly waveId?: string | null
+  readonly planSummary?: string | null
+  readonly declaredExecution?: 'serial' | 'parallel' | null
+  readonly effectiveExecution?: 'serial' | 'parallel' | null
+} = {}): DesktopTeamLiveState {
   return {
     ...state,
-    consumedProviderCalls: event.consumedProviderCalls ?? state.consumedProviderCalls,
-    maximumProviderCalls: event.maximumProviderCalls ?? state.maximumProviderCalls,
+    ...withOriginChrome(state, {
+      ...chrome,
+      consumedProviderCalls: event.consumedProviderCalls ?? originConsumedProviderCalls(state),
+      maximumProviderCalls: event.maximumProviderCalls ?? originMaximumProviderCalls(state),
+    }),
   }
 }
 
@@ -502,39 +704,51 @@ export function reduceDesktopTeamEvent(
   state: DesktopTeamLiveState,
   event: DesktopTeamRunEvent,
 ): DesktopTeamLiveState {
-  if (state.phase === 'preparing' && event.type === 'snapshot' && event.rosterEpoch === state.rosterEpoch) {
+  if (originPhase(state) === 'preparing' && event.type === 'snapshot' && event.rosterEpoch === state.rosterEpoch) {
     if (!eventIdentityComplete(event)) return state
     return {
       ...state,
       teamRunId: event.teamRunId,
-      runState: asRunState(event.state, state.runState),
-      consumedProviderCalls: event.consumedProviderCalls ?? state.consumedProviderCalls,
-      maximumProviderCalls: event.maximumProviderCalls ?? state.maximumProviderCalls,
+      ...withOriginChrome(state, {
+        runState: asRunState(event.state, originRunState(state)),
+        consumedProviderCalls: event.consumedProviderCalls ?? originConsumedProviderCalls(state),
+        maximumProviderCalls: event.maximumProviderCalls ?? originMaximumProviderCalls(state),
+      }),
     }
   }
   if (!eventMatches(state, event)) return state
   if (event.type === 'parent_proposing') {
-    return withBudget(
-      { ...state, phase: 'parent_proposing', runState: asRunState(event.state, state.runState) },
-      event,
-    )
+    return withBudget(state, event, {
+      phase: 'parent_proposing',
+      runState: asRunState(event.state, originRunState(state)),
+    })
   }
   if (event.type === 'host_validating') {
-    return { ...state, phase: 'host_validating', planRevisionId: event.planRevisionId ?? state.planRevisionId }
+    return {
+      ...state,
+      ...withOriginChrome(state, {
+        phase: 'host_validating',
+        planRevisionId: event.planRevisionId ?? originPlanRevisionId(state),
+      }),
+    }
   }
   if (event.type === 'plan_transition') {
     return {
       ...state,
-      planRevisionId: event.planRevisionId ?? state.planRevisionId,
-      waveId: null,
+      ...withOriginChrome(state, {
+        planRevisionId: event.planRevisionId ?? originPlanRevisionId(state),
+        waveId: null,
+      }),
     }
   }
   if (event.type === 'proposal') {
     return {
       ...state,
-      planRevisionId: event.planRevisionId ?? state.planRevisionId,
-      runState: asRunState(event.state, state.runState),
-      planSummary: event.planSummary ?? state.planSummary,
+      ...withOriginChrome(state, {
+        planRevisionId: event.planRevisionId ?? originPlanRevisionId(state),
+        runState: asRunState(event.state, originRunState(state)),
+        planSummary: event.planSummary ?? originPlanSummary(state),
+      }),
     }
   }
   if (event.type === 'wave_starting') {
@@ -566,12 +780,13 @@ export function reduceDesktopTeamEvent(
       return [node]
     })
     return {
-      ...state,
-      phase: 'wave_starting',
-      waveId: event.waveId ?? state.waveId,
-      planSummary: event.planSummary ?? state.planSummary,
-      declaredExecution: event.declaredExecution ?? state.declaredExecution,
-      effectiveExecution: event.effectiveExecution ?? state.effectiveExecution,
+      ...withBudget(state, event, {
+        phase: 'wave_starting',
+        waveId: event.waveId ?? originWaveId(state),
+        planSummary: event.planSummary ?? originPlanSummary(state),
+        declaredExecution: event.declaredExecution ?? originDeclaredExecution(state),
+        effectiveExecution: event.effectiveExecution ?? originEffectiveExecution(state),
+      }),
       ...commitVisible(state, { nodes: [...currentNodes, ...waiting] }),
     }
   }
@@ -609,10 +824,10 @@ export function reduceDesktopTeamEvent(
     const withoutPending = workingNodes(state).filter(
       (item) => item.nodeId !== `pending:${event.assignmentId}` && item.nodeId !== event.nodeId,
     )
-    return withBudget(
-      { ...state, phase: 'node_running', ...commitVisible(state, { nodes: upsertNode(withoutPending, node) }) },
-      event,
-    )
+    return {
+      ...withBudget(state, event, { phase: 'node_running' }),
+      ...commitVisible(state, { nodes: upsertNode(withoutPending, node) }),
+    }
   }
   if (event.type === 'node_delta' && event.employeeRoleId === 'parent') {
     return {
@@ -643,54 +858,45 @@ export function reduceDesktopTeamEvent(
       event.collaborationLine === undefined || event.collaborationLine === ''
         ? workingCollaboration(state)
         : [...workingCollaboration(state), event.collaborationLine]
-    return withBudget(
-      {
-        ...state,
-        ...commitVisible(state, {
-          collaborationLines: collaboration,
-          nodes: upsertNode(workingNodes(state), {
-            ...existing,
-            statusText,
-            durationMs: event.durationMs ?? existing.durationMs,
-            inputTokens: event.inputTokens ?? existing.inputTokens,
-            outputTokens: event.outputTokens ?? existing.outputTokens,
-            totalTokens: event.totalTokens ?? existing.totalTokens,
-            report: event.answer ?? existing.report,
-          }),
+    return {
+      ...withBudget(state, event),
+      ...commitVisible(state, {
+        collaborationLines: collaboration,
+        nodes: upsertNode(workingNodes(state), {
+          ...existing,
+          statusText,
+          durationMs: event.durationMs ?? existing.durationMs,
+          inputTokens: event.inputTokens ?? existing.inputTokens,
+          outputTokens: event.outputTokens ?? existing.outputTokens,
+          totalTokens: event.totalTokens ?? existing.totalTokens,
+          report: event.answer ?? existing.report,
         }),
-      },
-      event,
-    )
+      }),
+    }
   }
   if (event.type === 'blackboard') {
-    return { ...state, phase: 'blackboard_updated' }
+    return { ...state, ...withOriginChrome(state, { phase: 'blackboard_updated' }) }
   }
   if (event.type === 'parent_replanning') {
-    return { ...state, phase: 'parent_replanning' }
+    return { ...state, ...withOriginChrome(state, { phase: 'parent_replanning' }) }
   }
   if (event.type === 'parent_synthesizing') {
-    return { ...state, phase: 'parent_synthesizing' }
+    return { ...state, ...withOriginChrome(state, { phase: 'parent_synthesizing' }) }
   }
   if (event.type === 'completed') {
     const finalAnswer = event.parentFinalAnswer ?? workingParentLiveText(state)
-    return withBudget(
-      {
-        ...state,
-        phase: 'completed',
-        runState: 'succeeded',
-        ...commitVisible(state, { parentFinalAnswer: finalAnswer, parentLiveText: finalAnswer }),
-      },
-      event,
-    )
+    return {
+      ...withBudget(state, event, { phase: 'completed', runState: 'succeeded' }),
+      ...commitVisible(state, { parentFinalAnswer: finalAnswer, parentLiveText: finalAnswer }),
+    }
   }
   if (event.type === 'budget_exhausted') {
-    return withBudget({ ...state, phase: 'budget_exhausted', runState: 'budget_exhausted' }, event)
+    return withBudget(state, event, { phase: 'budget_exhausted', runState: 'budget_exhausted' })
   }
   if (event.type === 'cancelled') {
     return {
       ...state,
-      phase: 'cancelled',
-      runState: 'cancelled',
+      ...withOriginChrome(state, { phase: 'cancelled', runState: 'cancelled' }),
       ...commitVisible(state, {
         nodes: workingNodes(state).map((node) =>
           node.statusText === '运行中' ? { ...node, statusText: '正在停止' } : node,
@@ -699,35 +905,38 @@ export function reduceDesktopTeamEvent(
     }
   }
   if (event.type === 'unknown') {
-    return { ...state, phase: 'unknown', runState: 'unknown' }
+    return { ...state, ...withOriginChrome(state, { phase: 'unknown', runState: 'unknown' }) }
   }
   if (event.type === 'failed') {
-    return { ...state, phase: 'failed', runState: asRunState(event.state, 'failed') }
+    return {
+      ...state,
+      ...withOriginChrome(state, { phase: 'failed', runState: asRunState(event.state, 'failed') }),
+    }
   }
   return state
 }
 
 export function completeDesktopTeamRun(state: DesktopTeamLiveState): DesktopTeamLiveState {
+  const phase = originPhase(state)
   if (
-    state.phase === 'completed' ||
-    state.phase === 'cancelled' ||
-    state.phase === 'failed' ||
-    state.phase === 'budget_exhausted' ||
-    state.phase === 'cannot_complete' ||
-    state.phase === 'unknown'
+    phase === 'completed' ||
+    phase === 'cancelled' ||
+    phase === 'failed' ||
+    phase === 'budget_exhausted' ||
+    phase === 'cannot_complete' ||
+    phase === 'unknown'
   ) {
-    return { ...state, phase: 'idle', cancelRequested: false }
+    return { ...state, cancelRequested: false, ...withOriginChrome(state, { phase: 'idle' }) }
   }
   return state
 }
 
 export function failDesktopTeamPreStart(state: DesktopTeamLiveState): DesktopTeamLiveState {
-  if (state.phase === 'idle') return state
+  if (originPhase(state) === 'idle') return state
   const terminal = completeDesktopTeamRun(state)
-  if (terminal.phase === 'idle') return terminal
+  if (originPhase(terminal) === 'idle') return terminal
   return completeDesktopTeamRun({
     ...state,
-    phase: 'failed',
-    runState: 'failed',
+    ...withOriginChrome(state, { phase: 'failed', runState: 'failed' }),
   })
 }
