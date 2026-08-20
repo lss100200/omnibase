@@ -50,6 +50,20 @@ from omnibase.desktop_local.database import (
     utc_now_text,
 )
 from omnibase.desktop_local.errors import DesktopLocalError
+from omnibase.desktop_local.personal_team import (
+    EMPLOYEE_ROLE_IDS,
+    cancel_team_run,
+    get_agent_role,
+    get_team_blackboard,
+    get_team_run,
+    list_agent_roles,
+    list_team_runs,
+    record_collaboration_request,
+    start_team_run,
+    submit_parent_proposal,
+    test_agent_role,
+    update_agent_role,
+)
 from omnibase.desktop_local.providers import (
     DesktopApiError,
     delete_provider,
@@ -72,6 +86,7 @@ _INSTANCE_TOKEN_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _CHALLENGE_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _APPLICATION_VERSION_PATTERN = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}\Z")
 _WORKSPACE_ID_PATTERN = re.compile(r"workspace_[0-9a-f]{32}\Z")
+_TEAM_RUN_ID_PATTERN = re.compile(r"teamrun_[0-9a-f]{32}\Z")
 _CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 _NATIVE_ROUTE_ROOT = "/desktop/v1"
 _MAX_WORKSPACES = 256
@@ -197,6 +212,52 @@ class ConversationSendRequest(BaseModel):
     content: str = Field(default="", max_length=16384)
     provider_id: str | None = None
     retry_of_message_id: str | None = None
+
+
+class AgentRoleUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    provider_id: str | None = None
+    model_name_override: str | None = Field(default=None, max_length=256)
+    gear: str = Field(min_length=3, max_length=32)
+    thinking_depth: str = Field(min_length=3, max_length=32)
+
+
+class TeamRunStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    conversation_id: str = Field(min_length=13, max_length=45)
+    task: str = Field(min_length=1, max_length=16384)
+    team_mode: bool
+    allowed_specialist_role_ids: list[str] | None = None
+    maximum_provider_calls: int = Field(ge=0, le=2_147_483_647)
+    maximum_wall_time_ms: int = Field(ge=0, le=2_147_483_647)
+    maximum_concurrent_calls: int = Field(ge=0, le=2_147_483_647)
+    maximum_input_characters: int = Field(ge=0, le=2_147_483_647)
+    maximum_output_characters: int = Field(ge=0, le=2_147_483_647)
+
+    @field_validator("team_mode")
+    @classmethod
+    def require_team_mode(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("team_mode_must_be_true")
+        return value
+
+
+class TeamRunProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    proposal: dict[str, object]
+
+
+class TeamCollaborationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    from_assignment_id: str = Field(min_length=1, max_length=128)
+    from_employee_role_id: str = Field(min_length=2, max_length=32)
+    target_role_id: str = Field(min_length=2, max_length=32)
+    question: str = Field(min_length=1, max_length=16384)
+    reason: str = Field(min_length=1, max_length=16384)
 
 
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
@@ -752,6 +813,123 @@ def _invocations_cancel(invocation_id: str, request: Request) -> dict[str, objec
         )
 
 
+def _agent_roles_list(workspace_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return list_agent_roles(runtime.connection, workspace_id)
+
+
+def _agent_roles_get(workspace_id: str, role_id: str, request: Request) -> dict[str, object]:
+    if role_id not in EMPLOYEE_ROLE_IDS:
+        raise DesktopApiError(404, "desktop_agent_role_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_agent_role(runtime.connection, workspace_id, role_id)
+
+
+def _agent_roles_update(
+    workspace_id: str,
+    role_id: str,
+    payload: AgentRoleUpdateRequest,
+    request: Request,
+) -> dict[str, object]:
+    if role_id not in EMPLOYEE_ROLE_IDS:
+        raise DesktopApiError(404, "desktop_agent_role_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return update_agent_role(runtime.connection, workspace_id, role_id, payload.model_dump())
+
+
+def _agent_roles_test(workspace_id: str, role_id: str, request: Request) -> dict[str, object]:
+    if role_id not in EMPLOYEE_ROLE_IDS:
+        raise DesktopApiError(404, "desktop_agent_role_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return test_agent_role(runtime.connection, workspace_id, role_id)
+
+
+def _team_runs_list(workspace_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return list_team_runs(runtime.connection, workspace_id)
+
+
+def _team_runs_start(
+    workspace_id: str, payload: TeamRunStartRequest, request: Request
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return start_team_run(runtime.connection, workspace_id, payload.model_dump())
+
+
+def _team_runs_get(workspace_id: str, team_run_id: str, request: Request) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_team_run(runtime.connection, workspace_id, team_run_id)
+
+
+def _team_runs_cancel(workspace_id: str, team_run_id: str, request: Request) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return cancel_team_run(runtime.connection, workspace_id, team_run_id)
+
+
+def _team_runs_propose(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamRunProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return submit_parent_proposal(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.proposal,
+        )
+
+
+def _team_runs_blackboard(
+    workspace_id: str, team_run_id: str, request: Request
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_team_blackboard(runtime.connection, workspace_id, team_run_id)
+
+
+def _team_runs_collaboration(
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamCollaborationCreateRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return record_collaboration_request(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            {
+                "fromAssignmentId": payload.from_assignment_id,
+                "fromEmployeeRoleId": payload.from_employee_role_id,
+                "targetRoleId": payload.target_role_id,
+                "question": payload.question,
+                "reason": payload.reason,
+            },
+        )
+
+
 def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     """Create an isolated desktop app without importing the server Settings singleton."""
 
@@ -864,6 +1042,61 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/invocations/{invocation_id}/cancel",
         _invocations_cancel,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/agent-roles",
+        _agent_roles_list,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/agent-roles/{role_id}",
+        _agent_roles_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/agent-roles/{role_id}",
+        _agent_roles_update,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/agent-roles/{role_id}/test",
+        _agent_roles_test,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs",
+        _team_runs_list,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs",
+        _team_runs_start,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}",
+        _team_runs_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/cancel",
+        _team_runs_cancel,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+        _team_runs_propose,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/blackboard",
+        _team_runs_blackboard,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/collaboration-requests",
+        _team_runs_collaboration,
         methods=["POST"],
     )
 

@@ -69,6 +69,12 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "conversation",
             "invocation",
             "message",
+            "workspace_agent_role_config",
+            "team_run",
+            "team_plan_revision",
+            "team_assignment",
+            "team_node",
+            "team_collaboration_request",
         ):
             assert table_sql[table].rstrip().endswith("STRICT")
 
@@ -94,6 +100,7 @@ def test_restart_is_idempotent_and_preserves_application_migration_record(tmp_pa
         assert [tuple(row) for row in migration] == [
             (1, "desktop_0001", "1.0.0"),
             (2, "desktop_0002_provider_conversation", "1.0.0"),
+            (3, "desktop_0003_personal_agent_team", "1.0.0"),
         ]
         assert restarted.execute("SELECT COUNT(*) FROM runtime_job").fetchone()[0] == 1
         assert local_health(restarted).status == "healthy"
@@ -149,7 +156,8 @@ def test_concurrent_first_launch_applies_migration_once(tmp_path: Path) -> None:
 
     with initialized_database(config) as connection:
         assert (
-            connection.execute("SELECT COUNT(*) FROM desktop_migration_history").fetchone()[0] == 2
+            connection.execute("SELECT COUNT(*) FROM desktop_migration_history").fetchone()[0]
+            == DESKTOP_SCHEMA_VERSION
         )
 
 

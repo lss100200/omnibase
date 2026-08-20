@@ -70,7 +70,7 @@ def test_lifespan_initializes_sqlite_and_health_is_redacted(tmp_path: Path) -> N
     assert ready.json() == {
         "status": "ready",
         "storage": "sqlite",
-        "schema_version": 2,
+        "schema_version": 3,
         "application_version": "1.0.0",
         "integrity": "ok",
     }
