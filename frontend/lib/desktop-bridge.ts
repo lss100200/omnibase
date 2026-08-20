@@ -506,6 +506,8 @@ export interface OmniBaseDesktopBridge {
       readonly targetRoleId: string
       readonly question: string
       readonly reason: string
+      readonly nodeId: string
+      readonly reportId: string
     }) => Promise<DesktopOperationResult<{ readonly collaborationRequest: DesktopTeamCollaborationRequest }>>
     readonly execute: (input: {
       readonly workspaceId: string

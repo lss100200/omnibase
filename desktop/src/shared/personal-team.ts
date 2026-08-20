@@ -217,6 +217,8 @@ export interface DesktopTeamCollaborationInput {
   readonly targetRoleId: SpecialistEmployeeId;
   readonly question: string;
   readonly reason: string;
+  readonly nodeId: string;
+  readonly reportId: string;
 }
 
 export interface DesktopTeamCollaborationRequest {

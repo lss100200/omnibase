@@ -195,6 +195,8 @@ const CONVERSATION_ID_PATTERN = /^conversation_[a-f0-9]{32}$/u;
 const MESSAGE_ID_PATTERN = /^message_[a-f0-9]{32}$/u;
 const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
 const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
+const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
+const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const ASSIGNMENT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
 const SPECIALIST_ROLE_SET = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
@@ -818,8 +820,10 @@ function parseTeamCollaborationInput(
     !hasExactKeys(args[0], [
       "fromAssignmentId",
       "fromEmployeeRoleId",
+      "nodeId",
       "question",
       "reason",
+      "reportId",
       "targetRoleId",
       "teamRunId",
       "workspaceId",
@@ -834,6 +838,10 @@ function parseTeamCollaborationInput(
     !SPECIALIST_ROLE_SET.has(args[0].fromEmployeeRoleId) ||
     typeof args[0].targetRoleId !== "string" ||
     !SPECIALIST_ROLE_SET.has(args[0].targetRoleId) ||
+    typeof args[0].nodeId !== "string" ||
+    !TEAM_NODE_ID_PATTERN.test(args[0].nodeId) ||
+    typeof args[0].reportId !== "string" ||
+    !TEAM_REPORT_ID_PATTERN.test(args[0].reportId) ||
     typeof args[0].question !== "string" ||
     CONTROL_CHARACTER_PATTERN.test(args[0].question) ||
     args[0].question.trim().length < 1 ||
@@ -853,6 +861,8 @@ function parseTeamCollaborationInput(
     targetRoleId: args[0].targetRoleId as SpecialistEmployeeId,
     question: args[0].question.trim(),
     reason: args[0].reason.trim(),
+    nodeId: args[0].nodeId,
+    reportId: args[0].reportId,
   });
 }
 

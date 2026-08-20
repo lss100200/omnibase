@@ -62,6 +62,8 @@ const AGENT_ID_PATTERN = /^agent_[a-f0-9]{32}$/u;
 const MESSAGE_ID_PATTERN = /^message_[a-f0-9]{32}$/u;
 const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
 const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
+const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
+const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const TEAM_REV_ID_PATTERN = /^teamrev_[a-f0-9]{32}$/u;
 const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
 const SPECIALIST_ROLE_SET = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
@@ -2050,7 +2052,9 @@ export class DesktopNativeClient {
   > {
     if (
       !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
-      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId) ||
+      !TEAM_NODE_ID_PATTERN.test(input.nodeId) ||
+      !TEAM_REPORT_ID_PATTERN.test(input.reportId)
     ) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
@@ -2063,6 +2067,8 @@ export class DesktopNativeClient {
         target_role_id: input.targetRoleId,
         question: input.question,
         reason: input.reason,
+        node_id: input.nodeId,
+        report_id: input.reportId,
       },
       parseCollaborationWrapper,
     );

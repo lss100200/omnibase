@@ -700,12 +700,48 @@ function withBudget(state: DesktopTeamLiveState, event: DesktopTeamRunEvent, chr
   }
 }
 
+function teamTerminalLatched(state: DesktopTeamLiveState): boolean {
+  const phase = originPhase(state)
+  const runState = originRunState(state)
+  return (
+    phase === 'cancelled' ||
+    phase === 'failed' ||
+    phase === 'unknown' ||
+    phase === 'budget_exhausted' ||
+    phase === 'cannot_complete' ||
+    runState === 'cancelled' ||
+    runState === 'failed' ||
+    runState === 'unknown' ||
+    runState === 'budget_exhausted' ||
+    runState === 'cannot_complete'
+  )
+}
+
+function isLateSuccessTerminal(event: DesktopTeamRunEvent): boolean {
+  return event.type === 'completed' || event.state === 'succeeded'
+}
+
+function firstSnapshotMatchesCurrentOrigin(
+  state: DesktopTeamLiveState,
+  event: DesktopTeamRunEvent,
+): boolean {
+  return (
+    viewingOrigin(state) &&
+    event.workspaceId === state.originWorkspaceId &&
+    event.conversationId === state.originConversationId &&
+    event.workspaceId === state.workspaceId &&
+    event.conversationId === state.conversationId
+  )
+}
+
 export function reduceDesktopTeamEvent(
   state: DesktopTeamLiveState,
   event: DesktopTeamRunEvent,
 ): DesktopTeamLiveState {
   if (originPhase(state) === 'preparing' && event.type === 'snapshot' && event.rosterEpoch === state.rosterEpoch) {
-    if (!eventIdentityComplete(event)) return state
+    if (!eventIdentityComplete(event) || !firstSnapshotMatchesCurrentOrigin(state, event)) {
+      return state
+    }
     return {
       ...state,
       teamRunId: event.teamRunId,
@@ -717,6 +753,7 @@ export function reduceDesktopTeamEvent(
     }
   }
   if (!eventMatches(state, event)) return state
+  if (teamTerminalLatched(state) && isLateSuccessTerminal(event)) return state
   if (event.type === 'parent_proposing') {
     return withBudget(state, event, {
       phase: 'parent_proposing',
