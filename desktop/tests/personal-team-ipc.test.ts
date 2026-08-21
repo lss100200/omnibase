@@ -140,3 +140,63 @@ test("IPC rejects unknown role, infinite budget, and employee dispatch envelopes
     { ok: false, error: { code: "desktop_native_input_invalid" } },
   );
 });
+
+test("IPC rejects missing, malformed, and tampered node/report identity fields", async () => {
+  const handlers = register();
+  const workspaceId = `workspace_${"b".repeat(32)}`;
+  const envelope = {
+    workspaceId,
+    teamRunId: `teamrun_${"d".repeat(32)}`,
+    fromAssignmentId: "security-review",
+    fromEmployeeRoleId: "security",
+    targetRoleId: "qa",
+    question: "design the matrix",
+    reason: "need coverage",
+    nodeId: `teamnode_${"e".repeat(32)}`,
+    reportId: `teamrpt_${"e".repeat(32)}`,
+  };
+  const rejection = { ok: false, error: { code: "desktop_native_input_invalid" } };
+
+  const { nodeId: _omittedNodeId, ...withoutNodeId } = envelope;
+  void _omittedNodeId;
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.teamRunsRecordCollaboration)?.(trustedEvent, withoutNodeId),
+    rejection,
+  );
+  const { reportId: _omittedReportId, ...withoutReportId } = envelope;
+  void _omittedReportId;
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.teamRunsRecordCollaboration)?.(trustedEvent, withoutReportId),
+    rejection,
+  );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, nodeId: `teamnodes_${"e".repeat(32)}` }),
+    rejection,
+  );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, nodeId: `teamnode_${"e".repeat(31)}` }),
+    rejection,
+  );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, nodeId: `teamnode_${"E".repeat(32)}` }),
+    rejection,
+  );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, reportId: `teamreport_${"e".repeat(32)}` }),
+    rejection,
+  );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, reportId: `teamrpt_${"e".repeat(33)}` }),
+    rejection,
+  );
+});
