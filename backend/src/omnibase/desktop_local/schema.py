@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 5
+DESKTOP_SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -802,4 +802,28 @@ DESKTOP_0005 = DesktopMigration(
     ),
 )
 
-DESKTOP_MIGRATIONS = (DESKTOP_0001, DESKTOP_0002, DESKTOP_0003, DESKTOP_0004, DESKTOP_0005)
+DESKTOP_0006 = DesktopMigration(
+    version=6,
+    migration_id="desktop_0006_report_collaboration_digest",
+    statements=(
+        """
+        ALTER TABLE team_employee_report ADD COLUMN collaboration_requests_sha256 TEXT
+            CHECK (
+                collaboration_requests_sha256 IS NULL
+                OR (
+                    length(collaboration_requests_sha256) = 64
+                    AND collaboration_requests_sha256 NOT GLOB '*[^0-9a-f]*'
+                )
+            )
+        """,
+    ),
+)
+
+DESKTOP_MIGRATIONS = (
+    DESKTOP_0001,
+    DESKTOP_0002,
+    DESKTOP_0003,
+    DESKTOP_0004,
+    DESKTOP_0005,
+    DESKTOP_0006,
+)
