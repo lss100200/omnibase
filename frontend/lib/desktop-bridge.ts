@@ -322,6 +322,7 @@ export {
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
+  pendingDurableTeamCancel,
   reduceDesktopTeamEvent,
   requestDesktopTeamCancel,
   switchDesktopTeamScope,

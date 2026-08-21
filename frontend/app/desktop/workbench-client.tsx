@@ -36,6 +36,7 @@ import {
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
+  pendingDurableTeamCancel,
   projectDesktopTeamBudget,
   projectDesktopTeamEmployees,
   projectDesktopTeamTimeline,
@@ -196,6 +197,7 @@ export function DesktopWorkbench({
     }),
   )
   const teamLiveRef = useRef(teamLive)
+  const durableTeamCancelRef = useRef<string | null>(null)
   const [teamMode, setTeamMode] = useState(false)
   const [allowedSpecialists, setAllowedSpecialists] = useState<readonly string[]>([...TEAM_SPECIALISTS])
   const [teamBudget, setTeamBudget] = useState(DEFAULT_TEAM_BUDGET)
@@ -391,6 +393,16 @@ export function DesktopWorkbench({
       setTeamLive(next)
     })
   }, [bridge])
+
+  useEffect(() => {
+    const pending = pendingDurableTeamCancel(teamLive, durableTeamCancelRef.current)
+    if (pending === null) return
+    durableTeamCancelRef.current = pending
+    void bridge.teamRuns.cancel({
+      workspaceId: teamLive.originWorkspaceId ?? workspaceId ?? '',
+      teamRunId: pending,
+    })
+  }, [teamLive, bridge, workspaceId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -662,12 +674,6 @@ export function DesktopWorkbench({
       setTeamLive(cancelledTeam)
       if (mountedRef.current) onError('正在停止')
       await bridge.conversations.abortInFlightSend()
-      if (cancelledTeam.teamRunId !== null) {
-        await bridge.teamRuns.cancel({
-          workspaceId: cancelledTeam.originWorkspaceId ?? workspaceId ?? '',
-          teamRunId: cancelledTeam.teamRunId,
-        })
-      }
     }
     if (!desktopLiveStopVisible(current) && current.invocationId === null) return
     let cancelled = requestDesktopLiveCancel(current)

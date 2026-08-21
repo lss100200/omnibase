@@ -704,11 +704,13 @@ function teamTerminalLatched(state: DesktopTeamLiveState): boolean {
   const phase = originPhase(state)
   const runState = originRunState(state)
   return (
+    phase === 'completed' ||
     phase === 'cancelled' ||
     phase === 'failed' ||
     phase === 'unknown' ||
     phase === 'budget_exhausted' ||
     phase === 'cannot_complete' ||
+    runState === 'succeeded' ||
     runState === 'cancelled' ||
     runState === 'failed' ||
     runState === 'unknown' ||
@@ -717,43 +719,81 @@ function teamTerminalLatched(state: DesktopTeamLiveState): boolean {
   )
 }
 
-function isLateSuccessTerminal(event: DesktopTeamRunEvent): boolean {
-  return event.type === 'completed' || event.state === 'succeeded'
+function terminalPhaseForRunState(runState: TeamRunState | null): DesktopTeamPhase | null {
+  switch (runState) {
+    case 'succeeded':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    case 'unknown':
+      return 'unknown'
+    case 'budget_exhausted':
+      return 'budget_exhausted'
+    case 'cannot_complete':
+      return 'cannot_complete'
+    default:
+      return null
+  }
 }
 
-function firstSnapshotMatchesCurrentOrigin(
+function firstSnapshotEligible(state: DesktopTeamLiveState): boolean {
+  const phase = originPhase(state)
+  return phase === 'preparing' || (phase === 'cancelling' && state.cancelRequested)
+}
+
+function firstSnapshotMatchesOrigin(
   state: DesktopTeamLiveState,
   event: DesktopTeamRunEvent,
 ): boolean {
   return (
-    viewingOrigin(state) &&
     event.workspaceId === state.originWorkspaceId &&
-    event.conversationId === state.originConversationId &&
-    event.workspaceId === state.workspaceId &&
-    event.conversationId === state.conversationId
+    event.conversationId === state.originConversationId
   )
+}
+
+export function pendingDurableTeamCancel(
+  state: DesktopTeamLiveState,
+  lastCancelledTeamRunId: string | null,
+): string | null {
+  if (state.teamRunId === null) return null
+  if (!state.cancelRequested) return null
+  if (state.teamRunId === lastCancelledTeamRunId) return null
+  return state.teamRunId
 }
 
 export function reduceDesktopTeamEvent(
   state: DesktopTeamLiveState,
   event: DesktopTeamRunEvent,
 ): DesktopTeamLiveState {
-  if (originPhase(state) === 'preparing' && event.type === 'snapshot' && event.rosterEpoch === state.rosterEpoch) {
-    if (!eventIdentityComplete(event) || !firstSnapshotMatchesCurrentOrigin(state, event)) {
+  if (
+    event.type === 'snapshot' &&
+    event.rosterEpoch === state.rosterEpoch &&
+    firstSnapshotEligible(state)
+  ) {
+    if (
+      !eventIdentityComplete(event) ||
+      !firstSnapshotMatchesOrigin(state, event) ||
+      (state.teamRunId !== null && state.teamRunId !== event.teamRunId)
+    ) {
       return state
     }
+    const snapshotRunState = asRunState(event.state, originRunState(state))
+    const terminalPhase = terminalPhaseForRunState(snapshotRunState)
     return {
       ...state,
       teamRunId: event.teamRunId,
       ...withOriginChrome(state, {
-        runState: asRunState(event.state, originRunState(state)),
+        ...(terminalPhase === null ? {} : { phase: terminalPhase }),
+        runState: snapshotRunState,
         consumedProviderCalls: event.consumedProviderCalls ?? originConsumedProviderCalls(state),
         maximumProviderCalls: event.maximumProviderCalls ?? originMaximumProviderCalls(state),
       }),
     }
   }
   if (!eventMatches(state, event)) return state
-  if (teamTerminalLatched(state) && isLateSuccessTerminal(event)) return state
+  if (teamTerminalLatched(state)) return state
   if (event.type === 'parent_proposing') {
     return withBudget(state, event, {
       phase: 'parent_proposing',

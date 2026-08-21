@@ -3,13 +3,16 @@ import { test } from 'node:test'
 
 import {
   beginDesktopTeamRun,
+  completeDesktopTeamRun,
   createDesktopTeamLiveState,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
+  pendingDurableTeamCancel,
   reduceDesktopTeamEvent,
   requestDesktopTeamCancel,
   switchDesktopTeamScope,
+  type DesktopTeamLiveState,
   type DesktopTeamRunEvent,
 } from './desktop-team-lifecycle'
 import {
@@ -483,7 +486,119 @@ test('cancelled failed unknown and budget_exhausted stay latched against a late 
   }
 })
 
-test('first snapshot from origin A does not bind while viewing workspace B', () => {
+function landedTerminal(kind: string): DesktopTeamLiveState {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  if (kind === 'cannot_complete') {
+    return reduceDesktopTeamEvent(state, snapshot({ state: 'cannot_complete' }))
+  }
+  state = reduceDesktopTeamEvent(state, snapshot())
+  state = reduceDesktopTeamEvent(state, bound({ type: 'proposal', planRevisionId: PLAN_A }))
+  state = reduceDesktopTeamEvent(
+    state,
+    bound({
+      type: 'wave_starting',
+      waveId: 'wave-1',
+      assignmentIds: ['frontend-review'],
+      employeeRoleIds: ['frontend'],
+    }),
+  )
+  state = reduceDesktopTeamEvent(state, bound({ type: 'node_starting' }))
+  state = reduceDesktopTeamEvent(
+    state,
+    bound({ type: 'node_terminal', answer: 'node-report', reportStatus: 'completed' }),
+  )
+  if (kind === 'completed') {
+    return reduceDesktopTeamEvent(
+      state,
+      bound({ type: 'completed', parentFinalAnswer: 'final-ok' }),
+    )
+  }
+  return reduceDesktopTeamEvent(state, bound({ type: kind }))
+}
+
+test('all six terminals absorb every late mutable event', () => {
+  const terminals = [
+    'completed',
+    'cancelled',
+    'failed',
+    'unknown',
+    'budget_exhausted',
+    'cannot_complete',
+  ]
+  const lateEvents: readonly DesktopTeamRunEvent[] = [
+    bound({ type: 'proposal', planRevisionId: PLAN_A, planSummary: 'late-plan' }),
+    bound({ type: 'plan_transition', oldPlanRevisionId: PLAN_A, planRevisionId: PLAN_B }),
+    bound({
+      type: 'wave_starting',
+      waveId: 'wave-9',
+      assignmentIds: ['frontend-review'],
+      employeeRoleIds: ['frontend'],
+    }),
+    bound({
+      type: 'node_starting',
+      nodeId: `teamnode_${'9'.repeat(32)}`,
+      nodeOrdinal: 2,
+      invocationId: `invocation_${'9'.repeat(32)}`,
+      sendEpoch: 9,
+      nodeEpoch: 9,
+    }),
+    bound({ type: 'node_delta', employeeRoleId: 'parent', text: 'LATE' }),
+    bound({ type: 'node_terminal', answer: 'late-answer', reportStatus: 'completed' }),
+    bound({ type: 'blackboard' }),
+    bound({ type: 'parent_replanning' }),
+    bound({ type: 'parent_synthesizing' }),
+    bound({ type: 'completed', parentFinalAnswer: 'late-success' }),
+    bound({ type: 'cancelled' }),
+    bound({ type: 'failed' }),
+  ]
+  for (const terminal of terminals) {
+    const state = landedTerminal(terminal)
+    assert.notEqual(state.phase, 'preparing', `${terminal} should land`)
+    for (const late of lateEvents) {
+      const after = reduceDesktopTeamEvent(state, late)
+      assert.equal(after.phase, state.phase, `${terminal} + ${late.type} must keep phase`)
+      assert.equal(after.runState, state.runState, `${terminal} + ${late.type} must keep runState`)
+      assert.equal(
+        after.parentLiveText,
+        state.parentLiveText,
+        `${terminal} + ${late.type} must keep parent text`,
+      )
+      assert.equal(
+        after.parentFinalAnswer,
+        state.parentFinalAnswer,
+        `${terminal} + ${late.type} must keep final answer`,
+      )
+      assert.deepEqual(after.nodes, state.nodes, `${terminal} + ${late.type} must keep nodes`)
+      assert.deepEqual(
+        after.collaborationLines,
+        state.collaborationLines,
+        `${terminal} + ${late.type} must keep collaboration`,
+      )
+      assert.equal(
+        after.consumedProviderCalls,
+        state.consumedProviderCalls,
+        `${terminal} + ${late.type} must keep budget`,
+      )
+      assert.equal(
+        after.planRevisionId,
+        state.planRevisionId,
+        `${terminal} + ${late.type} must keep plan`,
+      )
+      assert.equal(after.waveId, state.waveId, `${terminal} + ${late.type} must keep wave`)
+    }
+  }
+})
+
+test('first snapshot from origin A binds parked identity while viewing workspace B', () => {
   let state = createDesktopTeamLiveState({
     workspaceId: WORKSPACE_A,
     conversationId: CONVERSATION_A,
@@ -496,11 +611,121 @@ test('first snapshot from origin A does not bind while viewing workspace B', () 
   })
   assert.equal(state.teamRunId, null)
   state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
-  const dropped = reduceDesktopTeamEvent(state, snapshot())
-  assert.equal(dropped.teamRunId, null)
-  assert.equal(dropped.phase, 'idle')
-  assert.equal(dropped.originWorkspaceId, WORKSPACE_A)
-  const stillB = desktopTeamLiveProjection(dropped, WORKSPACE_B, CONVERSATION_B)
+  const boundState = reduceDesktopTeamEvent(state, snapshot())
+  assert.equal(boundState.teamRunId, TEAM_RUN)
+  assert.equal(boundState.phase, 'idle')
+  assert.equal(boundState.parkedPhase, 'preparing')
+  assert.equal(boundState.originWorkspaceId, WORKSPACE_A)
+  const stillB = desktopTeamLiveProjection(boundState, WORKSPACE_B, CONVERSATION_B)
   assert.equal(stillB.visible, false)
   assert.equal(stillB.parentLiveText, '')
+  const parkedDelta = reduceDesktopTeamEvent(
+    boundState,
+    bound({ type: 'node_delta', employeeRoleId: 'parent', text: 'parked-text' }),
+  )
+  assert.equal(parkedDelta.parentLiveText, '')
+  assert.equal(parkedDelta.parkedParentLiveText, 'parked-text')
+  const returned = switchDesktopTeamScope(parkedDelta, WORKSPACE_A, CONVERSATION_A)
+  assert.equal(returned.teamRunId, TEAM_RUN)
+  assert.equal(returned.phase, 'preparing')
+  assert.equal(returned.parentLiveText, 'parked-text')
+})
+
+test('a bound run does not rebind a different team run id', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = reduceDesktopTeamEvent(state, snapshot())
+  assert.equal(state.teamRunId, TEAM_RUN)
+  const foreign = reduceDesktopTeamEvent(
+    state,
+    snapshot({ teamRunId: `teamrun_${'9'.repeat(32)}` }),
+  )
+  assert.equal(foreign.teamRunId, TEAM_RUN)
+  assert.equal(foreign.runState, 'preparing')
+})
+
+test('stop before identity binds the late snapshot and cancels exactly once', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  state = requestDesktopTeamCancel(state)
+  assert.equal(state.cancelRequested, true)
+  assert.equal(state.parkedPhase, 'cancelling')
+  assert.equal(pendingDurableTeamCancel(state, null), null)
+  state = reduceDesktopTeamEvent(state, snapshot({ state: 'running' }))
+  assert.equal(state.teamRunId, TEAM_RUN)
+  assert.equal(state.parkedPhase, 'cancelling')
+  assert.equal(state.parkedRunState, 'running')
+  assert.equal(state.phase, 'idle')
+  assert.equal(pendingDurableTeamCancel(state, null), TEAM_RUN)
+  assert.equal(pendingDurableTeamCancel(state, TEAM_RUN), null)
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'cancelled' }))
+  assert.equal(state.parkedPhase, 'cancelled')
+  assert.equal(state.parkedRunState, 'cancelled')
+  const returned = switchDesktopTeamScope(state, WORKSPACE_A, CONVERSATION_A)
+  assert.equal(returned.phase, 'cancelled')
+  assert.equal(returned.runState, 'cancelled')
+  assert.equal(pendingDurableTeamCancel(returned, TEAM_RUN), null)
+})
+
+test('snapshot first then stop still dispatches durable cancel exactly once', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  state = reduceDesktopTeamEvent(state, snapshot({ state: 'running' }))
+  assert.equal(pendingDurableTeamCancel(state, null), null)
+  state = requestDesktopTeamCancel(state)
+  assert.equal(pendingDurableTeamCancel(state, null), TEAM_RUN)
+  assert.equal(pendingDurableTeamCancel(state, TEAM_RUN), null)
+})
+
+test('a snapshot from an older roster epoch does not rebind a new run', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = reduceDesktopTeamEvent(state, snapshot())
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', parentFinalAnswer: 'done' }))
+  state = completeDesktopTeamRun(state)
+  assert.equal(state.phase, 'idle')
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 2,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(state.teamRunId, null)
+  const stale = reduceDesktopTeamEvent(state, snapshot())
+  assert.equal(stale.teamRunId, null)
+  assert.equal(stale.phase, 'preparing')
 })
