@@ -4340,8 +4340,11 @@ host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 5 (`desktop_0005_team_node_identity_epochs`) is current.
-Version 4 (`desktop_0004_personal_team_runtime`) remains the Round 1 runtime
+Desktop schema version 6 (`desktop_0006_report_collaboration_digest`) is
+current; it adds the settle-time collaboration-request digest column to
+`team_employee_report`. Version 5 (`desktop_0005_team_node_identity_epochs`)
+remains the node identity epoch migration; version 4
+(`desktop_0004_personal_team_runtime`) remains the Round 1 runtime
 migration; version 3 (`desktop_0003_personal_agent_team`) remains the A2
 contract migration. These are desktop-namespace SQLite migrations, not Alembic
 0016/0017. Unique indexes forbid reused `node_epoch` / `send_epoch` on a Team
@@ -4392,16 +4395,32 @@ an already-`unknown` run is a stable 409 no-op (`desktop_team_run_not_found` /
 already `cancelling|cancelled`, node update may only CAS `running→cancelled`
 (or no-op an already-cancelled node). Restart recovery maps residual live
 nodes from the **parent Run** state: `cancelled` parent → residual live
-`cancelled`; crash/`unknown` parent → residual live `unknown`. Recovery must
-not rewrite a node that is already `cancelled` into `unknown`.
+`cancelled`; crash/`unknown` parent → residual live `unknown`; any other
+terminal parent (`succeeded|failed|budget_exhausted|cannot_complete`) →
+residual live `unknown` nodes and `blocked` assignments. Recovery must
+not rewrite a node that is already `cancelled` into `unknown`. `POST /state`
+into a terminal state is bound by the same invariant inside one
+`BEGIN IMMEDIATE` transaction: `succeeded`, `failed`, `unknown`,
+`budget_exhausted` and `cannot_complete` fail closed on any live child
+(`desktop_team_run_children_live`), while `cancelled` cascades the same child
+CAS as Stop. A terminal parent with live children can therefore neither be
+committed through `/state` nor survive a restart.
 
-Independent collaboration writes require a live Team Run (`preparing|running`)
-and a matching node/report identity on that run. A cancelled/unknown run, or a
-wrong node/report id, fails closed (`desktop_team_run_terminal` /
-`desktop_team_collaboration_identity_mismatch`). Standalone `/reports` replay
-must exact-match the stored assignment/role/status/text/digest; mutated replay
-fails closed (`desktop_team_report_replay_mismatch`). Identical replay may be
-idempotent.
+Independent collaboration writes — create **and** resolve — require a live
+Team Run (`preparing|running`) and a matching node/report identity on that
+run. A cancelled/unknown/terminal run, or a wrong node/report id, fails closed
+(`desktop_team_run_terminal` / `desktop_team_collaboration_identity_mismatch`).
+Resolve re-loads the parent Run inside the same write transaction, performs a
+`parent_decision = 'pending'` CAS, and accepts a replayed resolve only when the
+decision and `resolved_assignment_id` match exactly; any different replay
+conflicts (`desktop_team_collaboration_resolve_conflict`). Standalone
+`/reports` replay must exact-match the stored assignment/role/status/text and
+**both** digests — the report body SHA-256 and the settle-time canonical
+collaboration-request digest (`collaboration_requests_sha256`, computed over
+the unique `(targetRoleId, question, reason)` canonical ordering; rows settled
+before `desktop_0006` fall back to the stored request rows). Mutated replay
+fails closed (`desktop_team_report_replay_mismatch`). Identical replay —
+including a reordered but equal request set — may be idempotent.
 
 Replan emits an explicit validated `plan_transition` (old plan → new plan).
 The old-plan filter must not reject a legal new proposal after that event.
@@ -4415,10 +4434,16 @@ the origin workspace/conversation parks live text, nodes, collab, **and**
 phase, planRevisionId, waveId, planSummary, execution, and budgets. Returning
 restores full delta/terminal/final **and** plan/phase (A→B→A). First render on
 B must not paint A team chrome (parent 运行中, plan, budget). First snapshot
-bind verifies the current view is the exact origin workspace/conversation;
-a snapshot for A must not bind while the view is B. Frontend team terminals
-`cancelled|failed|unknown|budget_exhausted` must not be resurrected by a late
-`completed` / success terminal.
+bind verifies the snapshot matches the frozen origin workspace/conversation
+and roster epoch; a legal origin snapshot binds the parked durable identity
+(`teamRunId`) even while the view is B, without painting A chrome onto B, and
+a snapshot from a different team run id or an older roster epoch must not
+rebind. Stop requested before identity converges to exactly one durable
+backend cancel once identity arrives. Frontend team terminals
+`completed|cancelled|failed|unknown|budget_exhausted|cannot_complete` (phase
+or runState) latch and absorb every late mutable event — phase, text, nodes,
+collaboration, budget, plan and wave; only a same-terminal idempotent
+calibration may land.
 
 Unique success-settle writes node success plus employee report,
 collaboration request, and audit in one SQLite transaction. Partial

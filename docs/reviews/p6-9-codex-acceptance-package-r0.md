@@ -95,7 +95,11 @@ Cursor does **not** claim:
 | Backend residual Stop/collab | `80170a22160355c4b749fea237b2f3e0a16f0bfe` (`80170a2`) |
 | Frontend latch/snapshot | `e1910a4016430308206491014a46b7ed20dc93ce` (`e1910a4`) |
 | Negative tests | `9dcc46b511b817571f5414925ab31afa4fd94b46` (`9dcc46b`) |
-| This concentrated forward-fix | lands last on the same branch (HEAD after this file) |
+| Concentrated forward-fix (do not amend) | `246c423201b0a7e10ba578d0d3825b08f41a4cb6` (`246c423`) — **audited, not passed; see Round 3 below** |
+| Round 3 backend transaction law | `cc8494665c7aec2523c958a0215dc03a794cedfc` (`cc84946`) |
+| Round 3 frontend latch/identity | `5b63739a42f87dcee962ec169a5d286424863e32` (`5b63739`) |
+| Round 3 IPC negatives | `b5dc20b760fbc89f9b7e80e342e56a924472b604` (`b5dc20b`) |
+| This Round 3 record | lands last on the same branch (HEAD after this file) |
 | Product-law source | `cursor/p6-9-multi-agent-planning-r0` @ `01f9d3b` |
 | P6.8 worktree | `p6-8-cursor-desktop-hardening-r0` left at `d2a2db0` |
 | Codex empty pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (**untouched**) |
@@ -158,7 +162,14 @@ Round 1 did not redo workbench UI and did not return to a fixed Owner roster.
 26. `80170a22160355c4b749fea237b2f3e0a16f0bfe` — `fix(desktop-local): CAS residual nodes on cancelled Stop and bind collab/reports`
 27. `e1910a4016430308206491014a46b7ed20dc93ce` — `fix(workbench): latch team terminals and bind first snapshot to origin view`
 28. `9dcc46b511b817571f5414925ab31afa4fd94b46` — `test(p6.9): cover residual Stop, recovery-by-parent, and terminal latch`
-29. This file + INV-085 honesty (pin examples, not an exhaustive IANA list)
+29. `246c423201b0a7e10ba578d0d3825b08f41a4cb6` — `docs(p6.9): record concentrated Stop/recovery/latch fixes for Codex` (this file + INV-085 honesty; pin examples, not an exhaustive IANA list)
+
+**Round 3 P1 forward-fix (after `246c423`; do not amend it):**
+
+30. `cc8494665c7aec2523c958a0215dc03a794cedfc` — `fix(desktop-local): terminal runs need settled children, live resolve CAS, report digest`
+31. `5b63739a42f87dcee962ec169a5d286424863e32` — `fix(workbench): latch all team terminals and bind parked identity for durable cancel`
+32. `b5dc20b760fbc89f9b7e80e342e56a924472b604` — `test(desktop): add direct nodeId/reportId IPC rejection negatives`
+33. This file + INV-085 / ai-maintainer-map forward amendments (item 5 two-transaction honesty)
 
 ---
 
@@ -586,14 +597,83 @@ ENTERPRISE_MULTI_AGENT_DISABLED
 
 ---
 
+## Round 3 P1 forward-fix (after `246c423`; do not amend it)
+
+The Codex audit of `246c423` reproduced four P1s: `/state` could commit a
+terminal parent while nodes/assignments were still live and restart recovery
+did not converge it; collaboration resolve still wrote the blackboard after
+Stop; the frontend latch only rejected one late success event so replan and
+node deltas could resurrect or pollute all six terminals; and the first
+snapshot view gate dropped legal origin snapshots while viewing B, so
+Stop-before-identity never issued a durable backend cancel. It also confirmed
+two P2s (`/reports` replay ignored `collaboration_requests`; this file
+claimed "item 5 one-transaction status" against the real two transactions)
+and one P3 (no direct IPC `nodeId`/`reportId` negatives). This round
+forward-fixes all of them in one concentrated pass. `246c423` itself is
+**not** recorded as passed.
+
+| # | Fix | Tests that fail if the fix is deleted |
+|---|---|---|
+| 1 | `/state` terminal children invariant inside one `BEGIN IMMEDIATE` (`desktop_team_run_children_live`), `/state cancelled` cascading the Stop child CAS, recovery defensive pass for any other terminal parent (`personal_team.py`) | `test_state_succeeded_requires_settled_children_in_one_transaction`, `test_state_quiet_terminals_refuse_live_children`, `test_state_cancelled_converges_residual_live_children`, `test_recovery_converges_live_children_of_any_terminal_parent` |
+| 2 | Resolve re-validates a live run in the same write transaction, `parent_decision='pending'` CAS, exact idempotent replay (`desktop_team_collaboration_resolve_conflict`), `resolved_assignment_id` bound to the run | `test_collaboration_resolve_requires_live_run_and_pending_cas` |
+| 3 | `desktop_0006_report_collaboration_digest`: settle persists the canonical `(targetRoleId, question, reason)` digest; `/reports` exact replay compares it (legacy NULL rows fall back to stored request rows) | `test_report_replay_rejects_mutated_body_and_accepts_exact_match`, `test_report_replay_compares_collaboration_digest_with_canonical_order`, `test_schema_v3_has_team_tables_without_secret_columns`, `test_restart_is_idempotent_and_preserves_application_migration_record` |
+| 4 | Unified six-terminal latch (`completed/succeeded` included, phase and runState) absorbing every late mutable event before any branch | `all six terminals absorb every late mutable event` (12 late event kinds per terminal) |
+| 5 | First snapshot binds parked durable identity without a view gate, rejects different team run ids and older roster epochs, calibrates terminal snapshot states, and `pendingDurableTeamCancel` drives exactly one durable cancel from a single workbench effect | `first snapshot from origin A binds parked identity while viewing workspace B`, `a bound run does not rebind a different team run id`, `stop before identity binds the late snapshot and cancels exactly once`, `snapshot first then stop still dispatches durable cancel exactly once`, `a snapshot from an older roster epoch does not rebind a new run` |
+| 6 | Direct IPC negatives for missing/malformed/uppercase `nodeId`/`reportId`; RuntimeHost journey schema pin moved to 6 | `IPC rejects missing, malformed, and tampered node/report identity fields`, round-2 RuntimeHost journey probe |
+| 7 | Item 5 two-transaction honesty wording + INV-085 / ai-maintainer-map forward amendments + this record | this section |
+
+One pre-existing test was forward-fixed with item 1:
+`test_create_node_binds_live_run_identity_and_forbids_epoch_reuse` used to
+post `/state failed` over a live node and now settles the node first, because
+that old expectation was exactly the audited hole.
+
+### Round 3 gate counts
+
+Recorded after the fixes above. Same constraints. No Docker/WSL/PostgreSQL.
+No paid keys. No installer. Root `.env` not read. PowerShell: no `&&`.
+RuntimeHost optional; not faked.
+
+```text
+frontend pnpm test       = 270 passed
+frontend pnpm typecheck  = passed
+frontend pnpm lint       = passed
+frontend pnpm build      = passed
+desktop  pnpm test       = 90 passed
+desktop  pnpm typecheck  = passed
+desktop  pnpm build      = passed
+pytest desktop_local     = 161 passed
+ruff (touched Python)    = passed
+Ruff format check        = passed
+git diff --check         = passed
+validate_maintainer_map  = passed (75 invariants, 51 modules, 1218 path specs, 3127 matched files, 358 entrypoints, 21 discovered HTTP entrypoints, 296 verification commands)
+validate_maintainer_benchmark = passed (3 plans, 8 scenarios, 6 critical scenarios, 9 unsafe vetoes)
+```
+
+Publish boundary (unchanged):
+
+```text
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+EXE_MSI_REPACKAGE_NOT_APPROVED
+LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+```
+
+This round does not claim P6.9 engineering acceptance, a paid Provider
+window, Authenticode, EXE/MSI, or enterprise multi-agent; it only lands the
+forward-fix package the audit asked for.
+
+---
+
 ## What Codex should review
 
 The whole R0 slice on `cursor/p6-9-personal-multi-agent-team-r0` from
 `d2a2db0` through this HEAD, including Round 1, Round 2, the Stop/reports
-P1 forward-fix, and this concentrated P6.9 forward-fix. Product law:
+P1 forward-fix, the concentrated P6.9 forward-fix, and the Round 3 P1
+forward-fix recorded below. Product law:
 `docs/architecture/p6-9-multi-agent-planning.md`.
 Do not reopen A2 as a separate drip. Do not drip a new A-only memo. Do not
 announce OmniBase 1.0.0, Authenticode, EXE, or enterprise multi-agent. Round 2
-did **not** close all ten items in one pass. The P1s and this concentrated
-round are forward-fixed; item 1 pin match and item 5 one-transaction status
+did **not** close all ten items in one pass. The P1s and the concentrated
+round are forward-fixed; item 1 pin match and item 5 two-transaction status
 are honest; paid/EXE/live window still unproven.

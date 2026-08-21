@@ -2500,8 +2500,10 @@ set is closed at nine roles; parent is not a specialist. Serial, parallel
 and mixed waves are legal proposals; the host may serialize a parallel wave
 and must not parallelize declared dependencies.
 
-Desktop schema version 5 uses `desktop_0005_team_node_identity_epochs`
-(Round 1 bumped v4 `desktop_0004_personal_team_runtime`; A2 introduced v3
+Desktop schema version 6 uses `desktop_0006_report_collaboration_digest`
+(the Round 3 settle-time report replay digest; Round 1 bumped v5
+`desktop_0005_team_node_identity_epochs`; v4
+`desktop_0004_personal_team_runtime`; A2 introduced v3
 `desktop_0003_personal_agent_team`), never Alembic 0017. Role
 config may store a Provider id, model override, gear, thinking depth and a
 verification digest. It must never store API keys, ciphertext, nonce, DPAPI
