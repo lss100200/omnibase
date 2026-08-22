@@ -388,11 +388,12 @@ export class PersonalTeamCoordinator {
 
   /**
    * The backend success closure refuses `succeeded` while any collaboration
-   * request is still pending. Before the parent commits success it has, by
-   * construction, already answered every pending request through its replan
-   * and final synthesis, so each one is resolved as handle_self.
+   * request is still pending. Pending requests are decided per request by
+   * the parent at replan time; anything still pending here means the run
+   * must fail closed instead of committing success over an undecided
+   * collaboration.
    */
-  async #closePendingCollaborations(
+  async #requireNoPendingCollaborations(
     input: DesktopTeamRunExecuteInput,
     teamRunId: string,
   ): Promise<void> {
@@ -400,20 +401,13 @@ export class PersonalTeamCoordinator {
       workspaceId: input.workspaceId,
       teamRunId,
     });
-    for (const request of blackboard.collaborationRequests) {
-      if (request.parentDecision !== "pending") continue;
-      if (request.id === undefined) {
-        throw Object.assign(
-          new Error("desktop_team_collaboration_identity_mismatch"),
-          { code: "desktop_team_collaboration_identity_mismatch" },
-        );
-      }
-      await this.#host.resolveCollaboration({
-        workspaceId: input.workspaceId,
-        teamRunId,
-        requestId: request.id,
-        parentDecision: "handle_self",
-        resolvedAssignmentId: null,
+    if (
+      blackboard.collaborationRequests.some(
+        (request) => request.parentDecision === "pending",
+      )
+    ) {
+      throw Object.assign(new Error("desktop_team_collaboration_pending"), {
+        code: "desktop_team_collaboration_pending",
       });
     }
   }
@@ -637,7 +631,13 @@ export class PersonalTeamCoordinator {
       const decision = validated.value;
       if (decision.decision === "answer_directly") {
         parentFinal = decision.answer;
-        await this.#closePendingCollaborations(input, teamRun.id);
+        await this.#requireNoPendingCollaborations(input, teamRun.id);
+        if (this.#cancelled) {
+          return this.#cancelledProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+        }
+        if (this.#wallExceeded()) {
+          return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+        }
         await this.#host.setRunState({
           workspaceId: input.workspaceId,
           teamRunId: teamRun.id,
@@ -813,7 +813,13 @@ export class PersonalTeamCoordinator {
         return this.#terminalFromInvoke(synthesis, teamRun.id, calls, nodes, parentFinal, input, synthesizing, emitBound);
       }
       parentFinal = synthesis.text;
-      await this.#closePendingCollaborations(input, teamRun.id);
+      await this.#requireNoPendingCollaborations(input, teamRun.id);
+      if (this.#cancelled) {
+        return this.#cancelledProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+      }
+      if (this.#wallExceeded()) {
+        return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+      }
       await this.#host.setRunState({
         workspaceId: input.workspaceId,
         teamRunId: teamRun.id,

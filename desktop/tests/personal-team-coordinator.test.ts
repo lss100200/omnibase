@@ -689,6 +689,111 @@ test("Stop aborts active nodes, skips waiting nodes, and does not synthesize", a
   assert.ok(proof.executedNodeCount <= 2);
 });
 
+test("Stop during the answer_directly close-out cannot commit success", async () => {
+  const recorder = startFakeOpenAi([]);
+  const server = await recorder.listen();
+  const host = createInMemoryPersonalTeamHost({
+    credentials: {
+      providerId: `provider_${"d".repeat(32)}`,
+      model: "loopback-team",
+      baseUrl: server.baseUrl,
+      secret: "loopback-secret-not-for-git",
+      allowLoopbackHttp: true,
+      timeoutMs: 5_000,
+    },
+  });
+  const original = host.getBlackboard.bind(host);
+  let releaseCloseOut!: () => void;
+  let signalCloseOut!: () => void;
+  const closeOutEntered = new Promise<void>((resolve) => {
+    signalCloseOut = resolve;
+  });
+  const closeOutGate = new Promise<void>((resolve) => {
+    releaseCloseOut = resolve;
+  });
+  host.getBlackboard = async (input) => {
+    signalCloseOut();
+    await closeOutGate;
+    return original(input);
+  };
+  const coordinator = new PersonalTeamCoordinator({
+    host,
+    transport: createOpenAiCompatibleTransport(),
+  });
+  const running = coordinator.execute(
+    {
+      workspaceId: WORKSPACE,
+      conversationId: CONVERSATION,
+      task: "[p69-scenario:answer_directly] stop race",
+      teamMode: true,
+      rosterEpoch: 1,
+      budget: budget({}),
+    },
+    () => undefined,
+  );
+  await closeOutEntered;
+  coordinator.requestStop();
+  releaseCloseOut();
+  const proof = await running;
+  await server.close();
+  assert.equal(proof.state, "cancelled");
+  assert.equal(host.runs[0]!.state, "cancelled");
+});
+
+test("Stop during the synthesis close-out cannot commit success", async () => {
+  const recorder = startFakeOpenAi([]);
+  const server = await recorder.listen();
+  const host = createInMemoryPersonalTeamHost({
+    credentials: {
+      providerId: `provider_${"d".repeat(32)}`,
+      model: "loopback-team",
+      baseUrl: server.baseUrl,
+      secret: "loopback-secret-not-for-git",
+      allowLoopbackHttp: true,
+      timeoutMs: 5_000,
+    },
+  });
+  const original = host.getBlackboard.bind(host);
+  let releaseCloseOut!: () => void;
+  let signalCloseOut!: () => void;
+  const closeOutEntered = new Promise<void>((resolve) => {
+    signalCloseOut = resolve;
+  });
+  const closeOutGate = new Promise<void>((resolve) => {
+    releaseCloseOut = resolve;
+  });
+  let blackboardCalls = 0;
+  host.getBlackboard = async (input) => {
+    blackboardCalls += 1;
+    if (blackboardCalls === 1) return original(input);
+    signalCloseOut();
+    await closeOutGate;
+    return original(input);
+  };
+  const coordinator = new PersonalTeamCoordinator({
+    host,
+    transport: createOpenAiCompatibleTransport(),
+  });
+  const running = coordinator.execute(
+    {
+      workspaceId: WORKSPACE,
+      conversationId: CONVERSATION,
+      task: "[p69-scenario:one_specialist] stop race",
+      teamMode: true,
+      rosterEpoch: 1,
+      budget: budget({}),
+    },
+    () => undefined,
+  );
+  await closeOutEntered;
+  coordinator.requestStop();
+  releaseCloseOut();
+  const proof = await running;
+  await server.close();
+  assert.equal(proof.state, "cancelled");
+  assert.equal(host.runs[0]!.state, "cancelled");
+});
+
 test("team events missing roster/node/send epoch must not match the live identity", () => {
   const current = {
     workspaceId: WORKSPACE,
