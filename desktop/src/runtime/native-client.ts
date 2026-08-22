@@ -62,6 +62,8 @@ const AGENT_ID_PATTERN = /^agent_[a-f0-9]{32}$/u;
 const MESSAGE_ID_PATTERN = /^message_[a-f0-9]{32}$/u;
 const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
 const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
+const TEAM_COLLABORATION_ID_PATTERN = /^teamcollab_[a-f0-9]{32}$/u;
+const ASSIGNMENT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
 const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const TEAM_REV_ID_PATTERN = /^teamrev_[a-f0-9]{32}$/u;
@@ -1400,6 +1402,8 @@ function parseBlackboard(
   for (const row of board.collaboration_requests) {
     if (
       !isRecord(row) ||
+      typeof row.id !== "string" ||
+      !isBoundedString(row.id, 128) ||
       typeof row.from_assignment_id !== "string" ||
       typeof row.from_employee_role_id !== "string" ||
       !SPECIALIST_ROLE_SET.has(row.from_employee_role_id) ||
@@ -1413,6 +1417,7 @@ function parseBlackboard(
     }
     collaborationRequests.push(
       Object.freeze({
+        id: row.id,
         fromAssignmentId: row.from_assignment_id,
         fromEmployeeRoleId: row.from_employee_role_id as SpecialistEmployeeId,
         targetRoleId: row.target_role_id as SpecialistEmployeeId,
@@ -1544,6 +1549,29 @@ function parseCollaborationWrapper(value: unknown): {
       resolvedAssignmentId: null,
     }),
   });
+}
+
+function parseCollaborationResolveAck(value: unknown): { readonly resolved: true } | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["collaboration_request"]) ||
+    !isRecord(value.collaboration_request)
+  ) {
+    return null;
+  }
+  const row = value.collaboration_request;
+  if (
+    typeof row.id !== "string" ||
+    !isBoundedString(row.id, 128) ||
+    (row.parent_decision !== "accept_start" &&
+      row.parent_decision !== "handle_self" &&
+      row.parent_decision !== "merge_existing" &&
+      row.parent_decision !== "decline") ||
+    (row.resolved_assignment_id !== null && typeof row.resolved_assignment_id !== "string")
+  ) {
+    return null;
+  }
+  return Object.freeze({ resolved: true });
 }
 
 export class DesktopNativeClient {
@@ -2071,6 +2099,33 @@ export class DesktopNativeClient {
         report_id: input.reportId,
       },
       parseCollaborationWrapper,
+    );
+  }
+
+  resolveTeamCollaboration(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly requestId: string;
+    readonly parentDecision: "accept_start" | "handle_self" | "merge_existing" | "decline";
+    readonly resolvedAssignmentId: string | null;
+  }): Promise<DesktopOperationResult<{ readonly resolved: true }>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId) ||
+      !TEAM_COLLABORATION_ID_PATTERN.test(input.requestId) ||
+      (input.resolvedAssignmentId !== null &&
+        !ASSIGNMENT_ID_PATTERN.test(input.resolvedAssignmentId))
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/collaboration-requests/${input.requestId}/resolve`,
+      {
+        parent_decision: input.parentDecision,
+        resolved_assignment_id: input.resolvedAssignmentId,
+      },
+      parseCollaborationResolveAck,
     );
   }
 

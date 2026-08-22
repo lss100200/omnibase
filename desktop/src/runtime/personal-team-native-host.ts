@@ -61,6 +61,17 @@ export function createNativePersonalTeamHost(options: {
     async recordReport(input) {
       unwrap(await options.client.recordTeamReport(input));
     },
+    async resolveCollaboration(input) {
+      unwrap(
+        await options.client.resolveTeamCollaboration({
+          workspaceId: input.workspaceId,
+          teamRunId: input.teamRunId,
+          requestId: input.requestId,
+          parentDecision: input.parentDecision,
+          resolvedAssignmentId: input.resolvedAssignmentId,
+        }),
+      );
+    },
     async resolveCredentials(workspaceId, roleId: PersonalEmployeeId, signal) {
       if (signal.aborted) {
         throw Object.assign(new Error("desktop_invocation_cancelled"), {

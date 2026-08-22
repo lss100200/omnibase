@@ -137,6 +137,13 @@ export interface PersonalTeamHost {
     readonly invocationId: string;
     readonly report: EmployeeTeamReport;
   }): Promise<void>;
+  resolveCollaboration(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly requestId: string;
+    readonly parentDecision: "accept_start" | "handle_self" | "merge_existing" | "decline";
+    readonly resolvedAssignmentId: string | null;
+  }): Promise<void>;
   resolveCredentials(
     workspaceId: string,
     roleId: PersonalEmployeeId,
@@ -379,6 +386,38 @@ export class PersonalTeamCoordinator {
     this.abort.abortAll();
   }
 
+  /**
+   * The backend success closure refuses `succeeded` while any collaboration
+   * request is still pending. Before the parent commits success it has, by
+   * construction, already answered every pending request through its replan
+   * and final synthesis, so each one is resolved as handle_self.
+   */
+  async #closePendingCollaborations(
+    input: DesktopTeamRunExecuteInput,
+    teamRunId: string,
+  ): Promise<void> {
+    const { blackboard } = await this.#host.getBlackboard({
+      workspaceId: input.workspaceId,
+      teamRunId,
+    });
+    for (const request of blackboard.collaborationRequests) {
+      if (request.parentDecision !== "pending") continue;
+      if (request.id === undefined) {
+        throw Object.assign(
+          new Error("desktop_team_collaboration_identity_mismatch"),
+          { code: "desktop_team_collaboration_identity_mismatch" },
+        );
+      }
+      await this.#host.resolveCollaboration({
+        workspaceId: input.workspaceId,
+        teamRunId,
+        requestId: request.id,
+        parentDecision: "handle_self",
+        resolvedAssignmentId: null,
+      });
+    }
+  }
+
   async #markNodeCancelled(input: {
     readonly workspaceId: string;
     readonly teamRunId: string;
@@ -598,6 +637,7 @@ export class PersonalTeamCoordinator {
       const decision = validated.value;
       if (decision.decision === "answer_directly") {
         parentFinal = decision.answer;
+        await this.#closePendingCollaborations(input, teamRun.id);
         await this.#host.setRunState({
           workspaceId: input.workspaceId,
           teamRunId: teamRun.id,
@@ -752,6 +792,7 @@ export class PersonalTeamCoordinator {
         return this.#terminalFromInvoke(synthesis, teamRun.id, calls, nodes, parentFinal, input, synthesizing, emitBound);
       }
       parentFinal = synthesis.text;
+      await this.#closePendingCollaborations(input, teamRun.id);
       await this.#host.setRunState({
         workspaceId: input.workspaceId,
         teamRunId: teamRun.id,
@@ -1507,6 +1548,10 @@ export function createInMemoryPersonalTeamHost(
   const reports: EmployeeTeamReport[] = [];
   const audits: string[] = [];
   const assignments = new Map<string, TeamAssignmentProposal>();
+  const collaborationDecisions = new Map<
+    string,
+    { parentDecision: "accept_start" | "handle_self" | "merge_existing" | "decline"; resolvedAssignmentId: string | null }
+  >();
   let revision = 0;
   const allowed = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
 
@@ -1640,15 +1685,20 @@ export function createInMemoryPersonalTeamHost(
           })),
           reports,
           collaborationRequests: reports.flatMap((item) =>
-            item.collaborationRequests.map((request) => ({
-              fromAssignmentId: item.assignmentId,
-              fromEmployeeRoleId: item.employeeRoleId,
-              targetRoleId: request.targetRoleId,
-              question: request.question,
-              reason: request.reason,
-              parentDecision: "pending" as const,
-              resolvedAssignmentId: null,
-            })),
+            item.collaborationRequests.map((request, requestIndex) => {
+              const id = `teamcollab_${item.assignmentId}_${requestIndex}`;
+              const decision = collaborationDecisions.get(id);
+              return {
+                id,
+                fromAssignmentId: item.assignmentId,
+                fromEmployeeRoleId: item.employeeRoleId,
+                targetRoleId: request.targetRoleId,
+                question: request.question,
+                reason: request.reason,
+                parentDecision: decision?.parentDecision ?? ("pending" as const),
+                resolvedAssignmentId: decision?.resolvedAssignmentId ?? null,
+              };
+            }),
           ),
         },
       };
@@ -1677,6 +1727,49 @@ export function createInMemoryPersonalTeamHost(
       const index = runs.indexOf(run);
       runs[index] = next;
       return { teamRun: next };
+    },
+    async resolveCollaboration(input) {
+      const run = runs.find((item) => item.id === input.teamRunId);
+      if (run === undefined) {
+        throw Object.assign(new Error("desktop_team_run_not_found"), { code: "desktop_team_run_not_found" });
+      }
+      if (run.state !== "preparing" && run.state !== "running") {
+        throw Object.assign(new Error("desktop_team_run_terminal"), { code: "desktop_team_run_terminal" });
+      }
+      const requiresAssignment =
+        input.parentDecision === "accept_start" || input.parentDecision === "merge_existing";
+      if (requiresAssignment !== (input.resolvedAssignmentId !== null)) {
+        throw Object.assign(new Error("desktop_native_input_invalid"), {
+          code: "desktop_native_input_invalid",
+        });
+      }
+      const known = reports.some((item) =>
+        item.collaborationRequests.some(
+          (_, requestIndex) =>
+            `teamcollab_${item.assignmentId}_${requestIndex}` === input.requestId,
+        ),
+      );
+      const existing = collaborationDecisions.get(input.requestId);
+      if (existing !== undefined) {
+        if (
+          existing.parentDecision !== input.parentDecision ||
+          existing.resolvedAssignmentId !== input.resolvedAssignmentId
+        ) {
+          throw Object.assign(new Error("desktop_team_collaboration_resolve_conflict"), {
+            code: "desktop_team_collaboration_resolve_conflict",
+          });
+        }
+        return;
+      }
+      if (!known) {
+        throw Object.assign(new Error("desktop_team_collaboration_not_found"), {
+          code: "desktop_team_collaboration_not_found",
+        });
+      }
+      collaborationDecisions.set(input.requestId, {
+        parentDecision: input.parentDecision,
+        resolvedAssignmentId: input.resolvedAssignmentId,
+      });
     },
     async createNode(input) {
       const run = runs.find((item) => item.id === input.teamRunId);

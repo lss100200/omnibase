@@ -559,6 +559,28 @@ test("parent accepts collaboration and starts QA as a new validated assignment",
   assert.ok(proof.uniqueAssignmentIds.includes("qa-matrix"));
   assert.ok(host.reports.some((item) => item.employeeRoleId === "qa"));
   assert.equal(proof.parentWasLastWhenSynthesizing, true);
+  assert.equal(proof.state, "succeeded");
+  const run = host.runs[0]!;
+  const { blackboard } = await host.getBlackboard({
+    workspaceId: run.workspaceId,
+    teamRunId: run.id,
+  });
+  assert.ok(blackboard.collaborationRequests.length > 0);
+  for (const request of blackboard.collaborationRequests) {
+    assert.equal(request.parentDecision, "handle_self");
+    assert.equal(request.resolvedAssignmentId, null);
+  }
+});
+
+test("a completed journey with no collaboration requests performs no resolves", async () => {
+  const { proof, host } = await runScenario("one_specialist");
+  assert.equal(proof.state, "succeeded");
+  const run = host.runs[0]!;
+  const { blackboard } = await host.getBlackboard({
+    workspaceId: run.workspaceId,
+    teamRunId: run.id,
+  });
+  assert.equal(blackboard.collaborationRequests.length, 0);
 });
 
 test("finish early skips synthesis-only extra specialists and still has unique IDs", async () => {

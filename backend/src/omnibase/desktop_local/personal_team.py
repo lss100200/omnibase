@@ -1844,7 +1844,7 @@ def get_team_blackboard(
         (team_run_id,),
     ).fetchall()
     requests = connection.execute(
-        "SELECT from_assignment_id, from_employee_role_id, target_role_id, question, "
+        "SELECT id, from_assignment_id, from_employee_role_id, target_role_id, question, "
         "reason, parent_decision, resolved_assignment_id "
         "FROM team_collaboration_request WHERE team_run_id = ? ORDER BY created_at, id",
         (team_run_id,),
@@ -1879,6 +1879,7 @@ def get_team_blackboard(
             ],
             "collaboration_requests": [
                 {
+                    "id": str(row["id"]),
                     "from_assignment_id": str(row["from_assignment_id"]),
                     "from_employee_role_id": str(row["from_employee_role_id"]),
                     "target_role_id": str(row["target_role_id"]),
