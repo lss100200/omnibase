@@ -2345,3 +2345,79 @@ def test_report_replay_compares_collaboration_digest_with_canonical_order(
         )
         assert dropped.status_code == 409
         assert dropped.json()["error"]["code"] == "desktop_team_report_replay_mismatch"
+
+
+def test_report_replay_legacy_null_digest_fails_closed(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            db.execute("DROP TRIGGER team_employee_report_immutable")
+            db.execute(
+                "UPDATE team_employee_report SET collaboration_requests_sha256 = NULL "
+                "WHERE node_id = ?",
+                (created["node_id"],),
+            )
+            db.execute(
+                "CREATE TRIGGER team_employee_report_immutable "
+                "BEFORE UPDATE ON team_employee_report "
+                "BEGIN SELECT RAISE(ABORT, 'desktop_team_employee_report_immutable'); END"
+            )
+            db.commit()
+        finally:
+            db.close()
+        replay = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/reports",
+            headers=_native(),
+            json=_report_body(created),
+        )
+        assert replay.status_code == 409
+        assert replay.json()["error"]["code"] == "desktop_team_report_replay_legacy_unverifiable"
+
+
+def test_report_settle_rejects_duplicate_collaboration_tuples(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        duplicated: list[dict[str, object]] = [
+            {
+                "targetRoleId": "qa",
+                "question": "补一份回归清单",
+                "reason": "需要覆盖取消路径",
+            },
+            {
+                "targetRoleId": "qa",
+                "question": "补一份回归清单",
+                "reason": "需要覆盖取消路径",
+            },
+        ]
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload(created["invocation_id"]),
+                "collaboration_requests": duplicated,
+            },
+        )
+        assert settled.status_code == 400
+        assert settled.json()["error"]["code"] == "desktop_team_collaboration_duplicate"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            rows = db.execute(
+                "SELECT COUNT(*) FROM team_collaboration_request WHERE team_run_id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+            assert rows == 0
+        finally:
+            db.close()

@@ -903,6 +903,12 @@ def validate_employee_team_report(  # noqa: C901 - report and collaboration requ
                 "reason": str(result.normalized["reason"]),
             }
         )
+    seen_requests: set[tuple[str, str, str]] = set()
+    for item in normalized_requests:
+        key = (item["targetRoleId"], item["question"], item["reason"])
+        if key in seen_requests:
+            return TeamValidationResult(False, "desktop_team_collaboration_duplicate")
+        seen_requests.add(key)
     payload = {
         "assignmentId": report["assignmentId"],
         "employeeRoleId": report["employeeRoleId"],
@@ -2657,21 +2663,7 @@ def record_employee_report(
         body = str(result.normalized["report"])
         expected_digest = existing["collaboration_requests_sha256"]
         if expected_digest is None:
-            stored_requests = connection.execute(
-                "SELECT target_role_id, question, reason FROM team_collaboration_request "
-                "WHERE team_run_id = ? AND from_assignment_id = ?",
-                (team_run_id, str(existing["assignment_id"])),
-            ).fetchall()
-            expected_digest = _collaboration_requests_digest(
-                [
-                    {
-                        "targetRoleId": row["target_role_id"],
-                        "question": row["question"],
-                        "reason": row["reason"],
-                    }
-                    for row in stored_requests
-                ]
-            )
+            raise DesktopApiError(409, "desktop_team_report_replay_legacy_unverifiable")
         if (
             str(existing["assignment_id"]) != str(result.normalized["assignmentId"])
             or str(existing["employee_role_id"]) != str(result.normalized["employeeRoleId"])
