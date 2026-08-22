@@ -199,4 +199,10 @@ test("IPC rejects missing, malformed, and tampered node/report identity fields",
       ?.(trustedEvent, { ...envelope, reportId: `teamrpt_${"e".repeat(33)}` }),
     rejection,
   );
+  assert.deepEqual(
+    await handlers
+      .get(IPC_CHANNELS.teamRunsRecordCollaboration)
+      ?.(trustedEvent, { ...envelope, reportId: `teamrpt_${"E".repeat(32)}` }),
+    rejection,
+  );
 });
