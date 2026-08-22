@@ -773,7 +773,86 @@ def validate_parent_team_decision(  # noqa: C901 - answer/delegate identity gate
     )
 
 
-def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish share known-id checks
+def _validate_collaboration_decisions(  # noqa: C901 - shape, coverage and role binding fail closed together
+    proposal: dict[str, Any],
+    *,
+    pending_collaborations: list[dict[str, str]],
+    new_assignments: list[dict[str, Any]],
+    known_assignment_ids: frozenset[str],
+) -> tuple[list[dict[str, Any]] | None, TeamValidationResult]:
+    raw = proposal.get("collaborationDecisions")
+    if not pending_collaborations:
+        if raw is None:
+            return None, TeamValidationResult(True, None)
+        return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+    if not isinstance(raw, list):
+        return None, TeamValidationResult(False, "desktop_team_collaboration_undecided")
+    pending_ids = {str(item["id"]) for item in pending_collaborations}
+    decided: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    for item in raw:
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            - {
+                "requestId",
+                "decision",
+                "resolvedAssignmentId",
+            }
+            or not {"requestId", "decision"} <= set(item)
+        ):
+            return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        request_id = item.get("requestId")
+        decision = item.get("decision")
+        resolved = item.get("resolvedAssignmentId")
+        if not isinstance(request_id, str) or request_id not in pending_ids:
+            return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        if request_id in decided:
+            return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        if decision in {"accept_start", "merge_existing"}:
+            if not isinstance(resolved, str):
+                return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        elif decision in {"handle_self", "decline"}:
+            if resolved is not None:
+                return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        else:
+            return None, TeamValidationResult(False, "desktop_team_proposal_invalid")
+        if decision == "accept_start":
+            target_role = str(
+                next(
+                    entry["target_role_id"]
+                    for entry in pending_collaborations
+                    if str(entry["id"]) == request_id
+                )
+            )
+            match = next(
+                (
+                    assignment
+                    for assignment in new_assignments
+                    if str(assignment["assignmentId"]) == resolved
+                ),
+                None,
+            )
+            if match is None or str(match["employeeRoleId"]) != target_role:
+                return None, TeamValidationResult(
+                    False, "desktop_team_collaboration_identity_mismatch"
+                )
+        if decision == "merge_existing" and resolved not in known_assignment_ids:
+            return None, TeamValidationResult(False, "desktop_team_collaboration_identity_mismatch")
+        decided.add(request_id)
+        normalized.append(
+            {
+                "requestId": request_id,
+                "decision": str(decision),
+                "resolvedAssignmentId": resolved,
+            }
+        )
+    if decided != pending_ids:
+        return None, TeamValidationResult(False, "desktop_team_collaboration_undecided")
+    return normalized, TeamValidationResult(True, None)
+
+
+def validate_parent_replan_decision(  # noqa: C901 - decisions share known-id checks across branches
     proposal: object,
     *,
     budget: dict[str, int],
@@ -781,7 +860,9 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
     workspace_id: str | None,
     known_assignment_ids: frozenset[str],
     revision_ordinal: int | None = None,
+    pending_collaborations: list[dict[str, str]] | None = None,
 ) -> TeamValidationResult:
+    pending = pending_collaborations or []
     if isinstance(proposal, dict) and (set(proposal) & _INFINITE_REPLAN_KEYS):
         return TeamValidationResult(False, "desktop_team_infinite_replan")
     if revision_ordinal is not None and revision_ordinal > _MAX_PLAN_REVISIONS:
@@ -796,14 +877,31 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
     decision = proposal["decision"]
     if decision in {"finish", "cannot_complete"}:
-        if set(proposal) != {"decision", "reason"}:
+        if set(proposal) - {"decision", "reason", "collaborationDecisions"} or not {
+            "decision",
+            "reason",
+        } <= set(proposal):
             return TeamValidationResult(False, "desktop_team_proposal_invalid")
+        decisions, decisions_result = _validate_collaboration_decisions(
+            proposal,
+            pending_collaborations=pending,
+            new_assignments=[],
+            known_assignment_ids=known_assignment_ids,
+        )
+        if not decisions_result.ok:
+            return decisions_result
         reason = _bounded_text(proposal["reason"], budget["maximumInputCharacters"])
         if reason is None:
             return TeamValidationResult(False, "desktop_team_input_budget_exceeded")
-        return TeamValidationResult(True, None, {"decision": decision, "reason": reason})
+        normalized_payload: dict[str, Any] = {"decision": decision, "reason": reason}
+        if decisions is not None:
+            normalized_payload["collaborationDecisions"] = decisions
+        return TeamValidationResult(True, None, normalized_payload)
     if decision == "continue":
-        if set(proposal) != {"decision", "nextWave"}:
+        if set(proposal) - {"decision", "nextWave", "collaborationDecisions"} or not {
+            "decision",
+            "nextWave",
+        } <= set(proposal):
             return TeamValidationResult(False, "desktop_team_proposal_invalid")
         wave = _validate_wave(
             proposal["nextWave"],
@@ -813,6 +911,14 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
         )
         if not wave.ok or wave.normalized is None:
             return wave
+        decisions, decisions_result = _validate_collaboration_decisions(
+            proposal,
+            pending_collaborations=pending,
+            new_assignments=list(wave.normalized["assignments"]),
+            known_assignment_ids=known_assignment_ids,
+        )
+        if not decisions_result.ok:
+            return decisions_result
         assignment_ids = [item["assignmentId"] for item in wave.normalized["assignments"]]
         if any(item in known_assignment_ids for item in assignment_ids) or len(
             set(assignment_ids)
@@ -832,12 +938,16 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
             return TeamValidationResult(False, "desktop_team_dependency_cycle")
         if len(known_assignment_ids) + len(assignment_ids) > budget["maximumProviderCalls"]:
             return TeamValidationResult(False, "desktop_team_call_budget_exceeded")
-        return TeamValidationResult(
-            True, None, {"decision": "continue", "nextWave": wave.normalized}
-        )
+        normalized_payload = {"decision": "continue", "nextWave": wave.normalized}
+        if decisions is not None:
+            normalized_payload["collaborationDecisions"] = decisions
+        return TeamValidationResult(True, None, normalized_payload)
     if decision != "request_followup":
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
-    if set(proposal) != {"decision", "assignments"}:
+    if set(proposal) - {"decision", "assignments", "collaborationDecisions"} or not {
+        "decision",
+        "assignments",
+    } <= set(proposal):
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
     assignments = proposal["assignments"]
     if not isinstance(assignments, list) or not assignments:
@@ -861,11 +971,20 @@ def validate_parent_replan_decision(  # noqa: C901 - continue/followup/finish sh
             return TeamValidationResult(False, "desktop_team_missing_dependency")
         seen.add(assignment_id)
         normalized.append(result.normalized)
+    decisions, decisions_result = _validate_collaboration_decisions(
+        proposal,
+        pending_collaborations=pending,
+        new_assignments=normalized,
+        known_assignment_ids=known_assignment_ids,
+    )
+    if not decisions_result.ok:
+        return decisions_result
     if len(known_assignment_ids) + len(normalized) > budget["maximumProviderCalls"]:
         return TeamValidationResult(False, "desktop_team_call_budget_exceeded")
-    return TeamValidationResult(
-        True, None, {"decision": "request_followup", "assignments": normalized}
-    )
+    normalized_payload = {"decision": "request_followup", "assignments": normalized}
+    if decisions is not None:
+        normalized_payload["collaborationDecisions"] = decisions
+    return TeamValidationResult(True, None, normalized_payload)
 
 
 def validate_employee_team_report(  # noqa: C901 - report and collaboration requests fail closed
@@ -1601,6 +1720,17 @@ def submit_parent_proposal(  # noqa: C901 - first-pass and replan persist share 
                 workspace_id=workspace_id,
             )
         else:
+            pending_collaborations = [
+                {
+                    "id": str(row["id"]),
+                    "target_role_id": str(row["target_role_id"]),
+                }
+                for row in connection.execute(
+                    "SELECT id, target_role_id FROM team_collaboration_request "
+                    "WHERE team_run_id = ? AND parent_decision = 'pending'",
+                    (team_run_id,),
+                ).fetchall()
+            ]
             result = validate_parent_replan_decision(
                 proposal,
                 budget=budget,
@@ -1608,6 +1738,7 @@ def submit_parent_proposal(  # noqa: C901 - first-pass and replan persist share 
                 workspace_id=workspace_id,
                 known_assignment_ids=frozenset(known),
                 revision_ordinal=int(ordinal),
+                pending_collaborations=pending_collaborations,
             )
         encoded = _canonical_json(proposal)
         digest = _sha256_text(encoded)

@@ -696,11 +696,19 @@ export class PersonalTeamCoordinator {
         if (pendingWaves.length > 0) continue;
 
         emitBound({ type: "parent_replanning", employeeRoleId: "parent" });
+        const pendingBoard = await this.#host.getBlackboard({
+          workspaceId: input.workspaceId,
+          teamRunId: teamRun.id,
+        });
+        const pendingCollaboration = pendingBoard.blackboard.collaborationRequests.filter(
+          (request): request is typeof request & { id: string } =>
+            request.parentDecision === "pending" && typeof request.id === "string",
+        );
         const replanCall = await this.#invokeParent({
           input,
           teamRun,
           purpose: "parent-replan",
-          messages: this.#parentReplanMessages(input, reports, assignments),
+          messages: this.#parentReplanMessages(input, reports, assignments, pendingCollaboration),
           emit: emitBound,
           calls,
           started,
@@ -717,6 +725,10 @@ export class PersonalTeamCoordinator {
           input.workspaceId,
           new Set(assignments.keys()),
           revisionOrdinal,
+          pendingCollaboration.map((request) => ({
+            id: request.id,
+            targetRoleId: request.targetRoleId,
+          })),
         );
         const replanSubmitted = await this.#host.submitProposal({
           workspaceId: input.workspaceId,
@@ -749,6 +761,15 @@ export class PersonalTeamCoordinator {
           return this.#proof(teamRun.id, "failed", calls, nodes, parentFinal, false);
         }
         const replan = replanValidated.value;
+        for (const decision of replan.collaborationDecisions ?? []) {
+          await this.#host.resolveCollaboration({
+            workspaceId: input.workspaceId,
+            teamRunId: teamRun.id,
+            requestId: decision.requestId,
+            parentDecision: decision.decision,
+            resolvedAssignmentId: decision.resolvedAssignmentId ?? null,
+          });
+        }
         if (replan.decision === "continue") {
           this.#rememberWaves(assignments, [replan.nextWave]);
           pendingWaves = [replan.nextWave];
@@ -1354,19 +1375,25 @@ export class PersonalTeamCoordinator {
     input: DesktopTeamRunExecuteInput,
     reports: readonly EmployeeTeamReport[],
     assignments: Map<string, StoredAssignment>,
+    pendingCollaboration: readonly {
+      id: string;
+      targetRoleId: string;
+      question: string;
+      reason: string;
+    }[],
   ): readonly TeamChatMessage[] {
     return [
       {
         role: "system",
         content:
-          "[omnibase-team-role:parent-replan]\nOutput ONLY JSON ParentReplanDecision: continue | request_followup | finish | cannot_complete. Collaboration requests must be decided by you; employees cannot launch peers. New assignment IDs required for reinvoke.",
+          "[omnibase-team-role:parent-replan]\nOutput ONLY JSON ParentReplanDecision: continue | request_followup | finish | cannot_complete. Every pending collaboration request must be decided exactly once in collaborationDecisions: [{requestId, decision: accept_start|handle_self|merge_existing|decline, resolvedAssignmentId}] — accept_start binds a NEW same-role assignment from this proposal, handle_self/decline carry no assignment. Employees cannot launch peers. New assignment IDs required for reinvoke.",
       },
       {
         role: "user",
         content: JSON.stringify({
           objective: input.task,
           reports,
-          pendingCollaboration: reports.flatMap((item) => item.collaborationRequests),
+          pendingCollaboration,
           knownAssignmentIds: [...assignments.keys()],
         }),
       },
@@ -1615,6 +1642,17 @@ export function createInMemoryPersonalTeamHost(
         maximumOutputCharacters: run.maximumOutputCharacters,
       };
       revision += 1;
+      const pendingCollaboration = reports
+        .flatMap((item, reportIndex) =>
+          item.collaborationRequests.map((request, requestIndex) => ({
+            id: `teamcollab_${item.assignmentId}_${requestIndex}`,
+            targetRoleId: request.targetRoleId,
+            reportIndex,
+            requestIndex,
+          })),
+        )
+        .filter((entry) => !collaborationDecisions.has(entry.id))
+        .map((entry) => ({ id: entry.id, targetRoleId: entry.targetRoleId }));
       const validated =
         assignments.size === 0
           ? validateParentTeamDecision(input.proposal, budget, allowed, run.workspaceId)
@@ -1625,6 +1663,7 @@ export function createInMemoryPersonalTeamHost(
               run.workspaceId,
               new Set(assignments.keys()),
               revision,
+              pendingCollaboration,
             );
       const planRevision: DesktopTeamPlanRevision = {
         id: `teamrev_${randomBytes(16).toString("hex")}`,
@@ -1749,6 +1788,26 @@ export function createInMemoryPersonalTeamHost(
             `teamcollab_${item.assignmentId}_${requestIndex}` === input.requestId,
         ),
       );
+      if (requiresAssignment && input.resolvedAssignmentId !== null) {
+        const targetRole = reports
+          .flatMap((item) =>
+            item.collaborationRequests.map((request, requestIndex) => ({
+              id: `teamcollab_${item.assignmentId}_${requestIndex}`,
+              targetRoleId: request.targetRoleId,
+            })),
+          )
+          .find((entry) => entry.id === input.requestId)?.targetRoleId;
+        const bound = assignments.get(input.resolvedAssignmentId);
+        if (
+          targetRole === undefined ||
+          bound === undefined ||
+          bound.employeeRoleId !== targetRole
+        ) {
+          throw Object.assign(new Error("desktop_team_collaboration_identity_mismatch"), {
+            code: "desktop_team_collaboration_identity_mismatch",
+          });
+        }
+      }
       const existing = collaborationDecisions.get(input.requestId);
       if (existing !== undefined) {
         if (

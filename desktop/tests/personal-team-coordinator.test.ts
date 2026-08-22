@@ -31,6 +31,7 @@ type Scenario =
   | "mid_run_add"
   | "reinvoke"
   | "accept_collab_qa"
+  | "collab_undecided"
   | "finish_early"
   | "unknown_role"
   | "dup_assignment"
@@ -96,6 +97,7 @@ function parentDelegate(scenario: Scenario): string {
       case "parallel_pair":
       case "deps":
       case "accept_collab_qa":
+      case "collab_undecided":
       case "mid_run_add":
       case "reinvoke":
       case "hang":
@@ -265,7 +267,8 @@ function employeeReport(role: string, assignmentId: string, scenario: Scenario):
     });
   }
   const collab =
-    scenario === "accept_collab_qa" && role === "security"
+    (scenario === "accept_collab_qa" || scenario === "collab_undecided") &&
+    role === "security"
       ? [
           {
             targetRoleId: "qa",
@@ -309,7 +312,11 @@ function parentReplan(scenario: Scenario, known: string[]): string {
       assignments: [assignment("frontend-followup", "frontend", ["frontend-review"])],
     });
   }
-  if (scenario === "accept_collab_qa" && known.includes("frontend-review") && !known.includes("security-review")) {
+  if (
+    (scenario === "accept_collab_qa" || scenario === "collab_undecided") &&
+    known.includes("frontend-review") &&
+    !known.includes("security-review")
+  ) {
     return JSON.stringify({
       decision: "continue",
       nextWave: {
@@ -319,14 +326,28 @@ function parentReplan(scenario: Scenario, known: string[]): string {
       },
     });
   }
-  if (scenario === "accept_collab_qa" && !known.includes("qa-matrix")) {
+  if (
+    (scenario === "accept_collab_qa" || scenario === "collab_undecided") &&
+    !known.includes("qa-matrix")
+  ) {
+    const nextWave = {
+      waveId: "wave-qa",
+      execution: "serial",
+      assignments: [assignment("qa-matrix", "qa", ["security-review"])],
+    };
+    if (scenario === "collab_undecided") {
+      return JSON.stringify({ decision: "continue", nextWave });
+    }
     return JSON.stringify({
       decision: "continue",
-      nextWave: {
-        waveId: "wave-qa",
-        execution: "serial",
-        assignments: [assignment("qa-matrix", "qa", ["security-review"])],
-      },
+      nextWave,
+      collaborationDecisions: [
+        {
+          requestId: "teamcollab_security-review_0",
+          decision: "accept_start",
+          resolvedAssignmentId: "qa-matrix",
+        },
+      ],
     });
   }
   return JSON.stringify({ decision: "finish", reason: "Staffing is complete." });
@@ -567,7 +588,22 @@ test("parent accepts collaboration and starts QA as a new validated assignment",
   });
   assert.ok(blackboard.collaborationRequests.length > 0);
   for (const request of blackboard.collaborationRequests) {
-    assert.equal(request.parentDecision, "handle_self");
+    assert.equal(request.parentDecision, "accept_start");
+    assert.equal(request.resolvedAssignmentId, "qa-matrix");
+  }
+});
+
+test("an undecided collaboration request fails the replan instead of being auto-resolved", async () => {
+  const { proof, host } = await runScenario("collab_undecided");
+  assert.equal(proof.state, "failed");
+  const run = host.runs[0]!;
+  const { blackboard } = await host.getBlackboard({
+    workspaceId: run.workspaceId,
+    teamRunId: run.id,
+  });
+  assert.ok(blackboard.collaborationRequests.length > 0);
+  for (const request of blackboard.collaborationRequests) {
+    assert.equal(request.parentDecision, "pending");
     assert.equal(request.resolvedAssignmentId, null);
   }
 });

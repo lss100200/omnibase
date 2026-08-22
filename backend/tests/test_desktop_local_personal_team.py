@@ -2197,6 +2197,118 @@ def test_collaboration_resolve_requires_live_run_and_pending_cas(tmp_path: Path)
             db.close()
 
 
+def test_replan_requires_collaboration_decisions_coverage(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload(created["invocation_id"]),
+                "status": "needs_collaboration",
+                "collaboration_requests": [
+                    {
+                        "targetRoleId": "qa",
+                        "question": "请补回归清单",
+                        "reason": "需要覆盖取消路径",
+                    }
+                ],
+            },
+        )
+        assert settled.status_code == 200
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            request_id = db.execute(
+                "SELECT id FROM team_collaboration_request WHERE team_run_id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        proposals_url = f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals"
+        qa_wave: dict[str, object] = {
+            "waveId": "wave-qa",
+            "execution": "serial",
+            "assignments": [_assignment("qa-review", "qa")],
+        }
+        undecided = client.post(
+            proposals_url,
+            headers=_native(),
+            json={"proposal": {"decision": "continue", "nextWave": qa_wave}},
+        )
+        assert undecided.status_code == 200
+        assert undecided.json()["accepted"] is False
+        assert undecided.json()["validation_error_code"] == "desktop_team_collaboration_undecided"
+        wrong_role = client.post(
+            proposals_url,
+            headers=_native(),
+            json={
+                "proposal": {
+                    "decision": "continue",
+                    "nextWave": {
+                        "waveId": "wave-sec",
+                        "execution": "serial",
+                        "assignments": [_assignment("sec-audit", "security")],
+                    },
+                    "collaborationDecisions": [
+                        {
+                            "requestId": request_id,
+                            "decision": "accept_start",
+                            "resolvedAssignmentId": "sec-audit",
+                        }
+                    ],
+                }
+            },
+        )
+        assert wrong_role.status_code == 200
+        assert wrong_role.json()["accepted"] is False
+        assert (
+            wrong_role.json()["validation_error_code"]
+            == "desktop_team_collaboration_identity_mismatch"
+        )
+        accepted = client.post(
+            proposals_url,
+            headers=_native(),
+            json={
+                "proposal": {
+                    "decision": "continue",
+                    "nextWave": qa_wave,
+                    "collaborationDecisions": [
+                        {
+                            "requestId": request_id,
+                            "decision": "accept_start",
+                            "resolvedAssignmentId": "qa-review",
+                        }
+                    ],
+                }
+            },
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["accepted"] is True
+        resolved = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/"
+            f"collaboration-requests/{request_id}/resolve",
+            headers=_native(),
+            json={"parent_decision": "accept_start", "resolved_assignment_id": "qa-review"},
+        )
+        assert resolved.status_code == 200, resolved.text
+        finish_undecided = client.post(
+            proposals_url,
+            headers=_native(),
+            json={"proposal": {"decision": "finish", "reason": "已完成"}},
+        )
+        assert finish_undecided.status_code == 200
+        assert finish_undecided.json()["accepted"] is True
+
+
 def test_collaboration_resolve_binds_decision_shape_role_and_plan(tmp_path: Path) -> None:
     config = _config(tmp_path / "shape")
     with TestClient(create_desktop_local_app(config)) as client:

@@ -1,5 +1,6 @@
 import {
   SPECIALIST_EMPLOYEE_IDS,
+  type ParentCollaborationDecision,
   type ParentReplanDecision,
   type ParentTeamDecision,
   type SpecialistEmployeeId,
@@ -412,6 +413,91 @@ export function validateParentTeamDecision(
   };
 }
 
+export type PendingCollaboration = {
+  readonly id: string;
+  readonly targetRoleId: string;
+};
+
+function hasReplanKeys(
+  record: Record<string, unknown>,
+  base: readonly string[],
+): boolean {
+  const allowed = new Set<string>([...base, "collaborationDecisions"]);
+  return base.every((key) => key in record) && Object.keys(record).every((key) => allowed.has(key));
+}
+
+function validateCollaborationDecisions(
+  record: Record<string, unknown>,
+  pending: readonly PendingCollaboration[],
+  newAssignments: readonly TeamAssignmentProposal[],
+  knownAssignmentIds: ReadonlySet<string>,
+): TeamValidateResult<readonly ParentCollaborationDecision[] | null> {
+  const raw = record.collaborationDecisions;
+  if (pending.length === 0) {
+    if (raw === undefined) return { ok: true, value: null };
+    return fail("desktop_team_proposal_invalid");
+  }
+  if (!Array.isArray(raw)) return fail("desktop_team_collaboration_undecided");
+  const pendingIds = new Set(pending.map((item) => item.id));
+  const decided = new Set<string>();
+  const normalized: ParentCollaborationDecision[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return fail("desktop_team_proposal_invalid");
+    const entry = item as Record<string, unknown>;
+    const keys = Object.keys(entry);
+    if (
+      !keys.every((key) => key === "requestId" || key === "decision" || key === "resolvedAssignmentId")
+    ) {
+      return fail("desktop_team_proposal_invalid");
+    }
+    if (typeof entry.requestId !== "string" || typeof entry.decision !== "string") {
+      return fail("desktop_team_proposal_invalid");
+    }
+    const requestId = entry.requestId;
+    const decision = entry.decision;
+    const resolved = entry.resolvedAssignmentId;
+    if (!pendingIds.has(requestId) || decided.has(requestId)) {
+      return fail("desktop_team_proposal_invalid");
+    }
+    if (decision === "accept_start" || decision === "merge_existing") {
+      if (typeof resolved !== "string") return fail("desktop_team_proposal_invalid");
+    } else if (decision === "handle_self" || decision === "decline") {
+      if (resolved !== undefined && resolved !== null) {
+        return fail("desktop_team_proposal_invalid");
+      }
+    } else {
+      return fail("desktop_team_proposal_invalid");
+    }
+    if (decision === "accept_start") {
+      const target = pending.find((item) => item.id === requestId)?.targetRoleId ?? null;
+      const match =
+        target === null
+          ? undefined
+          : newAssignments.find(
+              (assignment) => assignment.assignmentId === resolved && assignment.employeeRoleId === target,
+            );
+      if (match === undefined) return fail("desktop_team_collaboration_identity_mismatch");
+    }
+    if (decision === "merge_existing" && typeof resolved === "string") {
+      if (!knownAssignmentIds.has(resolved)) {
+        return fail("desktop_team_collaboration_identity_mismatch");
+      }
+    }
+    decided.add(requestId);
+    normalized.push(
+      Object.freeze({
+        requestId,
+        decision,
+        ...(resolved === undefined || resolved === null ? {} : { resolvedAssignmentId: resolved }),
+      }),
+    );
+  }
+  if (decided.size !== pendingIds.size || [...pendingIds].some((id) => !decided.has(id))) {
+    return fail("desktop_team_collaboration_undecided");
+  }
+  return { ok: true, value: Object.freeze(normalized) };
+}
+
 export function validateParentReplanDecision(
   proposal: unknown,
   budget: TeamRunBudget,
@@ -419,6 +505,7 @@ export function validateParentReplanDecision(
   workspaceId: string | null,
   knownAssignmentIds: ReadonlySet<string>,
   revisionOrdinal: number,
+  pendingCollaborations: readonly PendingCollaboration[] = [],
 ): TeamValidateResult<ParentReplanDecision> {
   if (typeof proposal === "object" && proposal !== null) {
     if (Object.keys(proposal).some((key) => INFINITE_REPLAN_KEYS.has(key))) {
@@ -435,28 +522,56 @@ export function validateParentReplanDecision(
   }
   const record = proposal as Record<string, unknown>;
   if (record.decision === "finish" || record.decision === "cannot_complete") {
-    if (Object.keys(record).sort().join(",") !== ["decision", "reason"].sort().join(",")) {
+    if (!hasReplanKeys(record, ["decision", "reason"])) {
       return fail("desktop_team_proposal_invalid");
     }
+    const decisions = validateCollaborationDecisions(
+      record,
+      pendingCollaborations,
+      [],
+      knownAssignmentIds,
+    );
+    if (!decisions.ok) return decisions;
     const reason = boundText(record.reason, budget.maximumInputCharacters);
     if (reason === null) return fail("desktop_team_input_budget_exceeded");
-    return { ok: true, value: Object.freeze({ decision: record.decision, reason }) };
+    return {
+      ok: true,
+      value: Object.freeze({
+        decision: record.decision,
+        reason,
+        ...(decisions.value === null ? {} : { collaborationDecisions: decisions.value }),
+      }),
+    };
   }
   if (record.decision === "continue") {
-    if (Object.keys(record).sort().join(",") !== ["decision", "nextWave"].sort().join(",")) {
+    if (!hasReplanKeys(record, ["decision", "nextWave"])) {
       return fail("desktop_team_proposal_invalid");
     }
     const wave = validateWave(record.nextWave, budget, allowed, workspaceId);
     if (!wave.ok) return wave;
+    const decisions = validateCollaborationDecisions(
+      record,
+      pendingCollaborations,
+      wave.value.assignments,
+      knownAssignmentIds,
+    );
+    if (!decisions.ok) return decisions;
     const graphError = checkGraph([wave.value], knownAssignmentIds);
     if (graphError !== null) return graphError;
     if (knownAssignmentIds.size + wave.value.assignments.length > budget.maximumProviderCalls) {
       return fail("desktop_team_call_budget_exceeded");
     }
-    return { ok: true, value: Object.freeze({ decision: "continue", nextWave: wave.value }) };
+    return {
+      ok: true,
+      value: Object.freeze({
+        decision: "continue",
+        nextWave: wave.value,
+        ...(decisions.value === null ? {} : { collaborationDecisions: decisions.value }),
+      }),
+    };
   }
   if (record.decision !== "request_followup") return fail("desktop_team_proposal_invalid");
-  if (Object.keys(record).sort().join(",") !== ["assignments", "decision"].sort().join(",")) {
+  if (!hasReplanKeys(record, ["decision", "assignments"])) {
     return fail("desktop_team_proposal_invalid");
   }
   if (!Array.isArray(record.assignments) || record.assignments.length === 0) {
@@ -480,6 +595,13 @@ export function validateParentReplanDecision(
     seen.add(result.value.assignmentId);
     assignments.push(result.value);
   }
+  const decisions = validateCollaborationDecisions(
+    record,
+    pendingCollaborations,
+    assignments,
+    knownAssignmentIds,
+  );
+  if (!decisions.ok) return decisions;
   if (knownAssignmentIds.size + assignments.length > budget.maximumProviderCalls) {
     return fail("desktop_team_call_budget_exceeded");
   }
@@ -488,6 +610,7 @@ export function validateParentReplanDecision(
     value: Object.freeze({
       decision: "request_followup",
       assignments: Object.freeze(assignments),
+      ...(decisions.value === null ? {} : { collaborationDecisions: decisions.value }),
     }),
   };
 }

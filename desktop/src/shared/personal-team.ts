@@ -48,7 +48,13 @@ export type ParentTeamDecision =
       readonly finalSynthesisRequired: true;
     };
 
-export type ParentReplanDecision =
+export interface ParentCollaborationDecision {
+  readonly requestId: string;
+  readonly decision: "accept_start" | "handle_self" | "merge_existing" | "decline";
+  readonly resolvedAssignmentId?: string;
+}
+
+type ParentReplanVariant =
   | {
       readonly decision: "continue";
       readonly nextWave: TeamWaveProposal;
@@ -65,6 +71,10 @@ export type ParentReplanDecision =
       readonly decision: "cannot_complete";
       readonly reason: string;
     };
+
+export type ParentReplanDecision = ParentReplanVariant & {
+  readonly collaborationDecisions?: readonly ParentCollaborationDecision[];
+};
 
 export interface EmployeeCollaborationRequest {
   readonly targetRoleId: SpecialistEmployeeId;
