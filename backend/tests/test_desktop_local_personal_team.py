@@ -727,6 +727,16 @@ def _settle_payload(
     }
 
 
+def _finish_plan(client: TestClient, workspace_id: str, team_run_id: str) -> None:
+    finished = client.post(
+        f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+        headers=_native(),
+        json={"proposal": {"decision": "finish", "reason": "团队工作已完成"}},
+    )
+    assert finished.status_code == 200, finished.text
+    assert finished.json()["accepted"] is True
+
+
 def test_empty_allow_list_fails_closed_without_defaulting_all_nine(tmp_path: Path) -> None:
     with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
         workspace_id, conversation_id = _bootstrap_workspace(client)
@@ -1477,6 +1487,7 @@ def test_state_succeeded_requires_settled_children_in_one_transaction(tmp_path: 
             json=_settle_payload(created["invocation_id"]),
         )
         assert settled.status_code == 200
+        _finish_plan(client, workspace_id, team_run_id)
         succeeded = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
             headers=_native(),
@@ -1598,6 +1609,7 @@ def test_recovery_keeps_proven_success_intact(tmp_path: Path) -> None:
             json=_settle_payload(created["invocation_id"]),
         )
         assert settled.status_code == 200
+        _finish_plan(client, workspace_id, team_run_id)
         succeeded = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
             headers=_native(),
@@ -1737,6 +1749,7 @@ def test_state_succeeded_requires_success_closure(tmp_path: Path) -> None:
             json={"parent_decision": "handle_self", "resolved_assignment_id": None},
         )
         assert resolved.status_code == 200, resolved.text
+        _finish_plan(client, workspace_id, team_run_id)
         succeeded = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
             headers=_native(),
@@ -1764,6 +1777,7 @@ def test_state_terminal_transition_from_terminal_is_conflict(tmp_path: Path) -> 
             json=_settle_payload(created["invocation_id"]),
         )
         assert settled.status_code == 200
+        _finish_plan(client, workspace_id, team_run_id)
         succeeded = client.post(
             f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
             headers=_native(),
@@ -1784,6 +1798,180 @@ def test_state_terminal_transition_from_terminal_is_conflict(tmp_path: Path) -> 
         )
         assert replay.status_code == 200
         assert replay.json()["team_run"]["state"] == "succeeded"
+
+
+def test_state_succeeded_requires_terminal_plan_decision(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        premature = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "父 Agent 尚未终结"},
+        )
+        assert premature.status_code == 409
+        assert premature.json()["error"]["code"] == "desktop_team_success_closure_open"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            decision = db.execute(
+                "SELECT decision FROM team_plan_revision WHERE id = ("
+                "SELECT current_plan_revision_id FROM team_run WHERE id = ?)",
+                (team_run_id,),
+            ).fetchone()[0]
+            assert decision == "delegate"
+        finally:
+            db.close()
+
+
+def test_state_succeeded_cannot_launder_failed_child_via_finish(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}",
+            headers=_native(),
+            json={"state": "failed", "error_code": "desktop_provider_failed"},
+        )
+        assert failed.status_code == 200
+        _finish_plan(client, workspace_id, team_run_id)
+        laundered = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "空 finish 之后的伪成功"},
+        )
+        assert laundered.status_code == 409
+        assert laundered.json()["error"]["code"] == "desktop_team_success_closure_open"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            db.execute("UPDATE team_run SET state = 'succeeded' WHERE id = ?", (team_run_id,))
+            db.commit()
+        finally:
+            db.close()
+    with TestClient(create_desktop_local_app(config)) as client:
+        recovered = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}",
+            headers=_native(),
+        )
+        assert recovered.status_code == 200
+        assert recovered.json()["team_run"]["state"] == "unknown"
+
+
+def test_state_succeeded_answer_directly_binds_validated_answer(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        team_run_id = started["body"]["team_run"]["id"]
+        accepted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+            headers=_native(),
+            json={
+                "proposal": {
+                    "decision": "answer_directly",
+                    "answer": "validated answer A",
+                    "reason": "direct",
+                }
+            },
+        )
+        assert accepted.status_code == 200
+        assert accepted.json()["accepted"] is True
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        diverged = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "different answer B"},
+        )
+        assert diverged.status_code == 409
+        assert diverged.json()["error"]["code"] == "desktop_team_success_closure_open"
+        bound = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "validated answer A"},
+        )
+        assert bound.status_code == 200, bound.text
+        assert bound.json()["team_run"]["state"] == "succeeded"
+
+
+def test_state_succeeded_replay_requires_identical_answer(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        _finish_plan(client, workspace_id, team_run_id)
+        first = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "original final"},
+        )
+        assert first.status_code == 200
+        rewritten = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "rewritten terminal final"},
+        )
+        assert rewritten.status_code == 409
+        assert rewritten.json()["error"]["code"] == "desktop_team_success_answer_conflict"
+        exact = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "original final"},
+        )
+        assert exact.status_code == 200
+        without_answer = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded"},
+        )
+        assert without_answer.status_code == 200
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            stored = db.execute(
+                "SELECT parent_final_answer FROM team_run WHERE id = ?", (team_run_id,)
+            ).fetchone()[0]
+            assert stored == "original final"
+        finally:
+            db.close()
 
 
 def test_collaboration_write_requires_live_run_and_node_report_identity(

@@ -335,20 +335,36 @@ def _require_settled_children(connection: sqlite3.Connection, team_run_id: str) 
         raise DesktopApiError(409, "desktop_team_run_children_live")
 
 
-def _success_closure_violation(connection: sqlite3.Connection, run: sqlite3.Row) -> str | None:
+def _success_closure_violation(  # noqa: C901 - terminal decision, answer binding and full lineage share one proof
+    connection: sqlite3.Connection, run: sqlite3.Row
+) -> str | None:
     team_run_id = str(run["id"])
     revision_id = run["current_plan_revision_id"]
     if revision_id is None:
         return "desktop_team_success_plan_missing"
     revision = connection.execute(
-        "SELECT validated FROM team_plan_revision WHERE id = ? AND team_run_id = ?",
+        "SELECT validated, decision, proposal_json FROM team_plan_revision "
+        "WHERE id = ? AND team_run_id = ?",
         (revision_id, team_run_id),
     ).fetchone()
     if revision is None or int(revision["validated"]) != 1:
         return "desktop_team_success_plan_missing"
+    decision = str(revision["decision"])
+    if decision not in {"answer_directly", "finish"}:
+        return "desktop_team_success_plan_not_terminal"
     answer = run["parent_final_answer"]
     if not isinstance(answer, str) or len(answer.strip()) == 0:
         return "desktop_team_success_answer_missing"
+    if decision == "answer_directly":
+        try:
+            proposal = json.loads(str(revision["proposal_json"]))
+        except json.JSONDecodeError:
+            return "desktop_team_success_plan_missing"
+        validated_answer = proposal.get("answer") if isinstance(proposal, dict) else None
+        if not isinstance(validated_answer, str):
+            return "desktop_team_success_plan_missing"
+        if answer != validated_answer:
+            return "desktop_team_success_answer_diverged"
     pending = connection.execute(
         "SELECT COUNT(*) FROM team_collaboration_request "
         "WHERE team_run_id = ? AND parent_decision = 'pending'",
@@ -357,9 +373,8 @@ def _success_closure_violation(connection: sqlite3.Connection, run: sqlite3.Row)
     if int(pending) > 0:
         return "desktop_team_success_collaboration_pending"
     assignments = connection.execute(
-        "SELECT assignment_id, state FROM team_assignment "
-        "WHERE team_run_id = ? AND plan_revision_id = ?",
-        (team_run_id, revision_id),
+        "SELECT assignment_id, state FROM team_assignment WHERE team_run_id = ?",
+        (team_run_id,),
     ).fetchall()
     for assignment in assignments:
         state = str(assignment["state"])
@@ -375,11 +390,8 @@ def _success_closure_violation(connection: sqlite3.Connection, run: sqlite3.Row)
             if int(still_pending) > 0:
                 return "desktop_team_success_collaboration_pending"
     unsettled = connection.execute(
-        "SELECT COUNT(*) FROM team_node WHERE team_run_id = ? AND state <> 'succeeded' "
-        "AND assignment_id IN ("
-        "SELECT assignment_id FROM team_assignment "
-        "WHERE team_run_id = ? AND plan_revision_id = ?)",
-        (team_run_id, team_run_id, revision_id),
+        "SELECT COUNT(*) FROM team_node WHERE team_run_id = ? AND state <> 'succeeded'",
+        (team_run_id,),
     ).fetchone()[0]
     if int(unsettled) > 0:
         return "desktop_team_success_node_not_succeeded"
@@ -1994,6 +2006,10 @@ def set_team_run_state(  # noqa: C901 - terminal guard, child CAS and success cl
             if bounded is None:
                 raise DesktopApiError(400, "desktop_team_output_budget_exceeded")
         if state == "succeeded":
+            if str(row["state"]) == "succeeded" and bounded is not None:
+                stored_answer = row["parent_final_answer"]
+                if not isinstance(stored_answer, str) or bounded != stored_answer:
+                    raise DesktopApiError(409, "desktop_team_success_answer_conflict")
             _require_success_closure(connection, row, bounded)
         if bounded is not None:
             updated = connection.execute(
