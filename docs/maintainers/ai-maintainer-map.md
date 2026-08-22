@@ -2500,8 +2500,10 @@ set is closed at nine roles; parent is not a specialist. Serial, parallel
 and mixed waves are legal proposals; the host may serialize a parallel wave
 and must not parallelize declared dependencies.
 
-Desktop schema version 6 uses `desktop_0006_report_collaboration_digest`
-(the Round 3 settle-time report replay digest; Round 1 bumped v5
+Desktop schema version 7 uses `desktop_0007_recovery_success_downgrade`
+(the Round 4 recovery-only `succeeded → unknown` trigger relaxation behind
+the success-closure law; Round 3 added v6
+`desktop_0006_report_collaboration_digest`; Round 1 bumped v5
 `desktop_0005_team_node_identity_epochs`; v4
 `desktop_0004_personal_team_runtime`; A2 introduced v3
 `desktop_0003_personal_agent_team`), never Alembic 0017. Role

@@ -95,11 +95,18 @@ Cursor does **not** claim:
 | Backend residual Stop/collab | `80170a22160355c4b749fea237b2f3e0a16f0bfe` (`80170a2`) |
 | Frontend latch/snapshot | `e1910a4016430308206491014a46b7ed20dc93ce` (`e1910a4`) |
 | Negative tests | `9dcc46b511b817571f5414925ab31afa4fd94b46` (`9dcc46b`) |
-| Concentrated forward-fix (do not amend) | `246c423201b0a7e10ba578d0d3825b08f41a4cb6` (`246c423`) — **audited, not passed; see Round 3 below** |
+| Concentrated forward-fix (do not amend) | `246c423201b0a7e10ba578d0d3825b08f41a4cb6` (`246c423`) — **audited, not passed** |
 | Round 3 backend transaction law | `cc8494665c7aec2523c958a0215dc03a794cedfc` (`cc84946`) |
 | Round 3 frontend latch/identity | `5b63739a42f87dcee962ec169a5d286424863e32` (`5b63739`) |
 | Round 3 IPC negatives | `b5dc20b760fbc89f9b7e80e342e56a924472b604` (`b5dc20b`) |
-| This Round 3 record | lands last on the same branch (HEAD after this file) |
+| Round 3 record (do not amend) | `0423bdb41970e3192ba2d1117a24ba269ffc8d60` (`0423bdb`) — **audited 2026-08-22, acceptance withheld; see Round 4** |
+| Round 4 success closure | `ac746be10258a2c7e236d035d7a5cfb412639554` (`ac746be`) |
+| Round 4 resolve binding | `05781da60e15beb0908963a84e8a679836c92bd9` (`05781da`) |
+| Round 4 legacy replay / duplicates | `68d4bd1bb5537bdc76f1e35250079c9343d2be8a` (`68d4bd1`) |
+| Round 4 collaboration close-out | `56a9c384aad6d7fa6806f29ce009296e02edd131` (`56a9c38`) |
+| Round 4 append-budget gate | `a4a50051f7bb4017a74517a54b6cf7c2057bc827` (`a4a5005`) |
+| Round 4 IPC reportId negative | `4f2d7ecce65a281364497cbe20a65fea58bb08fe` (`4f2d7ec`) |
+| This Round 4 record | lands last on the same branch (HEAD after this file) |
 | Product-law source | `cursor/p6-9-multi-agent-planning-r0` @ `01f9d3b` |
 | P6.8 worktree | `p6-8-cursor-desktop-hardening-r0` left at `d2a2db0` |
 | Codex empty pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (**untouched**) |
@@ -169,7 +176,17 @@ Round 1 did not redo workbench UI and did not return to a fixed Owner roster.
 30. `cc8494665c7aec2523c958a0215dc03a794cedfc` — `fix(desktop-local): terminal runs need settled children, live resolve CAS, report digest`
 31. `5b63739a42f87dcee962ec169a5d286424863e32` — `fix(workbench): latch all team terminals and bind parked identity for durable cancel`
 32. `b5dc20b760fbc89f9b7e80e342e56a924472b604` — `test(desktop): add direct nodeId/reportId IPC rejection negatives`
-33. This file + INV-085 / ai-maintainer-map forward amendments (item 5 two-transaction honesty)
+33. `0423bdb41970e3192ba2d1117a24ba269ffc8d60` — `docs(p6.9): record Round 3 forward-fix and correct item 5 two-transaction honesty` (audited 2026-08-22; acceptance withheld)
+
+**Round 4 P1/P2 forward-fix (after `0423bdb`; do not amend it):**
+
+34. `ac746be10258a2c7e236d035d7a5cfb412639554` — `fix(desktop-local): require success closure for succeeded and downgrade unproven recovery`
+35. `05781da60e15beb0908963a84e8a679836c92bd9` — `fix(desktop-local): bind collaboration resolve to decision shape, target role and plan`
+36. `68d4bd1bb5537bdc76f1e35250079c9343d2be8a` — `fix(desktop-local): fail closed legacy report replay and duplicate collaboration tuples`
+37. `56a9c384aad6d7fa6806f29ce009296e02edd131` — `fix(desktop): resolve pending collaborations before team success`
+38. `a4a50051f7bb4017a74517a54b6cf7c2057bc827` — `fix(workbench): gate team append budget to the origin view`
+39. `4f2d7ecce65a281364497cbe20a65fea58bb08fe` — `test(desktop): add uppercase reportId IPC rejection negative`
+40. This file + INV-085 / ai-maintainer-map forward amendments (success closure, resolve binding, legacy fail-closed, schema v7)
 
 ---
 
@@ -662,6 +679,72 @@ ENTERPRISE_MULTI_AGENT_DISABLED
 This round does not claim P6.9 engineering acceptance, a paid Provider
 window, Authenticode, EXE/MSI, or enterprise multi-agent; it only lands the
 forward-fix package the audit asked for.
+
+---
+
+## Round 4 P1/P2 forward-fix (after `0423bdb`; do not amend it)
+
+Date: 2026-08-22. The Codex audit of `0423bdb` confirmed all six Round 3
+fixes, their commit chain and gates, but withheld acceptance on one new P1
+and two P2s: `succeeded` only proved "no live children" (an empty Run could
+succeed with no plan and no answer; failed/cancelled/unknown children and
+frozen pending collaborations could be declared success; recovery preserved
+a disproven `succeeded`), resolve accepted contradictory decision shapes and
+cross-role/cross-plan targets, and the legacy NULL-digest replay baseline
+could drift through later legal collaboration writes. Five P3s were also
+reported. `0423bdb` is registered above as audited-not-passed; this round
+lands the blocking fixes plus the P3s in one concentrated pass.
+
+| # | Fix | Tests that fail if the fix is deleted |
+|---|---|---|
+| 1 | Success closure in one `BEGIN IMMEDIATE` (`desktop_team_success_closure_open`): validated current plan, non-empty `parent_final_answer`, current-plan assignments completed (needs_collaboration only with no pending request), current-plan nodes succeeded, zero pending collaborations; `desktop_0007` recovery-only `succeeded→unknown` trigger relaxation with an explicit API terminal-transition conflict guard; recovery downgrades disproven success, keeps proven success | `test_state_succeeded_requires_success_closure`, `test_state_terminal_transition_from_terminal_is_conflict`, `test_recovery_downgrades_succeeded_without_success_proof`, `test_recovery_keeps_proven_success_intact` |
+| 2 | Resolve binds decision shape (accept_start/merge_existing ⇔ assignment; handle_self/decline ⇔ NULL), target role (`assignment.employee_role_id == target_role_id`), current plan, and per-decision assignment state | `test_collaboration_resolve_binds_decision_shape_role_and_plan` |
+| 3 | Legacy NULL-digest `/reports` replay fails closed (`desktop_team_report_replay_legacy_unverifiable`); duplicate `(targetRoleId, question, reason)` tuples rejected at validation (`desktop_team_collaboration_duplicate`) | `test_report_replay_legacy_null_digest_fails_closed`, `test_report_settle_rejects_duplicate_collaboration_tuples` |
+| 4 | Coordinator closes pending collaborations before success: blackboard requests now carry `id`, `resolveTeamCollaboration` on the native client, `resolveCollaboration` on the host, every pending request resolved `handle_self` before both `succeeded` commits | `parent accepts collaboration and starts QA as a new validated assignment` (asserts handle_self for all), `a completed journey with no collaboration requests performs no resolves` |
+| 5 | Append budget is origin-only (`desktopTeamAppendBudgetTarget`; B view no longer sends `{workspaceId: B, teamRunId: A}`); terminal first snapshot latches before a late cancelled (future recovery-emitter contract) | `append budget target is origin-only and uses the origin workspace id`, `a terminal first snapshot latches before a late cancelled event` |
+| 6 | Eighth IPC negative: uppercase `reportId` | `IPC rejects missing, malformed, and tampered node/report identity fields` |
+| 7 | INV-085 forward amendments (success closure, resolve binding, legacy fail-closed, duplicate set semantics, TypeScript-replica pin wording) + ai-maintainer-map schema v7 + this record | this section |
+
+The Round 3 recovery expectation was corrected with item 1:
+`test_recovery_converges_live_children_of_any_terminal_parent` pinned
+"succeeded parent stays succeeded" — the audit's reproduction D showed that
+as the bug — and is now `test_recovery_downgrades_succeeded_without_success_proof`.
+
+### Round 4 gate counts
+
+Recorded after the fixes above. Same constraints. No Docker/WSL/PostgreSQL.
+No paid keys. No installer. Root `.env` not read. PowerShell: no `&&`.
+RuntimeHost optional; not faked.
+
+```text
+frontend pnpm test       = 272 passed
+frontend pnpm typecheck  = passed
+frontend pnpm lint       = passed
+frontend pnpm build      = passed
+desktop  pnpm test       = 91 passed
+desktop  pnpm typecheck  = passed
+desktop  pnpm build      = passed
+pytest desktop_local     = 167 passed
+ruff (touched Python)    = passed
+Ruff format check        = passed
+git diff --check         = passed
+validate_maintainer_map  = passed (75 invariants, 51 modules, 1218 path specs, 3127 matched files, 358 entrypoints, 21 discovered HTTP entrypoints, 296 verification commands)
+validate_maintainer_benchmark = passed (3 plans, 8 scenarios, 6 critical scenarios, 9 unsafe vetoes)
+```
+
+Publish boundary (unchanged):
+
+```text
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+EXE_MSI_REPACKAGE_NOT_APPROVED
+LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+```
+
+Round 4 is a forward-fix, not an acceptance claim. P6.9 engineering
+acceptance remains withheld until the next independent audit re-runs the
+closure, resolve-binding and replay attacks against these commits.
 
 ---
 

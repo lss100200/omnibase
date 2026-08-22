@@ -4340,15 +4340,20 @@ host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 6 (`desktop_0006_report_collaboration_digest`) is
-current; it adds the settle-time collaboration-request digest column to
-`team_employee_report`. Version 5 (`desktop_0005_team_node_identity_epochs`)
-remains the node identity epoch migration; version 4
-(`desktop_0004_personal_team_runtime`) remains the Round 1 runtime
-migration; version 3 (`desktop_0003_personal_agent_team`) remains the A2
-contract migration. These are desktop-namespace SQLite migrations, not Alembic
-0016/0017. Unique indexes forbid reused `node_epoch` / `send_epoch` on a Team
-Run. A trigger forbids writing back a terminal node. Role config may store a
+Desktop schema version 7 (`desktop_0007_recovery_success_downgrade`) is
+current; it recreates the run-state transition trigger with one recovery-only
+relaxation, `succeeded → unknown`. Version 6
+(`desktop_0006_report_collaboration_digest`) added the settle-time
+collaboration-request digest column to `team_employee_report`; version 5
+(`desktop_0005_team_node_identity_epochs`) remains the node identity epoch
+migration; version 4 (`desktop_0004_personal_team_runtime`) remains the
+Round 1 runtime migration; version 3 (`desktop_0003_personal_agent_team`)
+remains the A2 contract migration. These are desktop-namespace SQLite
+migrations, not Alembic 0016/0017. The API surface stays closed:
+`POST /state` rejects any transition out of an already-terminal Run
+(`desktop_team_run_state_conflict`); only restart recovery may downgrade a
+disproven `succeeded`. Unique indexes forbid reused `node_epoch` /
+`send_epoch` on a Team Run. A trigger forbids writing back a terminal node. Role config may store a
 Provider id, model override, gear, thinking
 depth and a verification digest. It must never store API keys, ciphertext,
 nonce, DPAPI blobs or vault handles. Per-role Provider selection inherits the
@@ -4366,7 +4371,8 @@ allowed only when loopback HTTP is opted in. SNI/`Host` stay the original
 hostname. The TypeScript BlockList is a test/fallback replica. Extra-rejects
 versus CPython (`2001:1::1`, `2001:3::1`, `2001:20::1`) are **examples**, not
 an exhaustive IANA disagreement list; production pin is desktop-local
-`is_global_unicast`. It is not claimed to match `endpoint.py`.
+`is_global_unicast`. The TypeScript replica is not claimed to match
+`endpoint.py`.
 A missing or mismatched actual vs requested model fails the node
 (`desktop_provider_model_identity_drift`). **Every SSE chunk that contains
 `model` is validated immediately**; mid-stream drift fails the node, not
@@ -4404,7 +4410,22 @@ into a terminal state is bound by the same invariant inside one
 `budget_exhausted` and `cannot_complete` fail closed on any live child
 (`desktop_team_run_children_live`), while `cancelled` cascades the same child
 CAS as Stop. A terminal parent with live children can therefore neither be
-committed through `/state` nor survive a restart.
+committed through `/state` nor survive a restart. Beyond "not live",
+`succeeded` requires a full **success closure** in the same transaction
+(`desktop_team_success_closure_open`): a host-validated current plan
+revision, a non-empty `parent_final_answer`, every current-plan assignment
+`completed` (or `needs_collaboration` with no pending request), every
+current-plan node `succeeded`, and zero pending collaboration requests.
+`failed`, `cancelled`, `unknown` and `blocked` children are never success;
+an empty Run cannot succeed without a plan or an answer; and an earlier
+failure is absorbed only when a later validated plan revision supersedes it
+(the closure is scoped to the current plan). Restart recovery downgrades any
+`succeeded` Run whose closure does not hold to `unknown` (its residual live
+children then converge through the unknown-parent mapping); a proven success
+survives restart untouched. Before the coordinator commits success it
+resolves every still-pending collaboration request from the authoritative
+blackboard as `handle_self` — the parent has, by construction, already
+answered each request through its replan and final synthesis.
 
 Independent collaboration writes — create **and** resolve — require a live
 Team Run (`preparing|running`) and a matching node/report identity on that
@@ -4413,12 +4434,21 @@ run. A cancelled/unknown/terminal run, or a wrong node/report id, fails closed
 Resolve re-loads the parent Run inside the same write transaction, performs a
 `parent_decision = 'pending'` CAS, and accepts a replayed resolve only when the
 decision and `resolved_assignment_id` match exactly; any different replay
-conflicts (`desktop_team_collaboration_resolve_conflict`). Standalone
+conflicts (`desktop_team_collaboration_resolve_conflict`). Decision shapes are
+bound in the same transaction: `accept_start` and `merge_existing` require a
+resolved assignment whose role equals the request's `target_role_id` and whose
+plan is the run's current validated plan (`accept_start` only a `pending`
+assignment, `merge_existing` only a started or settled one);
+`handle_self` and `decline` must carry no assignment. A qa-targeted request
+can no longer be merged into a frontend assignment. Standalone
 `/reports` replay must exact-match the stored assignment/role/status/text and
 **both** digests — the report body SHA-256 and the settle-time canonical
 collaboration-request digest (`collaboration_requests_sha256`, computed over
-the unique `(targetRoleId, question, reason)` canonical ordering; rows settled
-before `desktop_0006` fall back to the stored request rows). Mutated replay
+the unique `(targetRoleId, question, reason)` canonical ordering; duplicate
+tuples are rejected at validation as `desktop_team_collaboration_duplicate`).
+Rows settled before `desktop_0006` carry no digest and replay fails closed as
+`desktop_team_report_replay_legacy_unverifiable` — the settle-time request set
+of a legacy row cannot be reconstructed immutably. Mutated replay
 fails closed (`desktop_team_report_replay_mismatch`). Identical replay —
 including a reordered but equal request set — may be idempotent.
 
