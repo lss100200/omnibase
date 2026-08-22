@@ -199,7 +199,7 @@ def _start_run(
 def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> None:
     with initialized_database(_config(tmp_path).storage) as connection:
         assert (
-            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 6
+            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 7
         )
         tables = {
             row["name"]: row["sql"]
@@ -227,11 +227,12 @@ def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> Non
                 "SELECT version, migration_id FROM desktop_migration_history ORDER BY version"
             )
         ]
-        assert history[-4:] == [
+        assert history[-5:] == [
             (3, "desktop_0003_personal_agent_team"),
             (4, "desktop_0004_personal_team_runtime"),
             (5, "desktop_0005_team_node_identity_epochs"),
             (6, "desktop_0006_report_collaboration_digest"),
+            (7, "desktop_0007_recovery_success_downgrade"),
         ]
         indexes = {
             row["name"]
@@ -1539,7 +1540,7 @@ def test_state_cancelled_converges_residual_live_children(tmp_path: Path) -> Non
             db.close()
 
 
-def test_recovery_converges_live_children_of_any_terminal_parent(tmp_path: Path) -> None:
+def test_recovery_downgrades_succeeded_without_success_proof(tmp_path: Path) -> None:
     config = _config(tmp_path)
     with TestClient(create_desktop_local_app(config)) as client:
         workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
@@ -1562,7 +1563,7 @@ def test_recovery_converges_live_children_of_any_terminal_parent(tmp_path: Path)
             headers=_native(),
         )
         assert recovered.status_code == 200
-        assert recovered.json()["team_run"]["state"] == "succeeded"
+        assert recovered.json()["team_run"]["state"] == "unknown"
         db = sqlite3.connect(config.storage.database_path)
         try:
             node_state = db.execute(
@@ -1577,6 +1578,212 @@ def test_recovery_converges_live_children_of_any_terminal_parent(tmp_path: Path)
             assert assignment_state == "blocked"
         finally:
             db.close()
+
+
+def test_recovery_keeps_proven_success_intact(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        succeeded = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "终稿"},
+        )
+        assert succeeded.status_code == 200
+    with TestClient(create_desktop_local_app(config)) as client:
+        recovered = client.get(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}",
+            headers=_native(),
+        )
+        assert recovered.status_code == 200
+        assert recovered.json()["team_run"]["state"] == "succeeded"
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            node_state = db.execute(
+                "SELECT state FROM team_node WHERE id = ?", (created["node_id"],)
+            ).fetchone()[0]
+            assignment_state = db.execute(
+                "SELECT state FROM team_assignment WHERE team_run_id = ? "
+                "AND assignment_id = 'frontend-review'",
+                (team_run_id,),
+            ).fetchone()[0]
+            assert node_state == "succeeded"
+            assert assignment_state == "completed"
+        finally:
+            db.close()
+
+
+def test_state_succeeded_requires_success_closure(tmp_path: Path) -> None:
+    empty_config = _config(tmp_path / "empty")
+    with TestClient(create_desktop_local_app(empty_config)) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        team_run_id = started["body"]["team_run"]["id"]
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        no_proof = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "无凭据成功"},
+        )
+        assert no_proof.status_code == 409
+        assert no_proof.json()["error"]["code"] == "desktop_team_success_closure_open"
+        db = sqlite3.connect(empty_config.storage.database_path)
+        try:
+            run_state = db.execute(
+                "SELECT state FROM team_run WHERE id = ?", (team_run_id,)
+            ).fetchone()[0]
+            assert run_state == "running"
+        finally:
+            db.close()
+
+    failed_config = _config(tmp_path / "failed-child")
+    with TestClient(create_desktop_local_app(failed_config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}",
+            headers=_native(),
+            json={"state": "failed", "error_code": "desktop_provider_failed"},
+        )
+        assert failed.status_code == 200
+        over_failed = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "失败之上宣布成功"},
+        )
+        assert over_failed.status_code == 409
+        assert over_failed.json()["error"]["code"] == "desktop_team_success_closure_open"
+
+    collab_config = _config(tmp_path / "collab")
+    with TestClient(create_desktop_local_app(collab_config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload(created["invocation_id"]),
+                "status": "needs_collaboration",
+                "collaboration_requests": [
+                    {
+                        "targetRoleId": "qa",
+                        "question": "请补回归清单",
+                        "reason": "需要覆盖取消路径",
+                    }
+                ],
+            },
+        )
+        assert settled.status_code == 200
+        no_answer = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded"},
+        )
+        assert no_answer.status_code == 409
+        assert no_answer.json()["error"]["code"] == "desktop_team_success_closure_open"
+        frozen = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "带着待决协作成功"},
+        )
+        assert frozen.status_code == 409
+        assert frozen.json()["error"]["code"] == "desktop_team_success_closure_open"
+        db = sqlite3.connect(collab_config.storage.database_path)
+        try:
+            request_id = db.execute(
+                "SELECT id FROM team_collaboration_request WHERE team_run_id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        resolved = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/"
+            f"collaboration-requests/{request_id}/resolve",
+            headers=_native(),
+            json={"parent_decision": "handle_self", "resolved_assignment_id": None},
+        )
+        assert resolved.status_code == 200, resolved.text
+        succeeded = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "终稿"},
+        )
+        assert succeeded.status_code == 200, succeeded.text
+        assert succeeded.json()["team_run"]["state"] == "succeeded"
+
+
+def test_state_terminal_transition_from_terminal_is_conflict(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, _conversation_id, team_run_id, provider_id = _prepare_assigned_run(client)
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json=_settle_payload(created["invocation_id"]),
+        )
+        assert settled.status_code == 200
+        succeeded = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "终稿"},
+        )
+        assert succeeded.status_code == 200
+        downgrade = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "unknown"},
+        )
+        assert downgrade.status_code == 409
+        assert downgrade.json()["error"]["code"] == "desktop_team_run_state_conflict"
+        replay = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "succeeded", "parent_final_answer": "终稿"},
+        )
+        assert replay.status_code == 200
+        assert replay.json()["team_run"]["state"] == "succeeded"
 
 
 def test_collaboration_write_requires_live_run_and_node_report_identity(

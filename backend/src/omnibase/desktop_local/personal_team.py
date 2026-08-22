@@ -335,6 +335,68 @@ def _require_settled_children(connection: sqlite3.Connection, team_run_id: str) 
         raise DesktopApiError(409, "desktop_team_run_children_live")
 
 
+def _success_closure_violation(connection: sqlite3.Connection, run: sqlite3.Row) -> str | None:
+    team_run_id = str(run["id"])
+    revision_id = run["current_plan_revision_id"]
+    if revision_id is None:
+        return "desktop_team_success_plan_missing"
+    revision = connection.execute(
+        "SELECT validated FROM team_plan_revision WHERE id = ? AND team_run_id = ?",
+        (revision_id, team_run_id),
+    ).fetchone()
+    if revision is None or int(revision["validated"]) != 1:
+        return "desktop_team_success_plan_missing"
+    answer = run["parent_final_answer"]
+    if not isinstance(answer, str) or len(answer.strip()) == 0:
+        return "desktop_team_success_answer_missing"
+    pending = connection.execute(
+        "SELECT COUNT(*) FROM team_collaboration_request "
+        "WHERE team_run_id = ? AND parent_decision = 'pending'",
+        (team_run_id,),
+    ).fetchone()[0]
+    if int(pending) > 0:
+        return "desktop_team_success_collaboration_pending"
+    assignments = connection.execute(
+        "SELECT assignment_id, state FROM team_assignment "
+        "WHERE team_run_id = ? AND plan_revision_id = ?",
+        (team_run_id, revision_id),
+    ).fetchall()
+    for assignment in assignments:
+        state = str(assignment["state"])
+        if state != "completed" and state != "needs_collaboration":
+            return "desktop_team_success_assignment_not_completed"
+        if state == "needs_collaboration":
+            still_pending = connection.execute(
+                "SELECT COUNT(*) FROM team_collaboration_request "
+                "WHERE team_run_id = ? AND from_assignment_id = ? "
+                "AND parent_decision = 'pending'",
+                (team_run_id, str(assignment["assignment_id"])),
+            ).fetchone()[0]
+            if int(still_pending) > 0:
+                return "desktop_team_success_collaboration_pending"
+    unsettled = connection.execute(
+        "SELECT COUNT(*) FROM team_node WHERE team_run_id = ? AND state <> 'succeeded' "
+        "AND assignment_id IN ("
+        "SELECT assignment_id FROM team_assignment "
+        "WHERE team_run_id = ? AND plan_revision_id = ?)",
+        (team_run_id, team_run_id, revision_id),
+    ).fetchone()[0]
+    if int(unsettled) > 0:
+        return "desktop_team_success_node_not_succeeded"
+    return None
+
+
+def _require_success_closure(
+    connection: sqlite3.Connection, run: sqlite3.Row, effective_answer: str | None
+) -> None:
+    checked = run
+    if effective_answer is not None:
+        checked = {**dict(run), "parent_final_answer": effective_answer}
+    violation = _success_closure_violation(connection, checked)
+    if violation is not None:
+        raise DesktopApiError(409, "desktop_team_success_closure_open")
+
+
 def _require_workspace(
     connection: sqlite3.Connection,
     owner_id: str,
@@ -1829,6 +1891,14 @@ def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
     now = utc_now_text()
     connection.execute("BEGIN IMMEDIATE")
     try:
+        for run in connection.execute(
+            "SELECT * FROM team_run WHERE state = 'succeeded'"
+        ).fetchall():
+            if _success_closure_violation(connection, run) is not None:
+                connection.execute(
+                    "UPDATE team_run SET state = 'unknown', updated_at = ? WHERE id = ?",
+                    (now, str(run["id"])),
+                )
         connection.execute(
             "UPDATE team_node SET state = 'cancelled', "
             "error_code = 'desktop_invocation_cancelled', updated_at = ? "
@@ -1880,7 +1950,7 @@ def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
         raise DesktopApiError(503, "desktop_team_recovery_failed") from None
 
 
-def set_team_run_state(
+def set_team_run_state(  # noqa: C901 - terminal guard, child CAS and success closure share one transaction
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
@@ -1907,12 +1977,18 @@ def set_team_run_state(
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(row["state"]) in _TERMINAL_RUN_STATES and state != str(row["state"]):
+            raise DesktopApiError(409, "desktop_team_run_state_conflict")
         if state in _TERMINAL_RUN_STATES and state != "cancelled":
             _require_settled_children(connection, team_run_id)
+        bounded: str | None = None
         if parent_final_answer is not None:
             bounded = _bounded_text(parent_final_answer, int(row["maximum_output_characters"]))
             if bounded is None:
                 raise DesktopApiError(400, "desktop_team_output_budget_exceeded")
+        if state == "succeeded":
+            _require_success_closure(connection, row, bounded)
+        if bounded is not None:
             updated = connection.execute(
                 "UPDATE team_run SET state = ?, parent_final_answer = ?, updated_at = ? "
                 "WHERE id = ? AND state = ? RETURNING *",

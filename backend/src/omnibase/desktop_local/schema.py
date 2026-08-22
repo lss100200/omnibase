@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 6
+DESKTOP_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -819,6 +819,39 @@ DESKTOP_0006 = DesktopMigration(
     ),
 )
 
+DESKTOP_0007 = DesktopMigration(
+    version=7,
+    migration_id="desktop_0007_recovery_success_downgrade",
+    statements=(
+        """
+        DROP TRIGGER team_run_state_transition_guard
+        """,
+        """
+        CREATE TRIGGER team_run_state_transition_guard
+        BEFORE UPDATE OF state ON team_run
+        WHEN NEW.state <> OLD.state
+             AND NOT (
+                 (OLD.state = 'preparing'
+                    AND NEW.state IN (
+                        'running', 'cancelled', 'failed', 'cannot_complete', 'unknown'
+                    ))
+                 OR (OLD.state = 'running'
+                    AND NEW.state IN (
+                        'cancelling', 'succeeded', 'failed', 'cancelled',
+                        'unknown', 'budget_exhausted', 'cannot_complete'
+                    ))
+                 OR (OLD.state = 'cancelling'
+                    AND NEW.state IN ('cancelled', 'failed', 'unknown'))
+                 OR (OLD.state = 'succeeded'
+                    AND NEW.state = 'unknown')
+             )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_run_state_transition_forbidden');
+        END
+        """,
+    ),
+)
+
 DESKTOP_MIGRATIONS = (
     DESKTOP_0001,
     DESKTOP_0002,
@@ -826,4 +859,5 @@ DESKTOP_MIGRATIONS = (
     DESKTOP_0004,
     DESKTOP_0005,
     DESKTOP_0006,
+    DESKTOP_0007,
 )
