@@ -106,7 +106,13 @@ Cursor does **not** claim:
 | Round 4 collaboration close-out | `56a9c384aad6d7fa6806f29ce009296e02edd131` (`56a9c38`) |
 | Round 4 append-budget gate | `a4a50051f7bb4017a74517a54b6cf7c2057bc827` (`a4a5005`) |
 | Round 4 IPC reportId negative | `4f2d7ecce65a281364497cbe20a65fea58bb08fe` (`4f2d7ec`) |
-| This Round 4 record | lands last on the same branch (HEAD after this file) |
+| Round 4 record (do not amend) | `4e14672cb6a23f097f0a2e22e77588c209701b62` (`4e14672`) — **audited 2026-08-23, acceptance withheld; see Round 5** |
+| Round 5 success proof | `16c453361ec90e34d49d9c99bd8a49810cb88aaf` (`16c4533`) |
+| Round 5 budget live gate | `487cc1da47367888b5edf8d04308f9d72d533313` (`487cc1d`) |
+| Round 5 report-bound replay | `cd7f17d18d7abd045f96f4edc46e1879ab9067c7` (`cd7f17d`) |
+| Round 5 per-request decisions | `49dc45bbd376be0b2ad18e4e60f857ffd37690e5` (`49dc45b`) |
+| Round 5 stop race guard | `2de5f66377d888b9d5319436598f4ff2d066a1c3` (`2de5f66`) |
+| This Round 5 record | lands last on the same branch (HEAD after this file) |
 | Product-law source | `cursor/p6-9-multi-agent-planning-r0` @ `01f9d3b` |
 | P6.8 worktree | `p6-8-cursor-desktop-hardening-r0` left at `d2a2db0` |
 | Codex empty pointer | `codex/p6-9-personal-multi-agent-team-r0` left at `d2a2db0` (**untouched**) |
@@ -186,7 +192,16 @@ Round 1 did not redo workbench UI and did not return to a fixed Owner roster.
 37. `56a9c384aad6d7fa6806f29ce009296e02edd131` — `fix(desktop): resolve pending collaborations before team success`
 38. `a4a50051f7bb4017a74517a54b6cf7c2057bc827` — `fix(workbench): gate team append budget to the origin view`
 39. `4f2d7ecce65a281364497cbe20a65fea58bb08fe` — `test(desktop): add uppercase reportId IPC rejection negative`
-40. This file + INV-085 / ai-maintainer-map forward amendments (success closure, resolve binding, legacy fail-closed, schema v7)
+40. `4e14672cb6a23f097f0a2e22e77588c209701b62` — `docs(p6.9): record Round 4 forward-fix and pin Round 3 audit verdict` (audited 2026-08-23; acceptance withheld)
+
+**Round 5 P1/P2 forward-fix (after `4e14672`; do not amend it):**
+
+41. `16c453361ec90e34d49d9c99bd8a49810cb88aaf` — `fix(desktop-local): bind succeeded to a terminal decision, full lineage and the validated answer`
+42. `487cc1da47367888b5edf8d04308f9d72d533313` — `fix(desktop-local): require a live run for budget append`
+43. `cd7f17d18d7abd045f96f4edc46e1879ab9067c7` — `fix(desktop-local): bind settle collaboration rows to reports and replay immutably`
+44. `49dc45bbd376be0b2ad18e4e60f857ffd37690e5` — `fix(desktop): decide pending collaborations per request at replan`
+45. `2de5f66377d888b9d5319436598f4ff2d066a1c3` — `fix(desktop): recheck stop after the collaboration close-out before success`
+46. This file + INV-085 / ai-maintainer-map forward amendments (success proof, per-request decisions, report-bound replay, schema v8)
 
 ---
 
@@ -745,6 +760,70 @@ ENTERPRISE_MULTI_AGENT_DISABLED
 Round 4 is a forward-fix, not an acceptance claim. P6.9 engineering
 acceptance remains withheld until the next independent audit re-runs the
 closure, resolve-binding and replay attacks against these commits.
+
+---
+
+## Round 5 P1/P2 forward-fix (after `4e14672`; do not amend it)
+
+Date: 2026-08-23. The Codex audit of `4e14672` closed the Round 4 resolve
+binding, legacy fail-closed and settle-duplicate items but reproduced a P1
+success-truth cluster (an empty `finish` revision launders failed children;
+a delegate plan succeeds before the parent finishes; `answer_directly`
+success is not bound to the validated answer; a same-state `succeeded`
+replay rewrites the terminal answer), a P1 Stop race in the new
+collaboration close-out window, and P2s (real `accept_start` recorded as
+`handle_self`, replay responses mixing later standalone requests, terminal
+budget mutation). This round lands all of them plus the reported P3s.
+
+| # | Fix | Tests that fail if the fix is deleted |
+|---|---|---|
+| 1 | Success proof v2: terminal decision (`answer_directly`/`finish` only), `answer_directly` answer bound verbatim to the validated proposal answer, full-history assignment/node closure (empty finish cannot launder failures), same-state answer conflict (`desktop_team_success_answer_conflict`), recovery re-verifies the same proof | `test_state_succeeded_requires_terminal_plan_decision`, `test_state_succeeded_cannot_launder_failed_child_via_finish`, `test_state_succeeded_answer_directly_binds_validated_answer`, `test_state_succeeded_replay_requires_identical_answer` |
+| 2 | Budget append requires a live Run (backend authoritative gate + workbench runState gate) | `test_append_budget_requires_live_run`, `append budget target is origin-only and uses the origin workspace id` |
+| 3 | `desktop_0008` binds settle-created collaboration rows to their report; replay response built solely from report-bound rows and must reconstruct the payload; standalone create idempotent per exact tuple | `test_report_replay_response_excludes_later_standalone_requests`, `test_report_replay_unbound_rows_fail_closed`, `test_standalone_collaboration_replay_is_idempotent` |
+| 4 | Per-request `collaborationDecisions` at replan (coverage required, accept_start binds a new same-role assignment of the same proposal, merge to known, handle_self/decline bare; coordinator executes decisions right after acceptance) | `test_replan_requires_collaboration_decisions_coverage`, `parent accepts collaboration and starts QA as a new validated assignment` (accept_start on qa-matrix), `an undecided collaboration request fails the replan instead of being auto-resolved` |
+| 5 | Close-out is verify-only (`desktop_team_collaboration_pending`); both success paths re-check Stop/wall after the close-out awaits; deterministic gated race tests on both paths | `Stop during the answer_directly close-out cannot commit success`, `Stop during the synthesis close-out cannot commit success` |
+| 6 | INV-085 forward amendments (success proof, per-request decisions, report-bound replay, budget live gate, `desktop_0007` wording precision, schema v8) + this record | this section |
+
+Pre-existing tests that settled then succeeded directly now submit an
+accepted `finish` replan first (the audit's reproductions showed the old
+expectation was exactly the hole).
+
+### Round 5 gate counts
+
+Recorded after the fixes above. Same constraints. No Docker/WSL/PostgreSQL.
+No paid keys. No installer. Root `.env` not read. PowerShell: no `&&`.
+RuntimeHost optional; not faked.
+
+```text
+frontend pnpm test       = 272 passed
+frontend pnpm typecheck  = passed
+frontend pnpm lint       = passed
+frontend pnpm build      = passed
+desktop  pnpm test       = 94 passed
+desktop  pnpm typecheck  = passed
+desktop  pnpm build      = passed
+pytest desktop_local     = 176 passed
+ruff (touched Python)    = passed
+Ruff format check        = passed
+git diff --check         = passed
+validate_maintainer_map  = passed (75 invariants, 51 modules, 1218 path specs, 3127 matched files, 358 entrypoints, 21 discovered HTTP entrypoints, 296 verification commands)
+validate_maintainer_benchmark = passed (3 plans, 8 scenarios, 6 critical scenarios, 9 unsafe vetoes)
+```
+
+Publish boundary (unchanged):
+
+```text
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+EXE_MSI_REPACKAGE_NOT_APPROVED
+LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+```
+
+Round 5 is a forward-fix, not an acceptance claim. P6.9 engineering
+acceptance remains withheld until the next independent audit re-runs the
+success-proof, Stop-race, decisions-coverage and replay-projection attacks
+against these commits.
 
 ---
 

@@ -4340,9 +4340,13 @@ host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 7 (`desktop_0007_recovery_success_downgrade`) is
-current; it recreates the run-state transition trigger with one recovery-only
-relaxation, `succeeded → unknown`. Version 6
+Desktop schema version 8 (`desktop_0008_collaboration_report_binding`) is
+current; it binds settle-created collaboration rows to their
+`team_employee_report`. Version 7 (`desktop_0007_recovery_success_downgrade`)
+recreates the run-state transition trigger so the schema permits
+`succeeded → unknown`; the normal `/state` API forbids that transition, and
+current application use is restart recovery (the schema itself cannot prove
+the caller is recovery). Version 6
 (`desktop_0006_report_collaboration_digest`) added the settle-time
 collaboration-request digest column to `team_employee_report`; version 5
 (`desktop_0005_team_node_identity_epochs`) remains the node identity epoch
@@ -4410,22 +4414,25 @@ into a terminal state is bound by the same invariant inside one
 `budget_exhausted` and `cannot_complete` fail closed on any live child
 (`desktop_team_run_children_live`), while `cancelled` cascades the same child
 CAS as Stop. A terminal parent with live children can therefore neither be
-committed through `/state` nor survive a restart. Beyond "not live",
-`succeeded` requires a full **success closure** in the same transaction
-(`desktop_team_success_closure_open`): a host-validated current plan
-revision, a non-empty `parent_final_answer`, every current-plan assignment
-`completed` (or `needs_collaboration` with no pending request), every
-current-plan node `succeeded`, and zero pending collaboration requests.
-`failed`, `cancelled`, `unknown` and `blocked` children are never success;
-an empty Run cannot succeed without a plan or an answer; and an earlier
-failure is absorbed only when a later validated plan revision supersedes it
-(the closure is scoped to the current plan). Restart recovery downgrades any
-`succeeded` Run whose closure does not hold to `unknown` (its residual live
-children then converge through the unknown-parent mapping); a proven success
-survives restart untouched. Before the coordinator commits success it
-resolves every still-pending collaboration request from the authoritative
-blackboard as `handle_self` — the parent has, by construction, already
-answered each request through its replan and final synthesis.
+committed through `/state` nor survive a restart. Budget append likewise
+requires a live Run (`preparing|running`, else
+`desktop_team_run_terminal`), so a terminal Run's durable budget receipt
+cannot be rewritten after Stop or success. Beyond "not live",
+`succeeded` requires a full **success proof** in the same transaction
+(`desktop_team_success_closure_open`): the current plan revision must be
+host-validated **and** terminal (`answer_directly` or `finish` — a
+delegate/continue/request_followup plan cannot succeed before the parent
+finishes); `answer_directly` success must carry exactly the validated
+proposal answer, `finish` success a non-empty synthesized answer; the
+closure covers the run's **entire** assignment/node history (every
+assignment `completed` or `needs_collaboration` with no pending request,
+every node `succeeded`) — so an empty `finish` revision can no longer
+launder an earlier failed child, and until an explicit supersede mechanism
+exists a failure is never absorbable; and zero pending collaboration
+requests. A same-state `succeeded` replay may only repeat the identical
+final answer (`desktop_team_success_answer_conflict` otherwise). Restart
+recovery re-verifies the same proof and downgrades disproven success to
+`unknown`; a proven success survives restart untouched.
 
 Independent collaboration writes — create **and** resolve — require a live
 Team Run (`preparing|running`) and a matching node/report identity on that
@@ -4434,7 +4441,20 @@ run. A cancelled/unknown/terminal run, or a wrong node/report id, fails closed
 Resolve re-loads the parent Run inside the same write transaction, performs a
 `parent_decision = 'pending'` CAS, and accepts a replayed resolve only when the
 decision and `resolved_assignment_id` match exactly; any different replay
-conflicts (`desktop_team_collaboration_resolve_conflict`). Decision shapes are
+conflicts (`desktop_team_collaboration_resolve_conflict`). Pending requests
+are decided **per request** by the parent: every replan submitted while
+requests are pending must carry `collaborationDecisions` covering exactly the
+pending set (`desktop_team_collaboration_undecided` otherwise), `accept_start`
+binding a new same-role assignment from the same proposal,
+`merge_existing` a known assignment, `handle_self`/`decline` no assignment;
+the coordinator executes each decision through the resolve endpoint right
+after the replan is accepted, and its pre-success close-out is verify-only —
+success over an undecided collaboration fails closed
+(`desktop_team_collaboration_pending`), it is never auto-resolved. Both
+success paths re-check the local Stop flag and wall deadline after the
+close-out awaits and before committing success, so an observed Stop cannot be
+followed by a durable success; once the durable cancel commits, the success
+proof and run-state trigger remain the authoritative second line. Decision shapes are
 bound in the same transaction: `accept_start` and `merge_existing` require a
 resolved assignment whose role equals the request's `target_role_id` and whose
 plan is the run's current validated plan (`accept_start` only a `pending`
@@ -4448,7 +4468,13 @@ the unique `(targetRoleId, question, reason)` canonical ordering; duplicate
 tuples are rejected at validation as `desktop_team_collaboration_duplicate`).
 Rows settled before `desktop_0006` carry no digest and replay fails closed as
 `desktop_team_report_replay_legacy_unverifiable` — the settle-time request set
-of a legacy row cannot be reconstructed immutably. Mutated replay
+of a legacy row cannot be reconstructed immutably. The replay **response** is
+built solely from the immutable rows bound to that report
+(`desktop_0008` `report_id`; standalone creates stay unbound), and the bound
+rows must reconstruct the replayed request set exactly — a later legal
+standalone request can no longer leak into an earlier report's projection.
+Standalone create is idempotent per exact tuple (the stored row is returned,
+never a duplicate). Mutated replay
 fails closed (`desktop_team_report_replay_mismatch`). Identical replay —
 including a reordered but equal request set — may be idempotent.
 
