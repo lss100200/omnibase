@@ -2742,7 +2742,7 @@ def resolve_collaboration_request(  # noqa: C901 - live gate, CAS and idempotent
         if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
             raise DesktopApiError(409, "desktop_team_run_terminal")
         existing = connection.execute(
-            "SELECT id, parent_decision, resolved_assignment_id "
+            "SELECT id, parent_decision, resolved_assignment_id, target_role_id "
             "FROM team_collaboration_request WHERE id = ? AND team_run_id = ?",
             (request_id, team_run_id),
         ).fetchone()
@@ -2761,14 +2761,29 @@ def resolve_collaboration_request(  # noqa: C901 - live gate, CAS and idempotent
                     "resolved_assignment_id": stored_assignment,
                 }
             }
+        requires_assignment = parent_decision in {"accept_start", "merge_existing"}
+        if requires_assignment != (resolved_assignment_id is not None):
+            raise DesktopApiError(400, "desktop_native_input_invalid")
         if resolved_assignment_id is not None:
             bound = connection.execute(
-                "SELECT assignment_id FROM team_assignment "
+                "SELECT employee_role_id, plan_revision_id, state FROM team_assignment "
                 "WHERE team_run_id = ? AND assignment_id = ?",
                 (team_run_id, resolved_assignment_id),
             ).fetchone()
             if bound is None:
                 raise DesktopApiError(404, "desktop_team_assignment_not_found")
+            if str(bound["employee_role_id"]) != str(existing["target_role_id"]):
+                raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+            if str(bound["plan_revision_id"]) != str(run["current_plan_revision_id"]):
+                raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+            if parent_decision == "accept_start" and str(bound["state"]) != "pending":
+                raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
+            if parent_decision == "merge_existing" and str(bound["state"]) not in (
+                "running",
+                "completed",
+                "needs_collaboration",
+            ):
+                raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
         updated = connection.execute(
             "UPDATE team_collaboration_request SET parent_decision = ?, "
             "resolved_assignment_id = ?, updated_at = ? "

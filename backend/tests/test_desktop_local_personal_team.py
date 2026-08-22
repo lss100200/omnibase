@@ -1982,6 +1982,183 @@ def test_collaboration_resolve_requires_live_run_and_pending_cas(tmp_path: Path)
             db.close()
 
 
+def test_collaboration_resolve_binds_decision_shape_role_and_plan(tmp_path: Path) -> None:
+    config = _config(tmp_path / "shape")
+    with TestClient(create_desktop_local_app(config)) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(
+            client, with_provider=True, base_url="http://127.0.0.1:9/v1"
+        )
+        listed = client.get("/desktop/v1/providers", headers=_native())
+        provider_id = listed.json()["items"][0]["id"]
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        team_run_id = started["body"]["team_run"]["id"]
+        accepted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+            headers=_native(),
+            json={
+                "proposal": _delegate(
+                    [
+                        _assignment(),
+                        _assignment("qa-review", "qa", objective="补齐回归矩阵"),
+                    ]
+                )
+            },
+        )
+        assert accepted.status_code == 200
+        assert accepted.json()["accepted"] is True
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = _create_running_node(client, workspace_id, team_run_id, provider_id)
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{created['node_id']}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload(created["invocation_id"]),
+                "status": "needs_collaboration",
+                "collaboration_requests": [
+                    {
+                        "targetRoleId": "qa",
+                        "question": "请补回归清单",
+                        "reason": "需要覆盖取消路径",
+                    }
+                ],
+            },
+        )
+        assert settled.status_code == 200
+        db = sqlite3.connect(config.storage.database_path)
+        try:
+            request_id = db.execute(
+                "SELECT id FROM team_collaboration_request WHERE team_run_id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        resolve_url = (
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/"
+            f"collaboration-requests/{request_id}/resolve"
+        )
+        wrong_role = client.post(
+            resolve_url,
+            headers=_native(),
+            json={"parent_decision": "merge_existing", "resolved_assignment_id": "frontend-review"},
+        )
+        assert wrong_role.status_code == 409
+        assert wrong_role.json()["error"]["code"] == "desktop_team_collaboration_identity_mismatch"
+        accept_without_assignment = client.post(
+            resolve_url,
+            headers=_native(),
+            json={"parent_decision": "accept_start", "resolved_assignment_id": None},
+        )
+        assert accept_without_assignment.status_code == 400
+        assert accept_without_assignment.json()["error"]["code"] == "desktop_native_input_invalid"
+        decline_with_assignment = client.post(
+            resolve_url,
+            headers=_native(),
+            json={"parent_decision": "decline", "resolved_assignment_id": "qa-review"},
+        )
+        assert decline_with_assignment.status_code == 400
+        handle_self_with_assignment = client.post(
+            resolve_url,
+            headers=_native(),
+            json={"parent_decision": "handle_self", "resolved_assignment_id": "qa-review"},
+        )
+        assert handle_self_with_assignment.status_code == 400
+        accepted_start = client.post(
+            resolve_url,
+            headers=_native(),
+            json={"parent_decision": "accept_start", "resolved_assignment_id": "qa-review"},
+        )
+        assert accepted_start.status_code == 200, accepted_start.text
+        assert accepted_start.json()["collaboration_request"]["parent_decision"] == "accept_start"
+
+    stale_config = _config(tmp_path / "stale-plan")
+    with TestClient(create_desktop_local_app(stale_config)) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(
+            client, with_provider=True, base_url="http://127.0.0.1:9/v1"
+        )
+        listed = client.get("/desktop/v1/providers", headers=_native())
+        provider_id = listed.json()["items"][0]["id"]
+        started = _start_run(client, workspace_id, conversation_id)
+        assert started["status"] == 200
+        team_run_id = started["body"]["team_run"]["id"]
+        accepted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/proposals",
+            headers=_native(),
+            json={"proposal": _delegate([_assignment("qa-review", "qa")])},
+        )
+        assert accepted.status_code == 200
+        promoted = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/state",
+            headers=_native(),
+            json={"state": "running"},
+        )
+        assert promoted.status_code == 200
+        created = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes",
+            headers=_native(),
+            json={
+                "assignment_id": "qa-review",
+                "employee_role_id": "qa",
+                "invocation_id": "invocation_" + "a" * 32,
+                "wave_id": "wave-1",
+                "node_epoch": 1,
+                "send_epoch": 1,
+                "provider_id": provider_id,
+                "requested_model": "loopback-chat",
+            },
+        )
+        assert created.status_code == 200, created.text
+        node_id = created.json()["node"]["id"]
+        settled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/nodes/"
+            f"{node_id}/settle",
+            headers=_native(),
+            json={
+                **_settle_payload("invocation_" + "a" * 32),
+                "assignment_id": "qa-review",
+                "employee_role_id": "qa",
+            },
+        )
+        assert settled.status_code == 200, settled.text
+        report_id = settled.json()["report"]["id"]
+        recorded = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/collaboration-requests",
+            headers=_native(),
+            json={
+                "from_assignment_id": "qa-review",
+                "from_employee_role_id": "qa",
+                "target_role_id": "qa",
+                "question": "请补充测试范围",
+                "reason": "需要覆盖取消路径",
+                "node_id": node_id,
+                "report_id": report_id,
+            },
+        )
+        assert recorded.status_code == 200, recorded.text
+        db = sqlite3.connect(stale_config.storage.database_path)
+        try:
+            request_id = db.execute(
+                "SELECT id FROM team_collaboration_request WHERE team_run_id = ?",
+                (team_run_id,),
+            ).fetchone()[0]
+        finally:
+            db.close()
+        not_pending = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/"
+            f"collaboration-requests/{request_id}/resolve",
+            headers=_native(),
+            json={"parent_decision": "accept_start", "resolved_assignment_id": "qa-review"},
+        )
+        assert not_pending.status_code == 409
+        assert not_pending.json()["error"]["code"] == "desktop_team_collaboration_identity_mismatch"
+
+
 def test_stop_missing_and_unknown_run_are_conflict_noops(tmp_path: Path) -> None:
     config = _config(tmp_path)
     missing_id = "teamrun_" + "0" * 32
