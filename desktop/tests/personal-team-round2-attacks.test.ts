@@ -710,7 +710,7 @@ test(
         audits: number;
         schema: number;
       };
-      assert.equal(counts.schema, 7);
+      assert.equal(counts.schema, 8);
       assert.equal(counts.reports, 1);
       assert.equal(counts.audits, 1);
       assert.ok(events.some((item) => item.type === "node_starting"));

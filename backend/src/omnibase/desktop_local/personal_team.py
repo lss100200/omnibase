@@ -1796,6 +1796,34 @@ def record_collaboration_request(
             report_id=payload.get("report_id"),
         )
         now = utc_now_text()
+        existing_tuple = connection.execute(
+            "SELECT id, parent_decision, resolved_assignment_id "
+            "FROM team_collaboration_request WHERE team_run_id = ? "
+            "AND from_assignment_id = ? AND target_role_id = ? "
+            "AND question = ? AND reason = ?",
+            (
+                team_run_id,
+                from_assignment,
+                result.normalized["targetRoleId"],
+                result.normalized["question"],
+                result.normalized["reason"],
+            ),
+        ).fetchone()
+        if existing_tuple is not None:
+            connection.execute("COMMIT")
+            return {
+                "collaboration_request": {
+                    "id": str(existing_tuple["id"]),
+                    "team_run_id": team_run_id,
+                    "from_assignment_id": from_assignment,
+                    "from_employee_role_id": from_role,
+                    "target_role_id": result.normalized["targetRoleId"],
+                    "question": result.normalized["question"],
+                    "reason": result.normalized["reason"],
+                    "parent_decision": str(existing_tuple["parent_decision"]),
+                    "resolved_assignment_id": existing_tuple["resolved_assignment_id"],
+                }
+            }
         request_id = _new_id("teamcollab")
         connection.execute(
             "INSERT INTO team_collaboration_request ("
@@ -2440,12 +2468,13 @@ def _persist_report_collaboration_and_audit(
         request_id = _new_id("teamcollab")
         connection.execute(
             "INSERT INTO team_collaboration_request ("
-            "id, team_run_id, from_assignment_id, from_employee_role_id, target_role_id, "
-            "question, reason, parent_decision, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+            "id, team_run_id, report_id, from_assignment_id, from_employee_role_id, "
+            "target_role_id, question, reason, parent_decision, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
             (
                 request_id,
                 team_run_id,
+                report_id,
                 normalized["assignmentId"],
                 normalized["employeeRoleId"],
                 item["targetRoleId"],
@@ -2633,7 +2662,7 @@ def settle_team_node(  # noqa: C901 - success CAS, identity bind and report/audi
     }
 
 
-def record_employee_report(
+def record_employee_report(  # noqa: C901 - digest and report-bound projection verify in one transaction
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
@@ -2693,6 +2722,26 @@ def record_employee_report(
             != _collaboration_requests_digest(list(result.normalized["collaborationRequests"]))
         ):
             raise DesktopApiError(409, "desktop_team_report_replay_mismatch")
+        bound_rows = connection.execute(
+            "SELECT id, target_role_id, question, reason, parent_decision "
+            "FROM team_collaboration_request WHERE team_run_id = ? "
+            "AND report_id = ? ORDER BY created_at, id",
+            (team_run_id, str(existing["id"])),
+        ).fetchall()
+        bound_tuples = {
+            (str(row["target_role_id"]), str(row["question"]), str(row["reason"]))
+            for row in bound_rows
+        }
+        replay_tuples = {
+            (
+                str(item["targetRoleId"]),
+                str(item["question"]),
+                str(item["reason"]),
+            )
+            for item in result.normalized["collaborationRequests"]
+        }
+        if bound_tuples != replay_tuples:
+            raise DesktopApiError(409, "desktop_team_report_replay_legacy_unverifiable")
         recorded = [
             {
                 "id": str(row["id"]),
@@ -2701,12 +2750,7 @@ def record_employee_report(
                 "reason": str(row["reason"]),
                 "parent_decision": str(row["parent_decision"]),
             }
-            for row in connection.execute(
-                "SELECT id, target_role_id, question, reason, parent_decision "
-                "FROM team_collaboration_request WHERE team_run_id = ? "
-                "AND from_assignment_id = ? ORDER BY created_at, id",
-                (team_run_id, existing["assignment_id"]),
-            ).fetchall()
+            for row in bound_rows
         ]
         connection.execute("COMMIT")
     except DesktopApiError:
