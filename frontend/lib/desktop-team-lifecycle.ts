@@ -763,6 +763,14 @@ export function pendingDurableTeamCancel(
   return state.teamRunId
 }
 
+export function desktopTeamAppendBudgetTarget(
+  state: DesktopTeamLiveState,
+): { readonly workspaceId: string; readonly teamRunId: string } | null {
+  if (state.teamRunId === null || state.originWorkspaceId === null) return null
+  if (!viewingOrigin(state)) return null
+  return { workspaceId: state.originWorkspaceId, teamRunId: state.teamRunId }
+}
+
 export function reduceDesktopTeamEvent(
   state: DesktopTeamLiveState,
   event: DesktopTeamRunEvent,

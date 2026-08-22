@@ -5,6 +5,7 @@ import {
   beginDesktopTeamRun,
   completeDesktopTeamRun,
   createDesktopTeamLiveState,
+  desktopTeamAppendBudgetTarget,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
@@ -728,4 +729,57 @@ test('a snapshot from an older roster epoch does not rebind a new run', () => {
   const stale = reduceDesktopTeamEvent(state, snapshot())
   assert.equal(stale.teamRunId, null)
   assert.equal(stale.phase, 'preparing')
+})
+
+test('append budget target is origin-only and uses the origin workspace id', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  assert.equal(desktopTeamAppendBudgetTarget(state), null)
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(desktopTeamAppendBudgetTarget(state), null)
+  state = reduceDesktopTeamEvent(state, snapshot({ state: 'running' }))
+  assert.deepEqual(desktopTeamAppendBudgetTarget(state), {
+    workspaceId: WORKSPACE_A,
+    teamRunId: TEAM_RUN,
+  })
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  assert.equal(desktopTeamAppendBudgetTarget(state), null)
+  state = switchDesktopTeamScope(state, WORKSPACE_A, CONVERSATION_A)
+  assert.deepEqual(desktopTeamAppendBudgetTarget(state), {
+    workspaceId: WORKSPACE_A,
+    teamRunId: TEAM_RUN,
+  })
+})
+
+test('a terminal first snapshot latches before a late cancelled event', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  state = requestDesktopTeamCancel(state)
+  state = reduceDesktopTeamEvent(state, snapshot({ state: 'succeeded' }))
+  assert.equal(state.teamRunId, TEAM_RUN)
+  assert.equal(state.parkedPhase, 'completed')
+  assert.equal(state.parkedRunState, 'succeeded')
+  assert.equal(pendingDurableTeamCancel(state, null), TEAM_RUN)
+  const lateCancelled = reduceDesktopTeamEvent(state, snapshot({ type: 'cancelled' }))
+  assert.equal(lateCancelled.parkedPhase, 'completed')
+  assert.equal(lateCancelled.parkedRunState, 'succeeded')
+  const returned = switchDesktopTeamScope(lateCancelled, WORKSPACE_A, CONVERSATION_A)
+  assert.equal(returned.phase, 'completed')
+  assert.equal(returned.runState, 'succeeded')
 })

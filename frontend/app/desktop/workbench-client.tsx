@@ -27,6 +27,7 @@ import {
   desktopInvocationNeedsStreamAbort,
   desktopLiveSendBlocked,
   desktopLiveStopVisible,
+  desktopTeamAppendBudgetTarget,
   markDesktopInvocationCancelDispatched,
   reduceDesktopInvocationEvent,
   requestDesktopLiveCancel,
@@ -249,6 +250,7 @@ export function DesktopWorkbench({
   const activeWorkspaces = workspaces.filter((item) => item.state === 'active')
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
   const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
+  const teamAppendBudgetTarget = desktopTeamAppendBudgetTarget(teamLive)
   const sendBlocked = desktopLiveSendBlocked(live) || desktopTeamStopVisible(teamLive)
   const stopping = desktopInvocationIsStopping(live) || teamLive.phase === 'cancelling'
 
@@ -1086,16 +1088,16 @@ export function DesktopWorkbench({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={teamLive.teamRunId === null}
+                    disabled={teamAppendBudgetTarget === null}
                     onClick={() => {
-                      if (workspaceId === null || teamLive.teamRunId === null) return
+                      if (teamAppendBudgetTarget === null) return
                       const nextCalls = Number.parseInt(appendCalls, 10)
                       if (!Number.isInteger(nextCalls)) return
                       const next = { ...teamBudget, maximumProviderCalls: nextCalls }
                       setTeamBudget(next)
                       void bridge.teamRuns.appendBudget({
-                        workspaceId,
-                        teamRunId: teamLive.teamRunId,
+                        workspaceId: teamAppendBudgetTarget.workspaceId,
+                        teamRunId: teamAppendBudgetTarget.teamRunId,
                         budget: next,
                       })
                     }}

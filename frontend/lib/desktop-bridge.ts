@@ -319,6 +319,7 @@ export {
   beginDesktopTeamRun,
   completeDesktopTeamRun,
   createDesktopTeamLiveState,
+  desktopTeamAppendBudgetTarget,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
