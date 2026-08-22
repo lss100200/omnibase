@@ -2053,6 +2053,8 @@ def append_team_run_budget(
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        if str(row["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
         if int(row["consumed_provider_calls"]) > result.normalized["maximumProviderCalls"]:
             raise DesktopApiError(400, "desktop_team_call_budget_exceeded")
         updated = connection.execute(

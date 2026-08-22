@@ -653,6 +653,32 @@ def test_append_budget_rejects_infinite_and_keeps_consumed(tmp_path: Path) -> No
         assert ok.json()["team_run"]["maximum_provider_calls"] == 24
 
 
+def test_append_budget_requires_live_run(tmp_path: Path) -> None:
+    with TestClient(create_desktop_local_app(_config(tmp_path))) as client:
+        workspace_id, conversation_id = _bootstrap_workspace(client)
+        started = _start_run(client, workspace_id, conversation_id)
+        team_run_id = started["body"]["team_run"]["id"]
+        cancelled = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/cancel",
+            headers=_native(),
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["team_run"]["state"] == "cancelled"
+        appended = client.post(
+            f"/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/budget",
+            headers=_native(),
+            json={
+                "maximum_provider_calls": 24,
+                "maximum_wall_time_ms": 600000,
+                "maximum_concurrent_calls": 3,
+                "maximum_input_characters": 16384,
+                "maximum_output_characters": 32768,
+            },
+        )
+        assert appended.status_code == 409
+        assert appended.json()["error"]["code"] == "desktop_team_run_terminal"
+
+
 def _prepare_assigned_run(client: TestClient) -> tuple[str, str, str, str]:
     workspace_id, conversation_id = _bootstrap_workspace(
         client, with_provider=True, base_url="http://127.0.0.1:9/v1"

@@ -756,6 +756,18 @@ test('append budget target is origin-only and uses the origin workspace id', () 
     workspaceId: WORKSPACE_A,
     teamRunId: TEAM_RUN,
   })
+  state = reduceDesktopTeamEvent(state, snapshot({ type: 'cancelled' }))
+  assert.equal(desktopTeamAppendBudgetTarget(state), null)
+  state = completeDesktopTeamRun(state)
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 2,
+    maximumProviderCalls: 8,
+  })
+  state = reduceDesktopTeamEvent(state, snapshot({ rosterEpoch: 2, state: 'running' }))
+  state = reduceDesktopTeamEvent(state, snapshot({ rosterEpoch: 2, type: 'completed', parentFinalAnswer: 'done' }))
+  assert.equal(desktopTeamAppendBudgetTarget(state), null)
 })
 
 test('a terminal first snapshot latches before a late cancelled event', () => {

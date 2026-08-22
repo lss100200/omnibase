@@ -768,6 +768,8 @@ export function desktopTeamAppendBudgetTarget(
 ): { readonly workspaceId: string; readonly teamRunId: string } | null {
   if (state.teamRunId === null || state.originWorkspaceId === null) return null
   if (!viewingOrigin(state)) return null
+  const runState = originRunState(state)
+  if (runState !== 'preparing' && runState !== 'running') return null
   return { workspaceId: state.originWorkspaceId, teamRunId: state.teamRunId }
 }
 
