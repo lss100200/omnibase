@@ -439,7 +439,10 @@ def _converge_failure_terminal_assignments(
 
 
 def _success_closure_violation(  # noqa: C901 - terminal decision, answer binding and full lineage share one proof
-    connection: sqlite3.Connection, run: sqlite3.Row
+    connection: sqlite3.Connection,
+    run: sqlite3.Row,
+    *,
+    effective_answer: str | None = None,
 ) -> str | None:
     team_run_id = str(run["id"])
     pending_parent_calls = connection.execute(
@@ -461,7 +464,7 @@ def _success_closure_violation(  # noqa: C901 - terminal decision, answer bindin
     decision = str(revision["decision"])
     if decision not in {"answer_directly", "finish"}:
         return "desktop_team_success_plan_not_terminal"
-    answer = run["parent_final_answer"]
+    answer = effective_answer if effective_answer is not None else run["parent_final_answer"]
     if not isinstance(answer, str) or len(answer.strip()) == 0:
         return "desktop_team_success_answer_missing"
     if decision == "answer_directly":
@@ -533,10 +536,11 @@ def _success_closure_violation(  # noqa: C901 - terminal decision, answer bindin
 def _require_success_closure(
     connection: sqlite3.Connection, run: sqlite3.Row, effective_answer: str | None
 ) -> None:
-    checked = run
-    if effective_answer is not None:
-        checked = {**dict(run), "parent_final_answer": effective_answer}
-    violation = _success_closure_violation(connection, checked)
+    violation = _success_closure_violation(
+        connection,
+        run,
+        effective_answer=effective_answer,
+    )
     if violation is not None:
         raise DesktopApiError(409, "desktop_team_success_closure_open")
 
@@ -1345,8 +1349,11 @@ def get_agent_role(
     if role_id not in EMPLOYEE_ROLE_IDS:
         raise DesktopApiError(404, "desktop_agent_role_not_found")
     listed = list_agent_roles(connection, workspace_id)
-    for item in listed["items"]:  # type: ignore[union-attr]
-        if item["id"] == role_id:
+    items = listed["items"]
+    if not isinstance(items, list):
+        raise DesktopApiError(500, "desktop_agent_role_catalog_invalid")
+    for item in items:
+        if isinstance(item, dict) and item.get("id") == role_id:
             return {"role": item}
     raise DesktopApiError(404, "desktop_agent_role_not_found")
 
@@ -2547,9 +2554,19 @@ def _validated_usage(
     values = (input_tokens, output_tokens, total_tokens)
     if values == (None, None, None):
         return None, None, None
-    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+    if (
+        not isinstance(input_tokens, int)
+        or isinstance(input_tokens, bool)
+        or input_tokens < 0
+        or not isinstance(output_tokens, int)
+        or isinstance(output_tokens, bool)
+        or output_tokens < 0
+        or not isinstance(total_tokens, int)
+        or isinstance(total_tokens, bool)
+        or total_tokens < 0
+    ):
         raise DesktopApiError(400, "desktop_native_input_invalid")
-    parsed = (int(input_tokens), int(output_tokens), int(total_tokens))
+    parsed = (input_tokens, output_tokens, total_tokens)
     if parsed[2] != parsed[0] + parsed[1]:
         raise DesktopApiError(400, "desktop_team_parent_call_usage_mismatch")
     return parsed
@@ -2922,7 +2939,7 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
             "node_epoch": node_epoch,
             "send_epoch": send_epoch,
             "provider_id": provider_id,
-            "requested_model": requested_model.strip(),
+            "requested_model": normalized_requested_model,
         }
     }
 

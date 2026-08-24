@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from collections.abc import Sequence
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -88,7 +89,7 @@ def _require_public_or_loopback(address: str, *, allow_loopback: bool) -> None:
         _reject("desktop_provider_endpoint_invalid")
 
 
-def _unique_addresses(answers: list[tuple[object, ...]]) -> tuple[str, ...]:
+def _unique_addresses(answers: Sequence[tuple[object, ...]]) -> tuple[str, ...]:
     ordered: list[str] = []
     seen: set[str] = set()
     for item in answers:
@@ -136,6 +137,7 @@ def resolve_provider_endpoint(  # noqa: C901 - fail-closed URL, DNS and SSRF che
     ):
         _reject("desktop_provider_endpoint_invalid")
     loopback = _hostname_is_loopback(hostname)
+    connect_addrs: tuple[str, ...]
     if parsed.scheme == "http":
         if not allow_loopback_http or not loopback:
             _reject("desktop_provider_endpoint_invalid")
