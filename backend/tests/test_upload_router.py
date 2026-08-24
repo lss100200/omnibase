@@ -6,6 +6,7 @@ Pure unit tests — no real Redis/MinIO/DB/model calls.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -48,7 +49,7 @@ class TestRouter202Accepted:
     """The upload endpoint returns HTTP 202 with 'queued' status."""
 
     @pytest.fixture
-    def client_with_mocks(self, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    def client_with_mocks(self, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         """Build a FastAPI TestClient with dependency overrides."""
         from omnibase.documents.router import router
         from omnibase.tenants.dependencies import TenantContext, get_current_tenant
@@ -84,7 +85,8 @@ class TestRouter202Accepted:
             fake_upload,
         )
 
-        return TestClient(app)
+        with TestClient(app) as client:
+            yield client
 
     def test_upload_returns_202_status(self, client_with_mocks: TestClient) -> None:
         """Given: a multipart upload POST,
