@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 8
+DESKTOP_SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True, slots=True)
@@ -862,6 +862,210 @@ DESKTOP_0008 = DesktopMigration(
     ),
 )
 
+DESKTOP_0009 = DesktopMigration(
+    version=9,
+    migration_id="desktop_0009_parent_call_proof",
+    statements=(
+        """
+        CREATE UNIQUE INDEX team_plan_revision_run_identity_unique
+        ON team_plan_revision(id, team_run_id)
+        """,
+        """
+        CREATE TABLE team_provider_call_reservation (
+            invocation_id TEXT PRIMARY KEY CHECK (
+                length(invocation_id) = 43
+                AND invocation_id GLOB 'invocation_[0-9a-f]*'
+                AND substr(invocation_id, 12) NOT GLOB '*[^0-9a-f]*'
+            ),
+            team_run_id TEXT NOT NULL,
+            purpose TEXT NOT NULL CHECK (
+                purpose IN (
+                    'parent-propose', 'parent-replan', 'parent-synthesize', 'employee'
+                )
+            ),
+            provider_id TEXT NOT NULL CHECK (
+                length(provider_id) = 41
+                AND provider_id GLOB 'provider_[0-9a-f]*'
+                AND substr(provider_id, 10) NOT GLOB '*[^0-9a-f]*'
+            ),
+            requested_model TEXT NOT NULL CHECK (length(requested_model) BETWEEN 1 AND 256),
+            created_at TEXT NOT NULL,
+            UNIQUE (invocation_id, team_run_id, purpose, provider_id, requested_model),
+            FOREIGN KEY (team_run_id) REFERENCES team_run(id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        INSERT INTO team_provider_call_reservation (
+            invocation_id, team_run_id, purpose, provider_id, requested_model, created_at
+        )
+        SELECT invocation_id, team_run_id, 'employee', provider_id, requested_model, created_at
+        FROM team_node
+        WHERE invocation_id IS NOT NULL
+          AND provider_id IS NOT NULL
+          AND requested_model IS NOT NULL
+          AND length(invocation_id) = 43
+          AND invocation_id GLOB 'invocation_[0-9a-f]*'
+          AND substr(invocation_id, 12) NOT GLOB '*[^0-9a-f]*'
+          AND length(provider_id) = 41
+          AND provider_id GLOB 'provider_[0-9a-f]*'
+          AND substr(provider_id, 10) NOT GLOB '*[^0-9a-f]*'
+          AND length(requested_model) BETWEEN 1 AND 256
+        """,
+        """
+        CREATE TRIGGER team_node_provider_call_reservation_required
+        BEFORE INSERT ON team_node
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM team_provider_call_reservation AS reservation
+            WHERE reservation.invocation_id = NEW.invocation_id
+              AND reservation.team_run_id = NEW.team_run_id
+              AND reservation.purpose = 'employee'
+              AND reservation.provider_id = NEW.provider_id
+              AND reservation.requested_model = NEW.requested_model
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_node_provider_call_reservation_required');
+        END
+        """,
+        """
+        CREATE TRIGGER team_node_identity_guard
+        BEFORE UPDATE ON team_node
+        WHEN NEW.id <> OLD.id
+          OR NEW.team_run_id <> OLD.team_run_id
+          OR NEW.assignment_id <> OLD.assignment_id
+          OR NEW.ordinal <> OLD.ordinal
+          OR NEW.employee_role_id <> OLD.employee_role_id
+          OR NEW.invocation_id IS NOT OLD.invocation_id
+          OR NEW.provider_id IS NOT OLD.provider_id
+          OR NEW.requested_model IS NOT OLD.requested_model
+          OR NEW.created_at <> OLD.created_at
+          OR NEW.wave_id IS NOT OLD.wave_id
+          OR NEW.node_epoch IS NOT OLD.node_epoch
+          OR NEW.send_epoch IS NOT OLD.send_epoch
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_node_identity_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER team_provider_call_reservation_update_forbidden
+        BEFORE UPDATE ON team_provider_call_reservation
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_provider_call_reservation_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER team_provider_call_reservation_delete_forbidden
+        BEFORE DELETE ON team_provider_call_reservation
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_provider_call_reservation_immutable');
+        END
+        """,
+        """
+        CREATE TABLE team_parent_call (
+            invocation_id TEXT PRIMARY KEY CHECK (
+                length(invocation_id) = 43
+                AND invocation_id GLOB 'invocation_[0-9a-f]*'
+                AND substr(invocation_id, 12) NOT GLOB '*[^0-9a-f]*'
+            ),
+            team_run_id TEXT NOT NULL,
+            plan_revision_id TEXT,
+            purpose TEXT NOT NULL CHECK (
+                purpose IN ('parent-propose', 'parent-replan', 'parent-synthesize')
+            ),
+            state TEXT NOT NULL DEFAULT 'pending' CHECK (
+                state IN ('pending', 'succeeded', 'failed', 'cancelled', 'unknown')
+            ),
+            provider_id TEXT NOT NULL CHECK (
+                length(provider_id) = 41
+                AND provider_id GLOB 'provider_[0-9a-f]*'
+                AND substr(provider_id, 10) NOT GLOB '*[^0-9a-f]*'
+            ),
+            requested_model TEXT NOT NULL CHECK (length(requested_model) BETWEEN 1 AND 256),
+            actual_model TEXT CHECK (
+                actual_model IS NULL OR length(actual_model) BETWEEN 1 AND 256
+            ),
+            input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
+            output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
+            total_tokens INTEGER CHECK (total_tokens IS NULL OR total_tokens >= 0),
+            output_sha256 TEXT CHECK (
+                output_sha256 IS NULL
+                OR (
+                    length(output_sha256) = 64
+                    AND output_sha256 NOT GLOB '*[^0-9a-f]*'
+                )
+            ),
+            error_code TEXT CHECK (
+                error_code IS NULL
+                OR (
+                    length(error_code) BETWEEN 3 AND 96
+                    AND error_code NOT GLOB '*[^a-z0-9_]*'
+                )
+            ),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (team_run_id, invocation_id),
+            FOREIGN KEY (team_run_id) REFERENCES team_run(id) ON DELETE RESTRICT,
+            FOREIGN KEY (plan_revision_id, team_run_id)
+                REFERENCES team_plan_revision(id, team_run_id) ON DELETE RESTRICT,
+            FOREIGN KEY (
+                invocation_id, team_run_id, purpose, provider_id, requested_model
+            ) REFERENCES team_provider_call_reservation(
+                invocation_id, team_run_id, purpose, provider_id, requested_model
+            ) ON DELETE RESTRICT,
+            CHECK (
+                (state = 'pending'
+                    AND actual_model IS NULL
+                    AND input_tokens IS NULL
+                    AND output_tokens IS NULL
+                    AND total_tokens IS NULL
+                    AND output_sha256 IS NULL
+                    AND error_code IS NULL)
+                OR (state = 'succeeded'
+                    AND plan_revision_id IS NOT NULL
+                    AND actual_model = requested_model
+                    AND output_sha256 IS NOT NULL
+                    AND error_code IS NULL)
+                OR (state IN ('failed', 'cancelled', 'unknown')
+                    AND output_sha256 IS NULL
+                    AND error_code IS NOT NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE INDEX team_parent_call_success_proof
+        ON team_parent_call(team_run_id, purpose, plan_revision_id, state, output_sha256)
+        """,
+        """
+        CREATE TRIGGER team_parent_call_identity_guard
+        BEFORE UPDATE ON team_parent_call
+        WHEN NEW.invocation_id <> OLD.invocation_id
+          OR NEW.team_run_id <> OLD.team_run_id
+          OR NEW.purpose <> OLD.purpose
+          OR NEW.provider_id <> OLD.provider_id
+          OR NEW.requested_model <> OLD.requested_model
+          OR NEW.created_at <> OLD.created_at
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_parent_call_identity_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER team_parent_call_terminal_immutable
+        BEFORE UPDATE ON team_parent_call
+        WHEN OLD.state IN ('succeeded', 'failed', 'cancelled', 'unknown')
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_parent_call_terminal_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER team_parent_call_delete_forbidden
+        BEFORE DELETE ON team_parent_call
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_team_parent_call_terminal_immutable');
+        END
+        """,
+    ),
+)
+
 DESKTOP_MIGRATIONS = (
     DESKTOP_0001,
     DESKTOP_0002,
@@ -871,4 +1075,5 @@ DESKTOP_MIGRATIONS = (
     DESKTOP_0006,
     DESKTOP_0007,
     DESKTOP_0008,
+    DESKTOP_0009,
 )

@@ -80,6 +80,30 @@ const TEAM_RUN_STATES = new Set([
   "budget_exhausted",
   "cannot_complete",
 ]);
+const TEAM_PROVIDER_CALL_PURPOSES = new Set([
+  "parent-propose",
+  "parent-replan",
+  "parent-synthesize",
+  "employee",
+]);
+const TEAM_PARENT_CALL_PURPOSES = new Set([
+  "parent-propose",
+  "parent-replan",
+  "parent-synthesize",
+]);
+const TEAM_PARENT_CALL_STATES = new Set([
+  "pending",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "unknown",
+]);
+const TEAM_PARENT_CALL_TERMINAL_STATES = new Set([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "unknown",
+]);
 const FAMILIES = new Set([
   "deepseek",
   "openai",
@@ -96,6 +120,24 @@ const MAX_WORKSPACES = 256;
 
 type FetchLike = typeof fetch;
 type NativeMethod = "GET" | "POST" | "DELETE";
+
+export interface DesktopTeamParentCallRecord {
+  readonly invocationId: string;
+  readonly teamRunId: string;
+  readonly planRevisionId: string | null;
+  readonly purpose: "parent-propose" | "parent-replan" | "parent-synthesize";
+  readonly state: "pending" | "succeeded" | "failed" | "cancelled" | "unknown";
+  readonly providerId: string;
+  readonly requestedModel: string;
+  readonly actualModel: string | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly totalTokens: number | null;
+  readonly outputSha256: string | null;
+  readonly errorCode: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -115,6 +157,13 @@ function hasExactKeys(
 function isBoundedString(value: unknown, maximum: number): value is string {
   return (
     typeof value === "string" && value.length > 0 && value.length <= maximum
+  );
+}
+
+function isNullableNonNegativeInteger(value: unknown): value is number | null {
+  return (
+    value === null ||
+    (typeof value === "number" && Number.isInteger(value) && value >= 0)
   );
 }
 
@@ -1235,6 +1284,130 @@ function parseTeamRunWrapper(
   return teamRun === null ? null : Object.freeze({ teamRun });
 }
 
+function parseTeamParentCall(value: unknown): DesktopTeamParentCallRecord | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "actual_model",
+      "created_at",
+      "error_code",
+      "input_tokens",
+      "invocation_id",
+      "output_sha256",
+      "output_tokens",
+      "plan_revision_id",
+      "provider_id",
+      "purpose",
+      "requested_model",
+      "state",
+      "team_run_id",
+      "total_tokens",
+      "updated_at",
+    ]) ||
+    typeof value.invocation_id !== "string" ||
+    !INVOCATION_ID_PATTERN.test(value.invocation_id) ||
+    typeof value.team_run_id !== "string" ||
+    !TEAM_RUN_ID_PATTERN.test(value.team_run_id) ||
+    (value.plan_revision_id !== null &&
+      (typeof value.plan_revision_id !== "string" ||
+        !TEAM_REV_ID_PATTERN.test(value.plan_revision_id))) ||
+    typeof value.purpose !== "string" ||
+    !TEAM_PARENT_CALL_PURPOSES.has(value.purpose) ||
+    typeof value.state !== "string" ||
+    !TEAM_PARENT_CALL_STATES.has(value.state) ||
+    typeof value.provider_id !== "string" ||
+    !PROVIDER_ID_PATTERN.test(value.provider_id) ||
+    !isBoundedString(value.requested_model, 256) ||
+    (value.actual_model !== null && !isBoundedString(value.actual_model, 256)) ||
+    !isNullableNonNegativeInteger(value.input_tokens) ||
+    !isNullableNonNegativeInteger(value.output_tokens) ||
+    !isNullableNonNegativeInteger(value.total_tokens) ||
+    (value.output_sha256 !== null &&
+      (typeof value.output_sha256 !== "string" ||
+        !TOKEN_PATTERN.test(value.output_sha256))) ||
+    (value.error_code !== null &&
+      (typeof value.error_code !== "string" ||
+        !ERROR_CODE_PATTERN.test(value.error_code))) ||
+    !isBoundedString(value.created_at, 64) ||
+    !isBoundedString(value.updated_at, 64)
+  ) {
+    return null;
+  }
+  const pendingProofValid =
+    value.state !== "pending" ||
+    (value.plan_revision_id === null &&
+      value.actual_model === null &&
+      value.input_tokens === null &&
+      value.output_tokens === null &&
+      value.total_tokens === null &&
+      value.output_sha256 === null &&
+      value.error_code === null);
+  const usageValid =
+    (value.input_tokens === null &&
+      value.output_tokens === null &&
+      value.total_tokens === null) ||
+    (value.input_tokens !== null &&
+      value.output_tokens !== null &&
+      value.total_tokens !== null &&
+      value.total_tokens === value.input_tokens + value.output_tokens);
+  const successProofValid =
+    value.state !== "succeeded" ||
+    (value.plan_revision_id !== null &&
+      value.actual_model === value.requested_model &&
+      value.output_sha256 !== null &&
+      value.error_code === null);
+  const failureProofValid =
+    (value.state !== "failed" &&
+      value.state !== "cancelled" &&
+      value.state !== "unknown") ||
+    (value.output_sha256 === null && value.error_code !== null);
+  if (!usageValid || !pendingProofValid || !successProofValid || !failureProofValid) {
+    return null;
+  }
+  return Object.freeze({
+    invocationId: value.invocation_id,
+    teamRunId: value.team_run_id,
+    planRevisionId: value.plan_revision_id,
+    purpose: value.purpose as DesktopTeamParentCallRecord["purpose"],
+    state: value.state as DesktopTeamParentCallRecord["state"],
+    providerId: value.provider_id,
+    requestedModel: value.requested_model,
+    actualModel: value.actual_model,
+    inputTokens: value.input_tokens,
+    outputTokens: value.output_tokens,
+    totalTokens: value.total_tokens,
+    outputSha256: value.output_sha256,
+    errorCode: value.error_code,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  });
+}
+
+function parseTeamProviderCallConsume(value: unknown): {
+  readonly teamRun: DesktopTeamRun;
+  readonly parentCall?: DesktopTeamParentCallRecord;
+} | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["parent_call", "team_run"])
+  ) {
+    return null;
+  }
+  const teamRun = parseTeamRun(value.team_run);
+  if (teamRun === null) return null;
+  if (value.parent_call === null) return Object.freeze({ teamRun });
+  const parentCall = parseTeamParentCall(value.parent_call);
+  return parentCall === null ? null : Object.freeze({ teamRun, parentCall });
+}
+
+function parseTeamParentCallWrapper(value: unknown): {
+  readonly parentCall: DesktopTeamParentCallRecord;
+} | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["parent_call"])) return null;
+  const parentCall = parseTeamParentCall(value.parent_call);
+  return parentCall === null ? null : Object.freeze({ parentCall });
+}
+
 function parseTeamRunList(
   value: unknown,
 ): { readonly items: readonly DesktopTeamRun[] } | null {
@@ -2179,20 +2352,163 @@ export class DesktopNativeClient {
     );
   }
 
-  consumeTeamProviderCall(input: DesktopTeamRunIdInput): Promise<
-    DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>
+  consumeTeamProviderCall(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly invocationId: string;
+    readonly purpose:
+      | "parent-propose"
+      | "parent-replan"
+      | "parent-synthesize"
+      | "employee";
+    readonly providerId: string;
+    readonly requestedModel: string;
+  }): Promise<
+    DesktopOperationResult<{
+      readonly teamRun: DesktopTeamRun;
+      readonly parentCall?: DesktopTeamParentCallRecord;
+    }>
   > {
     if (
       !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
-      !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId) ||
+      !INVOCATION_ID_PATTERN.test(input.invocationId) ||
+      !TEAM_PROVIDER_CALL_PURPOSES.has(input.purpose) ||
+      !PROVIDER_ID_PATTERN.test(input.providerId) ||
+      !isBoundedString(input.requestedModel, 256)
     ) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
     return this.#request(
       "POST",
       `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/consume-call`,
-      undefined,
-      parseTeamRunWrapper,
+      {
+        invocation_id: input.invocationId,
+        purpose: input.purpose,
+        provider_id: input.providerId,
+        requested_model: input.requestedModel,
+      },
+      (value) => {
+        const parsed = parseTeamProviderCallConsume(value);
+        if (
+          parsed === null ||
+          parsed.teamRun.id !== input.teamRunId ||
+          parsed.teamRun.workspaceId !== input.workspaceId
+        ) {
+          return null;
+        }
+        if (input.purpose === "employee") {
+          return parsed.parentCall === undefined ? parsed : null;
+        }
+        return parsed.parentCall !== undefined &&
+          parsed.parentCall.invocationId === input.invocationId &&
+          parsed.parentCall.teamRunId === input.teamRunId &&
+          parsed.parentCall.purpose === input.purpose &&
+          parsed.parentCall.state === "pending" &&
+          parsed.parentCall.providerId === input.providerId &&
+          parsed.parentCall.requestedModel === input.requestedModel
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  settleTeamParentCall(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly invocationId: string;
+    readonly purpose: "parent-propose" | "parent-replan" | "parent-synthesize";
+    readonly providerId: string;
+    readonly requestedModel: string;
+    readonly state: "succeeded" | "failed" | "cancelled" | "unknown";
+    readonly planRevisionId: string | null;
+    readonly actualModel: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly outputSha256: string | null;
+    readonly errorCode: string | null;
+  }): Promise<
+    DesktopOperationResult<{ readonly parentCall: DesktopTeamParentCallRecord }>
+  > {
+    const usageAllNull =
+      input.inputTokens === null &&
+      input.outputTokens === null &&
+      input.totalTokens === null;
+    const usageValid =
+      usageAllNull ||
+      (isNullableNonNegativeInteger(input.inputTokens) &&
+        input.inputTokens !== null &&
+        isNullableNonNegativeInteger(input.outputTokens) &&
+        input.outputTokens !== null &&
+        isNullableNonNegativeInteger(input.totalTokens) &&
+        input.totalTokens !== null &&
+        input.totalTokens === input.inputTokens + input.outputTokens);
+    const successProofValid =
+      input.state !== "succeeded" ||
+      (input.planRevisionId !== null &&
+        input.actualModel === input.requestedModel &&
+        input.outputSha256 !== null &&
+        TOKEN_PATTERN.test(input.outputSha256) &&
+        input.errorCode === null);
+    const failureProofValid =
+      input.state === "succeeded" ||
+      (input.outputSha256 === null &&
+        input.errorCode !== null &&
+        ERROR_CODE_PATTERN.test(input.errorCode));
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !TEAM_RUN_ID_PATTERN.test(input.teamRunId) ||
+      !INVOCATION_ID_PATTERN.test(input.invocationId) ||
+      !TEAM_PARENT_CALL_PURPOSES.has(input.purpose) ||
+      !TEAM_PARENT_CALL_TERMINAL_STATES.has(input.state) ||
+      !PROVIDER_ID_PATTERN.test(input.providerId) ||
+      !isBoundedString(input.requestedModel, 256) ||
+      (input.planRevisionId !== null &&
+        !TEAM_REV_ID_PATTERN.test(input.planRevisionId)) ||
+      (input.actualModel !== null && !isBoundedString(input.actualModel, 256)) ||
+      !usageValid ||
+      !successProofValid ||
+      !failureProofValid
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/parent-calls/${input.invocationId}/settle`,
+      {
+        purpose: input.purpose,
+        provider_id: input.providerId,
+        requested_model: input.requestedModel,
+        state: input.state,
+        plan_revision_id: input.planRevisionId,
+        actual_model: input.actualModel,
+        input_tokens: input.inputTokens,
+        output_tokens: input.outputTokens,
+        total_tokens: input.totalTokens,
+        output_sha256: input.outputSha256,
+        error_code: input.errorCode,
+      },
+      (value) => {
+        const parsed = parseTeamParentCallWrapper(value);
+        if (parsed === null) return null;
+        const parentCall = parsed.parentCall;
+        return parentCall.invocationId === input.invocationId &&
+          parentCall.teamRunId === input.teamRunId &&
+          parentCall.purpose === input.purpose &&
+          parentCall.providerId === input.providerId &&
+          parentCall.requestedModel === input.requestedModel &&
+          parentCall.state === input.state &&
+          parentCall.planRevisionId === input.planRevisionId &&
+          parentCall.actualModel === input.actualModel &&
+          parentCall.inputTokens === input.inputTokens &&
+          parentCall.outputTokens === input.outputTokens &&
+          parentCall.totalTokens === input.totalTokens &&
+          parentCall.outputSha256 === input.outputSha256 &&
+          parentCall.errorCode === input.errorCode
+          ? parsed
+          : null;
+      },
     );
   }
 

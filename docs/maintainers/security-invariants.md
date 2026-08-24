@@ -4340,9 +4340,26 @@ host may serialize a parallel wave and must not parallelize declared
 dependencies. Next remains product-blind. Enterprise Planner /
 `MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
 
-Desktop schema version 8 (`desktop_0008_collaboration_report_binding`) is
-current; it binds settle-created collaboration rows to their
-`team_employee_report`. Version 7 (`desktop_0007_recovery_success_downgrade`)
+Desktop schema version 9 (`desktop_0009_parent_call_proof`) is current. Its
+`team_provider_call_reservation` records **every** parent and employee Provider
+invocation before the network call, atomically binding the unique invocation,
+Run, purpose, Provider, requested model and call-budget charge. Node create
+must exactly match an employee reservation. Reservation identity is immutable;
+deleting a saved Provider does not erase its historical text. Parent
+propose/replan/synthesis calls additionally create `team_parent_call` and
+settle it once with terminal state, requested/actual model, usage, plan
+revision and normalized output digest; no prompt, answer body, secret,
+ciphertext or Vault material is stored. Propose/replan reservation time must
+not follow its bound revision, while synthesis reservation time must not
+precede the finish revision. Terminal parent-call rows and their append-only
+audit events cannot be rewritten or deleted. Pending calls recover to
+`unknown`, are never auto-replayed, and prevent a Run from claiming success.
+The v9 native consume envelope has exact keys: employee calls explicitly carry
+`parent_call: null`; a missing field or non-null employee proof is
+`desktop_native_response_invalid` rather than backward-compatible success.
+Version 8 (`desktop_0008_collaboration_report_binding`) binds settle-created
+collaboration rows to their `team_employee_report`. Version 7
+(`desktop_0007_recovery_success_downgrade`)
 recreates the run-state transition trigger so the schema permits
 `succeeded → unknown`; the normal `/state` API forbids that transition, and
 current application use is restart recovery (the schema itself cannot prove
@@ -4413,8 +4430,11 @@ into a terminal state is bound by the same invariant inside one
 `BEGIN IMMEDIATE` transaction: `succeeded`, `failed`, `unknown`,
 `budget_exhausted` and `cannot_complete` fail closed on any live child
 (`desktop_team_run_children_live`), while `cancelled` cascades the same child
-CAS as Stop. A terminal parent with live children can therefore neither be
-committed through `/state` nor survive a restart. Budget append likewise
+CAS as Stop. A quiet `failed|unknown|budget_exhausted|cannot_complete` request
+also requires zero pending parent calls and zero running assignments, then
+atomically changes every remaining `pending|ready` assignment to `blocked`
+before committing the Run terminal. A terminal parent with live children can
+therefore neither be committed through `/state` nor survive a restart. Budget append likewise
 requires a live Run (`preparing|running`, else
 `desktop_team_run_terminal`), so a terminal Run's durable budget receipt
 cannot be rewritten after Stop or success. Beyond "not live",
@@ -4422,8 +4442,11 @@ cannot be rewritten after Stop or success. Beyond "not live",
 (`desktop_team_success_closure_open`): the current plan revision must be
 host-validated **and** terminal (`answer_directly` or `finish` — a
 delegate/continue/request_followup plan cannot succeed before the parent
-finishes); `answer_directly` success must carry exactly the validated
-proposal answer, `finish` success a non-empty synthesized answer; the
+finishes); `answer_directly` success must carry exactly the normalized,
+persisted proposal answer and a settled `parent-propose` proof whose plan and
+output digest match that revision; `finish` success requires both the settled
+`parent-replan` proof for that revision and a settled `parent-synthesize`
+proof whose digest equals the final answer; the
 closure covers the run's **entire** assignment/node history (every
 assignment `completed` or `needs_collaboration` with no pending request,
 every node `succeeded`) — so an empty `finish` revision can no longer
@@ -4452,13 +4475,28 @@ after the replan is accepted, and its pre-success close-out is verify-only —
 success over an undecided collaboration fails closed
 (`desktop_team_collaboration_pending`), it is never auto-resolved. Both
 success paths re-check the local Stop flag and wall deadline after the
-close-out awaits and before committing success, so an observed Stop cannot be
-followed by a durable success; once the durable cancel commits, the success
-proof and run-state trigger remain the authoritative second line. Decision shapes are
+close-out awaits. The coordinator then crosses one explicit success-commit
+linearization point: a Stop accepted before that point prevents success; once
+success commit starts, a later Stop is rejected locally and waits for the
+durable outcome instead of projecting cancellation. RuntimeManager emits a
+cancelled event only for an accepted durable cancel response and never for a
+quiet terminal `accepted=false` success. Once durable cancel commits, the
+success proof and run-state trigger remain the authoritative second line.
+Every quiet `failed|unknown|budget_exhausted|cannot_complete` path has the
+same local commit discipline: Stop accepted before the quiet Run CAS wins and
+converges through durable cancellation; after the CAS request starts, later
+local Stop is rejected and RuntimeManager waits for its outcome. A failed CAS
+reopens the local Stop latch so cancellation may be retried; invalid initial
+Proposal, invalid replan, cannot-complete, invoke failure, wall/budget failure
+and outer exception fallback must not bypass this quiet-commit point. A
+coordinator instance is one-shot: a second `execute()` fails with
+`desktop_team_coordinator_already_executed` and cannot inherit old
+success-commit, Stop or terminal projection state. Decision shapes are
 bound in the same transaction: `accept_start` and `merge_existing` require a
-resolved assignment whose role equals the request's `target_role_id` and whose
-plan is the run's current validated plan (`accept_start` only a `pending`
-assignment, `merge_existing` only a started or settled one);
+resolved assignment whose role equals the request's `target_role_id`.
+`accept_start` additionally requires a `pending` assignment from the run's
+current validated plan; `merge_existing` intentionally accepts a started or
+settled assignment from any revision of the same Run;
 `handle_self` and `decline` must carry no assignment. A qa-targeted request
 can no longer be merged into a frontend assignment. Standalone
 `/reports` replay must exact-match the stored assignment/role/status/text and

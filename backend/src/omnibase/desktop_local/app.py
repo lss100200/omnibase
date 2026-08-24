@@ -68,6 +68,7 @@ from omnibase.desktop_local.personal_team import (
     resolve_collaboration_request,
     set_assignment_effective_execution,
     set_team_run_state,
+    settle_parent_call,
     settle_team_node,
     start_team_run,
     submit_parent_proposal,
@@ -296,6 +297,31 @@ class TeamRunStateRequest(BaseModel):
 
     state: str = Field(min_length=4, max_length=32)
     parent_final_answer: str | None = Field(default=None, max_length=131072)
+
+
+class TeamParentCallConsumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    invocation_id: str = Field(min_length=43, max_length=43)
+    purpose: str = Field(min_length=8, max_length=17)
+    provider_id: str = Field(min_length=41, max_length=41)
+    requested_model: str = Field(min_length=1, max_length=256)
+
+
+class TeamParentCallSettleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    purpose: str = Field(min_length=13, max_length=17)
+    provider_id: str = Field(min_length=41, max_length=41)
+    requested_model: str = Field(min_length=1, max_length=256)
+    state: str = Field(min_length=6, max_length=9)
+    plan_revision_id: str | None = Field(default=None, min_length=40, max_length=40)
+    actual_model: str | None = Field(default=None, min_length=1, max_length=256)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    output_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    error_code: str | None = Field(default=None, min_length=3, max_length=96)
 
 
 class TeamAssignmentExecutionRequest(BaseModel):
@@ -1108,13 +1134,44 @@ def _team_runs_set_state(
 
 
 def _team_runs_consume_call(
-    workspace_id: str, team_run_id: str, request: Request
+    workspace_id: str,
+    team_run_id: str,
+    payload: TeamParentCallConsumeRequest,
+    request: Request,
 ) -> dict[str, object]:
     if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
         raise DesktopApiError(404, "desktop_team_run_not_found")
     runtime = _runtime(request)
     with runtime.lock:
-        return consume_provider_call(runtime.connection, workspace_id, team_run_id)
+        return consume_provider_call(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            payload.invocation_id,
+            payload.purpose,
+            payload.provider_id,
+            payload.requested_model,
+        )
+
+
+def _team_runs_settle_parent_call(
+    workspace_id: str,
+    team_run_id: str,
+    invocation_id: str,
+    payload: TeamParentCallSettleRequest,
+    request: Request,
+) -> dict[str, object]:
+    if not _TEAM_RUN_ID_PATTERN.fullmatch(team_run_id):
+        raise DesktopApiError(404, "desktop_team_run_not_found")
+    runtime = _runtime(request)
+    with runtime.lock:
+        return settle_parent_call(
+            runtime.connection,
+            workspace_id,
+            team_run_id,
+            invocation_id,
+            payload.model_dump(),
+        )
 
 
 def _team_runs_assignment_execution(
@@ -1421,6 +1478,12 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/consume-call",
         _team_runs_consume_call,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/team-runs/{team_run_id}/"
+        "parent-calls/{invocation_id}/settle",
+        _team_runs_settle_parent_call,
         methods=["POST"],
     )
     app.add_api_route(

@@ -64,6 +64,21 @@ export interface RuntimeManagerNativeSendClient {
   readonly sendConversation: DesktopNativeClient["sendConversation"];
 }
 
+export type RuntimeManagerNativeClientForTests = RuntimeManagerNativeSendClient &
+  Partial<
+    Pick<
+      DesktopNativeClient,
+      | "cancelTeamRun"
+      | "consumeTeamProviderCall"
+      | "getAgentRole"
+      | "getTeamBlackboard"
+      | "settleTeamParentCall"
+      | "setTeamRunState"
+      | "startTeamRun"
+      | "submitTeamProposal"
+    >
+  >;
+
 export interface RuntimeManagerOptions {
   readonly runtimeRoot: string;
   readonly expectedManifestSha256: string;
@@ -71,7 +86,7 @@ export interface RuntimeManagerOptions {
   readonly dataRoot: string;
   readonly hostEnvironment?: Readonly<Record<string, string | undefined>>;
   readonly secretVault?: DesktopSafeStorage;
-  readonly nativeClientForTests?: RuntimeManagerNativeSendClient;
+  readonly nativeClientForTests?: RuntimeManagerNativeClientForTests;
 }
 
 const SEND_ABORTED = Object.freeze({ aborted: true as const });
@@ -553,22 +568,22 @@ export class RuntimeManager {
     );
   }
 
-  abortInFlightSend(): Promise<
+  async abortInFlightSend(): Promise<
     DesktopOperationResult<{ readonly aborted: boolean }>
   > {
     const sendAborted = this.#requestStreamAbort();
-    this.#teamCoordinator?.requestStop();
-    let teamAborted = this.#teamCoordinator?.live === true;
-    if (!teamAborted && this.#teamInFlight) {
+    const coordinator = this.#teamCoordinator;
+    let teamAborted = false;
+    if (coordinator !== null) {
+      teamAborted = await this.#requestTeamStop(coordinator);
+    } else if (this.#teamInFlight) {
       this.#pendingTeamAbort = true;
       teamAborted = true;
     }
-    return Promise.resolve(
-      Object.freeze({
-        ok: true,
-        value: Object.freeze({ aborted: sendAborted || teamAborted }),
-      }),
-    );
+    return Object.freeze({
+      ok: true,
+      value: Object.freeze({ aborted: sendAborted || teamAborted }),
+    });
   }
 
   listAgentRoles(
@@ -642,7 +657,7 @@ export class RuntimeManager {
       readonly teamRun: DesktopTeamRun;
     }>
   > {
-    const client = this.#readyNativeClient();
+    const client = this.#readyTeamCancelClient();
     if (client === null) {
       return this.#nativeUnavailable<{
         readonly cancelled: boolean;
@@ -650,9 +665,18 @@ export class RuntimeManager {
         readonly teamRun: DesktopTeamRun;
       }>();
     }
-    this.#teamCoordinator?.requestStop();
+    const coordinator = this.#teamCoordinator;
+    if (coordinator !== null) {
+      await this.#requestTeamStop(coordinator);
+    } else if (this.#teamInFlight) {
+      this.#pendingTeamAbort = true;
+    }
     const result = await client.cancelTeamRun(input);
-    if (result.ok) {
+    if (
+      result.ok &&
+      result.value.accepted &&
+      (result.value.teamRun.state === "cancelling" || result.value.teamRun.state === "cancelled")
+    ) {
       emit(
         teamEventFromRun(result.value.teamRun, {
           type: "cancelled",
@@ -964,6 +988,14 @@ export class RuntimeManager {
     return this.#options.nativeClientForTests ?? this.#readyNativeClient();
   }
 
+  #readyTeamCancelClient(): Pick<DesktopNativeClient, "cancelTeamRun"> | null {
+    const candidate = this.#options.nativeClientForTests;
+    if (typeof candidate?.cancelTeamRun === "function") {
+      return candidate as Pick<DesktopNativeClient, "cancelTeamRun">;
+    }
+    return this.#readyNativeClient();
+  }
+
   #readyNativeClient(): DesktopNativeClient | null {
     if (this.#supervisor?.getStatus().phase !== "ready") {
       this.#nativeClient = null;
@@ -1001,6 +1033,19 @@ export class RuntimeManager {
       return true;
     }
     return false;
+  }
+
+  async #requestTeamStop(coordinator: PersonalTeamCoordinator): Promise<boolean> {
+    let accepted = coordinator.requestStop();
+    if (!accepted && coordinator.successCommitStarted) {
+      const successCommitted = await coordinator.waitForSuccessCommit();
+      if (!successCommitted) accepted = coordinator.requestStop();
+    }
+    if (!accepted && coordinator.quietCommitStarted) {
+      const quietCommitted = await coordinator.waitForQuietCommit();
+      if (!quietCommitted) accepted = coordinator.requestStop();
+    }
+    return accepted;
   }
 
   #cancelledSendResult(

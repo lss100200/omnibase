@@ -169,6 +169,10 @@ _PROVIDER_ID_PATTERN = re.compile(r"provider_[0-9a-f]{32}\Z")
 _TEAM_RUN_ID_PATTERN = re.compile(r"teamrun_[0-9a-f]{32}\Z")
 _NODE_ID_PATTERN = re.compile(r"teamnode_[0-9a-f]{32}\Z")
 _REPORT_ID_PATTERN = re.compile(r"teamrpt_[0-9a-f]{32}\Z")
+_PLAN_REVISION_ID_PATTERN = re.compile(r"teamrev_[0-9a-f]{32}\Z")
+_INVOCATION_ID_PATTERN = re.compile(r"invocation_[0-9a-f]{32}\Z")
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_ERROR_CODE_PATTERN = re.compile(r"[a-z0-9_]{3,96}\Z")
 _ASSIGNMENT_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,127}\Z")
 _WAVE_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,127}\Z")
 _CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
@@ -207,9 +211,15 @@ _QUIET_TERMINAL_RUN_STATES = frozenset(
     {"succeeded", "failed", "budget_exhausted", "cannot_complete"}
 )
 _TERMINAL_RUN_STATES = _QUIET_TERMINAL_RUN_STATES | frozenset({"cancelled", "unknown"})
+_FAILURE_TERMINAL_RUN_STATES = frozenset(
+    {"failed", "unknown", "budget_exhausted", "cannot_complete"}
+)
 _TERMINAL_NODE_STATES = frozenset({"succeeded", "failed", "cancelled", "unknown"})
 _LEGACY_NODE_UPDATE_STATES = frozenset({"failed", "cancelled", "unknown"})
 _LIVE_ASSIGNMENT_STATES = frozenset({"pending", "ready", "running"})
+_PARENT_CALL_PURPOSES = frozenset({"parent-propose", "parent-replan", "parent-synthesize"})
+_PROVIDER_CALL_PURPOSES = _PARENT_CALL_PURPOSES | frozenset({"employee"})
+_PARENT_CALL_TERMINAL_STATES = frozenset({"succeeded", "failed", "cancelled", "unknown"})
 _INFINITE_REPLAN_KEYS: frozenset[str] = frozenset(
     {
         "replanCap",
@@ -304,8 +314,59 @@ def _require_enabled_provider(
     return row
 
 
+def _append_parent_call_settled_audit(
+    connection: sqlite3.Connection,
+    *,
+    owner_id: str,
+    workspace_id: str,
+    parent_call: sqlite3.Row,
+) -> None:
+    append_audit_event(
+        connection,
+        event_id=_new_id("event"),
+        owner_id=owner_id,
+        workspace_id=workspace_id,
+        event_type="team_parent_call_settled",
+        payload={
+            "team_run_id": str(parent_call["team_run_id"]),
+            "invocation_id": str(parent_call["invocation_id"]),
+            "plan_revision_id": parent_call["plan_revision_id"],
+            "purpose": str(parent_call["purpose"]),
+            "state": str(parent_call["state"]),
+        },
+    )
+
+
+def _terminalize_pending_parent_calls(
+    connection: sqlite3.Connection,
+    calls: list[sqlite3.Row],
+    *,
+    state: str,
+    error_code: str,
+    now: str,
+) -> None:
+    for call in calls:
+        updated = connection.execute(
+            "UPDATE team_parent_call SET state = ?, error_code = ?, updated_at = ? "
+            "WHERE invocation_id = ? AND state = 'pending' RETURNING *",
+            (state, error_code, now, str(call["invocation_id"])),
+        ).fetchone()
+        if updated is None:
+            raise sqlite3.IntegrityError("desktop_team_parent_call_terminalize_conflict")
+        _append_parent_call_settled_audit(
+            connection,
+            owner_id=str(call["audit_owner_id"]),
+            workspace_id=str(call["audit_workspace_id"]),
+            parent_call=updated,
+        )
+
+
 def _cas_cancel_live_nodes_for_run(
-    connection: sqlite3.Connection, team_run_id: str, now: str
+    connection: sqlite3.Connection,
+    owner_id: str,
+    workspace_id: str,
+    team_run_id: str,
+    now: str,
 ) -> None:
     connection.execute(
         "UPDATE team_node SET state = 'cancelled', "
@@ -317,6 +378,19 @@ def _cas_cancel_live_nodes_for_run(
         "UPDATE team_assignment SET state = 'cancelled', updated_at = ? "
         "WHERE team_run_id = ? AND state IN ('pending', 'ready', 'running')",
         (now, team_run_id),
+    )
+    pending_parent_calls = connection.execute(
+        "SELECT parent_call.*, ? AS audit_owner_id, ? AS audit_workspace_id "
+        "FROM team_parent_call AS parent_call "
+        "WHERE parent_call.team_run_id = ? AND parent_call.state = 'pending'",
+        (owner_id, workspace_id, team_run_id),
+    ).fetchall()
+    _terminalize_pending_parent_calls(
+        connection,
+        pending_parent_calls,
+        state="cancelled",
+        error_code="desktop_invocation_cancelled",
+        now=now,
     )
 
 
@@ -331,20 +405,55 @@ def _require_settled_children(connection: sqlite3.Connection, team_run_id: str) 
         "WHERE team_run_id = ? AND state IN ('pending', 'ready', 'running')",
         (team_run_id,),
     ).fetchone()[0]
-    if int(live_nodes) > 0 or int(live_assignments) > 0:
+    live_parent_calls = connection.execute(
+        "SELECT COUNT(*) FROM team_parent_call " "WHERE team_run_id = ? AND state = 'pending'",
+        (team_run_id,),
+    ).fetchone()[0]
+    if int(live_nodes) > 0 or int(live_assignments) > 0 or int(live_parent_calls) > 0:
         raise DesktopApiError(409, "desktop_team_run_children_live")
+
+
+def _converge_failure_terminal_assignments(
+    connection: sqlite3.Connection, team_run_id: str, now: str
+) -> None:
+    live_nodes = connection.execute(
+        "SELECT COUNT(*) FROM team_node "
+        "WHERE team_run_id = ? AND state IN ('pending', 'running')",
+        (team_run_id,),
+    ).fetchone()[0]
+    pending_parent_calls = connection.execute(
+        "SELECT COUNT(*) FROM team_parent_call " "WHERE team_run_id = ? AND state = 'pending'",
+        (team_run_id,),
+    ).fetchone()[0]
+    running_assignments = connection.execute(
+        "SELECT COUNT(*) FROM team_assignment " "WHERE team_run_id = ? AND state = 'running'",
+        (team_run_id,),
+    ).fetchone()[0]
+    if int(live_nodes) > 0 or int(pending_parent_calls) > 0 or int(running_assignments) > 0:
+        raise DesktopApiError(409, "desktop_team_run_children_live")
+    connection.execute(
+        "UPDATE team_assignment SET state = 'blocked', updated_at = ? "
+        "WHERE team_run_id = ? AND state IN ('pending', 'ready')",
+        (now, team_run_id),
+    )
 
 
 def _success_closure_violation(  # noqa: C901 - terminal decision, answer binding and full lineage share one proof
     connection: sqlite3.Connection, run: sqlite3.Row
 ) -> str | None:
     team_run_id = str(run["id"])
+    pending_parent_calls = connection.execute(
+        "SELECT COUNT(*) FROM team_parent_call " "WHERE team_run_id = ? AND state = 'pending'",
+        (team_run_id,),
+    ).fetchone()[0]
+    if int(pending_parent_calls) > 0:
+        return "desktop_team_success_parent_call_pending"
     revision_id = run["current_plan_revision_id"]
     if revision_id is None:
         return "desktop_team_success_plan_missing"
     revision = connection.execute(
-        "SELECT validated, decision, proposal_json FROM team_plan_revision "
-        "WHERE id = ? AND team_run_id = ?",
+        "SELECT validated, decision, proposal_json, proposal_json_sha256 "
+        "FROM team_plan_revision WHERE id = ? AND team_run_id = ?",
         (revision_id, team_run_id),
     ).fetchone()
     if revision is None or int(revision["validated"]) != 1:
@@ -365,6 +474,29 @@ def _success_closure_violation(  # noqa: C901 - terminal decision, answer bindin
             return "desktop_team_success_plan_missing"
         if answer != validated_answer:
             return "desktop_team_success_answer_diverged"
+    proposal_purpose = "parent-propose" if decision == "answer_directly" else "parent-replan"
+    proposal_call = connection.execute(
+        "SELECT invocation_id FROM team_parent_call WHERE team_run_id = ? "
+        "AND plan_revision_id = ? AND purpose = ? AND state = 'succeeded' "
+        "AND output_sha256 = ? LIMIT 1",
+        (
+            team_run_id,
+            revision_id,
+            proposal_purpose,
+            str(revision["proposal_json_sha256"]),
+        ),
+    ).fetchone()
+    if proposal_call is None:
+        return "desktop_team_success_parent_proposal_unproven"
+    if decision == "finish":
+        synthesis_call = connection.execute(
+            "SELECT invocation_id FROM team_parent_call WHERE team_run_id = ? "
+            "AND plan_revision_id = ? AND purpose = 'parent-synthesize' "
+            "AND state = 'succeeded' AND output_sha256 = ? LIMIT 1",
+            (team_run_id, revision_id, _sha256_text(answer)),
+        ).fetchone()
+        if synthesis_call is None:
+            return "desktop_team_success_parent_synthesis_unproven"
     pending = connection.execute(
         "SELECT COUNT(*) FROM team_collaboration_request "
         "WHERE team_run_id = ? AND parent_decision = 'pending'",
@@ -1017,6 +1149,8 @@ def validate_employee_team_report(  # noqa: C901 - report and collaboration requ
     requests = report["collaborationRequests"]
     if not isinstance(requests, list) or len(requests) > 9:
         return TeamValidationResult(False, "desktop_team_proposal_invalid")
+    if report["status"] == "needs_collaboration" and len(requests) == 0:
+        return TeamValidationResult(False, "desktop_team_collaboration_required")
     normalized_requests: list[dict[str, str]] = []
     for item in requests:
         result = validate_collaboration_request(
@@ -1596,7 +1730,9 @@ def cancel_team_run(
         if state == "unknown":
             raise DesktopApiError(409, "desktop_team_run_unknown")
         if state == "cancelled":
-            _cas_cancel_live_nodes_for_run(connection, team_run_id, now)
+            _cas_cancel_live_nodes_for_run(
+                connection, str(owner["id"]), workspace_id, team_run_id, now
+            )
             updated = connection.execute(
                 "SELECT * FROM team_run WHERE id = ?",
                 (team_run_id,),
@@ -1627,7 +1763,7 @@ def cancel_team_run(
                 "WHERE id = ? AND state = 'cancelling' RETURNING *",
                 (now, team_run_id),
             ).fetchone()
-        _cas_cancel_live_nodes_for_run(connection, team_run_id, now)
+        _cas_cancel_live_nodes_for_run(connection, str(owner["id"]), workspace_id, team_run_id, now)
         append_audit_event(
             connection,
             event_id=_new_id("event"),
@@ -1740,7 +1876,10 @@ def submit_parent_proposal(  # noqa: C901 - first-pass and replan persist share 
                 revision_ordinal=int(ordinal),
                 pending_collaborations=pending_collaborations,
             )
-        encoded = _canonical_json(proposal)
+        persisted_proposal = (
+            result.normalized if result.ok and result.normalized is not None else proposal
+        )
+        encoded = _canonical_json(persisted_proposal)
         digest = _sha256_text(encoded)
         decision = "cannot_complete"
         if isinstance(proposal, dict) and isinstance(proposal.get("decision"), str):
@@ -2090,6 +2229,20 @@ def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
             "SELECT id FROM team_run WHERE state = 'cancelled')",
             (now,),
         )
+        cancelled_parent_calls = connection.execute(
+            "SELECT parent_call.*, run.owner_id AS audit_owner_id, "
+            "run.workspace_id AS audit_workspace_id "
+            "FROM team_parent_call AS parent_call "
+            "JOIN team_run AS run ON run.id = parent_call.team_run_id "
+            "WHERE parent_call.state = 'pending' AND run.state = 'cancelled'"
+        ).fetchall()
+        _terminalize_pending_parent_calls(
+            connection,
+            cancelled_parent_calls,
+            state="cancelled",
+            error_code="desktop_invocation_cancelled",
+            now=now,
+        )
         connection.execute(
             "UPDATE team_run SET state = 'unknown', updated_at = ? "
             "WHERE state IN ('preparing', 'running', 'cancelling')",
@@ -2106,6 +2259,20 @@ def recover_interrupted_team_runs(connection: sqlite3.Connection) -> None:
             "WHERE state IN ('pending', 'ready', 'running') AND team_run_id IN ("
             "SELECT id FROM team_run WHERE state = 'unknown')",
             (now,),
+        )
+        interrupted_parent_calls = connection.execute(
+            "SELECT parent_call.*, run.owner_id AS audit_owner_id, "
+            "run.workspace_id AS audit_workspace_id "
+            "FROM team_parent_call AS parent_call "
+            "JOIN team_run AS run ON run.id = parent_call.team_run_id "
+            "WHERE parent_call.state = 'pending'"
+        ).fetchall()
+        _terminalize_pending_parent_calls(
+            connection,
+            interrupted_parent_calls,
+            state="unknown",
+            error_code="desktop_team_parent_call_interrupted",
+            now=now,
         )
         connection.execute(
             "UPDATE team_node SET state = 'unknown', updated_at = ? "
@@ -2157,10 +2324,14 @@ def set_team_run_state(  # noqa: C901 - terminal guard, child CAS and success cl
         row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
         if str(row["state"]) in _TERMINAL_RUN_STATES and state != str(row["state"]):
             raise DesktopApiError(409, "desktop_team_run_state_conflict")
-        if state in _TERMINAL_RUN_STATES and state != "cancelled":
+        if state == "succeeded":
             _require_settled_children(connection, team_run_id)
+        elif state in _FAILURE_TERMINAL_RUN_STATES:
+            _converge_failure_terminal_assignments(connection, team_run_id, now)
         bounded: str | None = None
         if parent_final_answer is not None:
+            if state != "succeeded":
+                raise DesktopApiError(400, "desktop_native_input_invalid")
             bounded = _bounded_text(parent_final_answer, int(row["maximum_output_characters"]))
             if bounded is None:
                 raise DesktopApiError(400, "desktop_team_output_budget_exceeded")
@@ -2184,7 +2355,9 @@ def set_team_run_state(  # noqa: C901 - terminal guard, child CAS and success cl
         if updated is None:
             raise DesktopApiError(409, "desktop_team_run_state_conflict")
         if state == "cancelled":
-            _cas_cancel_live_nodes_for_run(connection, team_run_id, now)
+            _cas_cancel_live_nodes_for_run(
+                connection, str(owner["id"]), workspace_id, team_run_id, now
+            )
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:
@@ -2250,26 +2423,107 @@ def append_team_run_budget(
     return {"team_run": _team_run_payload(updated)}
 
 
-def consume_provider_call(
+def _parent_call_payload(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "invocation_id": str(row["invocation_id"]),
+        "team_run_id": str(row["team_run_id"]),
+        "plan_revision_id": row["plan_revision_id"],
+        "purpose": str(row["purpose"]),
+        "state": str(row["state"]),
+        "provider_id": str(row["provider_id"]),
+        "requested_model": str(row["requested_model"]),
+        "actual_model": row["actual_model"],
+        "input_tokens": row["input_tokens"],
+        "output_tokens": row["output_tokens"],
+        "total_tokens": row["total_tokens"],
+        "output_sha256": row["output_sha256"],
+        "error_code": row["error_code"],
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def consume_provider_call(  # noqa: C901 - reservation, budget charge and parent proof share one transaction
     connection: sqlite3.Connection,
     workspace_id: str,
     team_run_id: str,
+    invocation_id: str,
+    purpose: str,
+    provider_id: str,
+    requested_model: str,
 ) -> dict[str, object]:
+    if not _INVOCATION_ID_PATTERN.fullmatch(invocation_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if purpose not in _PROVIDER_CALL_PURPOSES:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    normalized_model = _bounded_text(requested_model, 256)
+    if normalized_model is None:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
     now = utc_now_text()
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
-        if str(row["state"]) not in {"preparing", "running"}:
+        if str(row["state"]) not in _LIVE_TEAM_RUN_STATES:
             raise DesktopApiError(409, "desktop_team_run_not_accepting_proposals")
+        _require_enabled_provider(connection, str(owner["id"]), provider_id)
+        duplicate_reservation = connection.execute(
+            "SELECT invocation_id FROM team_provider_call_reservation WHERE invocation_id = ?",
+            (invocation_id,),
+        ).fetchone()
+        duplicate_node = connection.execute(
+            "SELECT invocation_id FROM team_node WHERE invocation_id = ?",
+            (invocation_id,),
+        ).fetchone()
+        if duplicate_reservation is not None or duplicate_node is not None:
+            raise DesktopApiError(409, "desktop_team_duplicate_invocation")
         if int(row["consumed_provider_calls"]) >= int(row["maximum_provider_calls"]):
             raise DesktopApiError(409, "desktop_team_call_budget_exceeded")
+        connection.execute(
+            "INSERT INTO team_provider_call_reservation ("
+            "invocation_id, team_run_id, purpose, provider_id, requested_model, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                invocation_id,
+                team_run_id,
+                purpose,
+                provider_id,
+                normalized_model,
+                now,
+            ),
+        )
+        if purpose in _PARENT_CALL_PURPOSES:
+            connection.execute(
+                "INSERT INTO team_parent_call ("
+                "invocation_id, team_run_id, purpose, state, provider_id, requested_model, "
+                "created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+                (
+                    invocation_id,
+                    team_run_id,
+                    purpose,
+                    provider_id,
+                    normalized_model,
+                    now,
+                    now,
+                ),
+            )
         updated = connection.execute(
             "UPDATE team_run SET consumed_provider_calls = consumed_provider_calls + 1, "
-            "updated_at = ? WHERE id = ? RETURNING *",
+            "updated_at = ? WHERE id = ? AND state IN ('preparing', 'running') "
+            "AND consumed_provider_calls < maximum_provider_calls RETURNING *",
             (now, team_run_id),
         ).fetchone()
+        if updated is None:
+            raise DesktopApiError(409, "desktop_team_call_budget_exceeded")
+        parent_call = None
+        if purpose in _PARENT_CALL_PURPOSES:
+            parent_call = connection.execute(
+                "SELECT * FROM team_parent_call WHERE invocation_id = ?",
+                (invocation_id,),
+            ).fetchone()
         connection.execute("COMMIT")
     except DesktopApiError:
         if connection.in_transaction:
@@ -2279,7 +2533,205 @@ def consume_provider_call(
         if connection.in_transaction:
             connection.execute("ROLLBACK")
         raise DesktopApiError(503, "desktop_team_consume_call_failed") from None
-    return {"team_run": _team_run_payload(updated)}
+    return {
+        "team_run": _team_run_payload(updated),
+        "parent_call": None if parent_call is None else _parent_call_payload(parent_call),
+    }
+
+
+def _validated_usage(
+    input_tokens: object,
+    output_tokens: object,
+    total_tokens: object,
+) -> tuple[int | None, int | None, int | None]:
+    values = (input_tokens, output_tokens, total_tokens)
+    if values == (None, None, None):
+        return None, None, None
+    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    parsed = (int(input_tokens), int(output_tokens), int(total_tokens))
+    if parsed[2] != parsed[0] + parsed[1]:
+        raise DesktopApiError(400, "desktop_team_parent_call_usage_mismatch")
+    return parsed
+
+
+def settle_parent_call(  # noqa: C901 - exact replay and terminal proof share one identity gate
+    connection: sqlite3.Connection,
+    workspace_id: str,
+    team_run_id: str,
+    invocation_id: str,
+    payload: dict[str, Any],
+) -> dict[str, object]:
+    if not _INVOCATION_ID_PATTERN.fullmatch(invocation_id):
+        raise DesktopApiError(404, "desktop_team_parent_call_not_found")
+    purpose = payload.get("purpose")
+    provider_id = payload.get("provider_id")
+    requested_model = payload.get("requested_model")
+    state = payload.get("state")
+    if purpose not in _PARENT_CALL_PURPOSES or state not in _PARENT_CALL_TERMINAL_STATES:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    if not isinstance(provider_id, str) or not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    normalized_requested = _bounded_text(requested_model, 256)
+    if normalized_requested is None:
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    plan_revision_id = payload.get("plan_revision_id")
+    if plan_revision_id is not None and (
+        not isinstance(plan_revision_id, str)
+        or not _PLAN_REVISION_ID_PATTERN.fullmatch(plan_revision_id)
+    ):
+        raise DesktopApiError(400, "desktop_native_input_invalid")
+    actual_model = payload.get("actual_model")
+    normalized_actual: str | None = None
+    if actual_model is not None:
+        normalized_actual = _bounded_text(actual_model, 256)
+        if normalized_actual is None:
+            raise DesktopApiError(400, "desktop_native_input_invalid")
+    usage = _validated_usage(
+        payload.get("input_tokens"),
+        payload.get("output_tokens"),
+        payload.get("total_tokens"),
+    )
+    output_sha256 = payload.get("output_sha256")
+    error_code = payload.get("error_code")
+    if state == "succeeded":
+        if (
+            plan_revision_id is None
+            or normalized_actual != normalized_requested
+            or not isinstance(output_sha256, str)
+            or not _SHA256_PATTERN.fullmatch(output_sha256)
+            or error_code is not None
+        ):
+            raise DesktopApiError(409, "desktop_team_parent_call_proof_invalid")
+    else:
+        if output_sha256 is not None or not isinstance(error_code, str):
+            raise DesktopApiError(409, "desktop_team_parent_call_proof_invalid")
+        if not _ERROR_CODE_PATTERN.fullmatch(error_code):
+            raise DesktopApiError(400, "desktop_native_input_invalid")
+    owner = _require_owner(connection)
+    _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
+    now = utc_now_text()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        run = _load_team_run(connection, str(owner["id"]), workspace_id, team_run_id)
+        existing = connection.execute(
+            "SELECT parent_call.*, reservation.created_at AS reservation_created_at "
+            "FROM team_parent_call AS parent_call "
+            "JOIN team_provider_call_reservation AS reservation ON "
+            "reservation.invocation_id = parent_call.invocation_id "
+            "AND reservation.team_run_id = parent_call.team_run_id "
+            "AND reservation.purpose = parent_call.purpose "
+            "AND reservation.provider_id = parent_call.provider_id "
+            "AND reservation.requested_model = parent_call.requested_model "
+            "WHERE parent_call.invocation_id = ? AND parent_call.team_run_id = ?",
+            (invocation_id, team_run_id),
+        ).fetchone()
+        if existing is None:
+            raise DesktopApiError(404, "desktop_team_parent_call_not_found")
+        if (
+            str(existing["purpose"]) != purpose
+            or str(existing["provider_id"]) != provider_id
+            or str(existing["requested_model"]) != normalized_requested
+        ):
+            raise DesktopApiError(409, "desktop_team_parent_call_identity_mismatch")
+        expected = {
+            "state": state,
+            "plan_revision_id": plan_revision_id,
+            "actual_model": normalized_actual,
+            "input_tokens": usage[0],
+            "output_tokens": usage[1],
+            "total_tokens": usage[2],
+            "output_sha256": output_sha256,
+            "error_code": error_code,
+        }
+        if str(existing["state"]) != "pending":
+            if any(existing[key] != value for key, value in expected.items()):
+                raise DesktopApiError(409, "desktop_team_parent_call_settle_conflict")
+            connection.execute("COMMIT")
+            return {"parent_call": _parent_call_payload(existing)}
+        if str(run["state"]) not in _LIVE_TEAM_RUN_STATES:
+            raise DesktopApiError(409, "desktop_team_run_terminal")
+        if state == "succeeded":
+            _require_enabled_provider(connection, str(owner["id"]), provider_id)
+        revision: sqlite3.Row | None = None
+        if plan_revision_id is not None:
+            revision = connection.execute(
+                "SELECT id, revision_ordinal, decision, proposal_json_sha256, validated, "
+                "created_at "
+                "FROM team_plan_revision WHERE id = ? AND team_run_id = ?",
+                (plan_revision_id, team_run_id),
+            ).fetchone()
+            if revision is None or int(revision["validated"]) != 1:
+                raise DesktopApiError(409, "desktop_team_parent_call_plan_mismatch")
+        if state == "succeeded":
+            if revision is None:
+                raise DesktopApiError(409, "desktop_team_parent_call_plan_mismatch")
+            ordinal = int(revision["revision_ordinal"])
+            decision = str(revision["decision"])
+            if purpose == "parent-propose":
+                purpose_matches = ordinal == 1 and decision in {"answer_directly", "delegate"}
+            elif purpose == "parent-replan":
+                purpose_matches = ordinal > 1 and decision in {
+                    "continue",
+                    "request_followup",
+                    "finish",
+                    "cannot_complete",
+                }
+            else:
+                purpose_matches = decision == "finish"
+            if not purpose_matches:
+                raise DesktopApiError(409, "desktop_team_parent_call_plan_mismatch")
+            reservation_created_at = str(existing["reservation_created_at"])
+            revision_created_at = str(revision["created_at"])
+            if purpose == "parent-synthesize":
+                if reservation_created_at < revision_created_at:
+                    raise DesktopApiError(409, "desktop_team_parent_call_plan_mismatch")
+            else:
+                if reservation_created_at > revision_created_at:
+                    raise DesktopApiError(409, "desktop_team_parent_call_plan_mismatch")
+                if output_sha256 != str(revision["proposal_json_sha256"]):
+                    raise DesktopApiError(409, "desktop_team_parent_call_digest_mismatch")
+        updated = connection.execute(
+            "UPDATE team_parent_call SET plan_revision_id = ?, state = ?, actual_model = ?, "
+            "input_tokens = ?, output_tokens = ?, total_tokens = ?, output_sha256 = ?, "
+            "error_code = ?, updated_at = ? "
+            "WHERE invocation_id = ? AND team_run_id = ? AND state = 'pending' RETURNING *",
+            (
+                plan_revision_id,
+                state,
+                normalized_actual,
+                usage[0],
+                usage[1],
+                usage[2],
+                output_sha256,
+                error_code,
+                now,
+                invocation_id,
+                team_run_id,
+            ),
+        ).fetchone()
+        if updated is None:
+            raise DesktopApiError(409, "desktop_team_parent_call_settle_conflict")
+        _append_parent_call_settled_audit(
+            connection,
+            owner_id=str(owner["id"]),
+            workspace_id=workspace_id,
+            parent_call=updated,
+        )
+        connection.execute("COMMIT")
+    except DesktopApiError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    except sqlite3.IntegrityError:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(409, "desktop_team_parent_call_settle_conflict") from None
+    except sqlite3.Error:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise DesktopApiError(503, "desktop_team_parent_call_settle_failed") from None
+    return {"parent_call": _parent_call_payload(updated)}
 
 
 def set_assignment_effective_execution(
@@ -2351,11 +2803,8 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
         raise DesktopApiError(400, "desktop_native_input_invalid")
     if not isinstance(provider_id, str) or not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
         raise DesktopApiError(400, "desktop_native_input_invalid")
-    if (
-        not isinstance(requested_model, str)
-        or not requested_model.strip()
-        or len(requested_model) > 256
-    ):
+    normalized_requested_model = _bounded_text(requested_model, 256)
+    if normalized_requested_model is None:
         raise DesktopApiError(400, "desktop_native_input_invalid")
     owner = _require_owner(connection)
     _require_workspace(connection, str(owner["id"]), workspace_id, active=True)
@@ -2393,6 +2842,19 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
         ).fetchone()
         if duplicate is not None:
             raise DesktopApiError(409, "desktop_team_duplicate_invocation")
+        reservation = connection.execute(
+            "SELECT team_run_id, purpose, provider_id, requested_model "
+            "FROM team_provider_call_reservation WHERE invocation_id = ?",
+            (invocation_id,),
+        ).fetchone()
+        if (
+            reservation is None
+            or str(reservation["team_run_id"]) != team_run_id
+            or str(reservation["purpose"]) != "employee"
+            or str(reservation["provider_id"]) != provider_id
+            or str(reservation["requested_model"]) != normalized_requested_model
+        ):
+            raise DesktopApiError(409, "desktop_team_identity_mismatch")
         reused = connection.execute(
             "SELECT id FROM team_node WHERE team_run_id = ? AND (node_epoch = ? OR send_epoch = ?)",
             (team_run_id, node_epoch, send_epoch),
@@ -2418,7 +2880,7 @@ def create_team_node(  # noqa: C901 - live-run, identity bind and epoch uniquene
                 employee_role_id,
                 invocation_id,
                 provider_id,
-                requested_model.strip(),
+                normalized_requested_model,
                 wave_id,
                 node_epoch,
                 send_epoch,
@@ -2960,7 +3422,9 @@ def resolve_collaboration_request(  # noqa: C901 - live gate, CAS and idempotent
                 raise DesktopApiError(404, "desktop_team_assignment_not_found")
             if str(bound["employee_role_id"]) != str(existing["target_role_id"]):
                 raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
-            if str(bound["plan_revision_id"]) != str(run["current_plan_revision_id"]):
+            if parent_decision == "accept_start" and str(bound["plan_revision_id"]) != str(
+                run["current_plan_revision_id"]
+            ):
                 raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")
             if parent_decision == "accept_start" and str(bound["state"]) != "pending":
                 raise DesktopApiError(409, "desktop_team_collaboration_identity_mismatch")

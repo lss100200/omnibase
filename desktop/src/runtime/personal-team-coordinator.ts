@@ -58,6 +58,37 @@ export interface TeamRoleCredentials {
   readonly timeoutMs: number;
 }
 
+export type TeamProviderCallPurpose =
+  | "parent-propose"
+  | "parent-replan"
+  | "parent-synthesize"
+  | "employee";
+
+export type TeamParentCallPurpose = Exclude<TeamProviderCallPurpose, "employee">;
+export type TeamParentCallTerminalState =
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export interface TeamParentCallRecord {
+  readonly invocationId: string;
+  readonly teamRunId: string;
+  readonly planRevisionId: string | null;
+  readonly purpose: TeamParentCallPurpose;
+  readonly state: "pending" | TeamParentCallTerminalState;
+  readonly providerId: string;
+  readonly requestedModel: string;
+  readonly actualModel: string | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly totalTokens: number | null;
+  readonly outputSha256: string | null;
+  readonly errorCode: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface PersonalTeamHost {
   startTeamRun(
     input: DesktopTeamRunExecuteInput,
@@ -74,7 +105,30 @@ export interface PersonalTeamHost {
   consumeProviderCall(input: {
     readonly workspaceId: string;
     readonly teamRunId: string;
-  }): Promise<{ readonly teamRun: DesktopTeamRun }>;
+    readonly invocationId: string;
+    readonly purpose: TeamProviderCallPurpose;
+    readonly providerId: string;
+    readonly requestedModel: string;
+  }): Promise<{
+    readonly teamRun: DesktopTeamRun;
+    readonly parentCall?: TeamParentCallRecord;
+  }>;
+  settleParentCall(input: {
+    readonly workspaceId: string;
+    readonly teamRunId: string;
+    readonly invocationId: string;
+    readonly purpose: TeamParentCallPurpose;
+    readonly providerId: string;
+    readonly requestedModel: string;
+    readonly state: TeamParentCallTerminalState;
+    readonly planRevisionId: string | null;
+    readonly actualModel: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly outputSha256: string | null;
+    readonly errorCode: string | null;
+  }): Promise<{ readonly parentCall: TeamParentCallRecord }>;
   setRunState(input: {
     readonly workspaceId: string;
     readonly teamRunId: string;
@@ -159,14 +213,25 @@ export interface PersonalTeamCoordinatorOptions {
 }
 
 export interface TeamProviderCallRecord {
-  readonly purpose: "parent-propose" | "employee" | "parent-replan" | "parent-synthesize";
+  readonly purpose: TeamProviderCallPurpose;
   readonly roleId: PersonalEmployeeId;
   readonly invocationId: string;
   readonly nodeId: string | null;
   readonly assignmentId: string | null;
 }
 
+interface ParentProviderCallSuccess {
+  readonly kind: "ok";
+  readonly text: string;
+  readonly result: TeamChatResult;
+  readonly invocationId: string;
+  readonly purpose: TeamParentCallPurpose;
+  readonly providerId: string;
+  readonly requestedModel: string;
+}
+
 const ABORT_CODES = new Set(["desktop_invocation_cancelled"]);
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 
 function isAborted(value: unknown): value is typeof SEND_ABORTED {
   return value === SEND_ABORTED;
@@ -204,6 +269,12 @@ function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function normalizeParentFinalText(value: string, maximum: number): string | null {
+  if (CONTROL_CHARACTER_PATTERN.test(value)) return null;
+  const normalized = value.trim();
+  return normalized.length > 0 && normalized.length <= maximum ? normalized : null;
+}
+
 function defaultNewId(prefix: string): string {
   return `${prefix}_${randomBytes(16).toString("hex")}`;
 }
@@ -214,6 +285,32 @@ function errorCode(error: unknown): string {
     if (typeof code === "string") return code;
   }
   return "desktop_invocation_failed";
+}
+
+function normalizedUsage(result: TeamChatResult | undefined): {
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly totalTokens: number | null;
+} {
+  if (
+    result !== undefined &&
+    typeof result.inputTokens === "number" &&
+    Number.isInteger(result.inputTokens) &&
+    result.inputTokens >= 0 &&
+    typeof result.outputTokens === "number" &&
+    Number.isInteger(result.outputTokens) &&
+    result.outputTokens >= 0 &&
+    typeof result.totalTokens === "number" &&
+    Number.isInteger(result.totalTokens) &&
+    result.totalTokens === result.inputTokens + result.outputTokens
+  ) {
+    return {
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      totalTokens: result.totalTokens,
+    };
+  }
+  return { inputTokens: null, outputTokens: null, totalTokens: null };
 }
 
 export class TeamAbortRegistry {
@@ -362,7 +459,12 @@ export class PersonalTeamCoordinator {
   readonly #newId: (prefix: string) => string;
   readonly abort = new TeamAbortRegistry();
   #cancelled = false;
+  #executionStarted = false;
   #live = false;
+  #successCommitStarted = false;
+  #successCommit: Promise<boolean> | null = null;
+  #quietCommitStarted = false;
+  #quietCommit: Promise<boolean> | null = null;
   #wall = new AbortController();
   #wallTimer: ReturnType<typeof setTimeout> | null = null;
   #wallDeadlineMs = 0;
@@ -381,9 +483,33 @@ export class PersonalTeamCoordinator {
     return this.#live;
   }
 
-  requestStop(): void {
+  requestStop(): boolean {
+    if (
+      this.#successCommitStarted ||
+      this.#quietCommitStarted ||
+      (this.#executionStarted && !this.#live)
+    ) {
+      return false;
+    }
     this.#cancelled = true;
     this.abort.abortAll();
+    return true;
+  }
+
+  get successCommitStarted(): boolean {
+    return this.#successCommitStarted;
+  }
+
+  async waitForSuccessCommit(): Promise<boolean> {
+    return (await this.#successCommit) ?? false;
+  }
+
+  get quietCommitStarted(): boolean {
+    return this.#quietCommitStarted;
+  }
+
+  async waitForQuietCommit(): Promise<boolean> {
+    return (await this.#quietCommit) ?? false;
   }
 
   /**
@@ -410,6 +536,43 @@ export class PersonalTeamCoordinator {
         code: "desktop_team_collaboration_pending",
       });
     }
+  }
+
+  async #parentProposalBoundaryTerminal(
+    call: ParentProviderCallSuccess,
+    input: DesktopTeamRunExecuteInput,
+    teamRunId: string,
+    calls: readonly TeamProviderCallRecord[],
+    nodes: readonly StoredNode[],
+    parentFinal: string | null,
+    emit: (
+      event: Omit<
+        DesktopTeamRunEvent,
+        "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId"
+      >,
+    ) => void,
+  ): Promise<DesktopTeamRunProof | null> {
+    if (this.#cancelled) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
+    if (!this.#wallExceeded()) return null;
+    try {
+      await this.#settleParentProviderCall(call, input, teamRunId, {
+        state: "failed",
+        planRevisionId: null,
+        outputSha256: null,
+        errorCode: "desktop_team_wall_time_exceeded",
+      });
+    } catch (error) {
+      if (this.#cancelled) {
+        return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+      }
+      throw error;
+    }
+    if (this.#cancelled) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
+    return this.#budgetProof(input, teamRunId, calls, nodes, parentFinal, emit);
   }
 
   async #markNodeCancelled(input: {
@@ -496,6 +659,11 @@ export class PersonalTeamCoordinator {
         code: "desktop_team_run_already_active",
       });
     }
+    if (this.#executionStarted) {
+      throw Object.assign(new Error("desktop_team_coordinator_already_executed"), {
+        code: "desktop_team_coordinator_already_executed",
+      });
+    }
     if (
       input.allowedSpecialistRoleIds !== undefined &&
       input.allowedSpecialistRoleIds.length === 0
@@ -508,6 +676,7 @@ export class PersonalTeamCoordinator {
     if (!budgetCheck.ok) {
       throw Object.assign(new Error(budgetCheck.code), { code: budgetCheck.code });
     }
+    this.#executionStarted = true;
     this.#live = true;
     if (!this.#cancelled) this.abort.reset();
     this.#armWall(input.budget.maximumWallTimeMs);
@@ -528,13 +697,6 @@ export class PersonalTeamCoordinator {
         teamRun.workspaceId !== input.workspaceId ||
         teamRun.conversationId !== input.conversationId
       ) {
-        await this.#host
-          .setRunState({
-            workspaceId: teamRun.workspaceId,
-            teamRunId: teamRun.id,
-            state: "failed",
-          })
-          .catch(() => undefined);
         throw Object.assign(new Error("desktop_team_conversation_identity_mismatch"), {
           code: "desktop_team_conversation_identity_mismatch",
         });
@@ -593,6 +755,16 @@ export class PersonalTeamCoordinator {
       }
 
       emitBound({ type: "host_validating", employeeRoleId: "parent" });
+      const validationTerminal = await this.#parentProposalBoundaryTerminal(
+        parentFirst,
+        input,
+        teamRun.id,
+        calls,
+        nodes,
+        parentFinal,
+        emitBound,
+      );
+      if (validationTerminal !== null) return validationTerminal;
       const parsed = extractJsonObject(parentFirst.text);
       const allowed = new Set(
         input.allowedSpecialistRoleIds ?? SPECIALIST_EMPLOYEE_IDS,
@@ -603,29 +775,132 @@ export class PersonalTeamCoordinator {
         allowed,
         input.workspaceId,
       );
-      const submitted = await this.#host.submitProposal({
-        workspaceId: input.workspaceId,
-        teamRunId: teamRun.id,
-        proposal: (validated.ok ? validated.value : parsed) as ParentTeamDecision,
-      });
+      let submitted: DesktopTeamRunProposalResult;
+      try {
+        submitted = await this.#host.submitProposal({
+          workspaceId: input.workspaceId,
+          teamRunId: teamRun.id,
+          proposal: (validated.ok ? validated.value : parsed) as ParentTeamDecision,
+        });
+      } catch (error) {
+        const boundaryTerminal = await this.#parentProposalBoundaryTerminal(
+          parentFirst,
+          input,
+          teamRun.id,
+          calls,
+          nodes,
+          parentFinal,
+          emitBound,
+        );
+        if (boundaryTerminal !== null) return boundaryTerminal;
+        try {
+          await this.#settleParentProviderCall(parentFirst, input, teamRun.id, {
+            state: "unknown",
+            planRevisionId: null,
+            outputSha256: null,
+            errorCode: "desktop_team_parent_proposal_submit_unknown",
+          });
+        } catch (settleError) {
+          if (this.#cancelled) {
+            return this.#cancelledProof(
+              input,
+              teamRun.id,
+              calls,
+              nodes,
+              parentFinal,
+              emitBound,
+            );
+          }
+          throw settleError;
+        }
+        return this.#terminalFromInvoke(
+          {
+            kind: "unknown",
+            code: "desktop_team_parent_proposal_submit_unknown",
+          },
+          teamRun.id,
+          calls,
+          nodes,
+          parentFinal,
+          input,
+          synthesizing,
+          emitBound,
+        );
+      }
       identity.planRevisionId = submitted.planRevision.id;
       emitBound({
         type: "proposal",
         planRevisionId: submitted.planRevision.id,
         state: submitted.teamRun.state,
       });
+      const proposalTerminal = await this.#parentProposalBoundaryTerminal(
+        parentFirst,
+        input,
+        teamRun.id,
+        calls,
+        nodes,
+        parentFinal,
+        emitBound,
+      );
+      if (proposalTerminal !== null) return proposalTerminal;
       if (!submitted.accepted || !validated.ok) {
-        await this.#host.setRunState({
+        await this.#settleParentProviderCall(parentFirst, input, teamRun.id, {
+          state: "failed",
+          planRevisionId: null,
+          outputSha256: null,
+          errorCode:
+            submitted.validationErrorCode ??
+            (validated.ok ? "desktop_team_proposal_invalid" : validated.code),
+        });
+        const quietCommit = this.#startQuietCommit({
           workspaceId: input.workspaceId,
           teamRunId: teamRun.id,
           state: "failed",
         });
+        if (quietCommit === null) {
+          return this.#cancelledProof(
+            input,
+            teamRun.id,
+            calls,
+            nodes,
+            parentFinal,
+            emitBound,
+          );
+        }
+        await quietCommit;
         emitBound({
           type: "failed",
           state: "failed",
           errorCode: submitted.validationErrorCode ?? "desktop_team_proposal_invalid",
         });
         return this.#proof(teamRun.id, "failed", calls, nodes, parentFinal, false);
+      }
+
+      try {
+        await this.#settleParentProviderCall(parentFirst, input, teamRun.id, {
+          state: "succeeded",
+          planRevisionId: submitted.planRevision.id,
+          outputSha256: submitted.planRevision.proposalJsonSha256,
+          errorCode: null,
+        });
+      } catch (error) {
+        if (this.#cancelled) {
+          return this.#cancelledProof(
+            input,
+            teamRun.id,
+            calls,
+            nodes,
+            parentFinal,
+            emitBound,
+          );
+        }
+        throw error;
+      }
+      if (this.#cancelled) {
+        return this.#cancelledProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+      }
+      if (this.#wallExceeded()) {
+        return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
       }
 
       const decision = validated.value;
@@ -638,12 +913,16 @@ export class PersonalTeamCoordinator {
         if (this.#wallExceeded()) {
           return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
         }
-        await this.#host.setRunState({
+        const successCommit = this.#startSuccessCommit({
           workspaceId: input.workspaceId,
           teamRunId: teamRun.id,
           state: "succeeded",
           parentFinalAnswer: parentFinal,
         });
+        if (successCommit === null) {
+          return this.#cancelledProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+        }
+        await successCommit;
         emitBound({
           type: "completed",
           state: "succeeded",
@@ -730,11 +1009,58 @@ export class PersonalTeamCoordinator {
             targetRoleId: request.targetRoleId,
           })),
         );
-        const replanSubmitted = await this.#host.submitProposal({
-          workspaceId: input.workspaceId,
-          teamRunId: teamRun.id,
-          proposal: (replanValidated.ok ? replanValidated.value : replanParsed) as ParentReplanDecision,
-        });
+        let replanSubmitted: DesktopTeamRunProposalResult;
+        try {
+          replanSubmitted = await this.#host.submitProposal({
+            workspaceId: input.workspaceId,
+            teamRunId: teamRun.id,
+            proposal: (replanValidated.ok ? replanValidated.value : replanParsed) as ParentReplanDecision,
+          });
+        } catch (error) {
+          const boundaryTerminal = await this.#parentProposalBoundaryTerminal(
+            replanCall,
+            input,
+            teamRun.id,
+            calls,
+            nodes,
+            parentFinal,
+            emitBound,
+          );
+          if (boundaryTerminal !== null) return boundaryTerminal;
+          try {
+            await this.#settleParentProviderCall(replanCall, input, teamRun.id, {
+              state: "unknown",
+              planRevisionId: null,
+              outputSha256: null,
+              errorCode: "desktop_team_parent_proposal_submit_unknown",
+            });
+          } catch (settleError) {
+            if (this.#cancelled) {
+              return this.#cancelledProof(
+                input,
+                teamRun.id,
+                calls,
+                nodes,
+                parentFinal,
+                emitBound,
+              );
+            }
+            throw settleError;
+          }
+          return this.#terminalFromInvoke(
+            {
+              kind: "unknown",
+              code: "desktop_team_parent_proposal_submit_unknown",
+            },
+            teamRun.id,
+            calls,
+            nodes,
+            parentFinal,
+            input,
+            synthesizing,
+            emitBound,
+          );
+        }
         lastPlan = replanSubmitted.planRevision;
         emitBound({
           type: "plan_transition",
@@ -742,23 +1068,97 @@ export class PersonalTeamCoordinator {
           planRevisionId: lastPlan.id,
         });
         identity.planRevisionId = lastPlan.id;
+        const transitionTerminal = await this.#parentProposalBoundaryTerminal(
+          replanCall,
+          input,
+          teamRun.id,
+          calls,
+          nodes,
+          parentFinal,
+          emitBound,
+        );
+        if (transitionTerminal !== null) return transitionTerminal;
         emitBound({
           type: "proposal",
           planRevisionId: lastPlan.id,
           state: replanSubmitted.teamRun.state,
         });
+        const replanTerminal = await this.#parentProposalBoundaryTerminal(
+          replanCall,
+          input,
+          teamRun.id,
+          calls,
+          nodes,
+          parentFinal,
+          emitBound,
+        );
+        if (replanTerminal !== null) return replanTerminal;
         if (!replanSubmitted.accepted || !replanValidated.ok) {
-          await this.#host.setRunState({
+          await this.#settleParentProviderCall(replanCall, input, teamRun.id, {
+            state: "failed",
+            planRevisionId: null,
+            outputSha256: null,
+            errorCode:
+              replanSubmitted.validationErrorCode ??
+              (replanValidated.ok
+                ? "desktop_team_proposal_invalid"
+                : replanValidated.code),
+          });
+          const quietCommit = this.#startQuietCommit({
             workspaceId: input.workspaceId,
             teamRunId: teamRun.id,
             state: "failed",
           });
+          if (quietCommit === null) {
+            return this.#cancelledProof(
+              input,
+              teamRun.id,
+              calls,
+              nodes,
+              parentFinal,
+              emitBound,
+            );
+          }
+          await quietCommit;
           emitBound({
             type: "failed",
             state: "failed",
             errorCode: replanSubmitted.validationErrorCode ?? "desktop_team_proposal_invalid",
           });
           return this.#proof(teamRun.id, "failed", calls, nodes, parentFinal, false);
+        }
+        try {
+          await this.#settleParentProviderCall(replanCall, input, teamRun.id, {
+            state: "succeeded",
+            planRevisionId: replanSubmitted.planRevision.id,
+            outputSha256: replanSubmitted.planRevision.proposalJsonSha256,
+            errorCode: null,
+          });
+        } catch (error) {
+          if (this.#cancelled) {
+            return this.#cancelledProof(
+              input,
+              teamRun.id,
+              calls,
+              nodes,
+              parentFinal,
+              emitBound,
+            );
+          }
+          throw error;
+        }
+        if (this.#cancelled) {
+          return this.#cancelledProof(
+            input,
+            teamRun.id,
+            calls,
+            nodes,
+            parentFinal,
+            emitBound,
+          );
+        }
+        if (this.#wallExceeded()) {
+          return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
         }
         const replan = replanValidated.value;
         for (const decision of replan.collaborationDecisions ?? []) {
@@ -786,11 +1186,22 @@ export class PersonalTeamCoordinator {
           continue;
         }
         if (replan.decision === "cannot_complete") {
-          await this.#host.setRunState({
+          const quietCommit = this.#startQuietCommit({
             workspaceId: input.workspaceId,
             teamRunId: teamRun.id,
             state: "cannot_complete",
           });
+          if (quietCommit === null) {
+            return this.#cancelledProof(
+              input,
+              teamRun.id,
+              calls,
+              nodes,
+              parentFinal,
+              emitBound,
+            );
+          }
+          await quietCommit;
           emitBound({ type: "failed", state: "cannot_complete", errorCode: "desktop_team_cannot_complete" });
           return this.#proof(teamRun.id, "cannot_complete", calls, nodes, parentFinal, false);
         }
@@ -812,6 +1223,30 @@ export class PersonalTeamCoordinator {
       if (synthesis.kind !== "ok") {
         return this.#terminalFromInvoke(synthesis, teamRun.id, calls, nodes, parentFinal, input, synthesizing, emitBound);
       }
+      if (!lastPlan.validated || lastPlan.decision !== "finish") {
+        await this.#settleParentProviderCall(synthesis, input, teamRun.id, {
+          state: "failed",
+          planRevisionId: null,
+          outputSha256: null,
+          errorCode: "desktop_team_parent_call_plan_mismatch",
+        });
+        return this.#terminalFromInvoke(
+          { kind: "failed", code: "desktop_team_parent_call_plan_mismatch" },
+          teamRun.id,
+          calls,
+          nodes,
+          parentFinal,
+          input,
+          synthesizing,
+          emitBound,
+        );
+      }
+      await this.#settleParentProviderCall(synthesis, input, teamRun.id, {
+        state: "succeeded",
+        planRevisionId: lastPlan.id,
+        outputSha256: sha256Text(synthesis.text),
+        errorCode: null,
+      });
       parentFinal = synthesis.text;
       await this.#requireNoPendingCollaborations(input, teamRun.id);
       if (this.#cancelled) {
@@ -820,12 +1255,16 @@ export class PersonalTeamCoordinator {
       if (this.#wallExceeded()) {
         return this.#budgetProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
       }
-      await this.#host.setRunState({
+      const successCommit = this.#startSuccessCommit({
         workspaceId: input.workspaceId,
         teamRunId: teamRun.id,
         state: "succeeded",
         parentFinalAnswer: parentFinal,
       });
+      if (successCommit === null) {
+        return this.#cancelledProof(input, teamRun.id, calls, nodes, parentFinal, emitBound);
+      }
+      await successCommit;
       emitBound({
         type: "completed",
         state: "succeeded",
@@ -836,19 +1275,52 @@ export class PersonalTeamCoordinator {
     } catch (error) {
       const code = errorCode(error);
       if (teamRun !== null && (code === "desktop_team_call_budget_exceeded" || code === "desktop_team_input_budget_exceeded" || code === "desktop_team_output_budget_exceeded")) {
-        await this.#host.setRunState({
+        const quietCommit = this.#startQuietCommit({
           workspaceId: input.workspaceId,
           teamRunId: teamRun.id,
           state: "budget_exhausted",
-        }).catch(() => undefined);
+        });
+        if (quietCommit === null) {
+          await this.#host.setRunState({
+            workspaceId: input.workspaceId,
+            teamRunId: teamRun.id,
+            state: "cancelled",
+          });
+          return this.#proof(
+            teamRun.id,
+            "cancelled",
+            calls,
+            nodes,
+            synthesizing ? null : parentFinal,
+            false,
+          );
+        }
+        await quietCommit;
         return this.#proof(teamRun.id, "budget_exhausted", calls, nodes, parentFinal, synthesizing);
       }
       if (teamRun !== null) {
-        await this.#host.setRunState({
-          workspaceId: input.workspaceId,
-          teamRunId: teamRun.id,
-          state: this.#cancelled ? "cancelled" : "failed",
-        }).catch(() => undefined);
+        if (this.#cancelled) {
+          await this.#host.setRunState({
+            workspaceId: input.workspaceId,
+            teamRunId: teamRun.id,
+            state: "cancelled",
+          }).catch(() => undefined);
+        } else {
+          const quietCommit = this.#startQuietCommit({
+            workspaceId: input.workspaceId,
+            teamRunId: teamRun.id,
+            state: "failed",
+          });
+          if (quietCommit === null) {
+            await this.#host.setRunState({
+              workspaceId: input.workspaceId,
+              teamRunId: teamRun.id,
+              state: "cancelled",
+            }).catch(() => undefined);
+          } else {
+            await quietCommit.catch(() => undefined);
+          }
+        }
       }
       throw error;
     } finally {
@@ -869,6 +1341,38 @@ export class PersonalTeamCoordinator {
         });
       }
     }
+  }
+
+  #startSuccessCommit(
+    input: Parameters<PersonalTeamHost["setRunState"]>[0],
+  ): Promise<{ readonly teamRun: DesktopTeamRun }> | null {
+    if (this.#cancelled) return null;
+    this.#successCommitStarted = true;
+    const commit = this.#host.setRunState(input);
+    this.#successCommit = commit.then(
+      () => true,
+      () => {
+        this.#successCommitStarted = false;
+        return false;
+      },
+    );
+    return commit;
+  }
+
+  #startQuietCommit(
+    input: Parameters<PersonalTeamHost["setRunState"]>[0],
+  ): Promise<{ readonly teamRun: DesktopTeamRun }> | null {
+    if (this.#cancelled) return null;
+    this.#quietCommitStarted = true;
+    const commit = this.#host.setRunState(input);
+    this.#quietCommit = commit.then(
+      () => true,
+      () => {
+        this.#quietCommitStarted = false;
+        return false;
+      },
+    );
+    return commit;
   }
 
   async #executeWave(args: {
@@ -981,16 +1485,6 @@ export class PersonalTeamCoordinator {
     let createdId: string | null = null;
     try {
       if (controller.signal.aborted || this.#cancelled) return { kind: this.#abortKind() };
-      const consumed = await raceAbort(
-        this.#host.consumeProviderCall({
-          workspaceId: args.input.workspaceId,
-          teamRunId: args.teamRun.id,
-        }),
-        requestSignal,
-      );
-      if (isAborted(consumed) || controller.signal.aborted || this.#wallExceeded()) {
-        return { kind: this.#abortKind() };
-      }
       const credentials = await raceAbort(
         this.#host.resolveCredentials(
           args.input.workspaceId,
@@ -1000,6 +1494,30 @@ export class PersonalTeamCoordinator {
         requestSignal,
       );
       if (isAborted(credentials) || controller.signal.aborted || this.#wallExceeded()) {
+        return { kind: this.#abortKind() };
+      }
+      const consumed = await this.#host.consumeProviderCall({
+        workspaceId: args.input.workspaceId,
+        teamRunId: args.teamRun.id,
+        invocationId,
+        purpose: "employee",
+        providerId: credentials.providerId,
+        requestedModel: credentials.model,
+      });
+      if (consumed.parentCall !== undefined) {
+        throw Object.assign(new Error("desktop_team_parent_call_unexpected"), {
+          code: "desktop_team_parent_call_unexpected",
+        });
+      }
+      const callIndex = args.calls.length;
+      args.calls.push({
+        purpose: "employee",
+        roleId: args.assignment.employeeRoleId,
+        invocationId,
+        nodeId: null,
+        assignmentId: args.assignment.assignmentId,
+      });
+      if (controller.signal.aborted || this.#cancelled || this.#wallExceeded()) {
         return { kind: this.#abortKind() };
       }
       const created = await this.#host.createNode({
@@ -1043,13 +1561,13 @@ export class PersonalTeamCoordinator {
         report: null,
       };
       args.nodes.push(node);
-      args.calls.push({
+      args.calls[callIndex] = {
         purpose: "employee",
         roleId: args.assignment.employeeRoleId,
         invocationId,
         nodeId: created.node.id,
         assignmentId: args.assignment.assignmentId,
-      });
+      };
       args.emit({
         type: "node_starting",
         waveId: args.wave.waveId,
@@ -1206,7 +1724,8 @@ export class PersonalTeamCoordinator {
       if (
         code === "desktop_invocation_interrupted" ||
         code === "desktop_provider_stream_incomplete" ||
-        code === "desktop_provider_response_invalid"
+        code === "desktop_provider_response_invalid" ||
+        code === "desktop_native_response_invalid"
       ) {
         return { kind: "unknown", code };
       }
@@ -1217,16 +1736,53 @@ export class PersonalTeamCoordinator {
     }
   }
 
+  async #settleParentProviderCall(
+    call: {
+      readonly invocationId: string;
+      readonly purpose: TeamParentCallPurpose;
+      readonly providerId: string;
+      readonly requestedModel: string;
+      readonly result?: TeamChatResult;
+    },
+    input: DesktopTeamRunExecuteInput,
+    teamRunId: string,
+    settlement: {
+      readonly state: TeamParentCallTerminalState;
+      readonly planRevisionId: string | null;
+      readonly outputSha256: string | null;
+      readonly errorCode: string | null;
+    },
+  ): Promise<void> {
+    const result = settlement.state === "cancelled" ? undefined : call.result;
+    const usage = normalizedUsage(result);
+    await this.#host.settleParentCall({
+      workspaceId: input.workspaceId,
+      teamRunId,
+      invocationId: call.invocationId,
+      purpose: call.purpose,
+      providerId: call.providerId,
+      requestedModel: call.requestedModel,
+      state: settlement.state,
+      planRevisionId: settlement.planRevisionId,
+      actualModel: result?.actualModel ?? null,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      outputSha256: settlement.outputSha256,
+      errorCode: settlement.errorCode,
+    });
+  }
+
   async #invokeParent(args: {
     readonly input: DesktopTeamRunExecuteInput;
     readonly teamRun: DesktopTeamRun;
-    readonly purpose: "parent-propose" | "parent-replan" | "parent-synthesize";
+    readonly purpose: TeamParentCallPurpose;
     readonly messages: readonly TeamChatMessage[];
     readonly emit: (event: Omit<DesktopTeamRunEvent, "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId">) => void;
     readonly calls: TeamProviderCallRecord[];
     readonly started: number;
   }): Promise<
-    | { kind: "ok"; text: string; result: TeamChatResult }
+    | ParentProviderCallSuccess
     | { kind: "cancelled" | "unknown" | "failed" | "budget"; code?: string }
   > {
     if (this.#cancelled) return { kind: "cancelled" };
@@ -1234,18 +1790,17 @@ export class PersonalTeamCoordinator {
     const invocationId = this.#newId("invocation");
     const controller = this.abort.arm(invocationId);
     const requestSignal = this.#requestSignal(controller.signal);
+    let identity: {
+      readonly invocationId: string;
+      readonly purpose: TeamParentCallPurpose;
+      readonly providerId: string;
+      readonly requestedModel: string;
+    } | null = null;
+    let providerResult: TeamChatResult | undefined;
+    let settlementAttempted = false;
+    let consumeConfirmed = false;
     try {
       if (controller.signal.aborted) return { kind: this.#abortKind() };
-      const consumed = await raceAbort(
-        this.#host.consumeProviderCall({
-          workspaceId: args.input.workspaceId,
-          teamRunId: args.teamRun.id,
-        }),
-        requestSignal,
-      );
-      if (isAborted(consumed) || controller.signal.aborted || this.#wallExceeded()) {
-        return { kind: this.#abortKind() };
-      }
       const credentials = await raceAbort(
         this.#host.resolveCredentials(args.input.workspaceId, "parent", requestSignal),
         requestSignal,
@@ -1253,6 +1808,34 @@ export class PersonalTeamCoordinator {
       if (isAborted(credentials) || controller.signal.aborted || this.#wallExceeded()) {
         return { kind: this.#abortKind() };
       }
+      identity = {
+        invocationId,
+        purpose: args.purpose,
+        providerId: credentials.providerId,
+        requestedModel: credentials.model,
+      };
+      const consumed = await this.#host.consumeProviderCall({
+        workspaceId: args.input.workspaceId,
+        teamRunId: args.teamRun.id,
+        invocationId,
+        purpose: args.purpose,
+        providerId: credentials.providerId,
+        requestedModel: credentials.model,
+      });
+      if (
+        consumed.parentCall === undefined ||
+        consumed.parentCall.invocationId !== invocationId ||
+        consumed.parentCall.teamRunId !== args.teamRun.id ||
+        consumed.parentCall.purpose !== args.purpose ||
+        consumed.parentCall.providerId !== credentials.providerId ||
+        consumed.parentCall.requestedModel !== credentials.model ||
+        consumed.parentCall.state !== "pending"
+      ) {
+        throw Object.assign(new Error("desktop_native_response_invalid"), {
+          code: "desktop_native_response_invalid",
+        });
+      }
+      consumeConfirmed = true;
       args.calls.push({
         purpose: args.purpose,
         roleId: "parent",
@@ -1260,6 +1843,20 @@ export class PersonalTeamCoordinator {
         nodeId: null,
         assignmentId: null,
       });
+      if (controller.signal.aborted || this.#cancelled || this.#wallExceeded()) {
+        const kind = this.#abortKind();
+        settlementAttempted = true;
+        await this.#settleParentProviderCall(identity, args.input, args.teamRun.id, {
+          state: kind === "cancelled" ? "cancelled" : "failed",
+          planRevisionId: null,
+          outputSha256: null,
+          errorCode:
+            kind === "cancelled"
+              ? "desktop_invocation_cancelled"
+              : "desktop_team_wall_time_exceeded",
+        });
+        return { kind };
+      }
       args.emit({
         type: "node_identity",
         employeeRoleId: "parent",
@@ -1283,10 +1880,59 @@ export class PersonalTeamCoordinator {
         requestSignal,
       );
       if (isAborted(chat) || controller.signal.aborted || this.#cancelled || this.#wallExceeded()) {
-        return { kind: this.#abortKind() };
+        const kind = this.#abortKind();
+        settlementAttempted = true;
+        await this.#settleParentProviderCall(identity, args.input, args.teamRun.id, {
+          state: kind === "cancelled" ? "cancelled" : "failed",
+          planRevisionId: null,
+          outputSha256: null,
+          errorCode:
+            kind === "cancelled"
+              ? "desktop_invocation_cancelled"
+              : "desktop_team_wall_time_exceeded",
+        });
+        return { kind };
       }
+      providerResult = chat;
       assertRequestedModelIdentity(credentials.model, chat.actualModel);
+      const outputText =
+        args.purpose === "parent-synthesize"
+          ? normalizeParentFinalText(
+              chat.text,
+              args.input.budget.maximumOutputCharacters,
+            )
+          : chat.text;
+      if (outputText === null) {
+        settlementAttempted = true;
+        await this.#settleParentProviderCall(
+          { ...identity, result: chat },
+          args.input,
+          args.teamRun.id,
+          {
+            state: "failed",
+            planRevisionId: null,
+            outputSha256: null,
+            errorCode: "desktop_team_output_budget_exceeded",
+          },
+        );
+        return {
+          kind: "budget",
+          code: "desktop_team_output_budget_exceeded",
+        };
+      }
       if (args.purpose === "parent-synthesize" && this.#cancelled) {
+        settlementAttempted = true;
+        await this.#settleParentProviderCall(
+          { ...identity, result: chat },
+          args.input,
+          args.teamRun.id,
+          {
+            state: "cancelled",
+            planRevisionId: null,
+            outputSha256: null,
+            errorCode: "desktop_invocation_cancelled",
+          },
+        );
         return { kind: "cancelled" };
       }
       args.emit({
@@ -1294,16 +1940,85 @@ export class PersonalTeamCoordinator {
         employeeRoleId: "parent",
         invocationId,
         sendEpoch: args.calls.length,
-        text: chat.text,
+        text: outputText,
       });
-      return { kind: "ok", text: chat.text, result: chat };
+      if (this.#cancelled || this.#wallExceeded()) {
+        const kind = this.#abortKind();
+        settlementAttempted = true;
+        await this.#settleParentProviderCall(
+          { ...identity, result: chat },
+          args.input,
+          args.teamRun.id,
+          {
+            state: kind === "cancelled" ? "cancelled" : "failed",
+            planRevisionId: null,
+            outputSha256: null,
+            errorCode:
+              kind === "cancelled"
+                ? "desktop_invocation_cancelled"
+                : "desktop_team_wall_time_exceeded",
+          },
+        );
+        return { kind };
+      }
+      return {
+        kind: "ok",
+        text: outputText,
+        result: chat,
+        ...identity,
+      };
     } catch (error) {
       const code = errorCode(error);
+      if (identity !== null && !settlementAttempted) {
+        settlementAttempted = true;
+        const aborted = ABORT_CODES.has(code) || this.#cancelled || this.#wallExceeded();
+        const kind = aborted ? this.#abortKind() : null;
+        const unknown =
+          code === "desktop_invocation_interrupted" ||
+          code === "desktop_provider_stream_incomplete" ||
+          code === "desktop_provider_response_invalid" ||
+          code === "desktop_native_response_invalid";
+        const settlement = {
+          state:
+            kind === "cancelled"
+              ? ("cancelled" as const)
+              : unknown || !consumeConfirmed
+                ? ("unknown" as const)
+                : ("failed" as const),
+          planRevisionId: null,
+          outputSha256: null,
+          errorCode:
+            kind === "cancelled"
+              ? "desktop_invocation_cancelled"
+              : kind === "budget"
+                ? "desktop_team_wall_time_exceeded"
+                : !consumeConfirmed
+                  ? "desktop_team_parent_call_consume_unknown"
+                  : code,
+        };
+        try {
+          await this.#settleParentProviderCall(
+            { ...identity, ...(providerResult === undefined ? {} : { result: providerResult }) },
+            args.input,
+            args.teamRun.id,
+            settlement,
+          );
+          if (!consumeConfirmed) {
+            return {
+              kind: "unknown",
+              code: "desktop_team_parent_call_consume_unknown",
+            };
+          }
+        } catch (settleError) {
+          if (consumeConfirmed) throw settleError;
+        }
+      }
       if (ABORT_CODES.has(code) || this.#cancelled || this.#wallExceeded()) return { kind: this.#abortKind() };
       if (
         code === "desktop_invocation_interrupted" ||
         code === "desktop_provider_stream_incomplete" ||
-        code === "desktop_provider_response_invalid"
+        code === "desktop_provider_response_invalid" ||
+        code === "desktop_native_response_invalid"
       ) {
         return { kind: "unknown", code };
       }
@@ -1346,6 +2061,11 @@ export class PersonalTeamCoordinator {
             ];
           })
         : [];
+      if (record.status === "needs_collaboration" && requests.length === 0) {
+        throw Object.assign(new Error("desktop_team_report_invalid"), {
+          code: "desktop_team_report_invalid",
+        });
+      }
       return Object.freeze({
         assignmentId: assignment.assignmentId,
         employeeRoleId: assignment.employeeRoleId,
@@ -1465,38 +2185,53 @@ export class PersonalTeamCoordinator {
     synthesizing: boolean,
     emit: (event: Omit<DesktopTeamRunEvent, "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId">) => void,
   ): Promise<DesktopTeamRunProof> {
+    if (this.#cancelled) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
     if (result.kind === "cancelled") {
       await this.#host.setRunState({
         workspaceId: input.workspaceId,
         teamRunId,
         state: "cancelled",
-      }).catch(() => undefined);
+      });
       emit({ type: "cancelled", state: "cancelled" });
       return this.#proof(teamRunId, "cancelled", calls, nodes, synthesizing ? null : parentFinal, false);
     }
     if (result.kind === "budget") {
-      await this.#host.setRunState({
+      const quietCommit = this.#startQuietCommit({
         workspaceId: input.workspaceId,
         teamRunId,
         state: "budget_exhausted",
-      }).catch(() => undefined);
+      });
+      if (quietCommit === null) {
+        return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+      }
+      await quietCommit;
       emit({ type: "budget_exhausted", state: "budget_exhausted" });
       return this.#proof(teamRunId, "budget_exhausted", calls, nodes, parentFinal, false);
     }
     if (result.kind === "unknown") {
-      await this.#host.setRunState({
+      const quietCommit = this.#startQuietCommit({
         workspaceId: input.workspaceId,
         teamRunId,
         state: "unknown",
-      }).catch(() => undefined);
+      });
+      if (quietCommit === null) {
+        return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+      }
+      await quietCommit;
       emit({ type: "unknown", state: "unknown" });
       return this.#proof(teamRunId, "unknown", calls, nodes, parentFinal, false);
     }
-    await this.#host.setRunState({
+    const quietCommit = this.#startQuietCommit({
       workspaceId: input.workspaceId,
       teamRunId,
       state: "failed",
-    }).catch(() => undefined);
+    });
+    if (quietCommit === null) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
+    await quietCommit;
     emit({ type: "failed", state: "failed", errorCode: result.code });
     return this.#proof(teamRunId, "failed", calls, nodes, parentFinal, false);
   }
@@ -1509,11 +2244,18 @@ export class PersonalTeamCoordinator {
     parentFinal: string | null,
     emit: (event: Omit<DesktopTeamRunEvent, "teamRunId" | "workspaceId" | "rosterEpoch" | "conversationId">) => void,
   ): Promise<DesktopTeamRunProof> {
-    await this.#host.setRunState({
+    if (this.#cancelled) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
+    const quietCommit = this.#startQuietCommit({
       workspaceId: input.workspaceId,
       teamRunId,
       state: "budget_exhausted",
-    }).catch(() => undefined);
+    });
+    if (quietCommit === null) {
+      return this.#cancelledProof(input, teamRunId, calls, nodes, parentFinal, emit);
+    }
+    await quietCommit;
     emit({ type: "budget_exhausted", state: "budget_exhausted" });
     return this.#proof(teamRunId, "budget_exhausted", calls, nodes, parentFinal, false);
   }
@@ -1530,7 +2272,7 @@ export class PersonalTeamCoordinator {
       workspaceId: input.workspaceId,
       teamRunId,
       state: "cancelled",
-    }).catch(() => undefined);
+    });
     emit({ type: "cancelled", state: "cancelled" });
     return this.#proof(teamRunId, "cancelled", calls, nodes, parentFinal, false);
   }
@@ -1571,15 +2313,31 @@ export function createInMemoryPersonalTeamHost(
   options: MemoryTeamHostOptions,
 ): PersonalTeamHost & {
   readonly runs: DesktopTeamRun[];
-  readonly nodes: { id: string; invocationId: string; assignmentId: string }[];
+  readonly nodes: { id: string; invocationId: string; assignmentId: string; state: string }[];
   readonly reports: EmployeeTeamReport[];
   readonly audits: readonly string[];
+  readonly parentCalls: TeamParentCallRecord[];
+  readonly planRevisions: DesktopTeamPlanRevision[];
+  readonly assignmentStates: ReadonlyMap<string, string>;
   failNextSettle: string | null;
 } {
   const runs: DesktopTeamRun[] = [];
   const nodes: { id: string; invocationId: string; assignmentId: string; nodeEpoch: number; sendEpoch: number; state: string }[] = [];
   const reports: EmployeeTeamReport[] = [];
   const audits: string[] = [];
+  const parentCalls: TeamParentCallRecord[] = [];
+  const planRevisions: DesktopTeamPlanRevision[] = [];
+  const assignmentStates = new Map<
+    string,
+    | "pending"
+    | "ready"
+    | "running"
+    | "completed"
+    | "needs_collaboration"
+    | "blocked"
+    | "cancelled"
+  >();
+  const consumedInvocations = new Set<string>();
   const assignments = new Map<string, TeamAssignmentProposal>();
   const collaborationDecisions = new Map<
     string,
@@ -1590,15 +2348,21 @@ export function createInMemoryPersonalTeamHost(
 
   const host: PersonalTeamHost & {
     readonly runs: DesktopTeamRun[];
-    readonly nodes: { id: string; invocationId: string; assignmentId: string }[];
+    readonly nodes: { id: string; invocationId: string; assignmentId: string; state: string }[];
     readonly reports: EmployeeTeamReport[];
     readonly audits: string[];
+    readonly parentCalls: TeamParentCallRecord[];
+    readonly planRevisions: DesktopTeamPlanRevision[];
+    readonly assignmentStates: ReadonlyMap<string, string>;
     failNextSettle: string | null;
   } = {
     runs,
     nodes,
     reports,
     audits,
+    parentCalls,
+    planRevisions,
+    assignmentStates,
     failNextSettle: null,
     async startTeamRun(input) {
       if (input.allowedSpecialistRoleIds !== undefined && input.allowedSpecialistRoleIds.length === 0) {
@@ -1686,25 +2450,35 @@ export function createInMemoryPersonalTeamHost(
         validationErrorCode: validated.ok ? null : validated.code,
         createdAt: new Date().toISOString(),
       };
+      planRevisions.push(planRevision);
       if (validated.ok && validated.value.decision === "delegate") {
         for (const wave of validated.value.waves) {
-          for (const assignment of wave.assignments) assignments.set(assignment.assignmentId, assignment);
+          for (const assignment of wave.assignments) {
+            assignments.set(assignment.assignmentId, assignment);
+            assignmentStates.set(assignment.assignmentId, "pending");
+          }
         }
       }
       if (validated.ok && validated.value.decision === "continue") {
         for (const assignment of validated.value.nextWave.assignments) {
           assignments.set(assignment.assignmentId, assignment);
+          assignmentStates.set(assignment.assignmentId, "pending");
         }
       }
       if (validated.ok && validated.value.decision === "request_followup") {
         for (const assignment of validated.value.assignments) {
           assignments.set(assignment.assignmentId, assignment);
+          assignmentStates.set(assignment.assignmentId, "pending");
         }
       }
+      const currentRun = validated.ok
+        ? { ...run, currentPlanRevisionId: planRevision.id }
+        : run;
+      if (validated.ok) runs[runs.indexOf(run)] = currentRun;
       return {
         accepted: validated.ok,
         validationErrorCode: validated.ok ? null : validated.code,
-        teamRun: run,
+        teamRun: currentRun,
         planRevision,
       };
     },
@@ -1723,7 +2497,7 @@ export function createInMemoryPersonalTeamHost(
             assignmentId: item.assignmentId,
             employeeRoleId: item.employeeRoleId,
             objective: item.objective,
-            state: "pending",
+            state: assignmentStates.get(item.assignmentId) ?? "pending",
             waveId: "wave",
             dependsOnAssignmentIds: item.dependsOnAssignmentIds,
             expectedOutput: item.expectedOutput,
@@ -1758,15 +2532,224 @@ export function createInMemoryPersonalTeamHost(
           code: "desktop_team_call_budget_exceeded",
         });
       }
+      if (consumedInvocations.has(input.invocationId)) {
+        throw Object.assign(new Error("desktop_team_duplicate_invocation"), {
+          code: "desktop_team_duplicate_invocation",
+        });
+      }
+      consumedInvocations.add(input.invocationId);
       const next = { ...run, consumedProviderCalls: run.consumedProviderCalls + 1 };
       const index = runs.indexOf(run);
       runs[index] = next;
-      return { teamRun: next };
+      if (input.purpose === "employee") return { teamRun: next };
+      const now = new Date().toISOString();
+      const parentCall: TeamParentCallRecord = {
+        invocationId: input.invocationId,
+        teamRunId: input.teamRunId,
+        planRevisionId: null,
+        purpose: input.purpose,
+        state: "pending",
+        providerId: input.providerId,
+        requestedModel: input.requestedModel,
+        actualModel: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        outputSha256: null,
+        errorCode: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      parentCalls.push(parentCall);
+      return { teamRun: next, parentCall };
+    },
+    async settleParentCall(input) {
+      const run = runs.find((item) => item.id === input.teamRunId);
+      if (run === undefined) {
+        throw Object.assign(new Error("desktop_team_run_not_found"), {
+          code: "desktop_team_run_not_found",
+        });
+      }
+      const existing = parentCalls.find(
+        (item) =>
+          item.invocationId === input.invocationId &&
+          item.teamRunId === input.teamRunId,
+      );
+      if (existing === undefined) {
+        throw Object.assign(new Error("desktop_team_parent_call_not_found"), {
+          code: "desktop_team_parent_call_not_found",
+        });
+      }
+      if (existing.state !== "pending") {
+        const exactReplay =
+          existing.purpose === input.purpose &&
+          existing.providerId === input.providerId &&
+          existing.requestedModel === input.requestedModel &&
+          existing.state === input.state &&
+          existing.planRevisionId === input.planRevisionId &&
+          existing.actualModel === input.actualModel &&
+          existing.inputTokens === input.inputTokens &&
+          existing.outputTokens === input.outputTokens &&
+          existing.totalTokens === input.totalTokens &&
+          existing.outputSha256 === input.outputSha256 &&
+          existing.errorCode === input.errorCode;
+        if (exactReplay) return { parentCall: existing };
+        throw Object.assign(new Error("desktop_team_parent_call_settle_conflict"), {
+          code: "desktop_team_parent_call_settle_conflict",
+        });
+      }
+      if (
+        existing.purpose !== input.purpose ||
+        existing.providerId !== input.providerId ||
+        existing.requestedModel !== input.requestedModel
+      ) {
+        throw Object.assign(new Error("desktop_team_parent_call_identity_mismatch"), {
+          code: "desktop_team_parent_call_identity_mismatch",
+        });
+      }
+      if (input.state === "succeeded") {
+        const plan = planRevisions.find((item) => item.id === input.planRevisionId);
+        const purposeMatches =
+          plan !== undefined &&
+          plan.validated &&
+          ((input.purpose === "parent-propose" &&
+            plan.revisionOrdinal === 1 &&
+            (plan.decision === "answer_directly" || plan.decision === "delegate")) ||
+            (input.purpose === "parent-replan" &&
+              plan.revisionOrdinal > 1 &&
+              (plan.decision === "continue" ||
+                plan.decision === "request_followup" ||
+                plan.decision === "finish" ||
+                plan.decision === "cannot_complete")) ||
+            (input.purpose === "parent-synthesize" && plan.decision === "finish"));
+        if (
+          !purposeMatches ||
+          input.actualModel !== input.requestedModel ||
+          input.outputSha256 === null ||
+          input.errorCode !== null ||
+          (input.purpose !== "parent-synthesize" &&
+            input.outputSha256 !== plan?.proposalJsonSha256)
+        ) {
+          throw Object.assign(new Error("desktop_team_parent_call_proof_invalid"), {
+            code: "desktop_team_parent_call_proof_invalid",
+          });
+        }
+      } else if (input.outputSha256 !== null || input.errorCode === null) {
+        throw Object.assign(new Error("desktop_team_parent_call_proof_invalid"), {
+          code: "desktop_team_parent_call_proof_invalid",
+        });
+      }
+      const settled: TeamParentCallRecord = {
+        ...existing,
+        planRevisionId: input.planRevisionId,
+        state: input.state,
+        actualModel: input.actualModel,
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens,
+        totalTokens: input.totalTokens,
+        outputSha256: input.outputSha256,
+        errorCode: input.errorCode,
+        updatedAt: new Date().toISOString(),
+      };
+      parentCalls[parentCalls.indexOf(existing)] = settled;
+      audits.push(`team_parent_call_settled:${input.invocationId}:${input.state}`);
+      return { parentCall: settled };
     },
     async setRunState(input) {
       const run = runs.find((item) => item.id === input.teamRunId);
       if (run === undefined) {
         throw Object.assign(new Error("desktop_team_run_not_found"), { code: "desktop_team_run_not_found" });
+      }
+      const pending = parentCalls.filter(
+        (item) => item.teamRunId === input.teamRunId && item.state === "pending",
+      );
+      if (input.state === "cancelled") {
+        for (const call of pending) {
+          const cancelled: TeamParentCallRecord = {
+            ...call,
+            state: "cancelled",
+            errorCode: "desktop_invocation_cancelled",
+            updatedAt: new Date().toISOString(),
+          };
+          parentCalls[parentCalls.indexOf(call)] = cancelled;
+        }
+        for (const node of nodes) {
+          if (node.state === "pending" || node.state === "running") {
+            node.state = "cancelled";
+          }
+        }
+        for (const [assignmentId, state] of assignmentStates) {
+          if (state === "pending" || state === "ready" || state === "running") {
+            assignmentStates.set(assignmentId, "cancelled");
+          }
+        }
+      } else if (
+        input.state === "failed" ||
+        input.state === "unknown" ||
+        input.state === "budget_exhausted" ||
+        input.state === "cannot_complete"
+      ) {
+        const liveNode = nodes.some(
+          (node) => node.state === "pending" || node.state === "running",
+        );
+        const runningAssignment = [...assignmentStates.values()].some(
+          (state) => state === "running",
+        );
+        if (liveNode || runningAssignment || pending.length > 0) {
+          throw Object.assign(new Error("desktop_team_run_children_live"), {
+            code: "desktop_team_run_children_live",
+          });
+        }
+        for (const [assignmentId, state] of assignmentStates) {
+          if (state === "pending" || state === "ready") {
+            assignmentStates.set(assignmentId, "blocked");
+          }
+        }
+      } else if (
+        input.state !== "preparing" &&
+        input.state !== "running" &&
+        input.state !== "cancelling" &&
+        pending.length > 0
+      ) {
+        throw Object.assign(new Error("desktop_team_run_children_live"), {
+          code: "desktop_team_run_children_live",
+        });
+      }
+      if (input.state === "succeeded") {
+        const plan = planRevisions.find((item) => item.id === run.currentPlanRevisionId);
+        const proposalPurpose =
+          plan?.decision === "answer_directly" ? "parent-propose" : "parent-replan";
+        const proposalProven = parentCalls.some(
+          (item) =>
+            item.teamRunId === run.id &&
+            item.planRevisionId === plan?.id &&
+            item.purpose === proposalPurpose &&
+            item.state === "succeeded" &&
+            item.outputSha256 === plan?.proposalJsonSha256,
+        );
+        const synthesisProven =
+          plan?.decision !== "finish" ||
+          (typeof input.parentFinalAnswer === "string" &&
+            input.parentFinalAnswer.length > 0 &&
+            parentCalls.some(
+              (item) =>
+                item.teamRunId === run.id &&
+                item.planRevisionId === plan.id &&
+                item.purpose === "parent-synthesize" &&
+                item.state === "succeeded" &&
+                item.outputSha256 === sha256Text(input.parentFinalAnswer ?? ""),
+            ));
+        if (
+          plan === undefined ||
+          !plan.validated ||
+          (plan.decision !== "answer_directly" && plan.decision !== "finish") ||
+          !proposalProven ||
+          !synthesisProven
+        ) {
+          throw Object.assign(new Error("desktop_team_success_closure_open"), {
+            code: "desktop_team_success_closure_open",
+          });
+        }
       }
       const next = { ...run, state: input.state };
       const index = runs.indexOf(run);
@@ -1861,6 +2844,7 @@ export function createInMemoryPersonalTeamHost(
         state: "running",
       };
       nodes.push(node);
+      assignmentStates.set(input.assignmentId, "running");
       return { node: { id: node.id, ordinal: nodes.length, invocationId: node.invocationId } };
     },
     async updateNode(input) {
@@ -1873,7 +2857,13 @@ export function createInMemoryPersonalTeamHost(
       if (node && node.state !== "running") {
         throw Object.assign(new Error("desktop_team_node_terminal"), { code: "desktop_team_node_terminal" });
       }
-      if (node) node.state = input.state;
+      if (node) {
+        node.state = input.state;
+        assignmentStates.set(
+          node.assignmentId,
+          input.state === "cancelled" ? "cancelled" : "blocked",
+        );
+      }
     },
     async settleNode(input) {
       const node = nodes.find((item) => item.id === input.nodeId);
@@ -1893,7 +2883,10 @@ export function createInMemoryPersonalTeamHost(
       }
       reports.push(input.report);
       audits.push(`team_node_settled:${input.nodeId}:${input.invocationId}`);
-      if (node) node.state = "succeeded";
+      if (node) {
+        node.state = "succeeded";
+        assignmentStates.set(node.assignmentId, input.report.status);
+      }
     },
     async recordReport(input) {
       const node = nodes.find((item) => item.id === input.nodeId);

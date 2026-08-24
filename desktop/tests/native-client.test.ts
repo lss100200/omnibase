@@ -6,6 +6,57 @@ import { DesktopNativeClient } from "../src/runtime/native-client.ts";
 const CONTROL_TOKEN = "e".repeat(64);
 const OWNER_ID = `owner_${"a".repeat(32)}`;
 const WORKSPACE_ID = `workspace_${"b".repeat(32)}`;
+const TEAM_CONVERSATION_ID = `conversation_${"c".repeat(32)}`;
+const PROVIDER_ID = `provider_${"d".repeat(32)}`;
+const TEAM_RUN_ID = `teamrun_${"e".repeat(32)}`;
+const TEAM_INVOCATION_ID = `invocation_${"f".repeat(32)}`;
+const PLAN_REVISION_ID = `teamrev_${"1".repeat(32)}`;
+
+function rawTeamRun(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: TEAM_RUN_ID,
+    workspace_id: WORKSPACE_ID,
+    conversation_id: TEAM_CONVERSATION_ID,
+    mode: "team",
+    state: "running",
+    staffing_authority: "parent_proposal",
+    current_plan_revision_id: null,
+    current_wave_id: null,
+    dispatched_participant_count: null,
+    maximum_provider_calls: 24,
+    maximum_wall_time_ms: 60_000,
+    maximum_concurrent_calls: 2,
+    maximum_input_characters: 100_000,
+    maximum_output_characters: 100_000,
+    consumed_provider_calls: 1,
+    task: "native parent call contract",
+    allowed_specialist_role_ids: ["frontend"],
+    created_at: "2026-08-24T00:00:00Z",
+    updated_at: "2026-08-24T00:00:01Z",
+    ...overrides,
+  };
+}
+
+function rawParentCall(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    invocation_id: TEAM_INVOCATION_ID,
+    team_run_id: TEAM_RUN_ID,
+    plan_revision_id: null,
+    purpose: "parent-propose",
+    state: "pending",
+    provider_id: PROVIDER_ID,
+    requested_model: "loopback-team",
+    actual_model: null,
+    input_tokens: null,
+    output_tokens: null,
+    total_tokens: null,
+    output_sha256: null,
+    error_code: null,
+    created_at: "2026-08-24T00:00:00Z",
+    updated_at: "2026-08-24T00:00:01Z",
+    ...overrides,
+  };
+}
 
 function jsonResponse(
   value: unknown,
@@ -169,6 +220,269 @@ test("native client preserves stable backend errors and rejects malformed respon
     ok: false,
     error: { code: "desktop_native_response_invalid" },
   });
+});
+
+test("native client maps parent consume identity and parses its pending proof", async () => {
+  let seenUrl = "";
+  let seenBody = "";
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seenUrl = String(input);
+      seenBody = String(init?.body ?? "");
+      return jsonResponse({
+        team_run: rawTeamRun(),
+        parent_call: rawParentCall(),
+      });
+    }) as typeof fetch,
+  });
+  const result = await client.consumeTeamProviderCall({
+    workspaceId: WORKSPACE_ID,
+    teamRunId: TEAM_RUN_ID,
+    invocationId: TEAM_INVOCATION_ID,
+    purpose: "parent-propose",
+    providerId: PROVIDER_ID,
+    requestedModel: "loopback-team",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.parentCall?.state, "pending");
+  assert.equal(
+    seenUrl,
+    `http://127.0.0.1:47431/desktop/v1/workspaces/${WORKSPACE_ID}/team-runs/${TEAM_RUN_ID}/consume-call`,
+  );
+  assert.deepEqual(JSON.parse(seenBody), {
+    invocation_id: TEAM_INVOCATION_ID,
+    purpose: "parent-propose",
+    provider_id: PROVIDER_ID,
+    requested_model: "loopback-team",
+  });
+});
+
+test("native client requires the exact v9 employee consume wrapper", async () => {
+  const consumeEmployee = (payload: unknown) =>
+    new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () => jsonResponse(payload)) as typeof fetch,
+    }).consumeTeamProviderCall({
+      workspaceId: WORKSPACE_ID,
+      teamRunId: TEAM_RUN_ID,
+      invocationId: TEAM_INVOCATION_ID,
+      purpose: "employee",
+      providerId: PROVIDER_ID,
+      requestedModel: "loopback-team",
+    });
+
+  const valid = await consumeEmployee({
+    team_run: rawTeamRun(),
+    parent_call: null,
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.ok && valid.value.parentCall, undefined);
+
+  for (const payload of [
+    { team_run: rawTeamRun() },
+    { team_run: rawTeamRun(), parent_call: rawParentCall() },
+  ]) {
+    assert.deepEqual(await consumeEmployee(payload), {
+      ok: false,
+      error: { code: "desktop_native_response_invalid" },
+    });
+  }
+});
+
+test("native client maps parent settle exactly and binds every response identity field", async () => {
+  const outputSha256 = "2".repeat(64);
+  let seenUrl = "";
+  let seenBody = "";
+  const settled = rawParentCall({
+    plan_revision_id: PLAN_REVISION_ID,
+    state: "succeeded",
+    actual_model: "loopback-team",
+    input_tokens: 11,
+    output_tokens: 7,
+    total_tokens: 18,
+    output_sha256: outputSha256,
+    updated_at: "2026-08-24T00:00:02Z",
+  });
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      seenUrl = String(input);
+      seenBody = String(init?.body ?? "");
+      return jsonResponse({ parent_call: settled });
+    }) as typeof fetch,
+  });
+  const input = {
+    workspaceId: WORKSPACE_ID,
+    teamRunId: TEAM_RUN_ID,
+    invocationId: TEAM_INVOCATION_ID,
+    purpose: "parent-propose" as const,
+    providerId: PROVIDER_ID,
+    requestedModel: "loopback-team",
+    state: "succeeded" as const,
+    planRevisionId: PLAN_REVISION_ID,
+    actualModel: "loopback-team",
+    inputTokens: 11,
+    outputTokens: 7,
+    totalTokens: 18,
+    outputSha256,
+    errorCode: null,
+  };
+  const result = await client.settleTeamParentCall(input);
+  assert.equal(result.ok, true);
+  assert.equal(
+    seenUrl,
+    `http://127.0.0.1:47431/desktop/v1/workspaces/${WORKSPACE_ID}/team-runs/${TEAM_RUN_ID}/parent-calls/${TEAM_INVOCATION_ID}/settle`,
+  );
+  assert.deepEqual(JSON.parse(seenBody), {
+    purpose: "parent-propose",
+    provider_id: PROVIDER_ID,
+    requested_model: "loopback-team",
+    state: "succeeded",
+    plan_revision_id: PLAN_REVISION_ID,
+    actual_model: "loopback-team",
+    input_tokens: 11,
+    output_tokens: 7,
+    total_tokens: 18,
+    output_sha256: outputSha256,
+    error_code: null,
+  });
+
+  const mismatchedResponses: readonly [string, unknown][] = [
+    [
+      "invocation ID",
+      {
+        parent_call: {
+          ...settled,
+          invocation_id: `invocation_${"0".repeat(32)}`,
+        },
+      },
+    ],
+    [
+      "team Run ID",
+      {
+        parent_call: {
+          ...settled,
+          team_run_id: `teamrun_${"0".repeat(32)}`,
+        },
+      },
+    ],
+    ["purpose", { parent_call: { ...settled, purpose: "parent-replan" } }],
+    [
+      "Provider ID",
+      {
+        parent_call: {
+          ...settled,
+          provider_id: `provider_${"0".repeat(32)}`,
+        },
+      },
+    ],
+    [
+      "requested model",
+      { parent_call: { ...settled, requested_model: "other-team" } },
+    ],
+    ["state", { parent_call: { ...settled, state: "failed" } }],
+    [
+      "plan revision",
+      {
+        parent_call: {
+          ...settled,
+          plan_revision_id: `teamrev_${"0".repeat(32)}`,
+        },
+      },
+    ],
+    [
+      "actual model",
+      { parent_call: { ...settled, actual_model: "other-team" } },
+    ],
+    [
+      "input usage",
+      { parent_call: { ...settled, input_tokens: 12, total_tokens: 19 } },
+    ],
+    [
+      "output usage",
+      { parent_call: { ...settled, output_tokens: 8, total_tokens: 19 } },
+    ],
+    ["total usage", { parent_call: { ...settled, total_tokens: 19 } }],
+    [
+      "digest",
+      { parent_call: { ...settled, output_sha256: "3".repeat(64) } },
+    ],
+    [
+      "error",
+      {
+        parent_call: {
+          ...settled,
+          error_code: "desktop_team_response_mismatch",
+        },
+      },
+    ],
+    ["wrapper keys", { parent_call: settled, extra: true }],
+  ];
+  for (const [field, payload] of mismatchedResponses) {
+    const mismatched = new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () => jsonResponse(payload)) as typeof fetch,
+    });
+    assert.deepEqual(
+      await mismatched.settleTeamParentCall(input),
+      { ok: false, error: { code: "desktop_native_response_invalid" } },
+      `settle must bind ${field}`,
+    );
+  }
+
+  for (const malformedInput of [
+    { ...input, state: "pending" as never },
+    { ...input, outputTokens: null, totalTokens: null },
+    { ...input, totalTokens: 19 },
+  ]) {
+    assert.deepEqual(await client.settleTeamParentCall(malformedInput), {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    });
+  }
+});
+
+test("native client rejects malformed or extra-key parent call proofs", async () => {
+  for (const payload of [
+    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), extra: true } },
+    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), invocation_id: "invocation_bad" } },
+    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), state: "succeeded" } },
+    {
+      team_run: rawTeamRun({ id: `teamrun_${"9".repeat(32)}` }),
+      parent_call: rawParentCall(),
+    },
+    {
+      team_run: rawTeamRun({ workspace_id: `workspace_${"8".repeat(32)}` }),
+      parent_call: rawParentCall(),
+    },
+    {
+      team_run: rawTeamRun(),
+      parent_call: rawParentCall({ provider_id: `provider_${"7".repeat(32)}` }),
+    },
+  ]) {
+    const client = new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () =>
+        jsonResponse(payload)) as typeof fetch,
+    });
+    assert.deepEqual(
+      await client.consumeTeamProviderCall({
+        workspaceId: WORKSPACE_ID,
+        teamRunId: TEAM_RUN_ID,
+        invocationId: TEAM_INVOCATION_ID,
+        purpose: "parent-propose",
+        providerId: PROVIDER_ID,
+        requestedModel: "loopback-team",
+      }),
+      { ok: false, error: { code: "desktop_native_response_invalid" } },
+    );
+  }
 });
 
 test("native client bounds and de-duplicates the workspace projection", async () => {

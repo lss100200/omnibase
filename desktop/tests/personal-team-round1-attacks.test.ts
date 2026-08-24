@@ -467,7 +467,7 @@ test("settle/audit failure after node creation is not success", async () => {
     assert.notEqual(proof.state, "succeeded");
     assert.equal(host.nodes.length, 1);
     assert.equal(host.reports.length, 0);
-    assert.equal(host.audits.length, 0);
+    assert.equal(host.audits.some((item) => item.startsWith("team_node_settled:")), false);
   } finally {
     await listening.close();
   }
@@ -640,6 +640,8 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
     getTeamBlackboard: (input: Parameters<typeof memory.getBlackboard>[0]) => wrap(() => memory.getBlackboard(input)),
     consumeTeamProviderCall: (input: Parameters<typeof memory.consumeProviderCall>[0]) =>
       wrap(() => memory.consumeProviderCall(input)),
+    settleTeamParentCall: (input: Parameters<typeof memory.settleParentCall>[0]) =>
+      wrap(() => memory.settleParentCall(input)),
     setTeamRunState: (input: Parameters<typeof memory.setRunState>[0]) => wrap(() => memory.setRunState(input)),
     createTeamNode: (input: Parameters<typeof memory.createNode>[0]) => wrap(() => memory.createNode(input)),
     updateTeamNode: (input: Parameters<typeof memory.updateNode>[0]) =>

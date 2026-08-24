@@ -735,9 +735,10 @@ dispatch/collaboration 冻死在 Owner 闭集 roster 上，也不是把父 Agent
 目标是先建立真正独立的多 Agent 身份、Proposal 合同和持久化结构，不先做复杂
 UI。
 
-This recording does **not** implement A2 schema, A3 tests, or A4 IPC.
-Next execution starts with P6.9-A only. A must encode **parent Proposal + host
-validation + blackboard**, not the withdrawn closed Owner roster, and not raw
+The original planning recording did **not** implement A2 schema, A3 tests, or
+A4 IPC. The execution branch has since implemented A2 through D and forward
+fixes through desktop schema v9. The enduring law is **parent Proposal + host
+validation + blackboard**, not the withdrawn closed Owner roster and not raw
 parent dispatch.
 
 主要交付：
@@ -808,6 +809,25 @@ team_collaboration_request
 These tables record **what parent proposed, what host validated, and what
 actually ran**. They are not a closed Owner checkbox contract, and they are
 not a license for unvalidated model JSON to mutate runtime.
+
+### v9 Provider-call reservation and parent proof
+
+The forward-fix schema adds `team_provider_call_reservation` for **every**
+parent and employee Provider invocation. The host must consume the unique
+invocation, bind Run/purpose/Provider/requested model and charge the call
+budget in SQLite before any Provider request. Node creation must match its
+employee reservation exactly. Reservation identity is immutable and remains
+as historical text even if the saved Provider is later deleted.
+
+Parent propose/replan/synthesis invocations additionally create a
+`team_parent_call` proof that settles once with terminal state, actual model,
+usage, plan revision and normalized output digest. It stores no prompt,
+response body, secret, ciphertext or Vault handle. Propose/replan reservation
+time cannot follow the bound revision; synthesis reservation time cannot
+precede the finish revision. Pending proof recovers to `unknown` and is never
+auto-replayed. The v9 native consume response is exact: employee calls carry
+an explicit `parent_call: null`; accepting the old missing-field shape would
+silently lose the reservation-version signal and is forbidden.
 
 ### `workspace_agent_role_config`
 
@@ -1044,7 +1064,9 @@ desktop/src/runtime/personal-team-coordinator.ts
 The coordinator **hosts** validated Proposals, waves, blackboard, and
 specialist invocations under the safety envelope. It is **not** an
 Owner-roster police, and it is **not** a raw-dispatch executor for untrusted
-model JSON.
+model JSON. A coordinator object is one-shot: a second `execute()` call fails
+with `desktop_team_coordinator_already_executed` and cannot inherit the prior
+Run's success-commit or Stop state.
 
 主要交付：
 
@@ -1171,6 +1193,18 @@ R0 needs **safe host mediation** so identity, budgets, and Stop stay real:
 | Token/字符预算超限 | 停止，不截断成“成功” |
 | 非法 Proposal | 失败关闭，不执行 |
 | 宿主将 parallel 降为 serial | 合法；不改变依赖语义 |
+
+For a quiet `failed | unknown | budget_exhausted | cannot_complete` terminal,
+the host may converge only when there is no live node, pending parent call or
+running assignment. In the same transaction it changes every remaining
+`pending | ready` assignment to `blocked` before committing the Run terminal;
+otherwise the terminal request fails closed. The desktop crosses an explicit
+quiet-terminal commit barrier on every such path: Stop accepted before the
+barrier wins, while Stop after the barrier begins is rejected locally and
+waits for the durable terminal result. If the quiet CAS fails, the local latch
+reopens so Stop may be retried. No invalid-Proposal, invalid-replan,
+cannot-complete, invoke, wall/budget, or exception fallback path may write a
+quiet terminal outside this commit point.
 
 ## B5. 重试
 
@@ -1692,8 +1726,9 @@ docs(p6.9): record personal multi-agent engineering acceptance
 
 不建议在同一个提交里同时做 migration、协调器、UI 和验收文档。
 
-This recording is **A1 only**. Do not start A2 schema on the planning branch
-or on the empty Codex pointer.
+Historical note: this page was first recorded as **A1 only**. A2 through D now
+exist on the execution branch; the original planning branch and empty Codex
+pointer remain untouched historical coordinates.
 
 ---
 

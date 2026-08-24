@@ -1270,6 +1270,7 @@
         "desktop/src/runtime/native-client.ts",
         "desktop/src/runtime/runtime-manager.ts",
         "desktop/src/runtime/personal-team-coordinator.ts",
+        "desktop/src/runtime/personal-team-validate.ts",
         "backend/src/omnibase/desktop_local/endpoint.py",
         "desktop/src/runtime/global-unicast.ts",
         "desktop/src/runtime/personal-team-provider.ts",
@@ -1278,6 +1279,7 @@
         "desktop/src/shared/personal-team.ts",
         "frontend/lib/desktop-bridge.ts",
         "frontend/lib/desktop-team-lifecycle.ts",
+        "frontend/app/desktop/workbench-client.tsx",
         "docs/architecture/p6-9-multi-agent-planning.md"
       ],
       "test_paths": [
@@ -1287,8 +1289,11 @@
         "desktop/tests/personal-team-coordinator.test.ts",
         "backend/tests/test_desktop_local_endpoint.py",
         "backend/tests/test_desktop_local_provider.py",
+        "desktop/tests/native-client.test.ts",
         "desktop/tests/personal-team-round1-attacks.test.ts",
         "desktop/tests/personal-team-round2-attacks.test.ts",
+        "desktop/tests/personal-team-native-host.test.ts",
+        "desktop/tests/runtime-manager.test.ts",
         "desktop/tests/ipc.test.ts",
         "frontend/lib/desktop-bridge.test.ts",
         "frontend/lib/desktop-team-lifecycle.test.ts"

@@ -2500,8 +2500,20 @@ set is closed at nine roles; parent is not a specialist. Serial, parallel
 and mixed waves are legal proposals; the host may serialize a parallel wave
 and must not parallelize declared dependencies.
 
-Desktop schema version 8 uses `desktop_0008_collaboration_report_binding`
-(the Round 5 immutable report-bound replay projection; Round 4 added v7
+Desktop schema version 9 uses `desktop_0009_parent_call_proof`. Every parent
+and employee Provider call first consumes an immutable
+`team_provider_call_reservation`, binding invocation, Run, purpose, Provider,
+requested model and call-budget charge before the network boundary. Node
+creation must exactly match its employee reservation. Parent propose, replan,
+and synthesis additionally settle a `team_parent_call` proof once with
+requested/actual model, usage, plan revision and normalized output digest.
+Propose/replan reservations cannot follow their revision; synthesis
+reservations cannot predate the finish revision. The v9 native employee
+consume envelope must explicitly contain `parent_call: null`; a missing field
+fails closed. Pending parent calls recover to `unknown`; a succeeded Run
+missing this proof also recovers to `unknown`. Version 8 uses
+`desktop_0008_collaboration_report_binding` (the Round 5 immutable
+report-bound replay projection; Round 4 added v7
 `desktop_0007_recovery_success_downgrade` behind the success-proof law;
 Round 3 added v6
 `desktop_0006_report_collaboration_digest`; Round 1 bumped v5
@@ -2527,7 +2539,16 @@ per-type identity schema. Off-origin views park Team Run buffers including
 phase, plan, and budgets. Node/report/collaboration/audit settle atomically
 after unique success. Strict wall-time is independent of Provider HTTP
 timeout. Stop-during-createNode latches like P6.8. An explicit empty
-allow-list fails closed; default-all remains when unset.
+allow-list fails closed; default-all remains when unset. Quiet
+`failed|unknown|budget_exhausted|cannot_complete` convergence atomically blocks
+remaining `pending|ready` assignments and rejects any live node, pending parent
+call or running assignment. Every desktop quiet-terminal path crosses one
+commit barrier: Stop accepted before it wins; once the commit begins, Stop is
+rejected locally and waits for the durable result; a failed CAS reopens Stop
+for retry. Invalid Proposal/replan,
+cannot-complete, invoke, wall/budget and exception fallback paths may not
+bypass this rule. Each coordinator is one-shot; reusing it fails closed
+instead of carrying success-commit or Stop state into a second Run.
 
 Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closed the
 named attack holes of that drip. Round 1's RuntimeManager journey was an

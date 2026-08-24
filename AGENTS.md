@@ -272,13 +272,25 @@ runtime evidence; then correct the stale documentation in the same change.
   role config, team-run schema, Proposal validators, the closed role/team IPC
   catalog, the coordinator, pinned Provider transport, or the workbench team
   FSM. Parent emits a restricted structured Proposal; the host validates and
-  persists. Specialists do not launch peers. Desktop schema version 5 is
-  `desktop_0005_team_node_identity_epochs` (Round 1 was v4
-  `desktop_0004_personal_team_runtime`; A2 was v3
-  `desktop_0003_personal_agent_team`), never Alembic 0017. Role config never
+  persists. Specialists do not launch peers. Desktop schema version 9 is
+  `desktop_0009_parent_call_proof`; v8 is
+  `desktop_0008_collaboration_report_binding`, v7 is
+  `desktop_0007_recovery_success_downgrade`, v6 is
+  `desktop_0006_report_collaboration_digest`, Round 1 was v5
+  `desktop_0005_team_node_identity_epochs` and v4
+  `desktop_0004_personal_team_runtime`, and A2 was v3
+  `desktop_0003_personal_agent_team`; never Alembic 0017. Role config never
   stores API keys or vault material; vault reads are bound to `is_enabled` in
   the same snapshot; explicit disabled Providers fail closed;
-  role-config writes CAS on `row_version`. Team HTTPS production pinning asks
+  role-config writes CAS on `row_version`. Every parent and employee Provider
+  call must consume one immutable reservation before crossing the Provider
+  boundary; parent calls additionally carry a settled proof for the exact plan
+  revision and output digest. Employee consume responses explicitly return
+  `parent_call: null`; a missing field is an invalid v9 native response.
+  Synthesis reservations cannot predate their finish revision, and recovery
+  downgrades incomplete proof to unknown. Quiet failure terminals block every
+  unstarted assignment, and a coordinator instance may execute only once.
+  Team HTTPS production pinning asks
   desktop-local `is_global_unicast`; SNI/Host stay the hostname. Next stays product-blind. Keep
   `ENTERPRISE_MULTI_AGENT_DISABLED`. Loopback D may claim
   `PERSONAL_MULTI_AGENT_IMPLEMENTED`; paid/live Provider window is still

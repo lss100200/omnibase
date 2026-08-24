@@ -39,6 +39,9 @@ export function createNativePersonalTeamHost(options: {
     async consumeProviderCall(input) {
       return unwrap(await options.client.consumeTeamProviderCall(input));
     },
+    async settleParentCall(input) {
+      return unwrap(await options.client.settleTeamParentCall(input));
+    },
     async setRunState(input) {
       return unwrap(
         await options.client.setTeamRunState({
