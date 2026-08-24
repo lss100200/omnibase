@@ -173,6 +173,8 @@ jobs:
       - name: P5.1C browser registry API gate contract tests
         run: uv run pytest ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q
       - name: Backend non-integration tests
+        env:
+          PYTHONTRACEMALLOC: "25"
         run: uv run pytest -m "not integration"
       - name: OpenAPI and Python SDK contracts
         shell: bash
