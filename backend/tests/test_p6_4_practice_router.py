@@ -128,7 +128,11 @@ def _run(
         alpha=alpha,
         ctx=_ctx(),
     )
-    return asyncio.run(_collect_body(response)), alpha
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_collect_body(response)), alpha
+    finally:
+        loop.close()
 
 
 def test_practice_stream_reestablishes_and_restores_tenant_scope(
