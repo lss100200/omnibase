@@ -1,16 +1,12 @@
 .page {
-  --preview-cyan: 0 0% 30%;
-  --preview-blue: 0 0% 50%;
-  --preview-violet: 0 0% 70%;
-  background: radial-gradient(circle at 8% 4%, hsl(var(--preview-cyan) / 0.1), transparent 27rem),
-    radial-gradient(circle at 92% 8%, hsl(var(--preview-violet) / 0.1), transparent 30rem),
-    hsl(var(--background));
+  background: hsl(var(--background));
 }
 
 .grid {
   background-image: linear-gradient(hsl(var(--foreground) / 0.035) 1px, transparent 1px),
     linear-gradient(90deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px);
   background-size: 40px 40px;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 88%);
   mask-image: linear-gradient(to bottom, black 0%, transparent 88%);
 }
 
@@ -33,10 +29,6 @@
   animation-delay: 0.9s;
 }
 
-.floatSlow {
-  animation: float-slow 6s ease-in-out infinite;
-}
-
 @keyframes signal {
   0%,
   100% {
@@ -49,19 +41,8 @@
   }
 }
 
-@keyframes float-slow {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .signal,
-  .floatSlow {
+  .signal {
     animation: none;
   }
 }
