@@ -6,6 +6,7 @@ import {
   completeDesktopTeamRun,
   createDesktopTeamLiveState,
   desktopTeamAppendBudgetTarget,
+  desktopTeamEventBindsLiveRun,
   desktopTeamLiveProjection,
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
@@ -91,14 +92,20 @@ test('old team liveText does not paint a new workspace and Stop stays reachable'
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, { ...snapshot(), rosterEpoch: 4 })
-  state = reduceDesktopTeamEvent(state, snapshot({ type: 'node_delta', rosterEpoch: 4, employeeRoleId: 'parent', text: '旧团队流' }))
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({ type: 'node_delta', rosterEpoch: 4, employeeRoleId: 'parent', text: '旧团队流' }),
+  )
   state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
   const projection = desktopTeamLiveProjection(state, WORKSPACE_B, CONVERSATION_B)
   assert.equal(projection.visible, false)
   assert.equal(projection.parentLiveText, '')
   assert.equal(desktopTeamStopVisible(state), true)
   state = switchDesktopTeamScope(state, WORKSPACE_A, CONVERSATION_A)
-  assert.equal(desktopTeamLiveProjection(state, WORKSPACE_A, CONVERSATION_A).parentLiveText, '旧团队流')
+  assert.equal(
+    desktopTeamLiveProjection(state, WORKSPACE_A, CONVERSATION_A).parentLiveText,
+    '旧团队流',
+  )
 })
 
 test('events must match team/roster/node/send epoch or they are dropped', () => {
@@ -113,9 +120,20 @@ test('events must match team/roster/node/send epoch or they are dropped', () => 
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, { ...snapshot(), rosterEpoch: 2 })
-  const drifted = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', rosterEpoch: 9, parentFinalAnswer: 'should not appear' }))
+  const drifted = reduceDesktopTeamEvent(
+    state,
+    snapshot({ type: 'completed', rosterEpoch: 9, parentFinalAnswer: 'should not appear' }),
+  )
   assert.equal(drifted.parentFinalAnswer, null)
-  const otherRun = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', teamRunId: `teamrun_${'9'.repeat(32)}`, rosterEpoch: 2, parentFinalAnswer: 'old run' }))
+  const otherRun = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'completed',
+      teamRunId: `teamrun_${'9'.repeat(32)}`,
+      rosterEpoch: 2,
+      parentFinalAnswer: 'old run',
+    }),
+  )
   assert.equal(otherRun.parentFinalAnswer, null)
 })
 
@@ -131,11 +149,11 @@ test('parent final answer is the highlighted transcript on origin scope', () => 
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, snapshot({ type: 'completed', parentFinalAnswer: '父 Agent 汇总' }))
-  assert.equal(
-    desktopTeamTranscriptHighlight(state, WORKSPACE_A, CONVERSATION_A),
-    '父 Agent 汇总',
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({ type: 'completed', parentFinalAnswer: '父 Agent 汇总' }),
   )
+  assert.equal(desktopTeamTranscriptHighlight(state, WORKSPACE_A, CONVERSATION_A), '父 Agent 汇总')
   assert.equal(desktopTeamTranscriptHighlight(state, WORKSPACE_B, CONVERSATION_B), null)
 })
 
@@ -168,7 +186,15 @@ test('old wave events are dropped after a new wave starts', () => {
   })
   state = reduceDesktopTeamEvent(state, snapshot())
   state = reduceDesktopTeamEvent(state, snapshot({ type: 'wave_starting', waveId: 'wave-2' }))
-  const drifted = reduceDesktopTeamEvent(state, snapshot({ type: 'node_terminal', waveId: 'wave-1', nodeId: NODE, answer: 'old wave must not land' }))
+  const drifted = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'node_terminal',
+      waveId: 'wave-1',
+      nodeId: NODE,
+      answer: 'old wave must not land',
+    }),
+  )
   assert.equal(drifted.nodes.length, 0)
   assert.equal(drifted.waveId, 'wave-2')
 })
@@ -185,8 +211,31 @@ test('waiting specialist stays 等待 after Stop; running becomes 正在停止',
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot())
-  state = reduceDesktopTeamEvent(state, snapshot({ type: 'wave_starting', planRevisionId: 'teamrev_1', waveId: 'wave-1', assignmentIds: ['frontend-review', 'backend-review'], employeeRoleIds: ['frontend', 'backend'] }))
-  state = reduceDesktopTeamEvent(state, snapshot({ type: 'node_starting', planRevisionId: 'teamrev_1', waveId: 'wave-1', assignmentId: 'frontend-review', nodeId: NODE, nodeOrdinal: 1, employeeRoleId: 'frontend', invocationId: `invocation_${'1'.repeat(32)}`, sendEpoch: 2, nodeEpoch: 1 }))
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'wave_starting',
+      planRevisionId: 'teamrev_1',
+      waveId: 'wave-1',
+      assignmentIds: ['frontend-review', 'backend-review'],
+      employeeRoleIds: ['frontend', 'backend'],
+    }),
+  )
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({
+      type: 'node_starting',
+      planRevisionId: 'teamrev_1',
+      waveId: 'wave-1',
+      assignmentId: 'frontend-review',
+      nodeId: NODE,
+      nodeOrdinal: 1,
+      employeeRoleId: 'frontend',
+      invocationId: `invocation_${'1'.repeat(32)}`,
+      sendEpoch: 2,
+      nodeEpoch: 1,
+    }),
+  )
   state = reduceDesktopTeamEvent(state, snapshot({ type: 'cancelled' }))
   const frontend = state.nodes.find((item) => item.assignmentId === 'frontend-review')
   const backend = state.nodes.find((item) => item.assignmentId === 'backend-review')
@@ -334,8 +383,9 @@ test('node_terminal missing or mismatched identity fields are dropped', () => {
     'sendEpoch',
   ] as const
   for (const key of fields) {
-    const incomplete = { ...bound({ type: 'node_terminal', answer: `leak-${key}` }) } as DesktopTeamRunEvent &
-      Record<string, unknown>
+    const incomplete = {
+      ...bound({ type: 'node_terminal', answer: `leak-${key}` }),
+    } as DesktopTeamRunEvent & Record<string, unknown>
     delete incomplete[key]
     const dropped = reduceDesktopTeamEvent(state, incomplete)
     assert.equal(dropped.nodes[0]?.statusText, '运行中', `omitting ${key} must drop`)
@@ -437,7 +487,10 @@ test('leaving origin parks phase plan and budget so B has no A team chrome', () 
   assert.equal(state.planRevisionId, PLAN_A)
   assert.equal(state.planSummary, 'frontend-review')
   assert.equal(projectDesktopTeamBudget(state), '已用 4 / 上限 8 次调用')
-  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '运行中')
+  assert.equal(
+    projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText,
+    '运行中',
+  )
   state = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
   assert.equal(state.phase, 'idle')
   assert.equal(state.planRevisionId, null)
@@ -446,14 +499,20 @@ test('leaving origin parks phase plan and budget so B has no A team chrome', () 
   assert.equal(state.consumedProviderCalls, 0)
   assert.equal(state.maximumProviderCalls, 0)
   assert.equal(projectDesktopTeamBudget(state), '已用 0 / 上限 0 次调用')
-  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '静默')
+  assert.equal(
+    projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText,
+    '静默',
+  )
   assert.equal(desktopTeamStopVisible(state), true)
   state = switchDesktopTeamScope(state, WORKSPACE_A, CONVERSATION_A)
   assert.equal(state.phase, 'parent_proposing')
   assert.equal(state.planRevisionId, PLAN_A)
   assert.equal(state.planSummary, 'frontend-review')
   assert.equal(projectDesktopTeamBudget(state), '已用 4 / 上限 8 次调用')
-  assert.equal(projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText, '运行中')
+  assert.equal(
+    projectDesktopTeamEmployees(state).find((item) => item.roleId === 'parent')?.statusText,
+    '运行中',
+  )
 })
 
 test('cancelled failed unknown and budget_exhausted stay latched against a late completed event', () => {
@@ -766,7 +825,10 @@ test('append budget target is origin-only and uses the origin workspace id', () 
     maximumProviderCalls: 8,
   })
   state = reduceDesktopTeamEvent(state, snapshot({ rosterEpoch: 2, state: 'running' }))
-  state = reduceDesktopTeamEvent(state, snapshot({ rosterEpoch: 2, type: 'completed', parentFinalAnswer: 'done' }))
+  state = reduceDesktopTeamEvent(
+    state,
+    snapshot({ rosterEpoch: 2, type: 'completed', parentFinalAnswer: 'done' }),
+  )
   assert.equal(desktopTeamAppendBudgetTarget(state), null)
 })
 
@@ -794,4 +856,115 @@ test('a terminal first snapshot latches before a late cancelled event', () => {
   const returned = switchDesktopTeamScope(lateCancelled, WORKSPACE_A, CONVERSATION_A)
   assert.equal(returned.phase, 'completed')
   assert.equal(returned.runState, 'succeeded')
+})
+
+// ---------------------------------------------------------------------------
+// desktopTeamEventBindsLiveRun: identity-only side-effect acceptance
+// ---------------------------------------------------------------------------
+
+test('binds-live-run: a waiting state accepts its own snapshot identity', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(state.teamRunId, null)
+  assert.equal(desktopTeamEventBindsLiveRun(state, snapshot()), true)
+  // While unbound, the roster epoch identifies the single live attempt (the
+  // coordinator executes once per roster); the run id is not yet known, so
+  // any event of this roster and origin may establish the live slot.
+  assert.equal(
+    desktopTeamEventBindsLiveRun(state, snapshot({ teamRunId: `teamrun_${'d'.repeat(32)}` })),
+    true,
+    'an unbound state accepts this roster attempt regardless of the future run id',
+  )
+})
+
+test('binds-live-run: events for another roster or scope never bind', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(
+    desktopTeamEventBindsLiveRun(state, snapshot({ rosterEpoch: 2 })),
+    false,
+    'a different roster is a different run attempt',
+  )
+  assert.equal(desktopTeamEventBindsLiveRun(state, snapshot({ workspaceId: WORKSPACE_B })), false)
+  assert.equal(
+    desktopTeamEventBindsLiveRun(state, snapshot({ conversationId: CONVERSATION_B })),
+    false,
+  )
+})
+
+test('binds-live-run: incomplete events never bind', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  assert.equal(
+    desktopTeamEventBindsLiveRun(state, {
+      type: 'parent_proposing',
+      teamRunId: TEAM_RUN,
+    } as DesktopTeamRunEvent),
+    false,
+  )
+})
+
+test('binds-live-run: after binding, only the same run binds', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  const bound = reduceDesktopTeamEvent(state, snapshot())
+  assert.equal(bound.teamRunId, TEAM_RUN)
+  assert.equal(desktopTeamEventBindsLiveRun(bound, snapshot()), true)
+  assert.equal(
+    desktopTeamEventBindsLiveRun(bound, snapshot({ teamRunId: `teamrun_${'d'.repeat(32)}` })),
+    false,
+    'a late event for a previous run must not hijack the current identity',
+  )
+})
+
+test('binds-live-run: parked views still bind legitimate snapshots', () => {
+  let state = createDesktopTeamLiveState({
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+  })
+  state = beginDesktopTeamRun(state, {
+    workspaceId: WORKSPACE_A,
+    conversationId: CONVERSATION_A,
+    rosterEpoch: 1,
+    maximumProviderCalls: 8,
+  })
+  const parked = switchDesktopTeamScope(state, WORKSPACE_B, CONVERSATION_B)
+  assert.equal(parked.phase, 'idle', 'visible phase is hidden while parked')
+  assert.equal(
+    desktopTeamEventBindsLiveRun(parked, snapshot()),
+    true,
+    'identity gates must not depend on the hidden visible phase',
+  )
 })

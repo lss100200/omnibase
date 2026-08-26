@@ -4419,6 +4419,53 @@
         "Treat unsigned, dirty-source, incomplete-product-journey, missing-toolchain and failed clean-Windows evidence as release vetoes rather than weakening manifest, identity, downgrade or rollback checks.",
         "Do not start or repair Docker Desktop, WSL, Hyper-V or VHDX to manufacture desktop packaging or acceptance evidence."
       ]
+    },
+    {
+      "id": "p7-editor-first-workbench",
+      "name": "P7.0 editor-first desktop workbench shell, live/history blackboard slot state machine and OMNIA widget",
+      "source_paths": [
+        "frontend/components/workbench/p7/**",
+        "frontend/lib/p7-workbench-shell*.ts",
+        "frontend/lib/p7-live-slot*.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/app/desktop/p7-workbench.css",
+        "frontend/public/omnia/**",
+        "frontend/public/brand/omnibase-logo-icon.png"
+      ],
+      "entrypoints": [
+        "frontend/app/desktop/workbench-client.tsx:DesktopWorkbench",
+        "frontend/components/workbench/p7/p7-shell.tsx:P7WorkbenchShell",
+        "frontend/lib/p7-live-slot.ts:reduceP7LiveSlotEvent",
+        "frontend/lib/p7-live-slot.ts:p7LiveSlotViewProjection",
+        "frontend/lib/p7-workbench-shell.ts:p7OmniaStateForLive",
+        "frontend/lib/p7-workbench-shell.ts:p7LivePendingCollaborations"
+      ],
+      "public_interfaces": [
+        "Editor-first workbench shell: titlebar, mutually-exclusive activity/sidebar, editor tabs (transcript/brief/code/diff), agent panel, bottom panel, status bar, OMNIA widget",
+        "Pure live/history blackboard slot state machine with terminal-first ordering, identity-gated effects and conversation/workspace-scoped display",
+        "OMNIA widget driven exclusively by real live state; pending collaboration counts only from the live run's board in its origin view",
+        "Views without a trusted data source render a real unavailable state and never simulated content",
+        "All rendering stays behind the Electron preload/IPC bridge; no web-direct substitution"
+      ],
+      "depends_on": [
+        "p6-5-windows-desktop-distribution"
+      ],
+      "invariants": [
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085"
+      ],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && pnpm build"
+      ],
+      "recovery": [
+        "If the workbench fails to render, revert frontend/app/desktop/workbench-client.tsx and the p7 component/lib modules without touching the desktop bridge contract; the shell has no HTTP fallback and must stay behind preload/IPC.",
+        "Blackboard slot inconsistencies (stale boards, cross-conversation projections) are fixed in the pure state machine lib/p7-live-slot.ts plus its tests before any wiring change."
+      ]
     }
   ]
 }

@@ -1,23 +1,15 @@
 'use client'
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Archive,
-  Bot,
-  Loader2,
-  Plus,
-  Send,
-  ShieldCheck,
-  Square,
-  RotateCcw,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DesktopConversation,
   DesktopMessage,
   DesktopOwner,
   DesktopProvider,
+  DesktopTeamRun,
   DesktopWorkspace,
   OmniBaseDesktopBridge,
+  PersonalTeamBlackboard,
   beginDesktopLiveSend,
   completeDesktopLiveSend,
   createDesktopLiveStreamState,
@@ -38,9 +30,6 @@ import {
   desktopTeamStopVisible,
   failDesktopTeamPreStart,
   pendingDurableTeamCancel,
-  projectDesktopTeamBudget,
-  projectDesktopTeamEmployees,
-  projectDesktopTeamTimeline,
   reduceDesktopTeamEvent,
   requestDesktopTeamCancel,
   switchDesktopTeamScope,
@@ -68,12 +57,25 @@ import {
   desktopSurfaceProjectionIsCurrent,
   type DesktopSurfaceScope,
 } from '@/lib/desktop-surface-scope'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+import { desktopTeamEventBindsLiveRun } from '@/lib/desktop-team-lifecycle'
+import {
+  createP7LiveSlotState,
+  invalidateP7LiveSlot,
+  p7HistoryBoardForSelection,
+  p7LiveSlotViewProjection,
+  p7SelectionStaleInWorkspace,
+  reduceP7LiveSlotEvent,
+  selectP7HistoryRun,
+  type P7LiveSlotState,
+} from '@/lib/p7-live-slot'
+import {
+  p7BriefBoardSelection,
+  p7ConversationEventLogLine,
+  p7RunHistoryProjection,
+  p7TeamEventLogLine,
+} from '@/lib/p7-workbench-shell'
+import { P7WorkbenchShell, type P7ProviderForm } from '@/components/workbench/p7/p7-shell'
+import './p7-workbench.css'
 
 const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   desktop_native_input_invalid: '输入不符合本机控制边界。',
@@ -116,24 +118,6 @@ function familyLabel(family: string): string {
   }
 }
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'succeeded':
-      return '已完成'
-    case 'failed':
-      return '失败'
-    case 'cancelled':
-      return '调用已取消'
-    case 'unknown':
-      return '调用状态未知'
-    case 'running':
-    case 'streaming':
-      return '生成中'
-    default:
-      return status
-  }
-}
-
 const TEAM_SPECIALISTS = [
   'product',
   'ux',
@@ -154,6 +138,18 @@ const DEFAULT_TEAM_BUDGET = {
   maximumOutputCharacters: 32_768,
 }
 
+const TEAM_TERMINAL_EVENT_STATES: ReadonlySet<string> = new Set([
+  'succeeded',
+  'failed',
+  'cancelled',
+  'budget_exhausted',
+  'cannot_complete',
+  'unknown',
+])
+
+const MAX_EVENT_LOG_LINES = 300
+const MAX_OUTPUT_LINES = 100
+
 export function DesktopWorkbench({
   bridge,
   owner,
@@ -170,7 +166,8 @@ export function DesktopWorkbench({
   readonly onError: (message: string | null) => void
 }) {
   const chinese = useMemo(
-    () => (typeof navigator === 'undefined' ? true : navigator.language.toLowerCase().startsWith('zh')),
+    () =>
+      typeof navigator === 'undefined' ? true : navigator.language.toLowerCase().startsWith('zh'),
     [],
   )
   const [zoom, setZoom] = useState(100)
@@ -179,7 +176,9 @@ export function DesktopWorkbench({
   const [conversations, setConversations] = useState<readonly DesktopConversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<readonly DesktopMessage[]>([])
-  const [messagesStatus, setMessagesStatus] = useState<'empty' | 'loading' | 'ready' | 'error'>('empty')
+  const [messagesStatus, setMessagesStatus] = useState<'empty' | 'loading' | 'ready' | 'error'>(
+    'empty',
+  )
   const [messagesError, setMessagesError] = useState<string | null>(null)
   const [providers, setProviders] = useState<readonly DesktopProvider[]>([])
   const [agentName, setAgentName] = useState('父 Agent')
@@ -200,7 +199,9 @@ export function DesktopWorkbench({
   const teamLiveRef = useRef(teamLive)
   const durableTeamCancelRef = useRef<string | null>(null)
   const [teamMode, setTeamMode] = useState(false)
-  const [allowedSpecialists, setAllowedSpecialists] = useState<readonly string[]>([...TEAM_SPECIALISTS])
+  const [allowedSpecialists, setAllowedSpecialists] = useState<readonly string[]>([
+    ...TEAM_SPECIALISTS,
+  ])
   const [teamBudget, setTeamBudget] = useState(DEFAULT_TEAM_BUDGET)
   const [appendCalls, setAppendCalls] = useState('20')
   const rosterEpochRef = useRef(1)
@@ -212,26 +213,97 @@ export function DesktopWorkbench({
   )
   const mountedRef = useRef(true)
 
-  const applyViewScope = useCallback((nextWorkspaceId: string | null, nextConversationId: string | null) => {
-    const next = advanceDesktopSurfaceScope(
-      surfaceScopeRef.current,
-      nextWorkspaceId,
-      nextConversationId,
-    )
-    surfaceScopeRef.current = next
-    setWorkspaceId(next.workspaceId)
-    setConversationId(next.conversationId)
-    const nextLive = switchDesktopLiveScope(liveRef.current, next.workspaceId, next.conversationId)
-    liveRef.current = nextLive
-    setLive(nextLive)
-    const nextTeam = switchDesktopTeamScope(teamLiveRef.current, next.workspaceId, next.conversationId)
-    teamLiveRef.current = nextTeam
-    setTeamLive(nextTeam)
-    return next
+  // P7 Wave 1 wiring: run history, blackboards, live slot and logs.
+  // The live/history slot transitions are a pure state machine
+  // (lib/p7-live-slot.ts); this component only executes its effects.
+  const [slotState, setSlotState] = useState<P7LiveSlotState>(createP7LiveSlotState)
+  const slotStateRef = useRef(slotState)
+  const [runHistory, setRunHistory] = useState<readonly DesktopTeamRun[]>([])
+  const [runHistoryStatus, setRunHistoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  )
+  // The history list is bound to the workspace it was loaded for; the
+  // projection hides it the moment the view leaves that workspace, so the
+  // first frame after a switch can never render or click old rows.
+  const [runHistoryWorkspaceId, setRunHistoryWorkspaceId] = useState<string | null>(
+    initialWorkspaceId,
+  )
+  // History blackboard: board of the run selected in the run panel. It never
+  // drives OMNIA; browsing history must not move the live widget.
+  const [historyBlackboard, setHistoryBlackboard] = useState<PersonalTeamBlackboard | null>(null)
+  const [historyBlackboardStatus, setHistoryBlackboardStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >('idle')
+  // Live blackboard: board of the currently executing run only. OMNIA reads
+  // this slot, so its pending count is always about the current run.
+  const [liveBlackboard, setLiveBlackboard] = useState<PersonalTeamBlackboard | null>(null)
+  const [liveBlackboardStatus, setLiveBlackboardStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >('idle')
+  // Scoped task text: the last team task per workspace:conversation, so a
+  // completed team run never leaks into another conversation's feed.
+  const [taskTextByScope, setTaskTextByScope] = useState<Readonly<Record<string, string>>>({})
+  const [eventLog, setEventLog] = useState<readonly string[]>([])
+  const [outputLines, setOutputLines] = useState<readonly string[]>([])
+  const [bridgeSubscribed, setBridgeSubscribed] = useState(false)
+  const liveBlackboardEpochRef = useRef(0)
+  const historyBlackboardEpochRef = useRef(0)
+  const runHistoryEpochRef = useRef(0)
+
+  const pushOutput = useCallback((line: string) => {
+    setOutputLines((current) => [...current, line].slice(-MAX_OUTPUT_LINES))
   }, [])
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const appendEvent = useCallback((line: string) => {
+    setEventLog((current) => [...current, line].slice(-MAX_EVENT_LOG_LINES))
+  }, [])
+
+  const applySlotState = useCallback((next: P7LiveSlotState) => {
+    slotStateRef.current = next
+    setSlotState(next)
+  }, [])
+
+  /**
+   * Invalidates the live part of the slot on a new run attempt: bumps its
+   * epoch (so in-flight responses are dropped) and clears the board. A
+   * failed startup must never restore a previous run's pending projection;
+   * the history selection survives.
+   */
+  const invalidateLiveBoard = useCallback(() => {
+    liveBlackboardEpochRef.current += 1
+    setLiveBlackboard(null)
+    setLiveBlackboardStatus('idle')
+  }, [])
+
+  const applyViewScope = useCallback(
+    (nextWorkspaceId: string | null, nextConversationId: string | null) => {
+      const next = advanceDesktopSurfaceScope(
+        surfaceScopeRef.current,
+        nextWorkspaceId,
+        nextConversationId,
+      )
+      surfaceScopeRef.current = next
+      setWorkspaceId(next.workspaceId)
+      setConversationId(next.conversationId)
+      const nextLive = switchDesktopLiveScope(
+        liveRef.current,
+        next.workspaceId,
+        next.conversationId,
+      )
+      liveRef.current = nextLive
+      setLive(nextLive)
+      const nextTeam = switchDesktopTeamScope(
+        teamLiveRef.current,
+        next.workspaceId,
+        next.conversationId,
+      )
+      teamLiveRef.current = nextTeam
+      setTeamLive(nextTeam)
+      return next
+    },
+    [],
+  )
   const [submitting, setSubmitting] = useState(false)
-  const [providerForm, setProviderForm] = useState({
+  const [providerForm, setProviderForm] = useState<P7ProviderForm>({
     displayName: '',
     baseUrl: '',
     apiKey: '',
@@ -245,14 +317,112 @@ export function DesktopWorkbench({
   })
   const [testResult, setTestResult] = useState<string | null>(null)
   const [workspaceName, setWorkspaceName] = useState('')
-  const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  const activeWorkspaces = workspaces.filter((item) => item.state === 'active')
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
   const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
   const teamAppendBudgetTarget = desktopTeamAppendBudgetTarget(teamLive)
   const sendBlocked = desktopLiveSendBlocked(live) || desktopTeamStopVisible(teamLive)
+  const stopVisible = desktopLiveStopVisible(live) || desktopTeamStopVisible(teamLive)
   const stopping = desktopInvocationIsStopping(live) || teamLive.phase === 'cancelling'
+
+  const loadRunHistory = useCallback(
+    async (nextWorkspaceId: string) => {
+      // Never leave the previous workspace's runs visible while loading.
+      setRunHistory([])
+      setRunHistoryStatus('loading')
+      setRunHistoryWorkspaceId(nextWorkspaceId)
+      const epoch = ++runHistoryEpochRef.current
+      const result = await bridge.teamRuns.list({ workspaceId: nextWorkspaceId })
+      if (!mountedRef.current) return
+      if (surfaceScopeRef.current.workspaceId !== nextWorkspaceId) return
+      if (epoch !== runHistoryEpochRef.current) return
+      if (!result.ok) {
+        setRunHistoryStatus('error')
+        return
+      }
+      setRunHistory(result.value.items)
+      setRunHistoryStatus('ready')
+      const currentSlot = slotStateRef.current
+      if (
+        p7SelectionStaleInWorkspace({
+          historyWorkspaceId: currentSlot.historyOriginWorkspaceId,
+          loadedWorkspaceId: nextWorkspaceId,
+          historyRunId: currentSlot.historyRunId,
+          runs: result.value.items,
+        })
+      ) {
+        applySlotState({
+          ...currentSlot,
+          historyRunId: null,
+          historyOriginKey: null,
+          historyOriginWorkspaceId: null,
+          historyIsManual: false,
+        })
+      }
+    },
+    [applySlotState, bridge],
+  )
+
+  const loadHistoryBlackboard = useCallback(
+    async (nextWorkspaceId: string, teamRunId: string) => {
+      const epoch = ++historyBlackboardEpochRef.current
+      // Every history reload drops the previous payload first: a terminal
+      // refresh (or a failed reload) must never render an old snapshot of
+      // the same run together with loading/error states.
+      setHistoryBlackboard(null)
+      setHistoryBlackboardStatus('loading')
+      const result = await bridge.teamRuns.getBlackboard({
+        workspaceId: nextWorkspaceId,
+        teamRunId,
+      })
+      if (!mountedRef.current) return
+      if (epoch !== historyBlackboardEpochRef.current) return
+      if (slotStateRef.current.historyRunId !== teamRunId) return
+      if (!result.ok) {
+        setHistoryBlackboardStatus('error')
+        return
+      }
+      setHistoryBlackboard(result.value.blackboard)
+      setHistoryBlackboardStatus('ready')
+      pushOutput(`已读取运行 ${teamRunId} 的黑板`)
+    },
+    [bridge, pushOutput],
+  )
+
+  const loadLiveBlackboard = useCallback(
+    async (nextWorkspaceId: string, teamRunId: string) => {
+      const epoch = ++liveBlackboardEpochRef.current
+      setLiveBlackboardStatus('loading')
+      const result = await bridge.teamRuns.getBlackboard({
+        workspaceId: nextWorkspaceId,
+        teamRunId,
+      })
+      if (!mountedRef.current) return
+      if (epoch !== liveBlackboardEpochRef.current) return
+      // Identity gate: the live run may have advanced while the request was
+      // in flight; only a board matching the current live run may land.
+      if (slotStateRef.current.liveRunId !== teamRunId) return
+      if (!result.ok) {
+        setLiveBlackboardStatus('error')
+        return
+      }
+      setLiveBlackboard(result.value.blackboard)
+      setLiveBlackboardStatus('ready')
+    },
+    [bridge],
+  )
+
+  const selectRun = useCallback(
+    (teamRunId: string) => {
+      if (workspaceId === null) return
+      applySlotState(
+        selectP7HistoryRun(slotStateRef.current, teamRunId, workspaceId, conversationId),
+      )
+      setHistoryBlackboard(null)
+      void loadHistoryBlackboard(workspaceId, teamRunId)
+    },
+    [applySlotState, conversationId, loadHistoryBlackboard, workspaceId],
+  )
 
   const loadWorkspaceSurface = useCallback(
     async (nextWorkspaceId: string) => {
@@ -290,7 +460,8 @@ export function DesktopWorkbench({
       const active = conversationResult.value.items.filter((item) => item.state === 'active')
       const selected =
         conversationSurfaceRef.current.conversationId !== null
-          ? active.find((item) => item.id === conversationSurfaceRef.current.conversationId) ?? active[0]
+          ? (active.find((item) => item.id === conversationSurfaceRef.current.conversationId) ??
+            active[0])
           : active[0]
       const loaded = applyDesktopWorkspaceLoad(
         conversationSurfaceRef.current,
@@ -347,7 +518,9 @@ export function DesktopWorkbench({
     conversationSurfaceRef.current = { ...conversationSurfaceRef.current, mounted: true }
     return () => {
       mountedRef.current = false
-      conversationSurfaceRef.current = unmountDesktopConversationSurface(conversationSurfaceRef.current)
+      conversationSurfaceRef.current = unmountDesktopConversationSurface(
+        conversationSurfaceRef.current,
+      )
     }
   }, [])
 
@@ -369,7 +542,16 @@ export function DesktopWorkbench({
   }, [conversationId, workspaceId])
 
   useEffect(() => {
-    return bridge.conversations.subscribe((event) => {
+    if (workspaceId !== null) void loadRunHistory(workspaceId)
+    // The slot and blackboards are NOT reset on a workspace switch: an
+    // origin-scoped background run in another workspace must keep its
+    // selection and prefetched final board recoverable. Cross-workspace
+    // display is already blocked by the projection identity gates.
+  }, [loadRunHistory, workspaceId])
+
+  useEffect(() => {
+    const unsubscribe = bridge.conversations.subscribe((event) => {
+      appendEvent(`[conversation] ${p7ConversationEventLogLine(event)}`)
       const current = liveRef.current
       const reduced = reduceDesktopInvocationEvent(current, event)
       liveRef.current = reduced.state
@@ -386,15 +568,69 @@ export function DesktopWorkbench({
         onError('生成已停止')
       }
     })
-  }, [bridge, onError])
+    setBridgeSubscribed(true)
+    return () => {
+      setBridgeSubscribed(false)
+      unsubscribe()
+    }
+  }, [appendEvent, bridge, onError])
 
   useEffect(() => {
-    return bridge.teamRuns.subscribe((event) => {
+    const unsubscribe = bridge.teamRuns.subscribe((event) => {
+      appendEvent(`[team] ${p7TeamEventLogLine(event)}`)
       const next = reduceDesktopTeamEvent(teamLiveRef.current, event)
       teamLiveRef.current = next
       setTeamLive(next)
+      // The slot transition is decided by the pure state machine
+      // (lib/p7-live-slot.ts); this handler only executes its effects.
+      // Identity comes from the predicate (origin + roster + bound run id),
+      // never from the reducer's acceptance (phase/eligibility based) and
+      // never from the visible phase (hidden as `idle` while parked).
+      const currentSlot = slotStateRef.current
+      const transition = reduceP7LiveSlotEvent(currentSlot, {
+        eventRunId: event.teamRunId ?? null,
+        eventWorkspaceId: event.workspaceId,
+        eventConversationId: event.conversationId ?? null,
+        isTerminal: event.state !== undefined && TEAM_TERMINAL_EVENT_STATES.has(event.state),
+        bindsLiveRun: desktopTeamEventBindsLiveRun(teamLiveRef.current, event),
+        viewWorkspaceId: surfaceScopeRef.current.workspaceId,
+        viewConversationId: surfaceScopeRef.current.conversationId,
+        boardChanged:
+          event.type === 'blackboard' ||
+          event.type === 'plan_transition' ||
+          event.type === 'proposal',
+      })
+      applySlotState(transition.state)
+      // The selection moved to another run (auto-follow or terminal landing):
+      // the old run's payload must never render under the new selection, so
+      // drop it the moment the selection identity changes.
+      if (transition.state.historyRunId !== currentSlot.historyRunId) {
+        setHistoryBlackboard(null)
+        setHistoryBlackboardStatus('idle')
+      }
+      if (transition.effects.loadLiveBoard && transition.state.liveRunId !== null) {
+        void loadLiveBlackboard(event.workspaceId, transition.state.liveRunId)
+      }
+      if (transition.effects.loadHistoryBoard && transition.state.historyRunId !== null) {
+        void loadHistoryBlackboard(event.workspaceId, transition.state.historyRunId)
+      }
+      if (transition.effects.refreshRunHistory) {
+        void loadRunHistory(event.workspaceId)
+      }
     })
-  }, [bridge])
+    setBridgeSubscribed(true)
+    return () => {
+      setBridgeSubscribed(false)
+      unsubscribe()
+    }
+  }, [
+    appendEvent,
+    applySlotState,
+    bridge,
+    loadHistoryBlackboard,
+    loadLiveBlackboard,
+    loadRunHistory,
+  ])
 
   useEffect(() => {
     const pending = pendingDurableTeamCancel(teamLive, durableTeamCancelRef.current)
@@ -405,10 +641,6 @@ export function DesktopWorkbench({
       teamRunId: pending,
     })
   }, [teamLive, bridge, workspaceId])
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages, live.liveText, teamLive.parentLiveText, teamLive.parentFinalAnswer])
 
   const createConversation = async (): Promise<string | null> => {
     if (workspaceId === null) return null
@@ -447,6 +679,7 @@ export function DesktopWorkbench({
     setMessages([])
     setMessagesStatus('empty')
     setMessagesError(null)
+    pushOutput(`已创建会话：${created.value.conversation.title}`)
     return created.value.conversation.id
   }
 
@@ -456,11 +689,10 @@ export function DesktopWorkbench({
     return createConversation()
   }
 
-  const createWorkspace = async (event: FormEvent) => {
-    event.preventDefault()
-    const name = workspaceName.trim()
-    if (name === '') return
-    const result = await bridge.workspaces.create({ name })
+  const createWorkspace = async (name: string) => {
+    const trimmed = name.trim()
+    if (trimmed === '') return
+    const result = await bridge.workspaces.create({ name: trimmed })
     if (!mountedRef.current) return
     if (!result.ok) {
       onError(errorMessage(result.error.code))
@@ -471,6 +703,12 @@ export function DesktopWorkbench({
       result.value.workspace,
     ]
     onWorkspacesChange(next)
+    // The new workspace takes over synchronously: run history from any
+    // previous workspace must not survive the first frame.
+    runHistoryEpochRef.current += 1
+    setRunHistory([])
+    setRunHistoryStatus('loading')
+    setRunHistoryWorkspaceId(result.value.workspace.id)
     applyViewScope(result.value.workspace.id, null)
     conversationSurfaceRef.current = selectDesktopConversation(
       conversationSurfaceRef.current,
@@ -482,10 +720,11 @@ export function DesktopWorkbench({
     setMessagesStatus('empty')
     setMessagesError(null)
     setWorkspaceName('')
+    pushOutput(`已创建工作空间：${result.value.workspace.name}`)
   }
 
-  const archiveCurrentConversation = async () => {
-    const current = conversations.find((item) => item.id === conversationId)
+  const archiveConversation = async (targetId: string) => {
+    const current = conversations.find((item) => item.id === targetId)
     if (workspaceId === null || current === undefined) return
     const archivedId = current.id
     const mutation = beginDesktopSurfaceMutation(conversationSurfaceRef.current)
@@ -519,6 +758,7 @@ export function DesktopWorkbench({
     )
     conversationSurfaceRef.current = applied
     setConversations(applied.conversations)
+    pushOutput(`已归档会话：${current.title}`)
     if (applied.conversationId === archivedId) return
     if (applied.conversationId === surfaceScopeRef.current.conversationId) return
     applyViewScope(workspaceId, applied.conversationId)
@@ -547,10 +787,16 @@ export function DesktopWorkbench({
     })
   }
 
-  const sendMessage = async (event: FormEvent) => {
-    event.preventDefault()
+  const sendMessage = async () => {
     const content = draft.trim()
-    if (workspaceId === null || content === '' || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current) || desktopTeamStopVisible(teamLiveRef.current)) return
+    if (
+      workspaceId === null ||
+      content === '' ||
+      desktopLiveSendBlocked(live) ||
+      desktopLiveSendBlocked(liveRef.current) ||
+      desktopTeamStopVisible(teamLiveRef.current)
+    )
+      return
     const routed = parseEmployeeInvocation(content)
     if (!routed.ok) {
       onError(routed.message)
@@ -571,10 +817,18 @@ export function DesktopWorkbench({
       })
       teamLiveRef.current = started
       setTeamLive(started)
+      // A new run attempt invalidates the live slot immediately: no old
+      // board may project onto the new run's preparing phase, and a failed
+      // startup must not restore the previous run's pending view.
+      applySlotState(invalidateP7LiveSlot(slotStateRef.current))
+      invalidateLiveBoard()
+      setTaskTextByScope((current) => ({
+        ...current,
+        [`${workspaceId}:${target}`]: routed.message,
+      }))
       const allowed =
-        allowedSpecialists.length === TEAM_SPECIALISTS.length
-          ? undefined
-          : allowedSpecialists
+        allowedSpecialists.length === TEAM_SPECIALISTS.length ? undefined : allowedSpecialists
+      pushOutput(`已启动团队运行：${routed.message}`)
       const result = await bridge.teamRuns.execute({
         workspaceId,
         conversationId: target,
@@ -589,6 +843,7 @@ export function DesktopWorkbench({
         const failed = failDesktopTeamPreStart(teamLiveRef.current)
         teamLiveRef.current = failed
         setTeamLive(failed)
+        pushOutput(`团队运行启动失败：${errorMessage(result.error.code)}`)
         onError(errorMessage(result.error.code))
         return
       }
@@ -597,7 +852,11 @@ export function DesktopWorkbench({
         teamLiveRef.current = failed
         setTeamLive(failed)
       }
+      // Bring the just-started run into history immediately; terminal events
+      // refresh it again when the run finishes.
+      void loadRunHistory(workspaceId)
       if (result.value.proof.state === 'budget_exhausted') {
+        pushOutput('团队预算耗尽；未伪造完成。')
         onError('团队已经使用完本次协作预算；未伪造完成。')
       }
       return
@@ -629,13 +888,18 @@ export function DesktopWorkbench({
     liveRef.current = completed
     setLive(completed)
     if (!mountedRef.current) return
-    if (completed.phase === 'idle' && (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))) {
+    if (
+      completed.phase === 'idle' &&
+      (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))
+    ) {
       onError('生成已停止')
     }
     if (!result.ok) {
       if (completed.terminalStatus === 'cancelled') {
         onError('生成已停止')
-      } else if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+      } else if (
+        applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')
+      ) {
         onError(errorMessage(result.error.code))
       }
       return
@@ -670,6 +934,7 @@ export function DesktopWorkbench({
     const teamCurrent = teamLiveRef.current
     const teamStop = desktopTeamStopVisible(teamCurrent)
     if (!desktopLiveStopVisible(current) && current.invocationId === null && !teamStop) return
+    pushOutput('已请求停止')
     if (teamStop) {
       const cancelledTeam = requestDesktopTeamCancel(teamCurrent)
       teamLiveRef.current = cancelledTeam
@@ -703,8 +968,16 @@ export function DesktopWorkbench({
   }
 
   const retryLast = async () => {
-    if (workspaceId === null || conversationId === null || desktopLiveSendBlocked(live) || desktopLiveSendBlocked(liveRef.current)) return
-    const failed = [...messages].reverse().find((item) => item.role === 'assistant' && item.status !== 'completed')
+    if (
+      workspaceId === null ||
+      conversationId === null ||
+      desktopLiveSendBlocked(live) ||
+      desktopLiveSendBlocked(liveRef.current)
+    )
+      return
+    const failed = [...messages]
+      .reverse()
+      .find((item) => item.role === 'assistant' && item.status !== 'completed')
     if (failed === undefined) return
     const target = conversationId
     const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
@@ -724,13 +997,18 @@ export function DesktopWorkbench({
     liveRef.current = completed
     setLive(completed)
     if (!mountedRef.current) return
-    if (completed.phase === 'idle' && (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))) {
+    if (
+      completed.phase === 'idle' &&
+      (completed.terminalStatus === 'cancelled' || (result.ok && result.value.type === 'cancelled'))
+    ) {
       onError('生成已停止')
     }
     if (!result.ok) {
       if (completed.terminalStatus === 'cancelled') {
         onError('生成已停止')
-      } else if (applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')) {
+      } else if (
+        applyDesktopSurfaceError(conversationSurfaceRef.current, completion.epoch, 'detail')
+      ) {
         onError(errorMessage(result.error.code))
       }
       return
@@ -751,8 +1029,7 @@ export function DesktopWorkbench({
     setMessagesError(null)
   }
 
-  const saveProvider = async (event: FormEvent) => {
-    event.preventDefault()
+  const saveProvider = async () => {
     setSubmitting(true)
     onError(null)
     try {
@@ -778,6 +1055,7 @@ export function DesktopWorkbench({
       if (listed.ok) setProviders(listed.value.items)
       setProviderForm((current) => ({ ...current, apiKey: '' }))
       setTestResult('Provider 已保存。API Key 不会回读到界面。')
+      pushOutput(`Provider 已保存：${providerForm.displayName}`)
     } finally {
       setSubmitting(false)
     }
@@ -790,531 +1068,170 @@ export function DesktopWorkbench({
       onError(errorMessage(result.error.code))
       return
     }
-    setTestResult(
-      result.value.ok
-        ? `测试通过 · ${familyLabel(result.value.family)} · ${
-            result.value.identityProven
-              ? (result.value.actualModel ?? result.value.requestedModel)
-              : '模型身份未证明'
-          }`
-        : result.value.errorRedacted ?? '测试失败',
-    )
+    const line = result.value.ok
+      ? `测试通过 · ${familyLabel(result.value.family)} · ${
+          result.value.identityProven
+            ? (result.value.actualModel ?? result.value.requestedModel)
+            : '模型身份未证明'
+        }`
+      : (result.value.errorRedacted ?? '测试失败')
+    setTestResult(line)
+    pushOutput(line)
   }
 
+  const appendBudget = (nextCalls: number) => {
+    if (teamAppendBudgetTarget === null) return
+    const next = { ...teamBudget, maximumProviderCalls: nextCalls }
+    setTeamBudget(next)
+    void bridge.teamRuns.appendBudget({
+      workspaceId: teamAppendBudgetTarget.workspaceId,
+      teamRunId: teamAppendBudgetTarget.teamRunId,
+      budget: next,
+    })
+    pushOutput(`已追加预算：上限 ${nextCalls} 次调用`)
+  }
+
+  const selectWorkspace = (nextWorkspaceId: string) => {
+    // Invalidate the run history synchronously with the scope switch: the
+    // first frame after the switch must not render or allow clicks on the
+    // previous workspace's runs.
+    runHistoryEpochRef.current += 1
+    setRunHistory([])
+    setRunHistoryStatus('loading')
+    setRunHistoryWorkspaceId(nextWorkspaceId)
+    applyViewScope(nextWorkspaceId, null)
+    conversationSurfaceRef.current = selectDesktopConversation(
+      conversationSurfaceRef.current,
+      nextWorkspaceId,
+      null,
+    )
+    setConversations([])
+    setMessages([])
+    setMessagesStatus('empty')
+    setMessagesError(null)
+  }
+
+  const selectConversation = (nextConversationId: string) => {
+    if (workspaceId === null) return
+    applyViewScope(workspaceId, nextConversationId)
+    const selected = selectDesktopConversation(
+      conversationSurfaceRef.current,
+      workspaceId,
+      nextConversationId,
+    )
+    conversationSurfaceRef.current = selected
+    setMessages([])
+    setMessagesStatus('loading')
+    setMessagesError(null)
+    const epoch = selected.detailRequestEpoch
+    void bridge.conversations
+      .get({ workspaceId, conversationId: nextConversationId })
+      .then((detail) => {
+        const applied = applyDesktopConversationDetail(
+          conversationSurfaceRef.current,
+          epoch,
+          nextConversationId,
+          detail.ok
+            ? { ok: true, messages: detail.value.messages }
+            : { ok: false, error: errorMessage(detail.error.code) },
+        )
+        conversationSurfaceRef.current = applied
+        if (!applied.mounted || applied.detailRequestEpoch !== epoch) return
+        if (applied.conversationId !== nextConversationId) return
+        setMessages(applied.messages)
+        setMessagesStatus(applied.messagesStatus)
+        setMessagesError(applied.messagesError)
+        if (applied.messagesStatus === 'error' && applied.messagesError !== null) {
+          onError(applied.messagesError)
+        }
+      })
+  }
+
+  // The live slot only applies while the user views the live run's origin
+  // conversation; elsewhere the brief falls back to the history selection,
+  // which itself is conversation-scoped when auto-followed.
+  const slotView = p7LiveSlotViewProjection(slotState, workspaceId, conversationId)
+  const brief = p7BriefBoardSelection({
+    liveCurrent: slotView.liveCurrent,
+    liveBoard: liveBlackboard,
+    liveStatus: liveBlackboardStatus,
+    historyBoard: p7HistoryBoardForSelection(slotView.selectionRunId, historyBlackboard),
+    historyStatus: slotView.selectionVisible ? historyBlackboardStatus : 'idle',
+  })
+  const runHistoryView = p7RunHistoryProjection({
+    historyWorkspaceId: runHistoryWorkspaceId,
+    viewWorkspaceId: workspaceId,
+    status: runHistoryStatus,
+    rows: runHistory,
+  })
+
   return (
-    <div className="min-h-screen bg-background" style={{ fontSize: `${(16 * zoom) / 100}px` }}>
-      <header className="border-b border-border bg-card/70">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="font-mono text-[13px] uppercase tracking-[0.16em] text-foreground/80">
-              OmniBase {version} / {chinese ? '本机单 Agent' : 'Desktop agent'}
-            </div>
-            <h1 className="mt-1 text-[22px] font-semibold tracking-tight">{owner.displayName}</h1>
-          </div>
-          <div className="flex items-center gap-2 text-[13px]">
-            <Badge variant="outline" className="rounded-none">
-              <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-              原生控制
-            </Badge>
-            {stopping && (
-              <Badge variant="outline" className="rounded-none">
-                正在停止
-              </Badge>
-            )}
-            {desktopLiveStopVisible(live) && (
-              <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
-                <Square className="h-4 w-4" />
-                停止
-              </Button>
-            )}
-            <Button type="button" variant="outline" size="sm" onClick={() => setZoom((value) => Math.max(90, value - 10))}>
-              A-
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setZoom((value) => Math.min(140, value + 10))}>
-              A+
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto grid max-w-7xl gap-4 px-5 py-5 lg:grid-cols-[240px_minmax(0,1fr)_320px]">
-        <aside className="space-y-4">
-          <Card className="rounded-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">工作空间</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <form className="flex gap-2" onSubmit={(event) => void createWorkspace(event)}>
-                <Input
-                  value={workspaceName}
-                  onChange={(event) => setWorkspaceName(event.target.value)}
-                  placeholder="新工作空间"
-                  className="h-9 rounded-none text-[13px]"
-                />
-                <Button type="submit" size="sm" variant="outline" disabled={workspaceName.trim() === ''}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </form>
-              {activeWorkspaces.map((workspace) => (
-                <button
-                  key={workspace.id}
-                  type="button"
-                  className={`w-full border px-3 py-2 text-left text-[15px] ${
-                    workspace.id === workspaceId ? 'border-foreground bg-accent' : 'border-border'
-                  }`}
-                  onClick={() => {
-                    applyViewScope(workspace.id, null)
-                    conversationSurfaceRef.current = selectDesktopConversation(
-                      conversationSurfaceRef.current,
-                      workspace.id,
-                      null,
-                    )
-                    setConversations([])
-                    setMessages([])
-                    setMessagesStatus('empty')
-                    setMessagesError(null)
-                  }}
-                >
-                  {workspace.name}
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-          <Card className="rounded-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between text-base">
-                会话
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={workspaceId === null}
-                  onClick={() => void createConversation()}
-                >
-                  <Plus className="h-4 w-4" />
-                  新建
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {conversations
-                .filter((item) => item.state === 'active')
-                .map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`w-full border px-3 py-2 text-left text-[15px] ${
-                      item.id === conversationId ? 'border-foreground bg-accent' : 'border-border'
-                    }`}
-                    onClick={() => {
-                      if (workspaceId === null) return
-                      applyViewScope(workspaceId, item.id)
-                      const selected = selectDesktopConversation(
-                        conversationSurfaceRef.current,
-                        workspaceId,
-                        item.id,
-                      )
-                      conversationSurfaceRef.current = selected
-                      setMessages([])
-                      setMessagesStatus('loading')
-                      setMessagesError(null)
-                      const epoch = selected.detailRequestEpoch
-                      void bridge.conversations
-                        .get({ workspaceId, conversationId: item.id })
-                        .then((detail) => {
-                          const applied = applyDesktopConversationDetail(
-                            conversationSurfaceRef.current,
-                            epoch,
-                            item.id,
-                            detail.ok
-                              ? { ok: true, messages: detail.value.messages }
-                              : { ok: false, error: errorMessage(detail.error.code) },
-                          )
-                          conversationSurfaceRef.current = applied
-                          if (!applied.mounted || applied.detailRequestEpoch !== epoch) return
-                          if (applied.conversationId !== item.id) return
-                          setMessages(applied.messages)
-                          setMessagesStatus(applied.messagesStatus)
-                          setMessagesError(applied.messagesError)
-                          if (applied.messagesStatus === 'error' && applied.messagesError !== null) {
-                            onError(applied.messagesError)
-                          }
-                        })
-                    }}
-                  >
-                    {item.title}
-                  </button>
-                ))}
-            </CardContent>
-          </Card>
-        </aside>
-
-        <section className="flex min-h-[70vh] flex-col border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2 text-[16px] font-medium">
-              <Bot className="h-4 w-4" />
-              {agentName}
-            </div>
-            <div className="flex gap-2">
-              {conversationId !== null && (
-                <Button type="button" variant="outline" size="sm" onClick={() => void archiveCurrentConversation()}>
-                  <Archive className="h-4 w-4" />
-                  归档会话
-                </Button>
-              )}
-              {stopping && <span className="text-[13px] text-foreground/80">正在停止</span>}
-              {(desktopLiveStopVisible(live) || desktopTeamStopVisible(teamLive)) && (
-                <Button type="button" variant="outline" size="sm" onClick={() => void stopGeneration()}>
-                  <Square className="h-4 w-4" />
-                  停止
-                </Button>
-              )}
-            </div>
-          </div>
-          {teamMode && (
-            <div className="grid gap-3 border-b border-border p-3 text-[13px] md:grid-cols-2">
-              <div>
-                <div className="mb-1 font-medium">AI 员工</div>
-                {projectDesktopTeamEmployees(teamLive).map((row) => (
-                  <div key={row.roleId} className="flex justify-between gap-2">
-                    <span>{row.label}</span>
-                    <span>{row.statusText}</span>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div className="mb-1 font-medium">节点时间线</div>
-                {teamLive.planRevisionId !== null && (
-                  <div>当前计划：{teamLive.planRevisionId}</div>
-                )}
-                {teamLive.waveId !== null && (
-                  <div>
-                    当前 wave：{teamLive.waveId}
-                    {teamLive.declaredExecution !== null
-                      ? `（声明 ${teamLive.declaredExecution}${
-                          teamLive.effectiveExecution !== null &&
-                          teamLive.effectiveExecution !== teamLive.declaredExecution
-                            ? `，宿主降为 ${teamLive.effectiveExecution}`
-                            : ''
-                        }）`
-                      : ''}
-                  </div>
-                )}
-                {teamLive.planSummary !== null && teamLive.planSummary !== '' && (
-                  <div>依赖：{teamLive.planSummary}</div>
-                )}
-                {projectDesktopTeamTimeline(teamLive).map((node) => (
-                  <details key={node.nodeId} className="border border-border p-1">
-                    <summary>
-                      #{node.ordinal} {node.employeeRoleId} {node.statusText}{' '}
-                      {node.durationMs !== null ? `${Math.round(node.durationMs / 100) / 10}s` : ''}{' '}
-                      {node.totalTokens !== null ? `${node.totalTokens} tokens` : ''}
-                    </summary>
-                    <pre className="whitespace-pre-wrap break-words">{node.report ?? '尚无报告'}</pre>
-                  </details>
-                ))}
-                {teamLive.collaborationLines.length > 0 && (
-                  <div className="mt-2">
-                    <div className="font-medium">协作请求</div>
-                    {teamLive.collaborationLines.map((line) => (
-                      <div key={line}>{line}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          <div className="flex-1 space-y-4 overflow-y-auto p-4 text-[16px] leading-7">
-            {messagesStatus === 'loading' && messages.length === 0 && (
-              <div className="text-[13px] text-foreground/80">加载中</div>
-            )}
-            {messagesStatus === 'error' && messagesError !== null && (
-              <div className="text-[13px]">{messagesError}</div>
-            )}
-            {messages.map((message) => (
-              <div key={message.id} className="space-y-1">
-                <div className="text-[13px] font-medium text-foreground">
-                  {message.role === 'user' ? '你' : agentName}
-                </div>
-                <div className="whitespace-pre-wrap break-words">
-                  {message.content || (message.status === 'cancelled' ? '生成已停止' : '')}
-                </div>
-                {message.retryOfMessageId && (
-                  <div className="text-[13px] text-foreground/80">重试自前一次调用</div>
-                )}
-                {message.invocation && (
-                  <div className="text-[13px] text-foreground/80">
-                    {statusLabel(message.invocation.status)}
-                    {message.invocation.retryOfInvocationId ? ' · 新调用' : ''}
-                    {message.invocation.errorRedacted ? ` · ${message.invocation.errorRedacted}` : ''}
-                  </div>
-                )}
-              </div>
-            ))}
-            {teamProjection.visible && teamProjection.parentFinalAnswer && (
-              <div className="space-y-1 border border-foreground/40 p-3">
-                <div className="text-[13px] font-medium text-foreground">父 Agent 最终回答</div>
-                <div className="whitespace-pre-wrap break-words">{teamProjection.parentFinalAnswer}</div>
-              </div>
-            )}
-            {teamProjection.visible && teamProjection.parentLiveText !== '' && !teamProjection.parentFinalAnswer && (
-              <div className="whitespace-pre-wrap break-words">{teamProjection.parentLiveText}</div>
-            )}
-            {stopping && liveProjection.visible && liveProjection.liveText === '' && (
-              <div className="text-[13px] text-foreground/80">正在停止</div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-          <form className="border-t border-border p-4" onSubmit={(event) => void sendMessage(event)}>
-            <label className="mb-2 flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={teamMode}
-                onChange={(event) => setTeamMode(event.target.checked)}
-              />
-              团队协作（Owner 任务级委托：父 Agent 判断编制，宿主校验后执行）
-            </label>
-            {teamMode && (
-              <div className="mb-3 space-y-2 text-[13px]">
-                <div>{projectDesktopTeamBudget(teamLive)}</div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={appendCalls}
-                    onChange={(event) => setAppendCalls(event.target.value)}
-                    className="h-8 w-24 rounded-none text-[13px]"
-                    aria-label="追加调用预算"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={teamAppendBudgetTarget === null}
-                    onClick={() => {
-                      if (teamAppendBudgetTarget === null) return
-                      const nextCalls = Number.parseInt(appendCalls, 10)
-                      if (!Number.isInteger(nextCalls)) return
-                      const next = { ...teamBudget, maximumProviderCalls: nextCalls }
-                      setTeamBudget(next)
-                      void bridge.teamRuns.appendBudget({
-                        workspaceId: teamAppendBudgetTarget.workspaceId,
-                        teamRunId: teamAppendBudgetTarget.teamRunId,
-                        budget: next,
-                      })
-                    }}
-                  >
-                    追加预算
-                  </Button>
-                </div>
-                <details>
-                  <summary>允许父 Agent 使用的员工（默认全部允许，非每次任务编制）</summary>
-                  <div className="mt-2 grid grid-cols-2 gap-1">
-                    {TEAM_SPECIALISTS.map((role) => (
-                      <label key={role} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={allowedSpecialists.includes(role)}
-                          onChange={(event) => {
-                            setAllowedSpecialists((current) =>
-                              event.target.checked
-                                ? [...current, role]
-                                : current.filter((item) => item !== role),
-                            )
-                          }}
-                        />
-                        {role}
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            )}
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={3}
-              placeholder="向父 Agent 提问…"
-              className="w-full resize-none border border-input bg-background p-3 text-[16px] outline-none"
-            />
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void retryLast()}
-                disabled={sendBlocked}
-              >
-                <RotateCcw className="h-4 w-4" />
-                重试
-              </Button>
-              <Button type="submit" disabled={sendBlocked || draft.trim() === ''}>
-                {sendBlocked ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                发送
-              </Button>
-            </div>
-          </form>
-          {liveProjection.visible && liveProjection.liveMeta && (
-            <button
-              type="button"
-              className="border-t border-border px-4 py-2 text-left text-[13px]"
-              onClick={() => setDetailsOpen((value) => !value)}
-            >
-              调用详情 {detailsOpen ? '收起' : '展开'}
-              {detailsOpen && (
-                <div className="mt-2 space-y-1 text-foreground">
-                  <div>请求模型：{liveProjection.liveMeta.requestedModel ?? '—'}</div>
-                  <div>实际模型：{liveProjection.liveMeta.actualModel ?? '—'}</div>
-                  <div>Provider：{liveProjection.liveMeta.providerName ?? '—'}</div>
-                  <div>状态：{statusLabel(liveProjection.liveMeta.status ?? 'running')}</div>
-                  <div>耗时：{liveProjection.liveMeta.durationMs ?? '—'} ms</div>
-                  <div>Tokens：{liveProjection.liveMeta.totalTokens ?? '未提供'}</div>
-                  <div>思考深度：{liveProjection.liveMeta.thinkingDepth ?? '—'}</div>
-                  {liveProjection.liveMeta.errorRedacted && (
-                    <div>错误：{liveProjection.liveMeta.errorRedacted}</div>
-                  )}
-                </div>
-              )}
-            </button>
-          )}
-        </section>
-
-        <aside className="space-y-4">
-          <Card className="rounded-none">
-            <CardHeader>
-              <CardTitle className="text-base">模型 Provider</CardTitle>
-              <CardDescription className="text-[13px]">
-                API Key 只用于保存或测试，不会再显示。
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-3" onSubmit={(event) => void saveProvider(event)}>
-                <div className="space-y-1">
-                  <Label>显示名称</Label>
-                  <Input
-                    value={providerForm.displayName}
-                    onChange={(event) =>
-                      setProviderForm((current) => ({ ...current, displayName: event.target.value }))
-                    }
-                    className="h-10 rounded-none text-[15px]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Base URL</Label>
-                  <Input
-                    value={providerForm.baseUrl}
-                    onChange={(event) =>
-                      setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
-                    }
-                    placeholder="https://api.deepseek.com/v1"
-                    className="h-10 rounded-none text-[15px]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>API Key</Label>
-                  <Input
-                    type="password"
-                    value={providerForm.apiKey}
-                    onChange={(event) =>
-                      setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
-                    }
-                    autoComplete="off"
-                    className="h-10 rounded-none text-[15px]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>模型名称</Label>
-                  <Input
-                    value={providerForm.modelName}
-                    onChange={(event) =>
-                      setProviderForm((current) => ({ ...current, modelName: event.target.value }))
-                    }
-                    placeholder="deepseek-chat"
-                    className="h-10 rounded-none text-[15px]"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[13px]">
-                  <label className="space-y-1">
-                    档位
-                    <select
-                      value={providerForm.gear}
-                      onChange={(event) =>
-                        setProviderForm((current) => ({
-                          ...current,
-                          gear: event.target.value as DesktopReasoningGear,
-                        }))
-                      }
-                      className="h-10 w-full border border-input bg-background px-2"
-                    >
-                      <option value="economy">经济</option>
-                      <option value="standard">标准</option>
-                      <option value="deep">深度</option>
-                      <option value="audit">审计</option>
-                    </select>
-                  </label>
-                  <label className="space-y-1">
-                    思考深度
-                    <select
-                      value={providerForm.thinkingDepth}
-                      onChange={(event) =>
-                        setProviderForm((current) => ({
-                          ...current,
-                          thinkingDepth: event.target.value as DesktopThinkingDepth,
-                        }))
-                      }
-                      className="h-10 w-full border border-input bg-background px-2"
-                    >
-                      <option value="disabled">关闭</option>
-                      <option value="low">低</option>
-                      <option value="medium">中</option>
-                      <option value="high">高</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="flex items-center gap-2 text-[13px]">
-                  <input
-                    type="checkbox"
-                    checked={providerForm.allowLoopbackHttp}
-                    onChange={(event) =>
-                      setProviderForm((current) => ({
-                        ...current,
-                        allowLoopbackHttp: event.target.checked,
-                      }))
-                    }
-                  />
-                  允许本机 HTTP（127.0.0.1 / localhost）
-                </label>
-                <Button type="submit" className="w-full rounded-none" disabled={submitting}>
-                  保存 Provider
-                </Button>
-              </form>
-              {testResult && <p className="mt-3 text-[13px]">{testResult}</p>}
-              <Separator className="my-4" />
-              <div className="space-y-2">
-                {providers.map((provider) => (
-                  <div key={provider.id} className="border border-border p-3 text-[13px]">
-                    <div className="font-medium text-[15px]">{provider.displayName}</div>
-                    <div>
-                      {familyLabel(provider.family)} · {provider.modelName}
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-2"
-                      onClick={() => void testSelected(provider.id)}
-                    >
-                      测试
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-    </div>
+    <P7WorkbenchShell
+      version={version}
+      owner={owner}
+      chinese={chinese}
+      zoom={zoom}
+      onZoomChange={setZoom}
+      workspaces={workspaces}
+      workspaceId={workspaceId}
+      conversations={conversations}
+      conversationId={conversationId}
+      onSelectWorkspace={(next) => selectWorkspace(next)}
+      onCreateWorkspace={(name) => void createWorkspace(name)}
+      onSelectConversation={(next) => selectConversation(next)}
+      onCreateConversation={() => void createConversation()}
+      onArchiveConversation={(conversationId) => void archiveConversation(conversationId)}
+      workspaceNameInput={workspaceName}
+      onWorkspaceNameInputChange={setWorkspaceName}
+      messages={messages}
+      messagesStatus={messagesStatus}
+      messagesError={messagesError}
+      agentName={agentName}
+      teamProjection={teamProjection}
+      liveProjection={liveProjection}
+      stopping={stopping}
+      teamLive={teamLive}
+      taskText={taskTextByScope[`${workspaceId}:${conversationId}`] ?? null}
+      teamMode={teamMode}
+      onTeamModeChange={setTeamMode}
+      allowedSpecialists={allowedSpecialists}
+      onAllowedSpecialistsChange={setAllowedSpecialists}
+      teamBudget={teamBudget}
+      appendCalls={appendCalls}
+      onAppendCallsChange={setAppendCalls}
+      teamAppendBudgetTarget={teamAppendBudgetTarget}
+      onAppendBudget={(calls) => appendBudget(calls)}
+      runHistory={runHistoryView.rows}
+      runHistoryStatus={runHistoryView.status}
+      selectedRunId={slotView.selectionRunId}
+      onSelectRun={(teamRunId) => selectRun(teamRunId)}
+      blackboard={brief.board}
+      blackboardStatus={brief.status}
+      liveRunId={slotState.liveRunId}
+      liveBlackboard={liveBlackboard}
+      liveCurrent={slotView.liveCurrent}
+      draft={draft}
+      onDraftChange={setDraft}
+      onSend={() => void sendMessage()}
+      onRetry={() => void retryLast()}
+      onStop={() => void stopGeneration()}
+      sendBlocked={sendBlocked}
+      stopVisible={stopVisible}
+      providerForm={providerForm}
+      onProviderFormChange={(patch) => setProviderForm((current) => ({ ...current, ...patch }))}
+      onSaveProvider={() => void saveProvider()}
+      submitting={submitting}
+      testResult={testResult}
+      providers={providers}
+      onTestProvider={(providerId) => void testSelected(providerId)}
+      eventLog={eventLog}
+      outputLines={outputLines}
+      bridgeSubscribed={bridgeSubscribed}
+      live={{
+        conversationId: live.conversationId,
+        invocationId: live.invocationId,
+        phase: live.phase,
+      }}
+    />
   )
 }

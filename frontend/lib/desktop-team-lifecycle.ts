@@ -271,13 +271,18 @@ function withOriginChrome(
   const next = {
     phase: patch.phase ?? originPhase(state),
     runState: patch.runState !== undefined ? patch.runState : originRunState(state),
-    planRevisionId: patch.planRevisionId !== undefined ? patch.planRevisionId : originPlanRevisionId(state),
+    planRevisionId:
+      patch.planRevisionId !== undefined ? patch.planRevisionId : originPlanRevisionId(state),
     waveId: patch.waveId !== undefined ? patch.waveId : originWaveId(state),
     planSummary: patch.planSummary !== undefined ? patch.planSummary : originPlanSummary(state),
     declaredExecution:
-      patch.declaredExecution !== undefined ? patch.declaredExecution : originDeclaredExecution(state),
+      patch.declaredExecution !== undefined
+        ? patch.declaredExecution
+        : originDeclaredExecution(state),
     effectiveExecution:
-      patch.effectiveExecution !== undefined ? patch.effectiveExecution : originEffectiveExecution(state),
+      patch.effectiveExecution !== undefined
+        ? patch.effectiveExecution
+        : originEffectiveExecution(state),
     consumedProviderCalls: patch.consumedProviderCalls ?? originConsumedProviderCalls(state),
     maximumProviderCalls: patch.maximumProviderCalls ?? originMaximumProviderCalls(state),
   }
@@ -344,7 +349,8 @@ function commitVisible(
     return {
       nodes: patch.nodes ?? state.nodes,
       parentLiveText: patch.parentLiveText ?? state.parentLiveText,
-      parentFinalAnswer: patch.parentFinalAnswer !== undefined ? patch.parentFinalAnswer : state.parentFinalAnswer,
+      parentFinalAnswer:
+        patch.parentFinalAnswer !== undefined ? patch.parentFinalAnswer : state.parentFinalAnswer,
       collaborationLines: patch.collaborationLines ?? state.collaborationLines,
       parkedParentLiveText: state.parkedParentLiveText,
       parkedParentFinalAnswer: state.parkedParentFinalAnswer,
@@ -359,7 +365,9 @@ function commitVisible(
     collaborationLines: [],
     parkedParentLiveText: patch.parentLiveText ?? state.parkedParentLiveText,
     parkedParentFinalAnswer:
-      patch.parentFinalAnswer !== undefined ? patch.parentFinalAnswer : state.parkedParentFinalAnswer,
+      patch.parentFinalAnswer !== undefined
+        ? patch.parentFinalAnswer
+        : state.parkedParentFinalAnswer,
     parkedNodes: patch.nodes ?? state.parkedNodes,
     parkedCollaborationLines: patch.collaborationLines ?? state.parkedCollaborationLines,
   }
@@ -423,14 +431,13 @@ function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): 
   if (event.conversationId !== state.originConversationId) return false
   if (event.rosterEpoch !== state.rosterEpoch) return false
   if (event.type === 'plan_transition') {
-    return event.oldPlanRevisionId === originPlanRevisionId(state) && event.planRevisionId !== originPlanRevisionId(state)
+    return (
+      event.oldPlanRevisionId === originPlanRevisionId(state) &&
+      event.planRevisionId !== originPlanRevisionId(state)
+    )
   }
   const planRevisionId = originPlanRevisionId(state)
-  if (
-    planRevisionId !== null &&
-    planRevisionId !== '' &&
-    event.planRevisionId !== planRevisionId
-  ) {
+  if (planRevisionId !== null && planRevisionId !== '' && event.planRevisionId !== planRevisionId) {
     return false
   }
   const waveId = originWaveId(state)
@@ -444,6 +451,29 @@ function eventMatches(state: DesktopTeamLiveState, event: DesktopTeamRunEvent): 
   ) {
     return false
   }
+  return true
+}
+
+/**
+ * Identity-only acceptance for event-driven side effects (P7 workbench
+ * wiring): does this event belong to the run this live state represents, or
+ * the run it is waiting to bind (teamRunId === null)?
+ *
+ * Unlike `reduceDesktopTeamEvent` acceptance, this predicate is deliberately
+ * free of phase, eligibility and parked-view gates: a legitimate snapshot for
+ * the bound run must be recognized even while the run is parked in the
+ * background (visible phase is hidden as `idle`), and a late event for a
+ * previous run must never be mistaken for the current one.
+ */
+export function desktopTeamEventBindsLiveRun(
+  state: DesktopTeamLiveState,
+  event: DesktopTeamRunEvent,
+): boolean {
+  if (!eventIdentityComplete(event)) return false
+  if (event.workspaceId !== state.originWorkspaceId) return false
+  if (event.conversationId !== state.originConversationId) return false
+  if (event.rosterEpoch !== state.rosterEpoch) return false
+  if (state.teamRunId !== null && event.teamRunId !== state.teamRunId) return false
   return true
 }
 
@@ -622,12 +652,19 @@ export function desktopTeamStatusForRole(
 ): DesktopTeamNodeStatusText {
   if (!viewingOrigin(state)) return '静默'
   if (state.cancelRequested) {
-    const live = state.nodes.find((node) => node.employeeRoleId === roleId && node.statusText === '运行中')
+    const live = state.nodes.find(
+      (node) => node.employeeRoleId === roleId && node.statusText === '运行中',
+    )
     if (live) return '正在停止'
   }
   const nodes = state.nodes.filter((node) => node.employeeRoleId === roleId)
   if (nodes.length === 0) {
-    if (roleId === 'parent' && (state.phase === 'parent_proposing' || state.phase === 'parent_replanning' || state.phase === 'parent_synthesizing')) {
+    if (
+      roleId === 'parent' &&
+      (state.phase === 'parent_proposing' ||
+        state.phase === 'parent_replanning' ||
+        state.phase === 'parent_synthesizing')
+    ) {
       return '运行中'
     }
     return roleId === 'parent' && state.phase !== 'idle' ? '等待' : '静默'
@@ -681,15 +718,19 @@ function asRunState(value: string | undefined, fallback: TeamRunState | null): T
   return fallback
 }
 
-function withBudget(state: DesktopTeamLiveState, event: DesktopTeamRunEvent, chrome: {
-  readonly phase?: DesktopTeamPhase
-  readonly runState?: TeamRunState | null
-  readonly planRevisionId?: string | null
-  readonly waveId?: string | null
-  readonly planSummary?: string | null
-  readonly declaredExecution?: 'serial' | 'parallel' | null
-  readonly effectiveExecution?: 'serial' | 'parallel' | null
-} = {}): DesktopTeamLiveState {
+function withBudget(
+  state: DesktopTeamLiveState,
+  event: DesktopTeamRunEvent,
+  chrome: {
+    readonly phase?: DesktopTeamPhase
+    readonly runState?: TeamRunState | null
+    readonly planRevisionId?: string | null
+    readonly waveId?: string | null
+    readonly planSummary?: string | null
+    readonly declaredExecution?: 'serial' | 'parallel' | null
+    readonly effectiveExecution?: 'serial' | 'parallel' | null
+  } = {},
+): DesktopTeamLiveState {
   return {
     ...state,
     ...withOriginChrome(state, {
@@ -841,7 +882,11 @@ export function reduceDesktopTeamEvent(
   if (event.type === 'wave_starting') {
     const currentNodes = workingNodes(state)
     const waiting = (event.assignmentIds ?? []).flatMap((assignmentId, index) => {
-      if (currentNodes.some((item) => item.assignmentId === assignmentId && item.statusText !== '等待')) {
+      if (
+        currentNodes.some(
+          (item) => item.assignmentId === assignmentId && item.statusText !== '等待',
+        )
+      ) {
         return []
       }
       const roleId = asRole(event.employeeRoleIds?.[index])
@@ -919,7 +964,9 @@ export function reduceDesktopTeamEvent(
   if (event.type === 'node_delta' && event.employeeRoleId === 'parent') {
     return {
       ...state,
-      ...commitVisible(state, { parentLiveText: `${workingParentLiveText(state)}${event.text ?? ''}` }),
+      ...commitVisible(state, {
+        parentLiveText: `${workingParentLiveText(state)}${event.text ?? ''}`,
+      }),
     }
   }
   if (event.type === 'node_terminal' && event.nodeId !== undefined) {
