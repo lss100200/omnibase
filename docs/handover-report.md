@@ -8,6 +8,8 @@
 > **Git 状态**：PR `#9` 已把 P34.5A1-A4/B/C/D 工程封板合入公开 `main`（当前 hardening 分支基线 `f16f3c567caefd6d0c6a348f75f7f65b92331572`）。post-seal hardening 的本地代码提交依次为 `ec2ac7861190539a0d89e3a8b850b2b71d2d1a04`、`3d05921d198af7ff5cb331c4c281ae9df429c36f`、`d6e888b4f9640cca3cdec27860915226dcf47c64` 与 `2621759024ddf9e5d84fc96e56d00140287c1db2`；本报告不硬编码后续 evidence/docs commit 的自身 hash，避免循环修订。当前远端 tip 必须以 `git rev-parse origin/main` 或 `git ls-remote` 为准。
 > **Round 5 Desktop Runtime review-fix（2026-08-07，分支 `external/cross-platform-desktop-runtime`，基线 `2f00e6f`）**：独立审查已复现并修复六项问题。(1) acronym camelCase key 泄漏：`_is_sensitive_key` 改为 acronym-aware 分词（同时处理 lower/digit→upper 与 acronym→CapitalizedWord），`stripeAPIKey`/`OPENAIApiKey`/`openAIApiKey`/`azureADAccessToken`/`myTOKEN`/`providerPASSWORD`/`xAPIKey` 全部脱敏，`sortKey`/`cacheID`/`apiVersion`/`foreignKey`/`keyboardLayout`/`monkey` 保留。(2) 敏感 Header 遇 `{`/`}` 提前停止：`_redact_colon_items` 改为消费到物理行尾，`{`/`}`/`;`/引号/逗号/空白均非提前停止边界，JSON 右花括号为防泄漏而牺牲。(3) quoted scanner 不识别转义引号：`_match_equals_value` 改为 escape-aware（仅在前面连续反斜杠为偶数时终止），未闭合/超长整项 fail-closed。(4) capability probe 返回裸 engine 名、lifecycle 再次 `shutil.which`：新增 `ExecutableIdentity`（dev/ino/size/mtime/ctime+symlink）、`ComposeProbe.executable_path/identity`、`EngineResolution.selected_executable_path/identity`、`resolve_engine_resolution()`/`verify_executable_identity()`；lifecycle 以验证后的规范绝对路径作为 `argv[0]` 并在构建命令前重新验证身份，绝不再次解析 PATH；TOCTOU（trusted-path→replacement-which）、删除、替换、identity drift 均 fail-closed。(5) sequence token-state parser 不识别 `--flag=value`：`_belongs_to_another_allowlisted_flag` 改为区分 allowlisted 结构 `--profile=lite`、敏感 inline `--token=value` 与普通 dash 值，未吞并结构、首项 fail-closed、第二项自身脱敏。(6) `capture_output=True`+timeout 只限时不限字节：`_probe_compose` 改为 stdout/stderr 定向 `DEVNULL`（只需 exit code）；lifecycle `_run_bounded` 改为线程化增量读取、每流 64 KiB、合计 128 KiB、超限终止进程并标记 truncated，绝不先无限缓冲到内存再截断；timeout 与 byte cap 独立。维护地图/安全不变量/AI maintainer map/Desktop doc 已同步并重算 P5.1A/2A/3A sealed digest chain。focused runtime tests 134 passed、mypy src/omnibase/runtime clean、ruff check/format clean。Desktop 仍 Lite/Local engineering-only；Hardened `blocked/not_proven`；三个 Phase 5 Feature Gate 保持 false；Production Runtime/Planner/Multi-Agent 保持 disabled；migration head 仍 `0012`，无 `0013`；根 `.env` 未读取；业务数据库未访问/迁移；未 push。
 
+> **P6.8 Codex（2026-08-20）**：Canonical dossier for Codex global acceptance is `docs/reviews/p6-8-codex-acceptance-package-r0.md`. Product latch `70c99f2`. Cursor is not the acceptance authority. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e`.
+
 ---
 
 ## 一、项目定位
@@ -5240,4 +5242,1633 @@ root .env not read
 business database not accessed or migrated
 not deployed
 P6.0 not started
+```
+
+### P6.0-A Personal Engineering Workbench implementation start (2026-08-13)
+
+User approval moved P6.0 from planning to implementation. A new isolated
+worktree and branch were created from merged `origin/main@46bc894`:
+
+```text
+worktree = E:\Agent IDE\OmniBase Worktrees\Active\p6-0-personal-engineering-workbench
+branch = codex/p6-0-personal-engineering-workbench
+pre-HEAD = 46bc8948fb600c8cc174393064b7d2877c351594
+```
+
+The repository root was not reused because it remains on an old dirty branch.
+No existing worktree was modified.
+
+The first P6.0-A slice replaces the `/dashboard` RAG shell with the Personal
+Engineering Workbench and delivers an IDE-shaped top bar, session rail,
+conversation pane and context/employee rail. Sessions can be created,
+searched, pinned, archived, restored and inspected through an append-only local
+timeline. The versioned browser projection is tenant/user scoped and capped at
+80 sessions and 400 terminal messages per session.
+
+The employee contract contains one default-active parent Agent plus nine
+dormant specialists. No `@` routes to the parent. One recognized `@` routes a
+request-scoped role context to one specialist. Unicode NFKC normalization is
+applied; unknown, empty and multiple mentions fail before dispatch. Specialists
+cannot wake one another and return to dormant after success, failure or cancel.
+This uses the existing single Agent Alpha Runtime and does not enable
+Multi-Agent.
+
+Existing Workspace/profile status, same-origin streaming Route Handler,
+Agent Alpha SSE parser, cancellation and InvocationGuard are reused. The first
+repository is browser-local because Task/Run is an execution ledger and Memory
+is curated context, not transcript persistence. Migration `0016` remains
+absent.
+
+The first independent review then found session/Workspace ownership,
+double-submit, browser quota, sensitive local text, malformed `@`, stale
+Workspace response and missing-refresh-token UX gaps. The forward-only
+review-fix binds every invocation to immutable session/Workspace/generation
+context, disables session and Workspace mutation while running, drops stale
+runtime responses, aborts on unmount, performs the exact 32,000-character
+specialist-wrapper preflight, validates a strict closed-set local schema, caps
+the store at 4 MiB, preserves active/pinned sessions, redacts secret/locator
+categories before they enter the durable projection and maps missing refresh
+credentials to stable `auth_session_expired` handling.
+
+Local verification after the review-fix:
+
+```text
+frontend tests = 114 passed
+frontend typecheck = passed
+frontend lint = passed
+frontend NODE_ENV=production build = passed
+docker compose --env-file .env.example config --quiet = passed
+maintainer map = valid (54 invariants / 46 modules / 872 path specs)
+maintainer benchmark = valid (3 plans / 8 scenarios / 9 unsafe vetoes)
+```
+
+Current posture:
+
+```text
+P6_0_A_ENGINEERING_ACCEPTED_PENDING_PRODUCT_BROWSER_REVIEW
+P6_0_B_NOT_STARTED
+P6_0_C_NOT_STARTED
+P6_0_D_NOT_STARTED
+migration head = 0015
+migration 0016 absent
+Planner disabled
+Multi-Agent disabled
+root .env not read
+business database not accessed or migrated
+not pushed / not merged / not deployed
+```
+
+Independent review Round 1 identified two P1 issues: an identity scope change
+could issue one Runtime request using the previous Workspace ID, and the local
+redactor missed Basic Authorization, an un-delimited GitHub token and URI
+userinfo credentials. The forward fix clears Workspace/Runtime selection on
+scope change and requires the selected Workspace to exist in the newly scoped
+authorized list before profiles/status are fetched. The redactor and attack
+suite cover all three credential forms. Independent Round 2 reported no
+remaining P0/P1/P2. The final 114-test, typecheck, lint, production build,
+Prettier, maintainer-map, benchmark and `git diff --check` matrix passed.
+
+### Docker/WSL virtual-disk recovery and permanent guardrail (2026-08-13)
+
+The C: incident was infrastructure pressure, not repository corruption. After
+rebuildable BuildKit/image/dependency caches were removed and the stopped data
+disk was compacted, `docker_data.vhdx` decreased from 244.92 GiB to 28.90 GiB.
+An attempted 100-GiB capacity cap was abandoned because the platform did not
+offer a verified filesystem-aware in-place shrink for the Docker data disk.
+No 100-GiB cap is claimed.
+
+Restoring the preserved data-disk backup exposed a WSL VM-SID ACL requirement;
+after restoring that ACL the remaining startup error was traced to
+`WSL_E_USER_VHD_ALREADY_ATTACHED`. A normal Docker Desktop shutdown released
+the stale attachment and a clean restart passed Docker Engine 29.6.2, direct
+`docker-desktop` WSL execution, an isolated no-network container smoke and
+named-volume discovery. Existing OmniBase containers and data volumes remain
+present and stopped; no business database was opened or migrated.
+
+`INV-064 virtual-disk-ownership-backup-and-offline-maintenance` now permanently
+requires owner/system-vs-data discovery, stopped writers, exact paths, mount
+verification, cross-disk backup, filesystem-aware supported operations and VM
+service ACL/SID-preserving restore. It forbids deleting, truncating, replacing
+or shrinking a mounted or unknown virtual disk and records that compaction is
+not a capacity limit. P6 work resumed without further VHD/VHDX operations.
+
+### P6.0-D2 researched model adaptation and per-role settings (2026-08-13)
+
+P6.0-D2 continues from the frozen P6.0 workbench in the isolated
+`codex/p6-0-d2-model-adaptation` worktree at base `dd23b976`. The product remains
+one personal Agent Alpha Runtime with one parent and nine dormant request-scoped
+specialists. Every role inherits the user's default saved Provider URL,
+encrypted key and model; the Owner may reference another saved credential or
+override only the model name for one role. API keys are not copied to the role
+table or returned through Browser DTOs.
+
+Five conservative profiles were researched for DeepSeek, GLM, Kimi, GPT and
+Claude. Resolution is model-name first, then observed actual model, explicit
+family fallback, weak URL/provider hint and finally generic. Conflicts fail
+closed to generic. Classification changes prompt guidance only: native
+reasoning controls, Tools, MCP, CLI and Vision remain disabled.
+
+Custom model names remain pending until an exact no-tool probe returns the same
+actual model. Test evidence binds override ID/version and credential/key/
+provider/base-URL/model state; mutation, delete/recreate or credential drift
+invalidates writeback. Runtime selection binds the employee role and the same
+configuration identity into the invocation request digest.
+
+Migration `0016` is authorized only for tenant-owned role model preferences and
+the composite credential/user ownership constraint. It is not conversation
+persistence and does not authorize Planner, Multi-Agent, Skills, MCP, enterprise
+Trust Policy approval or production evidence. Populated tenant downgrade and
+global-before-tenant downgrade fail closed. The reviewed `0016 -> 0015` path
+downgrades every retained tenant first and the global head last in one
+transaction; the global preflight requires tenant head `0015`, the role table
+absent and the added credential ownership unique constraint absent. Personal
+target/backup/restore and current P5 contracts advance to exact `0016`; `0017+`
+remains rejected and historical `0015` evidence is not rewritten.
+
+An external read-only review of an earlier P6.0-A development baseline supplied
+three useful attacks: long-session persistence poisoning, a non-round-tripping
+UI/UX quick mention and oversized ordinary replies being mislabeled as secrets.
+Current D2 contains deterministic session compaction, stable short-name/alias
+routing and separate truncation versus secret-redaction behavior with tests.
+The old report is retained as attack input, not current acceptance evidence.
+
+The final independent security review then found five current D2 issues, all
+now forward-fixed: model-test evidence binds Workspace generation and the exact
+installed Binding; model-name fields reject secrets and physical locators
+before persistence/Audit; probe and personal Runtime share a pinned HTTPS,
+no-proxy, no-redirect endpoint policy; exact `0016 -> 0015` is tenant-first and
+atomic; and frontend submission uses a scope generation plus complete
+model-setting fingerprint so stale projections cannot cross Workspace/Agent
+switches.
+
+Final local verification available on the Windows host:
+
+```text
+frontend tests = 157 passed
+frontend typecheck = passed
+frontend lint = passed
+frontend production build = passed
+backend focused model/Alpha/rate-limit/endpoint-policy tests = 104 passed
+personal target/backup/acceptance controller tests = 68 passed
+P5/P34 focused contracts = 1028 passed, 1 Windows symlink skip
+remaining host non-integration = 2673 passed / 42 skipped / 15 host-platform
+  failures / 16 deselected after excluding one Linux-launcher collection error
+changed-path Ruff check and format = passed (65 Python paths)
+maintainer map and benchmark = valid
+guarded D2 PostgreSQL attacks = 10 passed in 99.58s against an isolated
+  omnibase_test_p60d2_* sentinel; exact 0016 shape/constraints, concurrency,
+  stale writes, probe mutation and authority drift, tenant-first empty
+  downgrade and populated atomic rollback all passed
+focused migration/model forward-fix contracts = 47 passed, including 10 direct
+  exact-CLI selector behavior cases
+broader D2/Agent Alpha/rate-limit/migration regression = 90 passed
+P5 registry/task-ledger/planner sealed-contract regression = 407 passed
+Mypy migration env + model settings boundary = passed (2 source files)
+forward-fix Ruff check / format = passed on 3 explicit paths
+disposable container, networks and tmpfs database = removed with
+  down -v --remove-orphans
+maintainer map = valid (58 invariants / 46 modules / 921 path specs /
+  2087 matched files / 311 entrypoints / 19 HTTP entrypoints /
+  247 verification commands)
+maintainer benchmark = valid (3 plans / 8 scenarios / 6 critical scenarios /
+  9 unsafe vetoes)
+root .env not read
+business database not accessed or migrated
+not pushed / not merged / not deployed
+```
+
+The P5/P34 sealed chain, production frontend build and maintainer validators are
+closed. External P6.0-A findings were independently rechecked; all current P1/P2
+and applicable P3 issues are fixed, including honest `interrupted_unknown`
+semantics when an invocation ID has not arrived. Docker/WSL recovery allowed the
+previously missing database Gate to run. Its first real execution exposed a
+schema-assertion drift, a stale pre-hardening Provider test double, missing
+tenant-session rebinding in that test harness after the deliberate mid-probe
+commit, and downgrade-test ordering polluted by intentionally retained
+append-only audit tenants. The forward fix binds the harness exactly like
+`get_tenant_db`, runs database-wide downgrade proofs before audited service
+cases, and selects tenant-first downgrade only for the exact ordinary
+`alembic downgrade 0015` CLI form. Final result: `10 passed`, cleanup complete.
+
+The final independent review of `f8a4aae` found one additional P1 before any
+push: Alembic command metadata preserved the destination revision for flagged
+commands, so `metadata_matches or exact_cli` could bypass the exact-CLI rule.
+The review forward fix removes the metadata branch; tenant-first now requires
+the complete `sys.argv` tuple to equal `("downgrade", "0015")`. Ten direct
+behavior cases prove flags, SQL mode, range, relative revision, programmatic
+invocation, wrong command and wrong destination fail closed. The focused
+matrix passed 47 tests and the disposable PostgreSQL attack module passed all
+10 tests again before cleanup.
+
+Current status is `P6_0_D2_ENGINEERING_COMPLETE_DATABASE_GATE_PASSED_LOCALLY`.
+This remains local disposable engineering evidence, not production evidence.
+Local commits only; no push, PR, merge or deployment.
+
+### P6.0-D2 readable workbench UX forward fix (2026-08-13)
+
+A direct 2048x1152 product review after PR #34 opened found that the workbench
+was functionally complete but visually undersized: shell metadata, navigation,
+session summaries, employee/model state, file controls and ChangeSet audit text
+used 6-11px fonts. The forward fix raises ordinary content and controls to
+13-14px, enforces a 12px minimum for secondary metadata, widens the session and
+context rails, and applies the same floor to the authenticated dashboard shell
+and sidebar. A source-level regression contract covers the five relevant shell
+and workbench files and rejects any arbitrary font size below 12px.
+
+Final frontend verification on the UX fix:
+
+```text
+frontend tests = 158 passed
+typecheck = passed
+lint = passed
+Prettier = passed
+production build = passed (16 routes)
+API proxy after restart = authenticated boundary reachable; anonymous probe 401
+```
+
+This is a presentation-only forward fix. Runtime, Planner, Multi-Agent, Tools,
+Skills Runtime, MCP, CLI, Vision, migration `0016`, Provider credentials and
+production activation boundaries are unchanged.
+
+Adding the typography contract to the maintainer map changed its sealed raw
+bytes, so the first PR CI run correctly reported Registry/Task Ledger
+`maintainer_map` drift while all other backend tests passed. The forward fix
+resealed Registry first, then Task Ledger against Registry, then Planner
+against both downstream raw-byte digests. The focused sealed-contract matrix
+passed 407 tests after resealing; no feature gate or activation field changed.
+
+### P6.0-D2 AI employee workbench Chinese localization (2026-08-13)
+
+The next visual review found a mixed-language product surface: navigation was
+mostly Chinese while `/agents` still presented its title, empty state,
+invocation target, capability disclosures, runtime status and employee builder
+in English. The forward fix localizes all user-visible copy on this page and
+the remaining shell labels to Chinese. Required technical names such as Agent
+Alpha, API, MCP, Gate, token and backend identifiers remain intact rather than
+being mistranslated.
+
+Verification after localization:
+
+```text
+frontend tests = 159 passed
+typecheck = passed
+lint = passed
+Prettier = passed
+production build = passed (16 routes)
+source-level Chinese shell regression contract = passed
+```
+
+This is presentation-only. Runtime, authorization, model routing, migrations,
+credentials and production activation boundaries are unchanged.
+
+### P6.1 A-D native Skills, model adaptation, read-only MCP and release preview (2026-08-13)
+
+Branch `codex/p6-1-native-skills-mcp-release` starts from local P6.0 Chinese
+workbench head `25f82a9`. P6.1-A adds six first-party instruction-only Skills,
+authenticated catalog/detail API, live Owner/Workspace/Agent install/disable
+control and a Chinese `/skills` page. It reuses migration `0014`; no new schema.
+
+P6.1-B moves reasoning gears into Browser API and provider gateway. Effective
+model name is authoritative: DeepSeek gets stable cache-friendly prefix,
+thinking and reasoning effort; GPT gets outcome-first stable guidance and
+Chat-Completions-compatible reasoning effort. Unknown/conflicting or
+compatible/proxy/emulator names stay generic. Usage
+projects reasoning plus cache hit/miss input tokens when supplied. DeepSeek
+official docs were retrieved; OpenAI live docs were blocked, so bundled
+official guidance was used and disclosed.
+
+P6.1-C adds an independent stdio MCP preview with exactly authorized-file list,
+authorized UTF-8 read and metadata-only Git status/log. Stable root/repository/
+Git identities are revalidated per call and file/Git I/O is bounded while it
+runs. It is not mounted into Agent
+Alpha and does not change `no_tool`; no arbitrary server, HTTP, shell, write or
+credential flow exists.
+
+P6.1-D adds deterministic canonical ZIP, offline immutable-image preflight,
+release-only Compose with no `build:` and the personal migration/init/health
+lifecycle, operator env template, Chinese instructions and .NET
+single-file verifier/extractor source. ZIP reproducibility is proven locally.
+A portable Microsoft .NET SDK 8.0.424 archive was recovered outside the
+repository (`285090820` bytes) and verified against the official SHA-512. The
+recovered SDK was expanded into a new non-overwriting directory and reports SDK
+`8.0.424` / MSBuild `17.11.48`. Clean source commit `cf707e2` produced the
+authoritative preview ZIP and EXE outside the repository. Two independent
+builds of each artifact were byte-identical:
+
+```text
+ZIP  27131 bytes  SHA-256 e9a4049d5d9986a9cc76cf5a4b3a67f17587135f3de7c08554979de652c89fd3
+EXE 166920 bytes  SHA-256 6b0c904f29239a474c9dbfe7e0e382b3c5e20341aa637b71cf5db58168b6896c
+Authenticode = NotSigned
+```
+
+The actual EXE passed 20/20 fresh-target installations. Payload digest tamper,
+extra archive content, forged production posture, traversal, corrupt ZIP and a
+pre-existing target all failed closed with exit `2`; no partial target,
+traversal escape or `.staging-*` residue remained. The manifest intentionally
+keeps `production_ready=false`, publisher/Authenticode verification false and
+VHDX mutation forbidden. No OCI image was built or published.
+
+After network access recovered, official OpenAI reasoning and GPT guidance was
+fetched directly from `developers.openai.com`. It confirms the conservative
+adapter boundary: tune reasoning effort to task difficulty, prefer Responses
+for reasoning flows while retaining Chat Completions compatibility, and do not
+send the Responses-only verbosity control through the current Chat Completions
+provider path.
+
+Independent review also changed native Definition/Version database IDs to a
+deterministic tenant-scoped projection and added explicit resource/audit
+evidence for first materialization. Safety remains: migration head `0016`; enterprise P34.7 frozen; no root `.env`,
+business DB, Docker build, VHDX mutation, push, PR, merge or deployment.
+
+Final local status: `P6_1_ENGINEERING_COMPLETE_RELEASE_PREVIEW_VERIFIED`.
+This is a verified personal-edition engineering preview, not a signed,
+published or production-deployed Windows release.
+
+### P6.2 personal capability center and Windows Companion R0 (2026-08-14)
+
+Branch `codex/p6-2-personal-capability-center-r0` starts from the final local
+P6.1 documentation head `8d13f6c`. P6.2 keeps the personal product truth: one
+human Owner, one Agent Alpha Runtime, one active parent role and nine dormant
+request-scoped specialists. It does not reopen enterprise P34.7, Planner,
+autonomous Multi-Agent or general MCP execution.
+
+P6.2-A upgrades `/skills` into a Chinese personal capability center. It
+combines the sealed six-Skill first-party catalog, the existing P6.0-D2
+ten-role model settings and the exact three-tool read-only MCP posture. An
+Owner can explicitly choose a local directory for a bounded scan of direct
+child `SKILL.md` candidates. The scanner is UTF-8/count/byte bounded, rejects
+scripts, executables, tools, network, secrets and unsupported fields, returns
+opaque source IDs and performs no execution, installation or network use.
+Unknown candidates remain `unsupported_unreviewed`; migration `0014` is not
+misused to label them first-party.
+
+P6.2-B compiles at most 24 recent terminal user/Agent messages from the exact
+active browser session under an independent 12,000-character budget. These
+messages are already processed by the P6.0 persistence redactor. Newest
+messages are retained deterministically; timeline/system entries and another
+session never enter the request. The `fnv1a32` manifest is explicitly a local
+diagnostic fingerprint, not a security digest. ChangeSets now survive refresh
+in the bounded key `omnibase.p6.changes.v1:<tenant>:<workspace>`. Restore
+validates exact scope, logical paths, unique files, complete version shapes,
+content limits and digest grammar before the existing handle/CAS/three-way
+rollback path can use a record. No backend file API or replay authority was
+added.
+
+P6.2-C does not duplicate the model gateway. The capability center combines
+`model-provider-runtime` with the ten existing role projections and reports
+personal/operator-default/unavailable source, ready/pending/unavailable role
+counts and explicit overrides. MCP still exposes only
+`omnibase_files_list`, `omnibase_files_read` and `omnibase_git_inspect` as a
+separately launched preview; it is not mounted into Agent Alpha and `no_tool`
+is unchanged.
+
+P6.2-D upgrades `OmniBase.Setup` source to a self-contained `win-x64`
+single-file Companion with `verify`, `install`, `init-config` and `doctor`.
+The first implementation passed static tests but an actual build using the
+already preserved, officially SHA-512-verified .NET SDK `8.0.424` found missing
+namespace imports and failed compilation. Independent source comparison also
+found that the expansion had dropped P6.1 manifest schema, manifest-size,
+compression-ratio, source-commit and posture checks. A forward fix restored the
+entire P6.1 integrity baseline, added installed-directory closed-set/digest
+verification, closed doctor argument parsing, exact repository/config-key
+validation, credential/key/CORS checks and explicit false values for Runtime,
+Planner, Multi-Agent and MCP gates. The fixed project builds with zero errors
+and zero warnings; the offline Release regression reports `14 passed, 1
+skipped` (the existing POSIX-only fsmonitor fixture is skipped on Windows).
+
+The first full frontend run executed 169 tests and exposed one new journal
+predicate failure: `Array.filter` passed its numeric index into a two-argument
+scope validator. The forward fix wraps the predicate explicitly and adds scope,
+traversal and malformed-version attacks. Final frontend verification is `169
+passed`; TypeScript typecheck, Next lint, explicit-path Prettier and production
+build all pass, with 17 routes generated. The focused backend model/Skill/MCP/
+Agent matrix is `85 passed`. The ordered Registry → Task Ledger → Planner
+raw-byte reseal is complete and its three contract suites report `129 + 200 +
+78 = 407 passed`. Maintainer validation reports `66 invariants`, `48 modules`,
+`1014 path specs`, `3098 matched files`, `324 entrypoints`, `20 discovered HTTP
+entrypoints` and `264 verification commands`; the benchmark reports `3 plans`,
+`8 scenarios`, `6 critical scenarios` and `9 unsafe vetoes`.
+
+The canonical .NET formatter passes and the Release build remains `0 warnings /
+0 errors`. The self-contained artifact is preserved outside the repository at
+`E:\Agent IDE\Artifacts\OmniBase-P62-Companion-R0\OmniBase.Setup.exe`:
+`67,519,558` bytes, SHA-256
+`1669acef98afcd8aa865593d541f7e9915d934cad3714bf8b3313b46f869936d`,
+Authenticode `NotSigned`. Offline verify/install/init-config smoke passed; the
+negative corrupt archive, existing target/config and invalid doctor argument
+cases failed closed. A valid doctor host probe was intentionally not run
+because that path invokes read-only Docker/WSL diagnostics and this branch's
+explicit boundary excludes Docker/WSL access.
+
+Final engineering state:
+
+```text
+P6_2_PERSONAL_CAPABILITY_CENTER_ENGINEERING_COMPLETE
+PERSONAL_WORKBENCH_CONTINUITY_VERIFIED
+LOCAL_SKILL_DISCOVERY_SCAN_ONLY
+MCP_RUNTIME_NOT_INTEGRATED
+WINDOWS_COMPANION_SELF_CONTAINED_BINARY_VERIFIED
+OCI_RELEASE_IMAGES_NOT_PUBLISHED
+AUTHENTICODE_NOT_SIGNED
+PRODUCTION_READY_FALSE
+NOT_PUSHED
+NOT_DEPLOYED
+```
+
+Current invariant posture remains:
+
+```text
+migration head = 0016; migration 0017 absent
+Agent Runtime / Planner / Multi-Agent / MCP Runtime = unchanged and disabled
+unknown local Skill install/execute = absent
+MCP-to-Agent integration = absent
+OCI release image digests = not published
+Authenticode / publisher verification = not proven
+production_ready = false
+root .env not read
+business database not accessed or migrated
+Docker / WSL / VHDX mutation not performed
+not pushed / not merged / not deployed
+```
+
+### P6.3 personal extensions engineering R0 (2026-08-14)
+
+Branch `codex/p6-3-personal-extensions-r0` starts from local P6.2 head
+`b3fdd46`. P6.2 Git upload was not retried after the user-authorized three
+methods failed; its complete verified fallback remains
+`D:\OmniBase-Backups\P6.2-20260814\omnibase-p6.2-b3fdd46.bundle`, SHA-256
+`cfeb929a4fa1cde2481d922e31016e44535cf87ec9b2ee15d9053228af0df711`.
+
+P6.3-A expands the fixed catalog to fifteen first-party instruction-only Skills,
+adds catalog metadata/filtering, exact persisted-row comparison and independent
+install/resolve ceilings of eight live Skills and 32 KiB instructions. P6.3-B
+expands the standalone read-only MCP server to six tools with bounded hash,
+literal search and Git diff metadata, while keeping Agent Alpha `no_tool` and
+MCP Runtime disabled. GLM and Claude now use exact model-name-first conservative
+prompt/context profiles; the current Chat Completions transport does not claim
+their native thinking, cache, effort, strict tools or MCP controls.
+
+Official sources rechecked with HTTP 200 on 2026-08-14:
+
+- Z.AI: [thinking](https://docs.z.ai/guides/capabilities/thinking),
+  [cache](https://docs.z.ai/guides/capabilities/cache),
+  [function calling](https://docs.z.ai/guides/capabilities/function-calling),
+  [tool streaming](https://docs.z.ai/guides/capabilities/stream-tool) and
+  [OpenAI Python compatibility](https://docs.z.ai/guides/develop/openai/python);
+- Anthropic: [models](https://platform.claude.com/docs/en/about-claude/models/overview),
+  [extended thinking](https://platform.claude.com/docs/en/build-with-claude/extended-thinking),
+  [effort](https://platform.claude.com/docs/en/build-with-claude/effort),
+  [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching),
+  [strict tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use),
+  [MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector)
+  and [OpenAI SDK compatibility](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk).
+
+These sources describe official transports, not an unknown relay. Therefore
+the P6.3 Chat Completions gateway keeps vendor-native fields disabled.
+
+Independent review then found two P2 issues and both were forward-fixed before
+the final seal: public native-Skill catalog lookups now return detached nested
+snapshots, and MCP text search revalidates every descendant directory and every
+yielded file component chain before scanning/opening. The focused regression
+for these paths passed `44` tests.
+
+P6.3-C updates both READMEs and `/public-preview` to migration `0016`, the 1+9
+personal role model, file/conversation/ChangeSet continuity, fifteen Skills,
+six MCP tools and the Windows Companion. The production frontend build generated
+all 17 routes, including static `/public-preview`. The initial engineering seal
+stopped before deployment; the final completion audit later verified the new
+build on an alternate loopback port and replaced only the stale Next.js process
+behind the existing `omnibase.chat -> http://127.0.0.1:3100` Cloudflare Tunnel.
+The tunnel configuration, Docker/WSL, Hyper-V and VHDX were not modified. A live
+browser read verified the P6.3, fifteen-Skill, six-MCP, GLM/Claude/Kimi and
+Windows Companion presentation. The current status is
+`PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED`; it remains operator-hosted
+and process-bound, not high-availability SaaS or production Runtime evidence.
+
+P6.3-D adds `help`, `locations` and `plan-install` with user/machine/custom
+location policies and no UAC, PATH, registry, service, firewall, Docker, WSL or
+VHDX mutation. The clean-Windows probe was run exactly once and stopped on a
+Windows PowerShell 5.1 compatibility blocker. Source was forward-fixed and only
+AST-parsed afterward; Hyper-V/VM inspection was not repeated. Therefore:
+
+```text
+CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
+NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED
+```
+
+Verified matrix before the final sealed-contract pass:
+
+```text
+focused backend Skill/Model/MCP/Agent Alpha = 95 passed
+frontend = 172 passed; typecheck/lint/build passed; 17 routes
+Windows release contract = 17 passed, 1 skipped
+dotnet format = passed; Release build = 0 warnings / 0 errors
+PowerShell AST parse = passed
+Companion EXE = 67,535,942 bytes
+SHA-256 = e85efe0282be1e2ab48e485986f3c6bbbd71f6195aff04b25f6c1e5c73ae0e02
+Authenticode = NotSigned
+catalog = 15 Skills
+catalog SHA-256 = abd8923479f6040d4f747f28f27054101f01fba710528f06bb870a42d471ab98
+Ruff 0.8.6 = 14 explicit Python paths passed
+Mypy follow-imports=skip = 9 changed source files, 0 issues
+maintainer map = valid; 70 invariants / 49 modules / 1059 path specs
+maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
+P5 sealed regression = 129 + 200 + 78 = 407 passed
+P5.1A / P5.2A / P5.3A validate-only = blocked/not_proven,
+  activation_allowed=false, vetoes=[]
+P5.0 / P5.1A / P5.2A / P5.3A / P5.6A clean-HEAD verify = exit 2,
+  source.clean=true, blocked/not_proven, activation_allowed=false, vetoes=[]
+personal single-Owner validate-only = exit 0; runtime_activated=false
+Windows-compatible backend non-integration = 2734 passed / 41 skipped /
+  16 deselected
+git diff --check = passed
+```
+
+The native-Windows backend run excluded exactly five P34.5 modules that require
+Linux UID/root-mode semantics, AF_UNIX peer credentials, cgroups or
+`ctypes.CDLL(None)`. The initial unfiltered run exposed those host-only
+collection/execution limits. Two unrelated sealed-evidence failures were CRLF
+working-tree drift; restoring the tracked files to their `.gitattributes` LF
+bytes introduced no source diff and both focused tests passed. Docker/WSL was
+not started to manufacture a Linux result.
+
+Full design, official GLM/Claude references, detailed evidence and recovery
+boundaries are in `docs/architecture/p6-3-personal-extensions.md` and
+`docs/evidence/p6-3/engineering-r0-decision.md`.
+
+```text
+P6_3_PERSONAL_EXTENSIONS_ENGINEERING_COMPLETE
+FIRST_PARTY_SKILLS_EXACT_15
+READONLY_MCP_EXACT_6_NOT_CONNECTED_TO_AGENT_ALPHA
+FIVE_FAMILY_CHAT_COMPLETIONS_PROMPT_PROFILES_ALIGNED
+WINDOWS_COMPANION_MUTATING_INSTALL_FROZEN_FAIL_CLOSED
+INSTALL_PATH_IDENTITY_BINDING_NOT_IMPLEMENTED
+PUBLIC_PREVIEW_LIVE_ENGINEERING_PREVIEW_DEPLOYED
+CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN
+AUTHENTICODE_NOT_SIGNED
+OCI_RELEASE_IMAGES_NOT_PUBLISHED
+PRODUCTION_READY_FALSE
+migration head 0016; migration 0017 absent
+Runtime / Planner / Multi-Agent / MCP Runtime disabled
+root .env not read; business database not accessed or migrated
+public preview deployed from the P6.3 build; production product/runtime not deployed
+```
+
+### P6.3 final independent-review fixes and safe Companion freeze (2026-08-14)
+
+The final read-only review of clean head `6098180` found six P2 issues. Three
+were already closed by the catalog-snapshot and descendant-path forward fix;
+the remaining review-fix chain is:
+
+```text
+da726a9 fix(p6.3): enforce MCP lifetime resource budgets
+933c993 fix(p6.3): align model-name family profiles
+b5d380f fix(p6.3): freeze unsafe Companion install mutation
+b88ea67 fix(p6.3): charge MCP file growth during reads
+```
+
+MCP file capacity is required before opening even a currently empty file,
+current size is reserved, and post-stat growth is charged per chunk with
+overflow saturation. List enumeration has a fixed pre-sort visited ceiling, and
+Git stdout/stderr consume the shared lifetime budget while chunks arrive on
+success and failure paths. Backend Kimi/Moonshot
+recognition now matches the frontend; any present but unknown requested or
+observed name is terminal `generic` and cannot be upgraded by branded relay or
+Provider hints.
+
+The Companion review proved that repeated path/reparse checks do not bind the
+final rename identity. An attempted no-delete-share lease design was rejected
+during master review because releasing the staging handle to permit a path-based
+`Directory.Move` reopened the race. No experimental lease/P/Invoke code was
+retained. Mutating `install` and `--verify-and-extract` now exit `30` with
+`install_path_identity_binding_not_implemented` before path resolution, archive
+open, staging creation, extraction, move or cleanup. `verify`, `help`,
+`locations`, `plan-install`, `init-config` and read-only `doctor` remain.
+
+Final review-fix verification before the sealed-chain clean-HEAD pass:
+
+```text
+P6.3 focused backend = 118 passed
+MCP focused = 47 passed
+model gateway focused = 43 passed
+frontend = 175 passed; typecheck/lint/Prettier/build passed; 17 routes
+Windows release contracts = 19 passed, 1 skipped
+dotnet format = passed; Release build = 0 warnings / 0 errors
+maintainer map = valid; 70 invariants / 49 modules / 1059 path specs /
+  3634 matched files / 333 entrypoints / 275 verification commands
+maintainer benchmark = valid; 3 plans / 8 scenarios / 9 unsafe vetoes
+```
+
+The rebuilt fail-closed self-contained artifact is:
+
+```text
+E:\Agent IDE\Artifacts\OmniBase-P63-Companion-Safe-Freeze-R0\OmniBase.Setup.exe
+size = 67,535,942 bytes
+SHA-256 = a646c2db2c5ad5a03ce906bafc6e589c2435233e923add1ee67626a6f7209eb0
+Authenticode = NotSigned
+help exit = 0
+plan-install exit = 0; mutation_performed=false; acceptance fields=false
+install exit = 30; target_exists=false; staging_count=0
+```
+
+The earlier `OmniBase-P63-Companion-D-R0` binary predates this security freeze
+and is explicitly marked `DO_NOT_DISTRIBUTE.txt`; it is not release evidence.
+The final completion audit also removed one stale runbook paragraph that still
+described `install` as a working staging-and-rename flow. The runbook now
+presents verify, location planning, configuration and read-only diagnosis as
+the usable frozen-period workflow, states the exact exit-30 boundary, and has a
+regression test preventing the unsafe guidance from returning.
+The D-drive P6.2 full-history bundle remains verified and must be retained:
+
+```text
+D:\OmniBase-Backups\P6.2-20260814\omnibase-p6.2-b3fdd46.bundle
+SHA-256 = cfeb929a4fa1cde2481d922e31016e44535cf87ec9b2ee15d9053228af0df711
+```
+
+The clean-Windows VM probe was not run a second time. Docker/WSL/Hyper-V/VHDX,
+the root `.env`, business databases and production activation remained untouched.
+
+### P6.4 bounded personal Agent practice engineering implementation (2026-08-15)
+
+P6.4 is the personal edition's bounded transition from a capable workbench to
+real Agent practice. It covers exactly three scenarios, each once with one
+Agent and once with an Owner-declared 3-6 Agent roster: uploaded-file RAG with
+deterministic citation accuracy, trusted small artifact generation, and one
+audited reversible modification of a disposable Workspace. Participants are
+separate durable Agent Alpha calls in a fixed serial roster; the final parent
+synthesizes. Planner, enterprise Multi-Agent and MCP Runtime remain disabled.
+
+The engineering implementation now includes:
+
+- Browser upload binding from `Document.id` to an immutable
+  Workspace-private Resource and the authoritative ready Embedding lane;
+  Browser reads/deletes require the exact live Workspace membership, an initial
+  metadata-commit failure compensates the uploaded object, and canonical v1
+  chunks suppress a same-source v2 shadow;
+- durable practice API/UI with per-node invocation, task, actual model, Token
+  usage, exact metadata order, unique identities, progress and current-node
+  cancellation;
+- local exact fact/chunk/document citation scoring, including statement-text
+  mismatch rejection, answer citation-label verification, per-fact document
+  isolation and two-document decoy Workspace exclusion;
+- trusted dependency-free clock HTML and offline HTML slides, with no PPTX
+  claim or arbitrary template execution;
+- exact-before-CAS Workspace replacement, read-back verification,
+  deterministic project check, lexical symlink/junction/reparse rejection,
+  atomic replace and conflict-safe rollback;
+- strict `omnibase.p6-4.personal-agent-practice.v1` redacted receipt validation;
+- a loopback-only live matrix runner whose CLI cannot accept secrets and whose
+  fragment is permanently forced to `production_accepted=false`;
+- an outer disposable production controller that alone may accept after
+  clean unchanged source binding, read-only healthy Linux Docker preflight,
+  before/during/after gate proof, Provider/document cleanup, canary kill, zero
+  labeled Compose resources and final receipt validation;
+- a production Compose overlay with a run-scoped embedding prewarm and one
+  bounded ingestion worker, without Planner, enterprise Multi-Agent or MCP.
+
+Latest local evidence:
+
+```text
+P6.4 focused backend + runner/controller = 100 passed
+Document/Worker/RAG/rate-limit related regression = 126 passed
+Model Gateway/personal Agent/per-role model regression = 81 passed
+Frontend unit tests = 196 passed
+Frontend typecheck / lint / changed-path Prettier / production build = passed
+Full frontend Prettier baseline remains dirty in 95 pre-existing files and is
+  not claimed as clean; no unrelated formatting rewrite was made
+Ruff changed-path check / format --check = passed
+targeted Mypy = 17 source files, no issues
+maintainer map = valid (71 invariants / 50 modules / 345 entrypoints)
+maintainer benchmark = valid (3 plans / 8 scenarios)
+P5.1A/P5.2A/P5.3A sealed-contract regression = 407 passed after raw-byte
+  reseal in Registry -> Task Ledger -> Planner order
+Broad Windows-host non-integration (Linux launcher module excluded) =
+  2863 passed / 42 skipped / 16 deselected / 13 failed; all 13 are outside
+  P6.4: 11 require POSIX/Linux primitives and 2 reproduce only under the host
+  FastAPI 0.141.1 / Starlette 1.3.1 instead of the locked FastAPI 0.116.2 /
+  Starlette 0.48.0 route-introspection behavior
+Compose merged config --quiet = passed using explicit .env.example and
+  non-secret placeholder host coordinates
+```
+
+A current read-only `docker version` / `docker info` probe again found the
+`dockerDesktopLinuxEngine` pipe absent. The controller stops before target
+preparation and does not start or repair Docker Desktop, WSL, Hyper-V or a
+virtual disk. Therefore the real DeepSeek six-journey production receipt
+remains unexecuted and no production acceptance claim is permitted yet.
+
+```text
+P6_4_ENGINEERING_IMPLEMENTATION_ADVANCED_SECURITY_FORWARD_FIX_APPLIED
+P6_4_FOCUSED_100_PASSED
+DOCKER_LINUX_ENGINE_PIPE_ABSENT_READ_ONLY_PROBE
+REAL_DEEPSEEK_LIVE_MATRIX_PENDING
+PRODUCTION_ACCEPTANCE_NOT_PROVEN
+Planner / enterprise Multi-Agent / MCP Runtime disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```
+
+### P6.4 clean-HEAD formal closure and live-gate blocker (2026-08-15)
+
+The complete engineering implementation is sealed locally as forward-only
+commit `184fef897effe27df0cf860e23baf926836dfd4b` (`44 files`,
+`+10347/-78`) on `codex/p6-4-agent-practice-r0`, parent
+`38b60ce7208bed231210873822f4c0526204ed9a`. The worktree was clean before the
+formal closure run.
+
+The clean-HEAD P5 frozen verifiers all bound their source evidence to that
+exact commit. P5.0, P5.1A, P5.2A, P5.3A and P5.6A each returned `exit 2`,
+`blocked/not_proven`, `activation_allowed=false`, `vetoes=[]` and
+`source.clean=true`. This is the required fail-closed production posture; none
+of these static contracts was reinterpreted as Runtime authority.
+
+The corrected P34.7 invocation supplied the canonical example evidence file.
+The joint Gate returned `exit 2`, `blocked/not_proven`, the sole blocker
+`contract_mode_no_direct_evidence` and no veto. The Trust Policy candidate
+returned `exit 0`, `candidate/valid_not_approved`, with its raw digest verified
+but `production_approved=false`, `approved_digest_written=false` and
+`activation_allowed=false`. Its focused Trust Policy and joint regression is
+`255 passed, 1 skipped` (the Windows symlink behavior is covered by reparse
+guards).
+
+No remaining engineering implementation defect is currently known in the
+bounded P6.4 lane. The still-missing acceptance fact is external runtime
+evidence: the already-running Docker Desktop Linux Engine must be healthy so
+the outer controller can execute the real DeepSeek six-journey matrix from a
+clean unchanged source commit. The latest read-only pipe probe found the Linux
+Engine absent. Per INV-081, the controller stopped before creating target
+material or making a paid Provider call and did not start or repair Docker,
+WSL, Hyper-V or any virtual disk.
+
+```text
+P6_4_ENGINEERING_IMPLEMENTATION_COMPLETE
+P6_4_CLEAN_HEAD_FORMAL_VERIFIERS_COMPLETED
+P6_4_FOCUSED_100_PASSED
+P34_7_JOINT_BLOCKED_NOT_PROVEN_ZERO_VETOES
+P34_7_TRUST_POLICY_CANDIDATE_VALID_NOT_APPROVED
+DOCKER_LINUX_ENGINE_NOT_HEALTHY
+REAL_DEEPSEEK_SIX_JOURNEY_RECEIPT_NOT_EXECUTED
+PRODUCTION_ACCEPTANCE_NOT_PROVEN
+Runtime / Planner / enterprise Multi-Agent / MCP Runtime disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```
+
+### P6.4 personal production-practice acceptance (2026-08-16)
+
+The previously missing external-runtime fact is now closed. From clean
+executable source HEAD `3c3d322e3f9871749da00525eaac9505062026b4`, the outer
+disposable-target controller completed the real DeepSeek production-mode Gate
+and produced a strictly validated redacted receipt:
+
+```text
+schema = omnibase.p6-4.personal-agent-practice.v1
+receipt SHA-256 = 5e8145525e75feb84d6a28d3cf1007e078747f8e73ac7bd62b8b462b5978f0ef
+production_accepted = true
+provider/model = deepseek / deepseek-v4-flash
+models preflight = passed
+```
+
+All six required journeys passed: one- and three-Agent upload-to-Workspace RAG,
+one- and four-Agent artifact creation, and one- and six-Agent disposable
+Workspace modification with rollback. The exact serial rosters made
+`1 + 3 + 1 + 4 + 1 + 6 = 16` separate Provider calls with 16 unique invocation
+IDs and 16 unique task IDs. Both RAG journeys scored fact precision/recall and
+citation precision/recall at `1.0`, with two expected facts, two supported
+claims and zero missing, unsupported, wrong-chunk, unknown-chunk or
+statement-mismatch findings. The clock and offline slide HTML artifacts passed
+digest and DOM checks; the clock changed between samples. Both Workspace
+journeys applied exact CAS, passed the deterministic project check, rolled back
+under after-CAS and restored the original tree digest.
+
+The canary used production mode with the personal single-owner profile and one
+active invocation. Runtime and P6.4 practice were true only during that bounded
+window; Planner, enterprise Multi-Agent and MCP remained false. Before and
+after the window all five gates were false. Final cleanup proves credential
+revocation, disposable document and Workspace removal, canary closure and all
+feature gates closed. A post-Gate host audit found zero P6.4 containers,
+networks and volumes; the run root retained only the redacted receipt.
+
+The complete receipt was independently audited without printing its content.
+It contained zero matches for Provider-key shapes, Bearer tokens, JWTs, URLs,
+Windows physical paths, the private acceptance facts, prompts, full answers,
+source text or raw responses. The first audit draft alone had an incorrect
+expected total of 18 calls; correcting the arithmetic to 16 made the full audit
+pass. The receipt itself was not changed to suppress a product failure.
+
+Real-Gate forward fixes closed stable redacted error propagation, tenant scope
+across synchronous SSE generator pulls, over-constrained multi-Agent RAG
+queries, specialist reasoning/output bounds, DeepSeek economy thinking and
+strict whole-response fenced-JSON canonicalization. No executable source was
+changed after the accepted receipt. The documentation-only evidence commit
+records the result without claiming a second paid run.
+
+The authoritative decision is
+`docs/evidence/p6-4/production-practice-r0-decision.md`.
+
+Final engineering verification around the evidence commit was:
+
+```text
+P6.4 focused = 118 passed
+Model Gateway / personal Agent = 88 passed
+Document / Worker / upload / RAG / rate-limit = 126 passed
+P5 sealed-contract regression = 407 passed
+P34.7 Trust Policy + joint = 255 passed, 1 skipped
+frontend = 196 passed; typecheck/lint/production build passed; 17 routes
+Mypy = 17 files, no issues
+Ruff check/format = passed / 17 files already formatted
+maintainer map + benchmark = valid
+three-file Compose config --quiet = passed
+```
+
+The broad non-integration suite completed twice as `2941 passed / 26 skipped /
+16 deselected / 1 failed`. The sole failure was an order-dependent pytest
+unraisable `ResourceWarning` for two sockets and one event loop, observed at a
+RAG batch mock test rather than a behavior assertion. The whole RAG-store file
+passed independently (`20 passed`) and the adjacent RAG SSE/store sequence
+passed (`31 passed`). This broad suite is not claimed fully green; the warning
+is retained as a separate test-hygiene finding and did not affect any P6.4,
+Gateway, citation, artifact, Workspace or formal Gate result.
+
+From clean evidence HEAD `e2692c0592d0b98775a89d275edb645e3a405775`,
+P5.0/P5.1A/P5.2A/P5.3A/P5.6A formal verification each returned the expected
+`exit 2 blocked/not_proven`, `activation_allowed=false` and zero vetoes. P34.7
+joint returned `exit 2 blocked/not_proven` with only
+`contract_mode_no_direct_evidence` and zero vetoes. The Trust Policy candidate
+remained `candidate/valid_not_approved`, digest-verified, unapproved and unable
+to activate production.
+
+```text
+P6_4_PERSONAL_PRODUCTION_PRACTICE_ACCEPTED
+REAL_DEEPSEEK_SINGLE_AND_3_TO_6_AGENT_MATRIX_PASSED
+UPLOAD_RAG_CITATION_ACCEPTANCE_PASSED
+OFFLINE_ARTIFACT_ACCEPTANCE_PASSED
+DISPOSABLE_WORKSPACE_CAS_AND_ROLLBACK_ACCEPTANCE_PASSED
+FINAL_PERSONAL_CANARY_CLOSED
+
+P34.7 Trust Policy remains a separate approval track
+enterprise P5 total production authorization is not implied
+Planner / enterprise Multi-Agent / MCP Runtime remain disabled
+migration head 0016; migration 0017 absent
+root .env not read; business database not accessed or migrated
+not pushed; not merged; not deployed
+```
+
+### P6.5 Windows desktop unsigned engineering build (2026-08-19)
+
+P6.5 targets a one-click, per-user Windows OmniBase 1.0.0 distribution. The
+integration work is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-5-cursor-integration` on branch
+`cursor/p6-5-desktop-integration-r0`; the non-clean authoritative
+`p6-5-desktop-v1` worktree has not been edited by this integration pass.
+
+The current source work aligns the independent SQLite `desktop_local` FastAPI
+service, .NET RuntimeHost, Next server-side proxy and Electron native identity
+around two separate 64-lowercase-hex secrets. Electron gives RuntimeHost a
+native proof key; RuntimeHost creates a separate per-launch authorization token,
+passes that token to Next/backend, and passes the proof key only to the backend.
+Electron probes Next with a fresh challenge; Next authenticates the backend hop
+and forwards only the proof generated by the backend. RuntimeHost performs the
+same backend proof check before readiness. Browser-supplied and
+upstream-reflected desktop control headers are removed.
+
+The payload builder now emits RuntimeHost's closed snake-case configuration,
+passes the application version and stages the Electron build inputs.
+RuntimeHost passes the explicit data root and application version to the
+backend. A minimal pinned PyInstaller backend definition and guarded builder
+exist, as does a pinned Electron packager entrypoint. The WiX 7 authoring
+remains one Burn EXE containing one per-user MSI, installs under
+`%LOCALAPPDATA%\Programs\OmniBase`, excludes Docker/WSL/PostgreSQL chain
+packages and leaves `%LOCALAPPDATA%\OmniBase` outside installer ownership.
+
+Focused verification and one complete isolated engineering build completed:
+
+```text
+desktop-local backend = 49 passed
+release pipeline + installer contract = passed
+frontend = 204 passed; typecheck passed
+Electron = 27 passed; typecheck passed
+RuntimeHost = 24/24 passed
+backend PyInstaller onedir = 39 files / 29,279,994 bytes
+maintainer map = valid: 72 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+```
+
+The authoritative full-pipeline artifact root for this pass is
+`E:\Agent IDE\OmniBase Artifacts\p6-5-unified-engineering-r9-20260819`.
+The pipeline pinned and repeatedly verified the official Node 24.14.0 x64
+`node.exe`, verified the pinned Electron archive, built Next and the backend,
+published RuntimeHost, assembled the closed runtime, packaged Electron, copied
+the validated 2,191-file application tree into a separate WiX bind root, built
+the MSI/Burn projects with zero warnings/errors, revalidated the bind-tree
+digest, and promoted single-link release files:
+
+```text
+Burn EXE = 203,730,535 bytes
+SHA-256 = 832d85b1692347570eb06456f876e3d673732967e09e79b616f11f4fef48bb57
+MSI = 203,430,545 bytes
+SHA-256 = ffba313cfa9f7430b272ceed0964e5eeecff5f23e032903a29ae0aa683757fad
+installer payload SHA-256 = 11eef6dd6517d466f2d800aa82e6a38484c2d728bb951fb710d71ccc8d1f48ee
+Authenticode = NotSigned
+source mode = engineering-dirty
+production_ready = false
+```
+
+This proves repeatable source-to-EXE engineering packaging, not distribution
+readiness. The current desktop-local Browser surface exposes health/readiness
+and Owner bootstrap/status only; required P6 personal product journeys remain
+to be wired and accepted.
+
+After the user later authorized Windows Sandbox and rebooted the host, the
+unsigned engineering artifact passed two offline, disposable Windows runs.
+Each run created a fresh local `OmniBaseTester` standard user; the actual test
+process reported `elevated=false` and medium integrity. Installer/control inputs
+were mapped read-only, networking and clipboard redirection were disabled, and
+only a dedicated evidence directory was writable.
+
+The installer lifecycle run used the pinned 1.0.0 Burn EXE, a separately built
+1.0.1 upgrade EXE and an intentional 1.0.1 rollback-probe bundle. It passed:
+
+```text
+install 1.0.0
+upgrade to 1.0.1
+reject 1.0.0 downgrade
+execute candidate + intentional blocker + WiX MSI transaction rollback
+retain the pre-existing 1.0.1 registration and user-data marker
+uninstall 1.0.1
+remove install root and registration while retaining user data
+```
+
+The first-launch run installed 1.0.0 into a separate fresh account and reached
+the visible `OmniBase` Electron window in 7,917 ms. It observed
+`OmniBase.exe`, `OmniBase.RuntimeHost.exe`,
+`OmniBase.Desktop.Backend.exe` and `node.exe`; both listeners were IPv4
+loopback-only; Next health/readiness returned 200; direct unauthenticated
+backend health returned 401; the challenge-HMAC proof had the required closed
+shape; SQLite was created; window close reaped the process tree and ports while
+retaining the data root.
+
+```text
+acceptance root =
+  E:\Agent IDE\OmniBase Artifacts\p6-5-sandbox-acceptance-r0-20260819-1422
+acceptance report = acceptance root\acceptance-report.json
+acceptance report SHA-256 =
+  5abca2c82f8037ff6e7c48114ccf90a339fc9702ef25c5eb825659c4e2e9f077
+lifecycle evidence = acceptance root\standard-user-lifecycle-evidence-r4
+lifecycle evidence tree SHA-256 =
+  b9b4b3ac92af850a2a37754ac38c6f035da35e3b4d90bb72852b584db1d631c3
+first-launch evidence = acceptance root\standard-user-first-launch-evidence
+first-launch evidence tree SHA-256 =
+  75d2d293080a6928933180c0eb08a0226bb52397ef27a6ff9a548fabf904dafb
+```
+
+The clean run also exposed and fixed two Windows PowerShell 5.1 harness-only
+compatibility defects and aligned rollback evidence with WiX 7 transaction
+logging. These fixes do not change installer payload bytes. The original
+`desktop-build-report.json` remains an immutable pre-acceptance receipt and is
+not rewritten to claim later external evidence.
+
+The first maintainer-map check correctly rejected the newly discovered
+`create_desktop_local_app` entrypoint because P6.5 had not been added to the
+public maintenance contract. INV-082, the P6.5 architecture document and map
+coverage were then added, and both maintainer validators pass. An unsigned
+engineering Burn EXE now exists; no distributable, production-ready or
+complete installable-and-usable 1.0.0 product is claimed: Authenticode and the
+required P6 personal product journeys remain unproven.
+
+```text
+P6_5_UNSIGNED_ENGINEERING_BUILD_COMPLETE
+BACKEND_FREEZE_BUILT_UNSIGNED
+RUNTIMEHOST_PUBLISH_COMPLETE
+NEXT_STANDALONE_PAYLOAD_COMPLETE
+ELECTRON_PACKAGE_COMPLETE
+WIX_BURN_BUILD_PASSED
+INSTALLER_LIFECYCLE_SANDBOX_STANDARD_USER_PASSED
+FIRST_LAUNCH_NATIVE_RUNTIME_SANDBOX_STANDARD_USER_PASSED
+AUTHENTICODE_PENDING
+CLEAN_WINDOWS_REQUIRED_PERSONAL_PRODUCT_JOURNEYS_NOT_PROVEN
+root .env not read; business database not accessed or migrated
+existing Hyper-V VMs/VHDX and Docker/WSL not started, repaired or mutated
+Windows Sandbox feature enabled and used with explicit user approval
+not pushed; not merged; not deployed
+```
+
+### P6.6 desktop-local product admission engineering R0 (2026-08-19)
+
+P6.6 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-6-cursor-desktop-journeys` on branch
+`cursor/p6-6-desktop-personal-journeys-r0`, based on P6.5 integration commit
+`58840ff600db86f19da2fd54768aedb54cbd072f`. The P6.6 source is committed
+and pushed as `9653cbd75dc2b66487b23312d60ede9944f63f5e` (product
+`1be2b5f8c1b2fc8be63d58d6728d37ca5c6253d0` plus the handover correction).
+It is not merged.
+
+The bounded product scope is local Owner first-run plus durable Workspace
+create/list/archive. The Electron renderer detects the complete preload bridge
+and enters `/desktop` instead of PostgreSQL JWT login. It stores no access or
+refresh token. PostgreSQL Workspace DTOs, documents, RAG, Provider credentials,
+Agent Runtime, Skills, MCP, Sandbox, Planner and Multi-Agent are not emulated.
+
+P6.6 adds a third independent per-launch identity. Electron creates the native
+proof key and a native control token; RuntimeHost creates the separate
+authorization token. RuntimeHost passes proof/control only to the backend and
+authorization only to Next/backend. Next remains product-blind in desktop
+mode except exact health/readiness hops. Owner/Workspace reads and writes use
+exact origin-checked IPC and a direct Electron-main-to-backend `/desktop/v1`
+call; the native control token never enters Next, renderer JavaScript, argv,
+SQLite, logs or response DTOs. JWT bootstrap is skipped when the complete
+preload bridge exists.
+
+Owner bootstrap and audit append remain one singleton/idempotent SQLite
+transaction. Workspace creation is Owner-bound, limited to 256 rows and commits
+its audit event without the user-supplied name. Archive requires exact active
+state and `row_version` CAS; state/version and audit append commit or roll back
+together. Desktop schema version remains 1 and no migration was added.
+
+Focused verification completed after closing the Browser Owner catalog,
+rejecting noncanonical native-control identity, dropping Browser cookies,
+bounding native Workspace projections, and skipping JWT bootstrap when the
+desktop bridge is present:
+
+```text
+desktop-local foundation/safety/API = 65 passed
+release/payload/backend-freeze/installer contracts = 82 passed
+frontend = 209 passed; typecheck, lint and production build passed; 18 routes
+Electron = 32 passed; typecheck and source build passed
+RuntimeHost = 24/24 passed
+Ruff format/check = passed
+Mypy desktop_local = 7 source files, no issues
+maintainer map = valid: 73 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+```
+
+R1 remains retained but is superseded. The current unsigned engineering
+bytes are R2, built after the identity-catalog hardening:
+
+```text
+artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-6-desktop-local-admission-r2-20260819
+build report = artifact root\desktop-build-report.json
+installer payload = 2,199 files / 614,638,227 bytes
+installer payload SHA-256 =
+  9c1270d52d2a8b26dcedbff3eabad8680e1f6158b7043c5f97e53f2bb4727b4f
+
+Burn EXE = 203,756,573 bytes
+Burn EXE SHA-256 =
+  dad2dbfed2d55c6fcb195843a71df07d5d1553687f427b72856ac912617969b2
+MSI = 203,457,248 bytes
+MSI SHA-256 =
+  6851209a0854372ee5021c7c1686b86c55596960d3bd8b4f5233ebfa73b74f73
+Authenticode = NotSigned
+source mode = engineering-dirty
+production_ready = false
+required_product_journeys_verified = false
+source_commit recorded by the builder = 58840ff
+```
+
+The R2 frozen backend EXE was launched twice with independent launch
+identities and a fresh data root under the artifact directory. The probe
+proved public Owner mutation closed, wrong and uppercase native control
+rejected, Owner/Workspace create and CAS archive, and archived row/version
+persistence after backend restart. Probe data was not written to the user's
+normal OmniBase data directory.
+
+No system installation, installer lifecycle rerun, clean-Windows Electron UI
+journey or Authenticode stage was performed for these new bytes. The earlier
+P6.5 Sandbox evidence is not silently inherited by the P6.6 artifact. Therefore
+this build proves source-to-EXE engineering construction and the frozen local
+backend journey only; it is not a distributable or complete
+installable-and-usable OmniBase 1.0.0.
+
+```text
+P6_6_DESKTOP_LOCAL_PRODUCT_ADMISSION_ENGINEERING_R0
+OWNER_BOOTSTRAP_NATIVE_IPC_IMPLEMENTED
+WORKSPACE_CREATE_LIST_ARCHIVE_SQLITE_IMPLEMENTED
+NEXT_DESKTOP_MUTATION_PROXY_CLOSED
+FROZEN_BACKEND_OWNER_WORKSPACE_RESTART_PROBE_PASSED
+UNSIGNED_ENGINEERING_EXE_BUILT
+AUTHENTICODE_PENDING
+CLEAN_WINDOWS_P6_6_UI_AND_INSTALLER_LIFECYCLE_NOT_RUN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+pushed origin/cursor/p6-6-desktop-personal-journeys-r0 at 9653cbd75dc2b66487b23312d60ede9944f63f5e; not merged; not deployed
+```
+
+### P6.7 personal desktop single-agent core engineering R0 (2026-08-19)
+
+P6.7 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-desktop-agent-core` on branch
+`cursor/p6-7-desktop-single-agent-core-r0`, based on the P6.6 closeout HEAD
+`9653cbd75dc2b66487b23312d60ede9944f63f5e`.
+
+The bounded product scope is: configure a user-owned Provider into an Electron
+`safeStorage` vault, keep one parent Agent per Workspace, and run a cancellable
+recoverable streaming conversation in SQLite. Next stays product-blind except
+exact health/readiness. Mutations use native IPC plus `/desktop/v1`. The
+renderer never receives raw API keys, vault blobs or launch identities.
+
+Desktop schema version 2 is `desktop_0002_provider_conversation`. The frozen
+backend ports Model Gateway family grammar with stdlib HTTPS because the
+desktop freeze excludes `openai`, `httpx` and `cryptography`. Unrecognized
+model names become `generic-openai-compatible`.
+
+Files, RAG, citations, ChangeSet, Skills, MCP, child agents, PostgreSQL,
+pgvector, BGE-M3, enterprise Trust Policy, Authenticode and OmniBase 1.0.0
+remain closed.
+
+Focused verification completed after restoring the workspace-id parser
+constant, rejecting utf8-looking vault ciphertext, and keeping Next on the
+exact health/readiness catalog:
+
+```text
+desktop-local foundation/safety/API/provider/conversation = 80 passed
+Ruff format/check on desktop_local + those tests = passed
+Electron = 36 passed; typecheck passed
+frontend = 209 passed; typecheck and lint passed
+RuntimeHost = 24/24 passed
+maintainer map = valid: 74 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+git diff --check = passed after removing the trailing blank line
+```
+
+Hang-cancel through TestClient incremental SSE remains unproven. Adapter-level
+cancel, persisted API cancel of a running row, and restart recovery to
+`unknown` without auto-replay are proven with a loopback fake OpenAI-compatible
+server and isolation secrets only. Live paid Provider calls, Windows Sandbox
+UI, Authenticode and OmniBase 1.0.0 remain unproven.
+
+The first packaging attempt used clean HEAD `9d6e3ad` and failed at
+`runtime-host-tests` because a leftover `OmniBase.RuntimeHost.Tests.exe`
+from an earlier `--nologo` invocation still locked the test EXE. That
+incomplete root was retained and not overwritten:
+
+```text
+failed artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-7-desktop-single-agent-r0-20260819
+```
+
+A second clean-HEAD rebuild completed after that process had exited:
+
+```text
+artifact root =
+  E:\Agent IDE\OmniBase Artifacts\p6-7-desktop-single-agent-r0-20260819-2354
+build report = artifact root\desktop-build-report.json
+installer payload = 2,199 files / 614,755,643 bytes
+installer payload SHA-256 =
+  17622cdc24d3b95a9b8ad71f13560590b01c81835b5bbb5da519d61cbcf3e571
+
+Burn EXE = 203,794,415 bytes
+Burn EXE SHA-256 =
+  3797c1a64e79f6e00e6624e71d04ef853c775982e1e8e4127a38c43ff29e9024
+MSI = 203,494,145 bytes
+MSI SHA-256 =
+  557cc255b202a4e4549b49cfbc8e3248af3622fb4e7107b556de31db4113720c
+Authenticode = NotSigned
+source mode = clean-release
+source_clean = true
+production_ready = false
+required_product_journeys_verified = false
+source_commit recorded by the builder = 9d6e3ad1c50281e2ef39978720b008159b3c1de7
+```
+
+No host install, Sandbox UI, or Authenticode stage was run for these bytes.
+They prove source-to-EXE engineering construction from the P6.7 HEAD, not a
+distributable or complete installable-and-usable OmniBase 1.0.0.
+
+```text
+P6_7_DESKTOP_SINGLE_AGENT_CORE_ENGINEERING_R0
+PROVIDER_VAULT_NATIVE_IPC_IMPLEMENTED
+PARENT_AGENT_STREAMING_IMPLEMENTED
+CONVERSATION_CANCEL_RETRY_RECOVERY_IMPLEMENTED
+NEXT_DESKTOP_MUTATION_PROXY_CLOSED
+FOCUSED_GATES_PASSED
+UNSIGNED_ENGINEERING_EXE_BUILT
+AUTHENTICODE_PENDING
+LIVE_PAID_PROVIDER_NOT_PROVEN
+WINDOWS_SANDBOX_UI_NOT_RUN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+pushed origin/cursor/p6-7-desktop-single-agent-core-r0 at 9d6e3ad1c50281e2ef39978720b008159b3c1de7; packaging receipts follow in this docs commit; not merged; not deployed
+```
+
+### P6.7 MASTER_REVIEW_FIX_ROUND_1 (2026-08-20)
+
+Independent Codex read-only audit of HEAD `b43a0cf` found four P1 stop-ships
+and two P2 issues. This round is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-master-review-fix-r1` on
+branch `cursor/p6-7-master-review-fix-r1`. It does not amend `9d6e3ad` /
+`b43a0cf`, does not edit P6.5 trees, and does not rebuild the unsigned
+installer. The previously recorded Burn/MSI bytes remain engineering-only and
+do not contain these six fixes.
+
+Fixes: (P1-1) pin TCP to DNS-validated public IPs with original SNI/Host;
+(P1-2) require `[DONE]` or `finish_reason` before `succeeded`, otherwise
+`unknown`; (P1-3) client disconnect / generator close / destroyed renderer
+durable-terminalize and abort the backend; (P1-4) cancel accept persists
+under the same CAS fence as success; (P2-1) stream events carry
+workspace/conversation identity and the renderer drops other-scope deltas and
+stale invocation IDs; (P2-2) Provider test rejects `{}` and does not forge
+missing `model`.
+
+```text
+P6_7_IMPLEMENTED_PENDING_REVIEW_FIX_ROUND_1
+INDEPENDENT_MASTER_REVIEW_FOUND_4_P1_STOP_SHIPS
+NOT_APPROVED_FOR_ENGINEERING_ACCEPTANCE
+UNSIGNED_INSTALLER_NOT_APPROVED_FOR_DISTRIBUTION
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+EXE_BYTES_DO_NOT_INCLUDE_MASTER_REVIEW_FIX_R1
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR; remaining human gate = installed send/stop after later review
+```
+
+### P6.7 MASTER_REVIEW_FIX_ROUND_2 (2026-08-20)
+
+Independent review of R1 `ebb211d` on `cursor/p6-7-master-review-fix-r1`
+partially accepted the original four P1 backend/protocol stop-ships and the
+R1 stream DTO / test-`{}` scoping work. Engineering acceptance stayed
+rejected because **frontend scope-return P1** and **async projection scope
+P2** remained. This round is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-7-cursor-master-review-fix-r2` on
+branch `cursor/p6-7-master-review-fix-r2` from `ebb211d`. It does not amend
+`9d6e3ad` / `b43a0cf` / `ebb211d`, does not reopen the original backend or
+protocol stop-ships, and does not rebuild the unsigned installer.
+
+Frontend-only forward-fix: keep a global Stop while a live invocation is
+active after Workspace/Conversation switch; A→B→A restores running/Stop and
+parked live text for the original invocation; send/retry/list-detail
+completions apply only when the captured scope generation still matches.
+
+Focused verification on this worktree (no Ruff; no Python edited):
+
+```text
+frontend pnpm test = 214 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+desktop pnpm test = 38 passed
+desktop pnpm typecheck = passed
+git diff --check = passed
+```
+
+```text
+P6_7_MASTER_REVIEW_FIX_R2_IMPLEMENTED_PENDING_REVIEW
+P6_7_MASTER_REVIEW_FIX_R1_PARTIALLY_ACCEPTED
+ORIGINAL_BACKEND_AND_PROTOCOL_STOP_SHIPS_CLOSED
+FRONTEND_SCOPE_RETURN_P1_FORWARD_FIXED_PENDING_REVIEW
+ASYNC_PROJECTION_SCOPE_P2_FORWARD_FIXED_PENDING_REVIEW
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+EXE_BYTES_DO_NOT_INCLUDE_MASTER_REVIEW_FIX_R1_OR_R2
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+HUMAN_SEND_STOP_NOT_PROVEN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR
+```
+
+### P6.8 desktop single-agent reliability closure R0 (2026-08-20)
+
+P6.8 is isolated in
+`E:\Agent IDE\OmniBase Worktrees\Active\p6-8-cursor-desktop-hardening-r0` on
+branch `cursor/p6-8-desktop-single-agent-hardening-r0`, created forward-only
+from frozen R2 HEAD `2d3b56e56721cbc450cd664eca052b74a7bfe95c`. It does not
+amend `9d6e3ad` / `b43a0cf` / `ebb211d` / `2d3b56e`. The local Codex pointer
+`codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e` and was
+not committed, reset or pushed.
+
+This phase productionizes P6.7 under races, switching, failure, restart and
+production-build verification. It is not a product UX, file-tree or installer
+phase. Independent review was not performed.
+
+Implemented slices:
+
+- P6.8-A: one personal invocation is a finite state
+  (`idle → send → starting_identity → identity → running → cancelling →
+  cancelled|terminal → convergence → idle`) with `sendEpoch`, frozen origin
+  scope, one-time `invocationId` bind, `cancelRequested`, `cancelDispatched`
+  and `terminalStatus`. Stop before identity shows `正在停止`, keeps Send/Retry
+  disabled, and fires exactly one cancel when origin identity arrives.
+- P6.8-B: conversation selection isolates the old transcript immediately;
+  live text/meta compare origin to the current view at render time; detail,
+  workspace load, archive, send and retry completions are request-epoch gated
+  even on the same conversation; unmount drops later UI projection.
+- P6.8-C: production-code gates below. No EXE/MSI/Burn was generated.
+
+Focused verification on this worktree:
+
+```text
+frontend pnpm test = 235 passed
+  P6.8-A attack tests = A1–A10 passed
+  P6.8-B attack tests = B1–B10 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+frontend pnpm build = passed
+desktop pnpm test = 38 passed
+desktop pnpm typecheck = passed
+desktop pnpm build = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+Ruff check/format on desktop_local + those tests = passed
+RuntimeHost = 24/24 passed
+  pinned SDK = C:\Users\Administrator\AppData\Local\OmniBaseBuildTools\dotnet-sdk-8.0.424\dotnet.exe
+  command = dotnet run --project packaging/windows/OmniBase.RuntimeHost.Tests/OmniBase.RuntimeHost.Tests.csproj -c Release
+  --nologo was not passed
+maintainer map = valid: 74 invariants / 51 modules / 21 discovered HTTP entrypoints
+maintainer benchmark = valid
+git diff --check = passed
+```
+
+Loopback fake OpenAI-compatible Provider coverage already present in
+desktop-local conversation/provider tests plus the renderer unit machines
+proves, without paid keys: Owner/workspace/provider save, secret not echoed,
+provider test, conversation send, identity, deltas, terminal, durable
+transcript, cancel CAS, truncated/disconnect as `unknown`, restart
+running/streaming to `unknown`, and no auto-replay of cancelled/unknown.
+Renderer Stop-before-identity, first-paint isolation and same-scope out-of-order
+detail are proven only as `pnpm test` units, not as a live Electron window
+against a disposable app-data directory.
+
+Unproven this round:
+
+- live Electron production-mode window journey (no installer, no paid key)
+- human send/stop after identity in a real desktop window
+- vault usable after an Electron process restart in that window
+- Hang-cancel through TestClient incremental SSE (still unproven from P6.7)
+- Authenticode, Sandbox UI, EXE/MSI/Burn rebuild, live paid Provider
+
+```text
+P6_8_IN_PROGRESS
+P6_8_A_STREAM_STOP_STATE_MACHINE_IMPLEMENTED
+P6_8_B_CONVERSATION_SURFACE_FENCE_IMPLEMENTED
+P6_8_C_PRODUCTION_CODE_GATES_RECORDED
+P6_7_R1_BACKEND_PROTOCOL_FIXES
+P6_7_MASTER_REVIEW_FIX_R2_IMPLEMENTED_PENDING_REVIEW
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+PENDING_INDEPENDENT_REVIEW
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+STALE_ENGINEERING_ARTIFACT
+DOES_NOT_INCLUDE_R1_R2_OR_P6_8
+NOT_FOR_DISTRIBUTION
+LIVE_PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+OMNIBASE_1_0_0_NOT_PROVEN
+HUMAN_SEND_STOP_NOT_PROVEN
+root .env not read; business database not accessed or migrated
+Docker/WSL/Hyper-V/VHDX not started, repaired or mutated
+no push; no PR
+```
+
+### P6.8-D four-lane independent review R0 (2026-08-20)
+
+Canonical report: `docs/reviews/p6-8-independent-review-r0.md`.
+Visual: workspace canvas `p6-8-independent-review-r0.canvas.tsx`.
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** No P0. P1 = 3. P2 = 7.
+
+The implementer closure block above records `A1–A10 passed` / `B1–B10 passed` as focused `pnpm test` units. That is **not** current status for P6.8 completion. Independent review refuses to treat reducer 10/10 as workbench / Electron / native-abort proof. A1–A3/A6/A9 fail the required UI+native+epoch bar; B7 list isolation fails; neither suite mounts `DesktopWorkbench`.
+
+```text
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = NOT PROVEN
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = PARTIAL
+P6_8_ASYNC_PROJECTION_ORDERING_PROVEN = PARTIAL
+P6_8_ARCHIVE_SCOPE_GATE_PROVEN = PARTIAL
+P6_8_PRODUCTION_BUILD_GATES_PASSED = IMPLEMENTER-CLAIMED, NOT RE-RUN BY THIS REVIEW
+P6_7_R1_BACKEND_PROTOCOL_FIXES_NO_REGRESSION = NO DIFF vs ebb211d (git; not a live re-proof)
+WORKTREE_CLEAN = true at review start
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+INDEPENDENT_REVIEW_RECORDED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+OMNIBASE_1_0_0_DISTRIBUTABLE not announced
+AUTHENTICODE not announced
+LIVE_PAID_PROVIDER not announced
+P7 UX not announced
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no product/runtime code changed by this review
+no push; no PR; no EXE pack
+```
+
+### P6.8-D forward fix (2026-08-20, pending re-review)
+
+Forward-only product fix of independent-review P1-1 / P1-2 / P1-3 on
+`cursor/p6-8-desktop-single-agent-hardening-r0` at `8e05265`. Does not amend `ca4f160` /
+`385123b` / R1 / R2. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0`
+remains at `2d3b56e`.
+
+What changed:
+
+- Conversation **list** writes: create/archive require matching `workspaceId` +
+  `listGeneration`; workspace load requires `workspaceId` + `workspaceLoadEpoch`.
+  Switching workspace invalidates in-flight create/archive list projections. Same-workspace
+  archive-while-viewing-B still updates B's sidebar without jumping selection.
+  Create and archive no longer share a single global mutation epoch that drops
+  an earlier successful create on the current workspace.
+- Identity binds only the current awaiting-identity / cancelling-unbound epoch.
+  Missing `sendEpoch` is not a wildcard. Native emit stamps optional `sendEpoch`
+  from the owning send. Completing an unbound send retires that epoch so a late
+  origin identity cannot bind send N+1; if Stop had been requested, one precise
+  cancel still fires when that origin identity arrives.
+- Stop during `starting_identity` calls a dedicated abort-in-flight-send IPC
+  (`#streamAbort.abort()`) without an `invocation_[a-f0-9]{32}`. Durable
+  `conversations.cancel` still requires a valid invocation id. Deferred
+  cancel-on-identity is unchanged: exactly one cancel once identity binds.
+
+Same-slice P2: `beginDesktopLiveSend` refuses any non-idle phase; `liveRef` is
+subscribe/reducer-only; `正在停止` clears when the send Promise returns to idle;
+late cancelled send results do not keep the stopping banner.
+
+Focused verification on this worktree (no EXE/MSI; root `.env` not read;
+RuntimeHost not re-run):
+
+```text
+frontend pnpm test = 245 passed
+frontend pnpm typecheck = passed
+frontend pnpm lint = passed
+desktop pnpm test = 42 passed
+desktop pnpm typecheck = passed
+backend desktop_local foundation/safety/app/provider/conversation = 85 passed
+git diff --check = passed
+```
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** These P1s are forward-fixed pending
+independent re-review. Reducer/helper tests are still not a live Electron
+window proof. `DesktopWorkbench` is still not mounted in the frontend suite.
+
+```text
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+PENDING_INDEPENDENT_REVIEW
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN (native abort unit-tested; live window unproven)
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = NOT PROVEN (reducer + native stamp unit-tested; live window unproven)
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = PARTIAL (list gate in lib + workbench wiring; workbench unmounted)
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
+
+### P6.8-D P1 forward-fix re-review R1 (2026-08-20)
+
+Canonical report: `docs/reviews/p6-8-p1-forward-fix-rereview-r0.md`.
+Visual: workspace canvas `p6-8-p1-forward-fix-rereview.canvas.tsx`.
+Prior review (unchanged): `docs/reviews/p6-8-independent-review-r0.md` (`ca4f160`).
+
+**ENGINEERING_ACCEPTANCE_NOT_APPROVED.** Independent re-review of product `8e05265` still has an **open P1** on abort **pre-arm**. User「批准」does not override this. Do not announce `P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED`, `P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED`, `APPROVED_FOR_LATER_RELEASE_REPACKAGE`, `OMNIBASE_1_0_0`, Authenticode, live paid Provider, or P7 UX.
+
+P1-1 list isolation **CODE-CLOSED**. P1-2 `sendEpoch` **CODE-CLOSED**. P1-3 armed-stream abort works; **remaining P1** is `RuntimeManager.sendConversation` awaiting `listProviders` + `getProviderVault` before assigning `#streamAbort`. Concurrent `abortInFlightSend` returns `aborted: false` with no pending latch; Stop then hides; a later hung messages POST cannot be aborted.
+
+```text
+ENGINEERING_ACCEPTANCE_NOT_APPROVED
+REMAINING_P1_ABORT_PRE_ARM
+P6_8_STREAM_LIFECYCLE_ACCEPTED = NOT ACCEPTED (pre-arm abort hole)
+P6_8_PRE_IDENTITY_CANCEL_PROVEN = NOT PROVEN (PARTIAL)
+P6_8_EVENT_GENERATION_ISOLATION_PROVEN = CODE-CLOSED; NOT LIVE-PROVEN
+P6_8_CONVERSATION_SCOPE_ISOLATION_PROVEN = list P1-1 CODE-CLOSED; transcript/live already held
+P6_8_ASYNC_PROJECTION_ORDERING_PROVEN = create/mutation CODE-CLOSED for list
+P6_8_ARCHIVE_SCOPE_GATE_PROVEN = CODE-CLOSED for list+selection
+P6_8_PRODUCTION_BUILD_GATES_PASSED = NOT RE-RUN
+P6_7_R1_BACKEND_PROTOCOL_FIXES_NO_REGRESSION = no new regression observed; not live re-proof
+WORKTREE_CLEAN = true at review start
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT ANNOUNCED
+P6_7_SINGLE_AGENT_CORE_RELIABILITY_CLOSED = NOT ANNOUNCED
+APPROVED_FOR_LATER_RELEASE_REPACKAGE = NOT ANNOUNCED
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no product/runtime code changed by this re-review
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
+
+### P6.8 Codex acceptance package (2026-08-20)
+
+**Open first:** `docs/reviews/p6-8-codex-acceptance-package-r0.md`.
+Prior Cursor reviews stay as history (`p6-8-independent-review-r0.md`, `p6-8-p1-forward-fix-rereview-r0.md`). This is not another failed independent-review report.
+
+Product latch `70c99f2` closes the remaining P1 (abort pre-arm). Chain: R2 `2d3b56e` → `99c54af` `467a4f5` `8e05265` `70c99f2`. Codex pointer `codex/p6-8-desktop-single-agent-hardening-r0` remains at `2d3b56e`. Cursor is not the engineering-acceptance authority.
+
+This-run gates: frontend test 245 / typecheck / lint / build passed; desktop test 45 / typecheck / build passed; backend desktop_local 85 passed; git diff --check passed; RuntimeHost 24/24 on pinned SDK `dotnet-sdk-8.0.424` (`--nologo` not passed).
+
+```text
+P6_8_CURSOR_P1_FORWARD_FIXES_COMPLETE
+P6_8_ABORT_PRE_ARM_LATCH_IMPLEMENTED
+P6_8_READY_FOR_CODEX_GLOBAL_ACCEPTANCE_REVIEW
+ENGINEERING_ACCEPTANCE_RESERVED_FOR_CODEX
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+CURRENT_UNSIGNED_INSTALLER_STALE
+P6_8_DESKTOP_SINGLE_AGENT_ENGINEERING_ACCEPTANCE_PASSED = NOT CLAIMED BY CURSOR
+OMNIBASE_1_0_0 / Authenticode / live paid Provider / P7 UX = not announced
+codex/p6-8-desktop-single-agent-hardening-r0 left at 2d3b56e
+no push; no PR; no EXE/MSI
+root .env not read; business database not accessed or migrated
+```
+
+### P6.9 Personal Multi-Agent Team R0 (adopted onto execution branch, 2026-08-20)
+
+Canonical plan: `docs/architecture/p6-9-multi-agent-planning.md` copied from
+`cursor/p6-9-multi-agent-planning-r0` (`01f9d3b`) onto
+`cursor/p6-9-personal-multi-agent-team-r0` from P6.8 HEAD `d2a2db0`.
+P6.8 product/acceptance remains at `d2a2db0`
+(`P6_8_BASE_HEAD_D2A2DB0_UNCHANGED`). Empty Codex pointer
+`codex/p6-9-personal-multi-agent-team-r0` stays at `d2a2db0` and is not
+committed on.
+
+**Honest history:** (1) Cursor first draft = Owner-declared 2–5 UI roster,
+serial-only, 3–6 calls, no A2A. (2) Owner change = parent may staff/collaborate;
+host only runtime safety (`95fa6d6`). (3) **Now-authoritative Codex contract:**
+parent does not get raw dispatch; parent emits a restricted structured
+Proposal; host validates identity/budget/deps/concurrency; collaboration via
+Personal Team Blackboard; parent remains the dispatch center and may replan;
+serial and parallel and mixed waves; host may serialize a parallel wave but
+must not parallelize declared deps; all nine specialists may participate;
+reinvocation requires new assignment/node/invocation/epochs.
+
+一句话：P6.9 不再要求用户亲自组队；用户只需要决定是否开启团队模式。团队模式开启后，父 Agent可以自由判断、调动、组织和协调九名专业员工，OmniBase 只负责让这种协作在可见预算、严格身份、单一 Workspace、可取消、可恢复、无权限越界的环境中稳定运行。**Codex tightening：** 父 Agent 输出必须是受限结构化 Proposal，不是直接调度权限。
+
+**NOW (already true):** A2+B+C+D on this execution branch, plus Round 1
+attack-hole closure, Round 2 forward-fix, and the Stop/reports P1s after
+`5321aa7`. `PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback**
+D journeys. `ENTERPRISE_MULTI_AGENT_DISABLED` remains. Paid/live Provider
+window, Authenticode, EXE/MSI and a human Electron soak are still unproven.
+Do not announce OmniBase 1.0.0. Round 2 did **not** close all ten items in one
+pass.
+
+A2 shipped desktop schema v3 then B bumped v4
+(`desktop_0004_personal_team_runtime`), typed Proposal/report/blackboard
+contracts, closed role and team-run IPC, host validators, coordinator,
+practical workbench team controls (not a P7 rewrite, not a fixed Owner
+roster), and loopback journeys. Round 1 reused P6.8 pinned Provider
+transport (handwritten octet lists), atomically settled node/report/audit,
+required complete team event identity, mixed wall time into Provider timeout
+polling, converged pre-start failures, and fail-closed empty allow-list /
+conversation mismatch. Round 1's RuntimeManager journey was an in-memory host
+wrapped as a fake `DesktopNativeClient`, not HTTP→SQLite.
+
+Round 2 (do not amend Round 1) replaces that pin with production HTTPS asking
+desktop-local `is_global_unicast` (TS BlockList remains a fallback replica),
+unique success-settle + schema v5 identity, independent wall
+`AbortController`, per-chunk SSE model checks, `plan_transition`, parked team
+buffers (including phase/plan/budget), vault/`is_enabled` snapshot bind, and
+a true `RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite`
+loopback journey. Create/settle remain two transactions; settle re-binds live
+Conversation, plan, and Provider `is_enabled`. Owner Stop CAS-cancels live
+nodes in the same transaction as the run. `/reports` is not a second success
+path. Those last two were P1s after `5321aa7`, not closed in the original
+Round 2 docs pass.
+
+Codex review starts at `docs/reviews/p6-9-codex-acceptance-package-r0.md`
+(whole slice + Round 1 + Round 2 + Stop/reports P1s). Do not reopen the
+A2-only drip. Do not claim Round 2 closed all ten items.
+
+```text
+P6_9_DIRECTION_CHANGE_OWNER_APPROVED
+P6_9_PARENT_DYNAMIC_DELEGATION_AUTHORIZED
+P6_9_PARENT_SELECTS_EMPLOYEE_COUNT_AND_ROSTER
+P6_9_PARENT_MAY_REPLAN_AND_REQUEST_FOLLOWUP
+P6_9_EMPLOYEE_COLLABORATION_ALLOWED
+P6_9_SERIAL_PARALLEL_AND_MIXED_WAVES_ALLOWED
+P6_9_ALL_NINE_SPECIALISTS_MAY_PARTICIPATE
+P6_9_EMPLOYEE_REINVOCATION_ALLOWED_WITH_NEW_IDENTITY
+P6_9_OWNER_TEAM_MODE_IS_TASK_LEVEL_DELEGATION_APPROVAL
+P6_9_HOST_ENFORCES_IDENTITY_BUDGET_AUTHORITY_AND_RECOVERY
+P6_9_HOST_DOES_NOT_MICROMANAGE_COLLABORATION_TOPOLOGY
+P6_9_ENTERPRISE_PLANNER_GATE_REMAINS_FALSE
+P6_9_ENTERPRISE_MULTI_AGENT_GATE_REMAINS_FALSE
+P6_9_TOOL_AND_EXTERNAL_EFFECT_AUTHORITY_NOT_IMPLIED
+P6_9_PARENT_OUTPUT_IS_STRUCTURED_PROPOSAL_NOT_RAW_DISPATCH
+P6_9_A2_CONTRACT_SCHEMA_IPC_COMPLETE
+P6_9_ROUND1_ATTACK_HOLES_CLOSED
+P6_9_ROUND2_FORWARD_FIX
+P6_8_BASE_HEAD_D2A2DB0_UNCHANGED
+P6_8_SINGLE_AGENT_PATH_NOT_REGRESSED
+PERSONAL_MULTI_AGENT_PLANNED
+PERSONAL_MULTI_AGENT_IMPLEMENTED
+ENTERPRISE_MULTI_AGENT_DISABLED
+REPACKAGE_NOT_APPROVED
+PUSH_PR_NOT_APPROVED
+WITHDRAWN: P6_9_OWNER_DECLARED_ROSTER_ONLY
+SUPERSEDED: P6_9_TEAM_MODE_PARENT_MAY_DISPATCH
+codex/p6-9-personal-multi-agent-team-r0 left at d2a2db0 (empty; not committed on)
+cursor/p6-9-personal-multi-agent-team-r0 is the Cursor execution line
+no push; no PR; no EXE/MSI
+root .env not read
 ```

@@ -41,9 +41,9 @@ gate = _load_runner()
 
 def _stdout(key: str) -> str:
     if key == "measured-alembic-head":
-        return "0015\n"
+        return "0016\n"
     if key == "measured-alembic-graph":
-        return 'P54B_GRAPH={"heads":["0015"],"revisions":["0015","0014","0013","0012","0011"]}\n'
+        return 'P54B_GRAPH={"heads":["0016"],"revisions":["0016","0015","0014","0013","0012","0011"]}\n'
     if key == "measured-runtime-gates":
         return json.dumps(gate.EXPECTED_RUNTIME_GATES, sort_keys=True) + "\n"
     if key == "measured-network":
@@ -78,13 +78,14 @@ def _synthetic_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
         result = subprocess.CompletedProcess(command, 0, _stdout(key))
         commands.append(gate._record_command(run_dir, key, command, result))
     measurements = {
-        "measured_alembic_head": "0015",
+        "measured_alembic_head": "0016",
         "alembic_graph": {
-            "heads": ["0015"],
-            "revisions": ["0015", "0014", "0013", "0012", "0011"],
+            "heads": ["0016"],
+            "revisions": ["0016", "0015", "0014", "0013", "0012", "0011"],
             "migration_0014_created": True,
             "migration_0015_created": True,
-            "migration_0016_or_higher_present": False,
+            "migration_0016_created": True,
+            "migration_0017_or_higher_present": False,
         },
         "runtime_gates": dict(gate.EXPECTED_RUNTIME_GATES),
         "docker_network_internal": True,
@@ -146,9 +147,9 @@ def test_source_closure_and_command_construction_are_fail_closed(tmp_path: Path)
     "stdout",
     [
         "missing marker",
-        'P54B_GRAPH={"heads":["0014","0015"],"revisions":["0015"]}',
-        'P54B_GRAPH={"heads":["0015"],"revisions":["0016","0015"]}',
-        'P54B_GRAPH={"heads":["0015"],"revisions":["head","0015"]}',
+        'P54B_GRAPH={"heads":["0015","0016"],"revisions":["0016"]}',
+        'P54B_GRAPH={"heads":["0016"],"revisions":["0017","0016"]}',
+        'P54B_GRAPH={"heads":["0016"],"revisions":["head","0016"]}',
     ],
 )
 def test_graph_parser_rejects_unsealed_revision_shapes(stdout: str) -> None:

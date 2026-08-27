@@ -626,7 +626,7 @@ def _prepare_executor(
     gateway = _CountingGateway(gateway_service, rag_adapter=rag_adapter)
     executor = build_engineering_single_agent_executor(
         enabled=True,
-        migration_head="0015",
+        migration_head="0016",
         feature_gates={
             "agent_runtime_enabled": False,
             "agent_planner_enabled": False,

@@ -5,6 +5,11 @@ from omnibase.agent_skills.models import (
     SkillVersionModel,
     WorkspaceAgentSkillInstallationModel,
 )
+from omnibase.agent_skills.native_catalog import (
+    NativeSkillCatalogItem,
+    get_native_skill,
+    list_native_skills,
+)
 from omnibase.agent_skills.resolver import (
     SkillInstruction,
     SkillInstructionBundle,
@@ -21,6 +26,7 @@ from omnibase.agent_skills.service import (
 )
 
 __all__ = [
+    "NativeSkillCatalogItem",
     "SkillConflictError",
     "SkillDefinitionModel",
     "SkillInstruction",
@@ -34,4 +40,6 @@ __all__ = [
     "SkillVersionModel",
     "SqlAlchemySkillResolver",
     "WorkspaceAgentSkillInstallationModel",
+    "get_native_skill",
+    "list_native_skills",
 ]

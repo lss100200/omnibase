@@ -636,7 +636,7 @@ def test_formal_gate_keeps_missing_proofs_blocked() -> None:
     assert report.activation_allowed is False
     assert report.vetoes == ()
     assert report.passed_evidence == ()
-    assert report.migration_head == "0015"
+    assert report.migration_head == "0016"
     assert any("P34.7 formal state is not ready" in item for item in report.blockers)
     assert any("core_runner_mtls_production_roundtrip" in item for item in report.blockers)
     assert any("two_real_member_overlay_derp_node_compromise" in item for item in report.blockers)

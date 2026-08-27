@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -42,7 +43,13 @@ from omnibase.agent_alpha.contracts import (
     AlphaUserPreferencesResolver,
 )
 from omnibase.agent_skills.resolver import SkillInstructionBundle
-from omnibase.model_gateway import ModelGateway, ModelMessage, ModelUsage
+from omnibase.model_gateway import (
+    ModelGateway,
+    ModelMessage,
+    ModelUsage,
+    UnavailableModelGateway,
+)
+from omnibase.model_gateway.adaptation import ReasoningGear
 from omnibase.model_gateway.providers import ModelProviderError
 
 
@@ -82,6 +89,20 @@ class UnavailableAgentAlpha:
 
     def cancel(self, **_: object) -> bool:
         raise AgentAlphaUnavailable("agent_alpha_unavailable")
+
+
+_SAFE_GATEWAY_RESOLVER_CODE = re.compile(r"^[a-z][a-z0-9]*_[a-z0-9_]{1,80}$")
+_SAFE_GATEWAY_RESOLVER_CODE_PREFIX = re.compile(r"^([a-z][a-z0-9]*_[a-z0-9_]{1,80})(?=[:\s])")
+
+
+def _gateway_resolver_error_code(exc: RuntimeError) -> str:
+    code = str(exc)
+    if _SAFE_GATEWAY_RESOLVER_CODE.fullmatch(code) is not None:
+        return f"agent_alpha_gateway_{code}"
+    match = _SAFE_GATEWAY_RESOLVER_CODE_PREFIX.match(code)
+    if match is not None:
+        return f"agent_alpha_gateway_{match.group(1)}"
+    return "agent_alpha_gateway_selection_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,7 +205,7 @@ class AgentAlphaService:
         profiles: AlphaProfileResolver,
         knowledge: AlphaKnowledgeRetriever,
         ledger: AlphaInvocationLedger,
-        gateway: ModelGateway,
+        gateway: ModelGateway | UnavailableModelGateway,
         gateway_resolver: AlphaGatewayResolver | None = None,
         preferences_resolver: AlphaUserPreferencesResolver | None = None,
         memory_compiler: AlphaMemoryCompiler | None = None,
@@ -243,6 +264,8 @@ class AgentAlphaService:
         top_k: int,
         idempotency_key: str,
         retry_of: str | None,
+        employee_role_id: str = "parent",
+        reasoning_gear: ReasoningGear = "standard",
     ) -> Iterator[AlphaStreamEvent]:
         self._verify_runtime_guard()
         if len(message) > self._limits.max_message_characters:
@@ -250,14 +273,19 @@ class AgentAlphaService:
         if top_k < 1 or top_k > self._limits.max_rag_chunks:
             raise AgentAlphaError("agent_alpha_top_k_exceeded")
         try:
-            selection = (
-                self._gateway_resolver.resolve(
+            if self._gateway_resolver is not None:
+                selection = self._gateway_resolver.resolve(
                     tenant_id=tenant_id,
                     tenant_schema=tenant_schema,
                     actor_user_id=actor_user_id,
+                    workspace_id=workspace_id,
+                    agent_version_id=agent_version_id,
+                    employee_role_id=employee_role_id,
                 )
-                if self._gateway_resolver is not None
-                else AlphaGatewaySelection(
+            else:
+                if isinstance(self._gateway, UnavailableModelGateway):
+                    raise AgentAlphaUnavailable("model_gateway_unavailable")
+                selection = AlphaGatewaySelection(
                     gateway=self._gateway,
                     credential_source="operator_default",
                     configuration_digest=_digest(
@@ -265,12 +293,14 @@ class AgentAlphaService:
                             "credential_source": "operator_default",
                             "provider_id": self._gateway.provider_id,
                             "model_id": self._gateway.model_id,
+                            "employee_role_id": employee_role_id,
                         }
                     ),
                 )
-            )
+        except AgentAlphaError:
+            raise
         except RuntimeError as exc:
-            raise AgentAlphaUnavailable(str(exc)) from exc
+            raise AgentAlphaUnavailable(_gateway_resolver_error_code(exc)) from exc
         try:
             preferences = (
                 self._preferences_resolver.resolve_preferences(
@@ -285,7 +315,7 @@ class AgentAlphaService:
                 )
             )
         except RuntimeError as exc:
-            raise AgentAlphaUnavailable(str(exc)) from exc
+            raise AgentAlphaUnavailable("agent_alpha_preferences_unavailable") from exc
         profile, chunks, memory_capsule, skill_bundle, identity = self._reserve_invocation(
             tenant_id=tenant_id,
             tenant_schema=tenant_schema,
@@ -297,7 +327,9 @@ class AgentAlphaService:
             idempotency_key=idempotency_key,
             retry_of=retry_of,
             preferences=preferences,
+            reasoning_gear=reasoning_gear,
             selection=selection,
+            employee_role_id=employee_role_id,
         )
         cancellation = Event()
         with _CANCELLATION_LOCK:
@@ -316,7 +348,9 @@ class AgentAlphaService:
             message=message,
             cancellation=cancellation,
             selection=selection,
+            employee_role_id=employee_role_id,
             preferences=preferences,
+            reasoning_gear=reasoning_gear,
         )
 
     def _stream(
@@ -330,7 +364,9 @@ class AgentAlphaService:
         message: str,
         cancellation: Event,
         selection: AlphaGatewaySelection,
+        employee_role_id: str,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
     ) -> Iterator[AlphaStreamEvent]:
         """SSE event stream for one durable invocation (or its exact replay)."""
         try:
@@ -345,6 +381,7 @@ class AgentAlphaService:
                 "provider_id": selection.gateway.provider_id,
                 "requested_model_id": selection.gateway.model_id,
                 "credential_source": selection.credential_source,
+                "employee_role_id": employee_role_id,
                 "tools_enabled": False,
             }
             if memory_capsule is not None:
@@ -402,6 +439,7 @@ class AgentAlphaService:
                 cancellation=cancellation,
                 selection=selection,
                 preferences=preferences,
+                reasoning_gear=reasoning_gear,
             )
         except ModelProviderError:
             self._ledger.fail(
@@ -460,6 +498,7 @@ class AgentAlphaService:
         cancellation: Event,
         selection: AlphaGatewaySelection,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
     ) -> Iterator[AlphaStreamEvent]:
         """One Model Gateway stream bounded by the server-owned deadline."""
         answer: list[str] = []
@@ -497,6 +536,7 @@ class AgentAlphaService:
             messages,
             max_output_tokens=min(profile.max_context_tokens, self._limits.max_output_tokens),
             temperature=0.2,
+            reasoning_gear=reasoning_gear,
         ):
             self._verify_runtime_guard()
             if time.monotonic() > deadline:
@@ -540,6 +580,8 @@ class AgentAlphaService:
                 "output_tokens": usage.output_tokens,
                 "total_tokens": usage.total_tokens,
                 "reasoning_tokens": usage.reasoning_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "cache_miss_input_tokens": usage.cache_miss_input_tokens,
             },
         )
         yield AlphaStreamEvent(
@@ -555,6 +597,8 @@ class AgentAlphaService:
                     "output_tokens": usage.output_tokens,
                     "total_tokens": usage.total_tokens,
                     "reasoning_tokens": usage.reasoning_tokens,
+                    "cached_input_tokens": usage.cached_input_tokens,
+                    "cache_miss_input_tokens": usage.cache_miss_input_tokens,
                 },
             },
         )
@@ -572,7 +616,9 @@ class AgentAlphaService:
         idempotency_key: str,
         retry_of: str | None,
         preferences: AlphaUserPreferences,
+        reasoning_gear: ReasoningGear,
         selection: AlphaGatewaySelection,
+        employee_role_id: str,
     ) -> tuple[
         AlphaAgentProfile,
         tuple[AlphaContextChunk, ...],
@@ -594,6 +640,12 @@ class AgentAlphaService:
                 actor_user_id=actor_user_id,
                 agent_version_id=agent_version_id,
             )
+            if selection.workspace_agent_binding_id is not None and (
+                selection.workspace_agent_binding_id != profile.workspace_agent_binding_id
+                or selection.workspace_generation != profile.workspace_generation
+                or selection.agent_version_digest != profile.agent_version_digest
+            ):
+                raise AgentAlphaError("agent_alpha_model_scope_drifted")
             if profile.allowed_tool_ids:
                 raise AgentAlphaError("agent_alpha_tools_forbidden")
             try:
@@ -627,8 +679,11 @@ class AgentAlphaService:
                 "workspace_id": workspace_id,
                 "agent_version_id": profile.agent_version_id,
                 "agent_version_digest": profile.agent_version_digest,
+                "workspace_generation": profile.workspace_generation,
+                "workspace_agent_binding_id": profile.workspace_agent_binding_id,
                 "message": message,
                 "top_k": top_k,
+                "reasoning_gear": reasoning_gear,
                 "retry_of": retry_of,
                 "assistant_name": preferences.assistant_name,
                 "assistant_tone": preferences.assistant_tone,
@@ -638,6 +693,11 @@ class AgentAlphaService:
                 "provider_id": selection.gateway.provider_id,
                 "requested_model_id": selection.gateway.model_id,
                 "provider_configuration_digest": selection.configuration_digest,
+                "employee_role_id": employee_role_id,
+                "model_override_id": selection.override_id,
+                "model_override_version": selection.override_version,
+                "model_family": selection.model_family,
+                "model_family_source": selection.family_source,
                 "memory_policy_digest": (
                     self._memory_compiler.policy_digest
                     if self._memory_compiler is not None

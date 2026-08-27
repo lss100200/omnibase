@@ -48,6 +48,7 @@ _MIGRATION_DIRECTORY = Path("backend/src/omnibase/migrations/versions")
 _MEMORY_SCHEMA_REVISION = "0013"
 _SKILL_SCHEMA_REVISION = "0014"
 _MEMORY_BOOTSTRAP_REVISION = "0015"
+_PERSONAL_MODEL_OVERRIDE_REVISION = "0016"
 _REQUIRED_MEMORY_VECTOR_LANES = ("v1", "v2")
 _LEGACY_V1_SOURCE_HEAD = "0012"
 _REQUIRED_MEMORY_TABLES = (
@@ -287,6 +288,10 @@ def _repository_migration_facts(
         raise BackupError("migration directory is missing")
     records = _load_migration_records(repo, versions)
     repository_head = _repository_migration_head(records)
+    if int(repository_head) > int(_PERSONAL_MODEL_OVERRIDE_REVISION):
+        raise BackupError(
+            "personal backup supports migration head 0016 only; migration 0017 or higher is not admitted"
+        )
     selected_head = repository_head if through_head is None else through_head
     if selected_head not in records:
         raise BackupError(f"source migration head is unavailable: {selected_head}")
@@ -318,6 +323,13 @@ def _repository_migration_facts(
             *PurePosixPath(str(bootstrap_record["path"])).parts
         )
         migration_0015_schema_sha256 = _sha256_file(bootstrap_path)
+    migration_0016_schema_sha256: str | None = None
+    if _PERSONAL_MODEL_OVERRIDE_REVISION in selected_revisions:
+        override_record = records[_PERSONAL_MODEL_OVERRIDE_REVISION]
+        override_path = repo.joinpath(
+            *PurePosixPath(str(override_record["path"])).parts
+        )
+        migration_0016_schema_sha256 = _sha256_file(override_path)
     return {
         "memory_table_names": memory_table_names,
         "memory_vector_inventory": memory_vector_inventory,
@@ -325,6 +337,7 @@ def _repository_migration_facts(
         "migration_0013_schema_sha256": migration_0013_schema_sha256,
         "migration_0014_schema_sha256": migration_0014_schema_sha256,
         "migration_0015_schema_sha256": migration_0015_schema_sha256,
+        "migration_0016_schema_sha256": migration_0016_schema_sha256,
         "migration_revision_list_sha256": _sha256_bytes(_canonical(chain)),
         "repository_migration_head": repository_head,
         "source_migration_head": selected_head,
@@ -339,6 +352,7 @@ def _migration_binding(value: dict[str, object]) -> dict[str, object]:
         "migration_0013_schema_sha256": value["migration_0013_schema_sha256"],
         "migration_0014_schema_sha256": value["migration_0014_schema_sha256"],
         "migration_0015_schema_sha256": value["migration_0015_schema_sha256"],
+        "migration_0016_schema_sha256": value["migration_0016_schema_sha256"],
         "migration_revision_list_sha256": value["migration_revision_list_sha256"],
         "source_migration_head": value["source_migration_head"],
     }
@@ -536,6 +550,18 @@ def _validate_migration_binding(value: dict[str, Any], *, where: str) -> None:
         raise BackupError(
             f"{where}.migration_0015_schema_sha256 must be null before 0015"
         )
+    override_digest = value.get("migration_0016_schema_sha256")
+    if int(head) >= int(_PERSONAL_MODEL_OVERRIDE_REVISION):
+        if not isinstance(override_digest, str) or not _SHA256.fullmatch(
+            override_digest
+        ):
+            raise BackupError(
+                f"{where}.migration_0016_schema_sha256 must be lowercase SHA-256"
+            )
+    elif override_digest is not None:
+        raise BackupError(
+            f"{where}.migration_0016_schema_sha256 must be null before 0016"
+        )
     lanes = value.get("memory_vector_lane_versions")
     if lanes != list(_REQUIRED_MEMORY_VECTOR_LANES):
         raise BackupError(f"{where}.memory_vector_lane_versions must be exactly v1/v2")
@@ -578,6 +604,7 @@ def _validate_plan_v2(plan: dict[str, Any]) -> None:
             "migration_0013_schema_sha256",
             "migration_0014_schema_sha256",
             "migration_0015_schema_sha256",
+            "migration_0016_schema_sha256",
             "migration_revision_list_sha256",
             "redis",
             "schema",
@@ -1181,6 +1208,7 @@ def _validate_manifest_v2(manifest: dict[str, Any]) -> None:
             "migration_0013_schema_sha256",
             "migration_0014_schema_sha256",
             "migration_0015_schema_sha256",
+            "migration_0016_schema_sha256",
             "migration_revision_list_sha256",
             "minio",
             "personal_runtime",
@@ -1512,6 +1540,7 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
             "migration_0013_schema_sha256": target_0013["migration_0013_schema_sha256"],
             "migration_0014_schema_sha256": None,
             "migration_0015_schema_sha256": None,
+            "migration_0016_schema_sha256": None,
             "required_commands": [
                 "restore_dump_into_new_database",
                 "capture_restore_new_postgresql_inventory",
@@ -1556,6 +1585,7 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
                     "migration_0014_schema_sha256"
                 ],
                 "migration_0015_schema_sha256": None,
+                "migration_0016_schema_sha256": None,
                 "required_commands": [
                     "restore_dump_into_new_database",
                     "capture_restore_new_postgresql_inventory",
@@ -1602,6 +1632,7 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
                 "migration_0015_schema_sha256": target_0015[
                     "migration_0015_schema_sha256"
                 ],
+                "migration_0016_schema_sha256": None,
                 "required_commands": [
                     "restore_dump_into_new_database",
                     "capture_restore_new_postgresql_inventory",
@@ -1626,6 +1657,54 @@ def _compatibility_matrix(repo: Path) -> tuple[dict[str, Any], str]:
                     "memory_vector_inventory"
                 ],
                 "target_revision_list_sha256": target_0015[
+                    "migration_revision_list_sha256"
+                ],
+                "target_skill_table_names": list(_REQUIRED_SKILL_TABLES),
+                "target_skill_trigger_names": list(_REQUIRED_SKILL_TRIGGERS),
+            }
+        )
+    if int(repository_head) >= int(_PERSONAL_MODEL_OVERRIDE_REVISION):
+        source_0015 = _repository_migration_facts(repo, through_head="0015")
+        target_0016 = _repository_migration_facts(repo, through_head="0016")
+        entries.append(
+            {
+                "entry_id": "p6-personal-model-overrides-0015-to-0016",
+                "migration_0013_schema_sha256": target_0016[
+                    "migration_0013_schema_sha256"
+                ],
+                "migration_0014_schema_sha256": target_0016[
+                    "migration_0014_schema_sha256"
+                ],
+                "migration_0015_schema_sha256": target_0016[
+                    "migration_0015_schema_sha256"
+                ],
+                "migration_0016_schema_sha256": target_0016[
+                    "migration_0016_schema_sha256"
+                ],
+                "required_commands": [
+                    "restore_dump_into_new_database",
+                    "capture_restore_new_postgresql_inventory",
+                    "verify_global_and_tenant_heads_at_0015",
+                    "upgrade_global_then_each_tenant_to_0016",
+                    "verify_workspace_agent_model_override_tables_and_constraints",
+                ],
+                "required_evidence": [
+                    "postgres_dump_sha256",
+                    "restore_new_inventory_sha256",
+                    "global_alembic_head",
+                    "tenant_alembic_heads",
+                    "workspace_agent_model_override_inventory",
+                ],
+                "source_head": "0015",
+                "source_revision_list_sha256": source_0015[
+                    "migration_revision_list_sha256"
+                ],
+                "target_head": "0016",
+                "target_memory_table_names": target_0016["memory_table_names"],
+                "target_memory_vector_inventory": target_0016[
+                    "memory_vector_inventory"
+                ],
+                "target_revision_list_sha256": target_0016[
                     "migration_revision_list_sha256"
                 ],
                 "target_skill_table_names": list(_REQUIRED_SKILL_TABLES),
@@ -1792,6 +1871,11 @@ def plan_restore(args: argparse.Namespace) -> dict[str, Any]:
             compatibility_entry["migration_0015_schema_sha256"]
             if compatibility_entry is not None
             else source_binding["migration_0015_schema_sha256"]
+        ),
+        "migration_0016_schema_sha256": (
+            compatibility_entry["migration_0016_schema_sha256"]
+            if compatibility_entry is not None
+            else source_binding["migration_0016_schema_sha256"]
         ),
         "migration_mode": migration["migration_mode"],
         "migration_revision_list_sha256": source_binding[

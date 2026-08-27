@@ -18,9 +18,11 @@ from urllib3.exceptions import (
     ReadTimeoutError,
 )
 
+from omnibase.control_plane.models import ResourceRecord
 from omnibase.core.config import get_settings
 from omnibase.core.db import get_session_factory
 from omnibase.core.logging import get_logger
+from omnibase.db.models import Tenant
 from omnibase.db.tenant import Document
 from omnibase.rag.ingest import ingest_document
 from omnibase.storage.minio_client import get_minio_client
@@ -244,6 +246,21 @@ def _process_ingest(
             doc.status = "indexed"
             doc.error_detail = None
 
+        resource = session.execute(
+            select(ResourceRecord)
+            .join(Tenant, Tenant.id == ResourceRecord.tenant_id)
+            .where(
+                ResourceRecord.id == document_id,
+                ResourceRecord.kind == "document",
+                ResourceRecord.policy_class == "workspace_private",
+                ResourceRecord.state == "provisioning",
+                Tenant.schema_name == schema_name,
+            )
+        ).scalar_one_or_none()
+        if resource is not None:
+            resource.state = "active" if doc.status == "indexed" else "failed"
+            resource.version += 1
+
         doc.metadata_ = {
             **(doc.metadata_ or {}),
             "rag_chunks": result.chunks_created,
@@ -276,6 +293,20 @@ def _set_document_failed(
 
             doc.status = "failed"
             doc.error_detail = error_detail[:_ERROR_DETAIL_MAX_LEN]
+            resource = session.execute(
+                select(ResourceRecord)
+                .join(Tenant, Tenant.id == ResourceRecord.tenant_id)
+                .where(
+                    ResourceRecord.id == document_id,
+                    ResourceRecord.kind == "document",
+                    ResourceRecord.policy_class == "workspace_private",
+                    ResourceRecord.state == "provisioning",
+                    Tenant.schema_name == schema_name,
+                )
+            ).scalar_one_or_none()
+            if resource is not None:
+                resource.state = "failed"
+                resource.version += 1
             session.commit()
         finally:
             session.close()
@@ -357,19 +388,25 @@ def backfill_all_documents_v2_task(
         session = factory()
         try:
             # Get all indexed documents
-            docs = session.execute(
-                select(Document.id).where(Document.status == "indexed")
-            ).scalars().all()
+            docs = (
+                session.execute(select(Document.id).where(Document.status == "indexed"))
+                .scalars()
+                .all()
+            )
 
             # Get documents that already have ready v2 state
             ready_docs = set()
             try:
-                ready_rows = session.execute(
-                    text(
-                        "SELECT document_id FROM rag_document_index_state "
-                        "WHERE index_version = 2 AND readiness = 'ready'"
+                ready_rows = (
+                    session.execute(
+                        text(
+                            "SELECT document_id FROM rag_document_index_state "
+                            "WHERE index_version = 2 AND readiness = 'ready'"
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 ready_docs = set(ready_rows)
             except Exception:
                 pass  # Table may not exist yet; proceed with all docs

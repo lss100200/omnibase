@@ -3,8 +3,10 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
 *.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
 deployment/overlay/gate.env -whitespace
 deployment/sandbox/omnibase-runner-seccomp.json -whitespace
-docs/evidence/p34-5/gateway-mtls-disposable-gate.json -whitespace
-docs/evidence/p34-5/gateway-mtls-disposable-gate.md -whitespace
-docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json -whitespace
+docs/evidence/p34-5/gateway-mtls-disposable-gate.json -text -whitespace
+docs/evidence/p34-5/gateway-mtls-disposable-gate.md -text -whitespace
+docs/evidence/p34-5/overlay-disposable-gate-source-manifest.json -text -whitespace

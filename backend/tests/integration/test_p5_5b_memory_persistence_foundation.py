@@ -34,6 +34,7 @@ from omnibase.agent_memory.service import (
     export_memory,
 )
 from omnibase.control_plane.service import create_approval, create_operation, decide_approval
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 from tests.integration.test_p5_1b_agent_registry_foundation import (
     ACTOR_ID,
     _binding_dto,
@@ -910,10 +911,10 @@ def _run_formal_memory_service_full_lifecycle_reaches_real_postgresql(
             connection,
             capture_mode="source_backup",
             expected_database=str(db_engine.url.database),
-            expected_head="0015",
+            expected_head="0016",
             postgres_dump_sha256=_DIGEST_D,
         )
-    assert captured["global_alembic_head"] == "0015"
+    assert captured["global_alembic_head"] == "0016"
     assert captured["postgres_dump_sha256"] == _DIGEST_D
     tenant_registry = {entry["tenant_id"]: entry for entry in captured["tenant_registry"]}
     assert tenant_registry[seed.tenant_id] == {
@@ -991,8 +992,8 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
     _alembic("upgrade", "head")
 
     with db_engine.begin() as connection:
-        assert _head(connection, "omnibase_meta") == "0015"
-        assert _head(connection, schema_name) == "0015"
+        assert _head(connection, "omnibase_meta") == "0016"
+        assert _head(connection, schema_name) == "0016"
         tables = set(
             connection.execute(
                 text(
@@ -1103,10 +1104,17 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
                 {"tenant": str(uuid.uuid4()), "digest": "0" * 64},
             )
 
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.begin() as connection:
+        assert _head(connection, "omnibase_meta") == "0015"
+        assert _head(connection, schema_name) == "0015"
+        assert _head(connection, other_schema_name) == "0015"
+
     _alembic("downgrade", "0012")
     with db_engine.begin() as connection:
         assert _head(connection, "omnibase_meta") == "0012"
         assert _head(connection, schema_name) == "0012"
+        assert _head(connection, other_schema_name) == "0012"
         remaining = connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.tables "
@@ -1118,8 +1126,9 @@ def test_0013_real_tenant_ddl_vector_lanes_and_empty_round_trip(
 
     _alembic("upgrade", "head")
     with db_engine.begin() as connection:
-        assert _head(connection, "omnibase_meta") == "0015"
-        assert _head(connection, schema_name) == "0015"
+        assert _head(connection, "omnibase_meta") == "0016"
+        assert _head(connection, schema_name) == "0016"
+        assert _head(connection, other_schema_name) == "0016"
         assert connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.tables "
@@ -1868,6 +1877,11 @@ def test_populated_0013_downgrade_fails_closed_without_head_or_data_drift(
         _set_tenant_search_path(connection, seed.schema_name)
         candidate_id = _insert_candidate(connection, seed)
 
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as connection:
+        assert _head(connection, "omnibase_meta") == "0015"
+        assert _head(connection, seed.schema_name) == "0015"
+
     result = _run_alembic("downgrade", "0012")
     assert result.returncode != 0
     assert "0013 populated downgrade is forbidden" in result.stdout + result.stderr
@@ -1875,6 +1889,19 @@ def test_populated_0013_downgrade_fails_closed_without_head_or_data_drift(
     with db_engine.connect() as connection:
         assert _head(connection, "omnibase_meta") == "0015"
         assert _head(connection, seed.schema_name) == "0015"
+        _set_tenant_search_path(connection, seed.schema_name)
+        assert connection.execute(
+            text(
+                "SELECT lifecycle_state, content_ciphertext IS NOT NULL "
+                "FROM memory_candidates WHERE id = :candidate"
+            ),
+            {"candidate": candidate_id},
+        ).one() == ("candidate", True)
+
+    _alembic("upgrade", "head")
+    with db_engine.connect() as connection:
+        assert _head(connection, "omnibase_meta") == "0016"
+        assert _head(connection, seed.schema_name) == "0016"
         _set_tenant_search_path(connection, seed.schema_name)
         assert connection.execute(
             text(

@@ -29,6 +29,7 @@ from omnibase.agent_registry.router import (
     installation_router as agent_installation_router,
 )
 from omnibase.agent_registry.router import router as agent_registry_router
+from omnibase.agent_skills.router import router as native_skills_router
 from omnibase.api.health import router as health_router
 from omnibase.auth.router import router as auth_router
 from omnibase.control_plane.router import router as control_plane_router
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     api_router.include_router(agent_installation_router)
     api_router.include_router(agent_builder_router)
     api_router.include_router(agent_alpha_router)
+    api_router.include_router(native_skills_router)
     api_router.include_router(user_settings_router)
 
     # Convenience: /health at root too (without /api prefix) for simple probes

@@ -2,13 +2,13 @@ import type { Metadata } from 'next'
 import { PublicPreviewClient } from './public-preview-client'
 
 export const metadata: Metadata = {
-  title: 'OmniBase · Agent workbench',
+  title: 'OmniBase · P6.9 Personal Multi-Agent Team R0',
   description:
-    'Create a workspace, connect your own model provider and build a versioned AI worker on an open-source, self-hosted workbench.',
+    'A parent-directed personal AI team engineering-accepted for deterministic loopback, with host-validated identity, budgets, collaboration, cancellation and recovery.',
   openGraph: {
-    title: 'OmniBase · Build AI workers you can understand',
+    title: 'OmniBase · P6.9 Personal Multi-Agent Team R0',
     description:
-      'A self-hosted Agent workbench with personal model providers, workspaces, versioned workers, durable runs and governed knowledge.',
+      'One Owner, one parent Agent and nine fixed specialists in a deterministic-loopback-proven, host-validated desktop team.',
     type: 'website',
   },
 }

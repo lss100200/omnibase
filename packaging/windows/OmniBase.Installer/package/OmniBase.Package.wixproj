@@ -1,0 +1,43 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <AcceptEula>wix7</AcceptEula>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
+    <PythonExecutable Condition="'$(PythonExecutable)' == ''">python</PythonExecutable>
+    <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputName>OmniBase-$(ProductVersion)-windows-x64</OutputName>
+    <GeneratedPayloadWxs>$(MSBuildProjectDirectory)\obj\$(Configuration)\OmniBase.Payload.g.wxs</GeneratedPayloadWxs>
+    <!--
+      ICE64 flags the shared LocalAppData\Programs parent, which this product
+      must retain. ICE91 assumes a possible per-machine install even though
+      this package is fixed Scope=perUser. Generated app directories still
+      receive explicit RemoveFolder components and are contract-tested.
+    -->
+    <SuppressIces>ICE64;ICE91</SuppressIces>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Product.wxs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(PayloadRoot)' != ''">
+    <BindPath Include="$(PayloadRoot)" BindName="PayloadRoot" />
+  </ItemGroup>
+
+  <Target Name="ValidateOmniBasePayload" BeforeTargets="CoreCompile">
+    <Error
+      Condition="'$(PayloadRoot)' == ''"
+      Text="PayloadRoot must be an absolute path to an already-built OmniBase desktop payload."
+    />
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Exec
+      Command="&quot;$(PythonExecutable)&quot; &quot;$(MSBuildThisFileDirectory)..\tools\validate_payload.py&quot; --payload-root &quot;$(PayloadRoot)&quot; --output-wxs &quot;$(GeneratedPayloadWxs)&quot;"
+    />
+    <ItemGroup>
+      <Compile Include="$(GeneratedPayloadWxs)" />
+    </ItemGroup>
+  </Target>
+</Project>

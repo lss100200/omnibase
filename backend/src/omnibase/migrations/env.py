@@ -37,7 +37,11 @@ from omnibase.core.config import get_settings  # noqa: E402
 from omnibase.core.logging import configure_logging, get_logger  # noqa: E402
 from omnibase.db import tenant as tenant_models  # noqa: E402, F401
 from omnibase.db.models import GLOBAL_METADATA, TENANT_METADATA  # noqa: E402
+from omnibase.migrations.order import (  # noqa: E402
+    is_exact_0016_to_0015_downgrade_cli,
+)
 from omnibase.sandbox import models as sandbox_models  # noqa: E402, F401
+from omnibase.tenants.schema_manager import validate_schema_name  # noqa: E402
 from omnibase.tenants.service import _initialize_tenant_schema  # noqa: E402
 from omnibase.workspace_data import models as workspace_data_models  # noqa: E402, F401
 from omnibase.workspace_data import (  # noqa: E402
@@ -116,6 +120,69 @@ def _configure_context(
     context.configure(**kwargs)
 
 
+def _is_exact_0016_to_0015_downgrade() -> bool:
+    """Select the reviewed tenant-first downgrade without guessing direction.
+
+    Only the source-complete ordinary CLI form is authorized.  Alembic command
+    metadata deliberately does not participate: it preserves the destination
+    revision while accepting flags such as ``-x``, ``--name`` and ``--tag``,
+    which would otherwise make an augmented invocation look exact.
+
+    Programmatic, flagged, ranged, relative and otherwise ambiguous calls
+    retain the historical global-first order, where the 0016 global guard
+    fails closed instead of moving the global revision first.
+    """
+    return is_exact_0016_to_0015_downgrade_cli(sys.argv[1:])
+
+
+def _run_global_migrations(connection: Any) -> None:
+    config.attributes["migration_schema_scope"] = "global"
+    _configure_context(
+        connection=connection,
+        target_metadata=TARGET_METADATA_GLOBAL,
+        version_table_schema=GLOBAL_SCHEMA_NAME,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def _run_one_tenant_migration(connection: Any, schema_name: str) -> None:
+    config.attributes["migration_schema_scope"] = "tenant"
+    _configure_context(
+        connection=connection,
+        target_metadata=TARGET_METADATA_TENANT,
+        version_table_schema=schema_name,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def _run_exact_0016_to_0015_downgrade(
+    connectable: Any,
+    tenant_schemas: list[str],
+) -> None:
+    """Downgrade every tenant before global, atomically in one transaction."""
+    log.info("migrations.online.tenant_first_downgrade_start", count=len(tenant_schemas))
+    with connectable.begin() as connection:
+        for schema_name in tenant_schemas:
+            validate_schema_name(schema_name)
+            connection.execute(
+                text(f'SET LOCAL search_path TO "{schema_name}", ' f"{GLOBAL_SCHEMA_NAME}, public")
+            )
+            _run_one_tenant_migration(connection, schema_name)
+            log.info(
+                "migrations.online.tenant_one_complete",
+                schema=schema_name,
+            )
+
+        connection.execute(text(f'SET LOCAL search_path TO "{GLOBAL_SCHEMA_NAME}", public'))
+        _run_global_migrations(connection)
+    log.info(
+        "migrations.online.tenant_first_downgrade_complete",
+        count=len(tenant_schemas),
+    )
+
+
 def run_migrations_offline() -> None:
     """Generate SQL without DB connection (GLOBAL schema only)."""
     url = config.get_main_option("sqlalchemy.url")
@@ -137,31 +204,28 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Apply migrations: global first, then loop over each tenant schema."""
+    """Apply upgrades global-first and reviewed 0016 downgrade tenant-first."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    # ---- Phase 1: global schema ----
-    config.attributes["migration_schema_scope"] = "global"
-    log.info("migrations.online.global_start", schema=GLOBAL_SCHEMA_NAME)
     with connectable.begin() as conn:
         conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{GLOBAL_SCHEMA_NAME}"'))
 
+    tenant_schemas = _get_all_tenant_schemas(connectable)
+    if _is_exact_0016_to_0015_downgrade():
+        _run_exact_0016_to_0015_downgrade(connectable, tenant_schemas)
+        return
+
+    # ---- Phase 1: global schema ----
+    log.info("migrations.online.global_start", schema=GLOBAL_SCHEMA_NAME)
     with connectable.connect() as connection:
-        _configure_context(
-            connection=connection,
-            target_metadata=TARGET_METADATA_GLOBAL,
-            version_table_schema=GLOBAL_SCHEMA_NAME,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+        _run_global_migrations(connection)
     log.info("migrations.online.global_complete", schema=GLOBAL_SCHEMA_NAME)
 
     # ---- Phase 2: per-tenant schemas ----
-    tenant_schemas = _get_all_tenant_schemas(connectable)
     if not tenant_schemas:
         log.info("migrations.online.tenant_none", reason="no retained tenants yet")
         return
@@ -181,13 +245,7 @@ def run_migrations_online() -> None:
             )
             connection.commit()
 
-            _configure_context(
-                connection=connection,
-                target_metadata=TARGET_METADATA_TENANT,
-                version_table_schema=schema_name,
-            )
-            with context.begin_transaction():
-                context.run_migrations()
+            _run_one_tenant_migration(connection, schema_name)
         log.info("migrations.online.tenant_one_complete", schema=schema_name)
 
     log.info(

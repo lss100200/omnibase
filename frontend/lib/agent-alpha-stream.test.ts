@@ -5,7 +5,18 @@ import {
   consumeAgentAlphaStream,
   formatAgentIdentity,
   takeAgentAlphaEvents,
+  type AgentAlphaUsage,
 } from './agent-alpha-stream'
+
+function streamOf(value: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(value))
+      controller.close()
+    },
+  })
+}
 
 function sseReader(frames: string[]): ReadableStreamDefaultReader<Uint8Array> {
   const encoder = new TextEncoder()
@@ -178,6 +189,51 @@ test('formatAgentIdentity uses actual model when present', () => {
     }),
     'fake / real-model (actual) · operator_default',
   )
+})
+
+test('usage preserves finite reasoning/cache tokens and rejects invalid usage', async () => {
+  let observed: AgentAlphaUsage | null = null
+  const terminal = await consumeAgentAlphaStream(
+    streamOf(
+      'event: usage\ndata: {"input_tokens":3,"output_tokens":4,"total_tokens":7,"reasoning_tokens":2,"cached_input_tokens":2,"cache_miss_input_tokens":1}\n\n' +
+        'event: done\ndata: {"answer":"ok"}\n\n',
+    ).getReader(),
+    { onUsage: (usage) => (observed = usage) },
+  )
+  assert.deepEqual(observed, {
+    input_tokens: 3,
+    output_tokens: 4,
+    total_tokens: 7,
+    reasoning_tokens: 2,
+    cached_input_tokens: 2,
+    cache_miss_input_tokens: 1,
+  })
+  assert.equal(terminal.kind, 'done')
+
+  observed = { input_tokens: 1, output_tokens: 1, total_tokens: 2 }
+  await consumeAgentAlphaStream(
+    streamOf(
+      'event: usage\ndata: {"input_tokens":3,"output_tokens":4,"total_tokens":7,"reasoning_tokens":-1}\n\n' +
+        'event: done\ndata: {"answer":"ok"}\n\n',
+    ).getReader(),
+    { onUsage: (usage) => (observed = usage) },
+  )
+  assert.equal(observed, null)
+})
+
+test('done updates the observed identity when the actual model arrives late', async () => {
+  const identities: string[] = []
+  await consumeAgentAlphaStream(
+    streamOf(
+      'event: meta\ndata: {"invocation_id":"i1","task_id":"t1","provider_id":"openai","requested_model_id":"gpt-requested","credential_source":"user"}\n\n' +
+        'event: done\ndata: {"answer":"ok","actual_model_id":"gpt-actual"}\n\n',
+    ).getReader(),
+    { onMeta: (meta) => meta.identity && identities.push(meta.identity) },
+  )
+  assert.deepEqual(identities, [
+    'openai / gpt-requested · user',
+    'openai / gpt-actual (actual) · user',
+  ])
 })
 
 test('takeAgentAlphaEvents recognizes the alpha vocabulary', () => {

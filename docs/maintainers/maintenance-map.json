@@ -9,7 +9,7 @@
   ],
   "sources_of_truth": [
     "Runtime source and database constraints",
-    "Alembic migrations 0001 through 0015",
+    "Alembic migrations 0001 through 0016",
     "OpenAPI and SDK contract snapshots",
     "Passing unit and disposable-database integration tests",
     "docs/maintainers/security-invariants.md",
@@ -872,6 +872,8 @@
       "source_paths": [
         "backend/src/omnibase/agent_skills/models.py",
         "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/agent_skills/__init__.py",
+        "backend/src/omnibase/main.py",
         "backend/src/omnibase/agent_skills/resolver.py",
         "backend/src/omnibase/migrations/versions/0014_p5_6p_personal_instruction_skills.py",
         "backend/src/omnibase/agent_alpha/contracts.py",
@@ -908,6 +910,393 @@
       ],
       "test_paths": [
         "scripts/production/test_run_p5_9p_personal_acceptance.py"
+      ]
+    },
+    {
+      "id": "INV-063",
+      "title": "P6.0 personal workbench sessions stay scoped and bounded while specialist employees require one explicit Owner mention",
+      "document": "docs/maintainers/security-invariants.md#inv-063-p60-personal-workbench-session-and-employee-boundary",
+      "source_paths": [
+        "frontend/app/(dashboard)/dashboard/page.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/invocation-state.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "docs/architecture/p6-0-personal-engineering-workbench.md",
+        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/agent-alpha-stream.test.ts",
+        "frontend/lib/invocation-state.test.ts",
+        "frontend/lib/personal-runtime-gate.test.ts"
+      ]
+    },
+    {
+      "id": "INV-064",
+      "title": "Virtual disks require ownership discovery, stopped writers, cross-disk backup, filesystem-aware offline maintenance and VM ACL-preserving recovery",
+      "document": "docs/maintainers/security-invariants.md#inv-064-virtual-disk-ownership-backup-and-offline-maintenance",
+      "source_paths": [
+        "AGENTS.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "test_paths": [
+        "scripts/maintenance/validate_maintainer_map.py"
+      ]
+    },
+    {
+      "id": "INV-065",
+      "title": "P6 local files require volatile Owner authorization, secret-name precheck and digest-bound context",
+      "document": "docs/maintainers/security-invariants.md#inv-065-p60-authorized-file-and-context-boundary",
+      "source_paths": [
+        "frontend/lib/p6-files.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/components/workbench/workspace-file-panel.tsx"
+      ],
+      "test_paths": ["frontend/lib/p6-files.test.ts"]
+    },
+    {
+      "id": "INV-066",
+      "title": "P6 local ChangeSets stay Task-owned, digest-verified and conflict-safe",
+      "document": "docs/maintainers/security-invariants.md#inv-066-p60-local-changeset-and-rollback-boundary",
+      "source_paths": [
+        "frontend/lib/p6-changesets.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/components/workbench/workspace-file-panel.tsx"
+      ],
+      "test_paths": ["frontend/lib/p6-changesets.test.ts"]
+    },
+    {
+      "id": "INV-067",
+      "title": "P6 model gears never overstate provider identity, native controls or cost",
+      "document": "docs/maintainers/security-invariants.md#inv-067-p60-model-adaptation-and-cost-honesty-boundary",
+      "source_paths": [
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/components/workbench/personal-engineering-workbench.tsx"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/agent-alpha-stream.test.ts"
+      ]
+    },
+    {
+      "id": "INV-068",
+      "title": "P6 per-role model settings stay user-owned, exact-tested, version-fenced and single-Runtime",
+      "document": "docs/maintainers/security-invariants.md#inv-068-p60d2-per-role-model-selection-and-migration-boundary",
+      "source_paths": [
+        "backend/src/omnibase/user_settings/model_settings.py",
+        "backend/src/omnibase/migrations/order.py",
+        "backend/src/omnibase/user_settings/gateway.py",
+        "backend/src/omnibase/user_settings/router.py",
+        "backend/src/omnibase/user_settings/schemas.py",
+        "backend/src/omnibase/db/tenant.py",
+        "backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/p6-model-profiles.ts",
+        "docs/architecture/p6-0-d2-model-adaptation.md",
+        "docs/evidence/p6-0/d2-model-adaptation-decision.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_0_d2_model_settings.py",
+        "backend/tests/integration/test_p6_0_d2_model_settings_foundation.py",
+        "backend/tests/test_rate_limit.py",
+        "backend/tests/test_agent_alpha_engineering.py",
+        "backend/tests/test_agent_alpha_personal.py",
+        "frontend/lib/p6-model-profiles.test.ts"
+      ]
+    },
+    {
+      "id": "INV-069",
+      "title": "P6.1 native Skill Browser stays first-party, instruction-only and live-Owner bound",
+      "document": "docs/maintainers/security-invariants.md#inv-069-p61-native-skill-browser-boundary",
+      "source_paths": ["backend/src/omnibase/agent_skills/**", "frontend/app/(dashboard)/skills/page.tsx"],
+      "test_paths": ["backend/tests/test_p6_1_native_skill_catalog.py", "backend/tests/test_p5_6p_instruction_skills.py"]
+    },
+    {
+      "id": "INV-070",
+      "title": "P6.1 model-name-native parameters and cache usage stay exact and non-authorizing",
+      "document": "docs/maintainers/security-invariants.md#inv-070-p61-model-native-parameter-and-cache-boundary",
+      "source_paths": ["backend/src/omnibase/model_gateway/**", "backend/src/omnibase/agent_alpha/**"],
+      "test_paths": ["backend/tests/test_model_gateway.py", "backend/tests/test_agent_alpha.py"]
+    },
+    {
+      "id": "INV-071",
+      "title": "P6.1 read-only MCP preview stays separate, bounded and non-mutating",
+      "document": "docs/maintainers/security-invariants.md#inv-071-p61-read-only-mcp-preview-boundary",
+      "source_paths": ["backend/src/omnibase/mcp_runtime/**", "scripts/mcp/omnibase_readonly_mcp.py"],
+      "test_paths": ["backend/tests/test_p6_1_readonly_mcp.py"]
+    },
+    {
+      "id": "INV-072",
+      "title": "P6.1 Windows release preview is reproducible, no-build and VHDX-safe",
+      "document": "docs/maintainers/security-invariants.md#inv-072-p61-reproducible-windows-release-boundary",
+      "source_paths": ["deployment/release/windows/**", "scripts/release/**", "packaging/windows/OmniBase.Setup/**"],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-073",
+      "title": "Recursive deletion requires one literal resolved target, same-shell containment proof and explicit permanent-delete authority",
+      "document": "docs/maintainers/security-invariants.md#inv-073-literal-target-recursive-delete-boundary",
+      "source_paths": [
+        "AGENTS.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/maintainers/security-invariants.md"
+      ],
+      "test_paths": ["scripts/maintenance/validate_maintainer_map.py"]
+    },
+    {
+      "id": "INV-074",
+      "title": "P6.2 local Skill discovery stays explicit, scan-only, opaque-path and never first-party by inference",
+      "document": "docs/maintainers/security-invariants.md#inv-074-p62-scan-only-local-skill-discovery-boundary",
+      "source_paths": [
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-skill-browser.ts",
+        "frontend/lib/p6-skill-discovery.ts"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "frontend/lib/p6-skill-discovery.test.ts"
+      ]
+    },
+    {
+      "id": "INV-075",
+      "title": "P6.2 conversation continuity and ChangeSet recovery stay redacted, bounded, exact-scope and browser-local",
+      "document": "docs/maintainers/security-invariants.md#inv-075-p62-bounded-history-and-local-changeset-journal-boundary",
+      "source_paths": [
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-change-journal.ts",
+        "frontend/lib/p6-changesets.ts"
+      ],
+      "test_paths": [
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/p6-change-journal.test.ts",
+        "frontend/lib/p6-changesets.test.ts"
+      ]
+    },
+    {
+      "id": "INV-076",
+      "title": "P6.2 Windows Companion preserves exact release integrity and performs only offline bounded diagnostics",
+      "document": "docs/maintainers/security-invariants.md#inv-076-p62-windows-companion-offline-no-mutation-boundary",
+      "source_paths": [
+        "deployment/release/windows/**",
+        "packaging/windows/OmniBase.Setup/**",
+        "scripts/release/**"
+      ],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-077",
+      "title": "P6.3 first-party Skill expansion stays source-owned, exact, instruction-only and aggregate-budgeted",
+      "document": "docs/maintainers/security-invariants.md#inv-077-p63-first-party-skill-registry-expansion-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/**",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/lib/api.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "frontend/lib/p6-native-skills.test.ts"
+      ]
+    },
+    {
+      "id": "INV-078",
+      "title": "P6.3 six-tool read-only MCP remains separately launched, bounded and non-mutating",
+      "document": "docs/maintainers/security-invariants.md#inv-078-p63-readonly-mcp-expansion-boundary",
+      "source_paths": [
+        "backend/src/omnibase/mcp_runtime/**",
+        "scripts/mcp/omnibase_readonly_mcp.py",
+        "frontend/lib/p6-capability-center.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "frontend/lib/p6-capability-center.test.ts"
+      ]
+    },
+    {
+      "id": "INV-079",
+      "title": "P6.3 GLM and Claude model-name profiles never imply unverified native transport controls",
+      "document": "docs/maintainers/security-invariants.md#inv-079-p63-glm-claude-model-adaptation-boundary",
+      "source_paths": [
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "frontend/lib/p6-model-profiles.ts"
+      ],
+      "test_paths": [
+        "backend/tests/test_model_gateway.py",
+        "frontend/lib/p6-model-profiles.test.ts"
+      ]
+    },
+    {
+      "id": "INV-080",
+      "title": "P6.3 Windows install planning and clean-VM preflight never elevate or mutate host virtualization",
+      "document": "docs/maintainers/security-invariants.md#inv-080-p63-windows-install-location-and-clean-vm-failfast-boundary",
+      "source_paths": [
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1",
+        "docs/runbooks/p6-3-windows-companion-install.md"
+      ],
+      "test_paths": ["scripts/release/test_build_windows_release.py"]
+    },
+    {
+      "id": "INV-081",
+      "title": "P6.4 personal Agent practice uses real bounded calls, local scoring/rendering and rollback",
+      "document": "docs/maintainers/security-invariants.md#inv-081-p64-personal-agent-practice-boundary",
+      "source_paths": [
+        "backend/src/omnibase/agent_practice/**",
+        "docs/architecture/p6-4-personal-agent-practice.md"
+      ],
+      "test_paths": ["backend/tests/test_p6_4_agent_practice.py"]
+    },
+    {
+      "id": "INV-082",
+      "title": "P6.5 Windows desktop distribution is local, identity-bound, rollback-safe and honest about release evidence",
+      "document": "docs/maintainers/security-invariants.md#inv-082-p65-windows-desktop-distribution-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "desktop/src/**",
+        "desktop/scripts/**",
+        "desktop/package.json",
+        "desktop/pnpm-lock.yaml",
+        "desktop/tsconfig*.json",
+        "frontend/app/health/**",
+        "frontend/lib/desktop-runtime.ts",
+        "packaging/windows/OmniBase.DesktopBackend/**",
+        "packaging/windows/OmniBase.Installer/**",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "scripts/release/build_p6_5_desktop_payload.py",
+        "scripts/release/build_p6_5_windows_desktop.py",
+        "docs/architecture/p6-5-windows-desktop-distribution.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_foundation.py",
+        "backend/tests/test_desktop_local_safety.py",
+        "backend/tests/test_desktop_local_app.py",
+        "desktop/tests/runtime-manager.test.ts",
+        "frontend/lib/desktop-runtime.test.ts",
+        "packaging/windows/OmniBase.DesktopBackend/tests/test_backend_packaging.py",
+        "packaging/windows/OmniBase.Installer/tests/test_installer_contract.py",
+        "scripts/release/test_build_p6_5_desktop_payload.py",
+        "scripts/release/test_build_p6_5_windows_desktop.py"
+      ]
+    },
+    {
+      "id": "INV-083",
+      "title": "P6.6 desktop-local Owner and Workspace admission is native-controlled, transactional and fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-083-p66-desktop-local-product-admission-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/manifest.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/app/desktop/**",
+        "frontend/app/page-client.tsx",
+        "frontend/app/api/v1/**",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-runtime.ts",
+        "frontend/lib/proxy.ts",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "docs/architecture/p6-6-desktop-local-product-admission.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_app.py",
+        "desktop/tests/ipc.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/runtime-manager.test.ts",
+        "desktop/tests/runtime-manifest.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-runtime.test.ts",
+        "frontend/lib/proxy.test.ts",
+        "packaging/windows/OmniBase.RuntimeHost.Tests/Program.cs"
+      ]
+    },
+    {
+      "id": "INV-084",
+      "title": "P6.7 desktop single-agent core is vault-isolated, native-controlled and fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-084-p67-desktop-single-agent-core-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/runtime/secret-vault.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/app/desktop/**",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-invocation-lifecycle.ts",
+        "frontend/lib/desktop-conversation-surface.ts",
+        "frontend/lib/desktop-surface-scope.ts",
+        "docs/architecture/p6-7-desktop-single-agent-core.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_app.py",
+        "backend/tests/test_desktop_local_provider.py",
+        "backend/tests/test_desktop_local_conversation.py",
+        "desktop/tests/ipc.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/secret-vault.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-invocation-lifecycle.test.ts",
+        "frontend/lib/desktop-conversation-surface.test.ts",
+        "frontend/lib/desktop-surface-scope.test.ts"
+      ]
+    },
+    {
+      "id": "INV-085",
+      "title": "P6.9 personal parent-directed team is proposal-validated, SQLite-local and fail-closed",
+      "document": "docs/maintainers/security-invariants.md#inv-085-p69-personal-parent-directed-team-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/personal_team.py",
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/app.py",
+        "backend/src/omnibase/desktop_local/providers.py",
+        "backend/src/omnibase/desktop_local/provider_http.py",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/runtime/personal-team-coordinator.ts",
+        "desktop/src/runtime/personal-team-validate.ts",
+        "backend/src/omnibase/desktop_local/endpoint.py",
+        "desktop/src/runtime/global-unicast.ts",
+        "desktop/src/runtime/personal-team-provider.ts",
+        "desktop/src/runtime/personal-team-native-host.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "desktop/src/shared/personal-team.ts",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/desktop-team-lifecycle.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "docs/architecture/p6-9-multi-agent-planning.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_personal_team.py",
+        "backend/tests/test_desktop_local_conversation.py",
+        "desktop/tests/personal-team-ipc.test.ts",
+        "desktop/tests/personal-team-coordinator.test.ts",
+        "backend/tests/test_desktop_local_endpoint.py",
+        "backend/tests/test_desktop_local_provider.py",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/personal-team-round1-attacks.test.ts",
+        "desktop/tests/personal-team-round2-attacks.test.ts",
+        "desktop/tests/personal-team-native-host.test.ts",
+        "desktop/tests/runtime-manager.test.ts",
+        "desktop/tests/ipc.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/desktop-team-lifecycle.test.ts"
       ]
     }
   ],
@@ -2243,7 +2632,7 @@
       "public_interfaces": [
         "Internal-only Agent Task/Run/Step/Attempt/Lease/Budget/Effect/Checkpoint/Reconciliation persistence",
         "create_task may receive a validated caller-intent hash which is nested into the canonical task payload so exact replay binds caller intent without discarding immutable task fields",
-        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0015 after the separately authorized provider, Memory, instruction-Skill and empty-Capsule bootstrap migrations, while production activation remains blocked",
+        "Migration 0011 owns the durable task ledger; the current reviewed personal repository head is 0016 after the separately authorized provider, Memory, instruction-Skill, empty-Capsule bootstrap and per-role model-preference migrations, while production activation remains blocked",
         "No Browser runtime DTO exposes physical locators, credentials, provider handles or database identities"
       ],
       "depends_on": [
@@ -2392,6 +2781,7 @@
         "backend/tests/test_p5_personal_runtime_activation.py",
         "frontend/app/(dashboard)/agents/page.tsx",
         "frontend/components/layout/sidebar.tsx",
+        "frontend/app/(dashboard)/layout.tsx",
         "frontend/lib/api.ts",
         "frontend/app/api/v1/**",
         "frontend/next.config.js",
@@ -2561,7 +2951,7 @@
       ],
       "recovery": [
         "Keep P5.4B unavailable unless the explicit engineering flag, current reviewed migration head, all-false Phase 5 gates and every injected dependency pass strict checks.",
-        "Keep production Runtime activation false and unauthorized migration 0016+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
+        "Keep production Runtime activation false and unauthorized migration 0017+ absent. A disposable omnibase_test_p54b_* sentinel Gate is not production admission.",
         "On live identity, lease/fencing, source manifest or evidence SHA drift, stop admission and preserve the historical sealed chain; forward-fix from a clean checkout.",
         "Never read root .env, touch the business database, retry unknown provider outcomes or fall back to direct database/RAG access."
       ]
@@ -2787,7 +3177,7 @@
       ],
       "recovery": [
         "Keep every Phase 5 Feature Gate false; contract validity never authorizes Skill installation or execution.",
-        "Reject migration head drift beyond reviewed 0015, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
+        "Reject migration head drift beyond reviewed 0016, dirty source, third-party definitions, wildcard capability, external/cyclic schema references and unsealed approved/published claims.",
         "If the contract drifts, freeze admission and forward-fix from a clean checkout. P5.6A owns no database or runtime; the separately reviewed P5.6P module owns migration 0014 and personal instruction projection."
       ]
     },
@@ -2941,7 +3331,7 @@
         "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace/backend backend ruff format --check src/omnibase/production/trust_policy_candidate.py tests/test_p34_7_trust_policy_candidate.py ../scripts/production/validate_p34_7_trust_policy_candidate.py"
       ],
       "recovery": [
-        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0015, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
+        "A candidate can never be approved: keep _APPROVED_TRUST_POLICY_SHA256 empty, require current migration head 0016, keep all three Phase 5 feature gates false, and never generate or transport private keys.",
         "On any candidate/packet drift or lifecycle violation, freeze the candidate, preserve the packet and history, and re-verify from a new clean checkout."
       ]
     },
@@ -2986,7 +3376,7 @@
       ],
       "recovery": [
         "On authority, custody, environment, blocker, path or canonical-byte drift, freeze the proposal and revalidate from a clean checkout; do not edit history into a passing state.",
-        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0015, migration 0016+ absent and all three Phase 5 Feature Gates false.",
+        "Keep _APPROVED_TRUST_POLICY_SHA256 empty, migration head 0016, migration 0017+ absent and all three Phase 5 Feature Gates false.",
         "Never generate or transmit private keys, run a ceremony, access a target environment, collect production evidence or activate Runtime from the R1-A validator."
       ]
     },
@@ -3079,7 +3469,7 @@
       "recovery": [
         "Write the independent kill marker on any ambiguous config, ledger, live Owner, feature-gate, migration, provider or request-scope posture; any marker presence keeps the canary killed.",
         "Remove the operator overlay or restore Runtime=false, while keeping Planner and Multi-Agent false; preserve config, activation, rollback and kill bytes for reconciliation.",
-        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0016+, bypass reviewed migration 0013 Memory, migration 0014 Skill or migration 0015 empty-Capsule lifecycle, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
+        "Never edit an event, delete a kill marker, reuse a terminal state directory, create unauthorized migration 0017+, bypass reviewed migration 0013 Memory, migration 0014 Skill, migration 0015 empty-Capsule lifecycle or migration 0016 personal model-preference ownership, install the enterprise approved digest or claim formal P5.4B/Sandbox authority from this no-tool lane."
       ]
     },
     {
@@ -3107,7 +3497,7 @@
         "Loopback-only full-stack Compose with internal PostgreSQL/Redis/MinIO/backend and one frontend ingress",
         "Non-root reload-free backend production image and standalone frontend production image",
         "Offline doctor, canonical release-manifest and verify-release CLI",
-        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including raw migration 0013/0014/0015 binding and the closed 0013-to-0014 Skill plus 0014-to-0015 Memory-bootstrap compatibility entries"
+        "Offline plan-backup, seal-assets, verify-backup and restore-new planning CLI, including raw migration 0013/0014/0015/0016 binding and the closed 0013-to-0014 Skill, 0014-to-0015 Memory-bootstrap and 0015-to-0016 personal-model-preference compatibility entries"
       ],
       "depends_on": [
         "personal-runtime-canary",
@@ -3135,7 +3525,7 @@
       "recovery": [
         "Restore Runtime=false and keep Planner/Multi-Agent false before diagnosis; preserve release, image, lifecycle and backup receipts.",
         "Redis is non-authoritative. Never replay ambiguous work or convert pending/unknown to success after restart or restore.",
-        "Backup and restore evidence for the current head must bind migration 0013/0014/0015 raw bytes plus the exact Memory and Skill inventories; arbitrary 0016+ forward restore remains rejected.",
+        "Backup and restore evidence for the current head must bind migration 0013/0014/0015/0016 raw bytes plus the exact Memory, Skill and personal-model-preference inventories; arbitrary 0017+ forward restore remains rejected.",
         "Restore and upgrade only into new database/MinIO/Runtime identities; never overwrite the accepted source target."
       ]
     },
@@ -3459,6 +3849,575 @@
         "Treat any missing terminal SSE event, automatic Provider replay, reused execution identity, failed kill switch, cleanup leak or in-place restore as a veto.",
         "Keep Runtime=false after acceptance and on the restored target; Planner and Multi-Agent remain false throughout.",
         "Delete run-scoped operator env, canary state and database dump after exact Compose project and volume cleanup; retain only the redacted receipt."
+      ]
+    },
+    {
+      "id": "p6-personal-engineering-workbench",
+      "name": "P6.0-A-D personal engineering workbench, authorized files, local ChangeSets and honest model gears",
+      "source_paths": [
+        "frontend/app/(dashboard)/dashboard/page.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-files.ts",
+        "frontend/lib/p6-files.test.ts",
+        "frontend/lib/p6-file-handles.ts",
+        "frontend/lib/p6-changesets.ts",
+        "frontend/lib/p6-changesets.test.ts",
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/p6-workbench-typography.test.ts",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-workbench.test.ts",
+        "backend/src/omnibase/user_settings/model_settings.py",
+        "backend/src/omnibase/user_settings/gateway.py",
+        "backend/src/omnibase/user_settings/router.py",
+        "backend/src/omnibase/user_settings/schemas.py",
+        "backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py",
+        "backend/tests/test_p6_0_d2_model_settings.py",
+        "backend/tests/integration/test_p6_0_d2_model_settings_foundation.py",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/invocation-state.ts",
+        "frontend/lib/personal-runtime-gate.ts",
+        "docs/architecture/p6-0-personal-engineering-workbench.md",
+        "docs/architecture/p6-0-d2-model-adaptation.md",
+        "docs/evidence/p6-0/personal-workbench-a-r0-decision.md",
+        "docs/evidence/p6-0/personal-workbench-r0-decision.md",
+        "docs/evidence/p6-0/d2-model-adaptation-decision.md"
+      ],
+      "entrypoints": [
+        "frontend/app/(dashboard)/dashboard/page.tsx:DashboardPage",
+        "frontend/components/workbench/personal-engineering-workbench.tsx:PersonalEngineeringWorkbench",
+        "frontend/components/workbench/workspace-file-panel.tsx:WorkspaceFilePanel",
+        "frontend/lib/p6-files.ts:compileP6FileContext",
+        "frontend/lib/p6-changesets.ts:preflightTaskChangeSetRollback",
+        "frontend/lib/p6-model-profiles.ts:buildP6AdaptationInstruction",
+        "backend/src/omnibase/user_settings/router.py:list_agent_model_settings",
+        "backend/src/omnibase/user_settings/router.py:put_agent_model_setting",
+        "backend/src/omnibase/user_settings/router.py:test_agent_model_setting",
+        "frontend/lib/p6-workbench.ts:parseEmployeeInvocation",
+        "frontend/lib/p6-workbench.ts:parseWorkbenchState"
+      ],
+      "public_interfaces": [
+        "Authenticated /dashboard Personal Engineering Workbench",
+        "Tenant/user-scoped versioned browser session projection with create/search/pin/archive/restore and timeline",
+        "One default-active parent Agent plus nine dormant specialist role contexts selected by exactly one Owner-authored @ mention",
+        "Owner-authorized lazy file tree with OPEN/CONTEXT/PINNED and internal text/image/PDF preview",
+        "Task/invocation-bound Owner-reviewed text ChangeSets with Before/After audit and three-way rollback",
+        "Observed five-provider profiles plus economy/standard/deep/audit top-k and context gears",
+        "Ten role model-setting projections with default credential inheritance, per-role saved-credential/model overrides and exact-model tests",
+        "Existing Agent Alpha Workspace/profile/SSE/cancel/usage interfaces without Planner or Multi-Agent activation"
+      ],
+      "depends_on": [
+        "frontend",
+        "agent-alpha-workbench",
+        "workspace-control-plane",
+        "personal-runtime-canary"
+      ],
+      "invariants": [
+        "INV-001",
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-060",
+        "INV-063",
+        "INV-065",
+        "INV-066",
+        "INV-067",
+        "INV-068"
+      ],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "TEST_COMPOSE_PROJECT=omnibase_test_p60d2_model_settings TEST_DATABASE_NAME=omnibase_test_p60d2_model_settings docker compose --env-file .env.example -p omnibase_test_p60d2_model_settings -f docker-compose.destructive-tests.yml up -d --wait postgres-test, then run backend/tests/integration/test_p6_0_d2_model_settings_foundation.py with OMNIBASE_INTEGRATION_TESTS=1 and always down -v --remove-orphans",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "docker compose --env-file .env.example run --rm --no-deps -v .:/workspace -w /workspace backend python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Remove only the exact scoped omnibase.p6.workbench.v1:<tenant>:<user> browser record or fall back to /agents; preserve Task, Run, Memory and Audit rows.",
+        "Never replay a Provider request from recovered browser history, persist partial SSE as success, or enable Planner/Multi-Agent to repair a UI projection.",
+        "Forget volatile file handles on scope change and require a new Owner gesture after permission loss.",
+        "Treat interrupted local writes as recovery_required and restore only under exact digest comparison.",
+        "Fall back to generic adaptation and rate_not_configured; never infer provider identity or pricing before server evidence.",
+        "Migration 0016 stores only user-owned role model preferences; its exact 0016-to-0015 downgrade is tenant-first and atomic, and it must not be reused as conversation persistence or expanded into Planner/Multi-Agent authority."
+      ]
+    },
+    {
+      "id": "p6-1-native-skills-mcp-release",
+      "name": "P6.1 native Skill Browser, DeepSeek/GPT adaptation, read-only MCP preview and Windows release preview",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/control.py",
+        "backend/src/omnibase/agent_skills/native_catalog.py",
+        "backend/src/omnibase/agent_skills/router.py",
+        "backend/src/omnibase/agent_skills/schemas.py",
+        "backend/src/omnibase/agent_skills/service.py",
+        "backend/src/omnibase/mcp_runtime/**",
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "backend/src/omnibase/model_gateway/contracts.py",
+        "backend/src/omnibase/model_gateway/providers.py",
+        "backend/src/omnibase/model_gateway/service.py",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/agent_alpha/service.py",
+        "backend/src/omnibase/agent_alpha/personal.py",
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "backend/tests/test_model_gateway.py",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/components/layout/sidebar.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/lib/agent-alpha-stream.ts",
+        "frontend/lib/agent-alpha-stream.test.ts",
+        "frontend/lib/api.ts",
+        "scripts/mcp/omnibase_readonly_mcp.py",
+        "deployment/release/windows/**",
+        "scripts/release/build_windows_release.py",
+        "scripts/release/validate_windows_release_config.py",
+        "scripts/release/test_build_windows_release.py",
+        "packaging/windows/OmniBase.Setup/**",
+        "docs/architecture/p6-1-native-skills-model-mcp-release.md",
+        "docs/evidence/p6-1/engineering-r0-decision.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_skills/router.py:router",
+        "backend/src/omnibase/agent_skills/control.py:NativeSkillControlService",
+        "backend/src/omnibase/model_gateway/adaptation.py:plan_model_adaptation",
+        "backend/src/omnibase/mcp_runtime/readonly.py:ReadOnlyMcpServer",
+        "scripts/mcp/omnibase_readonly_mcp.py:main",
+        "scripts/release/build_windows_release.py:build_release",
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage"
+      ],
+      "public_interfaces": [
+        "Authenticated /api/v1/skills catalog/detail and exact install/disable routes",
+        "Chinese /skills catalog and one-Owner Workspace/Agent installation controls",
+        "Model-name-first DeepSeek/GPT native request profiles and cache/reasoning usage",
+        "P6.1 three-tool read-only stdio MCP baseline, extended by P6.3 to the exact six-tool closed set without Agent Alpha integration",
+        "Deterministic canonical Windows ZIP plus offline digest preflight, no-build personal lifecycle Compose and EXE thin-wrapper source"
+      ],
+      "depends_on": [
+        "personal-instruction-skills",
+        "agent-alpha-workbench",
+        "p6-personal-engineering-workbench",
+        "desktop-runtime",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_model_gateway.py backend/tests/test_agent_alpha.py backend/tests/test_agent_alpha_personal.py backend/tests/test_p6_1_readonly_mcp.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable or revoke the exact native Skill installation and preserve immutable versions and Audit history; do not edit a sealed version.",
+        "Fall back to generic model adaptation and keep actual model identity checks; never infer native controls from URL/provider labels.",
+        "Do not launch the MCP server, and never mount it into no_tool, if root/Git/path identity is ambiguous.",
+        "Discard only the unpopulated preview release output. Never delete images, volumes, databases or mutate VHDX to repair packaging."
+      ]
+    },
+    {
+      "id": "p6-2-personal-capability-center",
+      "name": "P6.2 personal capability center, bounded local continuity and Windows Companion",
+      "source_paths": [
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/components/layout/sidebar.tsx",
+        "frontend/components/workbench/personal-engineering-workbench.tsx",
+        "frontend/components/workbench/workspace-file-panel.tsx",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-skill-browser.ts",
+        "frontend/lib/p6-skill-discovery.ts",
+        "frontend/lib/p6-skill-discovery.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "frontend/lib/p6-workbench.ts",
+        "frontend/lib/p6-workbench.test.ts",
+        "frontend/lib/p6-change-journal.ts",
+        "frontend/lib/p6-change-journal.test.ts",
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/build_windows_release.py",
+        "scripts/release/validate_windows_release_config.py",
+        "scripts/release/test_build_windows_release.py",
+        "docs/architecture/p6-2-personal-capability-center.md",
+        "docs/evidence/p6-2/engineering-r0-decision.md"
+      ],
+      "entrypoints": [
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage",
+        "frontend/lib/p6-skill-discovery.ts:scanP6SkillCandidates",
+        "frontend/lib/p6-skill-browser.ts:chooseAndScanP6SkillRoot",
+        "frontend/lib/p6-workbench.ts:compileWorkbenchHistory",
+        "frontend/lib/p6-change-journal.ts:parseP6ChangeJournal",
+        "packaging/windows/OmniBase.Setup/Program.cs:Companion.Run"
+      ],
+      "public_interfaces": [
+        "Chinese /skills personal capability center over authenticated Skill/model APIs and the current standalone six-tool MCP posture",
+        "Owner-triggered browser directory scan returning opaque scan-only Skill candidates",
+        "Same-session bounded redacted terminal history in personal Agent Alpha requests",
+        "Tenant/Workspace-scoped browser-local ChangeSet recovery journal",
+        "Self-contained Windows verify/init-config/doctor engineering-preview CLI; mutating install is frozen fail-closed by P6.3 until path identity binding is proven"
+      ],
+      "depends_on": [
+        "p6-1-native-skills-mcp-release",
+        "p6-personal-engineering-workbench",
+        "agent-alpha-workbench",
+        "desktop-runtime",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-065",
+        "INV-066",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-074",
+        "INV-075",
+        "INV-076"
+      ],
+      "verification": [
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_p6_1_readonly_mcp.py backend/tests/test_p6_0_d2_model_settings.py backend/tests/test_agent_alpha_personal.py backend/tests/test_model_gateway.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "dotnet build packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj -c Release",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Discard a local Skill scan report and require a new Owner directory-picker gesture; never import an unknown candidate into the first-party catalog.",
+        "Discard only the exact tenant/Workspace browser journal key when malformed; never replay Provider work or infer a file handle from recovery metadata.",
+        "Fall back to the P6.1 framework-dependent preview source if a reviewed forward fix is required; never weaken archive/config checks or mutate Docker/WSL/VHDX.",
+        "Keep migration head 0016 and every Runtime/Planner/Multi-Agent/MCP gate closed; P6.2 recovery never requires migration 0017 or enterprise P34.7 activation."
+      ]
+    },
+    {
+      "id": "p6-3-personal-extensions",
+      "name": "P6.3 first-party Skill expansion, six-tool read-only MCP, GLM/Claude profiles, product presentation and Windows install planning",
+      "source_paths": [
+        "backend/src/omnibase/agent_skills/**",
+        "backend/src/omnibase/mcp_runtime/**",
+        "backend/src/omnibase/model_gateway/adaptation.py",
+        "backend/tests/test_p6_1_native_skill_catalog.py",
+        "backend/tests/test_p5_6p_instruction_skills.py",
+        "backend/tests/test_p6_1_readonly_mcp.py",
+        "backend/tests/test_model_gateway.py",
+        "frontend/app/(dashboard)/skills/page.tsx",
+        "frontend/app/public-preview/**",
+        "frontend/lib/api.ts",
+        "frontend/lib/p6-capability-center.ts",
+        "frontend/lib/p6-capability-center.test.ts",
+        "frontend/lib/p6-model-profiles.ts",
+        "frontend/lib/p6-model-profiles.test.ts",
+        "frontend/lib/p6-native-skills.test.ts",
+        "packaging/windows/OmniBase.Setup/**",
+        "deployment/release/windows/**",
+        "scripts/release/test_build_windows_release.py",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1",
+        "AGENTS.md",
+        "README.md",
+        "README.zh-CN.md",
+        "docs/architecture/p6-3-personal-extensions.md",
+        "docs/runbooks/p6-3-windows-companion-install.md",
+        "docs/evidence/p6-3/**"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_skills/router.py:list_skills",
+        "backend/src/omnibase/agent_skills/control.py:NativeSkillControlService",
+        "backend/src/omnibase/agent_skills/native_catalog.py:filter_native_skills",
+        "backend/src/omnibase/mcp_runtime/readonly.py:ReadOnlyMcpServer",
+        "backend/src/omnibase/model_gateway/adaptation.py:plan_model_adaptation",
+        "frontend/app/(dashboard)/skills/page.tsx:SkillsPage",
+        "frontend/app/public-preview/public-preview-client.tsx:PublicPreviewClient",
+        "packaging/windows/OmniBase.Setup/Program.cs:Companion.Run",
+        "scripts/release/probe_p6_3_clean_windows_vm.ps1:script"
+      ],
+      "public_interfaces": [
+        "Authenticated filtered fifteen-Skill first-party catalog with exact digest and live installation footprint",
+        "Six-tool separately launched read-only MCP stdio preview with process lifetime budgets",
+        "Model-name-first DeepSeek/GPT/Kimi/GLM/Claude prompt/context profiles on the existing Chat Completions boundary",
+        "English/Chinese GitHub README and /public-preview personal workbench presentation",
+        "Windows Companion help, locations and user/machine/custom install planning, with mutating install frozen before any path/archive/write access",
+        "One-shot read-only clean-Windows Hyper-V preflight that never mutates a VM or VHDX"
+      ],
+      "depends_on": [
+        "p6-2-personal-capability-center",
+        "p6-1-native-skills-mcp-release",
+        "p6-personal-engineering-workbench",
+        "personal-instruction-skills",
+        "agent-model-gateway"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-061",
+        "INV-064",
+        "INV-067",
+        "INV-068",
+        "INV-069",
+        "INV-070",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-074",
+        "INV-075",
+        "INV-076",
+        "INV-077",
+        "INV-078",
+        "INV-079",
+        "INV-080"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_1_native_skill_catalog.py backend/tests/test_p5_6p_instruction_skills.py backend/tests/test_model_gateway.py backend/tests/test_p6_1_readonly_mcp.py backend/tests/test_agent_alpha_personal.py -q",
+        "python -m pytest scripts/release/test_build_windows_release.py -q",
+        "cd frontend && pnpm test",
+        "cd frontend && pnpm typecheck",
+        "cd frontend && pnpm lint",
+        "cd frontend && NODE_ENV=production pnpm build",
+        "dotnet format packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj --verify-no-changes",
+        "dotnet build packaging/windows/OmniBase.Setup/OmniBase.Setup.csproj -c Release --no-restore",
+        "PowerShell AST parse scripts/release/probe_p6_3_clean_windows_vm.ps1 without running a second VM preflight",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable only the exact affected first-party Skill installation and preserve immutable versions, idempotency and append-only Audit.",
+        "Stop the standalone MCP process and retain Agent Alpha no_tool; never repair MCP by granting shell, network or global client configuration writes.",
+        "Fall back to generic model adaptation while preserving exact requested/actual model identity; never retry with broader vendor-only fields.",
+        "Correct README/public-preview source and report live deployment separately; do not claim omnibase.chat was rebuilt without direct evidence.",
+        "Discard only an unpopulated Companion preview output and forward-fix source; never mutate Docker, WSL, Hyper-V or VHDX to repair packaging."
+      ]
+    },
+    {
+      "id": "p6-4-personal-agent-practice",
+      "name": "P6.4 bounded personal single and 3-6 Agent production practice",
+      "source_paths": [
+        "backend/src/omnibase/agent_practice/**",
+        "backend/src/omnibase/agent_alpha/router.py",
+        "backend/src/omnibase/agent_alpha/schemas.py",
+        "backend/src/omnibase/documents/router.py",
+        "backend/src/omnibase/documents/service.py",
+        "backend/src/omnibase/workers/tasks.py",
+        "backend/tests/test_p6_4_*.py",
+        "frontend/components/workbench/personal-agent-practice-panel.tsx",
+        "frontend/lib/p6-practice-*.ts",
+        "scripts/production/run_p6_4_personal_agent_practice.py",
+        "scripts/production/run_p6_4_personal_agent_practice_gate.py",
+        "scripts/production/test_run_p6_4_personal_agent_practice*.py",
+        "deployment/personal-production/p6-4-acceptance.compose.yml",
+        "docs/architecture/p6-4-personal-agent-practice.md",
+        "docs/maintainers/security-invariants.md",
+        "docs/evidence/p6-4/**",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/agent_practice/service.py:PersonalAgentPracticeService",
+        "backend/src/omnibase/agent_practice/scoring.py:score_citations",
+        "backend/src/omnibase/agent_practice/artifacts.py:render_clock_html",
+        "backend/src/omnibase/agent_practice/artifacts.py:render_slide_deck_html",
+        "backend/src/omnibase/agent_practice/changesets.py:apply_text_change",
+        "backend/src/omnibase/agent_practice/changesets.py:rollback_text_change",
+        "backend/src/omnibase/agent_practice/posture.py:personal_practice_posture",
+        "backend/src/omnibase/agent_practice/receipt.py:validate_personal_practice_receipt",
+        "backend/src/omnibase/agent_practice/alpha_coordinator.py:DurablePersonalPracticeCoordinator",
+        "backend/src/omnibase/agent_alpha/router.py:run_alpha_practice",
+        "scripts/production/run_p6_4_personal_agent_practice.py:main",
+        "scripts/production/run_p6_4_personal_agent_practice_gate.py:main"
+      ],
+      "public_interfaces": [
+        "One or 3-6 request-scoped serial Model Gateway calls with a final parent synthesizer",
+        "Deterministic exact fact-to-chunk citation scoring",
+        "Closed offline clock and HTML slide artifact rendering",
+        "Disposable-root UTF-8 ChangeSet CAS apply and conflict-safe rollback",
+        "Browser upload to immutable Workspace knowledge binding with membership-scoped document lifecycle and ready Agent-readable RAG",
+        "Canonical-v1-first RAG retrieval with same-source v2 shadow suppression",
+        "Strict redacted six-journey production receipt validator",
+        "Disposable production target controller with clean-source and healthy-Linux-Docker preflight, before/during/after gate and cleanup proof",
+        "Strict production personal-practice posture with Planner, enterprise Multi-Agent and MCP disabled"
+      ],
+      "depends_on": [
+        "p6-3-personal-extensions",
+        "p6-personal-engineering-workbench",
+        "agent-model-gateway",
+        "agent-alpha-workbench",
+        "personal-production-target-r1"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-010",
+        "INV-044",
+        "INV-056",
+        "INV-060",
+        "INV-061",
+        "INV-066",
+        "INV-067",
+        "INV-068",
+        "INV-073",
+        "INV-079",
+        "INV-081"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py -q",
+        "python -m pytest backend/tests/test_model_gateway.py backend/tests/test_agent_alpha_personal.py backend/tests/test_agent_alpha_personal_router.py backend/tests/test_p6_0_d2_model_settings.py -q",
+        "python -m pytest backend/tests/test_documents.py backend/tests/test_document_api_contract.py backend/tests/test_document_lifecycle.py backend/tests/test_upload_router.py backend/tests/test_upload_queue.py backend/tests/test_upload_no_sync_ingest.py backend/tests/test_upload_failure.py backend/tests/test_workers.py backend/tests/test_rate_limit.py backend/tests/test_rag_store.py backend/tests/test_rag_sse.py -q",
+        "python -m mypy --ignore-missing-imports backend/src/omnibase/agent_practice backend/src/omnibase/agent_alpha/adapters.py backend/src/omnibase/agent_alpha/router.py backend/src/omnibase/agent_alpha/schemas.py backend/src/omnibase/documents/router.py backend/src/omnibase/documents/service.py backend/src/omnibase/workers/tasks.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py",
+        "python -m ruff check backend/src/omnibase/agent_practice backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py",
+        "python -m ruff format --check backend/src/omnibase/agent_practice backend/tests/test_p6_4_agent_practice.py backend/tests/test_p6_4_practice_receipt.py backend/tests/test_p6_4_practice_router.py backend/tests/test_p6_4_workspace_upload.py scripts/production/run_p6_4_personal_agent_practice.py scripts/production/run_p6_4_personal_agent_practice_gate.py scripts/production/test_run_p6_4_personal_agent_practice.py scripts/production/test_run_p6_4_personal_agent_practice_gate.py",
+        "docker compose --env-file .env.example -f deployment/personal-production/compose.yml -f deployment/personal-production/p6-4-acceptance.compose.yml -f deployment/production/personal-runtime-canary.compose.example.yml config --quiet with explicit P6.4 host path overrides",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Disable P6_4_PERSONAL_PRACTICE_ENABLED and restore Runtime, Planner, Multi-Agent and MCP gates to false.",
+        "Stop a roster on the first unknown, cancelled, timed-out or identity-drifted member; never auto-replay or synthesize a success.",
+        "Discard only a run-scoped artifact scratch root after exact inventory; never modify OmniBase source or a user Workspace during acceptance.",
+        "Rollback a ChangeSet only while the live after digest matches; preserve a conflict rather than overwrite external edits.",
+        "Revoke the run-scoped Provider credential and retain only the redacted digest/metric receipt.",
+        "The matrix fragment is never production acceptance; only the outer controller may set production_accepted=true after strict receipt validation, canary closure, all gates false and zero labeled Compose resources.",
+        "If Docker is not already healthy, stop before infrastructure activation; do not start or repair Docker Desktop, WSL, Hyper-V or a virtual disk to manufacture P6.4 evidence."
+      ]
+    },
+    {
+      "id": "p6-5-windows-desktop-distribution",
+      "name": "P6.5/P6.6/P6.7 per-user Windows desktop runtime, local product admission, single-agent core, packaging and installer",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/**",
+        "backend/tests/test_desktop_local_*.py",
+        "desktop/src/**",
+        "desktop/tests/**",
+        "desktop/scripts/**",
+        "desktop/package.json",
+        "desktop/pnpm-lock.yaml",
+        "desktop/tsconfig*.json",
+        "frontend/app/api/v1/**",
+        "frontend/app/desktop/**",
+        "frontend/app/health/**",
+        "frontend/app/page-client.tsx",
+        "frontend/lib/desktop-bridge*.ts",
+        "frontend/lib/desktop-invocation-lifecycle*.ts",
+        "frontend/lib/desktop-team-lifecycle*.ts",
+        "frontend/lib/desktop-team-surface*.ts",
+        "frontend/lib/desktop-conversation-surface*.ts",
+        "frontend/lib/desktop-surface-scope*.ts",
+        "frontend/lib/desktop-runtime*.ts",
+        "frontend/lib/proxy*.ts",
+        "frontend/next.config.js",
+        "packaging/windows/OmniBase.DesktopBackend/**",
+        "packaging/windows/OmniBase.Installer/**",
+        "packaging/windows/OmniBase.RuntimeHost/**",
+        "packaging/windows/OmniBase.RuntimeHost.Tests/**",
+        "scripts/release/build_p6_5_desktop_payload.py",
+        "scripts/release/test_build_p6_5_desktop_payload.py",
+        "scripts/release/build_p6_5_windows_desktop.py",
+        "scripts/release/test_build_p6_5_windows_desktop.py",
+        "deployment/release/windows/desktop-release.template.json",
+        "docs/architecture/p6-5-windows-desktop-distribution.md",
+        "docs/architecture/p6-6-desktop-local-product-admission.md",
+        "docs/architecture/p6-7-desktop-single-agent-core.md",
+        "docs/architecture/p6-9-multi-agent-planning.md",
+        "docs/maintainers/security-invariants.md",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/desktop_local/app.py:create_desktop_local_app",
+        "backend/src/omnibase/desktop_local/app.py:main",
+        "desktop/src/main.ts:Electron main process",
+        "desktop/src/runtime/native-client.ts:DesktopNativeClient",
+        "desktop/src/runtime/secret-vault.ts:encryptProviderSecret",
+        "frontend/app/desktop/page.tsx:DesktopAdmissionPage",
+        "frontend/lib/desktop-runtime.ts:proxyRuntimeRequest",
+        "frontend/lib/desktop-runtime.ts:proxyRuntimeHealthRequest",
+        "packaging/windows/OmniBase.DesktopBackend/build_backend.py:build_backend",
+        "packaging/windows/OmniBase.RuntimeHost/Program.cs:Program.Main",
+        "scripts/release/build_p6_5_desktop_payload.py:build_desktop_payload",
+        "scripts/release/build_p6_5_windows_desktop.py:build_windows_desktop",
+        "desktop/scripts/package-windows.mjs:packageWindows"
+      ],
+      "public_interfaces": [
+        "Per-user Electron application loading only the fixed loopback Next origin",
+        "Loopback-only SQLite FastAPI service with separate per-launch native-proof, native-control and authorization identities",
+        "Challenge-HMAC native readiness without exposing any launch identity to Browser JavaScript",
+        "Origin-checked native IPC for Owner/Workspace plus Provider vault, parent Agent and conversation streaming",
+        "Read-only desktop Next proxy catalog that rejects unsupported routes before upstream contact",
+        "Closed digest-pinned RuntimeHost/backend/Node/Next payload",
+        "Single WiX Burn EXE containing one transactional per-user MSI",
+        "Application data under %LOCALAPPDATA%\\OmniBase retained by normal uninstall"
+      ],
+      "depends_on": [
+        "frontend",
+        "desktop-runtime",
+        "p6-4-personal-agent-practice",
+        "p6-1-native-skills-mcp-release"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-006",
+        "INV-010",
+        "INV-064",
+        "INV-067",
+        "INV-071",
+        "INV-072",
+        "INV-073",
+        "INV-076",
+        "INV-080",
+        "INV-081",
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py backend/tests/test_desktop_local_endpoint.py -q",
+        "python -m ruff check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "python -m ruff format --check backend/src/omnibase/desktop_local backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py scripts/release/build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend packaging/windows/OmniBase.Installer",
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "dotnet run --project packaging/windows/OmniBase.RuntimeHost.Tests/OmniBase.RuntimeHost.Tests.csproj -c Release",
+        "dotnet publish packaging/windows/OmniBase.RuntimeHost/OmniBase.RuntimeHost.csproj -c Release -r win-x64 --self-contained true",
+        "python -m pytest scripts/release/test_build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_windows_desktop.py packaging/windows/OmniBase.DesktopBackend/tests/test_backend_packaging.py packaging/windows/OmniBase.Installer/tests/test_installer_contract.py packaging/windows/OmniBase.Installer/tests/test_validate_payload.py -q",
+        "dotnet build packaging/windows/OmniBase.Installer/bundle/OmniBase.Bundle.wixproj -c Release with an absolute verified PayloadRoot and ProductVersion=1.0.0",
+        "Run packaging/windows/OmniBase.Installer/tests/Test-InstallerLifecycle.ps1 only in an explicitly acknowledged disposable Windows account or dedicated clean VM",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root ."
+      ],
+      "recovery": [
+        "Stop the Electron shell and let RuntimeHost close its Job Object; never leave unsupervised backend or Next children running.",
+        "Retain failed staging roots and logs for exact inspection; do not recursively delete their parent or any repository, worktree, user data or virtual disk.",
+        "Forward-fix or uninstall installer-owned application bytes only; preserve %LOCALAPPDATA%\\OmniBase and append-only SQLite audit evidence.",
+        "Treat unsigned, dirty-source, incomplete-product-journey, missing-toolchain and failed clean-Windows evidence as release vetoes rather than weakening manifest, identity, downgrade or rollback checks.",
+        "Do not start or repair Docker Desktop, WSL, Hyper-V or VHDX to manufacture desktop packaging or acceptance evidence."
       ]
     }
   ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +15,9 @@ from omnibase.core.rate_limit import (
     RateLimitPolicy,
     RedisRateLimiter,
     _enforce,
+    enforce_agent_model_test_rate_limit,
 )
+from omnibase.tenants.dependencies import TenantContext
 
 
 def _settings(**overrides: object) -> Settings:
@@ -132,3 +135,27 @@ def test_disabled_rate_limit_does_not_contact_redis() -> None:
             settings=_settings(rate_limit_enabled=False),
         )
     get_limiter.assert_not_called()
+
+
+def test_agent_model_probe_limiter_binds_role_scope_without_credential_parameter() -> None:
+    limiter = MagicMock()
+    limiter.check.return_value = RateLimitDecision(
+        allowed=True,
+        remaining=4,
+        retry_after=60,
+    )
+    context = TenantContext(
+        tenant=SimpleNamespace(id="tenant-id", schema_name="tenant_12345678"),
+        user=SimpleNamespace(id="user-id"),
+    )
+    with patch("omnibase.core.rate_limit._get_limiter", return_value=limiter):
+        enforce_agent_model_test_rate_limit(
+            workspace_id="workspace-id",
+            agent_version_id="agent-version-id",
+            employee_role_id="frontend",
+            ctx=context,
+            settings=_settings(),
+        )
+    assert limiter.check.call_args.args[1] == (
+        "tenant-id:user-id:workspace-id:agent-version-id:frontend"
+    )

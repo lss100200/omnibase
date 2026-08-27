@@ -10,7 +10,7 @@
 
 1. `AGENTS.md`：仓库级维护契约、冻结边界和安全工作流。
 2. `docs/maintainers/maintenance-map.json`：机器可读模块、依赖、不变量、验证和恢复入口。
-3. `docs/maintainers/security-invariants.md`：INV-001 至 INV-021 的权威维护约束。
+3. `docs/maintainers/security-invariants.md`：机器地图列出的全部权威维护约束。
 4. 本文：运行入口、调用方向、边界和影响矩阵。
 5. 目标模块源码，以及机器地图列出的迁移、契约和测试。
 6. `docs/handover-report.md`：当前阶段状态、最近验证证据和尚未授权的动作。
@@ -889,6 +889,7 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
+| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、parent-directed personal team contract、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084, INV-085 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
 跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
@@ -1632,7 +1633,7 @@ python scripts/production/run_p5_4c_lite_agent_product_disposable_gate.py --veri
   `$ref`. Rollback targets the same Definition and a strictly older reviewed
   release.
 - Verification requires clean Git provenance, all three Phase 5 gates false
-  and current repository migration head exactly `0015`. P5.6A itself remains compile-only; the
+  and current repository migration head exactly `0016`. P5.6A itself remains compile-only; the
   separately authorized P5.6P successor owns the Skill ORM, installation and
   personal runtime projection. Browser `/skills` remains absent.
 
@@ -1979,7 +1980,8 @@ P5.9P forward migration `0015` changes only the ContextCapsule token lower
 bound. A fresh invocation with no selected Memory persists one zero-item audit
 Capsule, then returns no Memory projection: no empty prompt and no Memory SSE
 metadata. The first real Candidate binds that Capsule. Backup/restore must bind
-the raw `0015` bytes; `0016+` remains absent.
+the raw `0015` bytes plus the separately reviewed `0016` personal-model-setting
+migration bytes; `0017+` remains absent.
 
 Use the focused compiler/Alpha tests plus one random `omnibase_test_*`
 PostgreSQL journey for local evidence. GitHub required CI is the full regression
@@ -2042,10 +2044,12 @@ Workspace, Owner, AgentVersion/binding, scope and budget digests, and require a
 retryable terminal state. Never mutate or revive the old ledger, Lease,
 fencing, runtime/workload identity or Effect. Preserve unknown evidence.
 
-Personal target and backup controllers now use migration head `0015`, reject
-`0016+`, bind the Skill tables, guard triggers and raw empty-Capsule migration
-bytes, and restore only into new identities. Closed compatibility entries are
-`0013 -> 0014` for Skills and `0014 -> 0015` for Memory bootstrap. GitHub
+Personal target and backup controllers now use migration head `0016`, reject
+`0017+`, bind the Skill tables, guard triggers, raw empty-Capsule migration
+bytes and raw personal-model-setting migration bytes, and restore only into new
+identities. Closed compatibility entries are `0013 -> 0014` for Skills,
+`0014 -> 0015` for Memory bootstrap and `0015 -> 0016` for personal model
+preferences. GitHub
 PostgreSQL sentinel CI is authoritative
 when local Docker is unavailable; do not substitute a normal database.
 
@@ -2073,7 +2077,8 @@ binding. SIGKILL must not be defeated by a container restart policy.
 The journey begins with no Memory and must prove one empty audit Capsule, no
 empty prompt/SSE metadata, first real Memory publication bound to that Capsule,
 then one-item retrieval. The redacted receipt carries the durable cancel Task
-state and terminal event. Current head is `0015`; `0016+` remains absent.
+state and terminal event. Current head is `0016`; `0017+` remains absent, and
+the `0016` role-preference table does not alter this acceptance evidence.
 
 Treat EOF without an SSE terminal event, any Provider call-count increase on
 restart/exact replay, reused retry identity, failed kill switch, in-place
@@ -2085,3 +2090,474 @@ Local offline tests are intentionally small. The authoritative P5.9P evidence
 is the clean GitHub Ubuntu `personal-production-acceptance` job. Do not claim
 P5.9P PASS or create the P6.0 Admission record until that job and required CI
 are green and the receipt is inspected.
+
+## P6.0 personal engineering workbench maintenance boundary
+
+Read INV-063 and `docs/architecture/p6-0-personal-engineering-workbench.md`
+before changing `/dashboard`, session persistence or employee routing.
+
+The P6.0-A workbench is a product projection over one existing personal Agent
+Runtime. The parent Agent is the only default-active actor. Specialists are
+request-scoped role contexts, not separate autonomous agents. Do not introduce
+background wake, Agent-to-Agent wake, broadcasts, multi-target `@` routing or
+any shortcut around the existing personal Runtime gate.
+
+Conversation state is currently browser-local because Task/Run is an execution
+ledger and Memory is curated context. Keep the store tenant/user scoped,
+versioned, bounded and free of tokens, credentials, Capability material and
+physical locators. Persist only terminal messages. A later cross-device model
+must use dedicated tenant/user/workspace-bound session tables; do not overload
+Task, Run, Memory or Audit rows and do not create migration `0016` merely to
+hide the current product boundary.
+
+The workbench must continue to use `agentAlphaApi`, the streaming Route
+Handler, `consumeAgentAlphaStream`, `InvocationGuard` and the personal Runtime
+gate. Unknown outcomes never replay from local history. On failure, discard
+only the scoped local projection or fall back to `/agents`; preserve all server
+evidence and keep Planner/Multi-Agent disabled.
+
+## Virtual-disk maintenance boundary
+
+Read INV-064 before touching Docker Desktop, WSL, Hyper-V, VirtualBox or other
+VM disk images. A VHDX that mostly contains rebuildable cache is still the
+stateful owner of images, containers and named volumes. Distinguish Docker's
+system distribution disk from its container-data disk; never infer ownership
+from size or filename alone.
+
+Clean from inside the engine first and preserve unknown or data-bearing volumes.
+Any offline disk work requires stopped writers, an exact resolved path, an
+unmounted image, a length-checked backup on another disk and a tested recovery
+path. `compact` is host-space reclamation, not a capacity limit. Never force a
+shrink when the guest filesystem or container format cannot prove the minimum
+safe size, and preserve the VM service SID ACL when restoring a copied image.
+
+## Recursive filesystem deletion boundary
+
+Read INV-073 before removing any directory tree, including backups, archives,
+caches and long-path remnants. Resolve one literal absolute target, inspect its
+symlink/junction/reparse state without following links, inventory descendants,
+and prove containment under the exact user-authorized parent. Also prove the
+target is not that parent, a workspace/repository root, or an ancestor of any
+retained repository, worktree, release artifact or user library.
+
+Keep discovery and mutation in one shell with literal-path semantics. Never
+enumerate in PowerShell and pass the result to `cmd.exe rd`, a batch builtin or
+another shell; never substitute a parent directory when a long child path is
+difficult to remove. Globs, unresolved variables, constructed command strings
+and multi-target recursive deletes are forbidden. Prefer a same-volume move to
+a uniquely named quarantine directory. Permanent deletion requires a separate
+explicit authorization that names the already-resolved target after inventory
+and recovery consequences are visible. Any drift or ambiguity fails closed.
+
+## P6.0 authorized files, local ChangeSets and model gears
+
+Read INV-065 through INV-067 and
+`docs/architecture/p6-0-personal-engineering-workbench.md`. Preserve
+Owner-gesture permission, pre-read secret-name rejection, memory-only handles,
+logical paths, one monotonic lazy-tree budget, reviewed content digests and the
+exact final request budget. Agent Alpha still has no file tool: local edits are
+Owner-reviewed and Task-bound, with CAS/digest checks and conflict-safe
+three-way rollback. Browser writes are not atomic transactions. The
+user-entered model name selects the conservative family profile before
+dispatch; the Provider-returned actual model remains the exact runtime identity.
+Conflicts fall back to generic and URL/provider hints are weaker than model
+names. Gears must not overstate native reasoning, output controls, tools, MCP,
+CLI or current pricing.
+
+## P6.0-D2 per-role model selection maintenance boundary
+
+Read INV-068 and the P6.0 architecture note before changing migration `0016`,
+the role model-setting API, Provider test writeback or personal gateway
+resolution. The parent plus nine specialists are still role contexts over one
+Runtime. They inherit one default encrypted Provider credential unless the
+Owner selects another already-saved credential or model for a single role.
+
+Keep API keys solely in `model_provider_credentials`; the override table and
+Browser DTO contain no key, ciphertext or nonce. Require `expected_version=0`
+for first creation and the exact current version thereafter. Preserve the
+Tenant -> User -> Workspace -> Membership -> installed Binding -> override lock
+and validation boundary and the composite credential/user foreign key.
+
+An overridden model remains pending until an exact no-tool Provider probe
+returns the same actual model. Freeze and revalidate override ID/version,
+credential/key/provider/base URL/model state around the external call. Runtime
+dispatch binds role and configuration identity into its request digest and must
+not fall back to another credential after an invalid override. Model-family
+recognition is prompt guidance only; it never enables native reasoning controls,
+Tools, MCP, CLI, Vision, Planner or Multi-Agent.
+
+Migration `0016` authorizes only personal role preferences. Advance current
+personal/P5 migration facts and restore-new contracts to `0016`, reject `0017+`,
+and keep historical `0015` receipts immutable. Its exact backward transition is
+tenant-first and atomic: every retained tenant must reach `0015` with the role
+table and credential ownership unique constraint absent before the global head
+may move. Global-first, partial, or populated downgrade attempts fail closed.
+P34.7 may acknowledge the current repository head while remaining
+frozen/blocked with the approved digest empty.
+
+The guarded disposable PostgreSQL Gate must execute database-wide downgrade
+proofs before service cases that intentionally retain append-only audited
+tenants. Probe attack tests must preserve the same tenant schema binding as
+`get_tenant_db` across the deliberate mid-probe commit and patch the shared
+hardened endpoint resolver/client seam, never a retired pre-hardening HTTP
+entrypoint. The tenant-first online path accepts only the exact ordinary
+`alembic downgrade 0015` CLI form; flags, ranges, relative revisions and
+programmatic ambiguity stay fail closed.
+
+## P6.1 native Skills, model-native parameters, read-only MCP and release preview
+
+Read INV-069 through INV-072 and
+`docs/architecture/p6-1-native-skills-model-mcp-release.md`. The Browser catalog
+is a fixed first-party instruction-only set over migration `0014`; never accept
+caller instructions, URL, ZIP, arbitrary path or capability expansion. Live
+Owner/Workspace/Agent binding validation precedes idempotency reservation and
+is repeated by persistence before mutation.
+
+Model-native fields are selected only from the exact effective model name.
+Keep the server-owned prefix stable and current task data last. Unknown,
+conflicting and compatible/proxy/emulator names remain generic. Chat
+Completions must not receive Responses-only `verbosity`. Cache usage is observational, not authority,
+and actual model identity remains mandatory.
+
+The stdio MCP preview is separately launched and must not be mounted into the
+historical `no_tool` Agent Alpha path. P6.1 introduced the three-tool baseline;
+P6.3 extends the same process to the six-tool closed set in INV-078. Preserve
+path/link/reparse/sensitive-file guards, per-call stable identity revalidation,
+incrementally bounded file work and metadata-only Git inspection. Any Runtime
+integration requires a separately reviewed explicit mode and durable
+grant/receipt design.
+
+The release ZIP is the canonical audit root. Preserve deterministic ordering,
+timestamps, modes and digests; keep release Compose free of `build:`, preserve
+personal migration/init/health lifecycle and require offline-preflighted
+immutable OCI digests. The EXE may only verify/extract that ZIP. Do not claim a
+release while image digests, EXE build/signing or production journey remain
+unproven, and never mutate Docker/WSL VHDX from installer code.
+
+## P6.2 personal capability center, local continuity and Windows Companion
+
+Read INV-074 through INV-076 and
+`docs/architecture/p6-2-personal-capability-center.md`. P6.2 is a personal
+single-Owner product increment, not a general extension-runtime unlock.
+
+The local Skill picker is scan-only. Keep its explicit Owner gesture, direct
+child scope, UTF-8 and byte/count budgets, opaque source IDs and capability/
+script/executable rejection. Never execute, install, download or persist an
+unknown candidate as first-party. Migration `0014` remains the sealed native
+catalog; migration head remains `0016` and P6.2 does not create `0017`.
+
+Conversation history must come only from the redacted terminal projection of
+the exact active session and remain independently bounded. Its FNV fingerprint
+is diagnostic only. ChangeSet journal records are local recovery data, not
+server audit authority: validate the full record and exact tenant/Workspace
+scope, then retain the original handle/CAS/digest/three-way rollback checks.
+Never reconstruct a handle, auto-replay a Provider call or add a server-side
+arbitrary file writer to recover a journal.
+
+The capability center reuses the existing P6.0-D2 ten-role settings and the
+standalone read-only MCP preview. P6.2 displayed the P6.1 three-tool baseline;
+P6.3 expands the same preview to six tools under INV-078. Do not create ten
+autonomous Agents, a second model router or any MCP-to-Agent connection.
+`no_tool`, Runtime, Planner, Multi-Agent and MCP Runtime stay unchanged and
+disabled.
+
+The Windows Companion is a self-contained CLI preview. Preserve P6.1 manifest,
+compression and digest guards while extending `verify/install/init-config/
+doctor`. Doctor must verify installed bytes and exact config shape and must use
+fixed parameterized child-process arguments only. It may observe host posture;
+it must not pull/up images, launch Docker/WSL, install dependencies or touch
+VHDX/system configuration. Real image digests, Authenticode and clean-machine
+acceptance remain separate publisher evidence, so never describe this source or
+a locally built unsigned binary as a production-ready public v1.0 release.
+
+## P6.3 personal extensions maintenance boundary
+
+Read INV-077 through INV-080 and
+`docs/architecture/p6-3-personal-extensions.md` before changing the expanded
+Skill catalog, MCP preview, GLM/Claude model-name profiles, public presentation
+or Companion install planning.
+
+P6.3 keeps the personal architecture. The fifteen native Skills are still a
+source-owned first-party instruction-only closed set over migration `0014`.
+Metadata and filtering do not authorize third-party import. Enforce the exact
+eight-live-Skill and 32 KiB aggregate instruction budgets both when installing
+and when resolving a fresh invocation. Existing persisted Definition/Version
+rows must match their immutable source projection; do not edit a sealed row to
+make drift disappear.
+
+The MCP stdio process has exactly six read-only tools. Hash returns no content,
+search is literal and bounded, and Git diff returns metadata without patch text.
+Keep lifetime call/file/Git budgets, VCS/secret/link/reparse exclusion and fixed
+Git argv/environment. Do not add shell, regex/glob scans, arbitrary refs,
+network, writes, global client configuration or any Agent Alpha connection.
+
+GLM and Claude recognition is model-name-first prompt/context guidance on the
+existing Chat Completions transport. Exact names through a relay may select a
+family profile; they do not prove the relay accepts native vendor fields. Bare,
+proxy/bridge/emulator or conflicting names stay generic. Do not send or claim
+GLM thinking/tool-stream controls or Anthropic Messages thinking, effort,
+cache, strict tools or native MCP without a separately implemented and verified
+transport adapter.
+
+README and `/public-preview` must distinguish Available, Engineering Preview
+and Deferred. Source changes are not live deployment evidence. If the preview
+host cannot be safely rebuilt without touching root `.env`, Docker/WSL recovery
+or VHDX, report `PUBLIC_PREVIEW_SOURCE_UPDATED_LIVE_DEPLOYMENT_PENDING`.
+
+The Companion may report recommended user/machine/custom locations and reject
+unsafe targets, but it must not elevate, write PATH/registry/service/firewall,
+or mutate Docker/WSL/Hyper-V/VHDX. The clean-Windows probe is read-only,
+one-shot and accepts only the fixed dedicated VM name. Any missing or ambiguous
+host/VM/disk/ACL/guest fact stops as `CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN`
+and `NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`. Do not rerun the probe in the
+same acceptance round after its first environmental blocker; static source or
+AST fixes do not become VM evidence.
+
+## P6.4 bounded personal Agent practice maintenance boundary
+
+Read INV-081 and `docs/architecture/p6-4-personal-agent-practice.md` before
+changing the Browser practice route, upload-to-Workspace binding, deterministic
+citation scorer, trusted artifact renderer, ChangeSet controller, live runner,
+Compose acceptance overlay or final receipt validator.
+
+P6.4 is one Owner-declared request with exactly one or three through six
+separately metered serial Model Gateway calls. The final participant is the
+parent synthesizer. Specialists cannot wake peers, create descendants, replan,
+execute a tool or retry an unknown outcome. This lane does not activate the
+enterprise Planner or Multi-Agent Runtime. Planner, enterprise Multi-Agent and
+MCP must remain false throughout the time-limited canary.
+
+An uploaded-file acceptance must traverse the Browser multipart endpoint,
+immutable Workspace binding, worker ingestion and the authoritative ready
+Embedding lane. Tenant-only legacy documents and a decoy Workspace must remain
+invisible. Citation presence is not a score: the trusted local scorer requires
+exact fact/chunk/document precision and recall and rejects wrong statements
+wrapped in correct identifiers. Browser list/get/download/delete operations on
+a Workspace-private document must re-prove the matching active membership;
+missing bindings fail closed. Initial metadata failure after object upload must
+remove the object or veto. Prefer canonical v1 chunks and suppress a v2 shadow
+for the same source document.
+
+Artifact model output is only a closed JSON proposal. Trusted code may render
+`clock_html` or offline `slides_html`; it must not advertise HTML slides as
+PPTX or accept arbitrary HTML, URLs, scripts, templates or dependencies.
+Workspace output is likewise proposal-only and applies one allowlisted UTF-8
+replacement under exact before-CAS, read-back digest, deterministic project
+check and conflict-safe rollback in a disposable root. Never target the
+OmniBase source tree or a user Workspace during acceptance.
+
+The live matrix runner reads its Browser token and DeepSeek key only from fixed
+environment names, accepts no secret CLI option, targets only explicit loopback
+HTTP and is permanently unable to set `production_accepted=true`. The outer
+controller is the only acceptance authority. It must prove a clean source HEAD,
+perform a read-only healthy Linux Docker Engine preflight, prove closed before
+posture, activate the exact personal canary, execute all six journeys, revoke
+the Provider credential, delete the disposable documents, kill the canary,
+recreate the backend with every gate false, remove the exact labeled sentinel
+Compose project, recheck the unchanged clean HEAD and validate the strict
+redacted receipt before acceptance. Node metadata order and invocation/task
+identity uniqueness fail closed in both the coordinator and Browser stream.
+
+If Docker is not already healthy, report the live matrix as unexecuted. Do not
+start or repair Docker Desktop, WSL, Hyper-V or VHDX for this gate. Matrix unit
+tests, fake Providers, Compose parsing and offline receipt validation are
+necessary engineering evidence but do not substitute for the real DeepSeek
+production-mode receipt.
+
+The R0 production-practice Gate later completed from clean executable source
+HEAD `3c3d322e3f9871749da00525eaac9505062026b4`. The retained redacted receipt
+has SHA-256
+`5e8145525e75feb84d6a28d3cf1007e078747f8e73ac7bd62b8b462b5978f0ef` and
+is summarized by
+`docs/evidence/p6-4/production-practice-r0-decision.md`. It proves the exact
+six journeys, 16 unique Provider/invocation/task calls, RAG fact/citation
+precision and recall of `1.0`, trusted artifact bytes, Workspace CAS rollback,
+credential/document cleanup, closed final gates and zero labeled Compose
+resources. Treat this as acceptance of the bounded personal P6.4 practice lane
+only. It does not authorize P34.7, enterprise P5, Planner, enterprise
+Multi-Agent, MCP-to-Agent, migration `0017`, deployment or release.
+
+## P6.5 per-user Windows desktop distribution boundary
+
+Read INV-082 and
+`docs/architecture/p6-5-windows-desktop-distribution.md` before changing
+`desktop_local`, the Next desktop proxy, Electron, RuntimeHost, payload
+construction, PyInstaller or WiX authoring.
+
+The native chain is Electron -> RuntimeHost -> loopback backend/Next. Electron
+pins the runtime manifest, generates independent 64-hex native proof and native
+control tokens, and verifies a fresh challenge-HMAC proof through Next before
+opening the window. RuntimeHost creates a separate 64-hex authorization token,
+passes the proof/control tokens only to the backend, and passes the
+authorization token only to Next and the backend. Next removes
+Browser-supplied desktop control headers, injects only the authorization token
+on the closed backend hop and removes reflected control headers. RuntimeHost
+accepts no argv, verifies every child immediately before launch and owns the
+children in a kill-on-close Job Object. Port-open alone is not readiness
+evidence.
+
+The desktop-local backend is an independent SQLite composition. It must not
+load root `.env`, PostgreSQL settings or ambient Provider credentials, and it
+must not silently substitute Docker/WSL/PostgreSQL services. Its data root is
+`%LOCALAPPDATA%\OmniBase`; installer ownership stops at
+`%LOCALAPPDATA%\Programs\OmniBase`. Normal uninstall retains user state and
+append-only audit evidence.
+
+Build outputs are external artifacts, not repository truth. Python dependencies,
+Electron/packager, .NET SDK and WiX are pinned; runtime payload and installer
+inputs are closed ordinary-file trees with digest and link/reparse guards. A
+generated but unsigned EXE, a dirty-source build or an Electron shell whose
+required P6 product routes are incomplete remains an engineering test artifact,
+not an installable-and-usable OmniBase 1.0.0 distribution claim.
+
+Release acceptance requires clean-source reconstruction, all component tests,
+one real Electron package, one WiX Burn build, guarded install/upgrade/
+downgrade/rollback/uninstall evidence, retained user data, successful required
+personal product journeys and Authenticode verification. Missing SDK, network,
+certificate, route or clean-target evidence is a veto. It never authorizes
+starting or repairing Docker/WSL/Hyper-V, mutating a virtual disk, deleting a
+parent artifact directory or weakening manifest/identity/rollback checks.
+
+
+## P6.6 desktop-local product admission
+
+Read INV-083 and
+`docs/architecture/p6-6-desktop-local-product-admission.md` before changing the
+desktop Owner/Workspace journey, native control API, renderer bridge or Next
+desktop route catalog.
+
+P6.6 keeps Next product-blind in desktop mode. It may proxy only readiness,
+while `/health` retains the separate challenge path; the `/api/v1` catch-all
+rejects every desktop route. Owner status/bootstrap and Workspace
+list/create/archive use exact origin-checked Electron IPC and a direct backend
+`/desktop/v1` request authenticated by the native control token.
+That token reaches Electron main, RuntimeHost and the backend only; it must
+never reach Next, renderer JavaScript, argv, SQLite, logs or responses.
+
+Keep desktop schema version 1. Owner bootstrap is singleton/idempotent and
+transactionally audited. Workspace create is Owner-bound, limited to 256 rows
+and transactionally audited without recording the name. Archive is one-way,
+requires exact row-version CAS and rolls back if audit append fails. Do not
+invent PostgreSQL Workspace fields or expose `runtime_job`.
+
+The renderer enters `/desktop` only when the complete preload bridge exists and
+stores no JWT or launch identity. PostgreSQL auth, documents, RAG, Provider
+credentials, Agent Runtime, Skills, MCP and Sandbox remain closed. A green
+P6.6 offline gate is bounded product-admission evidence, not Authenticode,
+clean-Windows journey acceptance or a distributable 1.0.0 claim.
+
+
+## P6.7 personal desktop single-agent core
+
+Read INV-084 and
+`docs/architecture/p6-7-desktop-single-agent-core.md` before changing Provider
+vault, desktop family adapters, native conversation IPC or the `/desktop`
+workbench.
+
+P6.7 keeps Next product-blind. Provider, parent Agent and conversation
+mutations use origin-checked IPC plus `/desktop/v1` with the native control
+token. Electron `safeStorage` encrypts API keys; SQLite stores only the
+credential reference, encrypted blob and fingerprint. The renderer never reads
+the raw key. The frozen backend must not import `openai`, `httpx`,
+`cryptography` or PostgreSQL Settings.
+
+Each Workspace has one parent Agent. No tools, files, MCP, Skills or child
+agents. Streaming is consumed by Electron main. Provider connections pin to
+DNS-validated public IPs. Streams succeed only with explicit terminal proof;
+disconnect and truncated EOF become `unknown`. Cancel accept and success share
+one durable CAS winner. Renderer events are workspace/conversation scoped;
+the visible transcript hides other-scope deltas, a global Stop stays
+reachable while a live invocation is active, returning to the origin scope
+restores running/Stop, and send/retry/list-detail projections are
+generation-gated. P6.8 adds
+`frontend/lib/desktop-invocation-lifecycle.ts` as the single live-invocation
+state machine and `frontend/lib/desktop-conversation-surface.ts` as the
+request-epoch fence; `workbench-client.tsx` must not reintroduce loose
+`liveActive`/`streaming`/`cancelRequested` combinations or apply stale
+detail/send/retry/archive completions after a newer epoch or unmount.
+Cancel must abort the provider request and never auto-replay cancelled or
+unknown invocations. Retry is a new invocation. Desktop schema version 2 uses
+`desktop_0002_provider_conversation`, never Alembic 0013/0017.
+
+A green P6.7 focused gate is unsigned engineering evidence. It does not prove
+Authenticode, Sandbox UI, a live paid Provider or OmniBase 1.0.0.
+
+
+## P6.9 personal parent-directed team contract
+
+Read INV-085 and
+`docs/architecture/p6-9-multi-agent-planning.md` before changing
+`workspace_agent_role_config`, `team_run` / plan / assignment / node /
+collaboration tables, Proposal validators, or the closed
+`agents.roles.*` / `teamRuns.*` IPC catalog.
+
+P6.9 keeps Next product-blind. Parent output is a restricted structured
+Proposal, never raw `dispatch(employee)`. The host validates identity,
+budget, dependencies and concurrency, then may persist a plan revision.
+Collaboration requests return to the parent through the Personal Team
+Blackboard. A specialist must not launch another specialist. The specialist
+set is closed at nine roles; parent is not a specialist. Serial, parallel
+and mixed waves are legal proposals; the host may serialize a parallel wave
+and must not parallelize declared dependencies.
+
+Desktop schema version 9 uses `desktop_0009_parent_call_proof`. Every parent
+and employee Provider call first consumes an immutable
+`team_provider_call_reservation`, binding invocation, Run, purpose, Provider,
+requested model and call-budget charge before the network boundary. Node
+creation must exactly match its employee reservation. Parent propose, replan,
+and synthesis additionally settle a `team_parent_call` proof once with
+requested/actual model, usage, plan revision and normalized output digest.
+Propose/replan reservations cannot follow their revision; synthesis
+reservations cannot predate the finish revision. The v9 native employee
+consume envelope must explicitly contain `parent_call: null`; a missing field
+fails closed. Pending parent calls recover to `unknown`; a succeeded Run
+missing this proof also recovers to `unknown`. Version 8 uses
+`desktop_0008_collaboration_report_binding` (the Round 5 immutable
+report-bound replay projection; Round 4 added v7
+`desktop_0007_recovery_success_downgrade` behind the success-proof law;
+Round 3 added v6
+`desktop_0006_report_collaboration_digest`; Round 1 bumped v5
+`desktop_0005_team_node_identity_epochs`; v4
+`desktop_0004_personal_team_runtime`; A2 introduced v3
+`desktop_0003_personal_agent_team`), never Alembic 0017. Role
+config may store a Provider id, model override, gear, thinking depth and a
+verification digest. It must never store API keys, ciphertext, nonce, DPAPI
+blobs or vault handles. Missing rows and null `provider_id` inherit the
+default Provider. Vault material is bound to `is_enabled` in the same
+snapshot. An explicit disabled Provider fails closed. Model override
+reuses that Provider's credentials and exposes only `secret_fingerprint`.
+Role-config writes CAS on `row_version`.
+
+Team HTTPS production pinning asks desktop-local `is_global_unicast`
+(validated public unicast IPs; SNI/Host stay the hostname). The TypeScript
+BlockList is a fallback replica with named extra-rejects vs CPython. Success
+settle is a unique API; `/reports` is not a second success path. Create and
+settle remain two transactions; each re-binds live Conversation, plan, and
+Provider `is_enabled`. Owner Stop CAS-cancels `pending|running` nodes in the
+same transaction as the run. Replan emits `plan_transition`. Team events use a
+per-type identity schema. Off-origin views park Team Run buffers including
+phase, plan, and budgets. Node/report/collaboration/audit settle atomically
+after unique success. Strict wall-time is independent of Provider HTTP
+timeout. Stop-during-createNode latches like P6.8. An explicit empty
+allow-list fails closed; default-all remains when unset. Quiet
+`failed|unknown|budget_exhausted|cannot_complete` convergence atomically blocks
+remaining `pending|ready` assignments and rejects any live node, pending parent
+call or running assignment. Every desktop quiet-terminal path crosses one
+commit barrier: Stop accepted before it wins; once the commit begins, Stop is
+rejected locally and waits for the durable result; a failed CAS reopens Stop
+for retry. Invalid Proposal/replan,
+cannot-complete, invoke, wall/budget and exception fallback paths may not
+bypass this rule. Each coordinator is one-shot; reusing it fails closed
+instead of carrying success-commit or Stop state into a second Run.
+
+Loopback D may claim `PERSONAL_MULTI_AGENT_IMPLEMENTED`. Round 1 closed the
+named attack holes of that drip. Round 1's RuntimeManager journey was an
+in-memory host wrapped as a fake native client. Round 2 adds a true
+`RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite` loopback
+journey. Round 2 did not close all ten items in one pass; Stop/node CAS and
+`/reports` P1s are forward-fixed after `5321aa7`. Paid/live Provider window is
+still unproven. P6.8 single-agent send/Stop/epoch behavior must not regress.
+Enterprise Planner / `MULTI_AGENT_ENABLED` stay disabled. Do not announce
+1.0.0, Authenticode, or EXE. The P34.3 maintainer-map benchmark suite
+(`docs/maintainers/benchmark/benchmark-suite.json`) remains MMB-001–008 and
+does not score P6.9; INV-085 still appears on the desktop impact row.

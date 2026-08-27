@@ -8,7 +8,10 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from omnibase.migrations.order import is_exact_0016_to_0015_downgrade_cli
+
 VERSIONS = Path(__file__).resolve().parents[1] / "src" / "omnibase" / "migrations" / "versions"
+MIGRATION_ENV = Path(__file__).resolve().parents[1] / "src" / "omnibase" / "migrations" / "env.py"
 
 
 def _load_migration(filename: str) -> ModuleType:
@@ -61,3 +64,39 @@ def test_offline_migration_generation_explicitly_uses_global_scope() -> None:
         "def run_migrations_online() -> None:", 1
     )[0]
     assert 'config.attributes["migration_schema_scope"] = "global"' in offline_body
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (["downgrade", "0015"], True),
+        (["-x", "unsafe=1", "downgrade", "0015"], False),
+        (["--name", "alternate", "downgrade", "0015"], False),
+        (["downgrade", "0015", "--tag", "unexpected"], False),
+        (["downgrade", "0015", "--sql"], False),
+        (["downgrade", "0016:0015"], False),
+        (["downgrade", "-1"], False),
+        ([], False),
+        (["upgrade", "0015"], False),
+        (["downgrade", "0014"], False),
+    ],
+)
+def test_0016_to_0015_tenant_first_selector_accepts_only_exact_cli(
+    arguments: list[str],
+    expected: bool,
+) -> None:
+    assert is_exact_0016_to_0015_downgrade_cli(arguments) is expected
+
+
+def test_0016_to_0015_online_downgrade_is_explicitly_tenant_first() -> None:
+    migration_env = MIGRATION_ENV.read_text(encoding="utf-8")
+    assert "def _is_exact_0016_to_0015_downgrade() -> bool:" in migration_env
+    assert "return is_exact_0016_to_0015_downgrade_cli(sys.argv[1:])" in migration_env
+    assert "metadata_matches" not in migration_env
+    tenant_first = migration_env.split("def _run_exact_0016_to_0015_downgrade(", 1)[1].split(
+        "def run_migrations_offline() -> None:", 1
+    )[0]
+    assert tenant_first.index("_run_one_tenant_migration") < tenant_first.index(
+        "_run_global_migrations"
+    )
+    assert "with connectable.begin() as connection:" in tenant_first

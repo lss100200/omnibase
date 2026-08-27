@@ -15,32 +15,26 @@ from sqlalchemy import text
 
 from omnibase.tenants.schema_manager import create_schema, drop_schema
 from omnibase.tenants.service import _initialize_tenant_schema, create_tenant
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 
 pytestmark = pytest.mark.integration
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _upgrade_head() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        cwd=_BACKEND_ROOT,
-        env=os.environ.copy(),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def _downgrade_0011() -> subprocess.CompletedProcess[str]:
+def _run_alembic(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "alembic", "downgrade", "0011"],
+        [sys.executable, "-m", "alembic", *arguments],
         cwd=_BACKEND_ROOT,
         env=os.environ.copy(),
         check=False,
         capture_output=True,
         text=True,
     )
+
+
+def _upgrade_head() -> None:
+    result = _run_alembic("upgrade", "head")
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_unversioned_legacy_schema_converges_without_touching_v1(db_engine) -> None:
@@ -227,8 +221,9 @@ def test_registered_tenant_alembic_upgrade_head_is_idempotent(
             "rag_document_index_state",
             "user_profiles",
             "model_provider_credentials",
+            "workspace_agent_model_overrides",
         }.issubset(tables)
-    assert tenant_revision == "0015"
+    assert tenant_revision == "0016"
 
 
 def test_new_tenant_is_at_current_head_inside_creation_transaction(
@@ -255,8 +250,13 @@ def test_new_tenant_is_at_current_head_inside_creation_transaction(
             ).scalars()
         )
 
-    assert revision == "0015"
-    assert {"memory_candidates", "memories", "context_capsules"}.issubset(tables)
+    assert revision == "0016"
+    assert {
+        "memory_candidates",
+        "memories",
+        "context_capsules",
+        "workspace_agent_model_overrides",
+    }.issubset(tables)
 
 
 def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
@@ -302,15 +302,24 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
         )
 
     _upgrade_head()
-    downgrade = _downgrade_0011()
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
+            == "0015"
+        )
+        for schema in schemas:
+            assert (
+                conn.execute(
+                    text(f'SELECT version_num FROM "{schema}".alembic_version')
+                ).scalar_one()
+                == "0015"
+            )
+
+    downgrade = _run_alembic("downgrade", "0011")
     assert downgrade.returncode != 0
     output = downgrade.stdout + downgrade.stderr
-    assert (
-        "0012 downgrade refused" in output
-        or "0013 populated downgrade is forbidden" in output
-        or "0014 populated downgrade is forbidden" in output
-        or "0015 downgrade refused" in output
-    )
+    assert "0012 downgrade refused" in output
 
     with db_engine.connect() as conn:
         assert (
@@ -323,4 +332,28 @@ def test_0012_populated_tenant_blocks_global_downgrade_before_any_head_moves(
                     text(f'SELECT version_num FROM "{schema}".alembic_version')
                 ).scalar_one()
                 == "0015"
+            )
+        assert (
+            conn.execute(
+                text(
+                    f'SELECT display_name FROM "{schemas[1]}".user_profiles '
+                    "WHERE user_id = :user_id"
+                ),
+                {"user_id": user_id},
+            ).scalar_one()
+            == "Downgrade guard"
+        )
+
+    _upgrade_head()
+    with db_engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT version_num FROM omnibase_meta.alembic_version")).scalar_one()
+            == "0016"
+        )
+        for schema in schemas:
+            assert (
+                conn.execute(
+                    text(f'SELECT version_num FROM "{schema}".alembic_version')
+                ).scalar_one()
+                == "0016"
             )

@@ -25,7 +25,7 @@ def _lite(*, enabled: bool = False) -> dict[str, object]:
     return {
         "activation_allowed": False,
         "engineering_composition_ready": enabled,
-        "expected_migration_head": "0015",
+        "expected_migration_head": "0016",
         "formal_builder_integration": "proven_engineering_only",
         "lite_gate_enabled": enabled,
     }
@@ -139,7 +139,16 @@ def test_invalid_personal_profile_fails_closed_without_engineering_fallback(monk
 
 
 def test_status_discloses_only_the_exact_active_personal_posture(monkeypatch) -> None:
-    monkeypatch.setenv("PERSONAL_RUNTIME_PROFILE", "personal_single_owner")
+    for name, value in {
+        "ENV": "production",
+        "P6_4_PERSONAL_PRACTICE_ENABLED": "true",
+        "AGENT_RUNTIME_ENABLED": "true",
+        "AGENT_PLANNER_ENABLED": "false",
+        "MULTI_AGENT_ENABLED": "false",
+        "MCP_RUNTIME_ENABLED": "false",
+        "PERSONAL_RUNTIME_PROFILE": "personal_single_owner",
+    }.items():
+        monkeypatch.setenv(name, value)
     monkeypatch.setattr("omnibase.agent_alpha.router.engineering_alpha_status", _engineering)
     monkeypatch.setattr("omnibase.agent_alpha.router.lite_agent_posture", _lite)
     monkeypatch.setattr(
@@ -152,6 +161,8 @@ def test_status_discloses_only_the_exact_active_personal_posture(monkeypatch) ->
     assert response.runtime_profile == "personal_single_owner"
     assert response.personal_runtime_state == "active"
     assert response.personal_runtime_active is True
+    assert response.personal_practice_active is True
+    assert response.personal_practice_blockers == []
     assert response.production_activation_allowed is True
     assert response.tools_enabled is False
     assert response.multi_agent_enabled is False
@@ -175,4 +186,6 @@ def test_invalid_profile_status_is_locked_and_vetoed(monkeypatch) -> None:
     assert response.runtime_profile == "locked"
     assert response.personal_runtime_state == "invalid/veto"
     assert response.personal_runtime_active is False
+    assert response.personal_practice_active is False
+    assert response.personal_practice_blockers
     assert response.production_activation_allowed is False

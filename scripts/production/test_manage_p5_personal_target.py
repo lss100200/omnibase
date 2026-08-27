@@ -204,11 +204,12 @@ def test_release_manifest_round_trip_and_digest_drift(
         ],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
         "migration": {
-            "head": "0015",
+            "head": "0016",
             "migration_0013_created": True,
             "migration_0014_created": True,
             "migration_0015_created": True,
-            "migration_0016_or_higher_absent": True,
+            "migration_0016_created": True,
+            "migration_0017_or_higher_absent": True,
         },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),
@@ -257,11 +258,12 @@ def test_verify_release_detects_artifact_fact_drift(
         ],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
         "migration": {
-            "head": "0015",
+            "head": "0016",
             "migration_0013_created": True,
             "migration_0014_created": True,
             "migration_0015_created": True,
-            "migration_0016_or_higher_absent": True,
+            "migration_0016_created": True,
+            "migration_0017_or_higher_absent": True,
         },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),
@@ -310,11 +312,12 @@ def test_verify_release_accepts_public_remote_ref_movement(
         "artifacts": [],
         "feature_gates": {name: False for name in manager.GATE_NAMES},
         "migration": {
-            "head": "0015",
+            "head": "0016",
             "migration_0013_created": True,
             "migration_0014_created": True,
             "migration_0015_created": True,
-            "migration_0016_or_higher_absent": True,
+            "migration_0016_created": True,
+            "migration_0017_or_higher_absent": True,
         },
         "operator_paths": {
             "backup_dir": str(backup.resolve()),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -15,12 +17,39 @@ class AlphaInvokeRequest(AlphaApiModel):
     agent_version_id: str = Field(pattern=_UUID)
     message: str = Field(min_length=1, max_length=32_000)
     top_k: int = Field(default=5, ge=1, le=12)
+    reasoning_gear: Literal["economy", "standard", "deep", "audit"] = "standard"
     retry_of: str | None = Field(default=None, pattern=_UUID)
+    employee_role_id: str = Field(
+        default="parent",
+        pattern=r"^(parent|product|ux|frontend|backend|data|security|qa|operations|docs)$",
+    )
 
 
 class AlphaCancelResponse(AlphaApiModel):
     invocation_id: str = Field(pattern=_UUID)
     cancellation_requested: bool
+
+
+PracticeEmployeeRole = Literal[
+    "product",
+    "ux",
+    "frontend",
+    "backend",
+    "data",
+    "security",
+    "qa",
+    "operations",
+    "docs",
+]
+
+
+class AlphaPracticeRunRequest(AlphaApiModel):
+    agent_version_id: str = Field(pattern=_UUID)
+    scenario: Literal["rag", "artifact", "workspace"]
+    participant_count: Literal[1, 3, 4, 5, 6]
+    specialist_roles: list[PracticeEmployeeRole] = Field(default_factory=list, max_length=5)
+    task: str = Field(min_length=1, max_length=16_000)
+    top_k: int = Field(default=5, ge=1, le=8)
 
 
 class AlphaProfileRead(AlphaApiModel):
@@ -57,7 +86,7 @@ class AlphaStatusResponse(AlphaApiModel):
     formal_builder_integration: str = "proven_engineering_only"
     engineering_composition_ready: bool = True
     activation_allowed: bool = False
-    expected_migration_head: str = "0015"
+    expected_migration_head: str = "0016"
     # P5 personal Runtime canary disclosure. These fields describe only the
     # exact current request scope; they contain no credential, locator,
     # approval, lease, fencing or workload-identity material.
@@ -66,11 +95,14 @@ class AlphaStatusResponse(AlphaApiModel):
     personal_runtime_active: bool = False
     personal_canary_id: str | None = Field(default=None, pattern=_UUID)
     personal_canary_expires_at: str | None = None
+    personal_practice_active: bool = False
+    personal_practice_blockers: list[str] = Field(default_factory=list)
 
 
 __all__ = [
     "AlphaCancelResponse",
     "AlphaInvokeRequest",
+    "AlphaPracticeRunRequest",
     "AlphaProfileList",
     "AlphaProfileRead",
     "AlphaStatusResponse",

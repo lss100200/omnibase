@@ -14,6 +14,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from tests.integration.migration_helpers import downgrade_0016_to_0015
+
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
         "P34.6 integration tests require OMNIBASE_INTEGRATION_TESTS=1",
@@ -70,8 +72,8 @@ def test_0009_global_and_tenant_foundation_guards(db_engine) -> None:
         tenant_revision = connection.execute(
             text(f'SELECT version_num FROM "{tenant_schema}".alembic_version')  # noqa: S608
         ).scalar_one()
-        assert global_revision == "0015"
-        assert tenant_revision == "0015"
+        assert global_revision == "0016"
+        assert tenant_revision == "0016"
         tables = set(
             connection.execute(
                 text(
@@ -408,6 +410,23 @@ def test_0009_global_and_tenant_foundation_guards(db_engine) -> None:
             == "committed"
         )
 
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                )
+            ).scalar_one()
+            == "0015"
+        )
+
     downgrade = _run_alembic("downgrade", "0008")
     assert downgrade.returncode != 0
     assert "refusing populated P34.6 global downgrade" in downgrade.stdout + downgrade.stderr
@@ -417,6 +436,34 @@ def test_0009_global_and_tenant_foundation_guards(db_engine) -> None:
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
             == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT state FROM omnibase_meta.workspace_data_usage_reservations "
+                    "WHERE operation_id = :operation"
+                ),
+                {"operation": operation_id},
+            ).scalar_one()
+            == "committed"
+        )
+
+    upgrade = _run_alembic("upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0016"
+        )
+        assert (
+            connection.execute(
+                text(
+                    f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                )
+            ).scalar_one()
+            == "0016"
         )
 
     migration_source = (

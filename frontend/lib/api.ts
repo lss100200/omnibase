@@ -1,5 +1,7 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import type {
+  AgentModelSettingList,
+  AgentModelSettingRead,
   ApiErrorResponse,
   DocumentDownloadURL,
   DocumentList,
@@ -8,6 +10,7 @@ import type {
   HealthResponse,
   LoginRequest,
   PlaygroundResponse,
+  P6EmployeeRoleId,
   ProviderCredentialList,
   ProviderCredentialRead,
   ProviderRuntimePosture,
@@ -166,6 +169,24 @@ export async function refreshAccessToken(): Promise<string> {
   return refreshPromise
 }
 
+async function refreshStreamAfterUnauthorized(
+  response: Response,
+  retry: (accessToken: string) => Promise<Response>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  if (response.status !== 401) return response
+
+  if (!getRefreshToken()) {
+    invalidateAuthSession()
+    redirectToLogin()
+    throw new Error('auth_session_expired')
+  }
+
+  const accessToken = await refreshAccessToken()
+  signal?.throwIfAborted()
+  return retry(accessToken)
+}
+
 // -----------------------------------------------------------
 // Typed API surface (one function per endpoint)
 // -----------------------------------------------------------
@@ -261,9 +282,10 @@ export const documentsApi = {
 
   get: (id: string) => api.get<DocumentRead>(`/documents/${id}`).then((r) => r.data),
 
-  upload: (file: File) => {
+  upload: (file: File, workspaceId?: string) => {
     const formData = new FormData()
     formData.append('file', file)
+    if (workspaceId) formData.append('workspace_id', workspaceId)
     return api
       .post<DocumentUploadResponse>('/documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -325,19 +347,30 @@ export const ragApi = {
     }
 
     const initialResponse = await requestStream(getAccessToken())
-    if (initialResponse.status !== 401) return initialResponse
-
-    const accessToken = await refreshAccessToken()
-    options.signal?.throwIfAborted()
-    return requestStream(accessToken)
+    return refreshStreamAfterUnauthorized(
+      initialResponse,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
   },
 }
 
 export interface AgentAlphaInvokePayload {
   readonly agent_version_id: string
+  readonly employee_role_id?: P6EmployeeRoleId
   readonly message: string
   readonly top_k?: number
+  readonly reasoning_gear?: 'economy' | 'standard' | 'deep' | 'audit'
   readonly retry_of?: string | null
+}
+
+export interface AgentAlphaPracticePayload {
+  readonly agent_version_id: string
+  readonly scenario: 'rag' | 'artifact' | 'workspace'
+  readonly participant_count: 1 | 3 | 4 | 5 | 6
+  readonly specialist_roles: readonly Exclude<P6EmployeeRoleId, 'parent'>[]
+  readonly task: string
+  readonly top_k?: number
 }
 
 export interface AgentInstallation {
@@ -410,6 +443,94 @@ export const agentBuilderApi = {
       .then((response) => response.data),
 }
 
+export interface NativeSkillRead {
+  readonly stable_logical_key: string
+  readonly display_name: string
+  readonly description: string
+  readonly category: string
+  readonly tags: string[]
+  readonly recommended_roles: P6EmployeeRoleId[]
+  readonly instructions_bytes: number
+  readonly semantic_version: string
+  readonly manifest_digest: string
+  readonly source: 'omnibase_first_party'
+  readonly review_state: 'sealed'
+  readonly kind: 'instruction'
+  readonly first_party: true
+  readonly tools_enabled: false
+  readonly network_enabled: false
+  readonly secrets_allowed: false
+}
+
+export interface NativeSkillList {
+  readonly schema_version: 1
+  readonly catalog_digest: string
+  readonly catalog_total: number
+  readonly categories: string[]
+  readonly items: NativeSkillRead[]
+  readonly total: number
+}
+
+export interface SkillInstallationRead {
+  readonly installation_id: string
+  readonly workspace_id: string
+  readonly agent_version_id: string
+  readonly stable_logical_key: string
+  readonly display_name: string
+  readonly semantic_version: string
+  readonly manifest_digest: string
+  readonly installation_state: 'installed' | 'disabled' | 'superseded' | 'revoked'
+  readonly created_at: string | null
+  readonly disabled_at: string | null
+  readonly revoked_at: string | null
+}
+
+export interface SkillInstallationList {
+  readonly items: SkillInstallationRead[]
+  readonly total: number
+  readonly live_count: number
+  readonly live_instruction_bytes: number
+  readonly max_live_installations: number
+  readonly max_instruction_bytes: number
+}
+
+export interface NativeSkillFilters {
+  readonly q?: string
+  readonly category?: string
+  readonly role?: P6EmployeeRoleId
+}
+
+export const nativeSkillsApi = {
+  list: (filters: NativeSkillFilters = {}) =>
+    api.get<NativeSkillList>('/skills', { params: filters }).then((response) => response.data),
+  installations: (workspaceId: string, agentVersionId: string) =>
+    api
+      .get<SkillInstallationList>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/skill-installations`,
+      )
+      .then((response) => response.data),
+  install: (skill: NativeSkillRead, workspaceId: string, agentVersionId: string) =>
+    api
+      .post<SkillInstallationRead>(
+        `/skills/${skill.stable_logical_key}/install`,
+        {
+          workspace_id: workspaceId,
+          agent_version_id: agentVersionId,
+          expected_manifest_digest: skill.manifest_digest,
+        },
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      )
+      .then((response) => response.data),
+  disable: (installation: SkillInstallationRead) =>
+    api
+      .post<SkillInstallationRead>(
+        `/workspaces/${installation.workspace_id}/agents/${installation.agent_version_id}/skill-installations/${installation.installation_id}/disable`,
+        undefined,
+        { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      )
+      .then((response) => response.data),
+}
+
 export const workspaceInstallationsApi = {
   list: (workspaceId: string) =>
     api
@@ -418,6 +539,56 @@ export const workspaceInstallationsApi = {
 }
 
 export const agentAlphaApi = {
+  modelSettings: (workspaceId: string, agentVersionId: string) =>
+    api
+      .get<AgentModelSettingList>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings`,
+      )
+      .then((response) => response.data),
+
+  updateModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+    payload: {
+      inherit_default: boolean
+      provider_credential_id?: string | null
+      requested_model_id?: string | null
+      family_override?: AgentModelSettingRead['family'] | null
+      expected_version: number
+    },
+  ) =>
+    api
+      .put<AgentModelSettingRead>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}`,
+        payload,
+      )
+      .then((response) => response.data),
+
+  deleteModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+    expectedVersion: number,
+  ) =>
+    api
+      .delete<AgentModelSettingRead>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}`,
+        { params: { expected_version: expectedVersion } },
+      )
+      .then((response) => response.data),
+
+  testModelSetting: (
+    workspaceId: string,
+    agentVersionId: string,
+    employeeRoleId: P6EmployeeRoleId,
+  ) =>
+    api
+      .post<ProviderTestResult>(
+        `/workspaces/${workspaceId}/agents/${agentVersionId}/model-settings/${employeeRoleId}/test`,
+      )
+      .then((response) => response.data),
+
   profiles: (workspaceId: string) =>
     api
       .get<AgentAlphaProfileList>(`/workspaces/${workspaceId}/agent-alpha/profiles`)
@@ -447,6 +618,8 @@ export const agentAlphaApi = {
         personal_runtime_active: boolean
         personal_canary_id: string | null
         personal_canary_expires_at: string | null
+        personal_practice_active: boolean
+        personal_practice_blockers: string[]
       }>(`/workspaces/${workspaceId}/agent-alpha/status`)
       .then((response) => response.data),
 
@@ -470,10 +643,38 @@ export const agentAlphaApi = {
       })
     }
     const response = await requestStream(getAccessToken())
-    if (response.status !== 401) return response
-    const accessToken = await refreshAccessToken()
-    options.signal?.throwIfAborted()
-    return requestStream(accessToken)
+    return refreshStreamAfterUnauthorized(
+      response,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
+  },
+
+  practiceStream: async (
+    workspaceId: string,
+    payload: AgentAlphaPracticePayload,
+    options: { signal?: AbortSignal; idempotencyKey?: string } = {},
+  ): Promise<Response> => {
+    const key = options.idempotencyKey ?? crypto.randomUUID()
+    const requestStream = (accessToken: string | null): Promise<Response> => {
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': key,
+      })
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+      return fetch(apiUrl(`/workspaces/${workspaceId}/agent-alpha/practice`), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: options.signal,
+      })
+    }
+    const response = await requestStream(getAccessToken())
+    return refreshStreamAfterUnauthorized(
+      response,
+      (accessToken) => requestStream(accessToken),
+      options.signal,
+    )
   },
 
   cancel: (workspaceId: string, invocationId: string) =>

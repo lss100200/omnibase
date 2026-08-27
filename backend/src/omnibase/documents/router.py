@@ -14,7 +14,9 @@ Endpoints (all under /api/v1/documents):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from omnibase.core.config import Settings, get_settings
 from omnibase.core.logging import get_logger
@@ -69,6 +71,10 @@ def _error(code: str, message: str, status_code: int) -> HTTPException:
 )
 async def upload_endpoint(
     file: UploadFile = File(..., description="File to upload"),
+    workspace_id: UUID | None = Form(
+        default=None,
+        description="Optional Workspace that may retrieve this document after indexing",
+    ),
     ctx: TenantContext = Depends(get_current_tenant),
     settings: Settings = Depends(get_settings),
 ) -> DocumentUploadResponse:
@@ -88,6 +94,9 @@ async def upload_endpoint(
             content_type=file.content_type,
             data=data,
             settings=settings,
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+            workspace_id=str(workspace_id) if workspace_id is not None else None,
         )
     except InvalidFile as exc:
         raise _error(exc.code, exc.message, 422) from exc
@@ -129,6 +138,8 @@ def list_endpoint(
         limit=limit,
         offset=offset,
         status_filter=status,
+        tenant_id=ctx.tenant_id,
+        actor_user_id=ctx.user_id,
     )
     return DocumentList(
         items=[DocumentRead.model_validate(d) for d in documents],
@@ -150,7 +161,12 @@ def get_endpoint(
 ) -> DocumentRead:
     """Fetch document metadata."""
     try:
-        document = get_document(schema_name=ctx.schema_name, document_id=document_id)
+        document = get_document(
+            schema_name=ctx.schema_name,
+            document_id=document_id,
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+        )
     except DocumentNotFound as exc:
         raise _error("not_found", str(exc), 404) from exc
     return DocumentRead.model_validate(document)
@@ -180,6 +196,8 @@ def download_endpoint(
             schema_name=ctx.schema_name,
             document_id=document_id,
             settings=settings,
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
         )
     except DocumentNotFound as exc:
         raise _error("not_found", str(exc), 404) from exc
@@ -208,7 +226,12 @@ def delete_endpoint(
 ) -> DocumentDeleteResponse:
     """Delete document + MinIO object."""
     try:
-        delete_document(schema_name=ctx.schema_name, document_id=document_id)
+        delete_document(
+            schema_name=ctx.schema_name,
+            document_id=document_id,
+            tenant_id=ctx.tenant_id,
+            actor_user_id=ctx.user_id,
+        )
     except DocumentNotFound as exc:
         raise _error("not_found", str(exc), 404) from exc
     except DocumentDeleteConflict as exc:

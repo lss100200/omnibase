@@ -2899,8 +2899,13 @@ The chain is an integrity/lifecycle receipt, not an external signature or
 separate authenticity root.
 
 Every Browser request independently binds config/plan/ledger, feature gates,
-migration, Tenant/Workspace/Owner/AgentVersion and Model Gateway. The exact
-live Owner, tenant-admin and AgentVersion scope is rechecked inside Task Ledger
+migration, Tenant/Workspace/Owner/AgentVersion and the request-scoped personal
+Provider resolver (or an explicitly configured operator Model Gateway). The
+status posture may prove the resolver's encryption and endpoint-policy
+composition without reading or decrypting a user credential; invocation must
+still select and revalidate one exact active, tested credential and fail closed
+on missing, revoked or drifted state. The exact live Owner, tenant-admin and
+AgentVersion scope is rechecked inside Task Ledger
 transaction A before reservation. Invalid profile tokens may not fall back to
 engineering Lite. Public status exposes no credentials, Approval/Capability,
 lease/fencing, physical locator or workload identity material.
@@ -3141,12 +3146,13 @@ bytes. Restore verification uses a distinct `omnibase_restore_*` database and a
 new `restore_new_evidence` inventory; source evidence is never edited or
 relabelled.
 
-The current personal head is `0015`. Migration `0015` changes only
+The current personal head is `0016`. Migration `0015` changes only
 `context_capsules_tokens_check` so `total_tokens=0` is valid while
 `max_tokens>=1` remains mandatory. Backup and restore bind the raw bytes of
-`0013`, `0014` and `0015`; the only new forward compatibility entry is the
-closed `0014 -> 0015` Memory-bootstrap upgrade. Downgrade refuses when any
-zero-token Capsule exists. Migration `0016+` remains absent.
+`0013`, `0014`, `0015` and `0016`; the reviewed compatibility entries are the
+closed `0014 -> 0015` Memory-bootstrap upgrade and the personal-model-settings
+`0015 -> 0016` upgrade. Migration `0015` downgrade refuses when any zero-token
+Capsule exists. Migration `0017+` remains absent.
 
 **Allowed changes**
 
@@ -3213,8 +3219,9 @@ unknown deletion as committed or downgrading a populated business database.
 P5.5C enables bounded Memory compilation only inside the exact INV-056 personal
 single-Owner canary composition. Runtime remains false by default, Planner and
 Multi-Agent remain false everywhere. The current personal repository head is
-`0015`; `0013` still owns Memory persistence, `0014` owns instruction Skills and
-`0015` owns only the empty-Capsule token lower bound. Migration `0016+`, Browser
+`0016`; `0013` still owns Memory persistence, `0014` owns instruction Skills,
+`0015` owns only the empty-Capsule token lower bound, and `0016` owns only
+user-scoped per-role model preferences. Migration `0017+`, Browser
 Memory CRUD, tools, shell, SQL, arbitrary HTTP, MCP, workflow/script Skill
 execution and enterprise Runtime authority are not created by this increment.
 
@@ -3285,7 +3292,7 @@ physical locators or internal provenance.
   compiler failure in a running ledger state.
 - Enabling Runtime outside the exact personal canary, enabling Planner or
   Multi-Agent, modifying the separately owned Skill migration `0014`, creating
-  unauthorized migration `0016+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
+  unauthorized migration `0017+`, or smuggling tool/Skill/MCP/HTTP/SQL authority
   through Memory content.
 
 **Required verification**
@@ -3458,7 +3465,9 @@ The initial no-Memory invocation must persist one zero-item/zero-token audit
 Capsule without changing Provider prompt or SSE Memory metadata. Publication of
 the first real Memory must bind that Capsule, and the following invocation must
 project exactly one item. The receipt must also report durable cancel terminal
-event and Task state as `cancelled`. Migration head is `0015`; `0016+` is absent.
+event and Task state as `cancelled`. The current migration head is `0016`;
+`0017+` is absent. Migration `0016` adds only personal per-role model
+preferences and does not alter this Memory/restart receipt.
 
 The Core container must not restart itself during the interruption window. The
 Provider call counter must remain unchanged across restart and exact replay.
@@ -3488,3 +3497,1103 @@ Local syntax or protocol tests cannot substitute for that evidence when Docker
 is unavailable. A PASS permits the small P6.0 Personal Admission record; it is
 not a public deployment, enterprise P34.7 activation, Marketplace, MCP,
 workflow/script Skill, Planner or Multi-Agent admission.
+
+## INV-063 p60-personal-workbench-session-and-employee-boundary
+
+**Authoritative source**
+
+- `frontend/lib/p6-workbench.ts`
+- `frontend/lib/p6-workbench.test.ts`
+- `frontend/components/workbench/personal-engineering-workbench.tsx`
+- `frontend/lib/agent-alpha-stream.ts`
+- `frontend/lib/invocation-state.ts`
+- `frontend/lib/personal-runtime-gate.ts`
+- `docs/architecture/p6-0-personal-engineering-workbench.md`
+
+P6.0-A is a single-human Owner workbench over the existing bounded personal
+Agent Runtime. It is not Multi-Agent orchestration. Exactly one parent Agent is
+active by default. Nine specialist role definitions are dormant until an
+Owner-authored message explicitly names exactly one of them. Unknown,
+duplicate, broadcast or multiple employee mentions fail before any network
+request. Agent output is display data and can never wake another employee.
+
+The initial session projection is browser-local and must be scoped by the live
+tenant and user identity. It may store terminal conversation text and local
+timeline events, but must never store auth tokens, Provider secrets,
+Capability material, physical infrastructure locators or partial SSE chunks as
+successful messages. Corrupt or unsupported schema versions fail safe. The
+projection is bounded and does not reconstruct, edit or infer Task, Run,
+Attempt, Lease, Memory, ContextCapsule or append-only audit history.
+
+P6.0-A reuses the existing Agent Alpha Runtime status, profile, SSE and cancel
+boundaries. InvocationGuard still owns one in-flight request, EOF without a
+terminal stays an error, and browser history never automatically replays a
+Provider call. Planner and Multi-Agent remain false. Migration `0016` stores
+only personal per-role model preferences; Task/Run, Memory and that preference
+table remain forbidden as conversation-persistence substitutes.
+
+**Required verification**
+
+- `cd frontend && pnpm test`
+- `cd frontend && pnpm typecheck`
+- `cd frontend && pnpm lint`
+- `cd frontend && NODE_ENV=production pnpm build`
+- maintainer map and benchmark validators
+
+**Failure recovery**
+
+Disable the `/dashboard` P6 projection or remove only the exact scoped
+`omnibase.p6.workbench.v1:<tenant>:<user>` browser record. Keep the existing
+`/agents` diagnostic surface and server ledgers intact. Never repair local
+conversation history by mutating execution, Memory or audit records, enabling
+Planner/Multi-Agent, or replaying an unknown Provider outcome.
+
+## INV-064 virtual-disk-ownership-backup-and-offline-maintenance
+
+**Authoritative source**
+
+- `AGENTS.md`
+- `docs/maintainers/ai-maintainer-map.md`
+- platform documentation for Docker Desktop, WSL and Hyper-V disk maintenance
+
+Virtual disks are stateful infrastructure even when most allocated space is
+rebuildable cache. A maintainer must distinguish a Docker Desktop system disk
+from its container-data disk and inventory running containers, referenced
+images, named volumes and business-data risk before changing either. A large
+host VHDX is not evidence that its contents are unused, and deleting the image
+is never a substitute for inspecting the engine object graph.
+
+Cleanup proceeds inside-out: remove only proven rebuildable BuildKit cache,
+unreferenced images and explicitly named unreferenced dependency-cache volumes;
+preserve PostgreSQL, Redis, MinIO and unknown volumes. Stop all writers, shut
+down the owning engine and WSL distribution, verify the exact resolved path and
+mount state, create a length-checked backup on a different disk, and prove a
+rollback path before offline maintenance. Compacting a dynamic disk can return
+sparse blocks to the host but does not impose a hard capacity limit.
+
+Never shrink, truncate, convert, replace or delete a mounted or unidentified
+VHD/VHDX/VDI/VMDK. A capacity change is allowed only when a supported tool can
+first validate and resize the guest filesystem and then validate the container
+format. If any layer cannot prove a minimum safe size, stop instead of forcing
+a container-level shrink. Restoring a copied VHDX must also restore the owning
+VM service ACL/SID; administrator access alone does not prove WSL or Hyper-V can
+attach it.
+
+**Required verification**
+
+- guest filesystem check reports clean before and after an offline resize;
+- container-format inspection reports the intended logical and physical size;
+- the owning engine starts and enumerates the expected containers and volumes;
+- application worktrees remain unchanged except for the intended patch;
+- recovery artifacts are reported explicitly and are not silently deleted.
+
+**Failure recovery**
+
+Stop repeated boot attempts, keep the failed image, restore the length-checked
+pre-change backup to the canonical path, restore its VM service ACL/SID,
+restart the WSL/virtualization service, and verify engine plus volume inventory.
+Do not troubleshoot a virtual-disk failure by mutating OmniBase source, database
+migrations or business data.
+
+## INV-065 p60-authorized-file-and-context-boundary
+
+Local files require a direct Owner directory-picker gesture. Handles stay in
+memory and are cleared on tenant or Workspace change. Secret/traversal names
+must be rejected before `getFile()`, enumeration is lazy under one monotonic
+tree budget, and no absolute path or file body is persisted. OPEN is preview;
+CONTEXT/PINNED text binds a reviewed SHA-256 digest, is re-read before dispatch,
+and enters only as bounded untrusted JSON data. Image/PDF is preview-only and
+other binary content is metadata-only. System-default opening remains disabled
+without a native bridge.
+
+## INV-066 p60-local-changeset-and-rollback-boundary
+
+Agent Alpha has no local file tool. A P6 ChangeSet records only an
+Owner-reviewed text edit after a successful Task/invocation, binds tenant,
+Workspace, Task and invocation, and seals Before/After content. Writes require
+snapshot CAS and post-write digest verification. Rollback validates owner,
+manifest and current content, performs bounded three-way merge, and refuses
+overlap or drift. Browser writes are not cross-file atomic; interrupted writes
+are recovery-required and may restore only under exact digest comparison.
+
+## INV-067 p60-model-adaptation-and-cost-honesty-boundary
+
+The user-entered model name is the first conservative family-classification
+input; observed Provider model identity remains the exact runtime evidence.
+Conflicting family tokens resolve to generic. An explicit family override is a
+fallback only and a Provider/base-URL hint must never override a recognized
+model name. Classification selects prompt guidance, not native capability.
+Gears control only real Agent Alpha top-k, local context budget and prompt
+guidance. Native reasoning, target output control, Tools, MCP, CLI, Vision and
+autonomous delegation remain unavailable and visibly disclosed. The final
+assembled request must fit 32,000 characters. Usage must be finite/non-negative
+and cost remains unknown without explicit rates.
+
+## INV-068 p60d2-per-role-model-selection-and-migration-boundary
+
+**Authoritative source**
+
+- `backend/src/omnibase/user_settings/model_settings.py`
+- `backend/src/omnibase/user_settings/gateway.py`
+- `backend/src/omnibase/user_settings/router.py`
+- `backend/src/omnibase/user_settings/schemas.py`
+- `backend/src/omnibase/db/tenant.py`
+- `backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py`
+- `frontend/components/workbench/personal-engineering-workbench.tsx`
+- `frontend/lib/p6-model-profiles.ts`
+
+One parent and nine dormant specialists remain request-scoped roles over one
+personal Agent Alpha Runtime. All ten inherit the user's default saved Provider
+credential and model unless a role references another credential or overrides
+its model name. The override table stores only logical user, Workspace,
+AgentVersion, employee-role and credential IDs, model/family metadata, an
+optimistic version and exact-test evidence. API keys, ciphertext and nonces stay
+in `model_provider_credentials` and never enter the override table, audit detail
+or Browser DTO. Model-name fields reject secret-shaped values, authenticated
+URLs, sensitive environment assignments, `.env` locators and absolute physical
+paths before ORM mutation or Audit.
+
+Every read, mutation, test and Runtime resolution revalidates the live Tenant,
+active tenant User, non-archived tenant-bound Workspace, active membership,
+installed exact AgentVersion binding and Workspace generation. Mutations use
+the repository lock order and require an exact `expected_version`, including
+zero for first creation. Credential ownership is enforced by the composite
+`(credential_id, user_id)` foreign key. A custom model is unusable until its
+exact requested/actual identity test passes. That evidence binds the override
+ID/version, credential/key/provider/base-URL/model state, Workspace generation,
+installed Binding ID, AgentVersion digest and endpoint-policy digest. Probe and
+personal Runtime share an HTTPS-only, port-443, allowlisted, public-DNS,
+no-environment-proxy and no-redirect transport; the verified address set is
+frozen for that client while TLS keeps the original hostname/SNI. Runtime
+resolves the policy again before dispatch. Concurrent mutation,
+generation/binding replacement, credential drift, allowlist change or DNS-set
+change invalidates the old evidence. Invocation identity binds the employee
+role and resolved scope/configuration so an idempotency key cannot cross role,
+model, Workspace generation or Binding.
+
+Migration `0016` is tenant-scoped and authorizes only this personal preference
+surface. Its exact `0016 -> 0015` downgrade is tenant-first: all retained
+tenants must atomically reach head `0015` and remove both the override table and
+the credential ownership unique constraint before the global revision may
+move. A populated tenant or any global-first attempt fails closed and rolls
+back without partial head movement; recovery is forward-fix or restore-new.
+The current migration fact does not enable Planner, Multi-Agent,
+Skills, MCP, CLI, Vision, arbitrary tools, enterprise Trust Policy approval,
+production evidence or a public deployment.
+
+## INV-069 p61-native-skill-browser-boundary
+
+The P6.1 native catalog is a source-owned closed set of first-party,
+instruction-only Skill manifests. Browser list/detail never accepts instruction
+text, URL, ZIP or path. Install/disable locks the live Tenant, active personal
+Owner, owned Workspace, active owner membership, sealed AgentVersion and exact
+installed binding before idempotency reserve; persistence repeats validation.
+Mutation, idempotency completion and append-only Audit share one transaction.
+Catalog source IDs are not reused as global database primary keys: Definition
+and Version rows use deterministic tenant-scoped UUIDs, and first
+materialization registers logical resources plus explicit Definition/Version
+Audit evidence in the same transaction.
+Native Skills have no tools, network, secrets, MCP, Planner, Multi-Agent or
+Capability expansion, and catalog digest drift fails closed.
+
+## INV-070 p61-model-native-parameter-and-cache-boundary
+
+Only one unambiguous effective model name selects DeepSeek or GPT native request
+fields; base URL/provider label never override it. Unknown/conflicting and
+compatible/proxy/emulator claims receive no native controls. The current Chat
+Completions boundary never sends the Responses-only `verbosity` field. A stable server-owned system prefix precedes sealed
+Agent/Skill/context messages and changing user data remains last. Reasoning gear
+is a closed API value bound into invocation intent/replay identity. DeepSeek
+cache hit/miss and reasoning tokens are bounded usage observations, never
+authorization or proof that caching occurred. Actual model identity must still
+equal requested identity; tools, MCP, Planner and Multi-Agent remain disabled.
+
+## INV-071 p61-read-only-mcp-preview-boundary
+
+The P6.1 MCP baseline introduced an explicitly launched local stdio preview,
+not mounted into Agent Alpha, with authorized-file list/read and metadata-only
+Git status/log. P6.3 extends that same server to the exact six-tool closed set
+defined by INV-078; it does not create a second MCP Runtime. Existing `no_tool`
+semantics remain unchanged and `MCP_RUNTIME_ENABLED` stays false. Roots,
+repository and Git binary identities are captured and revalidated for each
+call. They must be
+regular non-link/non-reparse objects. Paths reject traversal, absolute/drive,
+UNC, ADS, links and reparse escape; secret-like, binary and oversized files
+fail closed. File handles are checked after open and reads are incrementally
+bounded. Git argv/environment/time/output are fixed and bounded while the
+process runs; arbitrary
+flags, shell, writes, network operations and credentials are absent.
+
+## INV-072 p61-reproducible-windows-release-boundary
+
+The canonical Windows artifact is a deterministic ZIP with closed manifest,
+fixed sort/time/mode/stored encoding and per-file SHA-256. It contains no root
+`.env`, populated operator env, secret, DB, model, image tar, VHDX/WSL data,
+`node_modules`, `.next` or virtualenv. Release Compose has no `build:` and every
+release payload byte is read from the declared clean commit's fixed-path Git
+blob under a closed Git environment; ambient repository-overriding `GIT_*`
+variables and mutable worktree bytes are not provenance. Every image value is
+an operator-supplied immutable `image@sha256` reference verified
+by an offline repository/digest closed-set preflight; normal
+hosts use pull plus `up --no-build`. The EXE is a thin verifier/extractor of the
+same ZIP. Release Compose preserves personal migration, storage initialization,
+health and least-privilege lifecycle without host source builds. Install/doctor may report virtual-disk posture but must never compact,
+truncate, relocate or delete VHDX or unknown volumes. Unsigned/unbuilt EXE and
+placeholder image digests are not a release.
+
+## INV-073 literal-target-recursive-delete-boundary
+
+**Authoritative source**
+
+- `AGENTS.md`
+- `docs/maintainers/ai-maintainer-map.md`
+- `docs/maintainers/maintenance-map.json`
+
+Recursive deletion is a high-impact external-state mutation even when the
+requested object is called a backup, archive, cache, temporary directory or
+empty long-path tree. A directory name, approximate location, size or apparent
+rebuildability is not proof that its descendants are isolated from repositories,
+worktrees, game libraries, release artifacts or unrelated user data.
+
+Before any recursive delete, the maintainer must use read-only checks to resolve
+the literal absolute target, inspect every path component for symlink, junction
+or reparse behavior, prove the target is contained by the user-authorized parent
+and prove it is not that parent itself or an ancestor of any retained object.
+The intended entries and aggregate scope must be inventoried using the same
+shell and literal-path semantics as the mutation. One command may operate on
+only one verified target. Globs, unresolved variables, constructed command
+strings, parent-directory cleanup and cross-shell path handoff are forbidden.
+In particular, PowerShell discovery must never feed `cmd.exe rd`, batch builtins
+or another shell: quoting, backslash and extended-path reinterpretation can
+silently widen the deletion boundary.
+
+The default cleanup action is a recoverable same-volume move to a uniquely named
+quarantine/trash location after proving the destination is outside the source.
+Permanent deletion requires a separate explicit user authorization naming the
+exact resolved target after the inventory and recovery consequence are shown.
+Long paths, access-denied files or apparently empty parents never justify
+switching shells, deleting an ancestor or bypassing containment checks. If any
+ownership, containment, link state, target identity or recovery fact changes
+between inventory and mutation, fail closed and repeat the read-only proof.
+
+**Required verification**
+
+- capture the exact resolved literal target and authorized parent;
+- confirm the target exists, is not the filesystem/workspace/repository root,
+  and is not an ancestor of retained repositories, worktrees or user libraries;
+- enumerate link/reparse state and intended descendants without following links;
+- record whether the action is recoverable and the exact quarantine or backup;
+- after mutation, verify only the authorized target moved or disappeared and
+  report the recovery status explicitly.
+
+**Failure recovery**
+
+Stop all further cleanup immediately, preserve logs and surviving storage, and
+do not delete secondary recovery or forensic material. Identify affected paths,
+free space and authoritative remote copies with read-only checks. Prefer restore
+from version control, verified backups or a new destination; never conceal the
+scope, invent recovered evidence or continue destructive work to make the tree
+look tidy. Any follow-up deletion requires a fresh authorization and a fresh
+literal-target proof.
+
+**Required verification**
+
+- `backend/tests/test_p6_0_d2_model_settings.py`
+- `backend/tests/test_rate_limit.py`
+- focused Agent Alpha personal/engineering tests
+- disposable `omnibase_test_*` PostgreSQL migration and concurrent mutation tests
+- frontend test, typecheck, lint and production build
+- maintainer map and benchmark validators
+
+**Failure recovery**
+
+Disable the role override or restore inheritance, keep the personal Runtime and
+all enterprise gates fail closed, and preserve append-only audit evidence. Do
+not copy or expose a key, accept a stale test result, edit a populated schema
+backward or enable Planner/Multi-Agent to repair a model setting. Use a reviewed
+forward fix or restore into a new `omnibase_restore_*` database.
+
+## INV-074 p62-scan-only-local-skill-discovery-boundary
+
+P6.2 local Skill discovery begins only from an Owner-triggered browser directory
+picker. It examines only direct child directories that expose a `SKILL.md`,
+uses fixed candidate/file/aggregate byte budgets and accepts UTF-8 text only.
+Executable siblings, capability/tool/network/secret/script declarations,
+unknown frontmatter fields, duplicate fields, binary content and identity drift
+fail closed. The Browser projection uses opaque scan-local IDs and must not
+return or persist an absolute physical path.
+
+Discovery is never installation or trust approval. It performs no execution,
+dependency loading, network access, download, publish or database mutation. A
+safe-looking unknown candidate remains `unsupported_unreviewed`; an invalid
+candidate is `rejected`. Neither status may be written into migration `0014`,
+because that schema and `SkillPersistenceService` authorize only the sealed
+source-owned first-party catalog. Importing a real third-party Skill requires a
+separate provenance/review/revocation model and separately reviewed migration.
+
+**Required verification**
+
+- `frontend/lib/p6-skill-discovery.test.ts`
+- `frontend/lib/p6-capability-center.test.ts`
+- `frontend/lib/p6-native-skills.test.ts`
+- `backend/tests/test_p6_1_native_skill_catalog.py`
+- `backend/tests/test_p5_6p_instruction_skills.py`
+
+## INV-075 p62-bounded-history-and-local-changeset-journal-boundary
+
+P6.2 conversation continuity may compile only redacted terminal `user` and
+`agent` messages from the exact active browser session. It is capped at 24
+messages and an independent 12,000-character budget, retains newest messages
+deterministically and never imports another session or Workspace. The
+`fnv1a32` value is a browser-local diagnostic fingerprint, not a cryptographic
+digest, replay identity, approval or authorization. Partial SSE, unknown
+outcome and timeline/system entries do not become successful conversation
+history.
+
+The ChangeSet journal is browser-local under the exact tenant/Workspace key,
+bounded to 40 records and 4 MiB. Restore validates tenant, Workspace, IDs,
+logical paths, unique files, version kinds, content byte limits and digest
+grammar before exposing a record. It never restores a `FileSystemHandle` or
+grants write authority. Every rollback still requires the current Owner-held
+handle, exact Task/Attempt ownership, current-file reread, manifest/content
+validation, CAS and the existing three-way conflict rules. A scope change,
+malformed journal, storage failure or unknown write outcome fails closed and
+must not replay a Provider request or automatically write a file.
+
+**Required verification**
+
+- `frontend/lib/p6-workbench.test.ts`
+- `frontend/lib/p6-change-journal.test.ts`
+- `frontend/lib/p6-changesets.test.ts`
+- frontend typecheck, lint and production build
+
+## INV-076 p62-windows-companion-offline-no-mutation-boundary
+
+The P6.2 Windows Companion must compile as a self-contained, single-file
+`win-x64` program and preserve every P6.1 archive guard: exact manifest and file
+schemas, fixed preview/product/platform/posture, clean source-commit grammar,
+closed payload set, manifest/file/total byte ceilings, compression-ratio limit
+and fixed-time SHA-256 comparison. Installed-release doctor verifies the same
+closed file/directory set and payload digests; directory existence alone is not
+release-integrity evidence.
+
+`init-config` uses the operating-system CSPRNG, creates rather than overwrites,
+does not echo secrets and keeps image digests publisher-owned. Config diagnosis
+requires the exact key set, allowlisted image repositories, digest grammar,
+strong distinct encryption keys, credential/URL consistency, local CORS,
+deployment UUID and all four feature gates explicitly `false`. Unknown or
+malformed doctor arguments fail closed. Doctor is offline and read-only: fixed,
+bounded process arguments may inspect Docker CLI/daemon, Compose and WSL status,
+but the Companion never pulls, starts, installs, upgrades, restarts or mutates
+Docker, WSL, VHDX, PATH, firewall or system services.
+
+`RELEASE_IMAGES_NOT_PUBLISHED` is a publisher blocker, not a user config error.
+`READY_FOR_PULL` does not mean images were pulled, services are healthy,
+publisher identity is verified or production is ready. Until real OCI digests,
+Authenticode and clean-machine release evidence exist, the manifest remains
+`production_ready=false` and the artifact is an engineering preview.
+
+**Required verification**
+
+- zero-warning .NET build and self-contained publish using the pinned SDK;
+- `scripts/release/test_build_windows_release.py`;
+- real `verify`, `install` and `init-config` preview smoke plus tamper cases;
+- no Docker/WSL/VHDX mutation during verification.
+
+## INV-077 p63-first-party-skill-registry-expansion-boundary
+
+P6.3 expands the source-owned catalog to exactly fifteen first-party,
+instruction-only Skills without changing migration `0014` or creating migration
+`0017`. Catalog metadata may improve Browser discovery, but an existing
+Definition/Version must match the complete immutable source projection before it
+is reused. Source IDs are not global database IDs, sealed versions are not
+edited, and registration/idempotency/Audit remain one caller-owned transaction.
+Public catalog lookup and list functions return detached nested snapshots;
+mutating a returned JSON Schema must not alter the source catalog, its digest or
+a later lookup.
+
+One Agent binding may resolve at most eight live Skills and at most 32 KiB of
+aggregate UTF-8 instructions. Installation and resolution independently reject
+duplicates, count overflow and byte overflow. Native Skills retain empty tools,
+capabilities and required-tool IDs, deny network and secrets, and cannot enable
+MCP, CLI, Planner or Multi-Agent. Owner-triggered local discovery stays
+scan-only; an unknown candidate can never borrow the first-party registration
+path or migration `0014` identity.
+
+**Required verification**
+
+- `backend/tests/test_p6_1_native_skill_catalog.py`;
+- `backend/tests/test_p5_6p_instruction_skills.py`;
+- Skill-focused frontend tests, typecheck, lint and production build;
+- migration head `0016`, migration `0017` absent.
+
+## INV-078 p63-readonly-mcp-expansion-boundary
+
+The P6.3 MCP preview remains a separately launched local stdio process and is
+not mounted into Agent Alpha. `MCP_RUNTIME_ENABLED` remains false. The exact
+six-tool closed set is file list/read/hash, literal text search, Git status/log
+and Git worktree/staged diff summary. File hash returns no content. Search has
+fixed query, depth, visited-entry, file, byte, match and snippet ceilings and
+skips secret/VCS/link/reparse/binary content. Git diff accepts no ref, pathspec,
+arbitrary flag, external diff, textconv, hook, pager, credential or network
+operation and returns no patch body.
+
+Root, repository, Git binary and opened-file identities are revalidated. The
+process has fixed lifetime budgets for calls, aggregate file bytes and aggregate
+Git output. Text search revalidates every descendant directory before scanning
+and every yielded file's complete component chain immediately before opening;
+an initially safe directory cannot be replaced by a junction/symlink to escape
+the authorized root. File capacity is required even for a currently empty file,
+then current size is reserved before an opened-file read can start; exhausted
+process budget causes no further file open. If a file grows after stat/fstat,
+every byte beyond the reservation is charged as its chunk arrives and overflow
+saturates the lifetime counter before failing. Reservations and actual growth
+remain consumed on identity, decoding, redaction or search failure.
+Directory listing has a separate visited-entry ceiling before sorting. Git
+stdout and stderr consume the shared lifetime budget as pipe chunks arrive,
+including non-zero, timeout and over-limit paths; exhausted budget rejects the
+next Git process before launch and the two diff commands share one counter. No
+MCP tool writes files, invokes shell, performs arbitrary Git, opens a network
+connection or changes global Codex/Claude/Zed configuration.
+
+**Required verification**
+
+- `backend/tests/test_p6_1_readonly_mcp.py`;
+- `frontend/lib/p6-capability-center.test.ts`;
+- focused Ruff, Mypy, frontend typecheck and production build;
+- explicit confirmation that Agent Alpha remains `no_tool`.
+
+## INV-079 p63-glm-claude-model-adaptation-boundary
+
+The normalized user-entered model name selects only a conservative family
+prompt/context profile. Exact Kimi/Moonshot, GLM and Claude patterns may be
+recognized through an opaque relay namespace, but a Provider label or base URL
+cannot override a recognized or fail-closed name. Any present but unknown
+requested or observed model name terminates at `generic`; bare brands,
+proxy/bridge/emulator claims and conflicting family evidence also resolve to
+`generic`. Requested/actual model identity remains exact runtime evidence.
+
+Family classification is not transport capability. The current OpenAI-compatible
+Chat Completions boundary must not claim or send unverified GLM thinking,
+reasoning effort, clear-thinking, tool-stream fields, Anthropic Messages
+thinking/signatures, output effort, cache control, strict native tools or native
+MCP. Unknown relay context limits and cache hits remain unknown. Model
+classification never enables Tools, MCP, CLI, Vision, Planner, Multi-Agent or
+autonomous delegation.
+
+**Required verification**
+
+- `backend/tests/test_model_gateway.py`;
+- `frontend/lib/p6-model-profiles.test.ts`;
+- frontend/backend exact-name, relay, bare-name, conflict and unknown-name cases;
+- payload assertions proving vendor-only fields are absent.
+
+## INV-080 p63-windows-install-location-and-clean-vm-failfast-boundary
+
+P6.3 may add help, location reporting and install planning to the P6.2 Windows
+Companion while preserving all archive, manifest, config and installed-byte
+checks. Recommended user paths are `%LOCALAPPDATA%\Programs\OmniBase` and
+`%LOCALAPPDATA%\OmniBase\config\operator.env`; machine paths are
+`%ProgramFiles%\OmniBase` and `%ProgramData%\OmniBase\config\operator.env`.
+Machine scope may report that elevation is required but must not trigger UAC or
+self-restart. Custom paths must be explicit absolute local paths. Roots, UNC or
+network locations, alternate data streams, reparse targets and existing
+destinations fail closed.
+
+Independent review proved that repeated path/reparse checks cannot close the
+final rename check-then-use window. Until a handle-relative create/write/rename
+implementation and deterministic replacement attacks are proven, mutating
+`install` (including its compatibility alias) must return
+`install_path_identity_binding_not_implemented` before path resolution, archive
+open, staging creation, extraction, move or cleanup. `verify`, `help`,
+`locations`, `plan-install`, `init-config` and read-only `doctor` remain
+available. Plan output must state that custom/elevated and handle-relative
+installation acceptance are false; planning is never installation authority.
+
+The Companion must not write PATH, registry, shortcuts, services, firewall or
+global IDE/MCP settings, and must not install, launch, repair or mutate Docker,
+WSL, Hyper-V or any VHD/VHDX. Clean-Windows acceptance has one read-only,
+fail-fast preflight and accepts only an explicitly named dedicated test VM with
+unambiguous ownership, path, ACL, guest access and disk posture. Missing
+cmdlets, VM or evidence stops the step as
+`CLEAN_WINDOWS_VM_ACCEPTANCE_NOT_PROVEN` and
+`NO_VM_OR_VIRTUAL_DISK_MUTATION_PERFORMED`; enabling components, restarting the
+host, editing ACLs or creating/moving/resizing disks is forbidden.
+
+**Required verification**
+
+- zero-warning .NET build and self-contained publish using the pinned SDK;
+- `scripts/release/test_build_windows_release.py`;
+- help/location/plan output plus root/UNC/ADS/reparse/existing-target attacks;
+- at most one read-only VM preflight and explicit no-mutation report.
+
+## INV-081 p64-personal-agent-practice-boundary
+
+P6.4 is a request-scoped personal practice lane for exactly three scenarios:
+uploaded-file RAG with deterministic citation scoring, bounded offline artifact
+creation, and audited rollback-capable modification of an explicitly disposable
+Workspace. Allowed participant counts are one or three through six, including
+the final parent. Every participant is a separate, identity-checked Model
+Gateway call in a fixed Owner-declared serial roster; one prompt imitating
+multiple roles is not evidence. Roles cannot self-wake, delegate, recurse,
+replan, execute tools or automatically retry an unknown outcome.
+
+The practice window requires `ENV=production`, exact active single-Owner
+personal canary, `P6_4_PERSONAL_PRACTICE_ENABLED=true` and Agent Runtime true
+while Planner, enterprise Multi-Agent and MCP remain false. Defaults and final
+state are all false. Model output is always an untrusted JSON proposal. Trusted
+local code alone scores citations, renders a closed offline artifact type, or
+applies an allowlisted UTF-8 ChangeSet under before-CAS, post-write digest and
+conflict-safe rollback. No shell, arbitrary network, arbitrary file tool, MCP,
+SQL or background autonomy is introduced.
+
+An upload acceptance must traverse the Browser document endpoint, immutable
+Workspace binding and ready index; a DB fixture cannot prove upload-to-RAG.
+Citation presence alone is insufficient: fixed facts require exact
+fact/chunk/document precision and recall with no decoy or unsupported claim.
+Workspace-private document list/get/download/delete paths require the exact
+live Workspace membership; an unbound or missing binding fails closed while
+legacy tenant documents retain their existing tenant scope. If the initial
+Document/Resource/Binding transaction fails after object upload, the object
+must be removed and unverified compensation is a veto. Canonical v1 Embedding
+chunks are authoritative; a v2 shadow for the same source document cannot be
+returned as a duplicate citation candidate.
+Artifacts require real bytes, bounded media type/size and SHA-256. Workspace
+tests run only in a run-scoped disposable fixture and must restore its original
+tree digest. The redacted receipt contains logical IDs, digests and numeric
+metrics only; Provider keys, Authorization/JWT, prompts, full answers, source
+text, physical paths and raw errors are forbidden. Node metadata order is
+exactly meta, citations, usage and terminal completion; invocation/task
+identities are unique within a roster and across the six-journey receipt. A
+model identity drift, member unknown/cancel/timeout, unsafe path, CAS drift,
+partial write, failed rollback, secret-shaped receipt field or final open gate
+is a veto. The outer controller requires a clean source HEAD before any
+Provider call or target creation and rechecks the unchanged clean HEAD before
+receipt creation. It performs only read-only `docker version`/`docker info`
+health checks and must stop before target preparation unless an already-running
+Linux Engine is healthy.
+
+**Required verification**
+
+- `backend/tests/test_p6_4_agent_practice.py`;
+- focused Model Gateway and Personal Agent Alpha regressions;
+- clean production-mode single/3/4/6-Agent live DeepSeek receipt;
+- exact upload-to-Workspace-RAG and ChangeSet rollback product journeys;
+- final Runtime/Planner/Multi-Agent/MCP false and disposable cleanup proof.
+
+## INV-082 p65-windows-desktop-distribution-boundary
+
+P6.5 is a source-reproducible Windows personal-desktop distribution boundary,
+not a new authority model. The application is one per-user Electron shell over
+an independently supervised loopback Next standalone server and a
+loopback-only `desktop_local` FastAPI service backed by SQLite. It must not
+import the PostgreSQL `Settings` singleton, load dotenv files, inspect provider
+configuration or silently activate Docker, WSL, PostgreSQL/pgvector, BGE-M3,
+MCP, Planner or enterprise Multi-Agent. Unsupported Browser API routes fail
+closed; a shell that opens while required product journeys remain unwired is
+not a usable or production-ready OmniBase release.
+
+Electron creates independent 32-byte CSPRNG native proof and native control
+tokens encoded as 64 lowercase hexadecimal characters and passes both to
+RuntimeHost in a closed child-process environment. RuntimeHost creates a third
+32-byte CSPRNG authorization token. It passes the proof and control tokens only
+to the backend and the authorization token only to Next and the backend. None
+enters argv, Browser JavaScript, response bodies, logs, diagnostics or installer
+authoring. Next removes caller-supplied desktop control headers, injects the
+authorization token only on exact health/readiness server-side backend hops,
+drops Browser authorization and cookies, and removes reflected control headers.
+Native readiness sends a fresh 64-hex
+challenge and accepts only a successful authenticated backend health response
+carrying
+`HMAC-SHA256(native_proof_key, challenge)` through Next. Missing, duplicate,
+malformed or drifted identity material fails closed.
+
+The runtime payload is a closed ordinary-file tree. Electron pins the exact
+SHA-256 of a canonical runtime manifest at compile time; the manifest binds
+every RuntimeHost, backend, Node and Next entrypoint byte. Payload builders and
+installers reject links, junctions/reparse points, hard links where identity
+cannot be proven, traversal/UNC/ADS/reserved Windows names, secret/key/database
+paths, virtual disks, file-count/size overflow and source identity drift.
+RuntimeHost accepts no argv, revalidates artifact paths and digests immediately
+before launch, uses fixed argument arrays and a closed environment, binds only
+IPv4 loopback, applies bounded startup/shutdown/output budgets and places every
+child in a kill-on-close Windows Job Object. A TCP listener alone is not native
+readiness evidence; the outer challenge-HMAC health check remains authoritative.
+
+The install contract is a WiX Burn single EXE containing one transactional,
+per-user MSI under `%LOCALAPPDATA%\Programs\OmniBase`. It requires no elevation,
+blocks downgrade and has no Docker/WSL/PostgreSQL chain package. User state is
+owned by the application under `%LOCALAPPDATA%\OmniBase`; MSI authoring must
+not create, enumerate, remove or take ownership of that tree, and normal
+uninstall preserves it. Upgrade, failed-upgrade rollback and uninstall may
+remove only installer-owned application bytes and registration/shortcut state.
+Recursive cleanup of build, install or data roots is still governed by INV-073.
+
+Backend freezing uses an isolated Python 3.12 x64 environment and a fully
+pinned minimal PyInstaller dependency set. Electron, its packager, WiX and the
+.NET SDK are pinned source build inputs. Generated `node_modules`, `.next`,
+virtualenvs, PyInstaller output, MSI/EXE files and signing material never become
+source truth. Release construction requires a clean declared source commit and
+must reproduce from declared inputs without root `.env`, business databases,
+private caches or ambient provider credentials. Authenticode occurs only in an
+external trusted signing stage; no certificate, PFX, private key or signing
+password belongs in the repository or payload.
+
+An unsigned or dirty-source artifact is a test artifact with
+`production_ready=false`, never a distributable 1.0.0 claim. Distribution
+requires direct evidence from a dedicated clean Windows target for install,
+first launch, challenge-HMAC readiness, required personal product journeys,
+data persistence, major upgrade, downgrade rejection, transactional rollback,
+normal uninstall with retained data, manifest verification and Authenticode
+verification. Clean-target acceptance must not start or repair Docker Desktop,
+WSL or Hyper-V and must not create, move, resize, compact or delete a VHD/VHDX.
+
+**Required verification**
+
+- all `backend/tests/test_desktop_local_*.py` tests plus explicit Ruff and
+  format checks for the desktop-local and release Python paths;
+- Electron tests, typecheck and source build; frontend tests, typecheck, lint
+  and production standalone build;
+- RuntimeHost tests and self-contained single-file `win-x64` publish with the
+  pinned .NET SDK;
+- payload-builder, desktop-backend packager, release-manifest and WiX contract
+  tests;
+- one real unsigned Electron payload and WiX Burn build outside the repository,
+  followed by the guarded install/upgrade/downgrade/rollback/uninstall harness;
+- maintainer map and benchmark validators.
+
+**Failure recovery**
+
+Stop the native shell and let the Job Object converge its exact children.
+Retain failed staging trees, build logs and unsigned artifacts for inspection;
+do not broaden cleanup to their parent. Forward-fix application bytes or
+uninstall only installer-owned files while preserving
+`%LOCALAPPDATA%\OmniBase`. A malformed manifest, identity failure, partial
+upgrade, missing toolchain, absent signing authority or incomplete product
+journey is a release veto, not permission to disable checks, start optional
+infrastructure, expose any launch secret or claim production readiness.
+
+
+## INV-083 p66-desktop-local-product-admission-boundary
+
+P6.6 admits only one offline local product journey over the P6.5 runtime: the
+single Owner may be bootstrapped and may create, list and archive SQLite
+Workspaces. It does not emulate JWT, tenant membership, PostgreSQL Workspace
+templates/Runs, documents, RAG, Provider credentials, Agent Runtime, Skills,
+MCP, Sandbox, Planner or Multi-Agent. Those paths remain absent or return a
+stable redacted desktop denial. Desktop schema version 1 remains authoritative;
+P6.6 adds no business or desktop migration.
+
+Next is not an Owner authority. In desktop mode its catch-all proxy rejects
+every `/api/v1` route and may forward only exact `GET /health/ready`; `/health`
+remains the dedicated challenge-aware route. Query-bearing and every other path
+are rejected before upstream contact, the target must be an explicit HTTP
+IPv4-loopback origin with a nonzero port, Browser Authorization and Cookie are
+dropped, and all desktop control headers are stripped in both directions.
+
+Owner and Workspace reads and writes use the exact Electron IPC catalog and a direct
+Electron-main-to-backend `/desktop/v1` hop authenticated by the per-launch
+native control token. The token is not available to Next or the renderer.
+Electron main accepts only the fixed UI origin and exact bounded arguments. The
+native client validates the backend origin, response byte budget, 256-row
+Workspace bound, unique identifiers and closed DTO shape before returning a
+secret-free success/error union. Native routes reject
+missing, duplicate, malformed or wrong control identity and reject mixed
+instance/challenge/proof identity. Ordinary routes reject a native-control
+header.
+
+Owner bootstrap is singleton and idempotent. Owner creation and its append-only
+audit event are one `BEGIN IMMEDIATE` transaction. Workspace creation requires
+the Owner, has a 256-row lifetime capacity and atomically appends a
+`workspace_created` event without recording the user-supplied name. Archive is
+the only state transition, requires exact active state plus `row_version` CAS,
+increments the version and appends `workspace_archived` in the same
+transaction. An audit failure, stale version, wrong identity or malformed input
+must leave no partial mutation.
+
+The renderer routes to `/desktop` only when the complete preload bridge exists.
+It stores no JWT or launch identity and has no HTTP fallback. Direct Browser
+mode retains the existing JWT flow. P6.6 is an unsigned engineering product
+admission only; it does not prove the remaining personal journeys,
+Authenticode, clean-source reconstruction or clean-Windows release acceptance.
+
+**Required verification**
+
+- desktop-local Owner/Workspace/native-control tests plus Ruff check/format and
+  the existing import/freeze safety tests;
+- Electron IPC/native-client/runtime tests, typecheck and source build;
+- RuntimeHost closed-environment tests proving the control token reaches the
+  backend and not Next;
+- frontend proxy/bridge tests, typecheck, lint and production build;
+- release/payload/freeze contract tests and both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the exact child group, which invalidates
+all launch identities. Preserve `%LOCALAPPDATA%\OmniBase` and append-only audit
+evidence. Forward-fix application bytes; never delete or rewrite SQLite,
+weaken CAS/audit checks, publish a mutating Next route, expose a launch identity
+to the renderer, or start optional infrastructure to manufacture a successful
+journey.
+
+## INV-084 p67-desktop-single-agent-core-boundary
+
+P6.7 admits one additional local product journey over P6.6: the Owner may
+configure their own model Provider and have a cancellable, recoverable, durable
+streaming conversation with a single parent Agent inside a local Workspace.
+It does not open files, RAG, citations, ChangeSet, Skills, MCP, child agents,
+PostgreSQL, pgvector, BGE-M3 or enterprise Trust Policy. Next remains
+product-blind in desktop mode except exact health/readiness. Provider, Agent
+and conversation mutations use the exact Electron IPC catalog and a direct
+`/desktop/v1` hop authenticated by the native control token.
+
+Desktop schema version 2 is applied only by `desktop_0002_provider_conversation`.
+That is a desktop-namespace SQLite migration. It is not Alembic 0013/0017 and
+must not emulate PostgreSQL Settings. SQLite may store provider metadata,
+`credential_reference`, `encrypted_secret_blob` and `secret_fingerprint`. It
+must never store plaintext API keys, Authorization or Bearer values. Electron
+main encrypts with `safeStorage` (Windows DPAPI). The frozen backend never
+decrypts. The renderer never reads the blob, fingerprint or raw key. Vault GET
+is not an IPC channel.
+
+Family recognition is model-name-first. Unrecognized names become
+`generic-openai-compatible` rather than a hard reject. URL hostnames are an
+auxiliary hint only. The frozen desktop backend must not import `openai`,
+`httpx`, `cryptography` or PostgreSQL Settings; HTTPS uses the standard library.
+Remote Providers require HTTPS. HTTP is allowed only for loopback when the user
+explicitly enables it. LAN/private-network SSRF, URL userinfo and query
+credentials are rejected. DNS is validated to public addresses, then the TCP
+connection is pinned to that already-validated set; TLS SNI and the HTTP Host
+header keep the original hostname. A later private/LAN rebind must not be
+used. Public errors must not contain secrets from URLs or response bodies.
+Provider test requires HTTP success, JSON Content-Type, non-empty usable
+assistant `choices`, and must not treat `{}` as success. Missing `model` is
+identity-unproven, never forged as the requested name.
+
+Each Workspace has exactly one parent Agent. Sending a message is personal
+approval by the local Owner. Streaming is consumed by Electron main, not by a
+buffering Next proxy. Stream events carry workspace and conversation identity;
+the renderer drops other-scope deltas from the visible transcript, retains
+live invocation identity across Workspace/Conversation switches until
+terminal, restores running/Stop and parked live text when returning to the
+origin scope, keeps a global Stop reachable while a live invocation is
+active, and applies send/retry/list-detail projections only when the
+captured scope generation still matches. P6.8 keeps at most one personal live
+invocation as a finite state (`idle → send → starting_identity → identity →
+running → cancelling → cancelled|terminal → convergence → idle`) with
+`sendEpoch`, frozen `originWorkspaceId`/`originConversationId`, one-time
+`invocationId` bind, `cancelRequested`, `cancelDispatched` and
+`terminalStatus`. Stop before identity must not return to idle or re-enable
+Send/Retry; origin identity still arrives and cancel is dispatched exactly
+once. Event membership is by epoch plus bound invocation id, never by
+workspace/conversation alone. Conversation-surface live text/meta compare
+origin to the current view at render time; detail, workspace load, archive,
+send and retry use request epochs so a newer same-scope request invalidates
+older promises. Live invocation identity is
+cleared before send/retry and after terminal. A Provider stream is succeeded only with
+explicit terminal proof (`[DONE]` or `finish_reason`); truncated streams and
+client disconnect become `unknown` (or `cancelled` if cancel already won),
+never `succeeded`, and are not auto-replayed. Cancel accept and durable
+terminalization share one CAS fence: `accepted=true` matches durable
+`cancelled`, and an accepted cancel cannot commit `succeeded`. Cancel must
+stop the UI immediately, abort the in-flight request, mark the invocation
+cancelled, and never auto-replay cancelled or unknown records after restart.
+Retry is a new invocation that keeps the failed record. Interrupted
+running/streaming rows recover to `unknown`. Renderer destruction must not
+send IPC into a destroyed WebContents; the native reader must cancel and
+abandon the backend invocation.
+
+P6.7 remains unsigned engineering evidence for the original core journey. P6.8
+records renderer reliability implementation and production-code gates only;
+it is not independent-review acceptance, Authenticode, Sandbox UI, a live
+paid Provider, or OmniBase 1.0.0.
+
+**Required verification**
+
+- desktop-local foundation/safety/app plus provider and conversation tests;
+- Ruff check/format on desktop_local and those tests;
+- Electron IPC/native-client/vault/runtime tests and typecheck;
+- frontend bridge/lifecycle/surface/proxy tests, typecheck and lint;
+- RuntimeHost closed-environment tests;
+- both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the child group. Preserve
+`%LOCALAPPDATA%\OmniBase`. Forward-fix application bytes. Never publish a
+mutating Next route, put secrets in git/argv/logs/SQLite plaintext, import the
+PostgreSQL Model Gateway stack into the freeze, or start Docker/WSL/PostgreSQL
+to manufacture this journey.
+
+## INV-085 p69-personal-parent-directed-team-boundary
+
+P6.9 admits a personal, parent-directed team on the already accepted desktop
+single-parent Agent. Product law remains parent Proposal + host validation +
+blackboard. Parent output is a restricted structured Proposal, never a raw
+`dispatch(employee)` primitive. The host is the only runtime that may validate
+identity, budget, dependencies and concurrency, then persist a plan revision.
+Collaboration requests return to the parent through the Personal Team
+Blackboard; a specialist must not launch another specialist directly. The
+specialist set is closed at nine roles. Parent cannot appear as
+`employeeRoleId`. Serial, parallel and mixed waves are legal proposals; the
+host may serialize a parallel wave and must not parallelize declared
+dependencies. Next remains product-blind. Enterprise Planner /
+`MULTI_AGENT_ENABLED` stay disabled (`ENTERPRISE_MULTI_AGENT_DISABLED`).
+
+Desktop schema version 9 (`desktop_0009_parent_call_proof`) is current. Its
+`team_provider_call_reservation` records **every** parent and employee Provider
+invocation before the network call, atomically binding the unique invocation,
+Run, purpose, Provider, requested model and call-budget charge. Node create
+must exactly match an employee reservation. Reservation identity is immutable;
+deleting a saved Provider does not erase its historical text. Parent
+propose/replan/synthesis calls additionally create `team_parent_call` and
+settle it once with terminal state, requested/actual model, usage, plan
+revision and normalized output digest; no prompt, answer body, secret,
+ciphertext or Vault material is stored. Propose/replan reservation time must
+not follow its bound revision, while synthesis reservation time must not
+precede the finish revision. Terminal parent-call rows and their append-only
+audit events cannot be rewritten or deleted. Pending calls recover to
+`unknown`, are never auto-replayed, and prevent a Run from claiming success.
+The v9 native consume envelope has exact keys: employee calls explicitly carry
+`parent_call: null`; a missing field or non-null employee proof is
+`desktop_native_response_invalid` rather than backward-compatible success.
+Version 8 (`desktop_0008_collaboration_report_binding`) binds settle-created
+collaboration rows to their `team_employee_report`. Version 7
+(`desktop_0007_recovery_success_downgrade`)
+recreates the run-state transition trigger so the schema permits
+`succeeded → unknown`; the normal `/state` API forbids that transition, and
+current application use is restart recovery (the schema itself cannot prove
+the caller is recovery). Version 6
+(`desktop_0006_report_collaboration_digest`) added the settle-time
+collaboration-request digest column to `team_employee_report`; version 5
+(`desktop_0005_team_node_identity_epochs`) remains the node identity epoch
+migration; version 4 (`desktop_0004_personal_team_runtime`) remains the
+Round 1 runtime migration; version 3 (`desktop_0003_personal_agent_team`)
+remains the A2 contract migration. These are desktop-namespace SQLite
+migrations, not Alembic 0016/0017. The API surface stays closed:
+`POST /state` rejects any transition out of an already-terminal Run
+(`desktop_team_run_state_conflict`); only restart recovery may downgrade a
+disproven `succeeded`. Unique indexes forbid reused `node_epoch` /
+`send_epoch` on a Team Run. A trigger forbids writing back a terminal node. Role config may store a
+Provider id, model override, gear, thinking
+depth and a verification digest. It must never store API keys, ciphertext,
+nonce, DPAPI blobs or vault handles. Per-role Provider selection inherits the
+default Provider when the row is missing or `provider_id` is null. An
+**explicit** `provider_id` that is disabled must fail closed (`desktop_provider_disabled`);
+it must not silently inherit another Provider. Model override reuses that
+Provider's credentials and exposes only `secret_fingerprint`. Role-config
+writes compare-and-swap `row_version` (`desktop_role_config_cas_conflict`).
+
+Team HTTPS production pinning asks desktop-local
+`POST /desktop/v1/provider-endpoints/pin`, which uses Python
+`is_global_unicast` (IPv4 + IPv6, including reserved / CGNAT / benchmark /
+documentation / link-local / multicast). DNS is resolved once. Loopback is
+allowed only when loopback HTTP is opted in. SNI/`Host` stay the original
+hostname. The TypeScript BlockList is a test/fallback replica. Extra-rejects
+versus CPython (`2001:1::1`, `2001:3::1`, `2001:20::1`) are **examples**, not
+an exhaustive IANA disagreement list; production pin is desktop-local
+`is_global_unicast`. The TypeScript replica is not claimed to match
+`endpoint.py`.
+A missing or mismatched actual vs requested model fails the node
+(`desktop_provider_model_identity_drift`). **Every SSE chunk that contains
+`model` is validated immediately**; mid-stream drift fails the node, not
+success. `{}` or a non-chat-completions body is not success.
+
+Vault material is bound to `is_enabled` in the same SQLite snapshot
+(`BEGIN IMMEDIATE`). A Provider that is disabled cannot yield a blob
+(`desktop_provider_disabled`). List-then-vault TOCTOU fails closed.
+
+Success settle is a unique API. Legacy node `update` may only transition
+`running → failed|cancelled|unknown` with `WHERE state='running'` CAS.
+`succeeded` must not use generic update. Employee `/reports` is not a second
+success path: a still-`running` node must not mint `team_employee_report` or
+`team_node_settled`. Node create and settle are **two** transactions (Provider
+HTTP between them). Each bind Team Run, live Conversation, current plan, wave,
+assignment, role, node, invocation, node/send epoch, Provider `is_enabled`,
+requested/actual model and live status. Creating a node on a terminal run,
+writing back a terminal node, or reusing epochs is fail-stop.
+
+Owner Stop commits the Team Run to `cancelled` and, in the same transaction,
+CAS every `pending|running` node on that run to `cancelled`. A second Stop on
+an already-`cancelled` run is idempotent (no error-hang) and still CAS-cancels
+any residual `pending|running` nodes/assignments. Stop on a missing run id or
+an already-`unknown` run is a stable 409 no-op (`desktop_team_run_not_found` /
+`desktop_team_run_unknown`) and must not flip unrelated runs. After the run is
+already `cancelling|cancelled`, node update may only CAS `running→cancelled`
+(or no-op an already-cancelled node). Restart recovery maps residual live
+nodes from the **parent Run** state: `cancelled` parent → residual live
+`cancelled`; crash/`unknown` parent → residual live `unknown`; any other
+terminal parent (`succeeded|failed|budget_exhausted|cannot_complete`) →
+residual live `unknown` nodes and `blocked` assignments. Recovery must
+not rewrite a node that is already `cancelled` into `unknown`. `POST /state`
+into a terminal state is bound by the same invariant inside one
+`BEGIN IMMEDIATE` transaction: `succeeded`, `failed`, `unknown`,
+`budget_exhausted` and `cannot_complete` fail closed on any live child
+(`desktop_team_run_children_live`), while `cancelled` cascades the same child
+CAS as Stop. A quiet `failed|unknown|budget_exhausted|cannot_complete` request
+also requires zero pending parent calls and zero running assignments, then
+atomically changes every remaining `pending|ready` assignment to `blocked`
+before committing the Run terminal. A terminal parent with live children can
+therefore neither be committed through `/state` nor survive a restart. Budget append likewise
+requires a live Run (`preparing|running`, else
+`desktop_team_run_terminal`), so a terminal Run's durable budget receipt
+cannot be rewritten after Stop or success. Beyond "not live",
+`succeeded` requires a full **success proof** in the same transaction
+(`desktop_team_success_closure_open`): the current plan revision must be
+host-validated **and** terminal (`answer_directly` or `finish` — a
+delegate/continue/request_followup plan cannot succeed before the parent
+finishes); `answer_directly` success must carry exactly the normalized,
+persisted proposal answer and a settled `parent-propose` proof whose plan and
+output digest match that revision; `finish` success requires both the settled
+`parent-replan` proof for that revision and a settled `parent-synthesize`
+proof whose digest equals the final answer; the
+closure covers the run's **entire** assignment/node history (every
+assignment `completed` or `needs_collaboration` with no pending request,
+every node `succeeded`) — so an empty `finish` revision can no longer
+launder an earlier failed child, and until an explicit supersede mechanism
+exists a failure is never absorbable; and zero pending collaboration
+requests. A same-state `succeeded` replay may only repeat the identical
+final answer (`desktop_team_success_answer_conflict` otherwise). Restart
+recovery re-verifies the same proof and downgrades disproven success to
+`unknown`; a proven success survives restart untouched.
+
+Independent collaboration writes — create **and** resolve — require a live
+Team Run (`preparing|running`) and a matching node/report identity on that
+run. A cancelled/unknown/terminal run, or a wrong node/report id, fails closed
+(`desktop_team_run_terminal` / `desktop_team_collaboration_identity_mismatch`).
+Resolve re-loads the parent Run inside the same write transaction, performs a
+`parent_decision = 'pending'` CAS, and accepts a replayed resolve only when the
+decision and `resolved_assignment_id` match exactly; any different replay
+conflicts (`desktop_team_collaboration_resolve_conflict`). Pending requests
+are decided **per request** by the parent: every replan submitted while
+requests are pending must carry `collaborationDecisions` covering exactly the
+pending set (`desktop_team_collaboration_undecided` otherwise), `accept_start`
+binding a new same-role assignment from the same proposal,
+`merge_existing` a known assignment, `handle_self`/`decline` no assignment;
+the coordinator executes each decision through the resolve endpoint right
+after the replan is accepted, and its pre-success close-out is verify-only —
+success over an undecided collaboration fails closed
+(`desktop_team_collaboration_pending`), it is never auto-resolved. Both
+success paths re-check the local Stop flag and wall deadline after the
+close-out awaits. The coordinator then crosses one explicit success-commit
+linearization point: a Stop accepted before that point prevents success; once
+success commit starts, a later Stop is rejected locally and waits for the
+durable outcome instead of projecting cancellation. RuntimeManager emits a
+cancelled event only for an accepted durable cancel response and never for a
+quiet terminal `accepted=false` success. Once durable cancel commits, the
+success proof and run-state trigger remain the authoritative second line.
+Every quiet `failed|unknown|budget_exhausted|cannot_complete` path has the
+same local commit discipline: Stop accepted before the quiet Run CAS wins and
+converges through durable cancellation; after the CAS request starts, later
+local Stop is rejected and RuntimeManager waits for its outcome. A failed CAS
+reopens the local Stop latch so cancellation may be retried; invalid initial
+Proposal, invalid replan, cannot-complete, invoke failure, wall/budget failure
+and outer exception fallback must not bypass this quiet-commit point. A
+coordinator instance is one-shot: a second `execute()` fails with
+`desktop_team_coordinator_already_executed` and cannot inherit old
+success-commit, Stop or terminal projection state. Decision shapes are
+bound in the same transaction: `accept_start` and `merge_existing` require a
+resolved assignment whose role equals the request's `target_role_id`.
+`accept_start` additionally requires a `pending` assignment from the run's
+current validated plan; `merge_existing` intentionally accepts a started or
+settled assignment from any revision of the same Run;
+`handle_self` and `decline` must carry no assignment. A qa-targeted request
+can no longer be merged into a frontend assignment. Standalone
+`/reports` replay must exact-match the stored assignment/role/status/text and
+**both** digests — the report body SHA-256 and the settle-time canonical
+collaboration-request digest (`collaboration_requests_sha256`, computed over
+the unique `(targetRoleId, question, reason)` canonical ordering; duplicate
+tuples are rejected at validation as `desktop_team_collaboration_duplicate`).
+Rows settled before `desktop_0006` carry no digest and replay fails closed as
+`desktop_team_report_replay_legacy_unverifiable` — the settle-time request set
+of a legacy row cannot be reconstructed immutably. The replay **response** is
+built solely from the immutable rows bound to that report
+(`desktop_0008` `report_id`; standalone creates stay unbound), and the bound
+rows must reconstruct the replayed request set exactly — a later legal
+standalone request can no longer leak into an earlier report's projection.
+Standalone create is idempotent per exact tuple (the stored row is returned,
+never a duplicate). Mutated replay
+fails closed (`desktop_team_report_replay_mismatch`). Identical replay —
+including a reordered but equal request set — may be idempotent.
+
+Replan emits an explicit validated `plan_transition` (old plan → new plan).
+The old-plan filter must not reject a legal new proposal after that event.
+Later events match the new plan revision / roster epoch. Per event-type
+identity: terminal/node events must match **each** of assignment, role,
+invocation, wave, nodeEpoch and sendEpoch as stored on the node; missing or
+mismatch drops the event.
+
+Team Run data updates are decoupled from the currently viewed scope. Leaving
+the origin workspace/conversation parks live text, nodes, collab, **and**
+phase, planRevisionId, waveId, planSummary, execution, and budgets. Returning
+restores full delta/terminal/final **and** plan/phase (A→B→A). First render on
+B must not paint A team chrome (parent 运行中, plan, budget). First snapshot
+bind verifies the snapshot matches the frozen origin workspace/conversation
+and roster epoch; a legal origin snapshot binds the parked durable identity
+(`teamRunId`) even while the view is B, without painting A chrome onto B, and
+a snapshot from a different team run id or an older roster epoch must not
+rebind. Stop requested before identity converges to exactly one durable
+backend cancel once identity arrives. Frontend team terminals
+`completed|cancelled|failed|unknown|budget_exhausted|cannot_complete` (phase
+or runState) latch and absorb every late mutable event — phase, text, nodes,
+collaboration, budget, plan and wave; only a same-terminal idempotent
+calibration may land.
+
+Unique success-settle writes node success plus employee report,
+collaboration request, and audit in one SQLite transaction. Partial
+node-without-report or report-without-audit is fail-stop, not success.
+Standalone `/reports` on a still-`running` node is rejected. Strict team wall-time is an independent
+timer/`AbortController`, not the Provider HTTP timeout. Wall expiry stably
+converges to `budget_exhausted`. Stop during `createNode` latches abort like
+P6.8 (arm before vault/provider await; no identity emit). An explicit empty
+specialist allow-list fails closed (`desktop_team_allow_list_empty`);
+default-all remains only when the list is unset. A start bound to conversation
+A must not attach to B.
+
+Closed IPC names are exact:
+
+- `agents.roles.list|get|update|test`
+- `teamRuns.start|cancel|get|list|subscribe|execute|append-budget`
+- extra closed channels for proposal submit, blackboard read and collaboration
+  record
+
+There is no `ipc.invoke(arbitrary)`. Renderer → origin-checked preload →
+Electron main → `/desktop/v1` → SQLite. Practical workbench team controls
+exist (checkbox, allow-list, timeline, text statuses). That is not a P7 visual
+rewrite and is not a return to a fixed Owner roster. Tools, Sandbox, MCP,
+Skills and enterprise DAG stay out. P6.8 single-agent send/Stop/epoch behavior
+must not regress.
+
+`PERSONAL_MULTI_AGENT_IMPLEMENTED` is claimed only for **loopback** D
+journeys. Round 1 closed the named attack holes of that drip. Round 2 is a
+forward-fix for global-unicast pinning, unique success-settle, transactional
+node identity, independent wall-time, per-chunk SSE model checks, replan
+transition events, parked team buffers, and vault/enabled snapshot bind.
+It did **not** close all ten items in one pass: Stop/node CAS and `/reports`
+bypass were forward-fixed after `5321aa7`. Create/settle remain two
+transactions; production pin shares Python `is_global_unicast` while the TS
+replica extra-rejects **example** IPv6 specials (not an exhaustive IANA list).
+Round 1's `RuntimeManager plus
+loopback Provider` test was an **in-memory host wrapped as a fake
+DesktopNativeClient**, not a native HTTP→SQLite journey. Round 2 adds
+`RuntimeManager → DesktopNativeClient → desktop-local HTTP → SQLite →
+report/audit`. Paid / live Provider window, Authenticode, EXE/MSI and a human
+Electron soak remain unproven. Do not announce OmniBase 1.0.0.
+
+**Required verification**
+
+- desktop-local foundation/safety/app plus provider, conversation and personal
+  team tests;
+- Ruff check/format on desktop_local and those tests;
+- Electron IPC/native-client/coordinator/provider tests and typecheck,
+  including Round 1 and Round 2 attacks;
+- frontend bridge and team-lifecycle tests, typecheck and lint;
+- both maintainer validators.
+
+**Failure recovery**
+
+Stop Electron and let RuntimeHost reap the child group. Preserve
+`%LOCALAPPDATA%\OmniBase`. Forward-fix application bytes. Never treat an
+unvalidated model JSON blob as dispatch, copy Provider secrets into role
+config, open Alembic 0017, skip CAS on role config, or claim a paid/live
+multi-agent window from loopback evidence.

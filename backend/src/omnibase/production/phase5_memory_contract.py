@@ -1082,8 +1082,8 @@ class MemoryContractConfig:
         )
         if not config.source.require_clean_checkout:
             raise MemoryContractError("P5.5A source provenance must require a clean checkout")
-        if config.migration_baseline != "0015":
-            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0015")
+        if config.migration_baseline != "0016":
+            raise MemoryContractError("P5.5A migration_baseline must remain exactly 0016")
         if not config.policies or not config.capsules or not config.candidates:
             raise MemoryContractError("P5.5A requires policy, capsule and candidate examples")
         config._validate_references()
@@ -1341,7 +1341,7 @@ class MemoryContractGate:
     """Validate the P5.5A contract on the current P5.5B persistence baseline.
 
     The Gate accepts the separately reviewed persistence package and migration
-    0015 as repository facts. It still grants no Browser, compiler, worker or
+    0016 as repository facts. It still grants no Browser, compiler, worker or
     Runtime authority and rejects any future migration until independently
     reviewed.
     """
@@ -1362,7 +1362,7 @@ class MemoryContractGate:
     def _future_migration_present(self) -> bool:
         versions = self._repo_root / "backend/src/omnibase/migrations/versions"
         return any(
-            path.name[:4].isdigit() and int(path.name[:4]) >= 16
+            path.name[:4].isdigit() and int(path.name[:4]) >= 17
             for path in versions.glob("[0-9][0-9][0-9][0-9]_*.py")
         )
 
@@ -1433,7 +1433,7 @@ class MemoryContractGate:
                     f"expected {config.migration_baseline}, got {migration_head}"
                 )
         if self._future_migration_present():
-            vetoes.append("migration 0016 or higher is outside the reviewed P5.5/P5.9 baseline")
+            vetoes.append("migration 0017 or higher is outside the reviewed P5.5/P5.9 baseline")
         for relative in self._forbidden_paths_present():
             vetoes.append(f"forbidden Memory runtime or migration path exists: {relative}")
         blockers = (

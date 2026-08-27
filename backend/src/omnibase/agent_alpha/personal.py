@@ -8,8 +8,9 @@ builder.  It assembles only when all of the following independently hold:
   Multi-Agent=false;
 * a canonical, exact-scope canary config and an ACTIVE, unexpired activation
   ledger are mounted at explicit absolute paths;
-* the application environment is production, the Model Gateway is configured
-  and the database migration head is exactly ``0015``;
+* the application environment is production, either the request-scoped
+  personal Provider resolver or an operator Model Gateway is safely
+  configured, and the database migration head is exactly ``0016``;
 * the current request is the configured Tenant/Workspace/Owner and the live
   tenant schema still contains exactly that one active Owner, who is also an
   active tenant administrator.
@@ -23,6 +24,7 @@ one interactive Run at a time, with no Planner/Multi-Agent/Sandbox execution.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,6 +55,7 @@ from omnibase.core.db import get_session_factory
 from omnibase.db.models import Tenant
 from omnibase.db.tenant import User
 from omnibase.model_gateway import ModelGateway, UnavailableModelGateway
+from omnibase.model_gateway.adaptation import ReasoningGear
 from omnibase.model_gateway.service import configured_model_gateway
 from omnibase.production.personal_runtime_activation import (
     PersonalRuntimeCanaryConfig,
@@ -68,15 +71,17 @@ from omnibase.production.phase5_admission import (
 )
 from omnibase.task_ledger.service import TaskAdmissionContext
 from omnibase.tenants.schema_manager import set_search_path
+from omnibase.user_settings.crypto import CredentialCipher, CredentialCryptoUnavailable
 from omnibase.user_settings.gateway import UserModelGatewayResolver
 from omnibase.workspaces.models import WorkspaceMembership, WorkspaceRun
 
+_SAFE_PERSONAL_RUNTIME_CODE = re.compile(r"^personal_runtime_[a-z0-9_]{1,96}$")
 PERSONAL_RUNTIME_PROFILE_ENV = "PERSONAL_RUNTIME_PROFILE"
 PERSONAL_RUNTIME_CONFIG_ENV = "PERSONAL_RUNTIME_CANARY_CONFIG"
 PERSONAL_RUNTIME_STATE_DIR_ENV = "PERSONAL_RUNTIME_STATE_DIR"
 PERSONAL_RUNTIME_READINESS_ROOT_ENV = "PERSONAL_RUNTIME_READINESS_ROOT"
 PERSONAL_RUNTIME_PROFILE = "personal_single_owner"
-_EXPECTED_MIGRATION_HEAD = "0015"
+_EXPECTED_MIGRATION_HEAD = "0016"
 _ACTIVE_WORKSPACE_RUN_STATES = frozenset(
     {"queued", "leased", "starting", "running", "pausing", "paused", "stopping"}
 )
@@ -327,6 +332,17 @@ def _runtime_checkpoint(
     return guard
 
 
+def _invocation_guard_error_code(exc: BaseException) -> str:
+    if isinstance(exc, PersonalAlphaConfigurationError):
+        code = str(exc)
+        if _SAFE_PERSONAL_RUNTIME_CODE.fullmatch(code) is not None:
+            return code
+        return "personal_runtime_invocation_guard_unavailable"
+    if isinstance(exc, SQLAlchemyError):
+        return "personal_runtime_database_guard_unavailable"
+    return "personal_runtime_control_state_unavailable"
+
+
 def _invocation_guard(
     config: PersonalRuntimeCanaryConfig,
     *,
@@ -416,7 +432,7 @@ def _invocation_guard(
             PersonalRuntimeConfigurationError,
             SQLAlchemyError,
         ) as exc:
-            raise AlphaAdapterUnavailable(str(exc)) from exc
+            raise AlphaAdapterUnavailable(_invocation_guard_error_code(exc)) from exc
 
     return guard
 
@@ -475,8 +491,10 @@ class PersonalCanaryAgentAlpha:
         agent_version_id: str,
         message: str,
         top_k: int,
+        reasoning_gear: ReasoningGear = "standard",
         idempotency_key: str,
         retry_of: str | None,
+        employee_role_id: str = "parent",
     ) -> Iterator[AlphaStreamEvent]:
         self._scope(
             tenant_id=tenant_id,
@@ -495,8 +513,10 @@ class PersonalCanaryAgentAlpha:
             agent_version_id=agent_version_id,
             message=message,
             top_k=top_k,
+            reasoning_gear=reasoning_gear,
             idempotency_key=idempotency_key,
             retry_of=retry_of,
+            employee_role_id=employee_role_id,
         )
 
     def cancel(
@@ -559,6 +579,18 @@ def _memory_crypto_available(settings: Settings) -> bool:
     try:
         MemoryContentCipher.from_settings(settings)
     except MemoryCryptoUnavailable:
+        return False
+    return True
+
+
+def _personal_gateway_resolver_available(settings: Settings) -> bool:
+    """Prove the request-scoped credential path can assemble without reading a key."""
+
+    if not settings.provider_endpoint_allowlist:
+        return False
+    try:
+        CredentialCipher.from_settings(settings)
+    except CredentialCryptoUnavailable:
         return False
     return True
 
@@ -640,8 +672,11 @@ def personal_alpha_posture(
     migration_ready = False
     settings = settings or get_settings()
     environment_allowed = settings.env is Environment.PRODUCTION
-    gateway = gateway or configured_model_gateway()
-    gateway_configured = not isinstance(gateway, UnavailableModelGateway)
+    gateway = gateway if gateway is not None else configured_model_gateway()
+    gateway_configured = bool(
+        not isinstance(gateway, UnavailableModelGateway)
+        or _personal_gateway_resolver_available(settings)
+    )
     memory_crypto_configured = _memory_crypto_available(settings)
     factory: sessionmaker[Any] | None = session_factory
     try:
@@ -692,7 +727,7 @@ def personal_alpha_posture(
         factory = factory or get_session_factory(settings)
         migration_ready = _migration_head(factory) == _EXPECTED_MIGRATION_HEAD
         if not migration_ready:
-            blockers.append("migration head is not 0015")
+            blockers.append(f"migration head is not {_EXPECTED_MIGRATION_HEAD}")
         if scope_matches:
             session = _open_tenant_session(factory, tenant_id)
             try:
@@ -776,7 +811,7 @@ def build_personal_agent_alpha(
     if not resolve_personal_runtime_profile(selected_profile):
         return UnavailableAgentAlpha()
     settings = settings or get_settings()
-    gateway = gateway or configured_model_gateway()
+    gateway = gateway if gateway is not None else configured_model_gateway()
     factory = session_factory or get_session_factory(settings)
     posture = personal_alpha_posture(
         tenant_id=tenant_id,
@@ -791,7 +826,7 @@ def build_personal_agent_alpha(
         session_factory=factory,
         gateway=gateway,
     )
-    if not posture.assembled or isinstance(gateway, UnavailableModelGateway):
+    if not posture.assembled:
         return UnavailableAgentAlpha()
     selected_config = (
         config_path if config_path is not None else os.environ.get(PERSONAL_RUNTIME_CONFIG_ENV)

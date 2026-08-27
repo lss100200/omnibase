@@ -22,6 +22,27 @@ export const HOP_BY_HOP_HEADERS = [
   'upgrade',
 ] as const
 
+export const DESKTOP_INSTANCE_HEADER = 'x-omnibase-desktop-instance'
+export const DESKTOP_CHALLENGE_HEADER = 'x-omnibase-desktop-challenge'
+export const DESKTOP_PROOF_HEADER = 'x-omnibase-desktop-proof'
+export const DESKTOP_NATIVE_CONTROL_HEADER = 'x-omnibase-desktop-native-control'
+const DESKTOP_CONTROL_HEADERS = [
+  DESKTOP_INSTANCE_HEADER,
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  DESKTOP_NATIVE_CONTROL_HEADER,
+] as const
+const DESKTOP_INSTANCE_TOKEN = /^[a-f0-9]{64}$/
+const DESKTOP_CHALLENGE = /^[a-f0-9]{64}$/
+const DESKTOP_PROOF = /^[a-f0-9]{64}$/
+
+export interface ProxyRequestOptions {
+  readonly desktopInstanceToken?: string | null
+  readonly desktopChallenge?: string | null
+  readonly forwardDesktopProof?: boolean
+  readonly dropBrowserCredentials?: boolean
+}
+
 export function stripHopByHopHeaders(headers: Headers): void {
   // Read the Connection header FIRST: headers named by it are hop-by-hop
   // too (RFC 9110 section 7.6.1), and the loop below deletes Connection.
@@ -58,7 +79,11 @@ function logUpstreamFailure(error: unknown): void {
   console.error(JSON.stringify({ event: 'proxy.upstream_failed', name, code }))
 }
 
-export async function proxyRequest(target: string, request: Request): Promise<Response> {
+export async function proxyRequest(
+  target: string,
+  request: Request,
+  options: ProxyRequestOptions = {},
+): Promise<Response> {
   if (!FORWARDED_METHODS.has(request.method)) {
     return new Response(JSON.stringify({ error: { code: 'method_not_allowed' } }), {
       status: 405,
@@ -74,6 +99,46 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
   stripHopByHopHeaders(headers)
   headers.delete('host')
   headers.delete('content-length')
+  for (const name of DESKTOP_CONTROL_HEADERS) {
+    headers.delete(name)
+  }
+  if (options.dropBrowserCredentials === true) {
+    headers.delete('authorization')
+    headers.delete('cookie')
+  }
+  if (options.desktopInstanceToken !== undefined && options.desktopInstanceToken !== null) {
+    if (!DESKTOP_INSTANCE_TOKEN.test(options.desktopInstanceToken)) {
+      return new Response(
+        JSON.stringify({ error: { code: 'desktop_runtime_configuration_invalid' } }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
+    headers.set(DESKTOP_INSTANCE_HEADER, options.desktopInstanceToken)
+  }
+  if (options.desktopChallenge !== undefined && options.desktopChallenge !== null) {
+    if (!DESKTOP_CHALLENGE.test(options.desktopChallenge)) {
+      return new Response(
+        JSON.stringify({ error: { code: 'desktop_runtime_configuration_invalid' } }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
+    headers.set(DESKTOP_CHALLENGE_HEADER, options.desktopChallenge)
+  }
+  if (options.forwardDesktopProof === true && options.desktopChallenge == null) {
+    return new Response(
+      JSON.stringify({ error: { code: 'desktop_runtime_configuration_invalid' } }),
+      {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )
+  }
   // Node/undici deliberately rejects Expect: 100-continue with
   // UND_ERR_NOT_SUPPORTED. Some desktop HTTP clients add it automatically;
   // the proxy buffers the small request body first, so forwarding Expect is
@@ -108,7 +173,11 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
     return upstreamUnavailable()
   }
   const responseHeaders = new Headers(upstream.headers)
+  const desktopProof = responseHeaders.get(DESKTOP_PROOF_HEADER)
   stripHopByHopHeaders(responseHeaders)
+  for (const name of DESKTOP_CONTROL_HEADERS) {
+    responseHeaders.delete(name)
+  }
   // If the upstream ignored `Accept-Encoding: identity` and still sent a
   // compressed encoding, fail closed instead of forwarding decompressed
   // bytes under the stale compression header (no double-decode surprises
@@ -116,6 +185,14 @@ export async function proxyRequest(target: string, request: Request): Promise<Re
   const contentEncoding = (responseHeaders.get('content-encoding') ?? '').trim().toLowerCase()
   if (contentEncoding !== '' && contentEncoding !== 'identity') {
     return upstreamUnavailable()
+  }
+  if (options.forwardDesktopProof === true && upstream.ok) {
+    if (desktopProof === null || !DESKTOP_PROOF.test(desktopProof)) {
+      void upstream.body?.cancel()
+      return upstreamUnavailable()
+    }
+    responseHeaders.set(DESKTOP_PROOF_HEADER, desktopProof)
+    responseHeaders.set('Cache-Control', 'no-store')
   }
   // Server-Sent Events must not be buffered by any hop.
   responseHeaders.set('X-Accel-Buffering', 'no')

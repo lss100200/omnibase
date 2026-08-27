@@ -5,7 +5,6 @@ import {
   ArrowRight,
   BadgeCheck,
   BookOpenCheck,
-  Bot,
   Boxes,
   BrainCircuit,
   Check,
@@ -19,7 +18,6 @@ import {
   Layers3,
   Map,
   Orbit,
-  Play,
   Rocket,
   ShieldCheck,
   Sparkles,
@@ -40,88 +38,88 @@ const repositoryUrl = 'https://github.com/lss100200/omnibase'
 
 const copy = {
   zh: {
-    nav: ['产品底座', '真实闭环', '角色设计', '路线图'],
-    badge: 'Public Preview · 可运行的 Agent 工作台',
-    meta: '开源 · 自托管 · 用户模型 · 版本化 Agent',
-    heroLead: '从一个工作空间开始，创造并运行你的',
-    heroAccent: '第一个 AI 员工。',
+    nav: ['个人工作台', '工程闭环', '十角色团队', '路线图'],
+    badge: 'P6.9 R0 · 工程验收通过',
+    meta: '开源 · 自托管 · 父 Agent 指挥 · 宿主验证',
+    heroLead: 'OmniBase',
+    heroAccent: '个人 AI 员工团队。',
     heroBody:
-      '连接自己的 OpenAI-compatible 模型，创建 Workspace，定义员工职责和版本，然后发起真实运行。OmniBase 把模型、知识、任务、运行记录和安全边界放进同一个可维护的工作台。',
+      'Owner 开启团队模式后，父 Agent 可以面向九名固定专业员工提出受限 Proposal。宿主验证身份、预算、依赖和并发，再执行串行、并行或混合 wave；协作、取消、恢复与最终结果都留在一个可审计的本地边界内。',
     github: '查看公开源码',
-    explore: '查看真实产品闭环',
-    principles: ['Apache-2.0', 'Self-hosted', 'Personal model', 'Source-repairable'],
+    explore: '查看团队运行闭环',
+    principles: ['Apache-2.0', 'Self-hosted', 'Parent-directed', 'Host-validated'],
     metrics: [
-      ['Personal provider', '管理并测试自己的模型 API'],
-      ['Workspace', '为每个项目隔离上下文'],
-      ['Agent Builder', '创建版本化的数字员工'],
-      ['Task → Run', '让一次工作留下可审计记录'],
+      ['P6.9 R0', '确定性 loopback 范围已通过工程验收'],
+      ['1 + 9 roles', '父 Agent 动态编制，员工不能启动同伴'],
+      ['Bounded waves', '宿主验证串行、并行与混合执行'],
+      ['SQLite v9', '调用预留、父调用证明与成功闭包'],
     ],
     foundationKicker: 'A WORKBENCH, NOT A CHAT WRAPPER',
-    foundationTitle: '它首先是 AI 工作台，然后才是数据库与自动化平台。',
+    foundationTitle: '它首先是个人工程工作台，然后才是数据库与自动化平台。',
     foundationBody:
-      '用户从模型、Workspace 和 Agent 开始工作；数据库、RAG、任务账本、租约、审计和维护者地图在背后提供可持续的工程底座。',
+      '用户从会话、文件树、模型和 Workspace 开始工作；RAG、任务账本、ChangeSet、审计和维护者地图在背后提供可持续的工程底座。',
     studioKicker: 'A REAL PRODUCT LOOP',
-    studioTitle: '今天就能完成从模型连接到第一次 Agent 运行。',
+    studioTitle: '从模型连接、文件上下文到一次可审计任务。',
     studioBody:
-      '当前公开主线已经具备用户 Provider、连接测试、Workspace 创建、Agent Builder、真实模型调用、持久化 Task/Run 记录和工作空间只读知识能力。',
-    teamKicker: 'ONE RELIABLE AGENT FIRST',
-    teamTitle: '先让一个 Agent 可靠工作，再按任务需要扩展角色。',
+      '当前源码包含个人 Provider、Workspace、文件树、会话连续性、Agent Builder、无工具 Provider 调用、持久 Task/Run、ChangeSet 审计与恢复日志。',
+    teamKicker: 'PARENT-DIRECTED, HOST-VALIDATED',
+    teamTitle: '父 Agent 组织工作，宿主掌握执行权。',
     teamBody:
-      'OmniBase 已经定义清晰的角色语言，但生产多 Agent Runtime 仍然关闭。当前重点是让单 Agent 的职责、模型、Workspace、知识、预算和运行记录真正闭环。',
+      '父 Agent 从九个源码固定专业角色中选择员工，经结构化 Proposal 提出串行、并行或混合 wave。员工通过 Personal Team Blackboard 回报，不能直接启动同伴；企业 Planner、后台自治与无限 fan-out 仍然关闭。',
     roadmapKicker: 'HONEST ROADMAP',
     roadmapTitle: '我们只展示真实完成和真实正在建设的部分。',
     roadmapBody:
-      '用户可用产品能力已经进入主线；Planner、Typed Executor、只读 Capability Gateway 和 Desktop 正在统一整合。生产 Runtime、自我改造和多 Agent 长循环仍保持关闭。',
-    delivered: '已经具备',
-    building: '正在建设',
-    later: '后续阶段',
+      '个人团队 R0 已通过工程验收，但工程证据不等于正式发布。付费 Provider、真人 Electron 窗口、Authenticode、EXE/MSI 与企业 Multi-Agent 仍未开放或未证明。',
+    delivered: 'P6.9 R0 · 工程验收',
+    building: 'Engineering Preview · 工程预览',
+    later: 'Deferred · 延期能力',
     ctaKicker: 'BUILD WITH US',
-    ctaTitle: '从第一个 Workspace 和第一个 AI 员工开始。',
+    ctaTitle: '从一个 Workspace 和一项有边界的团队任务开始。',
     ctaBody:
-      'OmniBase 正在把 Agent 从一次性聊天人格变成有职位、有版本、有项目上下文和可审计运行记录的开源数字员工。欢迎试用、阅读源码或参与验证。',
+      'OmniBase 把父 Agent 的团队判断转换为可验证的 Proposal、预算、调用证明、协作记录和运行结果。欢迎阅读源码、复核门禁或参与下一阶段规划。',
     contribute: '参与共建',
     footer: 'AI workers, repairable by design.',
   },
   en: {
     nav: ['Product', 'Real workflow', 'Role design', 'Roadmap'],
-    badge: 'Public Preview · A working Agent workbench',
-    meta: 'Open source · Self-hosted · Personal models · Versioned agents',
-    heroLead: 'Start with a workspace. Create and run your',
-    heroAccent: 'first AI worker.',
+    badge: 'P6.9 R0 · Engineering accepted',
+    meta: 'Open source · Self-hosted · Parent-directed · Host-validated',
+    heroLead: 'OmniBase',
+    heroAccent: 'Personal AI team.',
     heroBody:
-      'Connect your own OpenAI-compatible provider, create a workspace, define a worker and its version, then start a real run. OmniBase keeps models, knowledge, tasks, run records and safety boundaries in one maintainable workbench.',
+      'After the Owner enables team mode, the parent Agent can propose work for nine fixed specialists. The host validates identity, budget, dependencies and concurrency before running serial, parallel or mixed waves; collaboration, cancellation, recovery and final results stay inside one auditable local boundary.',
     github: 'View source on GitHub',
-    explore: 'See the real product loop',
-    principles: ['Apache-2.0', 'Self-hosted', 'Personal model', 'Source-repairable'],
+    explore: 'See the team execution loop',
+    principles: ['Apache-2.0', 'Self-hosted', 'Parent-directed', 'Host-validated'],
     metrics: [
-      ['Personal provider', 'Manage and test your own model API'],
-      ['Workspace', 'Keep project context isolated'],
-      ['Agent Builder', 'Create versioned digital workers'],
-      ['Task → Run', 'Keep every shift observable and auditable'],
+      ['P6.9 R0', 'Engineering-accepted for the deterministic loopback scope'],
+      ['1 + 9 roles', 'Parent staffs dynamically; specialists cannot launch peers'],
+      ['Bounded waves', 'Host-validated serial, parallel and mixed execution'],
+      ['SQLite v9', 'Call reservations, parent proof and success closure'],
     ],
     foundationKicker: 'A WORKBENCH, NOT A CHAT WRAPPER',
-    foundationTitle: 'An AI workbench first. A data and automation platform underneath.',
+    foundationTitle: 'A personal engineering workbench first. A data platform underneath.',
     foundationBody:
-      'Users begin with models, workspaces and agents. Databases, RAG, task ledgers, leases, audits and an AI-readable maintainer map provide the durable foundation underneath.',
+      'Users begin with conversations, files, models and workspaces. RAG, task ledgers, ChangeSets, audits and an AI-readable maintainer map provide the durable foundation underneath.',
     studioKicker: 'A REAL PRODUCT LOOP',
-    studioTitle: 'Go from connecting a model to your first Agent run today.',
+    studioTitle: 'Go from model connection and file context to an auditable task.',
     studioBody:
-      'The public main line already includes personal providers, connection tests, workspace creation, Agent Builder, real model invocation, durable Task/Run records and workspace-scoped read-only knowledge.',
-    teamKicker: 'ONE RELIABLE AGENT FIRST',
-    teamTitle: 'Make one Agent reliable before expanding into a team.',
+      'The source includes personal providers, workspaces, a file tree, conversation continuity, Agent Builder, tool-free Provider calls, durable Task/Run records, ChangeSet review and recovery journals.',
+    teamKicker: 'PARENT-DIRECTED, HOST-VALIDATED',
+    teamTitle: 'The parent Agent organizes work. The host owns execution.',
     teamBody:
-      'OmniBase has a clear role language, but production multi-agent runtime remains disabled. The current priority is closing the loop around one Agent: role, model, workspace, knowledge, budget and durable run records.',
+      'The parent selects from nine source-owned specialist roles and proposes serial, parallel or mixed waves through a strict contract. Specialists report through the Personal Team Blackboard and cannot launch peers; enterprise Planner, background autonomy and unbounded fan-out remain disabled.',
     roadmapKicker: 'HONEST ROADMAP',
     roadmapTitle: 'We show what is real, what is being built and what is not ready yet.',
     roadmapBody:
-      'The usable product slice is already on main. Planner, typed execution, read-only Capability Gateway composition and Desktop are being consolidated. Production runtime, self-modification and long-running multi-agent loops remain disabled.',
-    delivered: 'Available now',
-    building: 'In development',
-    later: 'Later phases',
+      'Personal-team R0 passed engineering acceptance, but engineering evidence is not a release. Paid providers, a live-human Electron window, Authenticode, EXE/MSI packaging and enterprise Multi-Agent remain unproven or disabled.',
+    delivered: 'P6.9 R0 · Engineering accepted',
+    building: 'Engineering preview',
+    later: 'Deferred',
     ctaKicker: 'BUILD WITH US',
-    ctaTitle: 'Start with your first workspace and your first AI worker.',
+    ctaTitle: 'Start with one workspace and one bounded team task.',
     ctaBody:
-      'OmniBase is turning disposable chat personas into open-source digital workers with roles, versions, project context and auditable run records. Try it, read the source or help us verify the boundaries.',
+      'OmniBase turns the parent Agent’s team decisions into validated Proposals, budgets, call proofs, collaboration records and durable outcomes. Read the source, inspect the gates or help shape the next phase.',
     contribute: 'Contribute',
     footer: 'AI workers, repairable by design.',
   },
@@ -130,114 +128,138 @@ const copy = {
 const foundationCards = {
   zh: [
     [
-      'PERSONAL MODEL GATEWAY',
-      '使用并测试你自己的模型',
-      '用户可以配置 OpenAI-compatible Provider、管理 API Key 并在保存前后进行连接测试。',
+      'MODEL-NAME-FIRST ROUTING',
+      '根据用户填写的模型名称采用保守档案',
+      'DeepSeek、GPT、GLM、Claude 与 Kimi 使用各自的提示和上下文策略；中转站地址不会覆盖明确模型名，也不会伪装未验证的原生能力。',
     ],
     [
-      'WORKSPACE',
-      '每个项目拥有自己的上下文',
-      '成员、Agent、知识、任务和运行记录都绑定到 Workspace，而不是继续散落在聊天历史中。',
+      'FILES + CONTINUITY',
+      '把文件、会话和任务留在同一个 Workspace',
+      'Owner 授权的文件树、有限会话历史、持久 Task/Run 和浏览器本地恢复日志共同维护项目连续性。',
     ],
     [
-      'AGENT REGISTRY + RUNS',
-      '职位、版本与每次工作相互分离',
-      'AgentDefinition、AgentVersion、Workspace 绑定和 Task/Run 账本让数字员工能够被创建、运行和审计。',
+      'CHANGESET REVIEW',
+      '每次文件修改都留下 Before / After',
+      '文本 ChangeSet 绑定 Workspace、Task 与 invocation；写入前检查快照，写入后验证摘要，漂移或冲突时拒绝回滚。',
     ],
     [
-      'GOVERNED KNOWLEDGE',
-      '知识检索停留在 Workspace 边界内',
-      'RAG、引用回链和工程预览中的只读 knowledge_search 服从租户、Workspace、预算、审计与能力边界。',
+      'NATIVE SKILLS + MCP PREVIEW',
+      '能力扩展保持有界并且诚实',
+      '15 个第一方 instruction-only Skills 可安装/停用；6 个本地只读 MCP 工具需独立手工启动，尚未接入 Agent Alpha。',
     ],
   ],
   en: [
     [
-      'PERSONAL MODEL GATEWAY',
-      'Bring and test your own model',
-      'Configure an OpenAI-compatible provider, manage the API key and test connectivity before relying on it.',
+      'MODEL-NAME-FIRST ROUTING',
+      'Apply a conservative profile from the user-entered model name',
+      'DeepSeek, GPT, GLM, Claude and Kimi receive family-aware prompt and context guidance. A relay URL cannot override a recognized name or prove native features.',
     ],
     [
-      'WORKSPACE',
-      'Give every project its own context',
-      'Members, agents, knowledge, tasks and run records belong to a workspace instead of disappearing into chat history.',
+      'FILES + CONTINUITY',
+      'Keep files, conversations and work in one workspace',
+      'Owner-authorized file trees, bounded conversation history, durable Task/Run records and a browser-local recovery journal preserve project continuity.',
     ],
     [
-      'AGENT REGISTRY + RUNS',
-      'Separate a role, its version and each shift of work',
-      'AgentDefinition, AgentVersion, workspace bindings and the Task/Run ledger make workers creatable, runnable and auditable.',
+      'CHANGESET REVIEW',
+      'Keep Before / After evidence for file changes',
+      'Text ChangeSets bind workspace, task and invocation. Writes use snapshot checks and post-write digests; drift or overlap blocks rollback.',
     ],
     [
-      'GOVERNED KNOWLEDGE',
-      'Keep retrieval inside workspace boundaries',
-      'RAG, citations and engineering-preview read-only knowledge_search remain tenant-, workspace-, budget-, audit- and capability-bound.',
+      'NATIVE SKILLS + MCP PREVIEW',
+      'Extend capability without overstating authority',
+      'Fifteen first-party instruction-only Skills can be installed or disabled. Six local read-only MCP tools launch separately and are not connected to Agent Alpha.',
     ],
   ],
 } as const
 
 const roleCards = {
   zh: [
-    ['Workspace Steward', '理解目标、决定是否组队、分配任务并汇总结果。'],
-    ['Explorer', '定位入口、研究方案、提供证据和未知清单。'],
-    ['Builder', '实现代码、产出 Commit 与结构化交接。'],
-    ['Verifier', '独立检查实现与证据，给出明确验收决定。'],
-    ['Knowledge Curator', '把任务经验蒸馏成用户、项目和角色记忆。'],
-    ['Operator', '负责部署、恢复与真实运行世界的变化。'],
+    ['父 Agent', '默认活动；理解目标、保持会话连续性并向唯一 Owner 汇报。'],
+    ['产品经理', '澄清需求、范围、优先级、验收标准与用户路径。'],
+    ['UI/UX 设计师', '负责信息架构、交互、视觉系统与可访问性。'],
+    ['前端工程师', '负责 Web 工作台、状态管理、客户端契约与交互性能。'],
+    ['后端应用工程师', '负责 API、服务生命周期、幂等和事务边界。'],
+    ['数据与存储工程师', '负责数据模型、SQL、迁移、索引、备份与恢复边界。'],
+    ['安全架构师', '负责威胁模型、权限、秘密、审计、隔离与 fail-closed 设计。'],
+    ['测试工程师', '负责验收路径、回归、攻击用例与可复现证据。'],
+    ['运维与发布工程师', '负责构建、CI、发布、监控、备份和恢复演练。'],
+    ['技术文档工程师', '负责架构、交接、运行手册、用户说明与证据索引。'],
   ],
   en: [
+    ['Parent Agent', 'Active by default; maintains continuity and reports to the sole Owner.'],
+    ['Product Manager', 'Clarifies scope, priority, acceptance criteria and user journeys.'],
     [
-      'Workspace Steward',
-      'Understands goals, forms teams only when needed and integrates results.',
+      'UI/UX Designer',
+      'Owns information architecture, interaction, visual systems and accessibility.',
+    ],
+    ['Frontend Engineer', 'Owns the web workbench, client contracts, state and interaction.'],
+    [
+      'Backend Application Engineer',
+      'Owns APIs, service lifecycles, idempotency and transactions.',
     ],
     [
-      'Explorer',
-      'Finds entrypoints, researches options and returns evidence with explicit unknowns.',
+      'Data and Storage Engineer',
+      'Owns data models, SQL, migrations, indexes, backup and recovery bounds.',
     ],
-    ['Builder', 'Implements changes and hands off commits and structured artifacts.'],
-    ['Verifier', 'Independently reviews implementation and evidence before acceptance.'],
-    ['Knowledge Curator', 'Distills task experience into user, workspace and role memory.'],
-    ['Operator', 'Owns deployment, recovery and changes to the running world.'],
+    [
+      'Security Architect',
+      'Owns threat models, authority, secrets, audits and fail-closed design.',
+    ],
+    ['QA Engineer', 'Owns acceptance paths, regressions, attack cases and reproducible evidence.'],
+    [
+      'Operations and Release Engineer',
+      'Owns builds, CI, release, monitoring, backup and recovery drills.',
+    ],
+    [
+      'Technical Documentation Engineer',
+      'Owns architecture, handover, runbooks and evidence indexes.',
+    ],
   ],
 } as const
 
 const roadmap = {
   zh: {
     delivered: [
+      'P6.9 个人团队 R0：确定性 loopback 范围通过工程验收',
+      '父 Agent Proposal、宿主验证、受控 wave、黑板协作与 Stop / 恢复',
       '用户 Profile、个人模型 Provider、API Key 管理与连接测试',
-      'Workspace 创建、Agent Builder、AgentDefinition 与版本化员工',
-      '真实无工具单 Agent 模型调用与持久化 Task / Run 记录',
-      '自托管 RAG、引用回链、恢复 Runbook 与 AI 可读维护者地图',
+      'Workspace、文件树、会话连续性、Agent Builder 与 1+9 固定角色',
+      '无工具 Provider 调用、持久 Task / Run、引用与 ChangeSet 审计',
     ],
     building: [
-      'Planner Proposal、Typed Executor 与正式 Builder 主线收口',
-      'Capability Gateway 只读 knowledge_search 工程组合',
-      'Lite / Local Desktop 启动、诊断与端口检查',
-      '原生 Skill 合同、版本边界与工程验证',
+      'DeepSeek、GPT、GLM、Claude、Kimi 的模型名优先适配档案',
+      '6 个独立启动的只读 MCP 工具；未接入 Agent Alpha',
+      'Windows Companion 的离线验证、安装规划与诊断体验',
+      '源码级公网展示；实际 omnibase.chat 重新部署仍依赖预览主机',
     ],
     later: [
-      '可安装的 Skill 持久化与 Runtime',
-      '隔离 worktree 中的 Self-Development Alpha',
-      '按任务与预算展开的多 Agent Runtime',
-      'P34.7 通过后的 Hardened Production Runtime',
+      '付费 Provider 流程与真人 Electron 窗口交互尚未证明',
+      'Authenticode 未证明；EXE/MSI 重打包未批准',
+      '企业 Planner / Multi-Agent 仍关闭，生产 MULTI_AGENT_ENABLED=false',
+      '第三方 Skill 导入、Marketplace 与可执行 workflow/script Skill',
+      'MCP 接入 Agent Runtime、写工具、网络与任意 shell/SQL',
     ],
   },
   en: {
     delivered: [
+      'P6.9 personal-team R0 engineering acceptance for deterministic loopback',
+      'Parent Proposals, host validation, bounded waves, blackboard collaboration and Stop/recovery',
       'Profiles, personal model providers, API-key management and connection tests',
-      'Workspace creation, Agent Builder, AgentDefinition and versioned workers',
-      'Real tool-free single-Agent model calls with durable Task/Run records',
-      'Self-hosted RAG, citations, recovery runbooks and an AI-readable maintainer map',
+      'Workspaces, file trees, conversation continuity, Agent Builder and 1+9 fixed roles',
+      'Tool-free Provider calls, durable Task/Run records, citations and ChangeSet review',
     ],
     building: [
-      'Planner Proposal, typed execution and formal Builder consolidation',
-      'Read-only knowledge_search through the Capability Gateway',
-      'Lite / Local Desktop startup, diagnostics and port checks',
-      'Native Skill contracts, version boundaries and engineering verification',
+      'Model-name-first profiles for DeepSeek, GPT, GLM, Claude and Kimi',
+      'Six separately launched read-only MCP tools, not connected to Agent Alpha',
+      'Offline verification, install planning and diagnostics in the Windows Companion',
+      'Public-preview source updates; live omnibase.chat still depends on the preview host',
     ],
     later: [
-      'Installable Skill persistence and runtime',
-      'Self-Development Alpha inside isolated worktrees',
-      'Task- and budget-aware multi-agent runtime',
-      'Hardened production runtime after P34.7 admission',
+      'Paid Provider journeys and a live-human Electron window remain unproven',
+      'Authenticode is unproven; EXE/MSI repackaging is not approved',
+      'Enterprise Planner/Multi-Agent stays disabled; production MULTI_AGENT_ENABLED=false',
+      'Third-party Skill import, Marketplace and executable workflow/script Skills',
+      'MCP inside Agent Runtime, write tools, network access and arbitrary shell/SQL',
     ],
   },
 } as const
@@ -314,11 +336,8 @@ export function PublicPreviewClient() {
               </span>
             </div>
 
-            <h1 className="max-w-3xl text-balance text-4xl font-semibold leading-[1.08] tracking-[-0.045em] sm:text-5xl lg:text-[4.2rem]">
-              {t.heroLead}{' '}
-              <span className="bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 bg-clip-text text-transparent">
-                {t.heroAccent}
-              </span>
+            <h1 className="max-w-3xl text-balance text-4xl font-semibold leading-[1.08] sm:text-5xl lg:text-[4.2rem]">
+              {t.heroLead} <span className="text-foreground">{t.heroAccent}</span>
             </h1>
             <p className="mt-7 max-w-2xl text-pretty text-base leading-8 text-muted-foreground sm:text-lg">
               {t.heroBody}
@@ -348,7 +367,7 @@ export function PublicPreviewClient() {
               ))}
             </div>
           </div>
-          <AgentBlueprint locale={locale} />
+          <TeamRunConsole locale={locale} />
         </section>
 
         <section className="border-y border-border/60 bg-muted/20">
@@ -408,8 +427,8 @@ export function PublicPreviewClient() {
                   title={locale === 'zh' ? '连接模型' : 'Connect a model'}
                   text={
                     locale === 'zh'
-                      ? '添加自己的 OpenAI-compatible Provider，保存 API Key 并测试真实连接。'
-                      : 'Add your OpenAI-compatible provider, save the API key and test the real connection.'
+                      ? '添加自己的 OpenAI-compatible Provider，保存 API Key 并运行有界连接测试。'
+                      : 'Add your OpenAI-compatible provider, save the API key and run a bounded connection test.'
                   }
                 />
                 <StudioStep
@@ -422,12 +441,12 @@ export function PublicPreviewClient() {
                   }
                 />
                 <StudioStep
-                  icon={Play}
-                  title={locale === 'zh' ? '创建 AI 员工' : 'Build an AI worker'}
+                  icon={Users}
+                  title={locale === 'zh' ? '开启团队模式' : 'Enable team mode'}
                   text={
                     locale === 'zh'
-                      ? '定义职位、系统指令、模型和版本，让 Agent 成为可管理的项目成员。'
-                      : 'Define the role, system instructions, model and version so the Agent becomes a managed project member.'
+                      ? '由父 Agent 选择专业员工并提出计划，宿主校验后才会执行。'
+                      : 'Let the parent select specialists and propose a plan; execution begins only after host validation.'
                   }
                 />
                 <StudioStep
@@ -435,13 +454,13 @@ export function PublicPreviewClient() {
                   title={locale === 'zh' ? '运行并检查' : 'Run and inspect'}
                   text={
                     locale === 'zh'
-                      ? '发起真实模型调用，并在 Task、Run、预算、知识结果和审计记录中检查这次工作。'
-                      : 'Start a real model call and inspect the shift through Task, Run, budget, knowledge results and audit records.'
+                      ? '发起无工具 Provider 调用，并在 Task、Run、预算、知识结果和审计记录中检查这次工作。'
+                      : 'Start a tool-free Provider call and inspect the work through Task, Run, budget, knowledge results and audit records.'
                   }
                 />
               </div>
             </div>
-            <AgentLifecycle locale={locale} />
+            <TeamExecutionLoop locale={locale} />
           </div>
         </section>
 
@@ -503,16 +522,13 @@ export function PublicPreviewClient() {
         </section>
 
         <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8 sm:py-32">
-          <div className="relative overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-950 px-6 py-14 text-white shadow-2xl sm:px-12 lg:px-16">
-            <div className="pointer-events-none absolute -right-32 -top-48 h-96 w-96 rounded-full bg-cyan-500/20 blur-3xl" />
+          <div className="relative overflow-hidden rounded-lg border border-cyan-500/20 bg-slate-950 px-6 py-14 text-white shadow-2xl sm:px-12 lg:px-16">
             <div className="relative grid gap-9 lg:grid-cols-[1fr_auto] lg:items-end">
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-300">
                   {t.ctaKicker}
                 </div>
-                <h2 className="mt-5 max-w-3xl text-3xl font-semibold tracking-[-0.035em] sm:text-5xl">
-                  {t.ctaTitle}
-                </h2>
+                <h2 className="mt-5 max-w-3xl text-3xl font-semibold sm:text-5xl">{t.ctaTitle}</h2>
                 <p className="mt-5 max-w-2xl text-base leading-7 text-slate-400">{t.ctaBody}</p>
               </div>
               <div className="flex flex-col gap-3">
@@ -552,7 +568,7 @@ export function PublicPreviewClient() {
               <span className="ml-2">{t.footer}</span>
             </span>
           </div>
-          <div className="flex gap-6">
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
             <a className="hover:text-foreground" href={`${repositoryUrl}/blob/main/LICENSE`}>
               Apache-2.0
             </a>
@@ -565,6 +581,9 @@ export function PublicPreviewClient() {
             >
               Contributing
             </a>
+            <a className="hover:text-foreground" href={`${repositoryUrl}/blob/main/COMMUNITY.md`}>
+              Community
+            </a>
           </div>
         </div>
       </footer>
@@ -572,78 +591,76 @@ export function PublicPreviewClient() {
   )
 }
 
-function AgentBlueprint({ locale }: { locale: Locale }) {
+function TeamRunConsole({ locale }: { locale: Locale }) {
   const rows =
     locale === 'zh'
       ? [
-          ['AgentDefinition', '职位与职责'],
-          ['AgentVersion', '工作手册与 Skills'],
-          ['WorkspaceBinding', '项目任命与记忆'],
-          ['AgentRun', '一次具体工作班次'],
+          ['01 · OWNER', '开启团队模式并设定可见预算'],
+          ['02 · PARENT', '输出受限结构化 Proposal'],
+          ['03 · HOST', '校验身份、预算、依赖与并发'],
+          ['04 · WAVES', '运行串行、并行或混合专业任务'],
+          ['05 · PROOF', '结算调用证明并完成成功闭包'],
         ]
       : [
-          ['AgentDefinition', 'Role and responsibilities'],
-          ['AgentVersion', 'Handbook and skills'],
-          ['WorkspaceBinding', 'Project appointment and memory'],
-          ['AgentRun', 'One concrete shift of work'],
+          ['01 · OWNER', 'Enable team mode and set a visible budget'],
+          ['02 · PARENT', 'Emit a restricted structured Proposal'],
+          ['03 · HOST', 'Validate identity, budget, dependencies and concurrency'],
+          ['04 · WAVES', 'Run serial, parallel or mixed specialist work'],
+          ['05 · PROOF', 'Settle call proofs and close success atomically'],
         ]
   return (
-    <div className={cn(styles.floatSlow, 'relative mx-auto w-full max-w-xl')}>
-      <div className="absolute -inset-8 rounded-[3rem] bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/10 blur-2xl" />
+    <div className="relative mx-auto w-full max-w-xl">
       <div
         className={cn(
           styles.heroGlow,
-          'relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950 text-slate-100',
+          'relative overflow-hidden rounded-lg border border-white/10 bg-slate-950 text-slate-100',
         )}
       >
         <div className="flex h-11 items-center justify-between border-b border-white/10 px-4">
-          <div className="flex gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-400/80" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" />
-          </div>
+          <span className="font-mono text-[9px] text-slate-500">TEAM RUN / R0</span>
           <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">
-            agent / blueprint
+            loopback proven
           </span>
-          <Bot className="h-4 w-4 text-cyan-300" />
+          <Users className="h-4 w-4 text-cyan-300" />
         </div>
         <div className="p-6 sm:p-7">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">
-                {locale === 'zh' ? '用户想法' : 'User intent'}
+                {locale === 'zh' ? '当前状态' : 'Current state'}
               </p>
               <p className="mt-1 text-sm font-medium">
                 {locale === 'zh'
-                  ? '“创建一个前端审美检查员”'
-                  : '“Create a frontend visual reviewer”'}
+                  ? '父 Agent 正在协调三名专业员工'
+                  : 'Parent Agent coordinating three specialists'}
               </p>
             </div>
-            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-cyan-300">
-              compiled
+            <span className="rounded border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-cyan-300">
+              host validated
             </span>
           </div>
           <div className="space-y-3">
-            {rows.map(([key, value], index) => (
+            {rows.map(([key, value]) => (
               <div
                 key={key}
-                className="grid grid-cols-[auto_1fr] gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-3 sm:grid-cols-[auto_1fr_auto] sm:items-center"
+                className="grid grid-cols-[7.5rem_1fr] gap-3 rounded border border-white/[0.07] bg-white/[0.025] px-3 py-3 sm:items-center"
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-400/10 font-mono text-[9px] text-indigo-300">
-                  0{index + 1}
-                </span>
-                <span className="font-mono text-[10px] text-slate-300">{key}</span>
-                <span className="col-start-2 text-[10px] text-slate-500 sm:col-auto">{value}</span>
+                <span className="font-mono text-[9px] text-slate-300">{key}</span>
+                <span className="text-[10px] leading-4 text-slate-500">{value}</span>
               </div>
             ))}
           </div>
-          <div className="mt-5 flex items-center gap-3 rounded-xl border border-emerald-400/15 bg-emerald-400/[0.06] p-4">
+          <div className="mt-5 flex items-center gap-3 rounded border border-emerald-400/15 bg-emerald-400/[0.06] p-4">
             <BadgeCheck className="h-5 w-5 text-emerald-300" />
             <div>
               <p className="text-xs font-medium">
-                {locale === 'zh' ? '可读、可测试、可回滚' : 'Readable, testable, reversible'}
+                {locale === 'zh'
+                  ? '调用有预留，结果有证明'
+                  : 'Calls are reserved. Outcomes are proven.'}
               </p>
-              <p className="mt-1 text-[10px] text-slate-500">draft → trial → sealed → appointed</p>
+              <p className="mt-1 text-[10px] text-slate-500">
+                reservation → execution → settlement → synthesis
+              </p>
             </div>
           </div>
         </div>
@@ -652,37 +669,43 @@ function AgentBlueprint({ locale }: { locale: Locale }) {
   )
 }
 
-function AgentLifecycle({ locale }: { locale: Locale }) {
+function TeamExecutionLoop({ locale }: { locale: Locale }) {
   const labels =
     locale === 'zh'
       ? [
-          ['职位', '它负责什么'],
-          ['版本', '它怎样工作'],
-          ['任命', '它属于哪个项目'],
-          ['班次', '这一次做什么'],
+          ['Owner 授权', '显式开启本次团队模式'],
+          ['父 Agent 提案', '选择员工、依赖与 wave 形状'],
+          ['宿主验证', '身份、预算、并发与调用预留'],
+          ['员工协作', '通过黑板回报，不直接启动同伴'],
+          ['合成与关闭', '证明绑定、成功闭包或安静终态'],
         ]
       : [
-          ['Role', 'What it owns'],
-          ['Version', 'How it works'],
-          ['Appointment', 'Which project it serves'],
-          ['Run', 'What it does now'],
+          ['Owner approval', 'Explicitly enable team mode for this task'],
+          ['Parent proposal', 'Choose specialists, dependencies and wave shape'],
+          ['Host validation', 'Bind identity, budget, concurrency and reservations'],
+          ['Specialist work', 'Report through the blackboard; never launch peers'],
+          ['Synthesis and close', 'Bind proof, success closure or a quiet terminal'],
         ]
   return (
-    <div className="rounded-3xl border border-border/70 bg-card/75 p-6 shadow-xl sm:p-8">
+    <div className="rounded-lg border border-border/70 bg-card/75 p-6 shadow-xl sm:p-8">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+        <span className="flex h-10 w-10 items-center justify-center rounded bg-violet-500/10 text-violet-500">
           <Users className="h-5 w-5" />
         </span>
         <div>
-          <p className="font-semibold">{locale === 'zh' ? 'Agent 生命周期' : 'Agent lifecycle'}</p>
-          <p className="text-xs text-muted-foreground">Definition → Version → Binding → Run</p>
+          <p className="font-semibold">
+            {locale === 'zh' ? '团队运行闭环' : 'Team execution loop'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Owner → Parent → Host → Specialists → Synthesis
+          </p>
         </div>
       </div>
       <div className="mt-8 space-y-1">
         {labels.map(([title, body], index) => (
           <div key={title} className="relative flex gap-4 pb-7 last:pb-0">
             <div className="absolute bottom-0 left-[17px] top-9 w-px bg-border last:hidden" />
-            <span className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary font-mono text-[10px] font-bold text-primary-foreground">
+            <span className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded bg-primary font-mono text-[10px] font-bold text-primary-foreground">
               0{index + 1}
             </span>
             <div className="pt-1">
@@ -745,7 +768,7 @@ function SectionHeading({
       <p className="font-mono text-[10px] font-medium uppercase tracking-[0.23em] text-cyan-600 dark:text-cyan-300">
         {kicker}
       </p>
-      <h2 className="mt-4 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">{title}</h2>
+      <h2 className="mt-4 text-3xl font-semibold sm:text-4xl">{title}</h2>
       <p className="mt-4 text-base leading-7 text-muted-foreground">{description}</p>
     </div>
   )

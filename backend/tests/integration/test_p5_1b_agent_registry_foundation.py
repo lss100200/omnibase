@@ -39,6 +39,7 @@ from omnibase.production.phase5_registry_contract import (
     BudgetCeilings,
     WorkspaceAgentBinding,
 )
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
@@ -446,7 +447,7 @@ def test_0010_migration_upgrades_to_head(db_engine) -> None:
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
         )
-    assert current == "0015"
+    assert current == "0016"
 
 
 # ---------------------------------------------------------------------------
@@ -1447,16 +1448,49 @@ def test_physical_locators_absent_from_dtos_errors_and_audit(
 
 
 def test_0010_populated_downgrade_is_fail_closed(db_engine, run_owned_resources) -> None:
-    tenant_id, _, _ = _seed_definition_version(db_engine, run_owned_resources, "downgrade-0010")
+    tenant_id, _, version = _seed_definition_version(
+        db_engine,
+        run_owned_resources,
+        "downgrade-0010",
+    )
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0015"
+        )
+
     downgrade = _run_alembic("downgrade", "0009")
     assert downgrade.returncode != 0
     output = downgrade.stdout + downgrade.stderr
     assert "P5.1B downgrade refused" in output
     with db_engine.connect() as connection:
-        revision = str(
+        assert (
+            str(
+                connection.execute(
+                    text("SELECT version_num FROM omnibase_meta.alembic_version")
+                ).scalar_one()
+            )
+            == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM omnibase_meta.agent_versions "
+                    "WHERE tenant_id = :tenant AND id = :version"
+                ),
+                {"tenant": tenant_id, "version": str(version.agent_version_id)},
+            ).scalar_one()
+            == 1
+        )
+
+    _upgrade_head()
+    with db_engine.connect() as connection:
+        assert (
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
+            == "0016"
         )
-    assert revision == "0015"
-    assert tenant_id

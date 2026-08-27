@@ -18,6 +18,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from tests.integration.migration_helpers import downgrade_0016_to_0015
+
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
         "P34.3 integration tests require OMNIBASE_INTEGRATION_TESTS=1",
@@ -104,8 +106,8 @@ def test_0006_creates_global_foundation_and_only_tenant_payload_table(
 
     # Later global-only revisions still advance both scoped revision ledgers
     # to the repository head after their tenant no-op.
-    assert global_revision == "0015"
-    assert tenant_revision == "0015"
+    assert global_revision == "0016"
+    assert tenant_revision == "0016"
     assert {
         "data_table_bindings",
         "data_column_bindings",
@@ -144,7 +146,7 @@ def test_0006_empty_downgrade_and_reupgrade_are_safe(db_engine) -> None:
             connection.execute(
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
-            == "0015"
+            == "0016"
         )
 
 
@@ -390,6 +392,23 @@ def test_0006_downgrade_refuses_live_controlled_resources(
             },
         )
 
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                )
+            ).scalar_one()
+            == "0015"
+        )
+
     downgrade = _run_alembic("downgrade", "0005")
     assert downgrade.returncode != 0
     assert "P34.3 downgrade refused: controlled dynamic resources exist" in (
@@ -409,4 +428,31 @@ def test_0006_downgrade_refuses_live_controlled_resources(
                 )
             ).scalar_one()
             == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM omnibase_meta.data_table_bindings "
+                    "WHERE tenant_id = :tenant AND resource_id = :resource"
+                ),
+                {"tenant": tenant_id, "resource": resource_id},
+            ).scalar_one()
+            == 1
+        )
+
+    _upgrade_head()
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0016"
+        )
+        assert (
+            connection.execute(
+                text(
+                    f'SELECT version_num FROM "{tenant_schema}".alembic_version'  # noqa: S608
+                )
+            ).scalar_one()
+            == "0016"
         )

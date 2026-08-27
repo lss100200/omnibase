@@ -112,6 +112,45 @@ export interface ProviderRuntimePosture {
   credential_id: string | null
 }
 
+export type P6EmployeeRoleId =
+  | 'parent'
+  | 'product'
+  | 'ux'
+  | 'frontend'
+  | 'backend'
+  | 'data'
+  | 'security'
+  | 'qa'
+  | 'operations'
+  | 'docs'
+
+export interface AgentModelSettingRead {
+  employee_role_id: P6EmployeeRoleId
+  inherit_default: boolean
+  override_credential_id: string | null
+  requested_model_id: string | null
+  effective_provider_id: string | null
+  effective_model_id: string | null
+  family: 'deepseek' | 'glm' | 'kimi' | 'openai' | 'anthropic' | 'generic'
+  family_source: 'model_name' | 'explicit_override' | 'unknown'
+  state: 'inherited' | 'pending' | 'active' | 'unavailable'
+  test_status:
+    | 'passed'
+    | 'auth_failed'
+    | 'timeout'
+    | 'identity_mismatch'
+    | 'unreachable'
+    | 'failed'
+    | null
+  tested_at: string | null
+  version: number
+}
+
+export interface AgentModelSettingList {
+  items: AgentModelSettingRead[]
+  total: number
+}
+
 // -----------------------------------------------------------
 // Documents
 // -----------------------------------------------------------

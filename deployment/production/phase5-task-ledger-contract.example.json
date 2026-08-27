@@ -18,14 +18,14 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "c4ddbb679f9491bc990e6ac784fbd523cbc7bcb0e2d93835a9affbd2f4cf94f1"
+      "sha256": "196c0e3b972cb75b3f5e797d689277b3b09a480b296a3ba01b3abc8316183b0f"
     }
   },
   "source": {
@@ -618,7 +618,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -634,7 +635,7 @@
     {
       "name": "task_ledger_tests",
       "path": "backend/tests/test_p5_2a_task_ledger_contract.py",
-      "sha256": "b70c888d07ead6490d4a4ed86ed81ea1a3e15867d79c0d9799f1083686d44d1a"
+      "sha256": "2b6ba4e18798d21c239a32c6ae19bcb3f36e029bd3028d6a606aeb6cebf6e256"
     },
     {
       "name": "threat_model",
@@ -644,12 +645,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "9752e468be0fd8aa29034e1b8d696f06100daf92d634009ff4e1e3733c494c30"
+      "sha256": "a746441577807be07980c6cdd819b7f9cbd77c2c8a21c587f2b1b62c76690143"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "52444c63f5d0eabf19012486ab42d67c23bc1b589716cd6ea6143fccc0bad39d"
+      "sha256": "8eeb939530f8aa084c92e8112a462db6ed8aeb0177c8c2f25e4b07e268cb20cf"
     }
   ],
   "openapi_snapshot": {

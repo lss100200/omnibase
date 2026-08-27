@@ -7,7 +7,7 @@
 
 # OmniBase
 
-**面向知识、模型和用户自建 Agent 的自托管 AI 工作台。**
+**面向文件、模型、Skills 与可审计 Agent 工作的自托管个人 AI 工程工作台。**
 
 把文档、结构化数据、OpenAI-compatible Provider 和用户创建的 AI 员工放进同一个受控 Workspace，同时避免把一次浏览器登录变成无限制的基础设施权限。
 
@@ -15,7 +15,7 @@
 
 [![Public Preview](https://img.shields.io/badge/status-Public%20Preview-111111)](docs/handover-report.md)
 [![Infrastructure Gates](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml/badge.svg)](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml)
-[![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
+[![Migration](https://img.shields.io/badge/migration-0016-555555)](backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py)
 [![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
 
 [公网预览](https://omnibase.chat/public-preview) · [快速开始](#快速开始) · [创建第一个-agent](#创建第一个-agent) · [产品方向](#产品方向) · [社区](COMMUNITY.md) · [安全边界](#安全边界)
@@ -23,7 +23,7 @@
 </div>
 
 > [!IMPORTANT]
-> OmniBase 当前是开源 **Public Preview**，不是 production Agent Runtime 的正式准入。公开源码已经包含可用的自托管产品切片和多个 engineering-sealed 控制面组件，但三个 Phase 5 生产 Feature Gate 仍然关闭。P34.7 Trust Policy Candidate R0 已进入 `main`，但它只是候选策略治理合同：没有任何策略摘要获得批准，完整生产组合仍为 `blocked/not_proven`。
+> OmniBase 当前是聚焦完整个人版的开源 **Public Preview**。在 P6.9 桌面端范围内，一个 Owner 可以开启团队模式，由父 Agent 面向九名源码固定的专业员工提出工作 Proposal；任何串行、并行或混合 wave 都必须先由宿主校验身份、预算、依赖和并发。这个个人团队 R0 已在确定性 loopback 范围内实现并通过工程验收，但它不是 production Agent Runtime 的正式准入：付费 Provider 流程、真人 Electron 窗口、Authenticode 与 EXE/MSI 打包仍未证明，企业 Planner/Multi-Agent 和 MCP Runtime Gate 继续关闭。
 
 ## 首先是 AI 工作台，而不是基础设施看板
 
@@ -37,15 +37,19 @@ OmniBase 围绕三个连续任务设计：
 
 ## 当前可以使用什么
 
-| 范围 | 当前状态 | 含义 |
-|---|---|---|
-| 核心工作区 | **Public Preview 可用** | 认证、实时租户/用户校验、Workspace、成员和生命周期元数据、文档、混合 RAG、引用和黑白工作台已经进入公开源码。 |
-| 用户设置 | **Public Preview 可用** | 真实用户资料/偏好、用户自有 OpenAI-compatible Provider 凭据和有界连接测试。Browser DTO 不返回 Provider 密钥。 |
-| Agent Builder | **Engineering Preview** | 用户可以创建自有 AgentDefinition、封存 `1.0.0` Version、选择性安装到 Workspace，并进入现有 tool-free Agent Alpha 工作台。 |
-| Agent Alpha | **Engineering-only，默认关闭** | 单 Agent 可使用内部 Model Gateway 和 Workspace 范围的只读 derived RAG；支持持久 Task/Run 记录、SSE、取消、引用、模型身份、用量和延迟。 |
-| Capability 平台 | **工程封板，生产默认拒绝** | Capability Gateway、Workspace/Run/Node 元数据、fencing、独立 Linux Runner、PrivateNetwork Broker、Headscale Adapter 和 split-process mTLS Gateway 已有工程 Gate。P34.7 Trust Policy Candidate R0 已能校验候选治理、生命周期、密钥轮换/吊销、制品覆盖和评审人隔离，但不会批准生产策略。 |
-| Skill | **仅编译期合同** | P5.6A 可验证第一方、精确版本 Skill manifest；Skill 持久化、安装、执行、MCP 和 Marketplace 仍未开放。 |
-| Planner / 多 Agent / 敌对代码 | **阻断 / 路线图** | Planner 执行、多 Agent 调度、任意 shell/SQL/HTTP、MCP Runtime 和敌对代码 Sandbox 尚未授权。 |
+| 范围                    | 当前状态                          | 含义                                                                                                                                                                                                                                                                                   |
+| ----------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 核心工作区              | **Public Preview 可用**           | 认证、实时租户/用户校验、Workspace、成员和生命周期元数据、文档、混合 RAG、引用和黑白工作台已经进入公开源码。                                                                                                                                                                           |
+| 用户设置                | **Public Preview 可用**           | 真实用户资料/偏好、用户自有 OpenAI-compatible Provider 凭据和有界连接测试。Browser DTO 不返回 Provider 密钥。                                                                                                                                                                          |
+| Agent Builder           | **Engineering Preview**           | 用户可以创建自有 AgentDefinition、封存 `1.0.0` Version、选择性安装到 Workspace，并进入现有 tool-free Agent Alpha 工作台。                                                                                                                                                              |
+| Agent Alpha             | **Engineering-only，默认关闭**    | 单 Agent 可使用内部 Model Gateway 和 Workspace 范围的只读 derived RAG；支持持久 Task/Run 记录、SSE、取消、引用、模型身份、用量和延迟。                                                                                                                                                 |
+| 个人工程工作台          | **Engineering Preview**           | Owner 授权文件树、有限会话连续性、逐角色模型设置、ChangeSet 审查、精确回滚预检与浏览器本地恢复日志。                                                                                                                                                                                   |
+| 个人多 Agent 团队 R0    | **工程验收通过；loopback 已证明** | 桌面团队模式中，父 Agent 面向九个固定专业角色输出受限结构化 Proposal；宿主持有执行权，并约束预算、调用预留、取消、恢复、黑板协作和成功闭包。专业员工不能启动同伴。                                                                                                                     |
+| Capability 平台         | **工程封板，生产默认拒绝**        | Capability Gateway、Workspace/Run/Node 元数据、fencing、独立 Linux Runner、PrivateNetwork Broker、Headscale Adapter 和 split-process mTLS Gateway 已有工程 Gate。P34.7 Trust Policy Candidate R0 已能校验候选治理、生命周期、密钥轮换/吊销、制品覆盖和评审人隔离，但不会批准生产策略。 |
+| 原生 Skills             | **Engineering Preview**           | 十五个 source-owned、第一方、instruction-only Skills 可由个人 Owner 查看、安装、解析和停用；它们没有工具、网络、秘密或 Capability 扩张，本机第三方候选仍只扫描不安装。                                                                                                                 |
+| 只读 MCP                | **独立 Engineering Preview**      | 六个有界本地工具覆盖文件列举/读取/摘要、字面量文本搜索、Git status/log 与 diff 元数据。stdio server 需手工单独启动，不接 Agent Alpha，`MCP_RUNTIME_ENABLED` 保持 false。                                                                                                               |
+| Windows Companion       | **未签名 Engineering Preview**    | 自包含 `win-x64` CLI 可验证 canonical release archive、生成不回显秘密的本地配置、报告推荐安装位置并进行离线诊断；实际 `install` 已冻结，直到 handle-relative 路径身份绑定得到证明；不会修改 Docker、WSL、VHDX 或系统服务。                                                             |
+| 企业 Planner / 敌对工具 | **阻断 / 路线图**                 | 企业 Multi-Agent、Planner/DAG、后台自治、任意 shell/SQL/HTTP、MCP Runtime 和敌对代码 Sandbox 尚未授权；生产 `MULTI_AGENT_ENABLED` 保持 `false`。                                                                                                                                       |
 
 准确源码与证据边界见 [交接报告](docs/handover-report.md) 和 [安全不变量](docs/maintainers/security-invariants.md)。
 
@@ -66,8 +70,9 @@ Workspace 只读知识
 无 shell
 无 SQL
 无任意 HTTP
-无 MCP/Skill 执行
-无 Planner/多 Agent 委派
+第一方 instruction-only Skills 可以扩展提示词
+无可执行 workflow/script Skill，也不连接 MCP
+单 Agent Alpha 路径不执行委派；个人团队仅存在于有界的 P6.9 桌面端范围
 无敌对代码 Sandbox
 ```
 
@@ -137,12 +142,12 @@ make ps COMPOSE_ENV_FILE=.env
 
 ### 4. 打开 OmniBase
 
-| 页面 | 地址 |
-|---|---|
-| Web 工作台 | <http://localhost:3000> |
-| Backend API 文档 | <http://localhost:8000/docs> |
+| 页面             | 地址                           |
+| ---------------- | ------------------------------ |
+| Web 工作台       | <http://localhost:3000>        |
+| Backend API 文档 | <http://localhost:8000/docs>   |
 | Backend 健康探针 | <http://localhost:8000/health> |
-| MinIO 控制台 | <http://localhost:9001> |
+| MinIO 控制台     | <http://localhost:9001>        |
 
 公网展示页为 [omnibase.chat/public-preview](https://omnibase.chat/public-preview)。它依赖当前预览主机和 Cloudflare Tunnel，不是高可用托管 SaaS。
 
@@ -157,7 +162,7 @@ docker compose --env-file .env logs --tail 200 frontend
 常见首次启动问题：
 
 - `backend` 或 `frontend` 仍为 starting：等待镜像构建和依赖健康检查。
-- 登录/API 返回 500：确认 migration `0012` 已应用，并查看 backend 日志。
+- 登录/API 返回 500：确认 migration `0016` 已应用，并查看 backend 日志。
 - Agent 页面不可用：确认 `ENV=development`、`AGENT_ALPHA_ENGINEERING_ENABLED=true`、三个生产 Gate 均为 false，并存在测试通过的默认 Provider。
 - 第一次 RAG 查询很慢：CPU reranker 冷启动可能需要数分钟，后续查询通常更快。
 
@@ -192,7 +197,10 @@ OmniBase 把以下边界视为产品行为，而不是可选加固：
 - Sandbox/Runner 不得直接连接 PostgreSQL、Redis 或 MinIO。
 - P34.5 工程 Gate 不等于完整生产 Core→Runner/Broker/Gateway/Overlay 组合通过。
 - 三个 Phase 5 生产 Feature Gate 保持 `false`，production Runtime 激活必须单独审批。
-- 当前 migration head 为 `0012`；migration `0013` 不属于当前公开产品。
+- PostgreSQL migration head 为 `0016`，migration `0017` 不存在。P6.9 使用 desktop-local SQLite schema v9（`desktop_0009_parent_call_proof`），不是 Alembic migration。
+- DeepSeek、GPT、GLM、Claude、Kimi 的 model-name-first 档案只优化提示词与上下文；模型名或中转 URL 不能证明厂商原生参数、缓存、工具或 MCP 已受支持。
+- 六工具 MCP server 仍是独立本地预览，Agent Alpha 保持 `no_tool`。
+- P6.9 工程验收只覆盖确定性 loopback journeys 与独立 Provider invocation。`PAID_PROVIDER_NOT_PROVEN`、`AUTHENTICODE_NOT_PROVEN`、`EXE_MSI_REPACKAGE_NOT_APPROVED`、`LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN` 和 `ENTERPRISE_MULTI_AGENT_DISABLED` 继续有效。
 
 安全问题请通过 [SECURITY.md](SECURITY.md) 报告，不要公开创建 Issue。
 
@@ -200,10 +208,10 @@ OmniBase 把以下边界视为产品行为，而不是可选加固：
 
 OmniBase 将沿两条相互连接的轴演化，而不是拆成彼此无关的产品：
 
-| 轴 | 演化路径 | 设计目标 |
-|---|---|---|
+| 轴                 | 演化路径                                                                   | 设计目标                                                                                                     |
+| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Runtime 与操作系统 | 完整个人版 → 不依赖 hardened kernel 的 Lite PC 形态 → macOS 与更多宿主系统 | 让更多电脑都能使用 Workspace、知识、模型和 Agent；某台宿主无法安全证明的能力只降级该能力，不让整个产品失效。 |
-| 组织与治理 | 个人版 → 团队版 → 企业版 → 定制部署 | 复用同一套 Tenant、Workspace、Agent、Capability、Audit 和 Policy 合同，逐步增加协作、管理、合规与部署控制。 |
+| 组织与治理         | 个人版 → 团队版 → 企业版 → 定制部署                                        | 复用同一套 Tenant、Workspace、Agent、Capability、Audit 和 Policy 合同，逐步增加协作、管理、合规与部署控制。  |
 
 这个坐标系的原点是完整的自托管个人版：一个用户能够创建 Workspace、接入模型 Provider、组织知识并构建 Agent。纵向扩展可运行的平台和设备，横向扩展组织规模。Hardened isolation 是明确的能力层级，而不是让低配置 PC 或 macOS 整体无法使用产品的隐藏前提。
 
@@ -211,19 +219,24 @@ OmniBase 将沿两条相互连接的轴演化，而不是拆成彼此无关的�
 
 ## 路线图
 
-| 阶段 | 状态 |
-|---|---|
-| 地基、认证、租户隔离、文档、RAG | **可用** |
-| 受控数据与 Capability Gateway | **按边界可用 / 工程封板** |
-| Workspace 治理、生命周期、Lease/Fencing、Node 元数据 | **可用** |
-| Hardened Runner/Broker/Gateway/Overlay 组件 | **工程封板；生产组合阻断** |
-| 用户资料、个人 Provider、第一个 Workspace 和 Agent Builder | **工程产品预览** |
-| Tool-free 单 Agent Alpha | **Engineering-only；默认关闭** |
-| Planner 执行与多 Agent 编排 | **阻断 / 路线图** |
-| 第一方 Skill 合同 | **仅编译期工程准入** |
-| Skill Runtime、MCP、第三方 Marketplace | **路线图** |
-| P34.7 Trust Policy Candidate 治理 | **已合入 `main`；仅候选合同，未批准** |
-| 生产敌对代码 Sandbox 与 P34.7 总准入 | **blocked/not_proven** |
+| 阶段                                                       | 状态                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------- |
+| 地基、认证、租户隔离、文档、RAG                            | **可用**                                                |
+| 受控数据与 Capability Gateway                              | **按边界可用 / 工程封板**                               |
+| Workspace 治理、生命周期、Lease/Fencing、Node 元数据       | **可用**                                                |
+| Hardened Runner/Broker/Gateway/Overlay 组件                | **工程封板；生产组合阻断**                              |
+| 用户资料、个人 Provider、第一个 Workspace 和 Agent Builder | **工程产品预览**                                        |
+| Tool-free 单 Agent Alpha                                   | **Engineering-only；默认关闭**                          |
+| P6.9 父 Agent 指挥的个人团队 R0                            | **工程验收通过；确定性 loopback 已证明**                |
+| 企业 Planner 与 Multi-Agent 编排                           | **禁用 / 路线图**                                       |
+| 个人工作台、文件上下文与九个固定专业角色                   | **Engineering Preview**                                 |
+| 十五个第一方 instruction-only Skills                       | **可安装 Engineering Preview**                          |
+| 六工具独立只读 MCP                                         | **Engineering Preview；未接 Agent Alpha**               |
+| Windows Companion                                          | **未签名 Engineering Preview；release images 尚未发布** |
+| 第三方 Skill 导入、可执行 Skills 与 Marketplace            | **延期**                                                |
+| MCP Runtime、写工具与任意 shell/SQL/HTTP                   | **延期 / 阻断**                                         |
+| P34.7 Trust Policy Candidate 治理                          | **已合入 `main`；仅候选合同，未批准**                   |
+| 生产敌对代码 Sandbox 与 P34.7 总准入                       | **blocked/not_proven**                                  |
 
 ## 开发与验证
 

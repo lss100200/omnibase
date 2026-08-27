@@ -20,6 +20,7 @@ from omnibase.capabilities.service import verify_and_reserve_sandbox_capability
 from omnibase.sandbox.contracts import SandboxConflict
 from omnibase.sandbox.operations import SandboxOperationIntent, SandboxOperationState
 from omnibase.sandbox.persistence import SqlAlchemySandboxOperationStore
+from tests.integration.migration_helpers import downgrade_0016_to_0015
 
 if os.environ.get("OMNIBASE_INTEGRATION_TESTS") != "1":
     pytest.skip(
@@ -224,7 +225,7 @@ def test_0008_schema_is_global_closed_and_append_only(db_engine, p345_state) -> 
                 "'sandbox_operation_transitions', 'capability_usage_reservations')"
             )
         ).scalar_one()
-    assert revision == "0015"
+    assert revision == "0016"
     assert {
         "sandbox_operations",
         "sandbox_operation_transitions",
@@ -397,7 +398,15 @@ def test_reservation_and_transition_evidence_reject_mutation(db_engine, p345_sta
 
 
 def test_zz_0008_populated_downgrade_is_fail_closed(db_engine, p345_state) -> None:
-    del p345_state
+    downgrade_0016_to_0015(_run_alembic)
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0015"
+        )
+
     downgrade = _run_alembic("downgrade", "0007")
     assert downgrade.returncode != 0
     assert "refusing populated P34.5 downgrade" in downgrade.stdout + downgrade.stderr
@@ -407,4 +416,24 @@ def test_zz_0008_populated_downgrade_is_fail_closed(db_engine, p345_state) -> No
                 text("SELECT version_num FROM omnibase_meta.alembic_version")
             ).scalar_one()
             == "0015"
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM omnibase_meta.capability_grants "
+                    "WHERE id = :grant AND tenant_id = :tenant"
+                ),
+                {"grant": p345_state["grant"], "tenant": p345_state["tenant"]},
+            ).scalar_one()
+            == 1
+        )
+
+    upgrade = _run_alembic("upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stdout + upgrade.stderr
+    with db_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM omnibase_meta.alembic_version")
+            ).scalar_one()
+            == "0016"
         )

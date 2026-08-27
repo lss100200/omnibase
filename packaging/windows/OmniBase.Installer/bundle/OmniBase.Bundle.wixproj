@@ -1,0 +1,19 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <AcceptEula>wix7</AcceptEula>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
+    <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>
+    <OutputName>OmniBase-$(ProductVersion)-windows-x64-setup</OutputName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="7.0.0" />
+    <ProjectReference
+      Include="..\package\OmniBase.Package.wixproj"
+      BindName="OmniBasePackage"
+      AdditionalProperties="PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion);PythonExecutable=$(PythonExecutable)" />
+  </ItemGroup>
+</Project>

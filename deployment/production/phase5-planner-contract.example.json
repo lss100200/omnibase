@@ -18,21 +18,21 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "p5_1": {
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "c4ddbb679f9491bc990e6ac784fbd523cbc7bcb0e2d93835a9affbd2f4cf94f1"
+      "sha256": "196c0e3b972cb75b3f5e797d689277b3b09a480b296a3ba01b3abc8316183b0f"
     }
   },
   "p5_2a": {
     "formal_state": "blocked/not_proven",
     "task_ledger_contract": {
       "path": "deployment/production/phase5-task-ledger-contract.example.json",
-      "sha256": "12f66adcf978470187ea2b75217b3749d4ea988e0b845936478e491a6a87f164"
+      "sha256": "afc6a7010220f2842bbdba2b69d1871ab59b632f94d20df7b7de1ec463fb4597"
     }
   },
   "source": {
@@ -324,7 +324,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -350,12 +351,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "9752e468be0fd8aa29034e1b8d696f06100daf92d634009ff4e1e3733c494c30"
+      "sha256": "a746441577807be07980c6cdd819b7f9cbd77c2c8a21c587f2b1b62c76690143"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "52444c63f5d0eabf19012486ab42d67c23bc1b589716cd6ea6143fccc0bad39d"
+      "sha256": "8eeb939530f8aa084c92e8112a462db6ed8aeb0177c8c2f25e4b07e268cb20cf"
     }
   ],
   "openapi_snapshot": {

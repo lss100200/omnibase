@@ -17,9 +17,14 @@ from omnibase.agent_alpha.contracts import (
     AlphaGatewaySelection,
     AlphaInvocationIdentity,
     AlphaMemoryCapsule,
+    AlphaUserPreferences,
 )
 from omnibase.agent_alpha.router import get_agent_alpha, router
-from omnibase.agent_alpha.service import AgentAlphaError, AgentAlphaService
+from omnibase.agent_alpha.service import (
+    AgentAlphaError,
+    AgentAlphaService,
+    AgentAlphaUnavailable,
+)
 from omnibase.agent_skills.resolver import SkillInstruction, SkillInstructionBundle
 from omnibase.model_gateway import (
     ModelGateway,
@@ -27,6 +32,7 @@ from omnibase.model_gateway import (
     ModelResponse,
     ModelStreamChunk,
     ModelUsage,
+    UnavailableModelGateway,
 )
 from omnibase.model_gateway.providers import ModelProviderError
 from omnibase.tenants.dependencies import get_current_tenant
@@ -305,6 +311,228 @@ class _GatewayResolver:
             configuration_digest=self.configuration_digest,
             credential_id="credential-1",
         )
+
+
+class _FailingGatewayResolver:
+    def __init__(self, code: str = "provider detail must not cross the Agent boundary") -> None:
+        self.code = code
+
+    def resolve(self, **_: object) -> AlphaGatewaySelection:
+        raise RuntimeError(self.code)
+
+
+class _FailingPreferencesResolver:
+    def resolve_preferences(self, **_: object) -> AlphaUserPreferences:
+        raise RuntimeError("profile detail must not cross the Agent boundary")
+
+
+def test_request_scoped_resolver_does_not_require_an_operator_gateway() -> None:
+    ledger = _Ledger()
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_GatewayResolver("a" * 64),
+    )
+
+    events = list(
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+    )
+
+    assert events[-1].kind == "done"
+    assert events[-1].payload["actual_model_id"] == "model-alpha"
+
+
+def test_rag_query_is_bounded_or_search_and_prioritizes_fact_tokens() -> None:
+    from omnibase.agent_alpha.adapters import _bounded_websearch_query
+
+    prompt = " ".join(f"ordinaryword{index}" for index in range(80))
+    prompt += " project_codename release_channel ORCHID-417 LANTERN-82"
+
+    query = _bounded_websearch_query(prompt)
+    terms = query.split(" OR ")
+
+    assert len(terms) == 32
+    assert '"project_codename"' in terms
+    assert '"release_channel"' in terms
+    assert '"orchid-417"' in terms
+    assert '"lantern-82"' in terms
+    assert all(term.startswith('"') and term.endswith('"') for term in terms)
+
+
+def test_rag_query_does_not_forward_locator_or_quote_syntax() -> None:
+    from omnibase.agent_alpha.adapters import _bounded_websearch_query
+
+    query = _bounded_websearch_query('C:\\private\\secret.txt "quoted" https://host/path')
+
+    assert "\\" not in query
+    assert ":" not in query
+    assert "/" not in query
+    assert query == '"private" OR "secret" OR "txt" OR "quoted" OR "https" OR "host" OR "path"'
+
+
+def test_request_scoped_resolver_failure_is_stably_redacted() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver(),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_gateway_selection_unavailable$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert "provider detail" not in str(raised.value)
+
+
+def test_request_scoped_resolver_preserves_only_a_namespaced_stable_code() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver("personal_model_gateway_test_required"),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_gateway_personal_model_gateway_test_required$",
+    ):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("unsafe", "expected"),
+    [
+        (
+            "provider_host_unreachable: private detail",
+            "agent_alpha_gateway_provider_host_unreachable",
+        ),
+        ("C:/private/provider.json", "agent_alpha_gateway_selection_unavailable"),
+        (
+            "https://private.invalid/provider",
+            "agent_alpha_gateway_selection_unavailable",
+        ),
+        ("sk-not-a-code-token", "agent_alpha_gateway_selection_unavailable"),
+    ],
+)
+def test_request_scoped_resolver_rejects_non_code_diagnostics(
+    unsafe: str,
+    expected: str,
+) -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=UnavailableModelGateway(),
+        gateway_resolver=_FailingGatewayResolver(unsafe),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=rf"^{expected}$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert unsafe not in str(raised.value)
+
+
+def test_preferences_resolver_failure_is_stably_redacted() -> None:
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=_Ledger(),
+        gateway=ModelGateway(provider=_Provider(), model_id="model-alpha"),
+        preferences_resolver=_FailingPreferencesResolver(),
+    )
+
+    with pytest.raises(
+        AgentAlphaUnavailable,
+        match=r"^agent_alpha_preferences_unavailable$",
+    ) as raised:
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert "profile detail" not in str(raised.value)
+
+
+def test_missing_operator_gateway_and_request_resolver_fails_closed() -> None:
+    ledger = _Ledger()
+    service = AgentAlphaService(
+        profiles=_Profiles(),
+        knowledge=_Knowledge(),
+        ledger=ledger,
+        gateway=UnavailableModelGateway(),
+    )
+
+    with pytest.raises(AgentAlphaUnavailable, match="model_gateway_unavailable"):
+        service.invoke(
+            tenant_id="tenant",
+            tenant_schema="tenant_schema",
+            workspace_id="workspace",
+            actor_user_id="user",
+            agent_version_id="version",
+            message="hello",
+            top_k=1,
+            idempotency_key="key",
+            retry_of=None,
+        )
+
+    assert ledger.begin_request_hash is None
 
 
 def test_invocation_intent_binds_non_secret_provider_configuration() -> None:

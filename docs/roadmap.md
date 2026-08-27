@@ -166,7 +166,130 @@ CPU benchmark 只证明当前模型运行时满足性能阈值，不等于真实
 
 ---
 
-## Phase 6: Skill + MCP 扩展生态
+## Phase 6: Personal Engineering Workbench
+
+P6 has been redirected from an extension-ecosystem-first plan to a
+front-end-first personal engineering workbench. The single human Owner remains
+the only approver. Enterprise P34.7, Planner and autonomous Multi-Agent remain
+frozen and are not P6.0 prerequisites.
+
+P6.0 is split into four bounded product increments:
+
+- **P6.0-A — workbench, conversations and employees**: IDE-style workbench,
+  browser-local session create/search/pin/archive/restore, append-only session
+  timeline, one active parent Agent and nine dormant specialist employees. A
+  user message may explicitly `@` exactly one specialist. Employees cannot
+  self-trigger, wake one another or run in the background.
+- **P6.0-B — file tree, open modes and context**: authorized Workspace tree,
+  internal viewers, system opening, and distinct `OPEN` / `CONTEXT` / `PINNED`
+  states with visible context cost. No whole-home or secret-directory scan.
+- **P6.0-C — Agent changes, diff and rollback**: task-owned ChangeSets,
+  file/hunk review and three-way rollback that preserves pre-existing user
+  dirty changes and fails closed on conflict.
+- **P6.0-D — provider adaptation, gears and product acceptance**: DeepSeek,
+  GLM, Kimi, GPT and Claude capability profiles, economic/standard/deep/audit
+  gears, provider-specific context compilation, unified streaming/cancel/usage
+  and visible token/cost budgets.
+
+P6.1+ owns Skills, MCP, SQL visualization, AI CLI adapters, Email/remote
+messaging, browser/desktop control and controlled self-modification. Those are
+not silently included in P6.0.
+
+> **P6.0-A implementation start (2026-08-13)**: branch
+> `codex/p6-0-personal-engineering-workbench` starts from merged P5.9P
+> `main@46bc894`. `/dashboard` now mounts the first Personal Engineering
+> Workbench implementation. The initial slice uses a versioned tenant/user
+> scoped browser store because Task/Run is an execution ledger and Memory is
+> curated context, not a conversation database. Migration `0016` remains
+> absent. The work is implemented and locally verified but has not yet been
+> independently reviewed, pushed, merged or deployed.
+
+## Phase 6.x: Skills + MCP extension ecosystem
+
+> **P6.1 A-D engineering R0 (2026-08-13):** the personal line now has an
+> authenticated six-Skill first-party catalog, model-name-first DeepSeek/GPT
+> request adaptation, a separately launched three-tool read-only MCP preview
+> whose Git surface is metadata-only status/log, and a deterministic Windows
+> ZIP/no-build release preview with offline immutable-image preflight. MCP is not mounted
+> into Agent Alpha, migration remains `0016`, and EXE build/sign plus real OCI
+> digests remain not proven. This is not Marketplace, arbitrary MCP, production
+> release or enterprise P34.7 activation.
+
+> **P6.2 A-D personal capability center engineering R0 (2026-08-14):** the
+> personal line now consolidates the native Skill catalog, ten-role model
+> posture and exact read-only MCP boundary in one Chinese capability center;
+> adds Owner-triggered scan-only local Skill discovery; injects only bounded,
+> redacted terminal history from the same browser session; and restores
+> tenant/Workspace-scoped ChangeSet metadata plus bounded local Before/After
+> recovery content after refresh. P6.2-D upgrades the Windows source contract
+> to a self-contained Companion with exact release/installed-byte verification,
+> atomic install, CSPRNG config initialization and offline doctor. Migration
+> remains `0016`; unknown Skills are not installed, MCP is not connected to
+> Agent Alpha, and Runtime/Planner/Multi-Agent/MCP gates remain closed. Real OCI
+> digests, Authenticode, clean-machine public release acceptance and production
+> deployment remain separate future evidence.
+
+> **P6.3 A-D personal extensions engineering R0 (2026-08-14):** the
+> first-party catalog expands from six to fifteen instruction-only Skills with
+> exact registration comparison plus live-count and aggregate-instruction
+> budgets. The standalone read-only MCP preview expands from three to six tools
+> with bounded SHA-256, literal text search and Git diff metadata; it remains
+> disconnected from Agent Alpha. GLM and Claude gain exact model-name-first
+> prompt/context profiles while the current Chat Completions transport honestly
+> leaves native thinking, caching, strict tools and MCP unproven. GitHub and
+> `/public-preview` source now describe the P6 personal workbench instead of the
+> old P5-only snapshot. The Windows Companion adds help and safe install-location
+> planning without auto-elevation or host mutation. Migration stays `0016`,
+> `0017` is absent, and Runtime/Planner/Multi-Agent/MCP Runtime remain disabled.
+> Live `omnibase.chat`, published OCI digests, Authenticode and clean-Windows VM
+> acceptance remain separate external evidence.
+
+> **P6.4 personal Agent practice accepted (2026-08-16):** the bounded personal
+> lane passed its clean-source six-journey DeepSeek acceptance for one and
+> three-to-six serial, separately metered participants. This acceptance covers
+> exact upload-to-Workspace RAG/citations, trusted offline artifacts and
+> disposable Workspace CAS/rollback only. It does not authorize enterprise
+> Planner/Multi-Agent, MCP-to-Agent, P34.7 or a Windows desktop release.
+
+> **P6.5 Windows desktop unsigned engineering acceptance (2026-08-19):** the
+> architecture is a per-user Electron shell over supervised loopback Next
+> standalone and an independent SQLite `desktop_local` FastAPI service. A
+> per-launch server-owned identity, challenge-HMAC native readiness,
+> digest-pinned RuntimeHost payload, minimal PyInstaller backend, Electron
+> packaging and WiX Burn + per-user MSI now build as one unsigned engineering
+> EXE.
+> Install defaults to `%LOCALAPPDATA%\Programs\OmniBase`; application data is
+> `%LOCALAPPDATA%\OmniBase` and normal uninstall retains it. Docker, WSL,
+> PostgreSQL/pgvector, BGE-M3 and enhanced Sandbox remain optional. Offline,
+> fresh-standard-user Windows Sandbox runs passed install/upgrade/downgrade
+> rejection/transaction rollback/uninstall and native first launch through
+> visible Electron, loopback health/readiness, challenge-HMAC, SQLite and
+> graceful shutdown. The artifact remains `engineering-dirty`, unsigned and
+> missing required personal product journeys, so no distributable or complete
+> installable-and-usable OmniBase 1.0.0 product is claimed.
+
+> **P6.6 desktop-local product admission engineering R0 (2026-08-19):** the
+> desktop first-run path no longer falls into PostgreSQL JWT login. A complete
+> preload bridge routes Electron to `/desktop`, where the single local Owner can
+> be bootstrapped and can create, list and CAS-archive bounded SQLite
+> Workspaces. Mutations use origin-checked Electron IPC plus a separate
+> backend-only native control token; Next remains product-blind except exact
+> health/readiness hops. Owner/Workspace writes and append-only audit events share
+> transactions, survive restart and pull in no PostgreSQL, Docker/WSL, RAG,
+> Provider, Agent, Skill or MCP dependency. This is one offline product-admission
+> journey only. The source remains unsigned engineering work; clean-source
+> packaging, Authenticode and the remaining personal journeys are still release
+> vetoes.
+
+> **P6.7 personal desktop single-agent core engineering R0 (2026-08-19):** a
+> normal user can configure their own model (vaulted API key, never plaintext in
+> SQLite or the renderer) and have a cancellable, recoverable, durable streaming
+> conversation with one parent Agent inside a local Workspace. Next remains
+> product-blind except exact health/readiness; mutations stay on native IPC plus
+> `/desktop/v1`. The frozen backend ports Model Gateway family grammar with
+> stdlib HTTPS because `openai`/`httpx` are freeze-excluded. Files, RAG, Skills,
+> MCP, multi-agent, PostgreSQL and Authenticode remain closed. This is unsigned
+> engineering work, not OmniBase 1.0.0.
 
 > **前置条件**：Phase 3-4 工作空间边界 + Phase 5 Agent 工具协议完成
 > **预估工期**：2-3 周

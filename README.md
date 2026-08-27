@@ -7,7 +7,7 @@
 
 # OmniBase
 
-**Your self-hosted AI workspace for knowledge, models, and user-built agents.**
+**Your self-hosted personal AI engineering workbench for files, models, Skills, and auditable Agent work.**
 
 Bring documents, structured data, OpenAI-compatible providers, and purpose-built AI employees into one controlled workspace—without turning a browser session into unrestricted infrastructure access.
 
@@ -15,7 +15,7 @@ Bring documents, structured data, OpenAI-compatible providers, and purpose-built
 
 [![Public Preview](https://img.shields.io/badge/status-Public%20Preview-111111)](docs/handover-report.md)
 [![Infrastructure Gates](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml/badge.svg)](https://github.com/lss100200/omnibase/actions/workflows/infrastructure-gates.yml)
-[![Migration](https://img.shields.io/badge/migration-0012-555555)](backend/src/omnibase/migrations/versions/0012_user_profiles_provider_credentials.py)
+[![Migration](https://img.shields.io/badge/migration-0016-555555)](backend/src/omnibase/migrations/versions/0016_p6_0_workspace_agent_model_overrides.py)
 [![License](https://img.shields.io/badge/license-Apache--2.0-black)](LICENSE)
 
 [Public website](https://omnibase.chat/public-preview) · [Quick start](#quick-start) · [Build your first agent](#build-your-first-agent) · [Product direction](#product-direction) · [Community](COMMUNITY.md) · [Safety boundaries](#safety-boundaries)
@@ -23,7 +23,7 @@ Bring documents, structured data, OpenAI-compatible providers, and purpose-built
 </div>
 
 > [!IMPORTANT]
-> OmniBase is an open-source **Public Preview**, not a production Agent Runtime admission. The repository includes a usable self-hosted product slice and multiple engineering-sealed control-plane components, but the three Phase 5 production Feature Gates remain off. P34.7 Trust Policy Candidate R0 is now part of `main`, but it is a candidate-governance contract only: no policy digest is approved and the complete production composition remains `blocked/not_proven`.
+> OmniBase is an open-source **Public Preview** focused on the complete personal edition. In the P6.9 desktop lane, one Owner can enable team mode and let a parent Agent propose work for nine source-owned specialists; the host validates identity, budget, dependencies, and concurrency before it executes any serial, parallel, or mixed wave. This personal-team R0 is implemented and engineering-accepted for the deterministic loopback scope. It is not a production Agent Runtime admission: paid Provider journeys, a live-human Electron window, Authenticode, and EXE/MSI packaging remain unproven, while enterprise Planner/Multi-Agent and MCP Runtime gates remain off.
 
 ## Start with an AI workspace—not an infrastructure dashboard
 
@@ -37,15 +37,19 @@ The product is deliberately fail-closed: browser identity is not runtime authori
 
 ## What is available today
 
-| Area | Current state | What it means |
-|---|---|---|
-| Core workspace | **Available in Public Preview** | Authentication, live tenant/user checks, Workspaces, membership and lifecycle metadata, documents, hybrid RAG, citations, and the monochrome web workbench are in the public source tree. |
-| User settings | **Available in Public Preview** | Real user profile/preferences plus encrypted, user-owned OpenAI-compatible provider credentials and bounded connection tests. Provider secrets are never returned by browser DTOs. |
-| Agent Builder | **Engineering preview** | Users can create an owned AgentDefinition, seal version `1.0.0`, optionally install it into a Workspace, and use the existing tool-free Agent Alpha workbench. |
-| Agent Alpha | **Engineering-only, default off** | A single Agent can use the internal Model Gateway and read-only Workspace-derived RAG. It has durable task/run bookkeeping, SSE streaming, cancellation, citations, model identity, usage, and latency. |
-| Capability platform | **Engineering-sealed, production default reject** | Capability Gateway, Workspace/Run/Node control records, fencing, independent Linux Runner evidence, PrivateNetwork Broker, Headscale adapter, and split-process mTLS Gateway have engineering Gates. P34.7 Trust Policy Candidate R0 validates candidate governance, lifecycle, key rotation/revocation, artifact coverage, and review separation, but does not approve a production policy. |
-| Skills | **Compile-only contract** | P5.6A validates first-party, exact-version Skill manifests. Skill persistence, installation, execution, MCP, and Marketplace remain disabled. |
-| Planner / multi-Agent / hostile code | **Blocked / roadmap** | Planner execution, multi-Agent scheduling, arbitrary shell/SQL/HTTP tools, MCP Runtime, and hostile-code Sandbox activation are not authorized. |
+| Area                               | Current state                                     | What it means                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core workspace                     | **Available in Public Preview**                   | Authentication, live tenant/user checks, Workspaces, membership and lifecycle metadata, documents, hybrid RAG, citations, and the monochrome web workbench are in the public source tree.                                                                                                                                                                                                    |
+| User settings                      | **Available in Public Preview**                   | Real user profile/preferences plus encrypted, user-owned OpenAI-compatible provider credentials and bounded connection tests. Provider secrets are never returned by browser DTOs.                                                                                                                                                                                                           |
+| Agent Builder                      | **Engineering preview**                           | Users can create an owned AgentDefinition, seal version `1.0.0`, optionally install it into a Workspace, and use the existing tool-free Agent Alpha workbench.                                                                                                                                                                                                                               |
+| Agent Alpha                        | **Engineering-only, default off**                 | A single Agent can use the internal Model Gateway and read-only Workspace-derived RAG. It has durable task/run bookkeeping, SSE streaming, cancellation, citations, model identity, usage, and latency.                                                                                                                                                                                      |
+| Personal engineering workbench     | **Engineering preview**                           | Owner-authorized file tree, bounded conversation continuity, per-role model settings, ChangeSet review, exact rollback preflight, and a browser-local recovery journal.                                                                                                                                                                                                                      |
+| Personal multi-Agent team R0       | **Engineering accepted; loopback-proven**         | In desktop team mode, the parent emits a restricted structured Proposal for nine fixed specialist roles. The host owns execution, budgets, reservations, cancellation, recovery, blackboard collaboration, and success closure; specialists cannot launch peers.                                                                                                                             |
+| Capability platform                | **Engineering-sealed, production default reject** | Capability Gateway, Workspace/Run/Node control records, fencing, independent Linux Runner evidence, PrivateNetwork Broker, Headscale adapter, and split-process mTLS Gateway have engineering Gates. P34.7 Trust Policy Candidate R0 validates candidate governance, lifecycle, key rotation/revocation, artifact coverage, and review separation, but does not approve a production policy. |
+| Native Skills                      | **Engineering preview**                           | Fifteen source-owned, first-party, instruction-only Skills can be catalogued, installed, resolved and disabled for the personal Owner. They have no tools, network, secrets or capability expansion; local third-party candidates remain scan-only.                                                                                                                                          |
+| Read-only MCP                      | **Standalone engineering preview**                | Six bounded local tools cover file list/read/hash, literal text search, Git status/log and diff metadata. The stdio server is manually launched, not mounted into Agent Alpha, and `MCP_RUNTIME_ENABLED` remains false.                                                                                                                                                                      |
+| Windows Companion                  | **Unsigned engineering preview**                  | A self-contained `win-x64` CLI verifies the canonical release archive, creates a secret-bearing local config without echoing it, reports recommended install locations and performs offline diagnostics. Mutating `install` is frozen until handle-relative path identity is proven; it does not mutate Docker, WSL, VHDX or system services.                                                |
+| Enterprise Planner / hostile tools | **Blocked / roadmap**                             | Enterprise Multi-Agent, Planner/DAG execution, background autonomy, arbitrary shell/SQL/HTTP tools, MCP Runtime, and hostile-code Sandbox activation are not authorized. Production `MULTI_AGENT_ENABLED` remains `false`.                                                                                                                                                                   |
 
 For the exact source/evidence boundary, read [the handover report](docs/handover-report.md) and [security invariants](docs/maintainers/security-invariants.md).
 
@@ -66,8 +70,9 @@ Workspace read-only knowledge
 No shell
 No SQL
 No arbitrary HTTP
-No MCP or Skill execution
-No Planner or multi-Agent delegation
+Instruction-only first-party Skills may extend the prompt
+No executable workflow/script Skill or MCP connection
+The single-Agent Alpha path does not delegate; personal team execution exists only in the bounded P6.9 desktop lane
 No hostile-code Sandbox
 ```
 
@@ -137,12 +142,12 @@ make ps COMPOSE_ENV_FILE=.env
 
 ### 4. Open OmniBase
 
-| Surface | URL |
-|---|---|
-| Web workbench | <http://localhost:3000> |
-| Backend API docs | <http://localhost:8000/docs> |
+| Surface              | URL                            |
+| -------------------- | ------------------------------ |
+| Web workbench        | <http://localhost:3000>        |
+| Backend API docs     | <http://localhost:8000/docs>   |
 | Backend health probe | <http://localhost:8000/health> |
-| MinIO console | <http://localhost:9001> |
+| MinIO console        | <http://localhost:9001>        |
 
 The operator-hosted public website is [omnibase.chat/public-preview](https://omnibase.chat/public-preview). Its availability depends on the current preview host and Cloudflare tunnel; it is not a high-availability hosted service.
 
@@ -157,7 +162,7 @@ docker compose --env-file .env logs --tail 200 frontend
 Common first-run checks:
 
 - `backend` or `frontend` still starting: wait for image build and dependency health checks.
-- Login/API returns 500: confirm migration `0012` is applied and inspect backend logs.
+- Login/API returns 500: confirm migration `0016` is applied and inspect backend logs.
 - Agent surface is unavailable: confirm `ENV=development`, `AGENT_ALPHA_ENGINEERING_ENABLED=true`, all three production gates are false, and a tested default provider exists.
 - First RAG query is slow: CPU reranker cold start can take minutes; subsequent queries are normally faster.
 
@@ -192,7 +197,10 @@ OmniBase treats these boundaries as product behavior, not optional hardening:
 - A Sandbox or Runner must never connect directly to PostgreSQL, Redis, or MinIO.
 - P34.5 engineering Gates do not prove the complete production Core→Runner/Broker/Gateway/Overlay composition.
 - The three Phase 5 production Feature Gates remain `false`; production Runtime activation requires a separate explicit admission.
-- Migration head is `0012`; migration `0013` is not part of the current public product.
+- PostgreSQL migration head is `0016` and migration `0017` is absent. P6.9 uses desktop-local SQLite schema v9 (`desktop_0009_parent_call_proof`), not Alembic.
+- Model-name-first profiles may adapt prompt/context behavior for DeepSeek, GPT, GLM, Claude and Kimi, but a model name or relay URL never proves native vendor parameters, caching, tools or MCP support.
+- The six-tool MCP server remains a separate local preview; Agent Alpha stays `no_tool`.
+- P6.9 engineering acceptance covers deterministic loopback journeys and independent Provider invocations only. `PAID_PROVIDER_NOT_PROVEN`, `AUTHENTICODE_NOT_PROVEN`, `EXE_MSI_REPACKAGE_NOT_APPROVED`, `LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN`, and `ENTERPRISE_MULTI_AGENT_DISABLED` remain in force.
 
 Security issues should be reported through [SECURITY.md](SECURITY.md), not a public issue.
 
@@ -200,10 +208,10 @@ Security issues should be reported through [SECURITY.md](SECURITY.md), not a pub
 
 OmniBase is growing along two connected axes instead of splitting into unrelated products:
 
-| Axis | Evolution | Design goal |
-|---|---|---|
-| Runtime and operating systems | Full personal edition → Lite PC profile without hardened-kernel dependence → macOS and broader host support | Keep the Workspace, knowledge, model, and Agent experience available on more machines; degrade only capabilities that cannot be proved safely on a host. |
-| Organization and governance | Personal → Team → Enterprise → Customized deployments | Reuse the same tenant, Workspace, Agent, capability, audit, and policy contracts while adding collaboration, administration, compliance, and deployment controls. |
+| Axis                          | Evolution                                                                                                   | Design goal                                                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime and operating systems | Full personal edition → Lite PC profile without hardened-kernel dependence → macOS and broader host support | Keep the Workspace, knowledge, model, and Agent experience available on more machines; degrade only capabilities that cannot be proved safely on a host.          |
+| Organization and governance   | Personal → Team → Enterprise → Customized deployments                                                       | Reuse the same tenant, Workspace, Agent, capability, audit, and policy contracts while adding collaboration, administration, compliance, and deployment controls. |
 
 The coordinate origin is the complete self-hosted personal edition: one user can create a Workspace, connect a model provider, organize knowledge, and build an Agent. Portability expands vertically; organizational scale expands horizontally. Hardened isolation remains an explicit capability tier rather than a hidden requirement that makes the whole product unusable on lower-spec PCs or macOS.
 
@@ -211,19 +219,24 @@ For project questions, onboarding help, and community channels, use the single m
 
 ## Roadmap
 
-| Stage | Status |
-|---|---|
-| Foundation, authentication, tenant isolation, documents, RAG | **Available** |
-| Controlled data and Capability Gateway | **Available / engineering-sealed by boundary** |
-| Workspace governance, lifecycle, lease/fencing, Node metadata | **Available** |
-| Hardened Runner/Broker/Gateway/Overlay components | **Engineering-sealed; production composition blocked** |
-| User profile, personal provider, first Workspace and Agent Builder | **Engineering product preview** |
-| Tool-free single-Agent Alpha | **Engineering-only; default off** |
-| Planner execution and multi-Agent orchestration | **Blocked / roadmap** |
-| First-party Skill contract | **Compile-only engineering admission** |
-| Skill Runtime, MCP and third-party Marketplace | **Roadmap** |
-| P34.7 Trust Policy Candidate governance | **Merged in `main`; candidate-only, not approved** |
-| Production hostile-code Sandbox and total P34.7 admission | **Blocked/not_proven** |
+| Stage                                                              | Status                                                       |
+| ------------------------------------------------------------------ | ------------------------------------------------------------ |
+| Foundation, authentication, tenant isolation, documents, RAG       | **Available**                                                |
+| Controlled data and Capability Gateway                             | **Available / engineering-sealed by boundary**               |
+| Workspace governance, lifecycle, lease/fencing, Node metadata      | **Available**                                                |
+| Hardened Runner/Broker/Gateway/Overlay components                  | **Engineering-sealed; production composition blocked**       |
+| User profile, personal provider, first Workspace and Agent Builder | **Engineering product preview**                              |
+| Tool-free single-Agent Alpha                                       | **Engineering-only; default off**                            |
+| Personal P6.9 parent-directed team R0                              | **Engineering accepted; deterministic loopback-proven**      |
+| Enterprise Planner and Multi-Agent orchestration                   | **Disabled / roadmap**                                       |
+| Personal workbench, file context, and nine fixed specialist roles  | **Engineering preview**                                      |
+| Fifteen first-party instruction-only Skills                        | **Installable engineering preview**                          |
+| Six-tool standalone read-only MCP                                  | **Engineering preview; not connected to Agent Alpha**        |
+| Windows Companion                                                  | **Unsigned engineering preview; release images unpublished** |
+| Third-party Skill import, executable Skills and Marketplace        | **Deferred**                                                 |
+| MCP Runtime, write tools and arbitrary shell/SQL/HTTP              | **Deferred / blocked**                                       |
+| P34.7 Trust Policy Candidate governance                            | **Merged in `main`; candidate-only, not approved**           |
+| Production hostile-code Sandbox and total P34.7 admission          | **Blocked/not_proven**                                       |
 
 ## Development
 

@@ -645,7 +645,7 @@ def test_source_and_artifact_seals_reject_tamper(
 
 
 def test_static_validation_closes_migration_and_gates(tmp_path: Path) -> None:
-    # The typed-executor example contract must keep migration baseline 0015,
+    # The typed-executor example contract must keep migration baseline 0016,
     # activation false and all three Phase 5 Feature Gates false.
     gate._validate_config()
 

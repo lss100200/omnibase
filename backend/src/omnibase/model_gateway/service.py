@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from threading import BoundedSemaphore
 
 from omnibase.core.config import get_settings
+from omnibase.model_gateway.adaptation import ReasoningGear, plan_model_adaptation
 from omnibase.model_gateway.contracts import (
     ModelMessage,
     ModelProvider,
@@ -72,11 +73,16 @@ class ModelGateway:
         *,
         max_output_tokens: int | None,
         temperature: float,
+        reasoning_gear: ReasoningGear,
     ) -> ModelRequest:
         requested_output = max_output_tokens or self._max_output_tokens
         if requested_output > self._max_output_tokens:
             raise ModelGatewayBudgetExceeded("model_output_budget_exceeded")
-        if sum(len(message.content) for message in messages) > self._max_input_characters:
+        adaptation = plan_model_adaptation(self.model_id, reasoning_gear)
+        if (
+            len(adaptation.stable_prefix) + sum(len(message.content) for message in messages)
+            > self._max_input_characters
+        ):
             raise ModelGatewayBudgetExceeded("model_input_budget_exceeded")
         return ModelRequest(
             provider_id=self.provider_id,
@@ -85,6 +91,7 @@ class ModelGateway:
             max_output_tokens=requested_output,
             temperature=temperature,
             timeout_seconds=self._timeout_seconds,
+            reasoning_gear=reasoning_gear,
         )
 
     def complete(
@@ -93,11 +100,13 @@ class ModelGateway:
         *,
         max_output_tokens: int | None = None,
         temperature: float = 0.2,
+        reasoning_gear: ReasoningGear = "standard",
     ) -> ModelResponse:
         request = self._request(
             messages,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
+            reasoning_gear=reasoning_gear,
         )
         with self._semaphore:
             return self._provider.complete(request)
@@ -108,11 +117,13 @@ class ModelGateway:
         *,
         max_output_tokens: int | None = None,
         temperature: float = 0.2,
+        reasoning_gear: ReasoningGear = "standard",
     ) -> Iterator[ModelStreamChunk]:
         request = self._request(
             messages,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
+            reasoning_gear=reasoning_gear,
         )
 
         def _guarded() -> Iterator[ModelStreamChunk]:

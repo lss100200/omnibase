@@ -8,6 +8,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from omnibase.agent_skills.limits import (
+    MAX_LIVE_SKILL_INSTALLATIONS,
+    MAX_SKILL_INSTRUCTION_BYTES,
+    SkillBundleLimitError,
+    validate_skill_bundle_limits,
+)
 from omnibase.agent_skills.models import (
     SkillDefinitionModel,
     SkillVersionModel,
@@ -33,6 +39,14 @@ OWNER_ID = "00000000-0000-0000-0000-0000000000aa"
 WORKSPACE_ID = "00000000-0000-0000-0000-0000000000bb"
 AGENT_VERSION_ID = "00000000-0000-0000-0000-0000000000cc"
 TENANT_SCHEMA = "tenant_00000000"
+
+
+def test_skill_bundle_limits_bound_live_count_and_actual_utf8_bytes() -> None:
+    assert validate_skill_bundle_limits(["安全指令", "test"]) == (2, 16)
+    with pytest.raises(SkillBundleLimitError, match="skill_bundle_live_limit_exceeded"):
+        validate_skill_bundle_limits(["x"] * (MAX_LIVE_SKILL_INSTALLATIONS + 1))
+    with pytest.raises(SkillBundleLimitError, match="skill_bundle_instruction_budget_exceeded"):
+        validate_skill_bundle_limits(["x" * (MAX_SKILL_INSTRUCTION_BYTES + 1)])
 
 
 def _config() -> SimpleNamespace:

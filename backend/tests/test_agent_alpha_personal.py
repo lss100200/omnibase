@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
+import omnibase.agent_alpha.personal as personal_module
 from omnibase.agent_alpha.contracts import AlphaAgentProfile
 from omnibase.agent_alpha.personal import (
     PersonalAlphaConfigurationError,
@@ -36,9 +37,11 @@ from omnibase.model_gateway import (
     ModelResponse,
     ModelStreamChunk,
     ModelUsage,
+    UnavailableModelGateway,
 )
 from omnibase.production.personal_runtime_activation import (
     PersonalRuntimeCanaryConfig,
+    PersonalRuntimeConfigurationError,
     activate_personal_runtime_canary,
     read_personal_runtime_status,
 )
@@ -48,7 +51,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OWNER_READINESS_SHA256 = "68d5b91f428eaa2632f4ea60e6eab2aa27f3c9b94b593025e17ceced5bebf4d3"
 
 
-def _settings(env: str = "production") -> Settings:
+def _settings(
+    env: str = "production",
+    *,
+    personal_provider_resolver: bool = False,
+) -> Settings:
     return Settings(
         env=env,
         database_url="postgresql+psycopg://u:p@localhost:5432/db",
@@ -58,6 +65,7 @@ def _settings(env: str = "production") -> Settings:
         redis_url="redis://localhost:6379/0",
         jwt_secret="x" * 40,
         memory_content_encryption_key="11" * 32,
+        provider_credential_encryption_key=("22" * 32 if personal_provider_resolver else ""),
     )
 
 
@@ -96,7 +104,7 @@ def _mapping() -> dict[str, object]:
         "max_concurrent_invocations": 1,
         "max_top_k": 5,
         "migration_0013_created": True,
-        "migration_head": "0015",
+        "migration_head": "0016",
         "multi_agent_enabled": False,
         "network": {"default_deny": True, "destinations": []},
         "owner_readiness": {
@@ -115,10 +123,44 @@ def _config() -> PersonalRuntimeCanaryConfig:
     return PersonalRuntimeCanaryConfig.from_mapping(_mapping())
 
 
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (
+            PersonalAlphaConfigurationError("personal_runtime_invocation_slot_occupied"),
+            "personal_runtime_invocation_slot_occupied",
+        ),
+        (
+            PersonalAlphaConfigurationError("unsafe detail: C:/private"),
+            "personal_runtime_invocation_guard_unavailable",
+        ),
+        (
+            OperationalError("SELECT secret", {"token": "private"}, Exception("driver")),
+            "personal_runtime_database_guard_unavailable",
+        ),
+        (
+            PersonalRuntimeConfigurationError("private path is unavailable"),
+            "personal_runtime_control_state_unavailable",
+        ),
+        (OSError("C:/private"), "personal_runtime_control_state_unavailable"),
+    ],
+)
+def test_invocation_guard_projects_only_stable_failure_codes(
+    exc: BaseException,
+    expected: str,
+) -> None:
+    code = personal_module._invocation_guard_error_code(exc)
+
+    assert code == expected
+    assert "private" not in code
+    assert "secret" not in code
+
+
 def _write_config(path: Path, mapping: dict[str, object] | None = None) -> None:
-    path.write_text(
-        json.dumps(mapping or _mapping(), separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
+    path.write_bytes(
+        (json.dumps(mapping or _mapping(), separators=(",", ":"), sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
     )
 
 
@@ -223,9 +265,11 @@ def test_default_builder_returns_unavailable_before_loading_dependencies() -> No
     assert isinstance(result, UnavailableAgentAlpha)
 
 
-def test_posture_assembles_only_with_active_exact_scope(
+@pytest.mark.parametrize(("personal_provider_resolver",), [(True,), (False,)])
+def test_posture_assembles_only_with_active_exact_scope_and_gateway_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    personal_provider_resolver: bool,
 ) -> None:
     mapping, readiness_root = _current_readiness_fixture(tmp_path / "readiness")
     config = PersonalRuntimeCanaryConfig.from_mapping(mapping)
@@ -242,7 +286,7 @@ def test_posture_assembles_only_with_active_exact_scope(
     fake_session = SimpleNamespace(rollback=lambda: None, close=lambda: None)
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._migration_head",
-        lambda _: "0015",
+        lambda _: "0016",
     )
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
@@ -270,18 +314,20 @@ def test_posture_assembles_only_with_active_exact_scope(
             "AGENT_PLANNER_ENABLED": "false",
             "MULTI_AGENT_ENABLED": "false",
         },
-        settings=_settings(),
+        settings=_settings(personal_provider_resolver=personal_provider_resolver),
         session_factory=_session_factory(factory),
-        gateway=_gateway(),
+        gateway=UnavailableModelGateway(),
     )
 
-    assert posture.assembled is True
+    assert posture.assembled is personal_provider_resolver
     assert posture.canary_active is True
     assert posture.scope_matches is True
     assert posture.live_owner_verified is True
     assert posture.runtime_gate_enabled is True
     assert posture.planner_gate_enabled is False
     assert posture.multi_agent_gate_enabled is False
+    assert posture.gateway_configured is personal_provider_resolver
+    assert ("Model Gateway is unavailable" in posture.blockers) is (not personal_provider_resolver)
 
 
 def test_posture_rejects_gate_and_scope_drift(tmp_path: Path) -> None:
@@ -314,9 +360,8 @@ def test_posture_rejects_owner_readiness_digest_drift(tmp_path: Path) -> None:
     owner_readiness = cast(dict[str, object], mapping["owner_readiness"])
     owner_readiness["sha256"] = "0" * 64
     config_path = (tmp_path / "canary.json").resolve()
-    config_path.write_text(
-        json.dumps(mapping, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
+    config_path.write_bytes(
+        (json.dumps(mapping, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
     )
 
     posture = personal_alpha_posture(
@@ -356,7 +401,7 @@ def test_posture_turns_database_failure_into_stable_unavailable(
         confirmed_plan_sha256=config.activation_plan().canonical_digest(),
         now=NOW,
     )
-    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0015")
+    monkeypatch.setattr("omnibase.agent_alpha.personal._migration_head", lambda _: "0016")
     monkeypatch.setattr(
         "omnibase.agent_alpha.personal._open_tenant_session",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -446,9 +491,9 @@ def test_builder_assembles_scoped_facade_after_verified_posture(
             "AGENT_PLANNER_ENABLED": "false",
             "MULTI_AGENT_ENABLED": "false",
         },
-        settings=_settings(),
+        settings=_settings(personal_provider_resolver=True),
         session_factory=_session_factory(factory),
-        gateway=_gateway(),
+        gateway=UnavailableModelGateway(),
     )
     assert isinstance(result, PersonalCanaryAgentAlpha)
     assert captured["factory"] is factory

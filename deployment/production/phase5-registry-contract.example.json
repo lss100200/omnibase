@@ -17,7 +17,7 @@
     "formal_state": "blocked/not_proven",
     "admission_contract": {
       "path": "deployment/production/phase5-admission.example.json",
-      "sha256": "a75082c3f9c5b75e7a4e3b5682c8e371278105258cb9ab6f7f2e05db535c79a5"
+      "sha256": "02c312315a97fe1f06e101d3d50c8fd04c6041be27be25ff2a077d24bc230cc6"
     }
   },
   "source": {
@@ -88,7 +88,8 @@
     "0012",
     "0013",
     "0014",
-    "0015"
+    "0015",
+    "0016"
   ],
   "sealed_contracts": [
     {
@@ -104,17 +105,17 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "9752e468be0fd8aa29034e1b8d696f06100daf92d634009ff4e1e3733c494c30"
+      "sha256": "a746441577807be07980c6cdd819b7f9cbd77c2c8a21c587f2b1b62c76690143"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "52444c63f5d0eabf19012486ab42d67c23bc1b589716cd6ea6143fccc0bad39d"
+      "sha256": "8eeb939530f8aa084c92e8112a462db6ed8aeb0177c8c2f25e4b07e268cb20cf"
     },
     {
       "name": "registry_tests",
       "path": "backend/tests/test_p5_1_registry_contract.py",
-      "sha256": "50ab3cc80d51ad483122ede3282565c1f2f518a49dcd1d28c7a6274b2be41e1c"
+      "sha256": "f2a8277f87fabd803358cb0422cf29983686aee116208a3331fc29fc1ca95ee6"
     }
   ],
   "openapi_snapshot": {

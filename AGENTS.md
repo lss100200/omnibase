@@ -198,6 +198,103 @@ runtime evidence; then correct the stale documentation in the same change.
   Skills cannot request tools or capability; workflow/script versions cannot
   be approved or published. Skill execution remains blocked until the roadmap
   explicitly proves the required P5.4 and P34.7 boundaries.
+- The separately authorized personal successor is now at P6.3 with migration
+  head `0016` and migration `0017` absent. It permits exactly fifteen
+  source-owned first-party instruction-only Skills, at most eight live Skills
+  and 32 KiB aggregate instructions per Agent binding, plus a manually launched
+  six-tool read-only MCP preview. MCP is not mounted into Agent Alpha and
+  `MCP_RUNTIME_ENABLED` remains false. DeepSeek/GPT/Kimi/GLM/Claude model-name
+  profiles select conservative prompt/context guidance only on the current Chat
+  Completions transport; they do not prove native thinking, cache, effort,
+  strict tools or MCP. The Windows Companion may verify a closed release
+  archive and report safe user/machine/custom plans, but mutating `install` is
+  frozen until handle-relative path identity binding is implemented and proven.
+  It must not elevate, write system integration, start Docker/WSL, or mutate
+  Hyper-V/VHDX. Runtime, Planner and
+  Multi-Agent remain disabled; third-party Skill import, executable Skills,
+  MCP-to-Agent integration, published OCI images, Authenticode and live public
+  deployment require separate evidence. Read INV-077 through INV-080 before
+  changing these P6.3 boundaries.
+
+- P6.4 is the narrow personal Agent practice lane. It permits one or 3-6
+  separately metered, serial Model Gateway calls in one Owner-declared roster
+  while Planner, enterprise Multi-Agent and MCP remain false. Model output is
+  proposal-only: citations are scored locally, artifacts are rendered from a
+  closed schema, and Workspace writes require exact CAS and rollback inside a
+  disposable root. Read INV-081 and
+  `docs/architecture/p6-4-personal-agent-practice.md` before changing this lane.
+  The loopback live-matrix runner can never set `production_accepted=true`;
+  only the outer disposable-target controller may do so after the strict final
+  receipt validator proves all six journeys, Provider/document cleanup, canary
+  closure, every gate false and zero labeled Compose resources. If Docker is
+  not already healthy, stop before activation and do not start or repair
+  Docker Desktop, WSL, Hyper-V or VHDX to manufacture P6.4 evidence. A
+  Workspace-private Browser document is visible or deletable only through its
+  exact live membership binding; failed initial metadata commits must remove
+  the uploaded object or veto. Canonical v1 chunks take precedence over a v2
+  shadow for the same source document. Node invocation/task identities are
+  unique, streamed metadata order is fail-closed, and the outer controller
+  requires a clean unchanged source HEAD plus a read-only healthy Linux Docker
+  preflight before creating any disposable target material.
+- P6.5 is the per-user Windows desktop distribution lane. Read INV-082 and
+  `docs/architecture/p6-5-windows-desktop-distribution.md` before changing its
+  SQLite backend, Next desktop proxy, Electron shell, RuntimeHost, payload,
+  PyInstaller or WiX authoring. The native proof, native control and
+  authorization tokens are separate per-launch identities; none is a Browser
+  credential, and readiness requires a fresh challenge-HMAC proof over a
+  digest-pinned loopback runtime. Installation is per-user under
+  `%LOCALAPPDATA%\Programs\OmniBase`; `%LOCALAPPDATA%\OmniBase` is application
+  data that normal uninstall must retain. Docker, WSL, PostgreSQL, BGE-M3 and
+  enhanced Sandbox components remain optional and must not be silently
+  installed or started. Unsigned, dirty-source, incomplete-product-journey or
+  untested installer artifacts are engineering outputs, not a distributable
+  OmniBase 1.0.0 EXE.
+- P6.6 is the desktop-local product-admission lane. Read INV-083 and
+  `docs/architecture/p6-6-desktop-local-product-admission.md` before changing
+  `/desktop`, Owner/Workspace SQLite transactions, native IPC or the desktop
+  proxy catalog. Next is product-blind in desktop mode: only exact
+  health/readiness hops remain and it is never Owner authority. All Owner and
+  Workspace operations use the exact IPC catalog plus the backend-only native
+  control token; the renderer receives typed results but no token. Do not add
+  JWT emulation, publish `/desktop/v1` through Next, expose `runtime_job`, or
+  start Provider/RAG/Agent/MCP/Docker/WSL/PostgreSQL paths to complete this
+  bounded journey.
+- P6.7 is the desktop-local single-agent core. Read INV-084 and
+  `docs/architecture/p6-7-desktop-single-agent-core.md` before changing
+  Provider vault, family adapters, conversation IPC or `/desktop`. Next stays
+  product-blind except exact health/readiness. Mutations use native IPC plus
+  `/desktop/v1`. The renderer never receives raw API keys. Desktop schema
+  version 2 is `desktop_0002_provider_conversation`, never Alembic. Do not
+  import `openai`/`httpx`/PostgreSQL Settings into the freeze, and do not open
+  files, RAG, Skills, MCP or multi-agent to complete this journey.
+- P6.9 is the personal parent-directed team on that same desktop Agent. Read
+  INV-085 and `docs/architecture/p6-9-multi-agent-planning.md` before changing
+  role config, team-run schema, Proposal validators, the closed role/team IPC
+  catalog, the coordinator, pinned Provider transport, or the workbench team
+  FSM. Parent emits a restricted structured Proposal; the host validates and
+  persists. Specialists do not launch peers. Desktop schema version 9 is
+  `desktop_0009_parent_call_proof`; v8 is
+  `desktop_0008_collaboration_report_binding`, v7 is
+  `desktop_0007_recovery_success_downgrade`, v6 is
+  `desktop_0006_report_collaboration_digest`, Round 1 was v5
+  `desktop_0005_team_node_identity_epochs` and v4
+  `desktop_0004_personal_team_runtime`, and A2 was v3
+  `desktop_0003_personal_agent_team`; never Alembic 0017. Role config never
+  stores API keys or vault material; vault reads are bound to `is_enabled` in
+  the same snapshot; explicit disabled Providers fail closed;
+  role-config writes CAS on `row_version`. Every parent and employee Provider
+  call must consume one immutable reservation before crossing the Provider
+  boundary; parent calls additionally carry a settled proof for the exact plan
+  revision and output digest. Employee consume responses explicitly return
+  `parent_call: null`; a missing field is an invalid v9 native response.
+  Synthesis reservations cannot predate their finish revision, and recovery
+  downgrades incomplete proof to unknown. Quiet failure terminals block every
+  unstarted assignment, and a coordinator instance may execute only once.
+  Team HTTPS production pinning asks
+  desktop-local `is_global_unicast`; SNI/Host stay the hostname. Next stays product-blind. Keep
+  `ENTERPRISE_MULTI_AGENT_DISABLED`. Loopback D may claim
+  `PERSONAL_MULTI_AGENT_IMPLEMENTED`; paid/live Provider window is still
+  unproven. Do not announce 1.0.0, Authenticode, or EXE.
 
 ## Safe change workflow
 
@@ -232,6 +329,31 @@ runtime evidence; then correct the stale documentation in the same change.
 - Do not use `git add .`. Stage explicit paths and inspect the cached diff.
 - Do not run destructive database tests against a normal database. Use the
   sentinel Compose project and `omnibase_test_*` names enforced by the Makefile.
+- Recursive filesystem deletion is a separately authorized destructive action,
+  not a normal cleanup primitive. Before deleting any directory tree, resolve
+  and print the exact literal absolute target, prove it is neither a workspace
+  root nor an ancestor/sibling container of repositories, worktrees, release
+  artifacts, user libraries or unrelated data, and inventory the intended
+  entries with the same shell and path semantics that will perform the delete.
+  Never pass a PowerShell-enumerated path to `cmd.exe rd`, a batch builtin or a
+  second shell; quoting and extended-path reinterpretation can widen the target.
+  Do not use a glob, unresolved environment variable, command substitution,
+  junction/reparse traversal or a parent directory to work around long paths.
+  Delete only one already-verified literal target per operation. Prefer a
+  recoverable same-volume move to a clearly named quarantine/trash directory;
+  permanent deletion requires explicit user authorization naming the exact
+  target after the inventory is shown. If containment, ownership, link state or
+  recovery scope is uncertain, stop. See INV-073.
+- Treat Docker Desktop, WSL, Hyper-V and other VM disk images as stateful
+  infrastructure, not disposable cache files. Before any VHD/VHDX/VDI/VMDK
+  maintenance, identify the owner, distinguish system and data disks, stop all
+  writers, verify the exact absolute path and mount state, inventory referenced
+  containers/volumes, and create a length-checked backup with a tested restore
+  path. Never delete, truncate, replace or shrink a mounted or unknown virtual
+  disk. `compact` reclaims host blocks but does not impose a capacity limit;
+  capacity changes must use a platform-supported filesystem-aware operation and
+  be verified at the guest filesystem and container-format layers. A restored
+  disk must preserve or explicitly restore the VM service ACL/SID before boot.
 - Do not push, publish, deploy, rotate credentials, or migrate a business
   database unless the user explicitly authorizes that external state change.
 
