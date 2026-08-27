@@ -1,7 +1,8 @@
 # OmniBase 分阶段路线图
 
-> **状态同步日期**：2026-08-10
-> **基于**：`main` `eb0a173`（PR #18 P5 Consolidation、PR #19 P34.7 joint Gate、PR #20 Trust Policy Candidate R0、PR #21 repository introduction、PR #22 R1 preparation 均已合并；R1-A implementation 仍在独立未推送工作线）
+> **状态同步日期**：2026-08-27
+> **当前个人桌面线**：P6.9 工程验收与 required GitHub CI 已在 `7017612` 通过；P7.0 editor-first 设计基线已批准，Wave 1 源码 UI 已通过 Codex 审计并绑定 `11895e9`；fresh EXE 和隔离 Windows 生命周期仍待分波验收。当前权威交接见 `docs/reviews/p6-9-final-acceptance-p7-0-handoff.md`。
+> **历史基线**：本路线图的大部分基础设施叙述基于 `main` `eb0a173` 及其后续阶段记录；具体运行事实以源码、维护者地图、最终交接和可复现门禁为准。
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
 本文档覆盖从当前状态到产品远景规划的完整路径。每个阶段都列出了前置条件、关键任务和预估复杂度。
@@ -306,19 +307,21 @@ not silently included in P6.0.
 
 ---
 
-## Phase 7: 开源准备
+## Phase 7: Desktop Productization
 
-> **前置条件**：Phase 6 完成或核心功能稳定
-> **预估工期**：1-2 周
+旧路线图曾把 Phase 7 仅命名为“开源准备”。Owner 已在 P6.9 工程验收后重新定义
+P7.0：先完成真正可用的 editor-first 桌面工作台，再把 P6.8/P6.9 以来的源码打入
+fresh EXE，并在明确可销毁的 Windows 环境验证。开源文档、社区和发布准备保留为
+P7.x 后续工作，不与 P7.0 的产品与安装真实性混为一项。
 
-| 任务 | 说明 |
-|---|---|
-| 文档完善 | README、架构文档、API 文档、贡献指南 |
-| Demo 环境 | 一键部署脚本 + 示例数据集 + 教程 |
-| CI/CD | GitHub Actions: lint + test + build + deploy |
-| 安全审计 | 第三方安全审查 + 漏洞扫描 |
-| 许可证 | Apache 2.0（已配置） |
-| 社区准备 | Issue 模板、PR 模板、Code of Conduct |
+权威产品法：`docs/architecture/p7-0-editor-first-workbench.md`。
+
+| 增量 | 状态 | 说明 |
+|---|---|---|
+| P7.0 Wave 1：editor-first source UI | 设计批准；源码已通过审计（`11895e9`） | 中央 Code/Diff/Artifact，右侧真实 SSE Agent 面板，互斥侧栏，折叠底部面板，深黑/淡紫/粉白主题，Logo 与 OMNIA 接口；不得伪造文件、Diff、Agent 事件或测试状态 |
+| P7.0 Wave 2：fresh Windows EXE | 未开始 | Wave 1 通过后再构建；必须证明产物包含 P6.8/P6.9/P7.0 当前字节并登记输入与 digest |
+| P7.0 Wave 2：隔离生命周期 | 未开始 | 在明确可销毁的 Windows VM/账户中验证安装、首次启动、运行时就绪、停止、适用的升级/回滚和卸载；不得默认把宿主当破坏性测试机 |
+| P7.x：开源与发布准备 | 后续 | README/架构/API/贡献文档、Demo、CI/CD、安全复审、许可证与社区模板；不得提前宣称 1.0.0、签名或生产发布 |
 
 ---
 
@@ -333,9 +336,11 @@ Phase 3-4: 安全 AI 工作空间与能力平台（P34.0–P34.7）
     ↓
 Phase 5: Agent 编排（工作空间内运行）
     ↓
-Phase 6: Skill/MCP 扩展生态
+Phase 6: Skill/MCP 扩展生态（企业/第三方扩展仍按安全 Gate 推进）
     ↓
-Phase 7: 开源准备
+P7.0: Editor-first UI → fresh EXE → disposable Windows lifecycle
+    ↓
+P7.x: 开源、社区与发布准备
 ```
 
 ## 决策记录

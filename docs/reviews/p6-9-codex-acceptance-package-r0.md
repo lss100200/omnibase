@@ -1,10 +1,22 @@
 # P6.9 Personal Multi-Agent Team R0 — Codex acceptance package
 
-**Open this file first.** It is the Cursor-produced engineering dossier for
-the **whole** P6.9 R0 slice (A2 contract + B coordinator + C workbench + D
-loopback journeys). It supersedes the A2-only drip
+**Historical review dossier.** For current phase status, open
+`docs/reviews/p6-9-final-acceptance-p7-0-handoff.md` first. This file is the
+Cursor-produced engineering dossier for the **whole** P6.9 R0 slice (A2
+contract + B coordinator + C workbench + D loopback journeys). It supersedes
+the A2-only drip
 `docs/reviews/p6-9-a2-codex-acceptance-package-r0.md`. Do not ask Codex to
 review A2 again in isolation.
+
+> **Final disposition (2026-08-26):** P6.9 later passed engineering
+> acceptance after the Round 5 forward-fix, schema-v9 parent-call proof,
+> backend type/CI closure and full required GitHub CI at `7017612`. Read
+> `docs/reviews/p6-9-final-acceptance-p7-0-handoff.md` for the authoritative
+> final evidence and the approved P7.0 starting state. The Round-specific
+> `acceptance withheld` statements below remain historical verdicts for their
+> exact audited heads; they are not the current phase disposition. Paid
+> Provider, Authenticode, fresh EXE/MSI, live human Electron window and
+> enterprise multi-agent remain unproven or disabled.
 
 Cursor is **not** the acceptance authority. Cursor claims only the flags
 below. Product law remains `docs/architecture/p6-9-multi-agent-planning.md`.
