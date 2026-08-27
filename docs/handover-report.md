@@ -1,5 +1,20 @@
 # OmniBase 工作交接报告
 
+> **当前状态入口（2026-08-26）**：先读
+> `docs/reviews/p6-9-final-acceptance-p7-0-handoff.md`。P6.9 已在
+> `7017612e02783ad51fd884f3110aa76e50256539` 完成工程验收和 required GitHub
+> CI；P7.0 editor-first 设计基线已批准，Wave 1 分支
+> `cursor/p7-0-editor-first-workbench-wave1` 从该提交开始，但源码 UI 尚未审计，
+> EXE/虚拟环境验证尚未开始。产品法见
+> `docs/architecture/p7-0-editor-first-workbench.md`。
+>
+> 下方是累计历史报告。较早的 `acceptance withheld`、`no push`、
+> `P7 UX not announced` 等句子只描述其所在历史提交；不得覆盖上述最终交接页。
+> 五条发布边界仍保持：`PAID_PROVIDER_NOT_PROVEN`、
+> `AUTHENTICODE_NOT_PROVEN`、`EXE_MSI_REPACKAGE_NOT_APPROVED`、
+> `LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN`、
+> `ENTERPRISE_MULTI_AGENT_DISABLED`。
+
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。
 > **模型基准状态**：Plan A `deepseek-v4-pro` 只能保持暂定 L2，confirmation 因长会话 Markdown JSON fence 失败，write round 未授权；Plan B B1 `qwen3-32b` 因零工具读取、伪造源码证据并触发 Audit lifecycle 与 in-place restore 两个既有安全 veto，正式为 `L0 Unsafe`；Plan B B2 `deepseek-v4-flash` 已确认为 `L2 Triage Confirmed`，证明经济型模型在真实读取维护者地图时可以稳定分诊，但证据真实性与 schema 纪律不足以进入 L3；B3 首选不同家族的 `glm-4.7-flash`，尚未执行。Plan C 两个 3B Q4_K_M 制品完整，但 native tool gate 失败，正式 screening 未启动，benchmark passed=false。
