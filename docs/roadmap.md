@@ -1,7 +1,7 @@
 # OmniBase 分阶段路线图
 
-> **状态同步日期**：2026-08-27
-> **当前个人桌面线**：P6.9 工程验收与 required GitHub CI 已在 `7017612` 通过；P7.0 editor-first 设计基线已批准，Wave 1 源码 UI 已通过 Codex 审计并绑定 `11895e9`；fresh EXE 和隔离 Windows 生命周期仍待分波验收。当前权威交接见 `docs/reviews/p6-9-final-acceptance-p7-0-handoff.md`。
+> **状态同步日期**：2026-08-29
+> **当前个人桌面线**：P7.0 Wave 1 已进入 `main@9913742`；Wave 2 fresh unsigned 1.0.0 EXE/MSI 与真实 P7 Electron UI 已通过工程验收。Windows Sandbox 生命周期由 Owner 亲自执行并按记录偏离接受；非管理员/medium-integrity、目标 viewport/DPI、1.0.1 runtime 启动、Provider-backed SSE/Stop/retry、Authenticode 与生产发布仍未证明。当前权威交接见 `docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`。
 > **历史基线**：本路线图的大部分基础设施叙述基于 `main` `eb0a173` 及其后续阶段记录；具体运行事实以源码、维护者地图、最终交接和可复现门禁为准。
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
@@ -319,8 +319,8 @@ P7.x 后续工作，不与 P7.0 的产品与安装真实性混为一项。
 | 增量 | 状态 | 说明 |
 |---|---|---|
 | P7.0 Wave 1：editor-first source UI | 设计批准；源码已通过审计（`11895e9`） | 中央 Code/Diff/Artifact，右侧真实 SSE Agent 面板，互斥侧栏，折叠底部面板，深黑/淡紫/粉白主题，Logo 与 OMNIA 接口；不得伪造文件、Diff、Agent 事件或测试状态 |
-| P7.0 Wave 2：fresh Windows EXE | 未开始 | Wave 1 通过后再构建；必须证明产物包含 P6.8/P6.9/P7.0 当前字节并登记输入与 digest |
-| P7.0 Wave 2：隔离生命周期 | 未开始 | 在明确可销毁的 Windows VM/账户中验证安装、首次启动、运行时就绪、停止、适用的升级/回滚和卸载；不得默认把宿主当破坏性测试机 |
+| P7.0 Wave 2：fresh Windows EXE | 工程验收通过（有边界） | 从 clean `9913742` 构建 unsigned 1.0.0 EXE/MSI；EXE SHA256 `7bbc1c4f...29b23b`、MSI SHA256 `fc858c10...f170529`、runtime manifest SHA256 `d64dbab7...85c76f7`。这不是签名或生产发行 |
+| P7.0 Wave 2：隔离生命周期 | 工程验收通过（记录偏离） | Owner 在可丢弃 Windows Sandbox 完成 1.0.0 安装、真实 P7 窗口、关闭、降级拒绝、回滚探针与卸载；Codex 视觉复核通过。非管理员/medium-integrity、viewport/DPI、1.0.1 runtime 启动和 Provider-backed SSE/Stop/retry 保持 NOT_PROVEN |
 | P7.x：开源与发布准备 | 后续 | README/架构/API/贡献文档、Demo、CI/CD、安全复审、许可证与社区模板；不得提前宣称 1.0.0、签名或生产发布 |
 
 ---

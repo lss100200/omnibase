@@ -1,7 +1,8 @@
 # P7.0 Editor-First Desktop Workbench
 
-Status: **design baseline approved; Wave 1 source UI accepted at
-`11895e9`; Windows release evidence not yet accepted**.
+Status: **Wave 1 source UI accepted at `11895e9`; Wave 2 engineering
+acceptance passed with recorded deviations for the unsigned 1.0.0 build from
+`main@9913742`; production release not approved**.
 
 This document is the product law for the P7.0 desktop workbench. It supersedes
 the old roadmap use of "Phase 7" as only an open-source-preparation bucket.
@@ -163,18 +164,61 @@ P6.5-era packaging evidence does not prove that the P6.8/P6.9/P7 bytes are in a
 new package. A fresh artifact digest, build input record and lifecycle evidence
 are required.
 
+#### Wave 2 engineering acceptance R0 (2026-08-29)
+
+The clean source coordinate is
+`991374216505d2b9e3dd27111c4aed370fdc7fae`. The fresh unsigned engineering
+artifacts are bound by these SHA-256 values:
+
+- EXE: `7bbc1c4f22bac17d831c1882ac5dc1f5be665bceb54fc7ee7bfb25165329b23b`;
+- MSI: `fc858c10e1646d4def2ecf2e2824bb106867b43bb7735a2b543483c61f170529`;
+- runtime manifest:
+  `d64dbab7c52688de30b2d07161cacca7f5b18ab30f6e79bca6b4f775d85c76f7`.
+
+Codex visually reviewed the Owner-captured Windows Sandbox evidence and found
+the real P7 editor-first shell, Agent panel, OMNIA, team controls, blackboard
+and honest unavailable states rendered without obvious overlap, clipping,
+blank content or simulated product data. The Owner also observed 1.0.0 install,
+first launch, clean process shutdown, downgrade rejection, rollback-probe
+behavior, uninstall and retained application data in the disposable Sandbox.
+That lifecycle is Owner-attested evidence, not an independently reproducible
+automation transcript.
+
+The accepted deviations are binding: the Sandbox session used the built-in
+administrator at high integrity; captured frames do not prove 1440x900,
+1024x700 or 140% DPI; no paid/live Provider SSE, Stop or retry journey ran; and
+the P6.5-era 1.0.1 upgrade installed but failed to start with
+`runtime_exited_before_ready code=32 signal=null`. The first-run page also
+retains the stale nonblocking label `DESKTOP LOCAL / P6.7 R0`.
+
+The full decision and evidence classification are recorded in
+`docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`.
+
 ## 7. Boundaries that remain in force
 
-P7.0 design approval does not clear any release boundary:
+Wave 2 clears the real-window gate only for the exact unsigned 1.0.0
+engineering build above:
 
 ```text
-PAID_PROVIDER_NOT_PROVEN
-AUTHENTICODE_NOT_PROVEN
-EXE_MSI_REPACKAGE_NOT_APPROVED
-LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN
-ENTERPRISE_MULTI_AGENT_DISABLED
+P7_0_WAVE_2_ENGINEERING_ACCEPTANCE_PASSED_WITH_RECORDED_DEVIATIONS
+P7_0_WAVE_2_REAL_P7_UI_VISUAL_REVIEW_PASSED
+LIVE_HUMAN_ELECTRON_WINDOW_PROVEN_FOR_UNSIGNED_1_0_0_ENGINEERING_BUILD
+P7_0_WAVE_2_OWNER_OBSERVED_SANDBOX_LIFECYCLE_PASSED
 ```
 
-It also does not announce OmniBase 1.0.0, a signed installer, a production paid
-Provider journey, enterprise Planner/DAG authority, MCP-to-Agent execution or
-hostile-code Sandbox readiness.
+The following gates remain open and must not be inferred from that narrow pass:
+
+```text
+P7_0_WAVE_2_NON_ADMIN_LIFECYCLE_NOT_PROVEN
+P7_0_WAVE_2_VIEWPORT_DPI_NOT_PROVEN
+UPGRADE_1_0_1_RUNTIME_START_NOT_PROVEN
+PROVIDER_BACKED_SSE_STOP_RETRY_NOT_PROVEN
+PAID_PROVIDER_NOT_PROVEN
+AUTHENTICODE_NOT_PROVEN
+ENTERPRISE_MULTI_AGENT_DISABLED
+PRODUCTION_RELEASE_NOT_APPROVED
+```
+
+This does not announce a signed or production OmniBase 1.0.0 release, a
+production paid Provider journey, enterprise Planner/DAG authority,
+MCP-to-Agent execution or hostile-code Sandbox readiness.

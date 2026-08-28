@@ -1,19 +1,23 @@
 # OmniBase 工作交接报告
 
-> **当前状态入口（2026-08-26）**：先读
-> `docs/reviews/p6-9-final-acceptance-p7-0-handoff.md`。P6.9 已在
-> `7017612e02783ad51fd884f3110aa76e50256539` 完成工程验收和 required GitHub
-> CI；P7.0 editor-first 设计基线已批准，Wave 1 分支
-> `cursor/p7-0-editor-first-workbench-wave1` 从该提交开始，但源码 UI 尚未审计，
-> EXE/虚拟环境验证尚未开始。产品法见
-> `docs/architecture/p7-0-editor-first-workbench.md`。
+> **当前状态入口（2026-08-29）**：先读
+> `docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`。P7.0 Wave 1 已进入
+> `main@991374216505d2b9e3dd27111c4aed370fdc7fae`；Wave 2 已从该 clean
+> source 构建 fresh unsigned 1.0.0 EXE/MSI，并通过 Codex 对真实 P7 Electron
+> 窗口的视觉复核与 Owner 亲自执行的 Windows Sandbox 生命周期验收。验收口径是
+> `P7_0_WAVE_2_ENGINEERING_ACCEPTANCE_PASSED_WITH_RECORDED_DEVIATIONS`，不是
+> 生产发布批准。产品法见 `docs/architecture/p7-0-editor-first-workbench.md`。
 >
 > 下方是累计历史报告。较早的 `acceptance withheld`、`no push`、
-> `P7 UX not announced` 等句子只描述其所在历史提交；不得覆盖上述最终交接页。
-> 五条发布边界仍保持：`PAID_PROVIDER_NOT_PROVEN`、
-> `AUTHENTICODE_NOT_PROVEN`、`EXE_MSI_REPACKAGE_NOT_APPROVED`、
-> `LIVE_HUMAN_ELECTRON_WINDOW_NOT_PROVEN`、
-> `ENTERPRISE_MULTI_AGENT_DISABLED`。
+> `P7 UX not announced`、`Wave 2 未开始` 等句子只描述其所在历史提交；不得覆盖
+> 上述最终验收记录。仅对 unsigned 1.0.0 engineering build 翻转
+> `LIVE_HUMAN_ELECTRON_WINDOW_PROVEN_FOR_UNSIGNED_1_0_0_ENGINEERING_BUILD`。
+> `P7_0_WAVE_2_NON_ADMIN_LIFECYCLE_NOT_PROVEN`、
+> `P7_0_WAVE_2_VIEWPORT_DPI_NOT_PROVEN`、
+> `UPGRADE_1_0_1_RUNTIME_START_NOT_PROVEN`、
+> `PROVIDER_BACKED_SSE_STOP_RETRY_NOT_PROVEN`、`PAID_PROVIDER_NOT_PROVEN`、
+> `AUTHENTICODE_NOT_PROVEN`、`ENTERPRISE_MULTI_AGENT_DISABLED` 与
+> `PRODUCTION_RELEASE_NOT_APPROVED` 继续保持。
 
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。
