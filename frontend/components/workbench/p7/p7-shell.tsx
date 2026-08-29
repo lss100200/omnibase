@@ -16,32 +16,34 @@ import {
   Files,
   Bot,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   DesktopConversation,
   DesktopInvocationLiveProjection,
   DesktopMessage,
   DesktopOwner,
-  DesktopProvider,
-  DesktopReasoningGear,
   DesktopTeamRun,
   DesktopTeamRunBudget,
-  DesktopThinkingDepth,
   DesktopWorkspace,
+  DesktopWorkspaceSlotId,
   PersonalTeamBlackboard,
 } from '@/lib/desktop-bridge'
 import type { DesktopTeamLiveState } from '@/lib/desktop-team-lifecycle'
 import {
   P7_OMNIA_IMAGES,
-  createP7ShellUiState,
+  createP7WorkspaceShellUiState,
   expandP7Omnia,
   minimizeP7Omnia,
   openP7Blackboard,
+  openP7Settings,
   p7ActivityLabel,
   p7LiveActive,
   p7LivePendingCollaborations,
   p7OmniaStateForLive,
   p7RunningCount,
+  p7ShellLayoutClassNames,
+  p7WorkbenchRootClassNames,
+  p7WorkspaceShellUiProjection,
   selectP7BottomTab,
   setP7AgentPanelOpen,
   setP7BottomOpen,
@@ -54,25 +56,16 @@ import {
   type P7OmniaSnapshot,
   type P7ShellUiState,
 } from '@/lib/p7-workbench-shell'
+import { p7CompositionSlotEnabled, p7EffectiveDensity } from '@/lib/p7-workspace-composition'
 import { p7WorkspaceFilesAuthorized, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
 import { P7Sidebar } from './p7-sidebar'
 import { P7Editor } from './p7-editor'
 import { P7AgentPanel } from './p7-agent-panel'
+import type { P7SettingsCenterProps } from './p7-settings-center'
 
-export interface P7ProviderForm {
-  readonly displayName: string
-  readonly baseUrl: string
-  readonly apiKey: string
-  readonly modelName: string
-  readonly gear: DesktopReasoningGear
-  readonly thinkingDepth: DesktopThinkingDepth
-  readonly timeoutSeconds: number
-  readonly allowLoopbackHttp: boolean
-  readonly isDefault: boolean
-  readonly isEnabled: boolean
-}
+export type { P7ProviderForm } from './p7-settings-center'
 
-export interface P7WorkbenchProps {
+export interface P7WorkbenchProps extends P7SettingsCenterProps {
   readonly version: string
   readonly owner: DesktopOwner
   readonly chinese: boolean
@@ -145,19 +138,8 @@ export interface P7WorkbenchProps {
   readonly sendBlocked: boolean
   readonly stopVisible: boolean
 
-  readonly providerForm: P7ProviderForm
-  readonly onProviderFormChange: (patch: Partial<P7ProviderForm>) => void
-  readonly onSaveProvider: () => void
-  readonly submitting: boolean
-  readonly testResult: string | null
-  readonly providers: readonly DesktopProvider[]
-  readonly onTestProvider: (providerId: string) => void
-
   readonly eventLog: readonly string[]
   readonly outputLines: readonly string[]
-
-  /** True while both bridge event subscriptions are active. */
-  readonly bridgeSubscribed: boolean
 
   /** Real live invocation reference (workspace/conversation-bound stream). */
   readonly live: P7LiveReference
@@ -171,6 +153,7 @@ function P7Titlebar({
   zoom,
   onZoomChange,
   onPaletteOpen,
+  agentPanelAvailable,
 }: {
   readonly version: string
   readonly chinese: boolean
@@ -179,6 +162,7 @@ function P7Titlebar({
   readonly zoom: number
   readonly onZoomChange: (next: number) => void
   readonly onPaletteOpen: () => void
+  readonly agentPanelAvailable: boolean
 }) {
   return (
     <header className="p7-titlebar">
@@ -220,7 +204,8 @@ function P7Titlebar({
           className="p7-icon-button"
           title="切换 Agent 面板"
           aria-label="切换 Agent 面板"
-          aria-pressed={ui.agentPanelOpen}
+          aria-pressed={agentPanelAvailable && ui.agentPanelOpen}
+          disabled={!agentPanelAvailable}
           onClick={() => onUiChange(setP7AgentPanelOpen(ui, !ui.agentPanelOpen))}
         >
           <PanelRight size={15} />
@@ -252,25 +237,28 @@ function P7ActivityBar({
   activeRunCount,
   runningCount,
   omnia,
+  enabledActivities,
 }: {
   readonly ui: P7ShellUiState
   readonly onUiChange: (next: P7ShellUiState) => void
   readonly activeRunCount: number
   readonly runningCount: number
   readonly omnia: P7OmniaSnapshot
+  readonly enabledActivities: ReadonlySet<P7Activity>
 }) {
-  const activities: readonly {
-    readonly id: P7Activity
-    readonly icon: typeof Files
-    readonly badge: number | null
-  }[] = [
+  const allActivities = [
     { id: 'explorer', icon: Files, badge: null },
     { id: 'search', icon: Search, badge: null },
     { id: 'source', icon: GitBranch, badge: null },
     { id: 'run', icon: Play, badge: activeRunCount > 0 ? activeRunCount : null },
     { id: 'agents', icon: Bot, badge: runningCount > 0 ? runningCount : null },
     { id: 'blackboard', icon: NotebookTabs, badge: null },
-  ]
+  ] satisfies readonly {
+    readonly id: P7Activity
+    readonly icon: typeof Files
+    readonly badge: number | null
+  }[]
+  const activities = allActivities.filter((activity) => enabledActivities.has(activity.id))
   return (
     <nav className="p7-activity" aria-label="活动栏">
       {activities.map(({ id, icon: Icon, badge }) => (
@@ -306,8 +294,8 @@ function P7ActivityBar({
         className="p7-activity-button"
         aria-label="设置"
         title="设置"
-        aria-pressed={ui.activity === 'settings' && ui.sidebarOpen}
-        onClick={() => onUiChange(toggleP7Activity(ui, 'settings'))}
+        aria-pressed={ui.centerView === 'settings'}
+        onClick={() => onUiChange(openP7Settings(ui))}
       >
         <Settings size={16} />
       </button>
@@ -444,9 +432,74 @@ interface P7CommandEntry {
 }
 
 export function P7WorkbenchShell(props: P7WorkbenchProps) {
-  const [ui, setUi] = useState<P7ShellUiState>(createP7ShellUiState)
+  const [scopedUi, setScopedUi] = useState(() => createP7WorkspaceShellUiState(props.workspaceId))
+  const ui = p7WorkspaceShellUiProjection(scopedUi, props.workspaceId)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [paletteQuery, setPaletteQuery] = useState('')
+  const activeProfile =
+    props.compositionSnapshot?.profile.workspaceId === props.workspaceId
+      ? props.compositionSnapshot.profile
+      : null
+  const profile = activeProfile?.value ?? null
+  const slotEnabled = (slotId: DesktopWorkspaceSlotId) => p7CompositionSlotEnabled(profile, slotId)
+  const effectiveDensity = p7EffectiveDensity(props.applicationPreference, profile)
+  const settingsOpen = ui.centerView === 'settings'
+  const focusMode = profile?.layout.focusMode ?? false
+  const enabledActivities = new Set<P7Activity>([
+    ...(slotEnabled('workspace.explorer') ? (['explorer'] as const) : []),
+    'search',
+    'source',
+    ...(slotEnabled('run.history') ? (['run'] as const) : []),
+    ...(slotEnabled('agent.rail') ? (['agents'] as const) : []),
+    ...(slotEnabled('workspace.brief') ? (['blackboard'] as const) : []),
+    'settings',
+  ])
+  const sidebarVisible =
+    ui.sidebarOpen && enabledActivities.has(ui.activity) && !settingsOpen && !focusMode
+  const agentPanelVisible =
+    slotEnabled('agent.rail') && ui.agentPanelOpen && !settingsOpen && !focusMode
+  const selectedBottomSlotEnabled =
+    (ui.bottomTab === 'output' && slotEnabled('event.output')) ||
+    (ui.bottomTab === 'agent-log' && slotEnabled('event.agent-log')) ||
+    ui.bottomTab === 'terminal' ||
+    ui.bottomTab === 'problems'
+  const bottomPanelVisible = !settingsOpen && !focusMode && selectedBottomSlotEnabled
+
+  useEffect(() => {
+    if (activeProfile === null) return
+    setScopedUi((scopedCurrent) => {
+      const current = p7WorkspaceShellUiProjection(scopedCurrent, props.workspaceId)
+      const layout = activeProfile.value.layout
+      const sidebarActivity =
+        layout.sidebar === 'run'
+          ? 'run'
+          : layout.sidebar === 'blackboard'
+            ? 'blackboard'
+            : layout.sidebar === 'explorer'
+              ? 'explorer'
+              : current.activity
+      return createP7WorkspaceShellUiState(props.workspaceId, {
+        ...current,
+        activity: current.centerView === 'settings' ? current.activity : sidebarActivity,
+        sidebarOpen:
+          current.centerView === 'settings'
+            ? false
+            : !layout.focusMode && layout.sidebar !== 'hidden',
+        agentPanelOpen: !layout.focusMode && layout.agentPanel === 'open',
+        bottomOpen: !layout.focusMode && layout.bottomPanel !== 'hidden',
+        bottomTab:
+          layout.bottomPanel === 'output'
+            ? 'output'
+            : layout.bottomPanel === 'agent-log'
+              ? 'agent-log'
+              : current.bottomTab,
+        centerView:
+          current.centerView === 'brief' && !activeProfile.value.slots['workspace.brief']
+            ? 'transcript'
+            : current.centerView,
+      })
+    })
+  }, [activeProfile, props.workspaceId])
 
   const presence = useMemo(() => {
     // P7.1 unlocks Code only while an Owner-selected native authorization is
@@ -496,26 +549,43 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
     props.workspaces.find((item) => item.id === props.workspaceId)?.name ?? '未选择工作空间'
 
   const commands: readonly P7CommandEntry[] = [
+    ...(slotEnabled('workspace.brief')
+      ? [
+          {
+            label: '打开任务简报',
+            hint: 'Artifact',
+            run: (current: P7ShellUiState) => openP7Blackboard(current),
+          },
+        ]
+      : []),
     {
-      label: '打开任务简报',
-      hint: 'Artifact',
-      run: (current) => openP7Blackboard(current),
+      label: '打开设置',
+      hint: 'Settings',
+      run: (current) => openP7Settings(current),
     },
     {
       label: '切换底部面板',
       hint: 'Ctrl `',
       run: (current) => setP7BottomOpen(current, !current.bottomOpen),
     },
-    {
-      label: '打开 Agent Log',
-      hint: '事件流',
-      run: (current) => selectP7BottomTab(current, 'agent-log'),
-    },
-    {
-      label: '切换 Agent 面板',
-      hint: 'Ctrl L',
-      run: (current) => setP7AgentPanelOpen(current, !current.agentPanelOpen),
-    },
+    ...(slotEnabled('event.agent-log')
+      ? [
+          {
+            label: '打开 Agent Log',
+            hint: '事件流',
+            run: (current: P7ShellUiState) => selectP7BottomTab(current, 'agent-log'),
+          },
+        ]
+      : []),
+    ...(slotEnabled('agent.rail')
+      ? [
+          {
+            label: '切换 Agent 面板',
+            hint: 'Ctrl L',
+            run: (current: P7ShellUiState) => setP7AgentPanelOpen(current, !current.agentPanelOpen),
+          },
+        ]
+      : []),
     {
       label: '新建会话',
       hint: '会话',
@@ -529,11 +599,24 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
     command.label.toLowerCase().includes(paletteQuery.trim().toLowerCase()),
   )
 
-  const updateUi = (next: P7ShellUiState) => setUi(next)
+  const updateUi = (next: P7ShellUiState) =>
+    setScopedUi(createP7WorkspaceShellUiState(props.workspaceId, next))
+  const mutateUi = (mutation: (current: P7ShellUiState) => P7ShellUiState) =>
+    setScopedUi((current) =>
+      createP7WorkspaceShellUiState(
+        props.workspaceId,
+        mutation(p7WorkspaceShellUiProjection(current, props.workspaceId)),
+      ),
+    )
 
   return (
     <div
-      className={`p7-root${ui.agentPanelOpen ? '' : 'p7-agent-closed-body'}`}
+      className={p7WorkbenchRootClassNames({
+        density: effectiveDensity,
+        agentPanelVisible,
+        quietChrome: profile?.appearance.quietChrome ?? false,
+        reduceMotion: props.applicationPreference?.reduceMotion ?? false,
+      })}
       style={{ fontSize: `${(16 * props.zoom) / 100}px` }}
       onKeyDown={(event) => {
         if (event.key === 'k' && (event.ctrlKey || event.metaKey)) {
@@ -542,14 +625,14 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           setPaletteQuery('')
           return
         }
-        if (event.key === 'l' && (event.ctrlKey || event.metaKey)) {
+        if (slotEnabled('agent.rail') && event.key === 'l' && (event.ctrlKey || event.metaKey)) {
           event.preventDefault()
-          setUi((current) => setP7AgentPanelOpen(current, !current.agentPanelOpen))
+          mutateUi((current) => setP7AgentPanelOpen(current, !current.agentPanelOpen))
           return
         }
         if (event.key === '`' && (event.ctrlKey || event.metaKey)) {
           event.preventDefault()
-          setUi((current) => setP7BottomOpen(current, !current.bottomOpen))
+          mutateUi((current) => setP7BottomOpen(current, !current.bottomOpen))
         }
       }}
     >
@@ -564,18 +647,18 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           setPaletteOpen(true)
           setPaletteQuery('')
         }}
+        agentPanelAvailable={slotEnabled('agent.rail')}
       />
-      <div
-        className={`p7-shell${ui.sidebarOpen ? '' : 'p7-sidebar-closed'}${ui.agentPanelOpen ? '' : 'p7-agent-closed'}`}
-      >
+      <div className={p7ShellLayoutClassNames({ sidebarVisible, agentPanelVisible })}>
         <P7ActivityBar
           ui={ui}
           onUiChange={updateUi}
           activeRunCount={activeRunCount}
           runningCount={runningCount}
           omnia={omnia}
+          enabledActivities={enabledActivities}
         />
-        {ui.sidebarOpen && (
+        {sidebarVisible && (
           <P7Sidebar
             activity={ui.activity}
             {...props}
@@ -601,8 +684,11 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           eventLog={props.eventLog}
           outputLines={props.outputLines}
           workspaceFiles={props.workspaceFiles}
+          settings={props}
+          workspaceBriefEnabled={slotEnabled('workspace.brief')}
+          hideBottomPanel={!bottomPanelVisible}
         />
-        {ui.agentPanelOpen && (
+        {agentPanelVisible && (
           <P7AgentPanel
             agentName={props.agentName}
             teamLive={props.teamLive}
@@ -621,7 +707,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
             liveActive={liveActive}
           />
         )}
-        <P7OmniaWidget ui={ui} onUiChange={updateUi} omnia={omnia} />
+        {!settingsOpen && <P7OmniaWidget ui={ui} onUiChange={updateUi} omnia={omnia} />}
       </div>
       <P7Statusbar
         ownerName={props.owner.displayName}
@@ -629,7 +715,9 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
         conversationCount={props.conversations.filter((item) => item.state === 'active').length}
         runningCount={runningCount}
         bridgeSubscribed={props.bridgeSubscribed}
-        onOpenAgentLog={() => updateUi(selectP7BottomTab(ui, 'agent-log'))}
+        onOpenAgentLog={() => {
+          if (slotEnabled('event.agent-log')) updateUi(selectP7BottomTab(ui, 'agent-log'))
+        }}
         onOpenOmnia={() => updateUi(expandP7Omnia(ui))}
         onZoomChange={props.onZoomChange}
         zoom={props.zoom}

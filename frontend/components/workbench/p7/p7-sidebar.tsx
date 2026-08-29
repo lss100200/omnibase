@@ -461,121 +461,6 @@ function P7BlackboardPanel(props: P7WorkbenchProps) {
   )
 }
 
-function P7SettingsPanel(props: P7WorkbenchProps) {
-  return (
-    <div style={{ paddingBottom: '16px' }}>
-      <P7SectionLabel>模型 Provider</P7SectionLabel>
-      <form
-        className="p7-sidebar-form"
-        style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}
-        onSubmit={(event) => {
-          event.preventDefault()
-          props.onSaveProvider()
-        }}
-      >
-        <input
-          className="p7-sidebar-input"
-          value={props.providerForm.displayName}
-          onChange={(event) => props.onProviderFormChange({ displayName: event.target.value })}
-          placeholder="显示名称"
-          aria-label="Provider 显示名称"
-        />
-        <input
-          className="p7-sidebar-input"
-          value={props.providerForm.baseUrl}
-          onChange={(event) => props.onProviderFormChange({ baseUrl: event.target.value })}
-          placeholder="https://api.deepseek.com/v1"
-          aria-label="Base URL"
-        />
-        <input
-          className="p7-sidebar-input"
-          type="password"
-          value={props.providerForm.apiKey}
-          onChange={(event) => props.onProviderFormChange({ apiKey: event.target.value })}
-          autoComplete="off"
-          placeholder="API Key（不回读）"
-          aria-label="API Key"
-        />
-        <input
-          className="p7-sidebar-input"
-          value={props.providerForm.modelName}
-          onChange={(event) => props.onProviderFormChange({ modelName: event.target.value })}
-          placeholder="deepseek-chat"
-          aria-label="模型名称"
-        />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-          <select
-            className="p7-sidebar-input"
-            value={props.providerForm.gear}
-            onChange={(event) =>
-              props.onProviderFormChange({
-                gear: event.target.value as typeof props.providerForm.gear,
-              })
-            }
-            aria-label="档位"
-          >
-            <option value="economy">经济</option>
-            <option value="standard">标准</option>
-            <option value="deep">深度</option>
-            <option value="audit">审计</option>
-          </select>
-          <select
-            className="p7-sidebar-input"
-            value={props.providerForm.thinkingDepth}
-            onChange={(event) =>
-              props.onProviderFormChange({
-                thinkingDepth: event.target.value as typeof props.providerForm.thinkingDepth,
-              })
-            }
-            aria-label="思考深度"
-          >
-            <option value="disabled">关闭</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-          </select>
-        </div>
-        <label className="p7-check-row" style={{ padding: '0' }}>
-          <input
-            type="checkbox"
-            checked={props.providerForm.allowLoopbackHttp}
-            onChange={(event) =>
-              props.onProviderFormChange({ allowLoopbackHttp: event.target.checked })
-            }
-          />
-          允许本机 HTTP（127.0.0.1 / localhost）
-        </label>
-        <button type="submit" className="p7-text-button" disabled={props.submitting}>
-          {props.submitting ? '保存中…' : '保存 Provider'}
-        </button>
-      </form>
-      {props.testResult !== null && <div className="p7-sidebar-note">{props.testResult}</div>}
-      <P7SectionLabel>已保存 Provider</P7SectionLabel>
-      {props.providers.length === 0 && <div className="p7-sidebar-note">还没有 Provider。</div>}
-      {props.providers.map((provider) => (
-        <div
-          key={provider.id}
-          className="p7-sidebar-note"
-          style={{ borderLeftColor: 'var(--p7-accent)' }}
-        >
-          <div className="p7-row-text" style={{ color: 'var(--p7-text)' }}>
-            {provider.displayName}
-          </div>
-          <div className="p7-row-sub">{provider.modelName}</div>
-          <button
-            type="button"
-            className="p7-text-button"
-            style={{ marginTop: '6px' }}
-            onClick={() => props.onTestProvider(provider.id)}
-          >
-            测试
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export function P7Sidebar({
   activity,
   ...props
@@ -592,7 +477,6 @@ export function P7Sidebar({
         {activity === 'run' && <P7RunPanel {...props} />}
         {activity === 'agents' && <P7AgentsPanel {...props} />}
         {activity === 'blackboard' && <P7BlackboardPanel {...props} />}
-        {activity === 'settings' && <P7SettingsPanel {...props} />}
       </div>
     </aside>
   )

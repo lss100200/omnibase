@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DesktopConversation,
+  DesktopApplicationPreference,
   DesktopMessage,
   DesktopOwner,
   DesktopProvider,
   DesktopTeamRun,
   DesktopWorkspace,
+  DesktopWorkbenchDensity,
+  DesktopWorkspaceCompositionProfileValue,
+  DesktopWorkspaceCompositionProposal,
+  DesktopWorkspaceCompositionSnapshot,
   OmniBaseDesktopBridge,
   PersonalTeamBlackboard,
   beginDesktopLiveSend,
@@ -76,6 +81,14 @@ import {
   p7TeamEventLogLine,
 } from '@/lib/p7-workbench-shell'
 import {
+  p7CloneCompositionProfile,
+  p7CompositionAssistantPrompt,
+  p7CompositionProjection,
+  p7FindNewAssistantCompositionMessage,
+  p7WorkspaceSelectionChangesScope,
+  type P7CompositionLoadStatus,
+} from '@/lib/p7-workspace-composition'
+import {
   beginP7WorkspaceDirectoryList,
   beginP7WorkspaceFileAuthorization,
   beginP7WorkspaceFileRead,
@@ -85,6 +98,7 @@ import {
   failP7WorkspaceFileRead,
   p7WorkspaceFileDirectory,
   p7WorkspaceFileErrorMessage,
+  p7WorkspaceFilesAuthorized,
   parseP7WorkspaceFileAuthorization,
   releaseP7WorkspaceFilesAuthorization,
   setP7WorkspaceDirectoryExpanded,
@@ -115,6 +129,13 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   desktop_invocation_cancelled: '生成已停止',
   desktop_team_allow_list_empty: '已开启团队协作，但允许名单为空；未默认调用全部专员。',
   desktop_team_conversation_identity_mismatch: '团队启动绑定的会话与当前会话不一致。',
+  desktop_workbench_preference_version_conflict: '应用设置已经发生变化，已重新读取最新值。',
+  desktop_composition_version_conflict: 'Workspace Profile 已更新，请基于最新版本重新提案。',
+  desktop_composition_no_change: '提案与当前 Workspace Profile 相同。',
+  desktop_composition_capability_unavailable: '该组件没有可信数据源，不能在 Profile 中启用。',
+  desktop_composition_assistant_payload_invalid: 'Agent 没有返回可验证的完整 Profile 提案。',
+  desktop_composition_assistant_reference_invalid: 'Agent 提案的消息身份无法验证。',
+  desktop_composition_proposal_decided: '该提案已经被处理。',
 }
 
 function errorMessage(code: string): string {
@@ -379,6 +400,30 @@ export function DesktopWorkbench({
   })
   const [testResult, setTestResult] = useState<string | null>(null)
   const [workspaceName, setWorkspaceName] = useState('')
+  const [applicationPreference, setApplicationPreference] =
+    useState<DesktopApplicationPreference | null>(null)
+  const applicationPreferenceRef = useRef<DesktopApplicationPreference | null>(null)
+  const [applicationPreferenceStatus, setApplicationPreferenceStatus] =
+    useState<P7CompositionLoadStatus>('idle')
+  const applicationPreferenceEpochRef = useRef(0)
+  const applicationPreferenceBusyRef = useRef(false)
+  const [compositionWorkspaceId, setCompositionWorkspaceId] = useState<string | null>(
+    initialWorkspaceId,
+  )
+  const [compositionStatus, setCompositionStatus] = useState<P7CompositionLoadStatus>(
+    initialWorkspaceId === null ? 'idle' : 'loading',
+  )
+  const [compositionSnapshot, setCompositionSnapshot] =
+    useState<DesktopWorkspaceCompositionSnapshot | null>(null)
+  const compositionSnapshotRef = useRef<DesktopWorkspaceCompositionSnapshot | null>(null)
+  const [compositionDraft, setCompositionDraft] =
+    useState<DesktopWorkspaceCompositionProfileValue | null>(null)
+  const [compositionIntent, setCompositionIntent] = useState('')
+  const [compositionBusy, setCompositionBusy] = useState(false)
+  const compositionBusyRef = useRef(false)
+  const [compositionNotice, setCompositionNotice] = useState<string | null>(null)
+  const compositionLoadEpochRef = useRef(0)
+  const compositionOperationEpochRef = useRef(0)
 
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
   const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
@@ -386,6 +431,143 @@ export function DesktopWorkbench({
   const sendBlocked = desktopLiveSendBlocked(live) || desktopTeamStopVisible(teamLive)
   const stopVisible = desktopLiveStopVisible(live) || desktopTeamStopVisible(teamLive)
   const stopping = desktopInvocationIsStopping(live) || teamLive.phase === 'cancelling'
+
+  const applyApplicationPreference = useCallback((value: DesktopApplicationPreference | null) => {
+    applicationPreferenceRef.current = value
+    setApplicationPreference(value)
+  }, [])
+
+  const loadApplicationPreference = useCallback(async () => {
+    const epoch = ++applicationPreferenceEpochRef.current
+    setApplicationPreferenceStatus('loading')
+    const result = await bridge.workbenchSettings.get()
+    if (!mountedRef.current || epoch !== applicationPreferenceEpochRef.current) return false
+    if (!result.ok) {
+      applyApplicationPreference(null)
+      setApplicationPreferenceStatus('error')
+      onError(errorMessage(result.error.code))
+      return false
+    }
+    applyApplicationPreference(result.value.preference)
+    setApplicationPreferenceStatus('ready')
+    return true
+  }, [applyApplicationPreference, bridge, onError])
+
+  const updateApplicationPreference = useCallback(
+    async (density: DesktopWorkbenchDensity, reduceMotion: boolean) => {
+      const current = applicationPreferenceRef.current
+      if (current === null || applicationPreferenceBusyRef.current) return
+      if (current.density === density && current.reduceMotion === reduceMotion) return
+      applicationPreferenceBusyRef.current = true
+      const epoch = ++applicationPreferenceEpochRef.current
+      setApplicationPreferenceStatus('loading')
+      const result = await bridge.workbenchSettings.update({
+        density,
+        reduceMotion,
+        expectedRowVersion: current.rowVersion,
+      })
+      if (!mountedRef.current || epoch !== applicationPreferenceEpochRef.current) {
+        applicationPreferenceBusyRef.current = false
+        return
+      }
+      applicationPreferenceBusyRef.current = false
+      if (!result.ok) {
+        setApplicationPreferenceStatus('error')
+        onError(errorMessage(result.error.code))
+        void loadApplicationPreference()
+        return
+      }
+      applyApplicationPreference(result.value.preference)
+      setApplicationPreferenceStatus('ready')
+      pushOutput(`应用设置已更新：${density === 'compact' ? '紧凑' : '舒适'}`)
+    },
+    [applyApplicationPreference, bridge, loadApplicationPreference, onError, pushOutput],
+  )
+
+  const applyCompositionSnapshot = useCallback(
+    (value: DesktopWorkspaceCompositionSnapshot | null) => {
+      compositionSnapshotRef.current = value
+      setCompositionSnapshot(value)
+      setCompositionDraft(value === null ? null : p7CloneCompositionProfile(value.profile.value))
+    },
+    [],
+  )
+
+  const invalidateCompositionForWorkspace = useCallback(
+    (nextWorkspaceId: string | null) => {
+      compositionLoadEpochRef.current += 1
+      compositionOperationEpochRef.current += 1
+      compositionBusyRef.current = false
+      setCompositionBusy(false)
+      setCompositionWorkspaceId(nextWorkspaceId)
+      setCompositionStatus(nextWorkspaceId === null ? 'idle' : 'loading')
+      applyCompositionSnapshot(null)
+      setCompositionIntent('')
+      setCompositionNotice(null)
+    },
+    [applyCompositionSnapshot],
+  )
+
+  const loadComposition = useCallback(
+    async (nextWorkspaceId: string) => {
+      const epoch = ++compositionLoadEpochRef.current
+      setCompositionWorkspaceId(nextWorkspaceId)
+      setCompositionStatus('loading')
+      applyCompositionSnapshot(null)
+      const result = await bridge.workspaceComposition.get({ workspaceId: nextWorkspaceId })
+      if (!mountedRef.current || epoch !== compositionLoadEpochRef.current) return false
+      if (surfaceScopeRef.current.workspaceId !== nextWorkspaceId) return false
+      if (!result.ok) {
+        setCompositionStatus('error')
+        setCompositionNotice(errorMessage(result.error.code))
+        return false
+      }
+      if (result.value.profile.workspaceId !== nextWorkspaceId) {
+        setCompositionStatus('error')
+        setCompositionNotice('Workspace Profile 身份不一致，已拒绝投影。')
+        return false
+      }
+      applyCompositionSnapshot(result.value)
+      setCompositionStatus('ready')
+      return true
+    },
+    [applyCompositionSnapshot, bridge],
+  )
+
+  const beginCompositionOperation = useCallback(() => {
+    if (compositionBusyRef.current) return null
+    const nextWorkspaceId = surfaceScopeRef.current.workspaceId
+    const snapshot = compositionSnapshotRef.current
+    if (
+      nextWorkspaceId === null ||
+      snapshot === null ||
+      snapshot.profile.workspaceId !== nextWorkspaceId
+    ) {
+      return null
+    }
+    compositionBusyRef.current = true
+    setCompositionBusy(true)
+    setCompositionNotice(null)
+    return Object.freeze({
+      epoch: ++compositionOperationEpochRef.current,
+      workspaceId: nextWorkspaceId,
+      snapshot,
+    })
+  }, [])
+
+  const compositionOperationIsCurrent = useCallback(
+    (epoch: number, nextWorkspaceId: string) =>
+      mountedRef.current &&
+      compositionOperationEpochRef.current === epoch &&
+      surfaceScopeRef.current.workspaceId === nextWorkspaceId,
+    [],
+  )
+
+  const finishCompositionOperation = useCallback((epoch: number) => {
+    if (compositionOperationEpochRef.current !== epoch) return
+    compositionBusyRef.current = false
+    setCompositionBusy(false)
+  }, [])
 
   const loadRunHistory = useCallback(
     async (nextWorkspaceId: string) => {
@@ -739,6 +921,18 @@ export function DesktopWorkbench({
   }, [releaseNativeWorkspaceFiles])
 
   useEffect(() => {
+    void loadApplicationPreference()
+  }, [loadApplicationPreference])
+
+  useEffect(() => {
+    if (workspaceId === null) {
+      invalidateCompositionForWorkspace(null)
+      return
+    }
+    void loadComposition(workspaceId)
+  }, [invalidateCompositionForWorkspace, loadComposition, workspaceId])
+
+  useEffect(() => {
     if (workspaceId !== null) void loadWorkspaceSurface(workspaceId)
   }, [loadWorkspaceSurface, workspaceId])
 
@@ -903,6 +1097,233 @@ export function DesktopWorkbench({
     return createConversation()
   }
 
+  const createCompositionProposal = async () => {
+    const started = beginCompositionOperation()
+    const desiredProfile = compositionDraft
+    if (started === null || desiredProfile === null) return
+    const result = await bridge.workspaceComposition.propose({
+      workspaceId: started.workspaceId,
+      expectedRevision: started.snapshot.profile.revision,
+      expectedProfileSha256: started.snapshot.profile.profileSha256,
+      desiredProfile: p7CloneCompositionProfile(desiredProfile),
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setCompositionNotice(errorMessage(result.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComposition(started.workspaceId)
+    if (compositionOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setCompositionNotice(
+        result.value.replayed ? '既有相同提案已保留。' : '提案已创建，等待 Owner 审阅。',
+      )
+      pushOutput(`Workspace Profile 提案已创建：${result.value.proposal.id}`)
+    }
+    finishCompositionOperation(started.epoch)
+  }
+
+  const decideCompositionProposal = async (
+    selectedProposal: DesktopWorkspaceCompositionProposal,
+    decision: 'approve' | 'reject',
+  ) => {
+    const started = beginCompositionOperation()
+    if (started === null) return
+    const proposal = started.snapshot.proposals.find(
+      (item) =>
+        item.id === selectedProposal.id &&
+        item.requestSha256 === selectedProposal.requestSha256 &&
+        item.workspaceId === started.workspaceId &&
+        item.decision === null,
+    )
+    if (proposal === undefined) {
+      setCompositionNotice('提案身份已经变化，请重新读取后再处理。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const result = await bridge.workspaceComposition.decide({
+      workspaceId: started.workspaceId,
+      proposalId: proposal.id,
+      requestSha256: proposal.requestSha256,
+      decision,
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setCompositionNotice(errorMessage(result.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComposition(started.workspaceId)
+    if (compositionOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      const message = decision === 'approve' ? '提案已批准并创建新修订。' : '提案已拒绝。'
+      setCompositionNotice(message)
+      pushOutput(`${message} ${proposal.id}`)
+    }
+    finishCompositionOperation(started.epoch)
+  }
+
+  const proposeCompositionRollback = async (targetRevision: number) => {
+    const started = beginCompositionOperation()
+    if (started === null) return
+    const target = started.snapshot.revisions.find(
+      (revision) =>
+        revision.workspaceId === started.workspaceId && revision.revision === targetRevision,
+    )
+    if (target === undefined || target.revision === started.snapshot.profile.revision) {
+      setCompositionNotice('回滚目标不属于当前 Workspace 历史。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const result = await bridge.workspaceComposition.proposeRollback({
+      workspaceId: started.workspaceId,
+      expectedRevision: started.snapshot.profile.revision,
+      expectedProfileSha256: started.snapshot.profile.profileSha256,
+      targetRevision: target.revision,
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setCompositionNotice(errorMessage(result.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComposition(started.workspaceId)
+    if (compositionOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setCompositionNotice(`已创建恢复到修订 ${target.revision} 的提案，尚未批准。`)
+      pushOutput(`Workspace Profile 回滚提案已创建：${result.value.proposal.id}`)
+    }
+    finishCompositionOperation(started.epoch)
+  }
+
+  const requestAssistantComposition = async () => {
+    const started = beginCompositionOperation()
+    if (started === null) return
+    const prompt = p7CompositionAssistantPrompt(compositionIntent, started.snapshot.profile.value)
+    if (prompt === null) {
+      setCompositionNotice('请输入 1–2000 字的 Workspace 调整意图。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    if (desktopLiveSendBlocked(liveRef.current) || desktopTeamStopVisible(teamLiveRef.current)) {
+      setCompositionNotice('当前仍有 Agent 运行，请结束后再生成设置提案。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+
+    const targetConversationId = await ensureConversation()
+    if (
+      targetConversationId === null ||
+      !compositionOperationIsCurrent(started.epoch, started.workspaceId)
+    ) {
+      setCompositionNotice('无法建立用于生成提案的当前会话。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const baseline = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!baseline.ok) {
+      setCompositionNotice(errorMessage(baseline.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const previousMessageIds = new Set(baseline.value.messages.map((message) => message.id))
+    const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = completion.surface
+    const nextLive = beginDesktopLiveSend({
+      ...liveRef.current,
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (nextLive.phase !== 'starting_identity') {
+      setCompositionNotice('当前 Agent 调用状态不允许生成设置提案。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    liveRef.current = nextLive
+    setLive(nextLive)
+    pushOutput('Agent 正在生成 Workspace Profile 提案')
+    const sent = await bridge.conversations.send({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+      content: prompt,
+      sendEpoch: nextLive.sendEpoch,
+    })
+    const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
+    liveRef.current = completed
+    setLive(completed)
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!sent.ok) {
+      setCompositionNotice(errorMessage(sent.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    if (sent.value.type === 'cancelled') {
+      setCompositionNotice('Agent 提案生成已停止。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const detail = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!detail.ok) {
+      setCompositionNotice(errorMessage(detail.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const updatedConversations = conversationSurfaceRef.current.conversations.map((item) =>
+      item.id === detail.value.conversation.id ? detail.value.conversation : item,
+    )
+    const applied = applyDesktopConversationCompletion(
+      conversationSurfaceRef.current,
+      completion.epoch,
+      targetConversationId,
+      detail.value.messages,
+      updatedConversations,
+    )
+    conversationSurfaceRef.current = applied
+    if (
+      applied.mounted &&
+      applied.detailRequestEpoch === completion.epoch &&
+      applied.conversationId === targetConversationId
+    ) {
+      setMessages(applied.messages)
+      setMessagesStatus(applied.messagesStatus)
+      setMessagesError(null)
+      setConversations(applied.conversations)
+    }
+    const assistantMessage = p7FindNewAssistantCompositionMessage(
+      detail.value.messages,
+      previousMessageIds,
+    )
+    if (assistantMessage === null) {
+      setCompositionNotice('Agent 输出不是严格、完整的 Workspace Profile；未创建提案。')
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const proposalResult = await bridge.workspaceComposition.proposeFromAssistant({
+      workspaceId: started.workspaceId,
+      expectedRevision: started.snapshot.profile.revision,
+      expectedProfileSha256: started.snapshot.profile.profileSha256,
+      messageId: assistantMessage.id,
+    })
+    if (!compositionOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!proposalResult.ok) {
+      setCompositionNotice(errorMessage(proposalResult.error.code))
+      finishCompositionOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComposition(started.workspaceId)
+    if (compositionOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setCompositionNotice('Agent 提案已生成，必须由 Owner 单独审阅并批准。')
+      pushOutput(`Agent Workspace Profile 提案已创建：${proposalResult.value.proposal.id}`)
+    }
+    finishCompositionOperation(started.epoch)
+  }
+
   const createWorkspace = async (name: string) => {
     const trimmed = name.trim()
     if (trimmed === '') return
@@ -923,6 +1344,7 @@ export function DesktopWorkbench({
     setRunHistory([])
     setRunHistoryStatus('loading')
     setRunHistoryWorkspaceId(result.value.workspace.id)
+    invalidateCompositionForWorkspace(result.value.workspace.id)
     applyViewScope(result.value.workspace.id, null)
     conversationSurfaceRef.current = selectDesktopConversation(
       conversationSurfaceRef.current,
@@ -1306,6 +1728,9 @@ export function DesktopWorkbench({
   }
 
   const selectWorkspace = (nextWorkspaceId: string) => {
+    if (!p7WorkspaceSelectionChangesScope(surfaceScopeRef.current.workspaceId, nextWorkspaceId)) {
+      return
+    }
     // Invalidate the run history synchronously with the scope switch: the
     // first frame after the switch must not render or allow clicks on the
     // previous workspace's runs.
@@ -1313,6 +1738,7 @@ export function DesktopWorkbench({
     setRunHistory([])
     setRunHistoryStatus('loading')
     setRunHistoryWorkspaceId(nextWorkspaceId)
+    invalidateCompositionForWorkspace(nextWorkspaceId)
     applyViewScope(nextWorkspaceId, null)
     conversationSurfaceRef.current = selectDesktopConversation(
       conversationSurfaceRef.current,
@@ -1364,6 +1790,15 @@ export function DesktopWorkbench({
   // The live slot only applies while the user views the live run's origin
   // conversation; elsewhere the brief falls back to the history selection,
   // which itself is conversation-scoped when auto-followed.
+  const compositionView = p7CompositionProjection({
+    loadedWorkspaceId: compositionWorkspaceId,
+    viewWorkspaceId: workspaceId,
+    status: compositionStatus,
+    snapshot: compositionSnapshot,
+  })
+  const compositionDraftView = compositionView.snapshot === null ? null : compositionDraft
+  const selectedWorkspaceName =
+    workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? '未选择工作空间'
   const slotView = p7LiveSlotViewProjection(slotState, workspaceId, conversationId)
   const brief = p7BriefBoardSelection({
     liveCurrent: slotView.liveCurrent,
@@ -1397,6 +1832,31 @@ export function DesktopWorkbench({
       onArchiveConversation={(conversationId) => void archiveConversation(conversationId)}
       workspaceNameInput={workspaceName}
       onWorkspaceNameInputChange={setWorkspaceName}
+      workspaceName={selectedWorkspaceName}
+      applicationPreference={applicationPreference}
+      applicationPreferenceStatus={applicationPreferenceStatus}
+      onApplicationPreferenceChange={(density, reduceMotion) =>
+        void updateApplicationPreference(density, reduceMotion)
+      }
+      compositionStatus={compositionView.status}
+      compositionSnapshot={compositionView.snapshot}
+      compositionDraft={compositionDraftView}
+      onCompositionDraftChange={(profile) =>
+        setCompositionDraft(p7CloneCompositionProfile(profile))
+      }
+      onCreateCompositionProposal={() => void createCompositionProposal()}
+      onRequestAssistantComposition={() => void requestAssistantComposition()}
+      compositionIntent={compositionIntent}
+      onCompositionIntentChange={setCompositionIntent}
+      onDecideCompositionProposal={(proposal, decision) =>
+        void decideCompositionProposal(proposal, decision)
+      }
+      onProposeCompositionRollback={(targetRevision) =>
+        void proposeCompositionRollback(targetRevision)
+      }
+      compositionBusy={compositionBusy}
+      compositionNotice={compositionNotice}
+      workspaceFilesAuthorized={p7WorkspaceFilesAuthorized(workspaceFiles)}
       workspaceFiles={workspaceFiles}
       onAuthorizeWorkspaceFiles={() => void authorizeWorkspaceFiles()}
       onReleaseWorkspaceFiles={releaseWorkspaceFiles}

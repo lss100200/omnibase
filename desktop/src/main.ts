@@ -1,5 +1,12 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  session,
+} from "electron";
 import type { OpenDialogOptions } from "electron";
 
 import { enforceSingleInstance } from "./app-lifecycle.ts";
@@ -99,6 +106,25 @@ if (hasInstanceLock) {
         runtimeManager?.archiveWorkspace(input) ?? runtimeUnavailable(),
       getWorkspaceAgent: (input) =>
         runtimeManager?.getWorkspaceAgent(input) ?? runtimeUnavailable(),
+      getApplicationPreference: () =>
+        runtimeManager?.getApplicationPreference() ?? runtimeUnavailable(),
+      updateApplicationPreference: (input) =>
+        runtimeManager?.updateApplicationPreference(input) ??
+        runtimeUnavailable(),
+      getWorkspaceComposition: (input) =>
+        runtimeManager?.getWorkspaceComposition(input) ?? runtimeUnavailable(),
+      proposeWorkspaceComposition: (input) =>
+        runtimeManager?.proposeWorkspaceComposition(input) ??
+        runtimeUnavailable(),
+      proposeWorkspaceCompositionFromAssistant: (input) =>
+        runtimeManager?.proposeWorkspaceCompositionFromAssistant(input) ??
+        runtimeUnavailable(),
+      proposeWorkspaceCompositionRollback: (input) =>
+        runtimeManager?.proposeWorkspaceCompositionRollback(input) ??
+        runtimeUnavailable(),
+      decideWorkspaceComposition: (input) =>
+        runtimeManager?.decideWorkspaceComposition(input) ??
+        runtimeUnavailable(),
       authorizeWorkspaceFiles: (input) => workspaceFileService.authorize(input),
       releaseWorkspaceFiles: (input) => workspaceFileService.release(input),
       listWorkspaceFiles: (input) => workspaceFileService.list(input),
@@ -151,7 +177,8 @@ if (hasInstanceLock) {
       executeTeamRun: (input, emit) =>
         runtimeManager?.executeTeamRun(input, emit) ?? runtimeUnavailable(),
       appendTeamRunBudget: (input, emit) =>
-        runtimeManager?.appendTeamRunBudget(input, emit) ?? runtimeUnavailable(),
+        runtimeManager?.appendTeamRunBudget(input, emit) ??
+        runtimeUnavailable(),
     });
 
     const runtimeStatus = await runtimeManager.start();
@@ -173,7 +200,9 @@ if (hasInstanceLock) {
         if (isMainFrame && !isInPlace) workspaceFileService.invalidate();
       },
     );
-    mainWindow.webContents.on("render-process-gone", () => workspaceFileService.invalidate());
+    mainWindow.webContents.on("render-process-gone", () =>
+      workspaceFileService.invalidate(),
+    );
     installNavigationPolicy(mainWindow.webContents);
     mainWindow.once("ready-to-show", () => mainWindow?.show());
     mainWindow.on("closed", () => {

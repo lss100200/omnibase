@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -31,6 +31,17 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from omnibase.desktop_local.composition import (
+    create_assistant_proposal,
+    create_owner_proposal,
+    create_rollback_proposal,
+    decide_workspace_proposal,
+    get_application_preference,
+    get_workspace_composition,
+    initialize_owner_preference,
+    initialize_workspace_composition,
+    update_application_preference,
+)
 from omnibase.desktop_local.config import DesktopLocalConfig
 from omnibase.desktop_local.conversations import (
     abandon_if_running,
@@ -179,6 +190,45 @@ class WorkspaceArchiveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     expected_row_version: int = Field(ge=1, le=2_147_483_647)
+
+
+class ApplicationPreferenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    density: Literal["compact", "comfortable"]
+    reduce_motion: bool
+    expected_row_version: int = Field(ge=1, le=2_147_483_647)
+
+
+class WorkspaceCompositionOwnerProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    expected_revision: int = Field(ge=1, le=2_147_483_647)
+    expected_profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    desired_profile: dict[str, object]
+
+
+class WorkspaceCompositionAssistantProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    expected_revision: int = Field(ge=1, le=2_147_483_647)
+    expected_profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    message_id: str = Field(pattern=r"^message_[0-9a-f]{32}$")
+
+
+class WorkspaceCompositionRollbackProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    expected_revision: int = Field(ge=1, le=2_147_483_647)
+    expected_profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    target_revision: int = Field(ge=1, le=2_147_483_647)
+
+
+class WorkspaceCompositionDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    decision: Literal["approve", "reject"]
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProviderUpsertRequest(BaseModel):
@@ -463,6 +513,7 @@ def _bootstrap_owner(runtime: _DesktopRuntime, display_name: str) -> tuple[sqlit
 
             owner_id = f"owner_{uuid.uuid4().hex}"
             create_owner(connection, owner_id, display_name)
+            initialize_owner_preference(connection, owner_id)
             append_audit_event(
                 connection,
                 event_id=f"event_{uuid.uuid4().hex}",
@@ -518,6 +569,7 @@ def _create_owner_workspace(runtime: _DesktopRuntime, name: str) -> sqlite3.Row:
                 raise DesktopApiError(409, "desktop_workspace_capacity_reached")
             workspace_id = f"workspace_{uuid.uuid4().hex}"
             create_workspace(connection, workspace_id, str(owner["id"]), name)
+            initialize_workspace_composition(connection, str(owner["id"]), workspace_id)
             append_audit_event(
                 connection,
                 event_id=f"event_{uuid.uuid4().hex}",
@@ -806,6 +858,96 @@ def _workspace_parent_agent(workspace_id: str, request: Request) -> dict[str, ob
             "updated_at": str(row["updated_at"]),
         }
     }
+
+
+def _application_preference_get(request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_application_preference(runtime.connection)
+
+
+def _application_preference_update(
+    payload: ApplicationPreferenceUpdateRequest, request: Request
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return update_application_preference(
+            runtime.connection,
+            density=payload.density,
+            reduce_motion=payload.reduce_motion,
+            expected_row_version=payload.expected_row_version,
+        )
+
+
+def _workspace_composition_get(workspace_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_workspace_composition(runtime.connection, workspace_id)
+
+
+def _workspace_composition_propose(
+    workspace_id: str,
+    payload: WorkspaceCompositionOwnerProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_owner_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            expected_revision=payload.expected_revision,
+            expected_profile_sha256=payload.expected_profile_sha256,
+            desired_profile=payload.desired_profile,
+        )
+
+
+def _workspace_composition_propose_from_assistant(
+    workspace_id: str,
+    payload: WorkspaceCompositionAssistantProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_assistant_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            expected_revision=payload.expected_revision,
+            expected_profile_sha256=payload.expected_profile_sha256,
+            message_id=payload.message_id,
+        )
+
+
+def _workspace_composition_propose_rollback(
+    workspace_id: str,
+    payload: WorkspaceCompositionRollbackProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_rollback_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            expected_revision=payload.expected_revision,
+            expected_profile_sha256=payload.expected_profile_sha256,
+            target_revision=payload.target_revision,
+        )
+
+
+def _workspace_composition_decide(
+    workspace_id: str,
+    proposal_id: str,
+    payload: WorkspaceCompositionDecisionRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return decide_workspace_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            proposal_id=proposal_id,
+            request_sha256=payload.request_sha256,
+            decision=payload.decision,
+        )
 
 
 def _providers_list(request: Request) -> dict[str, object]:
@@ -1357,6 +1499,41 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
         "/desktop/v1/workspaces/{workspace_id}/agent",
         _workspace_parent_agent,
         methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/settings/application",
+        _application_preference_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/settings/application",
+        _application_preference_update,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/composition",
+        _workspace_composition_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/composition/proposals",
+        _workspace_composition_propose,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/composition/proposals/from-assistant",
+        _workspace_composition_propose_from_assistant,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/composition/proposals/rollback",
+        _workspace_composition_propose_rollback,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/composition/proposals/{proposal_id}/decision",
+        _workspace_composition_decide,
+        methods=["POST"],
     )
     app.add_api_route("/desktop/v1/providers", _providers_list, methods=["GET"])
     app.add_api_route("/desktop/v1/providers", _providers_upsert, methods=["POST"])

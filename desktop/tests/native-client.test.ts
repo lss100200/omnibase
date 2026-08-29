@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { DesktopNativeClient } from "../src/runtime/native-client.ts";
@@ -11,8 +12,295 @@ const PROVIDER_ID = `provider_${"d".repeat(32)}`;
 const TEAM_RUN_ID = `teamrun_${"e".repeat(32)}`;
 const TEAM_INVOCATION_ID = `invocation_${"f".repeat(32)}`;
 const PLAN_REVISION_ID = `teamrev_${"1".repeat(32)}`;
+const COMPOSITION_PROPOSAL_ID = `proposal_${"2".repeat(32)}`;
+const COMPOSITION_SLOT_IDS = [
+  "agent.rail",
+  "conversation.transcript",
+  "event.agent-log",
+  "event.output",
+  "knowledge.ebook",
+  "mcp.catalog",
+  "provider.settings",
+  "run.history",
+  "sandbox.runtime",
+  "settings.center",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+  "workspace.brief",
+  "workspace.explorer",
+] as const;
 
-function rawTeamRun(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function canonicalProfileSha256(profile: Record<string, unknown>): string {
+  return createHash("sha256")
+    .update(canonicalJson(profile), "utf8")
+    .digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function canonicalRequestSha256(input: {
+  workspaceId: string;
+  baseRevision: number;
+  baseProfileSha256: string;
+  sourceKind: "owner" | "assistant" | "rollback";
+  sourceReference: string | null;
+  desiredProfileSha256: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      canonicalJson({
+        base_profile_sha256: input.baseProfileSha256,
+        base_revision: input.baseRevision,
+        desired_profile_sha256: input.desiredProfileSha256,
+        schema_version: 1,
+        source_kind: input.sourceKind,
+        source_reference: input.sourceReference,
+        template: { id: "standard-workbench", version: 1 },
+        workspace_id: input.workspaceId,
+      }),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+function rawCompositionProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: 1,
+    template: { id: "standard-workbench", version: 1 },
+    appearance: { density: "inherit", quiet_chrome: false },
+    layout: {
+      agent_panel: "open",
+      bottom_panel: "output",
+      focus_mode: false,
+      sidebar: "explorer",
+    },
+    slots: Object.fromEntries(
+      COMPOSITION_SLOT_IDS.map((slotId) => [
+        slotId,
+        ![
+          "knowledge.ebook",
+          "mcp.catalog",
+          "sandbox.runtime",
+          "skills.catalog",
+          "source-control",
+          "terminal",
+        ].includes(slotId),
+      ]),
+    ),
+    ...overrides,
+  };
+}
+
+const RAW_PROFILE = rawCompositionProfile();
+const RAW_DESIRED_PROFILE = rawCompositionProfile({
+  appearance: { density: "compact", quiet_chrome: true },
+});
+const PROFILE_SHA256 = canonicalProfileSha256(RAW_PROFILE);
+const DESIRED_PROFILE_SHA256 = canonicalProfileSha256(RAW_DESIRED_PROFILE);
+const OWNER_UNCHANGED_REQUEST_SHA256 = canonicalRequestSha256({
+  workspaceId: WORKSPACE_ID,
+  baseRevision: 1,
+  baseProfileSha256: PROFILE_SHA256,
+  sourceKind: "owner",
+  sourceReference: null,
+  desiredProfileSha256: PROFILE_SHA256,
+});
+const REQUEST_SHA256 = canonicalRequestSha256({
+  workspaceId: WORKSPACE_ID,
+  baseRevision: 1,
+  baseProfileSha256: PROFILE_SHA256,
+  sourceKind: "owner",
+  sourceReference: null,
+  desiredProfileSha256: DESIRED_PROFILE_SHA256,
+});
+
+function rendererCompositionProfile() {
+  return {
+    schemaVersion: 1 as const,
+    template: { id: "standard-workbench" as const, version: 1 as const },
+    appearance: { density: "inherit" as const, quietChrome: false },
+    layout: {
+      agentPanel: "open" as const,
+      bottomPanel: "output" as const,
+      focusMode: false,
+      sidebar: "explorer" as const,
+    },
+    slots: Object.fromEntries(
+      COMPOSITION_SLOT_IDS.map((slotId) => [
+        slotId,
+        ![
+          "knowledge.ebook",
+          "mcp.catalog",
+          "sandbox.runtime",
+          "skills.catalog",
+          "source-control",
+          "terminal",
+        ].includes(slotId),
+      ]),
+    ) as Record<(typeof COMPOSITION_SLOT_IDS)[number], boolean>,
+  };
+}
+
+function rawCompositionRevision(overrides: Record<string, unknown> = {}) {
+  const value = {
+    workspace_id: WORKSPACE_ID,
+    revision: 1,
+    profile_sha256: PROFILE_SHA256,
+    source_kind: "system",
+    proposal_id: null,
+    value: rawCompositionProfile(),
+    created_at: "2026-08-29T00:00:00Z",
+    ...overrides,
+  };
+  if (!("profile_sha256" in overrides) && "value" in overrides) {
+    value.profile_sha256 = canonicalProfileSha256(
+      value.value as Record<string, unknown>,
+    );
+  }
+  return value;
+}
+
+function rawCompositionProposal(overrides: Record<string, unknown> = {}) {
+  const value = {
+    id: COMPOSITION_PROPOSAL_ID,
+    workspace_id: WORKSPACE_ID,
+    base_revision: 1,
+    base_profile_sha256: PROFILE_SHA256,
+    source_kind: "owner",
+    source_reference: null,
+    desired_profile_sha256: DESIRED_PROFILE_SHA256,
+    request_sha256: REQUEST_SHA256,
+    desired_profile: RAW_DESIRED_PROFILE,
+    decision: null,
+    applied_revision: null,
+    created_at: "2026-08-29T00:01:00Z",
+    decided_at: null,
+    ...overrides,
+  };
+  if (!("desired_profile_sha256" in overrides)) {
+    value.desired_profile_sha256 = canonicalProfileSha256(
+      value.desired_profile as Record<string, unknown>,
+    );
+  }
+  if (!("request_sha256" in overrides)) {
+    value.request_sha256 = canonicalRequestSha256({
+      workspaceId: value.workspace_id,
+      baseRevision: value.base_revision,
+      baseProfileSha256: value.base_profile_sha256,
+      sourceKind: value.source_kind as "owner" | "assistant" | "rollback",
+      sourceReference: value.source_reference,
+      desiredProfileSha256: value.desired_profile_sha256,
+    });
+  }
+  return value;
+}
+
+function rawCompositionSlotCatalog() {
+  return COMPOSITION_SLOT_IDS.map((id) => ({
+    id,
+    label: id,
+    region:
+      id === "agent.rail"
+        ? "right"
+        : id === "settings.center"
+          ? "editor"
+          : id.includes("event.") || id === "terminal"
+            ? "bottom"
+            : id.includes("settings") ||
+                id.includes("catalog") ||
+                id === "sandbox.runtime"
+              ? "settings"
+              : id === "workspace.explorer" ||
+                  id === "run.history" ||
+                  id === "source-control"
+                ? "sidebar"
+                : "editor",
+    posture:
+      id === "conversation.transcript" || id === "settings.center"
+        ? "required"
+        : [
+              "knowledge.ebook",
+              "mcp.catalog",
+              "sandbox.runtime",
+              "skills.catalog",
+              "source-control",
+              "terminal",
+            ].includes(id)
+          ? "unavailable"
+          : "admitted",
+  }));
+}
+
+function rawCompositionProposedAudit(
+  sequence: number,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    sequence,
+    event_type: "workspace_composition_proposed",
+    payload: {
+      base_revision: 1,
+      desired_profile_sha256: DESIRED_PROFILE_SHA256,
+      proposal_id: COMPOSITION_PROPOSAL_ID,
+      request_sha256: REQUEST_SHA256,
+      source_kind: "owner",
+    },
+    created_at: "2026-08-29T00:01:00Z",
+    ...overrides,
+  };
+}
+
+function rawCompositionRejectedAudit(
+  sequence: number,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    sequence,
+    event_type: "workspace_composition_rejected",
+    payload: {
+      proposal_id: COMPOSITION_PROPOSAL_ID,
+      request_sha256: REQUEST_SHA256,
+    },
+    created_at: "2026-08-29T00:02:00Z",
+    ...overrides,
+  };
+}
+
+function rawCompositionAppliedAudit(
+  sequence: number,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    sequence,
+    event_type: "workspace_composition_applied",
+    payload: {
+      profile_sha256: DESIRED_PROFILE_SHA256,
+      proposal_id: COMPOSITION_PROPOSAL_ID,
+      request_sha256: REQUEST_SHA256,
+      revision: 2,
+      source_kind: "owner",
+    },
+    created_at: "2026-08-29T00:03:00Z",
+    ...overrides,
+  };
+}
+
+function rawTeamRun(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: TEAM_RUN_ID,
     workspace_id: WORKSPACE_ID,
@@ -37,7 +325,9 @@ function rawTeamRun(overrides: Record<string, unknown> = {}): Record<string, unk
   };
 }
 
-function rawParentCall(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function rawParentCall(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     invocation_id: TEAM_INVOCATION_ID,
     team_run_id: TEAM_RUN_ID,
@@ -153,6 +443,480 @@ test("native client maps workspace mutations without exposing control identity",
   assert.deepEqual(JSON.parse(bodies[1] ?? ""), { expected_row_version: 1 });
   assert.equal(JSON.stringify(created).includes(CONTROL_TOKEN), false);
   assert.equal(JSON.stringify(archived).includes(CONTROL_TOKEN), false);
+});
+
+test("native client maps application preferences with exact optimistic concurrency", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        body:
+          init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+      });
+      return jsonResponse({
+        preference: {
+          density: init?.method === "POST" ? "comfortable" : "compact",
+          reduce_motion: init?.method === "POST",
+          row_version: init?.method === "POST" ? 2 : 1,
+          updated_at: "2026-08-29T00:00:00Z",
+        },
+      });
+    }) as typeof fetch,
+  });
+
+  const loaded = await client.getApplicationPreference();
+  const updated = await client.updateApplicationPreference({
+    density: "comfortable",
+    reduceMotion: true,
+    expectedRowVersion: 1,
+  });
+
+  assert.equal(loaded.ok && loaded.value.preference.density, "compact");
+  assert.equal(updated.ok && updated.value.preference.rowVersion, 2);
+  assert.deepEqual(requests, [
+    {
+      url: "http://127.0.0.1:47431/desktop/v1/settings/application",
+      body: undefined,
+    },
+    {
+      url: "http://127.0.0.1:47431/desktop/v1/settings/application",
+      body: {
+        density: "comfortable",
+        reduce_motion: true,
+        expected_row_version: 1,
+      },
+    },
+  ]);
+  assert.deepEqual(
+    await client.updateApplicationPreference({
+      density: "compact",
+      reduceMotion: false,
+      expectedRowVersion: 0,
+    }),
+    { ok: false, error: { code: "desktop_native_input_invalid" } },
+  );
+});
+
+test("native client maps the versioned Workspace composition lifecycle exactly", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  const client = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      const body =
+        init?.body === undefined ? undefined : JSON.parse(String(init.body));
+      requests.push({ url, body });
+      if (init?.method === "GET") {
+        return jsonResponse({
+          profile: rawCompositionRevision(),
+          revisions: [rawCompositionRevision()],
+          proposals: [],
+          slot_catalog: rawCompositionSlotCatalog(),
+          audit: [],
+        });
+      }
+      if (url.endsWith("/decision")) {
+        return jsonResponse({
+          workspace_id: WORKSPACE_ID,
+          proposal_id: COMPOSITION_PROPOSAL_ID,
+          request_sha256: REQUEST_SHA256,
+          decision: "approved",
+          applied_revision: 2,
+          profile: rawCompositionRevision({
+            revision: 2,
+            profile_sha256: DESIRED_PROFILE_SHA256,
+            source_kind: "owner",
+            proposal_id: COMPOSITION_PROPOSAL_ID,
+            value: rawCompositionProfile({
+              appearance: { density: "compact", quiet_chrome: true },
+            }),
+          }),
+        });
+      }
+      if (url.endsWith("/from-assistant")) {
+        return jsonResponse({
+          proposal: rawCompositionProposal({
+            source_kind: "assistant",
+            source_reference: `message_${"6".repeat(32)}`,
+          }),
+          replayed: false,
+        });
+      }
+      if (url.endsWith("/rollback")) {
+        return jsonResponse({
+          proposal: rawCompositionProposal({
+            base_revision: 2,
+            base_profile_sha256: DESIRED_PROFILE_SHA256,
+            source_kind: "rollback",
+            source_reference: "revision:1",
+          }),
+          replayed: false,
+        });
+      }
+      return jsonResponse({
+        proposal: rawCompositionProposal({
+          desired_profile: rawCompositionProfile(),
+        }),
+        replayed: false,
+      });
+    }) as typeof fetch,
+  });
+  const profile = rendererCompositionProfile();
+
+  const snapshot = await client.getWorkspaceComposition({
+    workspaceId: WORKSPACE_ID,
+  });
+  const ownerProposal = await client.proposeWorkspaceComposition({
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 1,
+    expectedProfileSha256: PROFILE_SHA256,
+    desiredProfile: profile,
+  });
+  const assistantProposal =
+    await client.proposeWorkspaceCompositionFromAssistant({
+      workspaceId: WORKSPACE_ID,
+      expectedRevision: 1,
+      expectedProfileSha256: PROFILE_SHA256,
+      messageId: `message_${"6".repeat(32)}`,
+    });
+  const rollbackProposal = await client.proposeWorkspaceCompositionRollback({
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 2,
+    expectedProfileSha256: DESIRED_PROFILE_SHA256,
+    targetRevision: 1,
+  });
+  const decision = await client.decideWorkspaceComposition({
+    workspaceId: WORKSPACE_ID,
+    proposalId: COMPOSITION_PROPOSAL_ID,
+    requestSha256: REQUEST_SHA256,
+    decision: "approve",
+  });
+
+  assert.equal(snapshot.ok && snapshot.value.profile.workspaceId, WORKSPACE_ID);
+  assert.equal(
+    snapshot.ok &&
+      snapshot.value.slotCatalog.find((item) => item.id === "knowledge.ebook")
+        ?.posture,
+    "unavailable",
+  );
+  assert.equal(
+    ownerProposal.ok && ownerProposal.value.proposal.requestSha256,
+    OWNER_UNCHANGED_REQUEST_SHA256,
+  );
+  assert.equal(assistantProposal.ok, true);
+  assert.equal(rollbackProposal.ok, true);
+  assert.equal(decision.ok && decision.value.appliedRevision, 2);
+  assert.deepEqual(requests[1], {
+    url: `http://127.0.0.1:47431/desktop/v1/workspaces/${WORKSPACE_ID}/composition/proposals`,
+    body: {
+      expected_revision: 1,
+      expected_profile_sha256: PROFILE_SHA256,
+      desired_profile: rawCompositionProfile(),
+    },
+  });
+  assert.deepEqual(requests[2]?.body, {
+    expected_revision: 1,
+    expected_profile_sha256: PROFILE_SHA256,
+    message_id: `message_${"6".repeat(32)}`,
+  });
+  assert.deepEqual(requests[3]?.body, {
+    expected_revision: 2,
+    expected_profile_sha256: DESIRED_PROFILE_SHA256,
+    target_revision: 1,
+  });
+  assert.deepEqual(requests[4]?.body, {
+    decision: "approve",
+    request_sha256: REQUEST_SHA256,
+  });
+});
+
+test("native client accepts only exact bounded composition audit projections", async () => {
+  const rejectedProposalId = `proposal_${"7".repeat(32)}`;
+  const rejectedRequestSha256 = "8".repeat(64);
+  const current = rawCompositionRevision({
+    revision: 2,
+    source_kind: "owner",
+    proposal_id: COMPOSITION_PROPOSAL_ID,
+    value: RAW_DESIRED_PROFILE,
+  });
+  const validAudit = [
+    rawCompositionAppliedAudit(4),
+    rawCompositionProposedAudit(3),
+    rawCompositionRejectedAudit(2, {
+      payload: {
+        proposal_id: rejectedProposalId,
+        request_sha256: rejectedRequestSha256,
+      },
+    }),
+    rawCompositionProposedAudit(1, {
+      payload: {
+        base_revision: 1,
+        desired_profile_sha256: DESIRED_PROFILE_SHA256,
+        proposal_id: rejectedProposalId,
+        request_sha256: rejectedRequestSha256,
+        source_kind: "assistant",
+      },
+    }),
+  ];
+  const snapshot = (audit: readonly unknown[]) => ({
+    profile: current,
+    revisions: [current, rawCompositionRevision()],
+    proposals: [],
+    slot_catalog: rawCompositionSlotCatalog(),
+    audit,
+  });
+  const valid = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async () => jsonResponse(snapshot(validAudit))) as typeof fetch,
+  });
+
+  const result = await valid.getWorkspaceComposition({
+    workspaceId: WORKSPACE_ID,
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.value.audit, [
+      {
+        sequence: 4,
+        eventType: "workspace_composition_applied",
+        payload: {
+          profileSha256: DESIRED_PROFILE_SHA256,
+          proposalId: COMPOSITION_PROPOSAL_ID,
+          requestSha256: REQUEST_SHA256,
+          revision: 2,
+          sourceKind: "owner",
+        },
+        createdAt: "2026-08-29T00:03:00Z",
+      },
+      {
+        sequence: 3,
+        eventType: "workspace_composition_proposed",
+        payload: {
+          baseRevision: 1,
+          desiredProfileSha256: DESIRED_PROFILE_SHA256,
+          proposalId: COMPOSITION_PROPOSAL_ID,
+          requestSha256: REQUEST_SHA256,
+          sourceKind: "owner",
+        },
+        createdAt: "2026-08-29T00:01:00Z",
+      },
+      {
+        sequence: 2,
+        eventType: "workspace_composition_rejected",
+        payload: {
+          proposalId: rejectedProposalId,
+          requestSha256: rejectedRequestSha256,
+        },
+        createdAt: "2026-08-29T00:02:00Z",
+      },
+      {
+        sequence: 1,
+        eventType: "workspace_composition_proposed",
+        payload: {
+          baseRevision: 1,
+          desiredProfileSha256: DESIRED_PROFILE_SHA256,
+          proposalId: rejectedProposalId,
+          requestSha256: rejectedRequestSha256,
+          sourceKind: "assistant",
+        },
+        createdAt: "2026-08-29T00:01:00Z",
+      },
+    ]);
+  }
+
+  const hostileAuditSets = [
+    [
+      rawCompositionAppliedAudit(2, {
+        event_type: "workspace_composition_deleted",
+      }),
+      rawCompositionProposedAudit(1),
+    ],
+    [
+      rawCompositionAppliedAudit(2, {
+        payload: {
+          profile_sha256: DESIRED_PROFILE_SHA256,
+          proposal_id: COMPOSITION_PROPOSAL_ID,
+          request_sha256: REQUEST_SHA256,
+          revision: 2,
+          source_kind: "owner",
+          sql: "DROP TABLE audit_event",
+        },
+      }),
+      rawCompositionProposedAudit(1),
+    ],
+    [
+      rawCompositionAppliedAudit(2, {
+        payload: {
+          profile_sha256: DESIRED_PROFILE_SHA256,
+          proposal_id: "proposal_invalid",
+          request_sha256: REQUEST_SHA256,
+          revision: 2,
+          source_kind: "owner",
+        },
+      }),
+      rawCompositionProposedAudit(1),
+    ],
+    [rawCompositionAppliedAudit(2), rawCompositionProposedAudit(2)],
+    [rawCompositionProposedAudit(1), rawCompositionAppliedAudit(2)],
+    [
+      rawCompositionAppliedAudit(2, {
+        payload: {
+          profile_sha256: DESIRED_PROFILE_SHA256,
+          proposal_id: COMPOSITION_PROPOSAL_ID,
+          request_sha256: REQUEST_SHA256,
+          revision: 3,
+          source_kind: "owner",
+        },
+      }),
+      rawCompositionProposedAudit(1),
+    ],
+  ];
+  for (const audit of hostileAuditSets) {
+    const hostile = new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () => jsonResponse(snapshot(audit))) as typeof fetch,
+    });
+    assert.deepEqual(
+      await hostile.getWorkspaceComposition({ workspaceId: WORKSPACE_ID }),
+      { ok: false, error: { code: "desktop_native_response_invalid" } },
+    );
+  }
+});
+
+test("native client rejects malformed composition identities and projections", async () => {
+  const malformed = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async () =>
+      jsonResponse({
+        profile: rawCompositionRevision(),
+        revisions: [rawCompositionRevision()],
+        proposals: [],
+        slot_catalog: rawCompositionSlotCatalog().slice(1),
+        audit: [],
+      })) as typeof fetch,
+  });
+  assert.deepEqual(
+    await malformed.getWorkspaceComposition({ workspaceId: WORKSPACE_ID }),
+    { ok: false, error: { code: "desktop_native_response_invalid" } },
+  );
+
+  for (const [profile, slotCatalog] of [
+    [
+      rawCompositionProfile({
+        slots: { ...rawCompositionProfile().slots, terminal: true },
+      }),
+      rawCompositionSlotCatalog(),
+    ],
+    [
+      rawCompositionProfile({
+        slots: {
+          ...rawCompositionProfile().slots,
+          "settings.center": false,
+        },
+      }),
+      rawCompositionSlotCatalog(),
+    ],
+    [
+      rawCompositionProfile(),
+      rawCompositionSlotCatalog().map((item) =>
+        item.id === "terminal" ? { ...item, posture: "admitted" } : item,
+      ),
+    ],
+  ] as const) {
+    const widened = new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () =>
+        jsonResponse({
+          profile: rawCompositionRevision({ value: profile }),
+          revisions: [rawCompositionRevision({ value: profile })],
+          proposals: [],
+          slot_catalog: slotCatalog,
+          audit: [],
+        })) as typeof fetch,
+    });
+    assert.deepEqual(
+      await widened.getWorkspaceComposition({ workspaceId: WORKSPACE_ID }),
+      { ok: false, error: { code: "desktop_native_response_invalid" } },
+    );
+  }
+
+  for (const payload of [
+    {
+      profile: rawCompositionRevision({ profile_sha256: "0".repeat(64) }),
+      revisions: [rawCompositionRevision({ profile_sha256: "0".repeat(64) })],
+      proposals: [],
+      slot_catalog: rawCompositionSlotCatalog(),
+      audit: [],
+    },
+    {
+      profile: rawCompositionRevision(),
+      revisions: [
+        rawCompositionRevision({
+          source_kind: "owner",
+          proposal_id: COMPOSITION_PROPOSAL_ID,
+        }),
+      ],
+      proposals: [],
+      slot_catalog: rawCompositionSlotCatalog(),
+      audit: [],
+    },
+    {
+      profile: rawCompositionRevision(),
+      revisions: [rawCompositionRevision()],
+      proposals: [rawCompositionProposal({ source_reference: "unexpected" })],
+      slot_catalog: rawCompositionSlotCatalog(),
+      audit: [],
+    },
+  ]) {
+    const inconsistent = new DesktopNativeClient({
+      backendOrigin: "http://127.0.0.1:47431",
+      nativeControlToken: CONTROL_TOKEN,
+      fetch: (async () => jsonResponse(payload)) as typeof fetch,
+    });
+    assert.deepEqual(
+      await inconsistent.getWorkspaceComposition({ workspaceId: WORKSPACE_ID }),
+      { ok: false, error: { code: "desktop_native_response_invalid" } },
+    );
+  }
+  assert.deepEqual(
+    await malformed.decideWorkspaceComposition({
+      workspaceId: WORKSPACE_ID,
+      proposalId: "proposal_bad",
+      requestSha256: REQUEST_SHA256,
+      decision: "approve",
+    }),
+    { ok: false, error: { code: "desktop_native_input_invalid" } },
+  );
+
+  const mismatchedDecision = new DesktopNativeClient({
+    backendOrigin: "http://127.0.0.1:47431",
+    nativeControlToken: CONTROL_TOKEN,
+    fetch: (async () =>
+      jsonResponse({
+        workspace_id: `workspace_${"9".repeat(32)}`,
+        proposal_id: COMPOSITION_PROPOSAL_ID,
+        request_sha256: REQUEST_SHA256,
+        decision: "rejected",
+        applied_revision: null,
+      })) as typeof fetch,
+  });
+  assert.deepEqual(
+    await mismatchedDecision.decideWorkspaceComposition({
+      workspaceId: WORKSPACE_ID,
+      proposalId: COMPOSITION_PROPOSAL_ID,
+      requestSha256: REQUEST_SHA256,
+      decision: "reject",
+    }),
+    { ok: false, error: { code: "desktop_native_response_invalid" } },
+  );
 });
 
 test("native client preserves stable backend errors and rejects malformed responses", async () => {
@@ -407,10 +1171,7 @@ test("native client maps parent settle exactly and binds every response identity
       { parent_call: { ...settled, output_tokens: 8, total_tokens: 19 } },
     ],
     ["total usage", { parent_call: { ...settled, total_tokens: 19 } }],
-    [
-      "digest",
-      { parent_call: { ...settled, output_sha256: "3".repeat(64) } },
-    ],
+    ["digest", { parent_call: { ...settled, output_sha256: "3".repeat(64) } }],
     [
       "error",
       {
@@ -449,9 +1210,18 @@ test("native client maps parent settle exactly and binds every response identity
 
 test("native client rejects malformed or extra-key parent call proofs", async () => {
   for (const payload of [
-    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), extra: true } },
-    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), invocation_id: "invocation_bad" } },
-    { team_run: rawTeamRun(), parent_call: { ...rawParentCall(), state: "succeeded" } },
+    {
+      team_run: rawTeamRun(),
+      parent_call: { ...rawParentCall(), extra: true },
+    },
+    {
+      team_run: rawTeamRun(),
+      parent_call: { ...rawParentCall(), invocation_id: "invocation_bad" },
+    },
+    {
+      team_run: rawTeamRun(),
+      parent_call: { ...rawParentCall(), state: "succeeded" },
+    },
     {
       team_run: rawTeamRun({ id: `teamrun_${"9".repeat(32)}` }),
       parent_call: rawParentCall(),
@@ -468,8 +1238,7 @@ test("native client rejects malformed or extra-key parent call proofs", async ()
     const client = new DesktopNativeClient({
       backendOrigin: "http://127.0.0.1:47431",
       nativeControlToken: CONTROL_TOKEN,
-      fetch: (async () =>
-        jsonResponse(payload)) as typeof fetch,
+      fetch: (async () => jsonResponse(payload)) as typeof fetch,
     });
     assert.deepEqual(
       await client.consumeTeamProviderCall({
@@ -503,7 +1272,9 @@ test("native client bounds and de-duplicates the workspace projection", async ()
     });
 
   assert.deepEqual(
-    await clientFor(Array.from({ length: 257 }, (_, index) => rawWorkspace(index))).listWorkspaces(),
+    await clientFor(
+      Array.from({ length: 257 }, (_, index) => rawWorkspace(index)),
+    ).listWorkspaces(),
     {
       ok: false,
       error: { code: "desktop_native_response_invalid" },
@@ -581,10 +1352,7 @@ test("native client maps provider list without secret material", async () => {
   if (!result.ok) return;
   assert.equal(result.value.items[0]?.id, providerId);
   assert.equal(result.value.items[0]?.hasSecret, true);
-  assert.equal(
-    JSON.stringify(result.value).includes("encrypted"),
-    false,
-  );
+  assert.equal(JSON.stringify(result.value).includes("encrypted"), false);
   assert.equal(JSON.stringify(result.value).includes("isolation"), false);
   assert.equal(seen[0], "http://127.0.0.1:47431/desktop/v1/providers");
 });
@@ -600,7 +1368,10 @@ function sseResponse(body: string): Response {
   });
 }
 
-function scopedEvent(eventName: string, extra: Record<string, unknown> = {}): string {
+function scopedEvent(
+  eventName: string,
+  extra: Record<string, unknown> = {},
+): string {
   return (
     `event: ${eventName}\n` +
     `data: ${JSON.stringify({
@@ -639,7 +1410,10 @@ test("native client drops unscoped stream events and cancels the backend on abor
         scopedEvent("identity") +
         scopedEvent("delta", { text: "ok" }) +
         scopedEvent("done", { status: "succeeded", answer: "ok" });
-      if (seen.some((item) => item.includes("/messages")) && seen.filter((item) => item.includes("/messages")).length === 1) {
+      if (
+        seen.some((item) => item.includes("/messages")) &&
+        seen.filter((item) => item.includes("/messages")).length === 1
+      ) {
         return sseResponse(unscoped);
       }
       if (String(input).includes("/messages")) {
@@ -650,7 +1424,11 @@ test("native client drops unscoped stream events and cancels the backend on abor
   });
 
   const unscoped = await client.sendConversation(
-    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    {
+      workspaceId: WORKSPACE_ID,
+      conversationId: CONVERSATION_ID,
+      content: "hi",
+    },
     "isolation-secret",
     (event) => emitted.push(event),
     new AbortController().signal,
@@ -658,13 +1436,19 @@ test("native client drops unscoped stream events and cancels the backend on abor
   assert.equal(unscoped.ok, false);
   assert.equal(emitted.length, 0);
   assert.equal(
-    seen.some((item) => item.includes(`/desktop/v1/invocations/${INVOCATION_ID}/cancel`)),
+    seen.some((item) =>
+      item.includes(`/desktop/v1/invocations/${INVOCATION_ID}/cancel`),
+    ),
     false,
   );
 
   emitted.length = 0;
   const scoped = await client.sendConversation(
-    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    {
+      workspaceId: WORKSPACE_ID,
+      conversationId: CONVERSATION_ID,
+      content: "hi",
+    },
     "isolation-secret",
     (event) => emitted.push(event),
     new AbortController().signal,
@@ -701,7 +1485,11 @@ test("native client drops unscoped stream events and cancels the backend on abor
   });
   const controller = new AbortController();
   const pending = aborting.sendConversation(
-    { workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, content: "hi" },
+    {
+      workspaceId: WORKSPACE_ID,
+      conversationId: CONVERSATION_ID,
+      content: "hi",
+    },
     "isolation-secret",
     () => {
       controller.abort();

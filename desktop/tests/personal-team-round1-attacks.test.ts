@@ -46,7 +46,10 @@ function coded(error: unknown): string {
   return "unknown";
 }
 
-async function rejectCode(run: Promise<unknown>, expected: string): Promise<void> {
+async function rejectCode(
+  run: Promise<unknown>,
+  expected: string,
+): Promise<void> {
   try {
     await run;
     assert.fail(`expected ${expected}`);
@@ -86,15 +89,21 @@ function executeInput(
   };
 }
 
-function startLoopbackChat(options: { readonly bodyFor?: (role: string) => unknown } = {}) {
+function startLoopbackChat(
+  options: { readonly bodyFor?: (role: string) => unknown } = {},
+) {
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
-      const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[] };
-      const system = parsed.messages?.find((item) => item.role === "system")?.content ?? "";
-      const role = /\[omnibase-team-role:([^\]]+)\]/u.exec(system)?.[1] ?? "parent";
+      const parsed = JSON.parse(body) as {
+        messages?: { role: string; content: string }[];
+      };
+      const system =
+        parsed.messages?.find((item) => item.role === "system")?.content ?? "";
+      const role =
+        /\[omnibase-team-role:([^\]]+)\]/u.exec(system)?.[1] ?? "parent";
       if (options.bodyFor) {
         const custom = options.bodyFor(role);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -133,7 +142,10 @@ function startLoopbackChat(options: { readonly bodyFor?: (role: string) => unkno
           collaborationRequests: [],
         });
       } else if (role === "parent-replan") {
-        content = JSON.stringify({ decision: "finish", reason: "Staffing is complete." });
+        content = JSON.stringify({
+          decision: "finish",
+          reason: "Staffing is complete.",
+        });
       } else if (role === "parent-synthesize") {
         content = "综合结论：父 Agent 已汇总各专业员工报告。";
       }
@@ -173,7 +185,9 @@ function credentials(baseUrl: string) {
   };
 }
 
-function sampleRole(overrides: Partial<DesktopAgentRole> = {}): DesktopAgentRole {
+function sampleRole(
+  overrides: Partial<DesktopAgentRole> = {},
+): DesktopAgentRole {
   return {
     id: "frontend",
     displayName: "前端",
@@ -196,7 +210,9 @@ function sampleRole(overrides: Partial<DesktopAgentRole> = {}): DesktopAgentRole
   };
 }
 
-function sampleProvider(overrides: Partial<DesktopProvider> = {}): DesktopProvider {
+function sampleProvider(
+  overrides: Partial<DesktopProvider> = {},
+): DesktopProvider {
   return {
     id: PROVIDER_ID,
     displayName: "loopback",
@@ -259,12 +275,16 @@ test("DNS rebinding to loopback, private, or link-local is rejected and public p
     "desktop_provider_endpoint_invalid",
   );
   let lookupCount = lookups;
-  const pinned = await resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
-    lookup: async () => {
-      lookupCount += 1;
-      return ["8.8.8.8"];
+  const pinned = await resolvePinnedTeamEndpoint(
+    "https://api.example.test/v1",
+    false,
+    {
+      lookup: async () => {
+        lookupCount += 1;
+        return ["8.8.8.8"];
+      },
     },
-  });
+  );
   assert.equal(lookupCount, 1);
   assert.deepEqual(pinned.connectAddrs, ["8.8.8.8"]);
   assert.equal(pinned.hostname, "api.example.test");
@@ -287,7 +307,11 @@ test("explicit disabled Provider fails closed instead of inheriting another", as
     vault,
   });
   await rejectCode(
-    host.resolveCredentials(WORKSPACE, "frontend", new AbortController().signal),
+    host.resolveCredentials(
+      WORKSPACE,
+      "frontend",
+      new AbortController().signal,
+    ),
     "desktop_provider_disabled",
   );
 });
@@ -312,18 +336,33 @@ test("missing or mismatched actual model fails the chat instead of succeeding", 
   const signal = new AbortController().signal;
   try {
     await rejectCode(
-      transport.complete({ ...credentials(missingServer.baseUrl), messages: [{ role: "user", content: "hi" }] }, signal),
-      "desktop_provider_model_identity_drift",
-    );
-    await rejectCode(
       transport.complete(
-        { ...credentials(mismatchedServer.baseUrl), messages: [{ role: "user", content: "hi" }] },
+        {
+          ...credentials(missingServer.baseUrl),
+          messages: [{ role: "user", content: "hi" }],
+        },
         signal,
       ),
       "desktop_provider_model_identity_drift",
     );
     await rejectCode(
-      transport.complete({ ...credentials(emptyServer.baseUrl), messages: [{ role: "user", content: "hi" }] }, signal),
+      transport.complete(
+        {
+          ...credentials(mismatchedServer.baseUrl),
+          messages: [{ role: "user", content: "hi" }],
+        },
+        signal,
+      ),
+      "desktop_provider_model_identity_drift",
+    );
+    await rejectCode(
+      transport.complete(
+        {
+          ...credentials(emptyServer.baseUrl),
+          messages: [{ role: "user", content: "hi" }],
+        },
+        signal,
+      ),
       "desktop_provider_response_invalid",
     );
   } finally {
@@ -379,7 +418,9 @@ test("Provider failure after node creation fail-stops without fake success", asy
     },
   });
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   const coordinator = new PersonalTeamCoordinator({
     host,
     transport: createOpenAiCompatibleTransport(),
@@ -438,7 +479,9 @@ test("incomplete Provider body after node creation is unknown, not success", asy
     },
   });
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   const coordinator = new PersonalTeamCoordinator({
     host,
     transport: createOpenAiCompatibleTransport(),
@@ -456,7 +499,9 @@ test("incomplete Provider body after node creation is unknown, not success", asy
 test("settle/audit failure after node creation is not success", async () => {
   const server = startLoopbackChat();
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   host.failNextSettle = "desktop_team_node_settle_failed";
   const coordinator = new PersonalTeamCoordinator({
     host,
@@ -467,7 +512,10 @@ test("settle/audit failure after node creation is not success", async () => {
     assert.notEqual(proof.state, "succeeded");
     assert.equal(host.nodes.length, 1);
     assert.equal(host.reports.length, 0);
-    assert.equal(host.audits.some((item) => item.startsWith("team_node_settled:")), false);
+    assert.equal(
+      host.audits.some((item) => item.startsWith("team_node_settled:")),
+      false,
+    );
   } finally {
     await listening.close();
   }
@@ -476,7 +524,9 @@ test("settle/audit failure after node creation is not success", async () => {
 test("Stop during createNode latches abort and does not emit node identity", async () => {
   const server = startLoopbackChat();
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   let releaseCreate!: () => void;
   const held = new Promise<void>((resolve) => {
     releaseCreate = resolve;
@@ -496,7 +546,9 @@ test("Stop during createNode latches abort and does not emit node identity", asy
     transport: createOpenAiCompatibleTransport(),
   });
   const events: DesktopTeamRunEvent[] = [];
-  const running = coordinator.execute(executeInput(), (event) => events.push(event));
+  const running = coordinator.execute(executeInput(), (event) =>
+    events.push(event),
+  );
   await started;
   coordinator.requestStop();
   releaseCreate();
@@ -545,19 +597,40 @@ test("missing roster, plan, wave, assignment, node, or send epoch each fails ide
     text: "ok",
   };
   assert.equal(eventMatchesTeamIdentity(current, valid), true);
-  const keys = ["rosterEpoch", "planRevisionId", "waveId", "assignmentId", "nodeId", "sendEpoch", "nodeEpoch", "invocationId", "employeeRoleId"] as const;
+  const keys = [
+    "rosterEpoch",
+    "planRevisionId",
+    "waveId",
+    "assignmentId",
+    "nodeId",
+    "sendEpoch",
+    "nodeEpoch",
+    "invocationId",
+    "employeeRoleId",
+  ] as const;
   for (const key of keys) {
-    const incomplete = { ...valid } as DesktopTeamRunEvent & Record<string, unknown>;
+    const incomplete = { ...valid } as DesktopTeamRunEvent &
+      Record<string, unknown>;
     delete incomplete[key];
-    assert.equal(teamEventIdentityComplete(incomplete), false, `missing ${key} must be incomplete`);
-    assert.equal(eventMatchesTeamIdentity(current, incomplete), false, `missing ${key} must drop`);
+    assert.equal(
+      teamEventIdentityComplete(incomplete),
+      false,
+      `missing ${key} must be incomplete`,
+    );
+    assert.equal(
+      eventMatchesTeamIdentity(current, incomplete),
+      false,
+      `missing ${key} must drop`,
+    );
   }
 });
 
 test("strict team wall-time stops further nodes without fake success", async () => {
   const server = startLoopbackChat();
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   let now = 1_000;
   const original = host.consumeProviderCall.bind(host);
   host.consumeProviderCall = async (input) => {
@@ -572,10 +645,18 @@ test("strict team wall-time stops further nodes without fake success", async () 
   });
   const events: DesktopTeamRunEvent[] = [];
   try {
-    const proof = await coordinator.execute(executeInput(), (event) => events.push(event));
+    const proof = await coordinator.execute(executeInput(), (event) =>
+      events.push(event),
+    );
     assert.equal(proof.state, "budget_exhausted");
-    assert.equal(events.some((item) => item.type === "node_starting"), false);
-    assert.equal(events.some((item) => item.type === "completed"), false);
+    assert.equal(
+      events.some((item) => item.type === "node_starting"),
+      false,
+    );
+    assert.equal(
+      events.some((item) => item.type === "completed"),
+      false,
+    );
     assert.equal(host.nodes.length, 0);
   } finally {
     await listening.close();
@@ -591,7 +672,10 @@ test("empty specialist allow-list fails closed before any team run", async () =>
     transport: createOpenAiCompatibleTransport(),
   });
   await rejectCode(
-    coordinator.execute(executeInput({ allowedSpecialistRoleIds: [] }), () => undefined),
+    coordinator.execute(
+      executeInput({ allowedSpecialistRoleIds: [] }),
+      () => undefined,
+    ),
     "desktop_team_allow_list_empty",
   );
   assert.equal(host.runs.length, 0);
@@ -600,18 +684,25 @@ test("empty specialist allow-list fails closed before any team run", async () =>
 test("raw start bound to conversation A cannot attach to conversation B", async () => {
   const server = startLoopbackChat();
   const listening = await server.listen();
-  const host = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
+  const host = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
   const original = host.startTeamRun.bind(host);
   host.startTeamRun = async (input) => {
     const started = await original(input);
-    return { teamRun: { ...started.teamRun, conversationId: OTHER_CONVERSATION } };
+    return {
+      teamRun: { ...started.teamRun, conversationId: OTHER_CONVERSATION },
+    };
   };
   const coordinator = new PersonalTeamCoordinator({
     host,
     transport: createOpenAiCompatibleTransport(),
   });
   try {
-    await rejectCode(coordinator.execute(executeInput(), () => undefined), "desktop_team_conversation_identity_mismatch");
+    await rejectCode(
+      coordinator.execute(executeInput(), () => undefined),
+      "desktop_team_conversation_identity_mismatch",
+    );
     assert.equal(host.runs[0]?.state, "failed");
   } finally {
     await listening.close();
@@ -623,8 +714,12 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
   const listening = await server.listen();
   const vault = memoryVault();
   const encrypted = encryptProviderSecret(SECRET, vault);
-  const memory = createInMemoryPersonalTeamHost({ credentials: credentials(listening.baseUrl) });
-  const wrap = async <T>(run: () => Promise<T>): Promise<DesktopOperationResult<T>> => {
+  const memory = createInMemoryPersonalTeamHost({
+    credentials: credentials(listening.baseUrl),
+  });
+  const wrap = async <T>(
+    run: () => Promise<T>,
+  ): Promise<DesktopOperationResult<T>> => {
     try {
       return { ok: true, value: await run() };
     } catch (error) {
@@ -632,18 +727,34 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
     }
   };
   const client = {
-    listProviders: async () => ({ ok: true as const, value: { items: [sampleProvider({ baseUrl: listening.baseUrl })] } }),
-    getProviderVault: async () => ({ ok: true as const, value: { encryptedSecretBlob: encrypted.encryptedSecretBlob } }),
-    sendConversation: async () => ({ ok: false as const, error: { code: "must-not-send" } }),
-    startTeamRun: (input: DesktopTeamRunExecuteInput) => wrap(() => memory.startTeamRun(input)),
-    submitTeamProposal: (input: Parameters<typeof memory.submitProposal>[0]) => wrap(() => memory.submitProposal(input)),
-    getTeamBlackboard: (input: Parameters<typeof memory.getBlackboard>[0]) => wrap(() => memory.getBlackboard(input)),
-    consumeTeamProviderCall: (input: Parameters<typeof memory.consumeProviderCall>[0]) =>
-      wrap(() => memory.consumeProviderCall(input)),
-    settleTeamParentCall: (input: Parameters<typeof memory.settleParentCall>[0]) =>
-      wrap(() => memory.settleParentCall(input)),
-    setTeamRunState: (input: Parameters<typeof memory.setRunState>[0]) => wrap(() => memory.setRunState(input)),
-    createTeamNode: (input: Parameters<typeof memory.createNode>[0]) => wrap(() => memory.createNode(input)),
+    listProviders: async () => ({
+      ok: true as const,
+      value: { items: [sampleProvider({ baseUrl: listening.baseUrl })] },
+    }),
+    getProviderVault: async () => ({
+      ok: true as const,
+      value: { encryptedSecretBlob: encrypted.encryptedSecretBlob },
+    }),
+    sendConversation: async () => ({
+      ok: false as const,
+      error: { code: "must-not-send" },
+    }),
+    startTeamRun: (input: DesktopTeamRunExecuteInput) =>
+      wrap(() => memory.startTeamRun(input)),
+    submitTeamProposal: (input: Parameters<typeof memory.submitProposal>[0]) =>
+      wrap(() => memory.submitProposal(input)),
+    getTeamBlackboard: (input: Parameters<typeof memory.getBlackboard>[0]) =>
+      wrap(() => memory.getBlackboard(input)),
+    consumeTeamProviderCall: (
+      input: Parameters<typeof memory.consumeProviderCall>[0],
+    ) => wrap(() => memory.consumeProviderCall(input)),
+    settleTeamParentCall: (
+      input: Parameters<typeof memory.settleParentCall>[0],
+    ) => wrap(() => memory.settleParentCall(input)),
+    setTeamRunState: (input: Parameters<typeof memory.setRunState>[0]) =>
+      wrap(() => memory.setRunState(input)),
+    createTeamNode: (input: Parameters<typeof memory.createNode>[0]) =>
+      wrap(() => memory.createNode(input)),
     updateTeamNode: (input: Parameters<typeof memory.updateNode>[0]) =>
       wrap(async () => {
         await memory.updateNode(input);
@@ -661,11 +772,15 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
       }),
     getAgentRole: async () => ({
       ok: true as const,
-      value: { role: sampleRole({ providerId: null, inheritedProvider: true }) },
+      value: {
+        role: sampleRole({ providerId: null, inheritedProvider: true }),
+      },
     }),
   };
   const manager = new RuntimeManager({
-    runtimeRoot: path.resolve(`C:/omnibase-missing-runtime-team-${process.pid}`),
+    runtimeRoot: path.resolve(
+      `C:/omnibase-missing-runtime-team-${process.pid}`,
+    ),
     expectedManifestSha256: "0".repeat(64),
     uiOrigin: "http://127.0.0.1:3000",
     dataRoot: path.resolve("C:/Users/Alice/AppData/Local/OmniBase"),
@@ -674,7 +789,9 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
   });
   const events: DesktopTeamRunEvent[] = [];
   try {
-    const result = await manager.executeTeamRun(executeInput(), (event) => events.push(event));
+    const result = await manager.executeTeamRun(executeInput(), (event) =>
+      events.push(event),
+    );
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.value.proof.state, "succeeded");
@@ -688,15 +805,25 @@ test("RuntimeManager plus loopback Provider completes a parent-directed team jou
 });
 
 test("IPC forwards an explicit empty allow-list instead of parse-failing it", async () => {
-  const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
   const ipcMain: IpcMainLike = {
     handle: (channel, listener) => {
       handlers.set(channel, listener);
     },
     removeHandler: () => undefined,
   };
-  const ready: RuntimeStatus = Object.freeze({ phase: "ready", attempts: 1, lastError: null });
-  const unused = async () => ({ ok: false as const, error: { code: "must-not-run" } });
+  const ready: RuntimeStatus = Object.freeze({
+    phase: "ready",
+    attempts: 1,
+    lastError: null,
+  });
+  const unused = async () => ({
+    ok: false as const,
+    error: { code: "must-not-run" },
+  });
   let received: unknown;
   registerClosedIpcHandlers(ipcMain, {
     getVersion: () => "1.0.0",
@@ -708,6 +835,13 @@ test("IPC forwards an explicit empty allow-list instead of parse-failing it", as
     createWorkspace: unused,
     archiveWorkspace: unused,
     getWorkspaceAgent: unused,
+    getApplicationPreference: unused,
+    updateApplicationPreference: unused,
+    getWorkspaceComposition: unused,
+    proposeWorkspaceComposition: unused,
+    proposeWorkspaceCompositionFromAssistant: unused,
+    proposeWorkspaceCompositionRollback: unused,
+    decideWorkspaceComposition: unused,
     authorizeWorkspaceFiles: unused,
     releaseWorkspaceFiles: unused,
     listWorkspaceFiles: unused,
@@ -744,20 +878,23 @@ test("IPC forwards an explicit empty allow-list instead of parse-failing it", as
     sender: { isDestroyed: () => false, send: () => undefined },
     senderFrame: { url: `${DESKTOP_UI_ORIGIN}/` },
   } as unknown as IpcMainInvokeEvent;
-  const result = await handlers.get(IPC_CHANNELS.teamRunsStart)?.(trustedEvent, {
-    workspaceId: WORKSPACE,
-    conversationId: CONVERSATION,
-    task: "review",
-    teamMode: true,
-    budget: {
-      maximumProviderCalls: 16,
-      maximumWallTimeMs: 600000,
-      maximumConcurrentCalls: 2,
-      maximumInputCharacters: 16384,
-      maximumOutputCharacters: 32768,
+  const result = await handlers.get(IPC_CHANNELS.teamRunsStart)?.(
+    trustedEvent,
+    {
+      workspaceId: WORKSPACE,
+      conversationId: CONVERSATION,
+      task: "review",
+      teamMode: true,
+      budget: {
+        maximumProviderCalls: 16,
+        maximumWallTimeMs: 600000,
+        maximumConcurrentCalls: 2,
+        maximumInputCharacters: 16384,
+        maximumOutputCharacters: 32768,
+      },
+      allowedSpecialistRoleIds: [],
     },
-    allowedSpecialistRoleIds: [],
-  });
+  );
   assert.deepEqual(received, {
     workspaceId: WORKSPACE,
     conversationId: CONVERSATION,
@@ -772,5 +909,8 @@ test("IPC forwards an explicit empty allow-list instead of parse-failing it", as
     },
     allowedSpecialistRoleIds: [],
   });
-  assert.deepEqual(result, { ok: false, error: { code: "desktop_team_allow_list_empty" } });
+  assert.deepEqual(result, {
+    ok: false,
+    error: { code: "desktop_team_allow_list_empty" },
+  });
 });

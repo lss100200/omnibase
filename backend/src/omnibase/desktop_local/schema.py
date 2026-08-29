@@ -3,10 +3,49 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 9
+DESKTOP_SCHEMA_VERSION = 10
+
+STANDARD_WORKBENCH_PROFILE = {
+    "appearance": {"density": "inherit", "quiet_chrome": True},
+    "layout": {
+        "agent_panel": "open",
+        "bottom_panel": "hidden",
+        "focus_mode": False,
+        "sidebar": "explorer",
+    },
+    "schema_version": 1,
+    "slots": {
+        "agent.rail": True,
+        "conversation.transcript": True,
+        "event.agent-log": True,
+        "event.output": True,
+        "knowledge.ebook": False,
+        "mcp.catalog": False,
+        "provider.settings": True,
+        "run.history": True,
+        "sandbox.runtime": False,
+        "settings.center": True,
+        "skills.catalog": False,
+        "source-control": False,
+        "terminal": False,
+        "workspace.brief": True,
+        "workspace.explorer": True,
+    },
+    "template": {"id": "standard-workbench", "version": 1},
+}
+STANDARD_WORKBENCH_PROFILE_JSON = json.dumps(
+    STANDARD_WORKBENCH_PROFILE,
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+)
+STANDARD_WORKBENCH_PROFILE_SHA256 = hashlib.sha256(
+    STANDARD_WORKBENCH_PROFILE_JSON.encode("utf-8")
+).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1066,6 +1105,356 @@ DESKTOP_0009 = DesktopMigration(
     ),
 )
 
+DESKTOP_0010 = DesktopMigration(
+    version=10,
+    migration_id="desktop_0010_workspace_composition",
+    statements=(
+        """
+        CREATE TABLE owner_workbench_preference (
+            owner_id TEXT PRIMARY KEY,
+            density TEXT NOT NULL DEFAULT 'compact' CHECK (
+                density IN ('compact', 'comfortable')
+            ),
+            reduce_motion INTEGER NOT NULL DEFAULT 0 CHECK (reduce_motion IN (0, 1)),
+            row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (owner_id) REFERENCES owner(id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TRIGGER owner_workbench_preference_identity_guard
+        BEFORE UPDATE ON owner_workbench_preference
+        WHEN NEW.owner_id <> OLD.owner_id
+          OR NEW.created_at <> OLD.created_at
+          OR NEW.row_version <> OLD.row_version + 1
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_workbench_preference_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER owner_workbench_preference_delete_forbidden
+        BEFORE DELETE ON owner_workbench_preference
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_workbench_preference_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TABLE workspace_composition_revision (
+            workspace_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            template_id TEXT NOT NULL CHECK (template_id = 'standard-workbench'),
+            template_version INTEGER NOT NULL CHECK (template_version = 1),
+            profile_json TEXT NOT NULL CHECK (json_valid(profile_json) = 1),
+            profile_sha256 TEXT NOT NULL CHECK (
+                length(profile_sha256) = 64
+                AND profile_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            source_kind TEXT NOT NULL CHECK (
+                source_kind IN ('system', 'owner', 'assistant', 'rollback')
+            ),
+            proposal_id TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, revision),
+            UNIQUE (workspace_id, owner_id, revision),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_composition_proposal (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 41
+                AND id GLOB 'proposal_[0-9a-f]*'
+                AND substr(id, 10) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            base_revision INTEGER NOT NULL CHECK (base_revision >= 1),
+            base_profile_sha256 TEXT NOT NULL CHECK (
+                length(base_profile_sha256) = 64
+                AND base_profile_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            source_kind TEXT NOT NULL CHECK (
+                source_kind IN ('owner', 'assistant', 'rollback')
+            ),
+            source_reference TEXT CHECK (
+                source_reference IS NULL OR length(source_reference) BETWEEN 1 AND 128
+            ),
+            desired_profile_json TEXT NOT NULL CHECK (json_valid(desired_profile_json) = 1),
+            desired_profile_sha256 TEXT NOT NULL CHECK (
+                length(desired_profile_sha256) = 64
+                AND desired_profile_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            request_sha256 TEXT NOT NULL UNIQUE CHECK (
+                length(request_sha256) = 64
+                AND request_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL,
+            UNIQUE (id, workspace_id),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (workspace_id, base_revision)
+                REFERENCES workspace_composition_revision(workspace_id, revision)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_composition_current (
+            workspace_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            profile_sha256 TEXT NOT NULL CHECK (
+                length(profile_sha256) = 64
+                AND profile_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (workspace_id, owner_id),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (workspace_id, revision)
+                REFERENCES workspace_composition_revision(workspace_id, revision)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_composition_decision (
+            proposal_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+            request_sha256 TEXT NOT NULL CHECK (
+                length(request_sha256) = 64
+                AND request_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            decided_by TEXT NOT NULL CHECK (decided_by = 'owner'),
+            applied_revision INTEGER,
+            decided_at TEXT NOT NULL,
+            UNIQUE (proposal_id, workspace_id),
+            FOREIGN KEY (proposal_id, workspace_id)
+                REFERENCES workspace_composition_proposal(id, workspace_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (workspace_id, applied_revision)
+                REFERENCES workspace_composition_revision(workspace_id, revision)
+                ON DELETE RESTRICT,
+            CHECK (
+                (decision = 'approved' AND applied_revision IS NOT NULL)
+                OR (decision = 'rejected' AND applied_revision IS NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TRIGGER workspace_composition_revision_update_forbidden
+        BEFORE UPDATE ON workspace_composition_revision
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_revision_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_revision_delete_forbidden
+        BEFORE DELETE ON workspace_composition_revision
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_revision_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_proposal_update_forbidden
+        BEFORE UPDATE ON workspace_composition_proposal
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_proposal_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_proposal_delete_forbidden
+        BEFORE DELETE ON workspace_composition_proposal
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_proposal_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_decision_update_forbidden
+        BEFORE UPDATE ON workspace_composition_decision
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_decision_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_decision_delete_forbidden
+        BEFORE DELETE ON workspace_composition_decision
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_decision_immutable');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_current_identity_guard
+        BEFORE UPDATE ON workspace_composition_current
+        WHEN NEW.workspace_id <> OLD.workspace_id
+          OR NEW.owner_id <> OLD.owner_id
+          OR NEW.created_at <> OLD.created_at
+          OR NEW.revision <> OLD.revision + 1
+          OR NOT EXISTS (
+              SELECT 1
+              FROM workspace_composition_revision AS revision
+              JOIN workspace_composition_proposal AS proposal
+                ON proposal.id = revision.proposal_id
+               AND proposal.workspace_id = revision.workspace_id
+               AND proposal.owner_id = revision.owner_id
+              JOIN workspace_composition_decision AS decision
+                ON decision.proposal_id = proposal.id
+               AND decision.workspace_id = proposal.workspace_id
+              JOIN audit_event AS audit
+                ON audit.owner_id = revision.owner_id
+               AND audit.workspace_id = revision.workspace_id
+               AND audit.event_type = 'workspace_composition_applied'
+              WHERE revision.workspace_id = NEW.workspace_id
+                AND revision.owner_id = NEW.owner_id
+                AND revision.revision = NEW.revision
+                AND revision.profile_sha256 = NEW.profile_sha256
+                AND decision.decision = 'approved'
+                AND decision.request_sha256 = proposal.request_sha256
+                AND decision.applied_revision = revision.revision
+                AND json_extract(audit.payload_json, '$.proposal_id') = proposal.id
+                AND json_extract(audit.payload_json, '$.request_sha256') = proposal.request_sha256
+                AND json_extract(audit.payload_json, '$.revision') = revision.revision
+                AND json_extract(audit.payload_json, '$.profile_sha256') = revision.profile_sha256
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_current_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_current_delete_forbidden
+        BEFORE DELETE ON workspace_composition_current
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_current_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_proposal_binding
+        BEFORE INSERT ON workspace_composition_proposal
+        WHEN NOT EXISTS (
+              SELECT 1
+              FROM workspace_composition_revision AS base
+              WHERE base.workspace_id = NEW.workspace_id
+                AND base.owner_id = NEW.owner_id
+                AND base.revision = NEW.base_revision
+                AND base.profile_sha256 = NEW.base_profile_sha256
+          )
+          OR (NEW.source_kind = 'owner' AND NEW.source_reference IS NOT NULL)
+          OR (
+              NEW.source_kind = 'assistant'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM message
+                  JOIN invocation
+                    ON invocation.id = message.invocation_id
+                   AND invocation.owner_id = message.owner_id
+                   AND invocation.workspace_id = message.workspace_id
+                   AND invocation.conversation_id = message.conversation_id
+                  WHERE message.id = NEW.source_reference
+                    AND message.workspace_id = NEW.workspace_id
+                    AND message.owner_id = NEW.owner_id
+                    AND message.role = 'assistant'
+                    AND message.status = 'completed'
+                    AND invocation.status = 'succeeded'
+              )
+          )
+          OR (
+              NEW.source_kind = 'rollback'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM workspace_composition_revision AS target
+                  WHERE target.workspace_id = NEW.workspace_id
+                    AND target.owner_id = NEW.owner_id
+                    AND target.revision < NEW.base_revision
+                    AND NEW.source_reference = 'revision:' || target.revision
+                    AND target.profile_json = NEW.desired_profile_json
+                    AND target.profile_sha256 = NEW.desired_profile_sha256
+              )
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_proposal_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_revision_proposal_binding
+        BEFORE INSERT ON workspace_composition_revision
+        WHEN (
+              NEW.proposal_id IS NULL
+              AND (NEW.revision <> 1 OR NEW.source_kind <> 'system')
+          )
+          OR (
+              NEW.proposal_id IS NOT NULL
+              AND NOT EXISTS (
+              SELECT 1
+              FROM workspace_composition_proposal AS proposal
+              WHERE proposal.id = NEW.proposal_id
+                AND proposal.workspace_id = NEW.workspace_id
+                AND proposal.owner_id = NEW.owner_id
+                AND proposal.base_revision + 1 = NEW.revision
+                AND proposal.desired_profile_json = NEW.profile_json
+                AND proposal.desired_profile_sha256 = NEW.profile_sha256
+                AND proposal.source_kind = NEW.source_kind
+              )
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_proposal_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_composition_decision_binding
+        BEFORE INSERT ON workspace_composition_decision
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM workspace_composition_proposal AS proposal
+            LEFT JOIN workspace_composition_revision AS applied
+              ON applied.workspace_id = NEW.workspace_id
+             AND applied.revision = NEW.applied_revision
+            WHERE proposal.id = NEW.proposal_id
+              AND proposal.workspace_id = NEW.workspace_id
+              AND proposal.request_sha256 = NEW.request_sha256
+              AND (
+                  (NEW.decision = 'rejected' AND NEW.applied_revision IS NULL)
+                  OR (
+                      NEW.decision = 'approved'
+                      AND applied.owner_id = proposal.owner_id
+                      AND applied.revision = proposal.base_revision + 1
+                      AND applied.profile_json = proposal.desired_profile_json
+                      AND applied.profile_sha256 = proposal.desired_profile_sha256
+                      AND applied.source_kind = proposal.source_kind
+                      AND applied.proposal_id = proposal.id
+                  )
+              )
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_composition_decision_binding_invalid');
+        END
+        """,
+        """
+        INSERT INTO owner_workbench_preference (
+            owner_id, density, reduce_motion, row_version, created_at, updated_at
+        )
+        SELECT id, 'compact', 0, 1, created_at, updated_at
+        FROM owner
+        """,
+        (
+            "INSERT INTO workspace_composition_revision "  # noqa: S608 - source-owned canonical constants
+            "(workspace_id, owner_id, revision, template_id, template_version, "
+            "profile_json, profile_sha256, source_kind, proposal_id, created_at) "
+            "SELECT id, owner_id, 1, 'standard-workbench', 1, "
+            f"'{STANDARD_WORKBENCH_PROFILE_JSON}', '{STANDARD_WORKBENCH_PROFILE_SHA256}', "
+            "'system', NULL, created_at FROM workspace"
+        ),
+        (
+            "INSERT INTO workspace_composition_current "  # noqa: S608 - source-owned canonical digest
+            "(workspace_id, owner_id, revision, profile_sha256, created_at, updated_at) "
+            f"SELECT id, owner_id, 1, '{STANDARD_WORKBENCH_PROFILE_SHA256}', "
+            "created_at, updated_at FROM workspace"
+        ),
+    ),
+)
+
 DESKTOP_MIGRATIONS = (
     DESKTOP_0001,
     DESKTOP_0002,
@@ -1076,4 +1465,5 @@ DESKTOP_MIGRATIONS = (
     DESKTOP_0007,
     DESKTOP_0008,
     DESKTOP_0009,
+    DESKTOP_0010,
 )

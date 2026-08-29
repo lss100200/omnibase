@@ -27,6 +27,17 @@ function bridgeFixture() {
       archive: async () => ({ ok: false, error: { code: 'not-called' } }),
       agent: async () => ({ ok: false, error: { code: 'not-called' } }),
     },
+    workbenchSettings: {
+      get: async () => ({ ok: false, error: { code: 'not-called' } }),
+      update: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
+    workspaceComposition: {
+      get: async () => ({ ok: false, error: { code: 'not-called' } }),
+      propose: async () => ({ ok: false, error: { code: 'not-called' } }),
+      proposeFromAssistant: async () => ({ ok: false, error: { code: 'not-called' } }),
+      proposeRollback: async () => ({ ok: false, error: { code: 'not-called' } }),
+      decide: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
     workspaceFiles: {
       authorize: async () => ({ ok: false, error: { code: 'not-called' } }),
       release: async () => ({ ok: false, error: { code: 'not-called' } }),
@@ -87,24 +98,31 @@ test('desktop bridge detection requires the complete closed product surface', ()
   assert.equal(
     resolveDesktopBridge({
       ...complete,
+      workspaceComposition: { ...complete.workspaceComposition, decide: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
       workspaceFiles: { ...complete.workspaceFiles, read: undefined },
     }),
     null,
   )
-          assert.equal(
-            resolveDesktopBridge({
-              ...complete,
-              owner: { ...complete.owner, bootstrap: 'not-a-function' },
-            }),
-            null,
-          )
-          assert.equal(
-            resolveDesktopBridge({
-              ...complete,
-              conversations: { ...complete.conversations, subscribe: undefined },
-            }),
-            null,
-          )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      owner: { ...complete.owner, bootstrap: 'not-a-function' },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      conversations: { ...complete.conversations, subscribe: undefined },
+    }),
+    null,
+  )
 })
 
 const WORKSPACE_A = `workspace_${'a'.repeat(32)}`

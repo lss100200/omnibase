@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { test } from 'node:test'
 import {
   P7_NO_TRUSTED_SOURCE_REASON,
   createP7ShellUiState,
+  createP7WorkspaceShellUiState,
   expandP7Omnia,
   minimizeP7Omnia,
   openP7Blackboard,
+  openP7Settings,
   p7ActivityLabel,
   p7AssignmentStateLabel,
   p7BottomTabAvailability,
@@ -23,6 +27,9 @@ import {
   p7RunHistoryProjection,
   p7RunStateLabel,
   p7RunningCount,
+  p7ShellLayoutClassNames,
+  p7WorkbenchRootClassNames,
+  p7WorkspaceShellUiProjection,
   p7TeamEventLogLine,
   p7TeamPhaseLabel,
   p7Truncate,
@@ -109,6 +116,19 @@ test('shell: blackboard activity opens the brief center view', () => {
   assert.equal(opened.centerView, 'brief')
 })
 
+test('shell: settings owns the center and closes competing panels', () => {
+  const opened = openP7Settings({
+    ...createP7ShellUiState(),
+    bottomOpen: true,
+    agentPanelOpen: true,
+  })
+  assert.equal(opened.activity, 'settings')
+  assert.equal(opened.centerView, 'settings')
+  assert.equal(opened.sidebarOpen, false)
+  assert.equal(opened.bottomOpen, false)
+  assert.equal(opened.agentPanelOpen, false)
+})
+
 test('shell: sidebar and center view and agent panel toggles stay independent', () => {
   let state = createP7ShellUiState()
   state = setP7SidebarOpen(state, false)
@@ -142,6 +162,69 @@ test('shell: selecting a bottom tab always expands the panel', () => {
   const selected = selectP7BottomTab(initial, 'output')
   assert.equal(selected.bottomOpen, true)
   assert.equal(selected.bottomTab, 'output')
+})
+
+test('shell: profile-derived chrome never projects across Workspaces on the first frame', () => {
+  const initial = createP7ShellUiState()
+  const workspaceA = {
+    ...initial,
+    activity: 'run' as const,
+    sidebarOpen: false,
+    bottomOpen: true,
+    bottomTab: 'output' as const,
+    agentPanelOpen: false,
+  }
+  const scoped = createP7WorkspaceShellUiState(`workspace_${'a'.repeat(32)}`, workspaceA)
+
+  assert.deepEqual(p7WorkspaceShellUiProjection(scoped, `workspace_${'a'.repeat(32)}`), workspaceA)
+  assert.deepEqual(
+    p7WorkspaceShellUiProjection(scoped, `workspace_${'b'.repeat(32)}`),
+    createP7ShellUiState(),
+  )
+})
+
+test('shell: conditional root and grid classes remain separate CSS tokens', () => {
+  assert.equal(
+    p7WorkbenchRootClassNames({
+      density: 'compact',
+      agentPanelVisible: false,
+      quietChrome: true,
+      reduceMotion: true,
+    }),
+    'p7-root p7-density-compact p7-agent-closed-body p7-quiet-chrome p7-reduce-motion',
+  )
+  assert.equal(
+    p7ShellLayoutClassNames({ sidebarVisible: false, agentPanelVisible: false }),
+    'p7-shell p7-sidebar-closed p7-agent-closed',
+  )
+})
+
+test('shell: compact viewport CSS defines every visible panel combination', () => {
+  const css = readFileSync(path.join(process.cwd(), 'app/desktop/p7-workbench.css'), 'utf8')
+  const responsive = css.slice(
+    css.indexOf('@media (max-width: 920px)'),
+    css.indexOf('@media (max-width: 700px)'),
+  )
+  assert.match(
+    responsive,
+    /\.p7-shell \{\s*grid-template-columns: 40px 180px minmax\(0, 1fr\) 252px;/,
+  )
+  assert.match(
+    responsive,
+    /\.p7-shell\.p7-sidebar-closed \{\s*grid-template-columns: 40px minmax\(0, 1fr\) 252px;/,
+  )
+  assert.match(
+    responsive,
+    /\.p7-shell\.p7-agent-closed \{\s*grid-template-columns: 40px 180px minmax\(0, 1fr\);/,
+  )
+  assert.match(
+    responsive,
+    /\.p7-shell\.p7-sidebar-closed\.p7-agent-closed \{\s*grid-template-columns: 40px minmax\(0, 1fr\);/,
+  )
+  assert.ok(css.includes('.p7-density-compact .p7-row'))
+  assert.ok(css.includes('.p7-density-comfortable .p7-event-row'))
+  assert.equal(css.includes('.p7-sidebar-row'), false)
+  assert.equal(css.includes('.p7-agent-event'), false)
 })
 
 // ---------------------------------------------------------------------------

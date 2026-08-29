@@ -2595,3 +2595,34 @@ watchers, file context injection, rename, deletion and root persistence remain
 closed. Their UI must stay unavailable. A green P7.1 Wave 1 gate proves none of
 those later capabilities, a new Windows package, Authenticode or production
 release.
+
+## P7.2 versioned Workspace composition
+
+Read INV-087 and `docs/architecture/p7-2-workspace-composition.md` before
+changing the central settings editor, composition schema, Slot registry,
+proposal lifecycle or any P7 profile projection.
+
+The application-owned `standard-workbench` is immutable. Each active Workspace
+has an independent, immutable revision chain and one CAS-fenced current pointer.
+Only closed presentation values and source-owned Slot identifiers may appear in
+a profile. Profile state cannot grant filesystem, Provider, process, network,
+MCP, Skill, Sandbox, Terminal, Git or database authority. Unknown fields, Slot
+semantics, versions, digests and lifecycle combinations fail closed at the
+backend, native-client and renderer boundaries.
+
+Owner, assistant and rollback changes first create immutable proposals. An
+assistant source must be a completed assistant message in the same Owner,
+Workspace and Conversation with a bound succeeded invocation. The backend and
+native client independently canonicalize profiles and verify profile, desired
+profile and complete request SHA-256 values. Only a separate explicit Owner
+decision carrying the exact request digest may create revision `base + 1`, move
+the current pointer and append Audit in one transaction. Rejection is terminal;
+rollback restores a prior profile as a new proposal and later revision. Never
+edit history, auto-approve, infer success from rendering or auto-replay an
+ambiguous external effect.
+
+`knowledge.ebook`, arbitrary plugins/URLs, Save/write, Terminal, Git/search,
+MCP/Skill execution and Sandbox activation remain unavailable. The auxiliary
+ebook may inform a future trusted read-only adapter, but its wildcard messages,
+unauthenticated reimport, hard-coded paths and local self-install launcher are
+not an admitted P7.2 capability.

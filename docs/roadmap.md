@@ -1,8 +1,9 @@
 # OmniBase 分阶段路线图
 
-> **状态同步日期**：2026-08-29
+> **状态同步日期**：2026-08-30
 > **当前个人桌面线**：P7.0 Wave 1 已进入 `main@9913742`；Wave 2 fresh unsigned 1.0.0 EXE/MSI 与真实 P7 Electron UI 已通过工程验收。Windows Sandbox 生命周期由 Owner 亲自执行并按记录偏离接受；非管理员/medium-integrity、目标 viewport/DPI、1.0.1 runtime 启动、Provider-backed SSE/Stop/retry、Authenticode 与生产发布仍未证明。当前权威交接见 `docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`。
-> **当前 P7.1 入口**：Owner 已批准 Wave 1 的只读本地文件合同，权威产品法为 `docs/architecture/p7-1-local-development-loop.md`。源码实现、攻击矩阵与全量门禁已完成；`2e6693e` 的 BOM 字节合同修复已进入 R3 unsigned Windows 包，并在 fresh Windows Sandbox 完成真实 Electron 授权、目录枚举、只读打开、Workspace 隔离、release 清空与窗口关闭旅程，工程证据等待 PR/Owner 审核。Sandbox 为 elevated/High integrity；非管理员/medium-integrity、目标 viewport/DPI、完整进程树收敛、卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、Git、搜索、重命名/删除、Next/backend 文件路由和数据库迁移继续关闭。当前证据见 `docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`。
+> **当前 P7.1 入口**：只读本地文件合同及 R3 工程证据已通过 PR #48 进入 `main@cb1295b`。权威产品法为 `docs/architecture/p7-1-local-development-loop.md`，证据见 `docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`。保存/写入、Agent 文件工具、Terminal、Git、搜索、重命名/删除、Next/backend 文件路由和数据库迁移继续关闭。
+> **当前 P7.2 状态**：从 `main@cb1295b` 完成 Workbench Refinement & Workspace Composition。紧凑/舒适/专注显示、中央全屏设置中心、Application/Workspace 设置分离、不可变 `standard-workbench`、版本化 Workspace derived Profile、闭集 Slot Registry 与 exact-SHA Owner review/approve/reject/rollback 已通过源码审计和单实例 Windows Sandbox 真实 Electron 工程验收。R0 首帧 Explorer 恢复缺陷已前向修复；R1 EXE 为 `55e45d2...ce568`，卸载 exit 0 且进程/监听清零。当前等待最终门禁、受控提交、远端 CI 与合并。产品法见 `docs/architecture/p7-2-workspace-composition.md` 与 INV-087；P3.4 的身份、scope、CAS/fencing、能力分离、审批绑定、append-only audit 和 no-auto-replay 语义保留。`knowledge.ebook`、Save/write、Terminal、Git/search、任意插件、MCP/Skill、Sandbox activation 与自动批准继续关闭；dirty/unsigned 包不等于生产发布。
 > **历史基线**：本路线图的大部分基础设施叙述基于 `main` `eb0a173` 及其后续阶段记录；具体运行事实以源码、维护者地图、最终交接和可复现门禁为准。
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
@@ -324,6 +325,9 @@ P7.x 后续工作，不与 P7.0 的产品与安装真实性混为一项。
 | P7.0 Wave 2：隔离生命周期 | 工程验收通过（记录偏离） | Owner 在可丢弃 Windows Sandbox 完成 1.0.0 安装、真实 P7 窗口、关闭、降级拒绝、回滚探针与卸载；Codex 视觉复核通过。非管理员/medium-integrity、viewport/DPI、1.0.1 runtime 启动和 Provider-backed SSE/Stop/retry 保持 NOT_PROVEN |
 | P7.1 Wave 1：只读本地文件 | R3 Windows 工程证据就绪；等待 PR/Owner 审核 | `2e6693e` 的 BOM 字节合同修复已在 fresh unsigned Windows 包中完成真实 Electron 授权/list/read/Workspace 隔离/release/关闭旅程。renderer 无 Node、绝对路径或 handle；elevated Sandbox 偏离及非管理员、DPI、卸载、Provider、签名、生产发布继续 NOT_PROVEN；保存、Agent 文件工具、Terminal、Git、搜索、重命名/删除继续关闭 |
 | P7.1 后续：写入/Terminal/Git | 冻结 | 写入须另过 reviewed buffer、digest CAS、atomic replace、post-write verify 和 recovery Gate；Terminal/Git 各自需要独立执行与仓库身份/变更合同，不由 Wave 1 推断 |
+| P7.2：Workbench Composition Foundation | 工程证据就绪；待提交/CI/合并 | 中央设置中心、Application/Workspace 分离、密度/专注模式、不可变标准工作台、版本化 Workspace Profile、闭集 Slot、AI proposal、Owner exact-SHA approve/reject、rollback-as-new-revision 与 append-only audit 已完成真实 Electron 工程验收。它是热插拔控制面基础，不是假装已经执行任意插件 |
+| P7.3：Complete Workspace Hot-Plug Platform | 已授权；P7.2 验收后启动 | 在一个大版本内完整交付统一 manifest/registry、安装与依赖、Slot 绑定、启停/升级/回滚/撤销、UI/Skill/MCP/Sandbox/trusted local-app 五类适配器、能力授权与预算、workload identity/lease/fencing、健康检查、故障隔离、reconciliation、设置中心管理与紧急停止。AI 只提案，Owner 审批 exact diff/digest；禁止 renderer 任意 JS、远程 iframe/CDN 和自动重放 `pending/unknown` |
+| P7.4：Hot-Plug Hardening and Product Acceptance | 不得提前启动 | 只负责兼容矩阵、性能与规模、崩溃/攻击/恢复演练、迁移、签名/分发/Marketplace 生产证据和 UX 精修；不得首次实现 registry、lifecycle、adapter、permission、revocation 或 recovery 核心路径 |
 | P7.x：开源与发布准备 | 后续 | README/架构/API/贡献文档、Demo、CI/CD、安全复审、许可证与社区模板；不得提前宣称 1.0.0、签名或生产发布 |
 
 ---
@@ -347,6 +351,12 @@ P7.1 Wave 1: Owner-authorized read-only local files
     ↓
 P7.1 later gates: write/save → Terminal → Git/search
     ↓
+P7.2: composition control plane and central settings
+    ↓
+P7.3: complete hot-plug platform (all core component families and lifecycle)
+    ↓
+P7.4: hardening, scale and product acceptance only
+    ↓
 P7.x: 开源、社区与发布准备
 ```
 
@@ -363,6 +373,7 @@ P7.x: 开源、社区与发布准备
 | 普通 Docker 不是敌对代码安全声明 | Docker 可用于开发和空沙箱生命周期基线；连接真实数据前必须以 P34.0 威胁模型通过 P34.5 隔离 Gate |
 | P5 Fast Track 与生产激活分离 | 允许 engineering-only P5.2B ledger、Model Gateway 和无工具单 Agent Alpha；P34.7 未通过且未获单独批准前，仍不得启用生产 Runtime、自主 Planner、多 Agent 长循环或宿主级工具 |
 | MCP 在工作空间和 Agent 之后 | 工作空间提供隔离边界，Agent 框架定义工具协议，MCP 是扩展实现之一 |
+| 热插拔平台不得拆散到多个后续版本 | P7.2 交付组合控制面，P7.3 必须完整交付 registry、五类适配器、生命周期、权限、撤销和恢复；P7.4 只能加固与验收，不能补核心能力 |
 ## 2026-08-11 personal production target update
 
 PR #25 merged the bounded personal Runtime product path. PR #26 then merged the

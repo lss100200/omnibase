@@ -1356,6 +1356,38 @@
         "frontend/lib/desktop-bridge.test.ts",
         "frontend/lib/p7-workspace-files.test.ts"
       ]
+    },
+    {
+      "id": "INV-087",
+      "title": "P7.2 Workspace composition is versioned, proposal-only, Owner-approved and capability-separate",
+      "document": "docs/maintainers/security-invariants.md#inv-087-p72-versioned-workspace-composition-boundary",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/composition.py",
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/app.py",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/app/desktop/p7-workbench.css",
+        "frontend/components/workbench/p7/**",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/p7-workspace-composition.ts",
+        "frontend/lib/p7-workbench-shell.ts",
+        "docs/architecture/p7-2-workspace-composition.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_composition.py",
+        "backend/tests/test_desktop_local_foundation.py",
+        "desktop/tests/ipc.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/p7-workspace-composition.test.ts",
+        "frontend/lib/p7-workbench-shell.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -4458,7 +4490,8 @@
         "INV-083",
         "INV-084",
         "INV-085",
-        "INV-086"
+        "INV-086",
+        "INV-087"
       ],
       "verification": [
         "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py backend/tests/test_desktop_local_endpoint.py -q",
@@ -4517,7 +4550,8 @@
         "INV-083",
         "INV-084",
         "INV-085",
-        "INV-086"
+        "INV-086",
+        "INV-087"
       ],
       "verification": [
         "cd frontend && pnpm test",
@@ -4570,7 +4604,8 @@
         "INV-083",
         "INV-084",
         "INV-085",
-        "INV-086"
+        "INV-086",
+        "INV-087"
       ],
       "verification": [
         "cd desktop && pnpm test && pnpm typecheck && pnpm build",
@@ -4584,6 +4619,104 @@
         "Release the in-memory root authorization, clear tree/editor buffers and require a new Owner picker gesture; never persist or infer a physical root.",
         "Preserve user files untouched and keep save/write, Agent file tools, Terminal, Git, search, rename and deletion closed after any read failure.",
         "Forward-fix Electron/frontend bytes without adding a Next/backend file route, SQLite migration, renderer Node access or weaker path/link/secret validation."
+      ]
+    },
+    {
+      "id": "p7-2-workspace-composition",
+      "name": "P7.2 compact workbench, central settings and versioned per-Workspace composition",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/composition.py",
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/app.py",
+        "backend/tests/test_desktop_local_composition.py",
+        "backend/tests/test_desktop_local_foundation.py",
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/native-client.ts",
+        "desktop/src/runtime/runtime-manager.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "desktop/tests/ipc.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/app/desktop/p7-workbench.css",
+        "frontend/components/workbench/p7/**",
+        "frontend/lib/desktop-bridge*.ts",
+        "frontend/lib/p7-workspace-composition*.ts",
+        "frontend/lib/p7-workbench-shell*.ts",
+        "docs/architecture/p7-2-workspace-composition.md",
+        "docs/architecture/p7-3-workspace-hot-plug-platform.md",
+        "docs/maintainers/security-invariants.md",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/desktop_local/composition.py:get_workspace_composition",
+        "backend/src/omnibase/desktop_local/composition.py:create_owner_proposal",
+        "backend/src/omnibase/desktop_local/composition.py:create_assistant_proposal",
+        "backend/src/omnibase/desktop_local/composition.py:create_rollback_proposal",
+        "backend/src/omnibase/desktop_local/composition.py:decide_workspace_proposal",
+        "desktop/src/runtime/native-client.ts:DesktopNativeClient",
+        "desktop/src/ipc.ts:registerClosedIpcHandlers",
+        "frontend/app/desktop/workbench-client.tsx:DesktopWorkbench",
+        "frontend/components/workbench/p7/p7-settings-center.tsx:P7SettingsCenter",
+        "frontend/lib/p7-workspace-composition.ts:p7CompositionProjection",
+        "frontend/lib/p7-workspace-composition.ts:p7ParseAssistantCompositionEnvelope"
+      ],
+      "public_interfaces": [
+        "Native-controlled application preference CAS plus workspaceComposition get/propose/proposeFromAssistant/proposeRollback/decide preload methods",
+        "Immutable standard-workbench template and one canonical SHA-256-bound derived profile revision chain per active Workspace",
+        "Closed Slot registry and presentation-only density/focus/layout profile whose unavailable capabilities cannot be enabled",
+        "Immutable Owner, assistant-message and rollback proposals with exact diff, request SHA-256 and separate explicit Owner decision",
+        "Full-editor settings center separating Application, current Workspace, capability posture, Provider controls, change review and append-only audit",
+        "First-frame Workspace profile isolation; renderer receives logical identifiers and validated projections but no native control token or SQLite authority"
+      ],
+      "depends_on": [
+        "p7-1-local-development-loop",
+        "p7-editor-first-workbench",
+        "p6-5-windows-desktop-distribution"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007",
+        "INV-011",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-016",
+        "INV-017",
+        "INV-018",
+        "INV-019",
+        "INV-020",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024",
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085",
+        "INV-086",
+        "INV-087"
+      ],
+      "verification": [
+        "python -m pytest backend/tests/test_desktop_local_composition.py backend/tests/test_desktop_local_foundation.py -q",
+        "python -m ruff check backend/src/omnibase/desktop_local/composition.py backend/src/omnibase/desktop_local/app.py backend/src/omnibase/desktop_local/schema.py backend/tests/test_desktop_local_composition.py backend/tests/test_desktop_local_foundation.py",
+        "python -m ruff format --check backend/src/omnibase/desktop_local/composition.py backend/src/omnibase/desktop_local/app.py backend/src/omnibase/desktop_local/schema.py backend/tests/test_desktop_local_composition.py backend/tests/test_desktop_local_foundation.py",
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "git diff --check"
+      ],
+      "recovery": [
+        "Keep the last verified current profile, clear stale renderer projections and reload the current Workspace snapshot through native control.",
+        "Reject stale proposals and create a new proposal from the current revision; never edit a revision, proposal, decision or audit row in place.",
+        "Restore a prior presentation only through rollback-as-new-proposal plus a separate exact-SHA Owner approval.",
+        "Keep unknown Slots, plugins, MCP, Skills, Sandbox, Terminal, Git/search and Save/write unavailable after any composition failure."
       ]
     }
   ]

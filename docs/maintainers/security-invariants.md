@@ -4662,3 +4662,68 @@ picker gesture. Preserve every user file unchanged. Never persist a physical
 path or handle, weaken containment/link/secret checks, add a Next/backend file
 route, rewrite SQLite or enable a later write, Terminal, Git or Agent-tool gate
 to repair a read failure.
+
+## INV-087 p72-versioned-workspace-composition-boundary
+
+P7.2 may refine workbench density and add a central settings editor, an
+immutable standard template, versioned per-Workspace composition profiles and
+an AI-compatible proposal/review/apply lifecycle. Presentation composition is
+not capability authority. A profile may select only source-owned closed-set
+appearance, layout and admitted Slot identifiers; it cannot define code, URL,
+process command, physical path, database locator, credential, tool, network or
+Sandbox policy. Unknown fields, Slots, versions and capability states fail
+closed and render unavailable.
+
+The desktop-local SQLite store is authoritative behind native control. It must
+keep the source-owned `standard-workbench` template separate from immutable
+derived Workspace revisions, bind one current pointer to an active Workspace,
+and use CAS revision/row-version checks as local fencing. Every mutation
+revalidates the live Owner and Workspace inside one `BEGIN IMMEDIATE`
+transaction. The renderer receives only logical IDs, closed profile values,
+canonical SHA-256 digests and bounded audit projections; it never receives the
+native control token, a physical database path or arbitrary mutation syntax.
+
+AI/Workspace-originated changes are immutable proposals, not dispatch. The
+trusted host canonicalizes the complete desired profile and computes a request
+digest binding schema/template version, Workspace, base revision/digest,
+source kind/reference and desired profile. Only a separate explicit Owner
+decision carrying that exact digest may atomically create a new immutable
+revision, move the current pointer and append Audit. AI, Workspace content,
+embedded applications and Agent output cannot approve themselves, change the
+standard template or broaden a capability. Stale base/current identity,
+double/replayed approval and digest drift are conflicts, not best-effort
+merges.
+
+Rollback is restore-as-new-revision through the same proposal and Owner
+approval path. Historical profiles, proposals, decisions and Audit remain
+append-only. A future external integration must independently prove its live
+capability, workload identity, lease/fencing, allowed origin and bounded
+transport on every use. `pending|unknown` external effects require explicit
+reconciliation and never auto-replay. These rules localize INV-003 through
+INV-007 and INV-011 through INV-024 semantics without claiming that the P34
+PostgreSQL enterprise control plane is wired into desktop-local SQLite.
+
+**Required verification**
+
+- v1-v9 upgrade and fresh P7.2 schema tests, immutable-row and append-only
+  database trigger attacks;
+- closed profile/Slot parsing, canonical digest determinism, exact diff and
+  rollback-as-new-revision tests;
+- cross-Workspace, archived Workspace, stale revision/digest, replay, double
+  approval and AI self-approval denials;
+- exact preload IPC channel/input/output and renderer-no-authority tests;
+- first-frame Workspace switch, density/focus, settings and unavailable
+  capability projection tests;
+- desktop/frontend/backend focused tests, typecheck/build, release contract
+  tests, both maintainer validators, sealed-contract validation and
+  `git diff --check`;
+- one fresh installed Windows Electron journey before product acceptance.
+
+**Failure recovery**
+
+Keep the last verified current profile, clear stale renderer state and require
+a fresh read/proposal from the current revision. Preserve every immutable
+revision, proposal, decision and Audit row. Never repair by editing history,
+resetting a revision, applying a stale proposal, enabling a missing capability,
+replaying an unknown effect or mutating the standard template/another
+Workspace.

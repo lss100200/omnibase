@@ -6,6 +6,8 @@ import type {
   DesktopAgentRoleList,
   DesktopAgentRoleTestResult,
   DesktopAgentRoleUpdateInput,
+  DesktopApplicationPreference,
+  DesktopApplicationPreferenceUpdateInput,
   DesktopConversationArchiveInput,
   DesktopConversationCancelInput,
   DesktopConversationCreateInput,
@@ -37,6 +39,13 @@ import type {
   DesktopTeamRunStartInput,
   DesktopTeamRunSubmitProposalInput,
   DesktopWorkspaceArchiveInput,
+  DesktopWorkspaceCompositionAssistantProposalInput,
+  DesktopWorkspaceCompositionDecisionInput,
+  DesktopWorkspaceCompositionDecisionResult,
+  DesktopWorkspaceCompositionOwnerProposalInput,
+  DesktopWorkspaceCompositionProposalResult,
+  DesktopWorkspaceCompositionRollbackProposalInput,
+  DesktopWorkspaceCompositionSnapshot,
   DesktopWorkspaceCreateInput,
   DesktopWorkspaceFileAuthorization,
   DesktopWorkspaceFileAuthorizeInput,
@@ -63,6 +72,15 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   workspacesCreate: "omnibase:workspaces:create",
   workspacesArchive: "omnibase:workspaces:archive",
   workspaceAgent: "omnibase:workspace:agent",
+  workbenchSettingsGet: "omnibase:workbench-settings:get",
+  workbenchSettingsUpdate: "omnibase:workbench-settings:update",
+  workspaceCompositionGet: "omnibase:workspace-composition:get",
+  workspaceCompositionPropose: "omnibase:workspace-composition:propose",
+  workspaceCompositionProposeFromAssistant:
+    "omnibase:workspace-composition:propose-from-assistant",
+  workspaceCompositionProposeRollback:
+    "omnibase:workspace-composition:propose-rollback",
+  workspaceCompositionDecide: "omnibase:workspace-composition:decide",
   workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
   workspaceFilesRelease: "omnibase:workspace-files:release",
   workspaceFilesList: "omnibase:workspace-files:list",
@@ -151,6 +169,86 @@ const api: OmniBaseDesktopApi = Object.freeze({
         DesktopOperationResult<{ readonly agent: DesktopParentAgent }>
       >,
   }),
+  workbenchSettings: Object.freeze({
+    get: (): Promise<
+      DesktopOperationResult<{
+        readonly preference: DesktopApplicationPreference;
+      }>
+    > =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workbenchSettingsGet) as Promise<
+        DesktopOperationResult<{
+          readonly preference: DesktopApplicationPreference;
+        }>
+      >,
+    update: (
+      input: DesktopApplicationPreferenceUpdateInput,
+    ): Promise<
+      DesktopOperationResult<{
+        readonly preference: DesktopApplicationPreference;
+      }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workbenchSettingsUpdate,
+        input,
+      ) as Promise<
+        DesktopOperationResult<{
+          readonly preference: DesktopApplicationPreference;
+        }>
+      >,
+  }),
+  workspaceComposition: Object.freeze({
+    get: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceCompositionGet,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>>,
+    propose: (
+      input: DesktopWorkspaceCompositionOwnerProposalInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceCompositionPropose,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+      >,
+    proposeFromAssistant: (
+      input: DesktopWorkspaceCompositionAssistantProposalInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceCompositionProposeFromAssistant,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+      >,
+    proposeRollback: (
+      input: DesktopWorkspaceCompositionRollbackProposalInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceCompositionProposeRollback,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+      >,
+    decide: (
+      input: DesktopWorkspaceCompositionDecisionInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceCompositionDecide,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+      >,
+  }),
   workspaceFiles: Object.freeze({
     authorize: (
       input: DesktopWorkspaceFileAuthorizeInput,
@@ -169,15 +267,17 @@ const api: OmniBaseDesktopApi = Object.freeze({
     list: (
       input: DesktopWorkspaceFileListInput,
     ): Promise<DesktopOperationResult<DesktopWorkspaceFileList>> =>
-      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceFilesList, input) as Promise<
-        DesktopOperationResult<DesktopWorkspaceFileList>
-      >,
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceFilesList,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopWorkspaceFileList>>,
     read: (
       input: DesktopWorkspaceFileReadInput,
     ): Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>> =>
-      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceFilesRead, input) as Promise<
-        DesktopOperationResult<DesktopWorkspaceFileReadResult>
-      >,
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceFilesRead,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>>,
   }),
   providers: Object.freeze({
     list: (): Promise<DesktopOperationResult<DesktopProviderList>> =>
@@ -299,13 +399,17 @@ const api: OmniBaseDesktopApi = Object.freeze({
       list: (
         input: DesktopWorkspaceIdInput,
       ): Promise<DesktopOperationResult<DesktopAgentRoleList>> =>
-        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesList, input) as Promise<
-          DesktopOperationResult<DesktopAgentRoleList>
-        >,
+        ipcRenderer.invoke(
+          PRELOAD_IPC_CHANNELS.agentsRolesList,
+          input,
+        ) as Promise<DesktopOperationResult<DesktopAgentRoleList>>,
       get: (
         input: DesktopAgentRoleIdInput,
       ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> =>
-        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesGet, input) as Promise<
+        ipcRenderer.invoke(
+          PRELOAD_IPC_CHANNELS.agentsRolesGet,
+          input,
+        ) as Promise<
           DesktopOperationResult<{ readonly role: DesktopAgentRole }>
         >,
       update: (
@@ -314,13 +418,16 @@ const api: OmniBaseDesktopApi = Object.freeze({
         ipcRenderer.invoke(
           PRELOAD_IPC_CHANNELS.agentsRolesUpdate,
           input,
-        ) as Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>>,
+        ) as Promise<
+          DesktopOperationResult<{ readonly role: DesktopAgentRole }>
+        >,
       test: (
         input: DesktopAgentRoleIdInput,
       ): Promise<DesktopOperationResult<DesktopAgentRoleTestResult>> =>
-        ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.agentsRolesTest, input) as Promise<
-          DesktopOperationResult<DesktopAgentRoleTestResult>
-        >,
+        ipcRenderer.invoke(
+          PRELOAD_IPC_CHANNELS.agentsRolesTest,
+          input,
+        ) as Promise<DesktopOperationResult<DesktopAgentRoleTestResult>>,
     }),
   }),
   teamRuns: Object.freeze({
@@ -395,8 +502,13 @@ const api: OmniBaseDesktopApi = Object.freeze({
       >,
     execute: (
       input: DesktopTeamRunExecuteInput,
-    ): Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>> =>
-      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.teamRunsExecute, input) as Promise<
+    ): Promise<
+      DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.teamRunsExecute,
+        input,
+      ) as Promise<
         DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>
       >,
     appendBudget: (
@@ -405,7 +517,9 @@ const api: OmniBaseDesktopApi = Object.freeze({
       ipcRenderer.invoke(
         PRELOAD_IPC_CHANNELS.teamRunsAppendBudget,
         input,
-      ) as Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>,
+      ) as Promise<
+        DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>
+      >,
     subscribe: (listener: (event: DesktopTeamRunEvent) => void) => {
       const wrapped = (_event: unknown, payload: DesktopTeamRunEvent) => {
         listener(payload);
