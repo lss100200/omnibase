@@ -78,6 +78,11 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "team_employee_report",
             "team_provider_call_reservation",
             "team_parent_call",
+            "owner_workbench_preference",
+            "workspace_composition_revision",
+            "workspace_composition_proposal",
+            "workspace_composition_current",
+            "workspace_composition_decision",
         ):
             assert table_sql[table].rstrip().endswith("STRICT")
 
@@ -110,6 +115,7 @@ def test_restart_is_idempotent_and_preserves_application_migration_record(tmp_pa
             (7, "desktop_0007_recovery_success_downgrade", "1.0.0"),
             (8, "desktop_0008_collaboration_report_binding", "1.0.0"),
             (9, "desktop_0009_parent_call_proof", "1.0.0"),
+            (10, "desktop_0010_workspace_composition", "1.0.0"),
         ]
         assert restarted.execute("SELECT COUNT(*) FROM runtime_job").fetchone()[0] == 1
         assert local_health(restarted).status == "healthy"

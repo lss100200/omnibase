@@ -13,6 +13,8 @@ import {
   type DesktopAgentRoleList,
   type DesktopAgentRoleTestResult,
   type DesktopAgentRoleUpdateInput,
+  type DesktopApplicationPreference,
+  type DesktopApplicationPreferenceUpdateInput,
   type DesktopConversationArchiveInput,
   type DesktopConversationCancelInput,
   type DesktopConversationCreateInput,
@@ -44,6 +46,14 @@ import {
   type DesktopTeamRunStartInput,
   type DesktopTeamRunSubmitProposalInput,
   type DesktopWorkspaceArchiveInput,
+  type DesktopWorkspaceCompositionAssistantProposalInput,
+  type DesktopWorkspaceCompositionDecisionInput,
+  type DesktopWorkspaceCompositionDecisionResult,
+  type DesktopWorkspaceCompositionOwnerProposalInput,
+  type DesktopWorkspaceCompositionProfileValue,
+  type DesktopWorkspaceCompositionProposalResult,
+  type DesktopWorkspaceCompositionRollbackProposalInput,
+  type DesktopWorkspaceCompositionSnapshot,
   type DesktopWorkspaceCreateInput,
   type DesktopWorkspaceFileAuthorization,
   type DesktopWorkspaceFileAuthorizeInput,
@@ -92,6 +102,41 @@ export interface IpcDependencies {
   readonly getWorkspaceAgent: (
     input: DesktopWorkspaceIdInput,
   ) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>;
+  readonly getApplicationPreference: () => Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  >;
+  readonly updateApplicationPreference: (
+    input: DesktopApplicationPreferenceUpdateInput,
+  ) => Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  >;
+  readonly getWorkspaceComposition: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>>;
+  readonly proposeWorkspaceComposition: (
+    input: DesktopWorkspaceCompositionOwnerProposalInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  >;
+  readonly proposeWorkspaceCompositionFromAssistant: (
+    input: DesktopWorkspaceCompositionAssistantProposalInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  >;
+  readonly proposeWorkspaceCompositionRollback: (
+    input: DesktopWorkspaceCompositionRollbackProposalInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  >;
+  readonly decideWorkspaceComposition: (
+    input: DesktopWorkspaceCompositionDecisionInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+  >;
   readonly authorizeWorkspaceFiles: (
     input: DesktopWorkspaceFileAuthorizeInput,
   ) => Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>>;
@@ -104,7 +149,9 @@ export interface IpcDependencies {
   readonly readWorkspaceFile: (
     input: DesktopWorkspaceFileReadInput,
   ) => Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>>;
-  readonly listProviders: () => Promise<DesktopOperationResult<DesktopProviderList>>;
+  readonly listProviders: () => Promise<
+    DesktopOperationResult<DesktopProviderList>
+  >;
   readonly upsertProvider: (
     input: DesktopProviderUpsertInput,
   ) => Promise<DesktopOperationResult<DesktopProviderMutationResult>>;
@@ -182,14 +229,18 @@ export interface IpcDependencies {
   ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
   readonly listTeamRuns: (
     input: DesktopWorkspaceIdInput,
-  ) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>>;
+  ) => Promise<
+    DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+  >;
   readonly submitTeamProposal: (
     input: DesktopTeamRunSubmitProposalInput,
     emit: (event: DesktopTeamRunEvent) => void,
   ) => Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>;
   readonly getTeamBlackboard: (
     input: DesktopTeamRunIdInput,
-  ) => Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>>;
+  ) => Promise<
+    DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+  >;
   readonly recordTeamCollaboration: (
     input: DesktopTeamCollaborationInput,
     emit: (event: DesktopTeamRunEvent) => void,
@@ -216,6 +267,37 @@ const INVOCATION_ID_PATTERN = /^invocation_[a-f0-9]{32}$/u;
 const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
 const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
 const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
+const COMPOSITION_PROPOSAL_ID_PATTERN = /^proposal_[a-f0-9]{32}$/u;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const COMPOSITION_SLOT_IDS = Object.freeze([
+  "agent.rail",
+  "conversation.transcript",
+  "event.agent-log",
+  "event.output",
+  "knowledge.ebook",
+  "mcp.catalog",
+  "provider.settings",
+  "run.history",
+  "sandbox.runtime",
+  "settings.center",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+  "workspace.brief",
+  "workspace.explorer",
+] as const);
+const COMPOSITION_REQUIRED_SLOTS = new Set([
+  "conversation.transcript",
+  "settings.center",
+] as const);
+const COMPOSITION_UNAVAILABLE_SLOTS = new Set([
+  "knowledge.ebook",
+  "mcp.catalog",
+  "sandbox.runtime",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+] as const);
 const ASSIGNMENT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
 const SPECIALIST_ROLE_SET = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
@@ -325,11 +407,249 @@ function parseWorkspaceIdInput(
   return Object.freeze({ workspaceId: args[0].workspaceId });
 }
 
+function validRevision(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 2_147_483_647
+  );
+}
+
+function parseApplicationPreferenceUpdateInput(
+  args: readonly unknown[],
+): DesktopApplicationPreferenceUpdateInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["density", "expectedRowVersion", "reduceMotion"]) ||
+    (args[0].density !== "compact" && args[0].density !== "comfortable") ||
+    typeof args[0].reduceMotion !== "boolean" ||
+    !validRevision(args[0].expectedRowVersion)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    density: args[0].density,
+    reduceMotion: args[0].reduceMotion,
+    expectedRowVersion: args[0].expectedRowVersion,
+  });
+}
+
+function parseCompositionProfile(
+  value: unknown,
+): DesktopWorkspaceCompositionProfileValue | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "appearance",
+      "layout",
+      "schemaVersion",
+      "slots",
+      "template",
+    ]) ||
+    value.schemaVersion !== 1 ||
+    !isRecord(value.template) ||
+    !hasExactKeys(value.template, ["id", "version"]) ||
+    value.template.id !== "standard-workbench" ||
+    value.template.version !== 1 ||
+    !isRecord(value.appearance) ||
+    !hasExactKeys(value.appearance, ["density", "quietChrome"]) ||
+    (value.appearance.density !== "inherit" &&
+      value.appearance.density !== "compact" &&
+      value.appearance.density !== "comfortable") ||
+    typeof value.appearance.quietChrome !== "boolean" ||
+    !isRecord(value.layout) ||
+    !hasExactKeys(value.layout, [
+      "agentPanel",
+      "bottomPanel",
+      "focusMode",
+      "sidebar",
+    ]) ||
+    (value.layout.agentPanel !== "open" &&
+      value.layout.agentPanel !== "closed") ||
+    (value.layout.bottomPanel !== "hidden" &&
+      value.layout.bottomPanel !== "output" &&
+      value.layout.bottomPanel !== "agent-log") ||
+    typeof value.layout.focusMode !== "boolean" ||
+    (value.layout.sidebar !== "explorer" &&
+      value.layout.sidebar !== "run" &&
+      value.layout.sidebar !== "blackboard" &&
+      value.layout.sidebar !== "hidden") ||
+    !isRecord(value.slots) ||
+    !hasExactKeys(value.slots, COMPOSITION_SLOT_IDS) ||
+    COMPOSITION_SLOT_IDS.some(
+      (slotId) =>
+        typeof (value.slots as Record<string, unknown>)[slotId] !== "boolean",
+    )
+  ) {
+    return null;
+  }
+  const rawSlots = value.slots as Record<
+    (typeof COMPOSITION_SLOT_IDS)[number],
+    boolean
+  >;
+  if (
+    [...COMPOSITION_REQUIRED_SLOTS].some((slotId) => !rawSlots[slotId]) ||
+    [...COMPOSITION_UNAVAILABLE_SLOTS].some((slotId) => rawSlots[slotId]) ||
+    (!rawSlots["agent.rail"] && value.layout.agentPanel !== "closed") ||
+    (!rawSlots["workspace.explorer"] && value.layout.sidebar === "explorer") ||
+    (!rawSlots["run.history"] && value.layout.sidebar === "run") ||
+    (!rawSlots["workspace.brief"] && value.layout.sidebar === "blackboard") ||
+    (!rawSlots["event.output"] && value.layout.bottomPanel === "output") ||
+    (!rawSlots["event.agent-log"] && value.layout.bottomPanel === "agent-log")
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    schemaVersion: 1,
+    template: Object.freeze({ id: "standard-workbench", version: 1 }),
+    appearance: Object.freeze({
+      density: value.appearance.density,
+      quietChrome: value.appearance.quietChrome,
+    }),
+    layout: Object.freeze({
+      agentPanel: value.layout.agentPanel,
+      bottomPanel: value.layout.bottomPanel,
+      focusMode: value.layout.focusMode,
+      sidebar: value.layout.sidebar,
+    }),
+    slots: Object.freeze(
+      Object.fromEntries(
+        COMPOSITION_SLOT_IDS.map((slotId) => [slotId, rawSlots[slotId]]),
+      ) as DesktopWorkspaceCompositionProfileValue["slots"],
+    ),
+  });
+}
+
+function parseCompositionOwnerProposalInput(
+  args: readonly unknown[],
+): DesktopWorkspaceCompositionOwnerProposalInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "desiredProfile",
+      "expectedProfileSha256",
+      "expectedRevision",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validRevision(args[0].expectedRevision) ||
+    typeof args[0].expectedProfileSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].expectedProfileSha256)
+  ) {
+    return null;
+  }
+  const desiredProfile = parseCompositionProfile(args[0].desiredProfile);
+  return desiredProfile === null
+    ? null
+    : Object.freeze({
+        workspaceId: args[0].workspaceId,
+        expectedRevision: args[0].expectedRevision,
+        expectedProfileSha256: args[0].expectedProfileSha256,
+        desiredProfile,
+      });
+}
+
+function parseCompositionAssistantProposalInput(
+  args: readonly unknown[],
+): DesktopWorkspaceCompositionAssistantProposalInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "expectedProfileSha256",
+      "expectedRevision",
+      "messageId",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validRevision(args[0].expectedRevision) ||
+    typeof args[0].expectedProfileSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].expectedProfileSha256) ||
+    typeof args[0].messageId !== "string" ||
+    !MESSAGE_ID_PATTERN.test(args[0].messageId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    expectedRevision: args[0].expectedRevision,
+    expectedProfileSha256: args[0].expectedProfileSha256,
+    messageId: args[0].messageId,
+  });
+}
+
+function parseCompositionRollbackProposalInput(
+  args: readonly unknown[],
+): DesktopWorkspaceCompositionRollbackProposalInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "expectedProfileSha256",
+      "expectedRevision",
+      "targetRevision",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validRevision(args[0].expectedRevision) ||
+    typeof args[0].expectedProfileSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].expectedProfileSha256) ||
+    !validRevision(args[0].targetRevision)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    expectedRevision: args[0].expectedRevision,
+    expectedProfileSha256: args[0].expectedProfileSha256,
+    targetRevision: args[0].targetRevision,
+  });
+}
+
+function parseCompositionDecisionInput(
+  args: readonly unknown[],
+): DesktopWorkspaceCompositionDecisionInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "decision",
+      "proposalId",
+      "requestSha256",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].proposalId !== "string" ||
+    !COMPOSITION_PROPOSAL_ID_PATTERN.test(args[0].proposalId) ||
+    typeof args[0].requestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].requestSha256) ||
+    (args[0].decision !== "approve" && args[0].decision !== "reject")
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    proposalId: args[0].proposalId,
+    requestSha256: args[0].requestSha256,
+    decision: args[0].decision,
+  });
+}
+
 function validAuthorizationGeneration(value: unknown): value is number {
   return Number.isSafeInteger(value) && typeof value === "number" && value >= 1;
 }
 
-function validLogicalPathValue(value: unknown, allowRoot: boolean): value is string {
+function validLogicalPathValue(
+  value: unknown,
+  allowRoot: boolean,
+): value is string {
   return (
     typeof value === "string" &&
     (allowRoot || value.length > 0) &&
@@ -363,7 +683,11 @@ function parseWorkspaceFileListInput(
   if (
     args.length !== 1 ||
     !isRecord(args[0]) ||
-    !hasExactKeys(args[0], ["authorizationGeneration", "directoryPath", "workspaceId"]) ||
+    !hasExactKeys(args[0], [
+      "authorizationGeneration",
+      "directoryPath",
+      "workspaceId",
+    ]) ||
     typeof args[0].workspaceId !== "string" ||
     !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
     !validAuthorizationGeneration(args[0].authorizationGeneration) ||
@@ -384,7 +708,11 @@ function parseWorkspaceFileReadInput(
   if (
     args.length !== 1 ||
     !isRecord(args[0]) ||
-    !hasExactKeys(args[0], ["authorizationGeneration", "path", "workspaceId"]) ||
+    !hasExactKeys(args[0], [
+      "authorizationGeneration",
+      "path",
+      "workspaceId",
+    ]) ||
     typeof args[0].workspaceId !== "string" ||
     !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
     !validAuthorizationGeneration(args[0].authorizationGeneration) ||
@@ -455,7 +783,10 @@ function parseProviderUpsertInput(
   ) {
     return null;
   }
-  if (args[0].id !== undefined && (typeof args[0].id !== "string" || !PROVIDER_ID_PATTERN.test(args[0].id))) {
+  if (
+    args[0].id !== undefined &&
+    (typeof args[0].id !== "string" || !PROVIDER_ID_PATTERN.test(args[0].id))
+  ) {
     return null;
   }
   if (
@@ -474,7 +805,8 @@ function parseProviderUpsertInput(
     ...(args[0].apiKey === undefined ? {} : { apiKey: args[0].apiKey }),
     modelName,
     gear: args[0].gear as DesktopProviderUpsertInput["gear"],
-    thinkingDepth: args[0].thinkingDepth as DesktopProviderUpsertInput["thinkingDepth"],
+    thinkingDepth: args[0]
+      .thinkingDepth as DesktopProviderUpsertInput["thinkingDepth"],
     timeoutSeconds: args[0].timeoutSeconds,
     allowLoopbackHttp: args[0].allowLoopbackHttp,
     isDefault: args[0].isDefault,
@@ -494,7 +826,8 @@ function parseConversationCreateInput(
   }
   if (args[0].title !== undefined) {
     const title = normalizedName(args[0].title);
-    if (title === null || !hasExactKeys(args[0], ["title", "workspaceId"])) return null;
+    if (title === null || !hasExactKeys(args[0], ["title", "workspaceId"]))
+      return null;
     return Object.freeze({ workspaceId: args[0].workspaceId, title });
   }
   if (!hasExactKeys(args[0], ["workspaceId"])) return null;
@@ -527,7 +860,11 @@ function parseConversationArchiveInput(
   if (
     args.length !== 1 ||
     !isRecord(args[0]) ||
-    !hasExactKeys(args[0], ["conversationId", "expectedRowVersion", "workspaceId"]) ||
+    !hasExactKeys(args[0], [
+      "conversationId",
+      "expectedRowVersion",
+      "workspaceId",
+    ]) ||
     typeof args[0].workspaceId !== "string" ||
     !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
     typeof args[0].conversationId !== "string" ||
@@ -595,11 +932,15 @@ function parseConversationSendInput(
     workspaceId: args[0].workspaceId,
     conversationId: args[0].conversationId,
     content: args[0].content,
-    ...(args[0].providerId === undefined ? {} : { providerId: args[0].providerId }),
+    ...(args[0].providerId === undefined
+      ? {}
+      : { providerId: args[0].providerId }),
     ...(args[0].retryOfMessageId === undefined
       ? {}
       : { retryOfMessageId: args[0].retryOfMessageId }),
-    ...(args[0].sendEpoch === undefined ? {} : { sendEpoch: args[0].sendEpoch }),
+    ...(args[0].sendEpoch === undefined
+      ? {}
+      : { sendEpoch: args[0].sendEpoch }),
   });
 }
 
@@ -681,7 +1022,8 @@ function parseAgentRoleUpdateInput(
     providerId: args[0].providerId,
     modelNameOverride: args[0].modelNameOverride,
     gear: args[0].gear as DesktopAgentRoleUpdateInput["gear"],
-    thinkingDepth: args[0].thinkingDepth as DesktopAgentRoleUpdateInput["thinkingDepth"],
+    thinkingDepth: args[0]
+      .thinkingDepth as DesktopAgentRoleUpdateInput["thinkingDepth"],
     expectedRowVersion: args[0].expectedRowVersion,
   });
 }
@@ -1057,6 +1399,74 @@ export function registerClosedIpcHandlers(
       return input === null
         ? invalidInput<{ readonly agent: DesktopParentAgent }>()
         : dependencies.getWorkspaceAgent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workbenchSettingsGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      requireNoIpcArguments(args);
+      return dependencies.getApplicationPreference();
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workbenchSettingsUpdate,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseApplicationPreferenceUpdateInput(args);
+      return input === null
+        ? invalidInput<{ readonly preference: DesktopApplicationPreference }>()
+        : dependencies.updateApplicationPreference(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceCompositionGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceCompositionSnapshot>()
+        : dependencies.getWorkspaceComposition(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceCompositionPropose,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseCompositionOwnerProposalInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceCompositionProposalResult>()
+        : dependencies.proposeWorkspaceComposition(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceCompositionProposeFromAssistant,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseCompositionAssistantProposalInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceCompositionProposalResult>()
+        : dependencies.proposeWorkspaceCompositionFromAssistant(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceCompositionProposeRollback,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseCompositionRollbackProposalInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceCompositionProposalResult>()
+        : dependencies.proposeWorkspaceCompositionRollback(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceCompositionDecide,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseCompositionDecisionInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceCompositionDecisionResult>()
+        : dependencies.decideWorkspaceComposition(input);
     },
   );
   ipcMain.handle(

@@ -3,6 +3,8 @@ import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import type {
+  DesktopApplicationPreference,
+  DesktopApplicationPreferenceUpdateInput,
   DesktopConversation,
   DesktopConversationArchiveInput,
   DesktopConversationCancelInput,
@@ -38,6 +40,13 @@ import type {
   DesktopTeamRunStartInput,
   DesktopTeamRunSubmitProposalInput,
   DesktopWorkspaceArchiveInput,
+  DesktopWorkspaceCompositionAssistantProposalInput,
+  DesktopWorkspaceCompositionDecisionInput,
+  DesktopWorkspaceCompositionDecisionResult,
+  DesktopWorkspaceCompositionOwnerProposalInput,
+  DesktopWorkspaceCompositionProposalResult,
+  DesktopWorkspaceCompositionRollbackProposalInput,
+  DesktopWorkspaceCompositionSnapshot,
   DesktopWorkspaceCreateInput,
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
@@ -64,20 +73,21 @@ export interface RuntimeManagerNativeSendClient {
   readonly sendConversation: DesktopNativeClient["sendConversation"];
 }
 
-export type RuntimeManagerNativeClientForTests = RuntimeManagerNativeSendClient &
-  Partial<
-    Pick<
-      DesktopNativeClient,
-      | "cancelTeamRun"
-      | "consumeTeamProviderCall"
-      | "getAgentRole"
-      | "getTeamBlackboard"
-      | "settleTeamParentCall"
-      | "setTeamRunState"
-      | "startTeamRun"
-      | "submitTeamProposal"
-    >
-  >;
+export type RuntimeManagerNativeClientForTests =
+  RuntimeManagerNativeSendClient &
+    Partial<
+      Pick<
+        DesktopNativeClient,
+        | "cancelTeamRun"
+        | "consumeTeamProviderCall"
+        | "getAgentRole"
+        | "getTeamBlackboard"
+        | "settleTeamParentCall"
+        | "setTeamRunState"
+        | "startTeamRun"
+        | "submitTeamProposal"
+      >
+    >;
 
 export interface RuntimeManagerOptions {
   readonly runtimeRoot: string;
@@ -110,9 +120,7 @@ function teamEventFromRun(
   };
 }
 
-function isSendAborted(
-  value: unknown,
-): value is typeof SEND_ABORTED {
+function isSendAborted(value: unknown): value is typeof SEND_ABORTED {
   return value === SEND_ABORTED;
 }
 
@@ -326,6 +334,108 @@ export class RuntimeManager {
     );
   }
 
+  getApplicationPreference(): Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getApplicationPreference() ??
+      Promise.resolve(
+        this.#nativeUnavailable<{
+          readonly preference: DesktopApplicationPreference;
+        }>(),
+      )
+    );
+  }
+
+  updateApplicationPreference(
+    input: DesktopApplicationPreferenceUpdateInput,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.updateApplicationPreference(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<{
+          readonly preference: DesktopApplicationPreference;
+        }>(),
+      )
+    );
+  }
+
+  getWorkspaceComposition(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getWorkspaceComposition(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceCompositionSnapshot>(),
+      )
+    );
+  }
+
+  proposeWorkspaceComposition(
+    input: DesktopWorkspaceCompositionOwnerProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.proposeWorkspaceComposition(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceCompositionProposalResult>(),
+      )
+    );
+  }
+
+  proposeWorkspaceCompositionFromAssistant(
+    input: DesktopWorkspaceCompositionAssistantProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.proposeWorkspaceCompositionFromAssistant(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceCompositionProposalResult>(),
+      )
+    );
+  }
+
+  proposeWorkspaceCompositionRollback(
+    input: DesktopWorkspaceCompositionRollbackProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.proposeWorkspaceCompositionRollback(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceCompositionProposalResult>(),
+      )
+    );
+  }
+
+  decideWorkspaceComposition(
+    input: DesktopWorkspaceCompositionDecisionInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.decideWorkspaceComposition(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceCompositionDecisionResult>(),
+      )
+    );
+  }
+
   listProviders(): Promise<DesktopOperationResult<DesktopProviderList>> {
     const client = this.#readyNativeClient();
     return (
@@ -359,7 +469,9 @@ export class RuntimeManager {
       };
       if (input.apiKey !== undefined) {
         if (vault === undefined) {
-          return Promise.resolve(this.#nativeUnavailable<DesktopProviderMutationResult>());
+          return Promise.resolve(
+            this.#nativeUnavailable<DesktopProviderMutationResult>(),
+          );
         }
         const encrypted = encryptProviderSecret(input.apiKey, vault);
         body.credential_reference = encrypted.credentialReference;
@@ -387,7 +499,10 @@ export class RuntimeManager {
     return (
       client?.deleteProvider(input) ??
       Promise.resolve(
-        this.#nativeUnavailable<{ readonly deleted: true; readonly id: string }>(),
+        this.#nativeUnavailable<{
+          readonly deleted: true;
+          readonly id: string;
+        }>(),
       )
     );
   }
@@ -403,7 +518,10 @@ export class RuntimeManager {
     const material = await client.getProviderVault(input.providerId);
     if (!material.ok) return material;
     try {
-      const secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
+      const secret = decryptProviderSecret(
+        material.value.encryptedSecretBlob,
+        vault,
+      );
       return await client.testProvider(input.providerId, secret);
     } catch {
       return Object.freeze({
@@ -423,9 +541,7 @@ export class RuntimeManager {
     );
   }
 
-  createConversation(
-    input: DesktopConversationCreateInput,
-  ): Promise<
+  createConversation(input: DesktopConversationCreateInput): Promise<
     DesktopOperationResult<{
       readonly created: true;
       readonly conversation: DesktopConversation;
@@ -452,7 +568,9 @@ export class RuntimeManager {
     return (
       client?.archiveConversation(input) ??
       Promise.resolve(
-        this.#nativeUnavailable<{ readonly conversation: DesktopConversation }>(),
+        this.#nativeUnavailable<{
+          readonly conversation: DesktopConversation;
+        }>(),
       )
     );
   }
@@ -481,7 +599,10 @@ export class RuntimeManager {
       if (controller.signal.aborted) {
         return this.#cancelledSendResult(input);
       }
-      const providers = await raceAbort(client.listProviders(), controller.signal);
+      const providers = await raceAbort(
+        client.listProviders(),
+        controller.signal,
+      );
       if (isSendAborted(providers)) {
         return this.#cancelledSendResult(input);
       }
@@ -491,7 +612,9 @@ export class RuntimeManager {
       if (!providers.ok) return providers;
       const selected =
         input.providerId === undefined
-          ? providers.value.items.find((item) => item.isDefault && item.isEnabled)
+          ? providers.value.items.find(
+              (item) => item.isDefault && item.isEnabled,
+            )
           : providers.value.items.find((item) => item.id === input.providerId);
       if (selected === undefined) {
         return Object.freeze({
@@ -512,7 +635,10 @@ export class RuntimeManager {
       if (!material.ok) return material;
       let secret: string;
       try {
-        secret = decryptProviderSecret(material.value.encryptedSecretBlob, vault);
+        secret = decryptProviderSecret(
+          material.value.encryptedSecretBlob,
+          vault,
+        );
       } catch {
         return Object.freeze({
           ok: false,
@@ -545,9 +671,7 @@ export class RuntimeManager {
     }
   }
 
-  async cancelConversation(
-    input: DesktopConversationCancelInput,
-  ): Promise<
+  async cancelConversation(input: DesktopConversationCancelInput): Promise<
     DesktopOperationResult<{
       readonly cancelled: boolean;
       readonly id: string;
@@ -602,7 +726,9 @@ export class RuntimeManager {
     const client = this.#readyNativeClient();
     return (
       client?.getAgentRole(input) ??
-      Promise.resolve(this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>())
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>(),
+      )
     );
   }
 
@@ -612,7 +738,9 @@ export class RuntimeManager {
     const client = this.#readyNativeClient();
     return (
       client?.updateAgentRole(input) ??
-      Promise.resolve(this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>())
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly role: DesktopAgentRole }>(),
+      )
     );
   }
 
@@ -675,7 +803,8 @@ export class RuntimeManager {
     if (
       result.ok &&
       result.value.accepted &&
-      (result.value.teamRun.state === "cancelling" || result.value.teamRun.state === "cancelled")
+      (result.value.teamRun.state === "cancelling" ||
+        result.value.teamRun.state === "cancelled")
     ) {
       emit(
         teamEventFromRun(result.value.teamRun, {
@@ -705,7 +834,8 @@ export class RuntimeManager {
     }
     const hostClient =
       "startTeamRun" in sendClient &&
-      typeof (sendClient as { startTeamRun?: unknown }).startTeamRun === "function"
+      typeof (sendClient as { startTeamRun?: unknown }).startTeamRun ===
+        "function"
         ? (sendClient as unknown as DesktopNativeClient)
         : this.#readyNativeClient();
     if (hostClient === null || !("startTeamRun" in hostClient)) {
@@ -720,7 +850,9 @@ export class RuntimeManager {
               allowLoopbackHttp,
             });
             if (!pinned.ok) {
-              throw Object.assign(new Error(pinned.error.code), { code: pinned.error.code });
+              throw Object.assign(new Error(pinned.error.code), {
+                code: pinned.error.code,
+              });
             }
             return pinned.value;
           }
@@ -738,11 +870,16 @@ export class RuntimeManager {
     }
     try {
       const proof = await coordinator.execute(input, emit);
-      return Object.freeze({ ok: true as const, value: Object.freeze({ proof }) });
+      return Object.freeze({
+        ok: true as const,
+        value: Object.freeze({ proof }),
+      });
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error
-          ? String((error as { code?: unknown }).code ?? "desktop_team_run_failed")
+          ? String(
+              (error as { code?: unknown }).code ?? "desktop_team_run_failed",
+            )
           : "desktop_team_run_failed";
       return Object.freeze({
         ok: false,
@@ -788,18 +925,24 @@ export class RuntimeManager {
     const client = this.#readyNativeClient();
     return (
       client?.getTeamRun(input) ??
-      Promise.resolve(this.#nativeUnavailable<{ readonly teamRun: DesktopTeamRun }>())
+      Promise.resolve(
+        this.#nativeUnavailable<{ readonly teamRun: DesktopTeamRun }>(),
+      )
     );
   }
 
   listTeamRuns(
     input: DesktopWorkspaceIdInput,
-  ): Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>> {
+  ): Promise<
+    DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+  > {
     const client = this.#readyNativeClient();
     return (
       client?.listTeamRuns(input) ??
       Promise.resolve(
-        this.#nativeUnavailable<{ readonly items: readonly DesktopTeamRun[] }>(),
+        this.#nativeUnavailable<{
+          readonly items: readonly DesktopTeamRun[];
+        }>(),
       )
     );
   }
@@ -826,12 +969,16 @@ export class RuntimeManager {
 
   getTeamBlackboard(
     input: DesktopTeamRunIdInput,
-  ): Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>> {
+  ): Promise<
+    DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+  > {
     const client = this.#readyNativeClient();
     return (
       client?.getTeamBlackboard(input) ??
       Promise.resolve(
-        this.#nativeUnavailable<{ readonly blackboard: PersonalTeamBlackboard }>(),
+        this.#nativeUnavailable<{
+          readonly blackboard: PersonalTeamBlackboard;
+        }>(),
       )
     );
   }
@@ -1035,7 +1182,9 @@ export class RuntimeManager {
     return false;
   }
 
-  async #requestTeamStop(coordinator: PersonalTeamCoordinator): Promise<boolean> {
+  async #requestTeamStop(
+    coordinator: PersonalTeamCoordinator,
+  ): Promise<boolean> {
     let accepted = coordinator.requestStop();
     if (!accepted && coordinator.successCommitStarted) {
       const successCommitted = await coordinator.waitForSuccessCommit();
@@ -1059,7 +1208,9 @@ export class RuntimeManager {
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
         errorRedacted: "生成已停止",
-        ...(input.sendEpoch === undefined ? {} : { sendEpoch: input.sendEpoch }),
+        ...(input.sendEpoch === undefined
+          ? {}
+          : { sendEpoch: input.sendEpoch }),
       }),
     });
   }

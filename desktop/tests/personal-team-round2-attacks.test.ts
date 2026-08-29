@@ -54,7 +54,10 @@ function coded(error: unknown): string {
   return "unknown";
 }
 
-async function rejectCode(run: Promise<unknown>, expected: string): Promise<void> {
+async function rejectCode(
+  run: Promise<unknown>,
+  expected: string,
+): Promise<void> {
   try {
     await run;
     assert.fail(`expected ${expected}`);
@@ -100,9 +103,13 @@ function startLoopbackChat() {
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
-      const parsed = JSON.parse(body) as { messages?: { role: string; content: string }[] };
-      const system = parsed.messages?.find((item) => item.role === "system")?.content ?? "";
-      const role = /\[omnibase-team-role:([^\]]+)\]/u.exec(system)?.[1] ?? "parent";
+      const parsed = JSON.parse(body) as {
+        messages?: { role: string; content: string }[];
+      };
+      const system =
+        parsed.messages?.find((item) => item.role === "system")?.content ?? "";
+      const role =
+        /\[omnibase-team-role:([^\]]+)\]/u.exec(system)?.[1] ?? "parent";
       let content = "ok";
       if (role === "parent-propose") {
         content = JSON.stringify({
@@ -135,7 +142,10 @@ function startLoopbackChat() {
           collaborationRequests: [],
         });
       } else if (role === "parent-replan") {
-        content = JSON.stringify({ decision: "finish", reason: "Staffing is complete." });
+        content = JSON.stringify({
+          decision: "finish",
+          reason: "Staffing is complete.",
+        });
       } else if (role === "parent-synthesize") {
         content = "综合结论：父 Agent 已汇总各专业员工报告。";
       }
@@ -192,7 +202,9 @@ function credentials(baseUrl: string, timeoutMs = 5_000) {
   };
 }
 
-function sampleRole(overrides: Partial<DesktopAgentRole> = {}): DesktopAgentRole {
+function sampleRole(
+  overrides: Partial<DesktopAgentRole> = {},
+): DesktopAgentRole {
   return {
     id: "parent",
     displayName: "父 Agent",
@@ -215,7 +227,9 @@ function sampleRole(overrides: Partial<DesktopAgentRole> = {}): DesktopAgentRole
   };
 }
 
-function sampleProvider(overrides: Partial<DesktopProvider> = {}): DesktopProvider {
+function sampleProvider(
+  overrides: Partial<DesktopProvider> = {},
+): DesktopProvider {
   return {
     id: PROVIDER_ID,
     displayName: "loopback",
@@ -265,16 +279,20 @@ test("authoritative global-unicast rejects reserved CGNAT benchmark docs multica
 });
 
 test("team transport pin hook uses backend connect addrs instead of the TS replica", async () => {
-  const pinned = await resolvePinnedTeamEndpoint("https://api.example.test/v1", false, {
-    pinEndpoint: async () => ({
-      scheme: "https",
-      hostname: "api.example.test",
-      port: 443,
-      chatPath: "/v1/chat/completions",
-      connectAddrs: ["8.8.8.8"],
-      loopback: false,
-    }),
-  });
+  const pinned = await resolvePinnedTeamEndpoint(
+    "https://api.example.test/v1",
+    false,
+    {
+      pinEndpoint: async () => ({
+        scheme: "https",
+        hostname: "api.example.test",
+        port: 443,
+        chatPath: "/v1/chat/completions",
+        connectAddrs: ["8.8.8.8"],
+        loopback: false,
+      }),
+    },
+  );
   assert.deepEqual(pinned.connectAddrs, ["8.8.8.8"]);
   assert.equal(pinned.hostname, "api.example.test");
 });
@@ -313,13 +331,20 @@ test("independent wall AbortController expires to budget_exhausted without using
   try {
     const proof = await coordinator.execute(
       executeInput({
-        budget: { ...DEFAULT_TEAM_RUN_BUDGET, maximumWallTimeMs: 1_000, maximumProviderCalls: 8 },
+        budget: {
+          ...DEFAULT_TEAM_RUN_BUDGET,
+          maximumWallTimeMs: 1_000,
+          maximumProviderCalls: 8,
+        },
       }),
       () => undefined,
     );
     const elapsed = Date.now() - started;
     assert.equal(proof.state, "budget_exhausted");
-    assert.ok(elapsed < 4_000, `wall should win before Provider timeout, elapsed=${elapsed}`);
+    assert.ok(
+      elapsed < 4_000,
+      `wall should win before Provider timeout, elapsed=${elapsed}`,
+    );
   } finally {
     await listening.close();
   }
@@ -338,7 +363,11 @@ test("Provider HTTP timeout is not reported as team wall budget_exhausted", asyn
   try {
     const proof = await coordinator.execute(
       executeInput({
-        budget: { ...DEFAULT_TEAM_RUN_BUDGET, maximumWallTimeMs: 600_000, maximumProviderCalls: 8 },
+        budget: {
+          ...DEFAULT_TEAM_RUN_BUDGET,
+          maximumWallTimeMs: 600_000,
+          maximumProviderCalls: 8,
+        },
       }),
       () => undefined,
     );
@@ -358,7 +387,10 @@ test("SSE model drift mid-stream fails the node instead of succeeding", async ()
         "data: [DONE]\n\n",
     );
   });
-  const listening = await new Promise<{ baseUrl: string; close: () => Promise<void> }>((resolve) => {
+  const listening = await new Promise<{
+    baseUrl: string;
+    close: () => Promise<void>;
+  }>((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address() as AddressInfo;
       resolve({
@@ -371,7 +403,10 @@ test("SSE model drift mid-stream fails the node instead of succeeding", async ()
   try {
     await rejectCode(
       transport.complete(
-        { ...credentials(listening.baseUrl), messages: [{ role: "user", content: "hi" }] },
+        {
+          ...credentials(listening.baseUrl),
+          messages: [{ role: "user", content: "hi" }],
+        },
         new AbortController().signal,
       ),
       "desktop_provider_model_identity_drift",
@@ -618,12 +653,22 @@ test(
     const listening = await chat.listen();
     const child = spawn(
       python,
-      ["-m", "omnibase.desktop_local.app", "--data-root", dataRoot, "--port", String(port)],
+      [
+        "-m",
+        "omnibase.desktop_local.app",
+        "--data-root",
+        dataRoot,
+        "--port",
+        String(port),
+      ],
       {
         cwd: REPO_ROOT,
         env: {
           ...process.env,
-          PYTHONPATH: [path.join(REPO_ROOT, "backend", "src"), process.env.PYTHONPATH ?? ""]
+          PYTHONPATH: [
+            path.join(REPO_ROOT, "backend", "src"),
+            process.env.PYTHONPATH ?? "",
+          ]
             .filter((item) => item.length > 0)
             .join(path.delimiter),
           OMNIBASE_DESKTOP_INSTANCE_TOKEN: token,
@@ -645,10 +690,19 @@ test(
     const events: DesktopTeamRunEvent[] = [];
     try {
       await waitForOwner(client);
-      unwrap(await client.bootstrapOwner({ displayName: "Local Owner" }), "bootstrap");
-      const workspace = unwrap(await client.createWorkspace({ name: "Team Space" }), "workspace");
+      unwrap(
+        await client.bootstrapOwner({ displayName: "Local Owner" }),
+        "bootstrap",
+      );
+      const workspace = unwrap(
+        await client.createWorkspace({ name: "Team Space" }),
+        "workspace",
+      );
       const conversation = unwrap(
-        await client.createConversation({ workspaceId: workspace.workspace.id, title: "团队任务" }),
+        await client.createConversation({
+          workspaceId: workspace.workspace.id,
+          title: "团队任务",
+        }),
         "conversation",
       );
       const provider = unwrap(
@@ -710,7 +764,7 @@ test(
         audits: number;
         schema: number;
       };
-      assert.equal(counts.schema, 9);
+      assert.equal(counts.schema, 10);
       assert.equal(counts.reports, 1);
       assert.equal(counts.audits, 1);
       assert.ok(events.some((item) => item.type === "node_starting"));

@@ -1,6 +1,6 @@
 # OmniBase 工作交接报告
 
-> **当前状态入口（2026-08-29）**：先读
+> **当前状态入口（2026-08-30）**：先读
 > `docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`。P7.0 Wave 1 已进入
 > `main@991374216505d2b9e3dd27111c4aed370fdc7fae`；Wave 2 已从该 clean
 > source 构建 fresh unsigned 1.0.0 EXE/MSI，并通过 Codex 对真实 P7 Electron
@@ -33,6 +33,42 @@
 > elevated/High integrity；非管理员/medium-integrity、viewport/DPI、完整进程树收敛、
 > 卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、
 > Git、搜索、重命名/删除、Next/backend 文件路由与数据库迁移继续关闭。
+>
+> **P7.2 工程证据就绪（2026-08-30）**：P7.1 已通过 PR #48 进入
+> `main@cb1295b4b12df9f080eb0dcf94bc908367c8a7e3`。当前分支从该坐标完成
+> Workbench Refinement & Workspace Composition；权威产品法为
+> `docs/architecture/p7-2-workspace-composition.md` 与 INV-087。范围包括紧凑/
+> 舒适/专注显示模式、中央全屏设置中心、Application 与 Workspace 设置分离、
+> 不可变 `standard-workbench`、版本化 Workspace derived Profile、闭集 Slot
+> Registry，以及 AI proposal -> exact diff -> request SHA-256 绑定的 Owner
+> approve/reject/rollback-as-new-revision。P3.4 的逻辑身份、live scope、CAS/
+> fencing、能力分离、精确审批、append-only audit 与 no-auto-replay 语义在
+> desktop-local SQLite 中局部复用；不宣称企业 PostgreSQL control plane 已接入。
+> Save/write、Terminal、Git/search、任意插件、MCP/Skill 执行、Sandbox activation
+> 与自动批准继续关闭；`knowledge.ebook` 在受信只读适配器另行审查前保持
+> unavailable。R0 dirty package 的真实安装暴露并关闭了首帧 composition 未加载时
+> Explorer/Workspace 恢复入口被错误隐藏的缺陷。R1 dirty package（EXE
+> `55e45d2...ce568`、MSI `a0725d15...25a7b`、runtime manifest
+> `3ab17c2b...32950`）在唯一 Windows Sandbox 中完成 Explorer 恢复、中央设置、
+> Application/Workspace 隔离、准确 Diff、Owner approve/reject、rollback 新修订、
+> append-only audit、unavailable 扩展/Sandbox、Slot 门控、跨 Workspace 首帧隔离、
+> P7.1 只读文件与 focus-mode Revision 5/设置返回旅程。受控卸载 exit 0，进程与
+> 3000/8765 监听清零，程序移除、应用数据保留；唯一 Sandbox 已关闭且宿主无
+> Sandbox/vmwp 残留。证据目录标识为
+> `p7-2-workspace-composition-sandbox-evidence-r1-20260830`。源码审计未发现 P0/P1/P2；
+> 源码已受控提交并在 `8cb0020255202cb197ffdbf46393265db9a0ef28` 接受工程证据，
+> 权威登记为 `docs/reviews/p7-2-workspace-composition-engineering-acceptance-r0.md`；
+> 仍需远端 Linux CI 与合并。包保持 engineering-dirty/unsigned，
+> clean-source release、标准用户/medium-integrity、Authenticode、Provider live 与
+> 生产发布仍未证明。
+>
+> **P7.3 交付锁（2026-08-30 Owner 决定）**：P7 不再把热插拔平台拆成多个
+> 小版本。P7.2 只完成可审计的组合控制面并独立验收；其后 P7.3 必须在一个大工程
+> 包中完整交付 `docs/architecture/p7-3-workspace-hot-plug-platform.md` 定义的统一
+> manifest/registry、五类适配器、安装与运行生命周期、P3.4 能力/身份/lease/
+> fencing/预算/撤销、故障隔离、恢复、Owner 审批与设置中心管理。P7.4 只能做兼容、
+> 性能、攻击/恢复演练、签名分发和产品精修，不得把任何核心热插拔路径延期到
+> P7.4 或更晚。
 
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。

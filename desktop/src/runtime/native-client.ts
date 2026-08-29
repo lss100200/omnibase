@@ -1,9 +1,26 @@
+import { createHash } from "node:crypto";
+
 import type {
   DesktopAgentRole,
   DesktopAgentRoleIdInput,
   DesktopAgentRoleList,
   DesktopAgentRoleTestResult,
   DesktopAgentRoleUpdateInput,
+  DesktopApplicationPreference,
+  DesktopApplicationPreferenceUpdateInput,
+  DesktopWorkspaceCompositionAssistantProposalInput,
+  DesktopWorkspaceCompositionAuditEvent,
+  DesktopWorkspaceCompositionDecisionInput,
+  DesktopWorkspaceCompositionDecisionResult,
+  DesktopWorkspaceCompositionOwnerProposalInput,
+  DesktopWorkspaceCompositionProfileValue,
+  DesktopWorkspaceCompositionProposal,
+  DesktopWorkspaceCompositionProposalResult,
+  DesktopWorkspaceCompositionRevision,
+  DesktopWorkspaceCompositionRollbackProposalInput,
+  DesktopWorkspaceCompositionSnapshot,
+  DesktopWorkspaceSlotCatalogItem,
+  DesktopWorkspaceSlotId,
   DesktopConversation,
   DesktopConversationArchiveInput,
   DesktopConversationCreateInput,
@@ -67,6 +84,9 @@ const ASSIGNMENT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
 const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const TEAM_REV_ID_PATTERN = /^teamrev_[a-f0-9]{32}$/u;
+const COMPOSITION_PROPOSAL_ID_PATTERN = /^proposal_[a-f0-9]{32}$/u;
+const COMPOSITION_ROLLBACK_REFERENCE_PATTERN = /^revision:([1-9][0-9]*)$/u;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
 const SPECIALIST_ROLE_SET = new Set<string>(SPECIALIST_EMPLOYEE_IDS);
 const TEAM_RUN_STATES = new Set([
@@ -117,6 +137,81 @@ const DEPTHS = new Set(["disabled", "low", "medium", "high"]);
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_CONVERSATION_BYTES = 1_048_576;
 const MAX_WORKSPACES = 256;
+const COMPOSITION_SLOT_IDS = Object.freeze([
+  "agent.rail",
+  "conversation.transcript",
+  "event.agent-log",
+  "event.output",
+  "knowledge.ebook",
+  "mcp.catalog",
+  "provider.settings",
+  "run.history",
+  "sandbox.runtime",
+  "settings.center",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+  "workspace.brief",
+  "workspace.explorer",
+] as const satisfies readonly DesktopWorkspaceSlotId[]);
+const COMPOSITION_REQUIRED_SLOTS = new Set<DesktopWorkspaceSlotId>([
+  "conversation.transcript",
+  "settings.center",
+]);
+const COMPOSITION_UNAVAILABLE_SLOTS = new Set<DesktopWorkspaceSlotId>([
+  "knowledge.ebook",
+  "mcp.catalog",
+  "sandbox.runtime",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+]);
+const COMPOSITION_SLOT_POSTURE = Object.freeze({
+  "agent.rail": Object.freeze({ region: "right", posture: "admitted" }),
+  "conversation.transcript": Object.freeze({
+    region: "editor",
+    posture: "required",
+  }),
+  "event.agent-log": Object.freeze({ region: "bottom", posture: "admitted" }),
+  "event.output": Object.freeze({ region: "bottom", posture: "admitted" }),
+  "knowledge.ebook": Object.freeze({
+    region: "editor",
+    posture: "unavailable",
+  }),
+  "mcp.catalog": Object.freeze({ region: "settings", posture: "unavailable" }),
+  "provider.settings": Object.freeze({
+    region: "settings",
+    posture: "admitted",
+  }),
+  "run.history": Object.freeze({ region: "sidebar", posture: "admitted" }),
+  "sandbox.runtime": Object.freeze({
+    region: "settings",
+    posture: "unavailable",
+  }),
+  "settings.center": Object.freeze({ region: "editor", posture: "required" }),
+  "skills.catalog": Object.freeze({
+    region: "settings",
+    posture: "unavailable",
+  }),
+  "source-control": Object.freeze({
+    region: "sidebar",
+    posture: "unavailable",
+  }),
+  terminal: Object.freeze({ region: "bottom", posture: "unavailable" }),
+  "workspace.brief": Object.freeze({ region: "editor", posture: "admitted" }),
+  "workspace.explorer": Object.freeze({
+    region: "sidebar",
+    posture: "admitted",
+  }),
+} as const satisfies Readonly<
+  Record<
+    DesktopWorkspaceSlotId,
+    Readonly<{
+      region: DesktopWorkspaceSlotCatalogItem["region"];
+      posture: DesktopWorkspaceSlotCatalogItem["posture"];
+    }>
+  >
+>);
 
 type FetchLike = typeof fetch;
 type NativeMethod = "GET" | "POST" | "DELETE";
@@ -316,6 +411,703 @@ function parseWorkspaceMutation(
   return workspace === null ? null : Object.freeze({ workspace });
 }
 
+function parseApplicationPreference(
+  value: unknown,
+): DesktopApplicationPreference | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "density",
+      "reduce_motion",
+      "row_version",
+      "updated_at",
+    ]) ||
+    (value.density !== "compact" && value.density !== "comfortable") ||
+    typeof value.reduce_motion !== "boolean" ||
+    typeof value.row_version !== "number" ||
+    !Number.isInteger(value.row_version) ||
+    value.row_version < 1 ||
+    value.row_version > 2_147_483_647 ||
+    !isBoundedString(value.updated_at, 64)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    density: value.density,
+    reduceMotion: value.reduce_motion,
+    rowVersion: value.row_version,
+    updatedAt: value.updated_at,
+  });
+}
+
+function parseApplicationPreferenceResult(
+  value: unknown,
+): { readonly preference: DesktopApplicationPreference } | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["preference"])) return null;
+  const preference = parseApplicationPreference(value.preference);
+  return preference === null ? null : Object.freeze({ preference });
+}
+
+function parseCompositionProfileValue(
+  value: unknown,
+): DesktopWorkspaceCompositionProfileValue | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "appearance",
+      "layout",
+      "schema_version",
+      "slots",
+      "template",
+    ]) ||
+    value.schema_version !== 1 ||
+    !isRecord(value.template) ||
+    !hasExactKeys(value.template, ["id", "version"]) ||
+    value.template.id !== "standard-workbench" ||
+    value.template.version !== 1 ||
+    !isRecord(value.appearance) ||
+    !hasExactKeys(value.appearance, ["density", "quiet_chrome"]) ||
+    !["inherit", "compact", "comfortable"].includes(
+      String(value.appearance.density),
+    ) ||
+    typeof value.appearance.quiet_chrome !== "boolean" ||
+    !isRecord(value.layout) ||
+    !hasExactKeys(value.layout, [
+      "agent_panel",
+      "bottom_panel",
+      "focus_mode",
+      "sidebar",
+    ]) ||
+    (value.layout.agent_panel !== "open" &&
+      value.layout.agent_panel !== "closed") ||
+    !["hidden", "output", "agent-log"].includes(
+      String(value.layout.bottom_panel),
+    ) ||
+    typeof value.layout.focus_mode !== "boolean" ||
+    !["explorer", "run", "blackboard", "hidden"].includes(
+      String(value.layout.sidebar),
+    ) ||
+    !isRecord(value.slots) ||
+    !hasExactKeys(value.slots, COMPOSITION_SLOT_IDS) ||
+    COMPOSITION_SLOT_IDS.some(
+      (slotId) =>
+        typeof (value.slots as Record<string, unknown>)[slotId] !== "boolean",
+    )
+  ) {
+    return null;
+  }
+  const density = value.appearance.density;
+  const bottomPanel = value.layout.bottom_panel;
+  const sidebar = value.layout.sidebar;
+  const rawSlots = value.slots as Record<DesktopWorkspaceSlotId, boolean>;
+  if (
+    (density !== "inherit" &&
+      density !== "compact" &&
+      density !== "comfortable") ||
+    (bottomPanel !== "hidden" &&
+      bottomPanel !== "output" &&
+      bottomPanel !== "agent-log") ||
+    (sidebar !== "explorer" &&
+      sidebar !== "run" &&
+      sidebar !== "blackboard" &&
+      sidebar !== "hidden") ||
+    [...COMPOSITION_REQUIRED_SLOTS].some((slotId) => !rawSlots[slotId]) ||
+    [...COMPOSITION_UNAVAILABLE_SLOTS].some((slotId) => rawSlots[slotId]) ||
+    (!rawSlots["agent.rail"] && value.layout.agent_panel !== "closed") ||
+    (!rawSlots["workspace.explorer"] && sidebar === "explorer") ||
+    (!rawSlots["run.history"] && sidebar === "run") ||
+    (!rawSlots["workspace.brief"] && sidebar === "blackboard") ||
+    (!rawSlots["event.output"] && bottomPanel === "output") ||
+    (!rawSlots["event.agent-log"] && bottomPanel === "agent-log")
+  ) {
+    return null;
+  }
+  const slots = Object.freeze(
+    Object.fromEntries(
+      COMPOSITION_SLOT_IDS.map((slotId) => [slotId, rawSlots[slotId]]),
+    ) as Record<DesktopWorkspaceSlotId, boolean>,
+  );
+  return Object.freeze({
+    schemaVersion: 1,
+    template: Object.freeze({ id: "standard-workbench", version: 1 }),
+    appearance: Object.freeze({
+      density,
+      quietChrome: value.appearance.quiet_chrome,
+    }),
+    layout: Object.freeze({
+      agentPanel: value.layout.agent_panel,
+      bottomPanel,
+      focusMode: value.layout.focus_mode,
+      sidebar,
+    }),
+    slots,
+  });
+}
+
+function parseCompositionRevision(
+  value: unknown,
+): DesktopWorkspaceCompositionRevision | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "created_at",
+      "profile_sha256",
+      "proposal_id",
+      "revision",
+      "source_kind",
+      "value",
+      "workspace_id",
+    ]) ||
+    typeof value.workspace_id !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(value.workspace_id) ||
+    typeof value.revision !== "number" ||
+    !Number.isInteger(value.revision) ||
+    value.revision < 1 ||
+    value.revision > 2_147_483_647 ||
+    typeof value.profile_sha256 !== "string" ||
+    !SHA256_PATTERN.test(value.profile_sha256) ||
+    !["system", "owner", "assistant", "rollback"].includes(
+      String(value.source_kind),
+    ) ||
+    (value.proposal_id !== null &&
+      (typeof value.proposal_id !== "string" ||
+        !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.proposal_id))) ||
+    !isBoundedString(value.created_at, 64)
+  ) {
+    return null;
+  }
+  const profile = parseCompositionProfileValue(value.value);
+  if (
+    profile === null ||
+    compositionProfileSha256(profile) !== value.profile_sha256
+  ) {
+    return null;
+  }
+  const sourceKind = value.source_kind;
+  if (
+    sourceKind !== "system" &&
+    sourceKind !== "owner" &&
+    sourceKind !== "assistant" &&
+    sourceKind !== "rollback"
+  ) {
+    return null;
+  }
+  if (
+    (value.revision === 1 &&
+      (sourceKind !== "system" || value.proposal_id !== null)) ||
+    (value.revision > 1 &&
+      (sourceKind === "system" || value.proposal_id === null))
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: value.workspace_id,
+    revision: value.revision,
+    profileSha256: value.profile_sha256,
+    sourceKind,
+    proposalId: value.proposal_id,
+    value: profile,
+    createdAt: value.created_at,
+  });
+}
+
+function parseCompositionProposal(
+  value: unknown,
+): DesktopWorkspaceCompositionProposal | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "applied_revision",
+      "base_profile_sha256",
+      "base_revision",
+      "created_at",
+      "decided_at",
+      "decision",
+      "desired_profile",
+      "desired_profile_sha256",
+      "id",
+      "request_sha256",
+      "source_kind",
+      "source_reference",
+      "workspace_id",
+    ]) ||
+    typeof value.id !== "string" ||
+    !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.id) ||
+    typeof value.workspace_id !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(value.workspace_id) ||
+    typeof value.base_revision !== "number" ||
+    !Number.isInteger(value.base_revision) ||
+    value.base_revision < 1 ||
+    typeof value.base_profile_sha256 !== "string" ||
+    !SHA256_PATTERN.test(value.base_profile_sha256) ||
+    (value.source_kind !== "owner" &&
+      value.source_kind !== "assistant" &&
+      value.source_kind !== "rollback") ||
+    (value.source_reference !== null &&
+      !isBoundedString(value.source_reference, 128)) ||
+    typeof value.desired_profile_sha256 !== "string" ||
+    !SHA256_PATTERN.test(value.desired_profile_sha256) ||
+    typeof value.request_sha256 !== "string" ||
+    !SHA256_PATTERN.test(value.request_sha256) ||
+    (value.decision !== null &&
+      value.decision !== "approved" &&
+      value.decision !== "rejected") ||
+    (value.applied_revision !== null &&
+      (typeof value.applied_revision !== "number" ||
+        !Number.isInteger(value.applied_revision) ||
+        value.applied_revision < 2)) ||
+    !isBoundedString(value.created_at, 64) ||
+    (value.decided_at !== null && !isBoundedString(value.decided_at, 64))
+  ) {
+    return null;
+  }
+  if (
+    (value.decision === null &&
+      (value.applied_revision !== null || value.decided_at !== null)) ||
+    (value.decision === "approved" &&
+      (value.applied_revision === null || value.decided_at === null)) ||
+    (value.decision === "rejected" &&
+      (value.applied_revision !== null || value.decided_at === null))
+  ) {
+    return null;
+  }
+  const desiredProfile = parseCompositionProfileValue(value.desired_profile);
+  const rollbackReference =
+    typeof value.source_reference === "string"
+      ? COMPOSITION_ROLLBACK_REFERENCE_PATTERN.exec(value.source_reference)
+      : null;
+  if (
+    desiredProfile === null ||
+    (value.source_kind === "owner" && value.source_reference !== null) ||
+    (value.source_kind === "assistant" &&
+      (typeof value.source_reference !== "string" ||
+        !MESSAGE_ID_PATTERN.test(value.source_reference))) ||
+    (value.source_kind === "rollback" &&
+      (rollbackReference === null ||
+        Number(rollbackReference[1]) >= value.base_revision)) ||
+    (value.decision === "approved" &&
+      value.applied_revision !== value.base_revision + 1) ||
+    compositionProfileSha256(desiredProfile) !== value.desired_profile_sha256 ||
+    compositionRequestSha256({
+      workspaceId: value.workspace_id,
+      baseRevision: value.base_revision,
+      baseProfileSha256: value.base_profile_sha256,
+      sourceKind: value.source_kind,
+      sourceReference: value.source_reference,
+      desiredProfileSha256: value.desired_profile_sha256,
+    }) !== value.request_sha256
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    id: value.id,
+    workspaceId: value.workspace_id,
+    baseRevision: value.base_revision,
+    baseProfileSha256: value.base_profile_sha256,
+    sourceKind: value.source_kind,
+    sourceReference: value.source_reference,
+    desiredProfileSha256: value.desired_profile_sha256,
+    requestSha256: value.request_sha256,
+    desiredProfile,
+    decision: value.decision,
+    appliedRevision: value.applied_revision,
+    createdAt: value.created_at,
+    decidedAt: value.decided_at,
+  });
+}
+
+function parseCompositionProposalResult(
+  value: unknown,
+): DesktopWorkspaceCompositionProposalResult | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["proposal", "replayed"]) ||
+    typeof value.replayed !== "boolean"
+  ) {
+    return null;
+  }
+  const proposal = parseCompositionProposal(value.proposal);
+  return proposal === null
+    ? null
+    : Object.freeze({ proposal, replayed: value.replayed });
+}
+
+function parseCompositionSlot(
+  value: unknown,
+): DesktopWorkspaceSlotCatalogItem | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["id", "label", "posture", "region"]) ||
+    typeof value.id !== "string" ||
+    !COMPOSITION_SLOT_IDS.includes(value.id as DesktopWorkspaceSlotId) ||
+    !isBoundedString(value.label, 64) ||
+    !["sidebar", "editor", "right", "settings", "bottom"].includes(
+      String(value.region),
+    ) ||
+    !["required", "admitted", "unavailable"].includes(String(value.posture))
+  ) {
+    return null;
+  }
+  const id = value.id as DesktopWorkspaceSlotId;
+  const region = value.region;
+  const posture = value.posture;
+  const expected = COMPOSITION_SLOT_POSTURE[id];
+  if (
+    (region !== "sidebar" &&
+      region !== "editor" &&
+      region !== "right" &&
+      region !== "settings" &&
+      region !== "bottom") ||
+    (posture !== "required" &&
+      posture !== "admitted" &&
+      posture !== "unavailable") ||
+    region !== expected.region ||
+    posture !== expected.posture
+  ) {
+    return null;
+  }
+  return Object.freeze({ id, label: value.label, region, posture });
+}
+
+function parseCompositionAudit(
+  value: unknown,
+): DesktopWorkspaceCompositionAuditEvent | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["created_at", "event_type", "payload", "sequence"]) ||
+    typeof value.sequence !== "number" ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 1 ||
+    !isRecord(value.payload) ||
+    !isBoundedString(value.created_at, 64)
+  ) {
+    return null;
+  }
+  const common = Object.freeze({
+    sequence: value.sequence,
+    createdAt: value.created_at,
+  });
+  if (value.event_type === "workspace_composition_proposed") {
+    if (
+      !hasExactKeys(value.payload, [
+        "base_revision",
+        "desired_profile_sha256",
+        "proposal_id",
+        "request_sha256",
+        "source_kind",
+      ]) ||
+      typeof value.payload.base_revision !== "number" ||
+      !Number.isSafeInteger(value.payload.base_revision) ||
+      value.payload.base_revision < 1 ||
+      value.payload.base_revision > 2_147_483_647 ||
+      typeof value.payload.desired_profile_sha256 !== "string" ||
+      !SHA256_PATTERN.test(value.payload.desired_profile_sha256) ||
+      typeof value.payload.proposal_id !== "string" ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.payload.proposal_id) ||
+      typeof value.payload.request_sha256 !== "string" ||
+      !SHA256_PATTERN.test(value.payload.request_sha256) ||
+      (value.payload.source_kind !== "owner" &&
+        value.payload.source_kind !== "assistant" &&
+        value.payload.source_kind !== "rollback")
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      ...common,
+      eventType: value.event_type,
+      payload: Object.freeze({
+        baseRevision: value.payload.base_revision,
+        desiredProfileSha256: value.payload.desired_profile_sha256,
+        proposalId: value.payload.proposal_id,
+        requestSha256: value.payload.request_sha256,
+        sourceKind: value.payload.source_kind,
+      }),
+    });
+  }
+  if (value.event_type === "workspace_composition_rejected") {
+    if (
+      !hasExactKeys(value.payload, ["proposal_id", "request_sha256"]) ||
+      typeof value.payload.proposal_id !== "string" ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.payload.proposal_id) ||
+      typeof value.payload.request_sha256 !== "string" ||
+      !SHA256_PATTERN.test(value.payload.request_sha256)
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      ...common,
+      eventType: value.event_type,
+      payload: Object.freeze({
+        proposalId: value.payload.proposal_id,
+        requestSha256: value.payload.request_sha256,
+      }),
+    });
+  }
+  if (value.event_type === "workspace_composition_applied") {
+    if (
+      !hasExactKeys(value.payload, [
+        "profile_sha256",
+        "proposal_id",
+        "request_sha256",
+        "revision",
+        "source_kind",
+      ]) ||
+      typeof value.payload.profile_sha256 !== "string" ||
+      !SHA256_PATTERN.test(value.payload.profile_sha256) ||
+      typeof value.payload.proposal_id !== "string" ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.payload.proposal_id) ||
+      typeof value.payload.request_sha256 !== "string" ||
+      !SHA256_PATTERN.test(value.payload.request_sha256) ||
+      typeof value.payload.revision !== "number" ||
+      !Number.isSafeInteger(value.payload.revision) ||
+      value.payload.revision < 2 ||
+      value.payload.revision > 2_147_483_647 ||
+      (value.payload.source_kind !== "owner" &&
+        value.payload.source_kind !== "assistant" &&
+        value.payload.source_kind !== "rollback")
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      ...common,
+      eventType: value.event_type,
+      payload: Object.freeze({
+        profileSha256: value.payload.profile_sha256,
+        proposalId: value.payload.proposal_id,
+        requestSha256: value.payload.request_sha256,
+        revision: value.payload.revision,
+        sourceKind: value.payload.source_kind,
+      }),
+    });
+  }
+  return null;
+}
+
+function parseCompositionSnapshot(
+  value: unknown,
+): DesktopWorkspaceCompositionSnapshot | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "audit",
+      "profile",
+      "proposals",
+      "revisions",
+      "slot_catalog",
+    ]) ||
+    !Array.isArray(value.revisions) ||
+    value.revisions.length < 1 ||
+    value.revisions.length > 25 ||
+    !Array.isArray(value.proposals) ||
+    value.proposals.length > 25 ||
+    !Array.isArray(value.slot_catalog) ||
+    value.slot_catalog.length !== COMPOSITION_SLOT_IDS.length ||
+    !Array.isArray(value.audit) ||
+    value.audit.length > 50
+  ) {
+    return null;
+  }
+  const profile = parseCompositionRevision(value.profile);
+  const revisions = value.revisions.map(parseCompositionRevision);
+  const proposals = value.proposals.map(parseCompositionProposal);
+  const slotCatalog = value.slot_catalog.map(parseCompositionSlot);
+  const audit = value.audit.map(parseCompositionAudit);
+  if (
+    profile === null ||
+    revisions.some((item) => item === null) ||
+    proposals.some((item) => item === null) ||
+    slotCatalog.some((item) => item === null) ||
+    audit.some((item) => item === null)
+  ) {
+    return null;
+  }
+  const parsedRevisions = revisions as DesktopWorkspaceCompositionRevision[];
+  const parsedProposals = proposals as DesktopWorkspaceCompositionProposal[];
+  const parsedSlots = slotCatalog as DesktopWorkspaceSlotCatalogItem[];
+  const parsedAudit = audit as DesktopWorkspaceCompositionAuditEvent[];
+  const firstRevision = parsedRevisions[0];
+  if (
+    firstRevision === undefined ||
+    firstRevision.revision !== profile.revision ||
+    firstRevision.profileSha256 !== profile.profileSha256 ||
+    firstRevision.sourceKind !== profile.sourceKind ||
+    firstRevision.proposalId !== profile.proposalId ||
+    !sameCompositionProfile(firstRevision.value, profile.value) ||
+    new Set(parsedRevisions.map((item) => item.revision)).size !==
+      parsedRevisions.length ||
+    parsedRevisions.some(
+      (item, index) => item.revision !== profile.revision - index,
+    ) ||
+    new Set(parsedProposals.map((item) => item.id)).size !==
+      parsedProposals.length ||
+    new Set(parsedSlots.map((item) => item.id)).size !==
+      COMPOSITION_SLOT_IDS.length ||
+    new Set(parsedAudit.map((item) => item.sequence)).size !==
+      parsedAudit.length ||
+    parsedAudit.some(
+      (item, index) =>
+        index > 0 && item.sequence >= parsedAudit[index - 1]!.sequence,
+    ) ||
+    parsedAudit.some(
+      (item) =>
+        (item.eventType === "workspace_composition_proposed" &&
+          item.payload.baseRevision > profile.revision) ||
+        (item.eventType === "workspace_composition_applied" &&
+          item.payload.revision > profile.revision),
+    ) ||
+    parsedRevisions.some((item) => item.workspaceId !== profile.workspaceId) ||
+    parsedProposals.some((item) => item.workspaceId !== profile.workspaceId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    profile,
+    revisions: Object.freeze(parsedRevisions),
+    proposals: Object.freeze(parsedProposals),
+    slotCatalog: Object.freeze(parsedSlots),
+    audit: Object.freeze(parsedAudit),
+  });
+}
+
+function parseCompositionDecisionResult(
+  value: unknown,
+): DesktopWorkspaceCompositionDecisionResult | null {
+  if (
+    !isRecord(value) ||
+    typeof value.workspace_id !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(value.workspace_id) ||
+    typeof value.proposal_id !== "string" ||
+    !COMPOSITION_PROPOSAL_ID_PATTERN.test(value.proposal_id) ||
+    typeof value.request_sha256 !== "string" ||
+    !SHA256_PATTERN.test(value.request_sha256)
+  ) {
+    return null;
+  }
+  if (
+    hasExactKeys(value, [
+      "applied_revision",
+      "decision",
+      "proposal_id",
+      "request_sha256",
+      "workspace_id",
+    ]) &&
+    value.decision === "rejected" &&
+    value.applied_revision === null
+  ) {
+    return Object.freeze({
+      workspaceId: value.workspace_id,
+      proposalId: value.proposal_id,
+      requestSha256: value.request_sha256,
+      decision: "rejected",
+      appliedRevision: null,
+    });
+  }
+  if (
+    !hasExactKeys(value, [
+      "applied_revision",
+      "decision",
+      "profile",
+      "proposal_id",
+      "request_sha256",
+      "workspace_id",
+    ]) ||
+    value.decision !== "approved" ||
+    typeof value.applied_revision !== "number" ||
+    !Number.isInteger(value.applied_revision) ||
+    value.applied_revision < 2
+  ) {
+    return null;
+  }
+  const profile = parseCompositionRevision(value.profile);
+  if (profile === null || profile.revision !== value.applied_revision)
+    return null;
+  return Object.freeze({
+    workspaceId: value.workspace_id,
+    proposalId: value.proposal_id,
+    requestSha256: value.request_sha256,
+    decision: "approved",
+    appliedRevision: value.applied_revision,
+    profile,
+  });
+}
+
+function compositionProfilePayload(
+  value: DesktopWorkspaceCompositionProfileValue,
+): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    appearance: Object.freeze({
+      density: value.appearance.density,
+      quiet_chrome: value.appearance.quietChrome,
+    }),
+    layout: Object.freeze({
+      agent_panel: value.layout.agentPanel,
+      bottom_panel: value.layout.bottomPanel,
+      focus_mode: value.layout.focusMode,
+      sidebar: value.layout.sidebar,
+    }),
+    schema_version: value.schemaVersion,
+    slots: Object.freeze(
+      Object.fromEntries(
+        COMPOSITION_SLOT_IDS.map((slotId) => [slotId, value.slots[slotId]]),
+      ),
+    ),
+    template: Object.freeze({
+      id: value.template.id,
+      version: value.template.version,
+    }),
+  });
+}
+
+function sha256Json(value: Readonly<Record<string, unknown>>): string {
+  return createHash("sha256")
+    .update(JSON.stringify(value), "utf8")
+    .digest("hex");
+}
+
+function compositionProfileSha256(
+  value: DesktopWorkspaceCompositionProfileValue,
+): string {
+  return sha256Json(compositionProfilePayload(value));
+}
+
+function compositionRequestSha256(
+  input: Readonly<{
+    workspaceId: string;
+    baseRevision: number;
+    baseProfileSha256: string;
+    sourceKind: "owner" | "assistant" | "rollback";
+    sourceReference: string | null;
+    desiredProfileSha256: string;
+  }>,
+): string {
+  return sha256Json(
+    Object.freeze({
+      base_profile_sha256: input.baseProfileSha256,
+      base_revision: input.baseRevision,
+      desired_profile_sha256: input.desiredProfileSha256,
+      schema_version: 1,
+      source_kind: input.sourceKind,
+      source_reference: input.sourceReference,
+      template: Object.freeze({ id: "standard-workbench", version: 1 }),
+      workspace_id: input.workspaceId,
+    }),
+  );
+}
+
+function validRevision(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647;
+}
+
+function sameCompositionProfile(
+  left: DesktopWorkspaceCompositionProfileValue,
+  right: DesktopWorkspaceCompositionProfileValue,
+): boolean {
+  return (
+    JSON.stringify(compositionProfilePayload(left)) ===
+    JSON.stringify(compositionProfilePayload(right))
+  );
+}
+
 function parseErrorCode(value: unknown): string | null {
   if (
     !isRecord(value) ||
@@ -361,11 +1153,7 @@ async function readBoundedJson(
   const declared = response.headers.get("content-length");
   if (declared !== null) {
     const parsed = Number(declared);
-    if (
-      !Number.isSafeInteger(parsed) ||
-      parsed < 0 ||
-      parsed > limit
-    ) {
+    if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > limit) {
       throw new Error("desktop_native_response_invalid");
     }
   }
@@ -399,7 +1187,11 @@ async function readBoundedJson(
 function parseParentAgent(
   value: unknown,
 ): { readonly agent: DesktopParentAgent } | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["agent"]) || !isRecord(value.agent)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["agent"]) ||
+    !isRecord(value.agent)
+  ) {
     return null;
   }
   const agent = value.agent;
@@ -497,7 +1289,11 @@ function parseProvider(value: unknown): DesktopProvider | null {
 }
 
 function parseProviderList(value: unknown): DesktopProviderList | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["items"]) || !Array.isArray(value.items)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
     return null;
   }
   const items: DesktopProvider[] = [];
@@ -573,7 +1369,10 @@ function parseProviderTest(value: unknown): DesktopProviderTestResult | null {
       return null;
     }
     if (value.identity_proven) {
-      if (typeof value.actual_model !== "string" || value.actual_model.length === 0) {
+      if (
+        typeof value.actual_model !== "string" ||
+        value.actual_model.length === 0
+      ) {
         return null;
       }
     } else if (value.actual_model !== null) {
@@ -691,7 +1490,11 @@ function parseConversation(value: unknown): DesktopConversation | null {
 }
 
 function parseConversationList(value: unknown): DesktopConversationList | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["items"]) || !Array.isArray(value.items)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
     return null;
   }
   const items: DesktopConversation[] = [];
@@ -703,9 +1506,10 @@ function parseConversationList(value: unknown): DesktopConversationList | null {
   return Object.freeze({ items: Object.freeze(items) });
 }
 
-function parseConversationCreated(
-  value: unknown,
-): { readonly created: true; readonly conversation: DesktopConversation } | null {
+function parseConversationCreated(value: unknown): {
+  readonly created: true;
+  readonly conversation: DesktopConversation;
+} | null {
   if (!isRecord(value) || value.created !== true) return null;
   const conversation = parseConversation(value.conversation);
   return conversation === null
@@ -740,7 +1544,8 @@ function parseInvocation(value: unknown): DesktopInvocation | null {
     typeof value.provider_id !== "string" ||
     !PROVIDER_ID_PATTERN.test(value.provider_id) ||
     !isBoundedString(value.requested_model, 256) ||
-    (value.actual_model !== null && !isBoundedString(value.actual_model, 256)) ||
+    (value.actual_model !== null &&
+      !isBoundedString(value.actual_model, 256)) ||
     typeof value.family !== "string" ||
     typeof value.gear !== "string" ||
     typeof value.thinking_depth !== "string" ||
@@ -754,7 +1559,8 @@ function parseInvocation(value: unknown): DesktopInvocation | null {
     Number.isNaN(outputTokens) ||
     Number.isNaN(totalTokens) ||
     (value.error_code !== null && typeof value.error_code !== "string") ||
-    (value.error_redacted !== null && typeof value.error_redacted !== "string") ||
+    (value.error_redacted !== null &&
+      typeof value.error_redacted !== "string") ||
     (value.retry_of_invocation_id !== null &&
       (typeof value.retry_of_invocation_id !== "string" ||
         !INVOCATION_ID_PATTERN.test(value.retry_of_invocation_id))) ||
@@ -846,9 +1652,7 @@ function parseConversationDetail(
   });
 }
 
-function parseCancelResult(
-  value: unknown,
-): {
+function parseCancelResult(value: unknown): {
   readonly cancelled: boolean;
   readonly id: string;
   readonly accepted: boolean;
@@ -893,7 +1697,8 @@ function parseStreamEvent(
     workspaceId: payload.workspace_id,
     conversationId: payload.conversation_id,
     invocationId: payload.invocation_id,
-    messageId: typeof payload.message_id === "string" ? payload.message_id : undefined,
+    messageId:
+      typeof payload.message_id === "string" ? payload.message_id : undefined,
   };
   if (eventName === "delta") {
     if (typeof payload.text !== "string") return null;
@@ -908,41 +1713,61 @@ function parseStreamEvent(
       type: "identity",
       ...scoped,
       providerName:
-        typeof payload.provider_name === "string" ? payload.provider_name : undefined,
+        typeof payload.provider_name === "string"
+          ? payload.provider_name
+          : undefined,
       requestedModel:
-        typeof payload.requested_model === "string" ? payload.requested_model : undefined,
+        typeof payload.requested_model === "string"
+          ? payload.requested_model
+          : undefined,
       family: typeof payload.family === "string" ? payload.family : undefined,
       gear: typeof payload.gear === "string" ? payload.gear : undefined,
       thinkingDepth:
-        typeof payload.thinking_depth === "string" ? payload.thinking_depth : undefined,
+        typeof payload.thinking_depth === "string"
+          ? payload.thinking_depth
+          : undefined,
     });
   }
-  if (eventName === "done" || eventName === "cancelled" || eventName === "error") {
+  if (
+    eventName === "done" ||
+    eventName === "cancelled" ||
+    eventName === "error"
+  ) {
     return Object.freeze({
       type: eventName,
       ...scoped,
       answer: typeof payload.answer === "string" ? payload.answer : undefined,
       actualModel:
-        payload.actual_model === null || typeof payload.actual_model === "string"
+        payload.actual_model === null ||
+        typeof payload.actual_model === "string"
           ? payload.actual_model
           : undefined,
       status: typeof payload.status === "string" ? payload.status : undefined,
-      durationMs: typeof payload.duration_ms === "number" ? payload.duration_ms : undefined,
+      durationMs:
+        typeof payload.duration_ms === "number"
+          ? payload.duration_ms
+          : undefined,
       inputTokens:
-        payload.input_tokens === null || typeof payload.input_tokens === "number"
+        payload.input_tokens === null ||
+        typeof payload.input_tokens === "number"
           ? payload.input_tokens
           : undefined,
       outputTokens:
-        payload.output_tokens === null || typeof payload.output_tokens === "number"
+        payload.output_tokens === null ||
+        typeof payload.output_tokens === "number"
           ? payload.output_tokens
           : undefined,
       totalTokens:
-        payload.total_tokens === null || typeof payload.total_tokens === "number"
+        payload.total_tokens === null ||
+        typeof payload.total_tokens === "number"
           ? payload.total_tokens
           : undefined,
-      errorCode: typeof payload.error_code === "string" ? payload.error_code : undefined,
+      errorCode:
+        typeof payload.error_code === "string" ? payload.error_code : undefined,
       errorRedacted:
-        typeof payload.error_redacted === "string" ? payload.error_redacted : undefined,
+        typeof payload.error_redacted === "string"
+          ? payload.error_redacted
+          : undefined,
     });
   }
   return null;
@@ -957,7 +1782,9 @@ function stampSendEpoch(
     : Object.freeze({ ...event, sendEpoch });
 }
 
-async function releaseStreamReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+async function releaseStreamReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<void> {
   try {
     await reader.cancel();
   } catch {
@@ -1011,15 +1838,21 @@ async function readConversationStream(
         let eventName = "message";
         const dataLines: string[] = [];
         for (const line of raw.split("\n")) {
-          if (line.startsWith("event:")) eventName = line.slice(6).trim() || "message";
-          if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+          if (line.startsWith("event:"))
+            eventName = line.slice(6).trim() || "message";
+          if (line.startsWith("data:"))
+            dataLines.push(line.slice(5).trimStart());
         }
         const parsed = parseStreamEvent(eventName, dataLines.join("\n"));
         if (parsed === null) continue;
         const stamped = stampSendEpoch(parsed, sendEpoch);
         if (stamped.type === "identity") invocationId = stamped.invocationId;
         emit(stamped);
-        if (stamped.type === "done" || stamped.type === "cancelled" || stamped.type === "error") {
+        if (
+          stamped.type === "done" ||
+          stamped.type === "cancelled" ||
+          stamped.type === "error"
+        ) {
           terminal = stamped;
         }
       }
@@ -1130,7 +1963,11 @@ function parseAgentRole(value: unknown): DesktopAgentRole | null {
 }
 
 function parseAgentRoleList(value: unknown): DesktopAgentRoleList | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["items"]) || !Array.isArray(value.items)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
     return null;
   }
   const items: DesktopAgentRole[] = [];
@@ -1231,7 +2068,8 @@ function parseTeamRun(value: unknown): DesktopTeamRun | null {
     (value.current_plan_revision_id !== null &&
       (typeof value.current_plan_revision_id !== "string" ||
         !TEAM_REV_ID_PATTERN.test(value.current_plan_revision_id))) ||
-    (value.current_wave_id !== null && !isBoundedString(value.current_wave_id, 128)) ||
+    (value.current_wave_id !== null &&
+      !isBoundedString(value.current_wave_id, 128)) ||
     (value.dispatched_participant_count !== null &&
       (typeof value.dispatched_participant_count !== "number" ||
         !Number.isInteger(value.dispatched_participant_count))) ||
@@ -1284,7 +2122,9 @@ function parseTeamRunWrapper(
   return teamRun === null ? null : Object.freeze({ teamRun });
 }
 
-function parseTeamParentCall(value: unknown): DesktopTeamParentCallRecord | null {
+function parseTeamParentCall(
+  value: unknown,
+): DesktopTeamParentCallRecord | null {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -1318,7 +2158,8 @@ function parseTeamParentCall(value: unknown): DesktopTeamParentCallRecord | null
     typeof value.provider_id !== "string" ||
     !PROVIDER_ID_PATTERN.test(value.provider_id) ||
     !isBoundedString(value.requested_model, 256) ||
-    (value.actual_model !== null && !isBoundedString(value.actual_model, 256)) ||
+    (value.actual_model !== null &&
+      !isBoundedString(value.actual_model, 256)) ||
     !isNullableNonNegativeInteger(value.input_tokens) ||
     !isNullableNonNegativeInteger(value.output_tokens) ||
     !isNullableNonNegativeInteger(value.total_tokens) ||
@@ -1361,7 +2202,12 @@ function parseTeamParentCall(value: unknown): DesktopTeamParentCallRecord | null
       value.state !== "cancelled" &&
       value.state !== "unknown") ||
     (value.output_sha256 === null && value.error_code !== null);
-  if (!usageValid || !pendingProofValid || !successProofValid || !failureProofValid) {
+  if (
+    !usageValid ||
+    !pendingProofValid ||
+    !successProofValid ||
+    !failureProofValid
+  ) {
     return null;
   }
   return Object.freeze({
@@ -1387,10 +2233,7 @@ function parseTeamProviderCallConsume(value: unknown): {
   readonly teamRun: DesktopTeamRun;
   readonly parentCall?: DesktopTeamParentCallRecord;
 } | null {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["parent_call", "team_run"])
-  ) {
+  if (!isRecord(value) || !hasExactKeys(value, ["parent_call", "team_run"])) {
     return null;
   }
   const teamRun = parseTeamRun(value.team_run);
@@ -1411,7 +2254,11 @@ function parseTeamParentCallWrapper(value: unknown): {
 function parseTeamRunList(
   value: unknown,
 ): { readonly items: readonly DesktopTeamRun[] } | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["items"]) || !Array.isArray(value.items)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
     return null;
   }
   const items: DesktopTeamRun[] = [];
@@ -1483,7 +2330,9 @@ function parsePlanRevision(value: unknown): DesktopTeamPlanRevision | null {
   });
 }
 
-function parseProposalResult(value: unknown): DesktopTeamRunProposalResult | null {
+function parseProposalResult(
+  value: unknown,
+): DesktopTeamRunProposalResult | null {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -1512,7 +2361,11 @@ function parseProposalResult(value: unknown): DesktopTeamRunProposalResult | nul
 function parseBlackboard(
   value: unknown,
 ): { readonly blackboard: PersonalTeamBlackboard } | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["blackboard"]) || !isRecord(value.blackboard)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["blackboard"]) ||
+    !isRecord(value.blackboard)
+  ) {
     return null;
   }
   const board = value.blackboard;
@@ -1596,7 +2449,8 @@ function parseBlackboard(
         targetRoleId: row.target_role_id as SpecialistEmployeeId,
         question: row.question,
         reason: row.reason,
-        parentDecision: row.parent_decision as DesktopTeamCollaborationRequest["parentDecision"],
+        parentDecision:
+          row.parent_decision as DesktopTeamCollaborationRequest["parentDecision"],
         resolvedAssignmentId:
           row.resolved_assignment_id === null ||
           typeof row.resolved_assignment_id === "string"
@@ -1642,13 +2496,19 @@ function parseBlackboard(
   });
 }
 
-function parseTeamReportAck(value: unknown): { readonly recorded: true } | null {
+function parseTeamReportAck(
+  value: unknown,
+): { readonly recorded: true } | null {
   if (!isRecord(value) || !isRecord(value.report)) return null;
   return Object.freeze({ recorded: true as const });
 }
 
 function parseTeamNodeCreate(value: unknown): {
-  readonly node: { readonly id: string; readonly ordinal: number; readonly invocationId: string };
+  readonly node: {
+    readonly id: string;
+    readonly ordinal: number;
+    readonly invocationId: string;
+  };
 } | null {
   if (!isRecord(value) || !isRecord(value.node)) return null;
   const node = value.node;
@@ -1724,7 +2584,9 @@ function parseCollaborationWrapper(value: unknown): {
   });
 }
 
-function parseCollaborationResolveAck(value: unknown): { readonly resolved: true } | null {
+function parseCollaborationResolveAck(
+  value: unknown,
+): { readonly resolved: true } | null {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, ["collaboration_request"]) ||
@@ -1740,7 +2602,8 @@ function parseCollaborationResolveAck(value: unknown): { readonly resolved: true
       row.parent_decision !== "handle_self" &&
       row.parent_decision !== "merge_existing" &&
       row.parent_decision !== "decline") ||
-    (row.resolved_assignment_id !== null && typeof row.resolved_assignment_id !== "string")
+    (row.resolved_assignment_id !== null &&
+      typeof row.resolved_assignment_id !== "string")
   ) {
     return null;
   }
@@ -1833,19 +2696,234 @@ export class DesktopNativeClient {
     );
   }
 
+  getApplicationPreference(): Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  > {
+    return this.#request(
+      "GET",
+      "/desktop/v1/settings/application",
+      undefined,
+      parseApplicationPreferenceResult,
+    );
+  }
+
+  updateApplicationPreference(
+    input: DesktopApplicationPreferenceUpdateInput,
+  ): Promise<
+    DesktopOperationResult<{
+      readonly preference: DesktopApplicationPreference;
+    }>
+  > {
+    if (!validRevision(input.expectedRowVersion)) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      "/desktop/v1/settings/application",
+      {
+        density: input.density,
+        reduce_motion: input.reduceMotion,
+        expected_row_version: input.expectedRowVersion,
+      },
+      parseApplicationPreferenceResult,
+    );
+  }
+
+  getWorkspaceComposition(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>> {
+    if (!WORKSPACE_ID_PATTERN.test(input.workspaceId)) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "GET",
+      `/desktop/v1/workspaces/${input.workspaceId}/composition`,
+      undefined,
+      (value) => {
+        const snapshot = parseCompositionSnapshot(value);
+        return snapshot !== null &&
+          snapshot.profile.workspaceId === input.workspaceId
+          ? snapshot
+          : null;
+      },
+    );
+  }
+
+  proposeWorkspaceComposition(
+    input: DesktopWorkspaceCompositionOwnerProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !validRevision(input.expectedRevision) ||
+      !SHA256_PATTERN.test(input.expectedProfileSha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/composition/proposals`,
+      {
+        expected_revision: input.expectedRevision,
+        expected_profile_sha256: input.expectedProfileSha256,
+        desired_profile: compositionProfilePayload(input.desiredProfile),
+      },
+      (value) => {
+        const result = parseCompositionProposalResult(value);
+        const proposal = result?.proposal;
+        return proposal !== undefined &&
+          proposal.workspaceId === input.workspaceId &&
+          proposal.baseRevision === input.expectedRevision &&
+          proposal.baseProfileSha256 === input.expectedProfileSha256 &&
+          proposal.sourceKind === "owner" &&
+          proposal.sourceReference === null &&
+          sameCompositionProfile(proposal.desiredProfile, input.desiredProfile)
+          ? result
+          : null;
+      },
+    );
+  }
+
+  proposeWorkspaceCompositionFromAssistant(
+    input: DesktopWorkspaceCompositionAssistantProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !validRevision(input.expectedRevision) ||
+      !SHA256_PATTERN.test(input.expectedProfileSha256) ||
+      !MESSAGE_ID_PATTERN.test(input.messageId)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/composition/proposals/from-assistant`,
+      {
+        expected_revision: input.expectedRevision,
+        expected_profile_sha256: input.expectedProfileSha256,
+        message_id: input.messageId,
+      },
+      (value) => {
+        const result = parseCompositionProposalResult(value);
+        const proposal = result?.proposal;
+        return proposal !== undefined &&
+          proposal.workspaceId === input.workspaceId &&
+          proposal.baseRevision === input.expectedRevision &&
+          proposal.baseProfileSha256 === input.expectedProfileSha256 &&
+          proposal.sourceKind === "assistant" &&
+          proposal.sourceReference === input.messageId
+          ? result
+          : null;
+      },
+    );
+  }
+
+  proposeWorkspaceCompositionRollback(
+    input: DesktopWorkspaceCompositionRollbackProposalInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !validRevision(input.expectedRevision) ||
+      !SHA256_PATTERN.test(input.expectedProfileSha256) ||
+      !validRevision(input.targetRevision)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/composition/proposals/rollback`,
+      {
+        expected_revision: input.expectedRevision,
+        expected_profile_sha256: input.expectedProfileSha256,
+        target_revision: input.targetRevision,
+      },
+      (value) => {
+        const result = parseCompositionProposalResult(value);
+        const proposal = result?.proposal;
+        return proposal !== undefined &&
+          proposal.workspaceId === input.workspaceId &&
+          proposal.baseRevision === input.expectedRevision &&
+          proposal.baseProfileSha256 === input.expectedProfileSha256 &&
+          proposal.sourceKind === "rollback" &&
+          proposal.sourceReference === `revision:${input.targetRevision}`
+          ? result
+          : null;
+      },
+    );
+  }
+
+  decideWorkspaceComposition(
+    input: DesktopWorkspaceCompositionDecisionInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(input.proposalId) ||
+      !SHA256_PATTERN.test(input.requestSha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/composition/proposals/${input.proposalId}/decision`,
+      {
+        decision: input.decision,
+        request_sha256: input.requestSha256,
+      },
+      (value) => {
+        const result = parseCompositionDecisionResult(value);
+        if (
+          result === null ||
+          result.workspaceId !== input.workspaceId ||
+          result.proposalId !== input.proposalId ||
+          result.requestSha256 !== input.requestSha256 ||
+          result.decision !==
+            (input.decision === "approve" ? "approved" : "rejected")
+        ) {
+          return null;
+        }
+        if (result.decision === "rejected") return result;
+        return result.profile.workspaceId === input.workspaceId &&
+          result.profile.proposalId === input.proposalId
+          ? result
+          : null;
+      },
+    );
+  }
+
   listProviders(): Promise<DesktopOperationResult<DesktopProviderList>> {
-    return this.#request("GET", "/desktop/v1/providers", undefined, parseProviderList);
+    return this.#request(
+      "GET",
+      "/desktop/v1/providers",
+      undefined,
+      parseProviderList,
+    );
   }
 
   upsertProvider(
     body: Readonly<Record<string, unknown>>,
   ): Promise<DesktopOperationResult<DesktopProviderMutationResult>> {
-    return this.#request("POST", "/desktop/v1/providers", body, parseProviderMutation);
+    return this.#request(
+      "POST",
+      "/desktop/v1/providers",
+      body,
+      parseProviderMutation,
+    );
   }
 
   deleteProvider(
     input: DesktopProviderIdInput,
-  ): Promise<DesktopOperationResult<{ readonly deleted: true; readonly id: string }>> {
+  ): Promise<
+    DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+  > {
     if (!PROVIDER_ID_PATTERN.test(input.providerId)) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
@@ -1925,9 +3003,7 @@ export class DesktopNativeClient {
     );
   }
 
-  createConversation(
-    input: DesktopConversationCreateInput,
-  ): Promise<
+  createConversation(input: DesktopConversationCreateInput): Promise<
     DesktopOperationResult<{
       readonly created: true;
       readonly conversation: DesktopConversation;
@@ -1982,9 +3058,7 @@ export class DesktopNativeClient {
     );
   }
 
-  cancelInvocation(
-    invocationId: string,
-  ): Promise<
+  cancelInvocation(invocationId: string): Promise<
     DesktopOperationResult<{
       readonly cancelled: boolean;
       readonly id: string;
@@ -2042,7 +3116,9 @@ export class DesktopNativeClient {
       const contentType = response.headers.get("content-type") ?? "";
       if (!contentType.includes("text/event-stream")) {
         const payload = await readBoundedJson(response, MAX_RESPONSE_BYTES);
-        return failure(parseErrorCode(payload) ?? "desktop_native_request_failed");
+        return failure(
+          parseErrorCode(payload) ?? "desktop_native_request_failed",
+        );
       }
       return await readConversationStream(
         response,
@@ -2089,7 +3165,10 @@ export class DesktopNativeClient {
   getAgentRole(
     input: DesktopAgentRoleIdInput,
   ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> {
-    if (!WORKSPACE_ID_PATTERN.test(input.workspaceId) || !EMPLOYEE_ROLE_SET.has(input.roleId)) {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !EMPLOYEE_ROLE_SET.has(input.roleId)
+    ) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
     return this.#request(
@@ -2103,7 +3182,10 @@ export class DesktopNativeClient {
   updateAgentRole(
     input: DesktopAgentRoleUpdateInput,
   ): Promise<DesktopOperationResult<{ readonly role: DesktopAgentRole }>> {
-    if (!WORKSPACE_ID_PATTERN.test(input.workspaceId) || !EMPLOYEE_ROLE_SET.has(input.roleId)) {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !EMPLOYEE_ROLE_SET.has(input.roleId)
+    ) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
     return this.#request(
@@ -2123,7 +3205,10 @@ export class DesktopNativeClient {
   testAgentRole(
     input: DesktopAgentRoleIdInput,
   ): Promise<DesktopOperationResult<DesktopAgentRoleTestResult>> {
-    if (!WORKSPACE_ID_PATTERN.test(input.workspaceId) || !EMPLOYEE_ROLE_SET.has(input.roleId)) {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !EMPLOYEE_ROLE_SET.has(input.roleId)
+    ) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
     return this.#request(
@@ -2136,7 +3221,9 @@ export class DesktopNativeClient {
 
   listTeamRuns(
     input: DesktopWorkspaceIdInput,
-  ): Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>> {
+  ): Promise<
+    DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+  > {
     if (!WORKSPACE_ID_PATTERN.test(input.workspaceId)) {
       return Promise.resolve(failure("desktop_native_input_invalid"));
     }
@@ -2163,7 +3250,9 @@ export class DesktopNativeClient {
         team_mode: true,
         ...(input.allowedSpecialistRoleIds === undefined
           ? {}
-          : { allowed_specialist_role_ids: [...input.allowedSpecialistRoleIds] }),
+          : {
+              allowed_specialist_role_ids: [...input.allowedSpecialistRoleIds],
+            }),
         maximum_provider_calls: input.budget.maximumProviderCalls,
         maximum_wall_time_ms: input.budget.maximumWallTimeMs,
         maximum_concurrent_calls: input.budget.maximumConcurrentCalls,
@@ -2231,7 +3320,9 @@ export class DesktopNativeClient {
 
   getTeamBlackboard(
     input: DesktopTeamRunIdInput,
-  ): Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>> {
+  ): Promise<
+    DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+  > {
     if (
       !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
       !TEAM_RUN_ID_PATTERN.test(input.teamRunId)
@@ -2279,7 +3370,11 @@ export class DesktopNativeClient {
     readonly workspaceId: string;
     readonly teamRunId: string;
     readonly requestId: string;
-    readonly parentDecision: "accept_start" | "handle_self" | "merge_existing" | "decline";
+    readonly parentDecision:
+      | "accept_start"
+      | "handle_self"
+      | "merge_existing"
+      | "decline";
     readonly resolvedAssignmentId: string | null;
   }): Promise<DesktopOperationResult<{ readonly resolved: true }>> {
     if (
@@ -2466,7 +3561,8 @@ export class DesktopNativeClient {
       !isBoundedString(input.requestedModel, 256) ||
       (input.planRevisionId !== null &&
         !TEAM_REV_ID_PATTERN.test(input.planRevisionId)) ||
-      (input.actualModel !== null && !isBoundedString(input.actualModel, 256)) ||
+      (input.actualModel !== null &&
+        !isBoundedString(input.actualModel, 256)) ||
       !usageValid ||
       !successProofValid ||
       !failureProofValid
@@ -2525,7 +3621,11 @@ export class DesktopNativeClient {
     readonly requestedModel: string;
   }): Promise<
     DesktopOperationResult<{
-      readonly node: { readonly id: string; readonly ordinal: number; readonly invocationId: string };
+      readonly node: {
+        readonly id: string;
+        readonly ordinal: number;
+        readonly invocationId: string;
+      };
     }>
   > {
     if (
@@ -2563,7 +3663,13 @@ export class DesktopNativeClient {
     readonly answerSha256: string | null;
     readonly errorCode: string | null;
     readonly durationMs: number | null;
-  }): Promise<DesktopOperationResult<{ readonly updated: true; readonly id: string; readonly state: string }>> {
+  }): Promise<
+    DesktopOperationResult<{
+      readonly updated: true;
+      readonly id: string;
+      readonly state: string;
+    }>
+  > {
     return this.#request(
       "POST",
       `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/nodes/${input.nodeId}`,
@@ -2598,7 +3704,13 @@ export class DesktopNativeClient {
     readonly nodeEpoch: number;
     readonly sendEpoch: number;
     readonly report: EmployeeTeamReport;
-  }): Promise<DesktopOperationResult<{ readonly updated: true; readonly id: string; readonly state: string }>> {
+  }): Promise<
+    DesktopOperationResult<{
+      readonly updated: true;
+      readonly id: string;
+      readonly state: string;
+    }>
+  > {
     return this.#request(
       "POST",
       `/desktop/v1/workspaces/${input.workspaceId}/team-runs/${input.teamRunId}/nodes/${input.nodeId}/settle`,
@@ -2616,11 +3728,13 @@ export class DesktopNativeClient {
         employee_role_id: input.report.employeeRoleId,
         status: input.report.status,
         report: input.report.report,
-        collaboration_requests: input.report.collaborationRequests.map((item) => ({
-          targetRoleId: item.targetRoleId,
-          question: item.question,
-          reason: item.reason,
-        })),
+        collaboration_requests: input.report.collaborationRequests.map(
+          (item) => ({
+            targetRoleId: item.targetRoleId,
+            question: item.question,
+            reason: item.reason,
+          }),
+        ),
         wave_id: input.waveId,
         node_epoch: input.nodeEpoch,
         send_epoch: input.sendEpoch,
@@ -2646,11 +3760,13 @@ export class DesktopNativeClient {
         report: input.report.report,
         node_id: input.nodeId,
         invocation_id: input.invocationId,
-        collaboration_requests: input.report.collaborationRequests.map((item) => ({
-          targetRoleId: item.targetRoleId,
-          question: item.question,
-          reason: item.reason,
-        })),
+        collaboration_requests: input.report.collaborationRequests.map(
+          (item) => ({
+            targetRoleId: item.targetRoleId,
+            question: item.question,
+            reason: item.reason,
+          }),
+        ),
       },
       parseTeamReportAck,
     );

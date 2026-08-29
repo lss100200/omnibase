@@ -18,6 +18,13 @@ const unused = async () => ({
 
 const productStubs = {
   getWorkspaceAgent: unused,
+  getApplicationPreference: unused,
+  updateApplicationPreference: unused,
+  getWorkspaceComposition: unused,
+  proposeWorkspaceComposition: unused,
+  proposeWorkspaceCompositionFromAssistant: unused,
+  proposeWorkspaceCompositionRollback: unused,
+  decideWorkspaceComposition: unused,
   authorizeWorkspaceFiles: unused,
   releaseWorkspaceFiles: unused,
   listWorkspaceFiles: unused,
@@ -47,6 +54,55 @@ const productStubs = {
   executeTeamRun: unused,
   appendTeamRunBudget: unused,
 };
+
+const WORKSPACE_ID = `workspace_${"1".repeat(32)}`;
+const PROFILE_SHA256 = "2".repeat(64);
+const REQUEST_SHA256 = "3".repeat(64);
+const COMPOSITION_PROPOSAL_ID = `proposal_${"4".repeat(32)}`;
+const COMPOSITION_SLOT_IDS = [
+  "agent.rail",
+  "conversation.transcript",
+  "event.agent-log",
+  "event.output",
+  "knowledge.ebook",
+  "mcp.catalog",
+  "provider.settings",
+  "run.history",
+  "sandbox.runtime",
+  "settings.center",
+  "skills.catalog",
+  "source-control",
+  "terminal",
+  "workspace.brief",
+  "workspace.explorer",
+] as const;
+
+function compositionProfile() {
+  return {
+    schemaVersion: 1,
+    template: { id: "standard-workbench", version: 1 },
+    appearance: { density: "inherit", quietChrome: false },
+    layout: {
+      agentPanel: "open",
+      bottomPanel: "output",
+      focusMode: false,
+      sidebar: "explorer",
+    },
+    slots: Object.fromEntries(
+      COMPOSITION_SLOT_IDS.map((slotId) => [
+        slotId,
+        ![
+          "knowledge.ebook",
+          "mcp.catalog",
+          "sandbox.runtime",
+          "skills.catalog",
+          "source-control",
+          "terminal",
+        ].includes(slotId),
+      ]),
+    ),
+  };
+}
 
 test("preload/main IPC is a closed product channel set", async () => {
   const handlers = new Map<
@@ -168,6 +224,197 @@ test("preload/main IPC is a closed product channel set", async () => {
   );
 });
 
+test("Workspace composition IPC normalizes the closed profile and rejects widened authority", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  let settingsInput: unknown;
+  let compositionGetInput: unknown;
+  let ownerProposalInput: unknown;
+  let assistantProposalInput: unknown;
+  let rollbackProposalInput: unknown;
+  let decisionInput: unknown;
+  registerClosedIpcHandlers(
+    {
+      handle: (
+        channel: string,
+        listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+      ) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    },
+    {
+      getVersion: () => "1.0.0",
+      getRuntimeStatus: () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      retryRuntimeStartup: async () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      getOwnerStatus: unused,
+      bootstrapOwner: unused,
+      listWorkspaces: unused,
+      createWorkspace: unused,
+      archiveWorkspace: unused,
+      ...productStubs,
+      updateApplicationPreference: async (input) => {
+        settingsInput = input;
+        return unused();
+      },
+      getWorkspaceComposition: async (input) => {
+        compositionGetInput = input;
+        return unused();
+      },
+      proposeWorkspaceComposition: async (input) => {
+        ownerProposalInput = input;
+        return unused();
+      },
+      proposeWorkspaceCompositionFromAssistant: async (input) => {
+        assistantProposalInput = input;
+        return unused();
+      },
+      proposeWorkspaceCompositionRollback: async (input) => {
+        rollbackProposalInput = input;
+        return unused();
+      },
+      decideWorkspaceComposition: async (input) => {
+        decisionInput = input;
+        return unused();
+      },
+    },
+  );
+  const trustedEvent = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+  } as IpcMainInvokeEvent;
+  const profile = compositionProfile();
+
+  await handlers.get(IPC_CHANNELS.workbenchSettingsUpdate)?.(trustedEvent, {
+    density: "compact",
+    reduceMotion: true,
+    expectedRowVersion: 1,
+  });
+  await handlers.get(IPC_CHANNELS.workspaceCompositionGet)?.(trustedEvent, {
+    workspaceId: WORKSPACE_ID,
+  });
+  await handlers.get(IPC_CHANNELS.workspaceCompositionPropose)?.(trustedEvent, {
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 1,
+    expectedProfileSha256: PROFILE_SHA256,
+    desiredProfile: profile,
+  });
+  await handlers.get(IPC_CHANNELS.workspaceCompositionProposeFromAssistant)?.(
+    trustedEvent,
+    {
+      workspaceId: WORKSPACE_ID,
+      expectedRevision: 1,
+      expectedProfileSha256: PROFILE_SHA256,
+      messageId: `message_${"5".repeat(32)}`,
+    },
+  );
+  await handlers.get(IPC_CHANNELS.workspaceCompositionProposeRollback)?.(
+    trustedEvent,
+    {
+      workspaceId: WORKSPACE_ID,
+      expectedRevision: 2,
+      expectedProfileSha256: PROFILE_SHA256,
+      targetRevision: 1,
+    },
+  );
+  await handlers.get(IPC_CHANNELS.workspaceCompositionDecide)?.(trustedEvent, {
+    workspaceId: WORKSPACE_ID,
+    proposalId: COMPOSITION_PROPOSAL_ID,
+    requestSha256: REQUEST_SHA256,
+    decision: "approve",
+  });
+
+  assert.deepEqual(settingsInput, {
+    density: "compact",
+    reduceMotion: true,
+    expectedRowVersion: 1,
+  });
+  assert.deepEqual(compositionGetInput, { workspaceId: WORKSPACE_ID });
+  assert.deepEqual(ownerProposalInput, {
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 1,
+    expectedProfileSha256: PROFILE_SHA256,
+    desiredProfile: profile,
+  });
+  assert.deepEqual(assistantProposalInput, {
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 1,
+    expectedProfileSha256: PROFILE_SHA256,
+    messageId: `message_${"5".repeat(32)}`,
+  });
+  assert.deepEqual(rollbackProposalInput, {
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 2,
+    expectedProfileSha256: PROFILE_SHA256,
+    targetRevision: 1,
+  });
+  assert.deepEqual(decisionInput, {
+    workspaceId: WORKSPACE_ID,
+    proposalId: COMPOSITION_PROPOSAL_ID,
+    requestSha256: REQUEST_SHA256,
+    decision: "approve",
+  });
+
+  ownerProposalInput = undefined;
+  const widened = await handlers.get(
+    IPC_CHANNELS.workspaceCompositionPropose,
+  )?.(trustedEvent, {
+    workspaceId: WORKSPACE_ID,
+    expectedRevision: 1,
+    expectedProfileSha256: PROFILE_SHA256,
+    desiredProfile: {
+      ...profile,
+      slots: { ...profile.slots, "plugin.arbitrary": true },
+    },
+  });
+  assert.deepEqual(widened, {
+    ok: false,
+    error: { code: "desktop_native_input_invalid" },
+  });
+  assert.equal(ownerProposalInput, undefined);
+
+  for (const slots of [
+    { ...profile.slots, terminal: true },
+    { ...profile.slots, "settings.center": false },
+  ]) {
+    const widenedCapability = await handlers.get(
+      IPC_CHANNELS.workspaceCompositionPropose,
+    )?.(trustedEvent, {
+      workspaceId: WORKSPACE_ID,
+      expectedRevision: 1,
+      expectedProfileSha256: PROFILE_SHA256,
+      desiredProfile: { ...profile, slots },
+    });
+    assert.deepEqual(widenedCapability, {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    });
+    assert.equal(ownerProposalInput, undefined);
+  }
+
+  decisionInput = undefined;
+  const wrongDigest = await handlers.get(
+    IPC_CHANNELS.workspaceCompositionDecide,
+  )?.(trustedEvent, {
+    workspaceId: WORKSPACE_ID,
+    proposalId: COMPOSITION_PROPOSAL_ID,
+    requestSha256: "not-a-digest",
+    decision: "approve",
+  });
+  assert.deepEqual(wrongDigest, {
+    ok: false,
+    error: { code: "desktop_native_input_invalid" },
+  });
+  assert.equal(decisionInput, undefined);
+});
+
 test("IPC rejects unexpected arguments and non-loopback senders", async () => {
   const handlers = new Map<
     string,
@@ -260,8 +507,16 @@ test("workspace file IPC accepts only the exact scoped generation contract", asy
     },
     {
       getVersion: () => "1.0.0",
-      getRuntimeStatus: () => ({ phase: "ready", attempts: 1, lastError: null }),
-      retryRuntimeStartup: async () => ({ phase: "ready", attempts: 1, lastError: null }),
+      getRuntimeStatus: () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      retryRuntimeStartup: async () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
       getOwnerStatus: unused,
       bootstrapOwner: unused,
       listWorkspaces: unused,
@@ -287,7 +542,11 @@ test("workspace file IPC accepts only the exact scoped generation contract", asy
         calls.push(input);
         return {
           ok: true,
-          value: { directoryPath: input.directoryPath, entries: [], truncated: false },
+          value: {
+            directoryPath: input.directoryPath,
+            entries: [],
+            truncated: false,
+          },
         };
       },
       readWorkspaceFile: async (input) => {
@@ -311,7 +570,9 @@ test("workspace file IPC accepts only the exact scoped generation contract", asy
   const workspaceId = `workspace_${"a".repeat(32)}`;
 
   assert.deepEqual(
-    await handlers.get(IPC_CHANNELS.workspaceFilesAuthorize)?.(trustedEvent, { workspaceId }),
+    await handlers.get(IPC_CHANNELS.workspaceFilesAuthorize)?.(trustedEvent, {
+      workspaceId,
+    }),
     {
       ok: true,
       value: { workspaceId, rootName: "project", authorizationGeneration: 7 },

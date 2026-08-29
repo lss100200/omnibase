@@ -7,6 +7,7 @@ import {
   GitCompareArrows,
   MessageSquare,
   NotebookPen,
+  Settings,
   type LucideIcon,
 } from 'lucide-react'
 import type {
@@ -29,6 +30,7 @@ import {
   type P7ShellUiState,
 } from '@/lib/p7-workbench-shell'
 import { p7WorkspaceFileErrorMessage, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
+import { P7SettingsCenter, type P7SettingsCenterProps } from './p7-settings-center'
 
 function invocationStatusLabel(status: string): string {
   switch (status) {
@@ -407,13 +409,20 @@ export function P7Editor(props: {
   readonly eventLog: readonly string[]
   readonly outputLines: readonly string[]
   readonly workspaceFiles: P7WorkspaceFilesState
+  readonly settings: P7SettingsCenterProps
+  readonly workspaceBriefEnabled: boolean
+  readonly hideBottomPanel: boolean
 }) {
-  const views: readonly P7CenterView[] = ['transcript', 'brief', 'code', 'diff']
+  const views: readonly P7CenterView[] =
+    props.ui.centerView === 'settings'
+      ? ['settings']
+      : ['transcript', ...(props.workspaceBriefEnabled ? (['brief'] as const) : []), 'code', 'diff']
   const viewIcons: Record<P7CenterView, LucideIcon> = {
     transcript: MessageSquare,
     brief: NotebookPen,
     code: FileCode2,
     diff: GitCompareArrows,
+    settings: Settings,
   }
   return (
     <section className="p7-workspace" aria-label="工作区">
@@ -456,14 +465,29 @@ export function P7Editor(props: {
         )}
         {props.ui.centerView === 'code' && <P7CodeView files={props.workspaceFiles} />}
         {props.ui.centerView === 'diff' && <P7UnavailableView title="审阅变更" />}
+        {props.ui.centerView === 'settings' && (
+          <P7SettingsCenter
+            {...props.settings}
+            onClose={() =>
+              props.onUiChange({
+                ...props.ui,
+                activity: 'explorer',
+                sidebarOpen: true,
+                centerView: 'transcript',
+              })
+            }
+          />
+        )}
       </div>
-      <P7BottomPanel
-        ui={props.ui}
-        onUiChange={props.onUiChange}
-        presence={props.presence}
-        eventLog={props.eventLog}
-        outputLines={props.outputLines}
-      />
+      {!props.hideBottomPanel && (
+        <P7BottomPanel
+          ui={props.ui}
+          onUiChange={props.onUiChange}
+          presence={props.presence}
+          eventLog={props.eventLog}
+          outputLines={props.outputLines}
+        />
+      )}
     </section>
   )
 }

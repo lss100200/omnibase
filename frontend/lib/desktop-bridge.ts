@@ -38,6 +38,151 @@ export interface DesktopWorkspaceMutationResult {
   readonly workspace: DesktopWorkspace
 }
 
+export type DesktopWorkbenchDensity = 'compact' | 'comfortable'
+export type DesktopWorkspaceDensity = 'inherit' | DesktopWorkbenchDensity
+export type DesktopWorkspaceSidebar = 'explorer' | 'run' | 'blackboard' | 'hidden'
+export type DesktopWorkspaceBottomPanel = 'hidden' | 'output' | 'agent-log'
+export type DesktopCompositionSourceKind = 'system' | 'owner' | 'assistant' | 'rollback'
+export type DesktopCompositionDecision = 'approved' | 'rejected'
+export type DesktopWorkspaceSlotPosture = 'required' | 'admitted' | 'unavailable'
+export type DesktopWorkspaceSlotId =
+  | 'agent.rail'
+  | 'conversation.transcript'
+  | 'event.agent-log'
+  | 'event.output'
+  | 'knowledge.ebook'
+  | 'mcp.catalog'
+  | 'provider.settings'
+  | 'run.history'
+  | 'sandbox.runtime'
+  | 'settings.center'
+  | 'skills.catalog'
+  | 'source-control'
+  | 'terminal'
+  | 'workspace.brief'
+  | 'workspace.explorer'
+
+export interface DesktopApplicationPreference {
+  readonly density: DesktopWorkbenchDensity
+  readonly reduceMotion: boolean
+  readonly rowVersion: number
+  readonly updatedAt: string
+}
+
+export interface DesktopWorkspaceCompositionProfileValue {
+  readonly schemaVersion: 1
+  readonly template: Readonly<{ id: 'standard-workbench'; version: 1 }>
+  readonly appearance: Readonly<{
+    density: DesktopWorkspaceDensity
+    quietChrome: boolean
+  }>
+  readonly layout: Readonly<{
+    agentPanel: 'open' | 'closed'
+    bottomPanel: DesktopWorkspaceBottomPanel
+    focusMode: boolean
+    sidebar: DesktopWorkspaceSidebar
+  }>
+  readonly slots: Readonly<Record<DesktopWorkspaceSlotId, boolean>>
+}
+
+export interface DesktopWorkspaceCompositionRevision {
+  readonly workspaceId: string
+  readonly revision: number
+  readonly profileSha256: string
+  readonly sourceKind: DesktopCompositionSourceKind
+  readonly proposalId: string | null
+  readonly value: DesktopWorkspaceCompositionProfileValue
+  readonly createdAt: string
+}
+
+export interface DesktopWorkspaceCompositionProposal {
+  readonly id: string
+  readonly workspaceId: string
+  readonly baseRevision: number
+  readonly baseProfileSha256: string
+  readonly sourceKind: Exclude<DesktopCompositionSourceKind, 'system'>
+  readonly sourceReference: string | null
+  readonly desiredProfileSha256: string
+  readonly requestSha256: string
+  readonly desiredProfile: DesktopWorkspaceCompositionProfileValue
+  readonly decision: DesktopCompositionDecision | null
+  readonly appliedRevision: number | null
+  readonly createdAt: string
+  readonly decidedAt: string | null
+}
+
+export interface DesktopWorkspaceSlotCatalogItem {
+  readonly id: DesktopWorkspaceSlotId
+  readonly label: string
+  readonly region: 'sidebar' | 'editor' | 'right' | 'settings' | 'bottom'
+  readonly posture: DesktopWorkspaceSlotPosture
+}
+
+export type DesktopWorkspaceCompositionAuditEvent =
+  | Readonly<{
+      sequence: number
+      eventType: 'workspace_composition_proposed'
+      payload: Readonly<{
+        baseRevision: number
+        desiredProfileSha256: string
+        proposalId: string
+        requestSha256: string
+        sourceKind: Exclude<DesktopCompositionSourceKind, 'system'>
+      }>
+      createdAt: string
+    }>
+  | Readonly<{
+      sequence: number
+      eventType: 'workspace_composition_rejected'
+      payload: Readonly<{
+        proposalId: string
+        requestSha256: string
+      }>
+      createdAt: string
+    }>
+  | Readonly<{
+      sequence: number
+      eventType: 'workspace_composition_applied'
+      payload: Readonly<{
+        profileSha256: string
+        proposalId: string
+        requestSha256: string
+        revision: number
+        sourceKind: Exclude<DesktopCompositionSourceKind, 'system'>
+      }>
+      createdAt: string
+    }>
+
+export interface DesktopWorkspaceCompositionSnapshot {
+  readonly profile: DesktopWorkspaceCompositionRevision
+  readonly revisions: readonly DesktopWorkspaceCompositionRevision[]
+  readonly proposals: readonly DesktopWorkspaceCompositionProposal[]
+  readonly slotCatalog: readonly DesktopWorkspaceSlotCatalogItem[]
+  readonly audit: readonly DesktopWorkspaceCompositionAuditEvent[]
+}
+
+export interface DesktopWorkspaceCompositionProposalResult {
+  readonly proposal: DesktopWorkspaceCompositionProposal
+  readonly replayed: boolean
+}
+
+export type DesktopWorkspaceCompositionDecisionResult =
+  | Readonly<{
+      workspaceId: string
+      proposalId: string
+      requestSha256: string
+      decision: 'rejected'
+      appliedRevision: null
+    }>
+  | Readonly<{
+      workspaceId: string
+      proposalId: string
+      requestSha256: string
+      decision: 'approved'
+      appliedRevision: number
+      profile: DesktopWorkspaceCompositionRevision
+    }>
+
 export interface DesktopWorkspaceFileAuthorization {
   readonly workspaceId: string
   readonly rootName: string
@@ -399,6 +544,45 @@ export interface OmniBaseDesktopBridge {
       readonly workspaceId: string
     }) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>
   }
+  readonly workbenchSettings: {
+    readonly get: () => Promise<
+      DesktopOperationResult<{ readonly preference: DesktopApplicationPreference }>
+    >
+    readonly update: (input: {
+      readonly density: DesktopWorkbenchDensity
+      readonly reduceMotion: boolean
+      readonly expectedRowVersion: number
+    }) => Promise<DesktopOperationResult<{ readonly preference: DesktopApplicationPreference }>>
+  }
+  readonly workspaceComposition: {
+    readonly get: (input: {
+      readonly workspaceId: string
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>>
+    readonly propose: (input: {
+      readonly workspaceId: string
+      readonly expectedRevision: number
+      readonly expectedProfileSha256: string
+      readonly desiredProfile: DesktopWorkspaceCompositionProfileValue
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>>
+    readonly proposeFromAssistant: (input: {
+      readonly workspaceId: string
+      readonly expectedRevision: number
+      readonly expectedProfileSha256: string
+      readonly messageId: string
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>>
+    readonly proposeRollback: (input: {
+      readonly workspaceId: string
+      readonly expectedRevision: number
+      readonly expectedProfileSha256: string
+      readonly targetRevision: number
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>>
+    readonly decide: (input: {
+      readonly workspaceId: string
+      readonly proposalId: string
+      readonly requestSha256: string
+      readonly decision: 'approve' | 'reject'
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>>
+  }
   readonly workspaceFiles: {
     readonly authorize: (input: {
       readonly workspaceId: string
@@ -419,7 +603,9 @@ export interface OmniBaseDesktopBridge {
     }) => Promise<DesktopOperationResult<DesktopWorkspaceFileRead>>
   }
   readonly providers: {
-    readonly list: () => Promise<DesktopOperationResult<{ readonly items: readonly DesktopProvider[] }>>
+    readonly list: () => Promise<
+      DesktopOperationResult<{ readonly items: readonly DesktopProvider[] }>
+    >
     readonly upsert: (input: {
       readonly id?: string
       readonly displayName: string
@@ -472,9 +658,7 @@ export interface OmniBaseDesktopBridge {
       readonly retryOfMessageId?: string
       readonly sendEpoch?: number
     }) => Promise<DesktopOperationResult<DesktopConversationEvent>>
-    readonly cancel: (input: {
-      readonly invocationId: string
-    }) => Promise<
+    readonly cancel: (input: { readonly invocationId: string }) => Promise<
       DesktopOperationResult<{
         readonly cancelled: boolean
         readonly id: string
@@ -557,7 +741,9 @@ export interface OmniBaseDesktopBridge {
       readonly reason: string
       readonly nodeId: string
       readonly reportId: string
-    }) => Promise<DesktopOperationResult<{ readonly collaborationRequest: DesktopTeamCollaborationRequest }>>
+    }) => Promise<
+      DesktopOperationResult<{ readonly collaborationRequest: DesktopTeamCollaborationRequest }>
+    >
     readonly execute: (input: {
       readonly workspaceId: string
       readonly conversationId: string
@@ -566,19 +752,23 @@ export interface OmniBaseDesktopBridge {
       readonly rosterEpoch: number
       readonly budget: DesktopTeamRunBudget
       readonly allowedSpecialistRoleIds?: readonly string[]
-    }) => Promise<DesktopOperationResult<{ readonly proof: {
-      readonly teamRunId: string
-      readonly state: string
-      readonly providerCallCount: number
-      readonly executedNodeCount: number
-      readonly parentCallCount: number
-      readonly uniqueInvocationIds: readonly string[]
-      readonly uniqueNodeIds: readonly string[]
-      readonly uniqueAssignmentIds: readonly string[]
-      readonly parentWasLastWhenSynthesizing: boolean
-      readonly hiddenCalls: false
-      readonly parentFinalAnswer: string | null
-    } }>>
+    }) => Promise<
+      DesktopOperationResult<{
+        readonly proof: {
+          readonly teamRunId: string
+          readonly state: string
+          readonly providerCallCount: number
+          readonly executedNodeCount: number
+          readonly parentCallCount: number
+          readonly uniqueInvocationIds: readonly string[]
+          readonly uniqueNodeIds: readonly string[]
+          readonly uniqueAssignmentIds: readonly string[]
+          readonly parentWasLastWhenSynthesizing: boolean
+          readonly hiddenCalls: false
+          readonly parentFinalAnswer: string | null
+        }
+      }>
+    >
     readonly appendBudget: (input: {
       readonly workspaceId: string
       readonly teamRunId: string
@@ -618,6 +808,15 @@ export function resolveDesktopBridge(value: unknown): OmniBaseDesktopBridge | nu
     !hasFunction(value.workspaces, 'create') ||
     !hasFunction(value.workspaces, 'archive') ||
     !hasFunction(value.workspaces, 'agent') ||
+    !isRecord(value.workbenchSettings) ||
+    !hasFunction(value.workbenchSettings, 'get') ||
+    !hasFunction(value.workbenchSettings, 'update') ||
+    !isRecord(value.workspaceComposition) ||
+    !hasFunction(value.workspaceComposition, 'get') ||
+    !hasFunction(value.workspaceComposition, 'propose') ||
+    !hasFunction(value.workspaceComposition, 'proposeFromAssistant') ||
+    !hasFunction(value.workspaceComposition, 'proposeRollback') ||
+    !hasFunction(value.workspaceComposition, 'decide') ||
     !isRecord(value.workspaceFiles) ||
     !hasFunction(value.workspaceFiles, 'authorize') ||
     !hasFunction(value.workspaceFiles, 'release') ||

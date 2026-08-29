@@ -308,6 +308,22 @@ runtime evidence; then correct the stale documentation in the same change.
   Root replacement, release, Workspace switch and window destruction invalidate
   prior generations. This lane adds no save/write, Agent file tool, Terminal,
   Git, search, rename/delete, Next/backend file route or database migration.
+- P7.2 is the personal workbench-refinement and Workspace-composition lane.
+  Read INV-087 and `docs/architecture/p7-2-workspace-composition.md` before
+  changing the P7 shell, settings center, composition profile, Slot registry,
+  proposal lifecycle or desktop-local schema. The source-owned
+  `standard-workbench` template is immutable; each Workspace stores only a
+  versioned derived profile. Profile settings control presentation, never
+  capability authority. Unknown Slots and stale Workspace/profile revisions
+  fail closed. AI output may create an immutable proposal only; a separate
+  explicit Owner decision bound to the exact request SHA-256 is required before
+  one atomic new revision and append-only audit record are committed. Rollback
+  is a new reviewed revision, never an edit of history. Do not claim that the
+  P34 PostgreSQL control plane is installed in desktop-local SQLite. Reuse its
+  logical-ID, live-scope, capability-separation, fencing, approval-binding,
+  audit and no-auto-replay semantics locally. Arbitrary plugin code/URLs,
+  MCP/Skill execution, Sandbox activation, Save/write, Terminal, Git/search and
+  automatic approval remain closed.
 
 ## Safe change workflow
 

@@ -27,6 +27,7 @@ import type {
   DesktopTeamCollaborationRequest,
   DesktopTeamRun,
   DesktopTeamRunEvent,
+  DesktopWorkbenchDensity,
   PersonalTeamBlackboard,
 } from './desktop-bridge'
 import type { DesktopInvocationPhase } from './desktop-invocation-lifecycle'
@@ -54,7 +55,7 @@ export const P7_ACTIVITIES = [
 ] as const
 export type P7Activity = (typeof P7_ACTIVITIES)[number]
 
-export const P7_CENTER_VIEWS = ['transcript', 'brief', 'code', 'diff'] as const
+export const P7_CENTER_VIEWS = ['transcript', 'brief', 'code', 'diff', 'settings'] as const
 export type P7CenterView = (typeof P7_CENTER_VIEWS)[number]
 
 export const P7_BOTTOM_TABS = ['terminal', 'problems', 'output', 'agent-log'] as const
@@ -82,6 +83,11 @@ export interface P7ShellUiState {
   readonly omniaMinimized: boolean
 }
 
+export interface P7WorkspaceShellUiState {
+  readonly workspaceId: string | null
+  readonly ui: P7ShellUiState
+}
+
 export function createP7ShellUiState(): P7ShellUiState {
   return {
     activity: 'explorer',
@@ -94,6 +100,51 @@ export function createP7ShellUiState(): P7ShellUiState {
     omniaPopoverOpen: false,
     omniaMinimized: false,
   }
+}
+
+export function p7WorkbenchRootClassNames(input: {
+  readonly density: DesktopWorkbenchDensity
+  readonly agentPanelVisible: boolean
+  readonly quietChrome: boolean
+  readonly reduceMotion: boolean
+}): string {
+  return [
+    'p7-root',
+    `p7-density-${input.density}`,
+    input.agentPanelVisible ? null : 'p7-agent-closed-body',
+    input.quietChrome ? 'p7-quiet-chrome' : null,
+    input.reduceMotion ? 'p7-reduce-motion' : null,
+  ]
+    .filter((name): name is string => name !== null)
+    .join(' ')
+}
+
+export function p7ShellLayoutClassNames(input: {
+  readonly sidebarVisible: boolean
+  readonly agentPanelVisible: boolean
+}): string {
+  return [
+    'p7-shell',
+    input.sidebarVisible ? null : 'p7-sidebar-closed',
+    input.agentPanelVisible ? null : 'p7-agent-closed',
+  ]
+    .filter((name): name is string => name !== null)
+    .join(' ')
+}
+
+export function createP7WorkspaceShellUiState(
+  workspaceId: string | null,
+  ui: P7ShellUiState = createP7ShellUiState(),
+): P7WorkspaceShellUiState {
+  return { workspaceId, ui }
+}
+
+/** A Workspace switch must synchronously discard the prior profile-derived chrome. */
+export function p7WorkspaceShellUiProjection(
+  state: P7WorkspaceShellUiState,
+  viewWorkspaceId: string | null,
+): P7ShellUiState {
+  return state.workspaceId === viewWorkspaceId ? state.ui : createP7ShellUiState()
 }
 
 /**
@@ -150,6 +201,17 @@ export function openP7Blackboard(state: P7ShellUiState): P7ShellUiState {
   }
 }
 
+export function openP7Settings(state: P7ShellUiState): P7ShellUiState {
+  return {
+    ...state,
+    activity: 'settings',
+    sidebarOpen: false,
+    centerView: 'settings',
+    bottomOpen: false,
+    agentPanelOpen: false,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Data-source presence and view availability
 // ---------------------------------------------------------------------------
@@ -196,6 +258,7 @@ export function p7ViewAvailability(
   switch (view) {
     case 'transcript':
     case 'brief':
+    case 'settings':
       return { available: true, reason: null }
     case 'code':
       return presence.files
@@ -1021,6 +1084,8 @@ export function p7CenterViewLabel(view: P7CenterView): string {
       return '代码'
     case 'diff':
       return '审阅变更'
+    case 'settings':
+      return '设置'
   }
 }
 

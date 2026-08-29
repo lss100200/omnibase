@@ -28,6 +28,15 @@ export const IPC_CHANNELS = Object.freeze({
   workspacesCreate: "omnibase:workspaces:create",
   workspacesArchive: "omnibase:workspaces:archive",
   workspaceAgent: "omnibase:workspace:agent",
+  workbenchSettingsGet: "omnibase:workbench-settings:get",
+  workbenchSettingsUpdate: "omnibase:workbench-settings:update",
+  workspaceCompositionGet: "omnibase:workspace-composition:get",
+  workspaceCompositionPropose: "omnibase:workspace-composition:propose",
+  workspaceCompositionProposeFromAssistant:
+    "omnibase:workspace-composition:propose-from-assistant",
+  workspaceCompositionProposeRollback:
+    "omnibase:workspace-composition:propose-rollback",
+  workspaceCompositionDecide: "omnibase:workspace-composition:decide",
   workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
   workspaceFilesRelease: "omnibase:workspace-files:release",
   workspaceFilesList: "omnibase:workspace-files:list",
@@ -174,11 +183,13 @@ export interface DesktopWorkspaceFileReleaseInput {
   readonly authorizationGeneration: number;
 }
 
-export interface DesktopWorkspaceFileListInput extends DesktopWorkspaceFileReleaseInput {
+export interface DesktopWorkspaceFileListInput
+  extends DesktopWorkspaceFileReleaseInput {
   readonly directoryPath: string;
 }
 
-export interface DesktopWorkspaceFileReadInput extends DesktopWorkspaceFileReleaseInput {
+export interface DesktopWorkspaceFileReadInput
+  extends DesktopWorkspaceFileReleaseInput {
   readonly path: string;
 }
 
@@ -203,6 +214,196 @@ export interface DesktopWorkspaceFileReadResult {
   readonly lastModifiedMs: number;
   readonly sha256: string;
 }
+
+export type DesktopWorkbenchDensity = "compact" | "comfortable";
+export type DesktopWorkspaceDensity = "inherit" | DesktopWorkbenchDensity;
+export type DesktopWorkspaceSidebar =
+  | "explorer"
+  | "run"
+  | "blackboard"
+  | "hidden";
+export type DesktopWorkspaceBottomPanel = "hidden" | "output" | "agent-log";
+export type DesktopCompositionSourceKind =
+  | "system"
+  | "owner"
+  | "assistant"
+  | "rollback";
+export type DesktopCompositionDecision = "approved" | "rejected";
+export type DesktopWorkspaceSlotPosture =
+  | "required"
+  | "admitted"
+  | "unavailable";
+export type DesktopWorkspaceSlotId =
+  | "agent.rail"
+  | "conversation.transcript"
+  | "event.agent-log"
+  | "event.output"
+  | "knowledge.ebook"
+  | "mcp.catalog"
+  | "provider.settings"
+  | "run.history"
+  | "sandbox.runtime"
+  | "settings.center"
+  | "skills.catalog"
+  | "source-control"
+  | "terminal"
+  | "workspace.brief"
+  | "workspace.explorer";
+
+export interface DesktopApplicationPreference {
+  readonly density: DesktopWorkbenchDensity;
+  readonly reduceMotion: boolean;
+  readonly rowVersion: number;
+  readonly updatedAt: string;
+}
+
+export interface DesktopApplicationPreferenceUpdateInput {
+  readonly density: DesktopWorkbenchDensity;
+  readonly reduceMotion: boolean;
+  readonly expectedRowVersion: number;
+}
+
+export interface DesktopWorkspaceCompositionProfileValue {
+  readonly schemaVersion: 1;
+  readonly template: Readonly<{ id: "standard-workbench"; version: 1 }>;
+  readonly appearance: Readonly<{
+    density: DesktopWorkspaceDensity;
+    quietChrome: boolean;
+  }>;
+  readonly layout: Readonly<{
+    agentPanel: "open" | "closed";
+    bottomPanel: DesktopWorkspaceBottomPanel;
+    focusMode: boolean;
+    sidebar: DesktopWorkspaceSidebar;
+  }>;
+  readonly slots: Readonly<Record<DesktopWorkspaceSlotId, boolean>>;
+}
+
+export interface DesktopWorkspaceCompositionRevision {
+  readonly workspaceId: string;
+  readonly revision: number;
+  readonly profileSha256: string;
+  readonly sourceKind: DesktopCompositionSourceKind;
+  readonly proposalId: string | null;
+  readonly value: DesktopWorkspaceCompositionProfileValue;
+  readonly createdAt: string;
+}
+
+export interface DesktopWorkspaceCompositionProposal {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly baseRevision: number;
+  readonly baseProfileSha256: string;
+  readonly sourceKind: Exclude<DesktopCompositionSourceKind, "system">;
+  readonly sourceReference: string | null;
+  readonly desiredProfileSha256: string;
+  readonly requestSha256: string;
+  readonly desiredProfile: DesktopWorkspaceCompositionProfileValue;
+  readonly decision: DesktopCompositionDecision | null;
+  readonly appliedRevision: number | null;
+  readonly createdAt: string;
+  readonly decidedAt: string | null;
+}
+
+export interface DesktopWorkspaceSlotCatalogItem {
+  readonly id: DesktopWorkspaceSlotId;
+  readonly label: string;
+  readonly region: "sidebar" | "editor" | "right" | "settings" | "bottom";
+  readonly posture: DesktopWorkspaceSlotPosture;
+}
+
+export type DesktopWorkspaceCompositionAuditEvent =
+  | Readonly<{
+      sequence: number;
+      eventType: "workspace_composition_proposed";
+      payload: Readonly<{
+        baseRevision: number;
+        desiredProfileSha256: string;
+        proposalId: string;
+        requestSha256: string;
+        sourceKind: Exclude<DesktopCompositionSourceKind, "system">;
+      }>;
+      createdAt: string;
+    }>
+  | Readonly<{
+      sequence: number;
+      eventType: "workspace_composition_rejected";
+      payload: Readonly<{
+        proposalId: string;
+        requestSha256: string;
+      }>;
+      createdAt: string;
+    }>
+  | Readonly<{
+      sequence: number;
+      eventType: "workspace_composition_applied";
+      payload: Readonly<{
+        profileSha256: string;
+        proposalId: string;
+        requestSha256: string;
+        revision: number;
+        sourceKind: Exclude<DesktopCompositionSourceKind, "system">;
+      }>;
+      createdAt: string;
+    }>;
+
+export interface DesktopWorkspaceCompositionSnapshot {
+  readonly profile: DesktopWorkspaceCompositionRevision;
+  readonly revisions: readonly DesktopWorkspaceCompositionRevision[];
+  readonly proposals: readonly DesktopWorkspaceCompositionProposal[];
+  readonly slotCatalog: readonly DesktopWorkspaceSlotCatalogItem[];
+  readonly audit: readonly DesktopWorkspaceCompositionAuditEvent[];
+}
+
+export interface DesktopWorkspaceCompositionOwnerProposalInput {
+  readonly workspaceId: string;
+  readonly expectedRevision: number;
+  readonly expectedProfileSha256: string;
+  readonly desiredProfile: DesktopWorkspaceCompositionProfileValue;
+}
+
+export interface DesktopWorkspaceCompositionAssistantProposalInput {
+  readonly workspaceId: string;
+  readonly expectedRevision: number;
+  readonly expectedProfileSha256: string;
+  readonly messageId: string;
+}
+
+export interface DesktopWorkspaceCompositionRollbackProposalInput {
+  readonly workspaceId: string;
+  readonly expectedRevision: number;
+  readonly expectedProfileSha256: string;
+  readonly targetRevision: number;
+}
+
+export interface DesktopWorkspaceCompositionDecisionInput {
+  readonly workspaceId: string;
+  readonly proposalId: string;
+  readonly requestSha256: string;
+  readonly decision: "approve" | "reject";
+}
+
+export interface DesktopWorkspaceCompositionProposalResult {
+  readonly proposal: DesktopWorkspaceCompositionProposal;
+  readonly replayed: boolean;
+}
+
+export type DesktopWorkspaceCompositionDecisionResult =
+  | Readonly<{
+      workspaceId: string;
+      proposalId: string;
+      requestSha256: string;
+      decision: "rejected";
+      appliedRevision: null;
+    }>
+  | Readonly<{
+      workspaceId: string;
+      proposalId: string;
+      requestSha256: string;
+      decision: "approved";
+      appliedRevision: number;
+      profile: DesktopWorkspaceCompositionRevision;
+    }>;
 
 export type DesktopProviderFamily =
   | "deepseek"
@@ -318,7 +519,12 @@ export interface DesktopMessage {
   readonly id: string;
   readonly role: "user" | "assistant";
   readonly content: string;
-  readonly status: "streaming" | "completed" | "cancelled" | "failed" | "unknown";
+  readonly status:
+    | "streaming"
+    | "completed"
+    | "cancelled"
+    | "failed"
+    | "unknown";
   readonly invocationId: string | null;
   readonly retryOfMessageId: string | null;
   readonly createdAt: string;
@@ -413,7 +619,48 @@ export interface OmniBaseDesktopApi {
     ) => Promise<DesktopOperationResult<DesktopWorkspaceMutationResult>>;
     readonly agent: (
       input: DesktopWorkspaceIdInput,
-    ) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly agent: DesktopParentAgent }>
+    >;
+  };
+  readonly workbenchSettings: {
+    readonly get: () => Promise<
+      DesktopOperationResult<{
+        readonly preference: DesktopApplicationPreference;
+      }>
+    >;
+    readonly update: (
+      input: DesktopApplicationPreferenceUpdateInput,
+    ) => Promise<
+      DesktopOperationResult<{
+        readonly preference: DesktopApplicationPreference;
+      }>
+    >;
+  };
+  readonly workspaceComposition: {
+    readonly get: (
+      input: DesktopWorkspaceIdInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceCompositionSnapshot>>;
+    readonly propose: (
+      input: DesktopWorkspaceCompositionOwnerProposalInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    >;
+    readonly proposeFromAssistant: (
+      input: DesktopWorkspaceCompositionAssistantProposalInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    >;
+    readonly proposeRollback: (
+      input: DesktopWorkspaceCompositionRollbackProposalInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionProposalResult>
+    >;
+    readonly decide: (
+      input: DesktopWorkspaceCompositionDecisionInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+    >;
   };
   readonly workspaceFiles: {
     readonly authorize: (
@@ -436,7 +683,9 @@ export interface OmniBaseDesktopApi {
     ) => Promise<DesktopOperationResult<DesktopProviderMutationResult>>;
     readonly delete: (
       input: DesktopProviderIdInput,
-    ) => Promise<DesktopOperationResult<{ readonly deleted: true; readonly id: string }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly deleted: true; readonly id: string }>
+    >;
     readonly test: (
       input: DesktopProviderIdInput,
     ) => Promise<DesktopOperationResult<DesktopProviderTestResult>>;
@@ -445,21 +694,30 @@ export interface OmniBaseDesktopApi {
     readonly list: (
       input: DesktopWorkspaceIdInput,
     ) => Promise<DesktopOperationResult<DesktopConversationList>>;
-    readonly create: (
-      input: DesktopConversationCreateInput,
-    ) => Promise<DesktopOperationResult<{ readonly created: true; readonly conversation: DesktopConversation }>>;
+    readonly create: (input: DesktopConversationCreateInput) => Promise<
+      DesktopOperationResult<{
+        readonly created: true;
+        readonly conversation: DesktopConversation;
+      }>
+    >;
     readonly archive: (
       input: DesktopConversationArchiveInput,
-    ) => Promise<DesktopOperationResult<{ readonly conversation: DesktopConversation }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly conversation: DesktopConversation }>
+    >;
     readonly get: (
       input: DesktopConversationGetInput,
     ) => Promise<DesktopOperationResult<DesktopConversationDetail>>;
     readonly send: (
       input: DesktopConversationSendInput,
     ) => Promise<DesktopOperationResult<DesktopConversationEvent>>;
-    readonly cancel: (
-      input: DesktopConversationCancelInput,
-    ) => Promise<DesktopOperationResult<{ readonly cancelled: boolean; readonly id: string; readonly accepted: boolean }>>;
+    readonly cancel: (input: DesktopConversationCancelInput) => Promise<
+      DesktopOperationResult<{
+        readonly cancelled: boolean;
+        readonly id: string;
+        readonly accepted: boolean;
+      }>
+    >;
     readonly abortInFlightSend: () => Promise<
       DesktopOperationResult<{ readonly aborted: boolean }>
     >;
@@ -487,9 +745,7 @@ export interface OmniBaseDesktopApi {
     readonly start: (
       input: DesktopTeamRunStartInput,
     ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
-    readonly cancel: (
-      input: DesktopTeamRunIdInput,
-    ) => Promise<
+    readonly cancel: (input: DesktopTeamRunIdInput) => Promise<
       DesktopOperationResult<{
         readonly cancelled: boolean;
         readonly accepted: boolean;
@@ -501,13 +757,17 @@ export interface OmniBaseDesktopApi {
     ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
     readonly list: (
       input: DesktopWorkspaceIdInput,
-    ) => Promise<DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly items: readonly DesktopTeamRun[] }>
+    >;
     readonly submitProposal: (
       input: DesktopTeamRunSubmitProposalInput,
     ) => Promise<DesktopOperationResult<DesktopTeamRunProposalResult>>;
     readonly getBlackboard: (
       input: DesktopTeamRunIdInput,
-    ) => Promise<DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly blackboard: PersonalTeamBlackboard }>
+    >;
     readonly recordCollaboration: (
       input: DesktopTeamCollaborationInput,
     ) => Promise<
@@ -517,11 +777,15 @@ export interface OmniBaseDesktopApi {
     >;
     readonly execute: (
       input: DesktopTeamRunExecuteInput,
-    ) => Promise<DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>>;
+    ) => Promise<
+      DesktopOperationResult<{ readonly proof: DesktopTeamRunProof }>
+    >;
     readonly appendBudget: (
       input: DesktopTeamRunAppendBudgetInput,
     ) => Promise<DesktopOperationResult<{ readonly teamRun: DesktopTeamRun }>>;
-    readonly subscribe: (listener: (event: DesktopTeamRunEvent) => void) => () => void;
+    readonly subscribe: (
+      listener: (event: DesktopTeamRunEvent) => void,
+    ) => () => void;
   };
 }
 
