@@ -26,7 +26,12 @@
 > 逻辑相对路径和有界 UTF-8/SHA-256 读取结果。根替换、release、Workspace 切换、
 > window destruction 都使旧 generation 失效。P6.7/P7.0 的文件冻结由该合同仅对
 > 此只读 lane 前向替代，不改写旧验收。源码实现、攻击矩阵与全量门禁已有工程
-> 证据并等待 PR 审核；真实 Electron 旅程和新 Windows 包尚未通过；保存/写入、Agent 文件工具、Terminal、
+> 证据；`2e6693e` 的 BOM 字节合同修复已进入 R3 unsigned Windows 包，并在 fresh
+> Windows Sandbox 完成真实 Electron 授权、目录枚举、只读打开、Workspace 隔离、
+> release 清空与窗口关闭旅程，等待 PR/Owner 审核。权威证据见
+> `docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`。Sandbox 身份为
+> elevated/High integrity；非管理员/medium-integrity、viewport/DPI、完整进程树收敛、
+> 卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、
 > Git、搜索、重命名/删除、Next/backend 文件路由与数据库迁移继续关闭。
 
 > **日期**：2026-08-02

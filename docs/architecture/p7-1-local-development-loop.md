@@ -1,7 +1,8 @@
 # P7.1 Local Development Loop
 
-Status: **Wave 1 read-only local-file engineering evidence ready for source
-review; real Electron and Windows package evidence not yet recorded**.
+Status: **Wave 1 source and R3 Windows engineering evidence ready for review at
+`2e6693e`; production release and the retained acceptance boundaries are not
+approved**.
 
 P7.1 starts the real local-development loop inside the P7 editor-first desktop
 workbench. Wave 1 is intentionally smaller than the complete loop: the Owner
@@ -144,3 +145,31 @@ buffers, and require a new Owner picker gesture. Preserve user files untouched.
 Never repair this lane by persisting a physical path, weakening link/secret
 checks, adding a Next/backend file route, rewriting SQLite, or enabling writes,
 Terminal, Git or Agent tools.
+
+### Wave 1 R3 Windows engineering evidence (2026-08-29)
+
+Commit `2e6693ebc9235f4220ffb8401fe9ac59efe14a6d` fixes the byte-contract defect
+found in the first installed journey: native UTF-8 decoding had removed a BOM
+while retaining the original byte count and SHA-256, so the renderer correctly
+rejected the response. The decoder now preserves that BOM and a byte-faithful
+regression test covers content, size and digest.
+
+A clean-source R3 build produced an unsigned setup EXE with SHA-256
+`4b745d2fd33f13d1e38371a019f81e4fbe21dca366bc12216262cbdc4d1100a4`,
+MSI `f169fd79dcc6168d2fc5027bda82eedf9369feafe9c6b79403d719b4c3a3c083`
+and runtime manifest
+`75ce437ce2d59e412fcd0e8a411e87fc431ae0531c988ffa0eaff526eff6b850`.
+In a fresh Windows Sandbox the setup returned zero and a real Electron window
+completed the exact Owner journey: authorize/list Fixture A, open the
+BOM-containing `src/main.ts` read-only as `39 B` with SHA prefix
+`e8e34f1c55ed`, create Workspace B without projecting A's tree or buffer,
+authorize/list Fixture B, release it, observe the tree and code buffer clear,
+and close the application window. The evidence decision and retained
+boundaries are recorded in
+`docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`.
+
+This is engineering evidence, not production admission. The Sandbox identity
+was elevated/High integrity, so non-admin medium-integrity remains not proven.
+The run also did not prove in-guest target viewport/DPI modes, full process-tree
+convergence, uninstall/data retention, Provider operation, Authenticode,
+production readiness, writes, Agent file tools, Terminal, Git or search.
