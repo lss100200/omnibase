@@ -25,6 +25,16 @@ const productStubs = {
   proposeWorkspaceCompositionFromAssistant: unused,
   proposeWorkspaceCompositionRollback: unused,
   decideWorkspaceComposition: unused,
+  getWorkspaceComponents: unused,
+  proposeWorkspaceComponent: unused,
+  proposeWorkspaceComponentFromAssistant: unused,
+  importOwnerWorkspaceComponentPackage: unused,
+  importAssistantWorkspaceComponentPackage: unused,
+  decideWorkspaceComponent: unused,
+  applyWorkspaceComponentAction: unused,
+  invokeWorkspaceComponent: unused,
+  emergencyStopWorkspaceComponents: unused,
+  reconcileWorkspaceComponent: unused,
   authorizeWorkspaceFiles: unused,
   releaseWorkspaceFiles: unused,
   listWorkspaceFiles: unused,
@@ -413,6 +423,82 @@ test("Workspace composition IPC normalizes the closed profile and rejects widene
     error: { code: "desktop_native_input_invalid" },
   });
   assert.equal(decisionInput, undefined);
+});
+
+test("assistant component package IPC accepts one exact bounded identity DTO", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  let received: unknown;
+  let calls = 0;
+  registerClosedIpcHandlers(
+    {
+      handle: (
+        channel: string,
+        listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+      ) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    },
+    {
+      getVersion: () => "1.0.0",
+      getRuntimeStatus: () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      retryRuntimeStartup: async () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      getOwnerStatus: unused,
+      bootstrapOwner: unused,
+      listWorkspaces: unused,
+      createWorkspace: unused,
+      archiveWorkspace: unused,
+      ...productStubs,
+      importAssistantWorkspaceComponentPackage: async (input) => {
+        calls += 1;
+        received = input;
+        return unused();
+      },
+    },
+  );
+  const trustedEvent = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+  } as IpcMainInvokeEvent;
+  const valid = {
+    workspaceId: WORKSPACE_ID,
+    conversationId: `conversation_${"2".repeat(32)}`,
+    messageId: `message_${"3".repeat(32)}`,
+    packageJson: "{}",
+    manifestSha256: "4".repeat(64),
+    packageSha256: "5".repeat(64),
+  };
+  const handler = handlers.get(
+    IPC_CHANNELS.workspaceComponentsImportAssistantPackage,
+  );
+
+  await handler?.(trustedEvent, valid);
+  assert.deepEqual(received, valid);
+  assert.equal(calls, 1);
+
+  for (const invalid of [
+    { ...valid, extra: true },
+    { ...valid, workspaceId: "workspace_invalid" },
+    { ...valid, conversationId: "conversation_invalid" },
+    { ...valid, messageId: "message_invalid" },
+    { ...valid, packageJson: "x".repeat(256 * 1024 + 1) },
+    { ...valid, manifestSha256: "G".repeat(64) },
+    { ...valid, packageSha256: "0".repeat(63) },
+  ]) {
+    assert.deepEqual(await handler?.(trustedEvent, invalid), {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    });
+  }
+  assert.equal(calls, 1);
 });
 
 test("IPC rejects unexpected arguments and non-loopback senders", async () => {

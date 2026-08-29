@@ -30,6 +30,7 @@ export interface VerifiedRuntimeBundle {
   readonly root: string;
   readonly command: string;
   readonly args: readonly string[];
+  readonly files: readonly RuntimeManifestFile[];
   readonly manifestSha256: string;
   readonly startupTimeoutMs: number;
   readonly backendPort: number;
@@ -178,9 +179,7 @@ function samePhysicalPath(left: string, right: string): boolean {
   );
 }
 
-async function inventoryRuntimeTree(
-  root: string,
-): Promise<{
+async function inventoryRuntimeTree(root: string): Promise<{
   readonly files: ReadonlySet<string>;
   readonly directories: ReadonlySet<string>;
 }> {
@@ -263,9 +262,7 @@ function exactSetEqual(
   );
 }
 
-async function readRuntimeHostLaunchConfig(
-  root: string,
-): Promise<{
+async function readRuntimeHostLaunchConfig(root: string): Promise<{
   readonly startupTimeoutMs: number;
   readonly backendPort: number;
 }> {
@@ -410,6 +407,7 @@ export async function verifyRuntimeBundle(options: {
     root,
     command,
     args: manifest.entrypoint.args,
+    files: manifest.files,
     manifestSha256,
     startupTimeoutMs: launchConfig.startupTimeoutMs,
     backendPort: launchConfig.backendPort,

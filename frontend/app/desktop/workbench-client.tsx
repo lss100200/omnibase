@@ -13,6 +13,12 @@ import {
   DesktopWorkspaceCompositionProfileValue,
   DesktopWorkspaceCompositionProposal,
   DesktopWorkspaceCompositionSnapshot,
+  DesktopWorkspaceComponentCatalogItem,
+  DesktopWorkspaceComponentEffect,
+  DesktopWorkspaceComponentInstallation,
+  DesktopWorkspaceComponentLifecycleAction,
+  DesktopWorkspaceComponentProposal,
+  DesktopWorkspaceComponentSnapshot,
   OmniBaseDesktopBridge,
   PersonalTeamBlackboard,
   beginDesktopLiveSend,
@@ -89,6 +95,21 @@ import {
   type P7CompositionLoadStatus,
 } from '@/lib/p7-workspace-composition'
 import {
+  createP7WorkspaceComponentSurfaceState,
+  p7AssistantDeclarativePackagePrompt,
+  p7EnterWorkspaceComponentSafeMode,
+  p7FindNewCompletedComponentAssistantMessage,
+  p7ParseAssistantDeclarativePackage,
+  p7SetWorkspaceComponentSurface,
+  p7WorkspaceComponentAssistantPrompt,
+  p7WorkspaceComponentResultEventLogLine,
+  p7WorkspaceComponentSurfaceProjection,
+  p7WorkspaceComponentsProjection,
+  type P7AssistantDeclarativePackageReview,
+  type P7WorkspaceComponentSurfaceState,
+  type P7WorkspaceComponentsLoadStatus,
+} from '@/lib/p7-workspace-components'
+import {
   beginP7WorkspaceDirectoryList,
   beginP7WorkspaceFileAuthorization,
   beginP7WorkspaceFileRead,
@@ -109,6 +130,10 @@ import {
   type P7WorkspaceFilesState,
 } from '@/lib/p7-workspace-files'
 import { P7WorkbenchShell, type P7ProviderForm } from '@/components/workbench/p7/p7-shell'
+import type {
+  P7WorkspaceComponentInvokeRequest,
+  P7WorkspaceComponentProposalDraft,
+} from '@/components/workbench/p7/settings/p7-workspace-component-views'
 import './p7-workbench.css'
 
 const ERROR_MESSAGES: Readonly<Record<string, string>> = {
@@ -140,6 +165,12 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = {
 
 function errorMessage(code: string): string {
   return ERROR_MESSAGES[code] ?? '操作未完成；本机服务已安全拒绝该请求。'
+}
+
+function p7ComponentIdempotencyKey(action: string): string {
+  const random = globalThis.crypto?.randomUUID?.().replaceAll('-', '')
+  if (random === undefined) throw new Error('workspace_component_random_identity_unavailable')
+  return `p73_${action}_${random}`
 }
 
 function familyLabel(family: string): string {
@@ -424,6 +455,27 @@ export function DesktopWorkbench({
   const [compositionNotice, setCompositionNotice] = useState<string | null>(null)
   const compositionLoadEpochRef = useRef(0)
   const compositionOperationEpochRef = useRef(0)
+  const [componentsWorkspaceId, setComponentsWorkspaceId] = useState<string | null>(
+    initialWorkspaceId,
+  )
+  const [componentsStatus, setComponentsStatus] = useState<P7WorkspaceComponentsLoadStatus>(
+    initialWorkspaceId === null ? 'idle' : 'loading',
+  )
+  const [componentsSnapshot, setComponentsSnapshot] =
+    useState<DesktopWorkspaceComponentSnapshot | null>(null)
+  const componentsSnapshotRef = useRef<DesktopWorkspaceComponentSnapshot | null>(null)
+  const [componentsBusy, setComponentsBusy] = useState(false)
+  const componentsBusyRef = useRef(false)
+  const [componentsNotice, setComponentsNotice] = useState<string | null>(null)
+  const [componentIntent, setComponentIntent] = useState('')
+  const [assistantPackageReview, setAssistantPackageReview] =
+    useState<P7AssistantDeclarativePackageReview | null>(null)
+  const componentsLoadEpochRef = useRef(0)
+  const componentsOperationEpochRef = useRef(0)
+  const [componentSurfaceState, setComponentSurfaceState] =
+    useState<P7WorkspaceComponentSurfaceState>(() =>
+      createP7WorkspaceComponentSurfaceState(initialWorkspaceId),
+    )
 
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
   const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
@@ -567,6 +619,85 @@ export function DesktopWorkbench({
     if (compositionOperationEpochRef.current !== epoch) return
     compositionBusyRef.current = false
     setCompositionBusy(false)
+  }, [])
+
+  const applyComponentsSnapshot = useCallback((value: DesktopWorkspaceComponentSnapshot | null) => {
+    componentsSnapshotRef.current = value
+    setComponentsSnapshot(value)
+  }, [])
+
+  const invalidateComponentsForWorkspace = useCallback(
+    (nextWorkspaceId: string | null) => {
+      componentsLoadEpochRef.current += 1
+      componentsOperationEpochRef.current += 1
+      componentsBusyRef.current = false
+      setComponentsBusy(false)
+      setComponentsWorkspaceId(nextWorkspaceId)
+      setComponentsStatus(nextWorkspaceId === null ? 'idle' : 'loading')
+      applyComponentsSnapshot(null)
+      setComponentSurfaceState(createP7WorkspaceComponentSurfaceState(nextWorkspaceId))
+      setComponentIntent('')
+      setAssistantPackageReview(null)
+      setComponentsNotice(null)
+    },
+    [applyComponentsSnapshot],
+  )
+
+  const loadComponents = useCallback(
+    async (nextWorkspaceId: string) => {
+      const epoch = ++componentsLoadEpochRef.current
+      setComponentsWorkspaceId(nextWorkspaceId)
+      setComponentsStatus('loading')
+      applyComponentsSnapshot(null)
+      const result = await bridge.workspaceComponents.get({ workspaceId: nextWorkspaceId })
+      if (!mountedRef.current || epoch !== componentsLoadEpochRef.current) return false
+      if (surfaceScopeRef.current.workspaceId !== nextWorkspaceId) return false
+      if (!result.ok) {
+        setComponentsStatus('error')
+        setComponentsNotice(errorMessage(result.error.code))
+        return false
+      }
+      if (result.value.workspaceId !== nextWorkspaceId) {
+        setComponentsStatus('error')
+        setComponentsNotice('Workspace 组件身份不一致，已拒绝投影。')
+        return false
+      }
+      applyComponentsSnapshot(result.value)
+      setComponentsStatus('ready')
+      return true
+    },
+    [applyComponentsSnapshot, bridge],
+  )
+
+  const beginComponentsOperation = useCallback(() => {
+    if (componentsBusyRef.current) return null
+    const nextWorkspaceId = surfaceScopeRef.current.workspaceId
+    const snapshot = componentsSnapshotRef.current
+    if (nextWorkspaceId === null || snapshot === null || snapshot.workspaceId !== nextWorkspaceId) {
+      return null
+    }
+    componentsBusyRef.current = true
+    setComponentsBusy(true)
+    setComponentsNotice(null)
+    return Object.freeze({
+      epoch: ++componentsOperationEpochRef.current,
+      workspaceId: nextWorkspaceId,
+      snapshot,
+    })
+  }, [])
+
+  const componentsOperationIsCurrent = useCallback(
+    (epoch: number, nextWorkspaceId: string) =>
+      mountedRef.current &&
+      componentsOperationEpochRef.current === epoch &&
+      surfaceScopeRef.current.workspaceId === nextWorkspaceId,
+    [],
+  )
+
+  const finishComponentsOperation = useCallback((epoch: number) => {
+    if (componentsOperationEpochRef.current !== epoch) return
+    componentsBusyRef.current = false
+    setComponentsBusy(false)
   }, [])
 
   const loadRunHistory = useCallback(
@@ -931,6 +1062,14 @@ export function DesktopWorkbench({
     }
     void loadComposition(workspaceId)
   }, [invalidateCompositionForWorkspace, loadComposition, workspaceId])
+
+  useEffect(() => {
+    if (workspaceId === null) {
+      invalidateComponentsForWorkspace(null)
+      return
+    }
+    void loadComponents(workspaceId)
+  }, [invalidateComponentsForWorkspace, loadComponents, workspaceId])
 
   useEffect(() => {
     if (workspaceId !== null) void loadWorkspaceSurface(workspaceId)
@@ -1324,6 +1463,580 @@ export function DesktopWorkbench({
     finishCompositionOperation(started.epoch)
   }
 
+  const proposeWorkspaceComponent = async (
+    catalog: DesktopWorkspaceComponentCatalogItem,
+    action: DesktopWorkspaceComponentLifecycleAction,
+    draft: P7WorkspaceComponentProposalDraft,
+  ) => {
+    const started = beginComponentsOperation()
+    if (started === null) return
+    const installation = started.snapshot.installations.find(
+      (item) => item.componentId === catalog.componentId && item.state !== 'uninstalled',
+    )
+    const result = await bridge.workspaceComponents.propose({
+      workspaceId: started.workspaceId,
+      componentId: catalog.componentId,
+      targetVersion: catalog.version,
+      changeKind: action,
+      expectedRevision: installation?.revision ?? 0,
+      requestedGrants: draft.requestedGrants,
+      desiredConfiguration: draft.desiredConfiguration,
+      desiredSlotBindings: draft.desiredSlotBindings,
+      dependencyGraph: draft.dependencyGraph,
+      idempotencyKey: p7ComponentIdempotencyKey(`propose_${action}`),
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentsNotice('组件提案已创建；必须由 Owner 审阅 exact SHA 后才能执行。')
+      pushOutput(`Workspace 组件提案已创建：${result.value.proposal.proposalId}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const importOwnerWorkspaceComponentPackage = async () => {
+    const started = beginComponentsOperation()
+    if (started === null) return
+    const result = await bridge.workspaceComponents.importOwnerPackage({
+      workspaceId: started.workspaceId,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (result.value.cancelled || result.value.registration === null) {
+      setComponentsNotice('未选择组件包；Catalog 未发生变化。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      const registration = result.value.registration
+      setComponentsNotice(
+        `组件包已登记：${registration.componentId} ${registration.version}；安装仍需单独提案与 Owner 批准。`,
+      )
+      pushOutput(`Workspace 组件包登记：${registration.componentId}@${registration.version}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const requestAssistantDeclarativePackage = async () => {
+    const started = beginComponentsOperation()
+    if (started === null) return
+    const prompt = p7AssistantDeclarativePackagePrompt(componentIntent)
+    if (prompt === null) {
+      setComponentsNotice('请输入 1–2000 字的声明式组件意图。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (desktopLiveSendBlocked(liveRef.current) || desktopTeamStopVisible(teamLiveRef.current)) {
+      setComponentsNotice('当前仍有 Agent 运行，请结束后再生成声明式组件包。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const targetConversationId = await ensureConversation()
+    if (
+      targetConversationId === null ||
+      !componentsOperationIsCurrent(started.epoch, started.workspaceId)
+    ) {
+      setComponentsNotice('无法建立用于生成声明式组件包的当前会话。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const baseline = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!baseline.ok) {
+      setComponentsNotice(errorMessage(baseline.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const previousMessageIds = new Set(baseline.value.messages.map((message) => message.id))
+    const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = completion.surface
+    const nextLive = beginDesktopLiveSend({
+      ...liveRef.current,
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (nextLive.phase !== 'starting_identity') {
+      setComponentsNotice('当前 Agent 调用状态不允许生成声明式组件包。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    liveRef.current = nextLive
+    setLive(nextLive)
+    setAssistantPackageReview(null)
+    pushOutput('Agent 正在生成 Owner 待审声明式组件包')
+    const sent = await bridge.conversations.send({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+      content: prompt,
+      sendEpoch: nextLive.sendEpoch,
+    })
+    const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
+    liveRef.current = completed
+    setLive(completed)
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!sent.ok) {
+      setComponentsNotice(errorMessage(sent.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (sent.value.type === 'cancelled') {
+      setComponentsNotice('Agent 声明式组件包生成已停止。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const detail = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!detail.ok) {
+      setComponentsNotice(errorMessage(detail.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const updatedConversations = conversationSurfaceRef.current.conversations.map((item) =>
+      item.id === detail.value.conversation.id ? detail.value.conversation : item,
+    )
+    const applied = applyDesktopConversationCompletion(
+      conversationSurfaceRef.current,
+      completion.epoch,
+      targetConversationId,
+      detail.value.messages,
+      updatedConversations,
+    )
+    conversationSurfaceRef.current = applied
+    if (
+      applied.mounted &&
+      applied.detailRequestEpoch === completion.epoch &&
+      applied.conversationId === targetConversationId
+    ) {
+      setMessages(applied.messages)
+      setMessagesStatus(applied.messagesStatus)
+      setMessagesError(null)
+      setConversations(applied.conversations)
+    }
+    const assistantMessage = p7FindNewCompletedComponentAssistantMessage(
+      detail.value.messages,
+      previousMessageIds,
+    )
+    if (assistantMessage === null) {
+      setComponentsNotice('没有找到新的成功 Agent 消息；未生成声明式组件包。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const review = await p7ParseAssistantDeclarativePackage({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+      message: assistantMessage,
+    })
+    if (
+      !componentsOperationIsCurrent(started.epoch, started.workspaceId) ||
+      surfaceScopeRef.current.conversationId !== targetConversationId
+    ) {
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (review === null) {
+      setComponentsNotice('Agent 输出不符合严格声明式组件包契约；未登记、未安装、未授权。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    setAssistantPackageReview(review)
+    setComponentsNotice('声明式组件包已解析；等待 Owner 核对完整 SHA 并明确登记。')
+    pushOutput(`Agent 声明式组件包待审：${review.componentId}@${review.version}`)
+    finishComponentsOperation(started.epoch)
+  }
+
+  const registerAssistantDeclarativePackage = async () => {
+    const review = assistantPackageReview
+    const started = beginComponentsOperation()
+    if (started === null) return
+    if (
+      review === null ||
+      review.workspaceId !== started.workspaceId ||
+      review.conversationId !== surfaceScopeRef.current.conversationId
+    ) {
+      setComponentsNotice('待审组件包不属于当前 Workspace 与会话，已拒绝登记。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const result = await bridge.workspaceComponents.importAssistantPackage({
+      workspaceId: review.workspaceId,
+      conversationId: review.conversationId,
+      messageId: review.messageId,
+      packageJson: review.packageJson,
+      manifestSha256: review.manifestSha256,
+      packageSha256: review.packageSha256,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (result.value.cancelled || result.value.registration === null) {
+      setComponentsNotice('组件包登记未完成；Catalog 未发生变化。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    setAssistantPackageReview(null)
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      const registration = result.value.registration
+      setComponentsNotice(
+        `Agent 组件包已登记：${registration.componentId} ${registration.version}；安装、授权和激活仍需独立 Owner 提案。`,
+      )
+      pushOutput(`Agent Workspace 组件包登记：${registration.componentId}@${registration.version}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const discardAssistantDeclarativePackage = () => {
+    if (componentsBusyRef.current || assistantPackageReview === null) return
+    setAssistantPackageReview(null)
+    setComponentsNotice('已丢弃 Agent 声明式组件包；Catalog 未发生变化。')
+  }
+
+  const requestAssistantWorkspaceComponent = async () => {
+    const started = beginComponentsOperation()
+    if (started === null) return
+    const prompt = p7WorkspaceComponentAssistantPrompt(componentIntent, started.snapshot)
+    if (prompt === null) {
+      setComponentsNotice('请输入 1–2000 字的组件调整意图，并确保存在已登记的可用组件包。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (desktopLiveSendBlocked(liveRef.current) || desktopTeamStopVisible(teamLiveRef.current)) {
+      setComponentsNotice('当前仍有 Agent 运行，请结束后再生成组件提案。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const targetConversationId = await ensureConversation()
+    if (
+      targetConversationId === null ||
+      !componentsOperationIsCurrent(started.epoch, started.workspaceId)
+    ) {
+      setComponentsNotice('无法建立用于生成组件提案的当前会话。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const baseline = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!baseline.ok) {
+      setComponentsNotice(errorMessage(baseline.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const previousMessageIds = new Set(baseline.value.messages.map((message) => message.id))
+    const completion = beginDesktopSurfaceDetailRequest(conversationSurfaceRef.current)
+    conversationSurfaceRef.current = completion.surface
+    const nextLive = beginDesktopLiveSend({
+      ...liveRef.current,
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (nextLive.phase !== 'starting_identity') {
+      setComponentsNotice('当前 Agent 调用状态不允许生成组件提案。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    liveRef.current = nextLive
+    setLive(nextLive)
+    pushOutput('Agent 正在生成 Workspace 组件提案')
+    const sent = await bridge.conversations.send({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+      content: prompt,
+      sendEpoch: nextLive.sendEpoch,
+    })
+    const completed = completeDesktopLiveSend(liveRef.current, nextLive.sendGeneration)
+    liveRef.current = completed
+    setLive(completed)
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!sent.ok) {
+      setComponentsNotice(errorMessage(sent.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    if (sent.value.type === 'cancelled') {
+      setComponentsNotice('Agent 组件提案生成已停止。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const detail = await bridge.conversations.get({
+      workspaceId: started.workspaceId,
+      conversationId: targetConversationId,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!detail.ok) {
+      setComponentsNotice(errorMessage(detail.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const updatedConversations = conversationSurfaceRef.current.conversations.map((item) =>
+      item.id === detail.value.conversation.id ? detail.value.conversation : item,
+    )
+    const applied = applyDesktopConversationCompletion(
+      conversationSurfaceRef.current,
+      completion.epoch,
+      targetConversationId,
+      detail.value.messages,
+      updatedConversations,
+    )
+    conversationSurfaceRef.current = applied
+    if (
+      applied.mounted &&
+      applied.detailRequestEpoch === completion.epoch &&
+      applied.conversationId === targetConversationId
+    ) {
+      setMessages(applied.messages)
+      setMessagesStatus(applied.messagesStatus)
+      setMessagesError(null)
+      setConversations(applied.conversations)
+    }
+    const assistantMessage = p7FindNewCompletedComponentAssistantMessage(
+      detail.value.messages,
+      previousMessageIds,
+    )
+    if (assistantMessage === null) {
+      setComponentsNotice('没有找到新的、已完成且身份一致的 Agent 消息；未创建组件提案。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const proposalResult = await bridge.workspaceComponents.proposeFromAssistant({
+      workspaceId: started.workspaceId,
+      messageId: assistantMessage.id,
+      idempotencyKey: p7ComponentIdempotencyKey('assistant_proposal'),
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!proposalResult.ok) {
+      setComponentsNotice(errorMessage(proposalResult.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentsNotice('Agent 组件提案已生成；只能由 Owner 单独审阅并批准。')
+      pushOutput(`Agent Workspace 组件提案已创建：${proposalResult.value.proposal.proposalId}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const decideWorkspaceComponent = async (
+    proposal: DesktopWorkspaceComponentProposal,
+    decision: 'approve' | 'reject',
+  ) => {
+    const started = beginComponentsOperation()
+    if (started === null || proposal.workspaceId !== started.workspaceId) return
+    const result = await bridge.workspaceComponents.decide({
+      workspaceId: started.workspaceId,
+      proposalId: proposal.proposalId,
+      decision,
+      requestSha256: proposal.requestSha256,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentsNotice(
+        decision === 'approve' ? '组件提案已批准，等待 Owner 执行。' : '组件提案已拒绝。',
+      )
+      pushOutput(
+        `Workspace 组件提案${decision === 'approve' ? '已批准' : '已拒绝'}：${proposal.proposalId}`,
+      )
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const executeWorkspaceComponentAction = async (proposal: DesktopWorkspaceComponentProposal) => {
+    const started = beginComponentsOperation()
+    if (
+      started === null ||
+      proposal.workspaceId !== started.workspaceId ||
+      proposal.decision !== 'approved'
+    ) {
+      return
+    }
+    const result = await bridge.workspaceComponents.action({
+      workspaceId: started.workspaceId,
+      componentId: proposal.componentId,
+      action: proposal.changeKind,
+      proposalId: proposal.proposalId,
+      requestSha256: proposal.requestSha256,
+      expectedRevision: proposal.baseRevision,
+      manifestSha256: proposal.manifestSha256,
+      packageSha256: proposal.packageSha256,
+      idempotencyKey: p7ComponentIdempotencyKey(`action_${proposal.changeKind}`),
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentsNotice(
+        `组件生命周期操作已落地：${result.value.installation?.state ?? result.value.operation.state}`,
+      )
+      pushOutput(`Workspace 组件 ${proposal.changeKind}：${proposal.componentId}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const invokeWorkspaceComponent = async (
+    installation: DesktopWorkspaceComponentInstallation,
+    request: P7WorkspaceComponentInvokeRequest,
+  ) => {
+    const operation = request.operation
+    const started = beginComponentsOperation()
+    if (
+      started === null ||
+      installation.workspaceId !== started.workspaceId ||
+      installation.state !== 'active' ||
+      installation.health !== 'healthy'
+    ) {
+      return
+    }
+    const catalog = started.snapshot.catalog.find(
+      (item) =>
+        item.componentId === installation.componentId && item.version === installation.version,
+    )
+    if (catalog === undefined || !catalog.operations.includes(operation)) {
+      setComponentsNotice('组件 operation 与当前受信 catalog 不一致。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const base = {
+      workspaceId: started.workspaceId,
+      componentId: installation.componentId,
+      expectedRevision: installation.revision,
+      bindingGeneration: installation.bindingGeneration,
+      manifestSha256: installation.manifestSha256,
+      packageSha256: installation.packageSha256,
+      idempotencyKey: p7ComponentIdempotencyKey('invoke'),
+      bytesOutReserved: Math.min(catalog.budgets.maxBytesOut, 4_194_304),
+      tokensReserved: Math.min(catalog.budgets.maxTokens, 131_072),
+      wallTimeMs: Math.min(catalog.budgets.maxWallTimeMs, 600_000),
+      costUnits: Math.min(catalog.budgets.maxCostUnits, 1_000),
+    } as const
+    const input = { ...base, ...request }
+    const result = await bridge.workspaceComponents.invoke(input)
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      const nextSurface = p7SetWorkspaceComponentSurface(
+        createP7WorkspaceComponentSurfaceState(started.workspaceId),
+        {
+          workspaceId: started.workspaceId,
+          componentId: installation.componentId,
+          operationId: result.value.operationId,
+          operation,
+          state: result.value.state,
+          output: result.value.output,
+        },
+      )
+      setComponentSurfaceState(nextSurface)
+      setComponentsNotice(
+        nextSurface.surface === null
+          ? '组件输出未进入编辑区；标准工作台保持可用。'
+          : '组件调用结果已在工作台中打开。',
+      )
+      if (nextSurface.surface !== null) {
+        appendEvent(p7WorkspaceComponentResultEventLogLine(nextSurface.surface))
+      }
+      pushOutput(`Workspace 组件调用 ${operation}：${result.value.state}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const emergencyStopWorkspaceComponents = async () => {
+    const started = beginComponentsOperation()
+    if (started === null) return
+    const result = await bridge.workspaceComponents.emergencyStop({
+      workspaceId: started.workspaceId,
+      idempotencyKey: p7ComponentIdempotencyKey('emergency_stop'),
+      reasonCode: 'owner_emergency_stop',
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentSurfaceState(
+        p7EnterWorkspaceComponentSafeMode(started.workspaceId, 'emergency-stop'),
+      )
+      setComponentsNotice(`紧急停止已完成：${result.value.stoppedComponentIds.length} 个组件。`)
+      pushOutput(`Workspace 组件紧急停止：${result.value.stoppedComponentIds.length} 个组件`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
+  const reconcileWorkspaceComponent = async (
+    effect: DesktopWorkspaceComponentEffect,
+    outcome: 'succeeded' | 'failed',
+    evidenceSha256: string,
+  ) => {
+    const started = beginComponentsOperation()
+    if (started === null || effect.workspaceId !== started.workspaceId) return
+    const operation = started.snapshot.operations.find(
+      (item) => item.operationId === effect.operationId,
+    )
+    if (operation === undefined || !/^[a-f0-9]{64}$/.test(evidenceSha256)) {
+      setComponentsNotice('Reconciliation 需要匹配的 operation 与 64 位 evidence SHA-256。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const result = await bridge.workspaceComponents.reconcile({
+      workspaceId: started.workspaceId,
+      operationId: operation.operationId,
+      effectId: effect.effectId,
+      requestSha256: operation.requestSha256,
+      outcome,
+      evidenceSha256,
+    })
+    if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
+    if (!result.ok) {
+      setComponentsNotice(errorMessage(result.error.code))
+      finishComponentsOperation(started.epoch)
+      return
+    }
+    const reloaded = await loadComponents(started.workspaceId)
+    if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
+      setComponentsNotice(`Reconciliation 已记录：${outcome}`)
+      pushOutput(`Workspace 组件 reconciliation：${result.value.reconciliationId}`)
+    }
+    finishComponentsOperation(started.epoch)
+  }
+
   const createWorkspace = async (name: string) => {
     const trimmed = name.trim()
     if (trimmed === '') return
@@ -1345,6 +2058,7 @@ export function DesktopWorkbench({
     setRunHistoryStatus('loading')
     setRunHistoryWorkspaceId(result.value.workspace.id)
     invalidateCompositionForWorkspace(result.value.workspace.id)
+    invalidateComponentsForWorkspace(result.value.workspace.id)
     applyViewScope(result.value.workspace.id, null)
     conversationSurfaceRef.current = selectDesktopConversation(
       conversationSurfaceRef.current,
@@ -1739,6 +2453,7 @@ export function DesktopWorkbench({
     setRunHistoryStatus('loading')
     setRunHistoryWorkspaceId(nextWorkspaceId)
     invalidateCompositionForWorkspace(nextWorkspaceId)
+    invalidateComponentsForWorkspace(nextWorkspaceId)
     applyViewScope(nextWorkspaceId, null)
     conversationSurfaceRef.current = selectDesktopConversation(
       conversationSurfaceRef.current,
@@ -1797,6 +2512,20 @@ export function DesktopWorkbench({
     snapshot: compositionSnapshot,
   })
   const compositionDraftView = compositionView.snapshot === null ? null : compositionDraft
+  const componentsView = p7WorkspaceComponentsProjection({
+    loadedWorkspaceId: componentsWorkspaceId,
+    viewWorkspaceId: workspaceId,
+    status: componentsStatus,
+    snapshot: componentsSnapshot,
+  })
+  const componentSurface = p7WorkspaceComponentSurfaceProjection({
+    state: componentSurfaceState,
+    viewWorkspaceId: workspaceId,
+    activeComponentIds:
+      componentsView.snapshot?.installations
+        .filter((installation) => installation.state === 'active')
+        .map((installation) => installation.componentId) ?? [],
+  })
   const selectedWorkspaceName =
     workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? '未选择工作空间'
   const slotView = p7LiveSlotViewProjection(slotState, workspaceId, conversationId)
@@ -1856,8 +2585,34 @@ export function DesktopWorkbench({
       }
       compositionBusy={compositionBusy}
       compositionNotice={compositionNotice}
+      status={componentsView.status}
+      snapshot={componentsView.snapshot}
+      busy={componentsBusy}
+      notice={componentsNotice}
+      assistantIntent={componentIntent}
+      onAssistantIntentChange={setComponentIntent}
+      assistantPackageReview={
+        assistantPackageReview?.workspaceId === workspaceId &&
+        assistantPackageReview.conversationId === conversationId
+          ? assistantPackageReview
+          : null
+      }
+      onRequestAssistantPackage={() => void requestAssistantDeclarativePackage()}
+      onRegisterAssistantPackage={() => void registerAssistantDeclarativePackage()}
+      onDiscardAssistantPackage={discardAssistantDeclarativePackage}
+      onRequestAssistantProposal={() => void requestAssistantWorkspaceComponent()}
+      onImportOwnerPackage={() => void importOwnerWorkspaceComponentPackage()}
+      onPropose={(catalog, action, draft) => void proposeWorkspaceComponent(catalog, action, draft)}
+      onDecide={(proposal, decision) => void decideWorkspaceComponent(proposal, decision)}
+      onAction={(proposal) => void executeWorkspaceComponentAction(proposal)}
+      onInvoke={(installation, request) => void invokeWorkspaceComponent(installation, request)}
+      onEmergencyStop={() => void emergencyStopWorkspaceComponents()}
+      onReconcile={(effect, outcome, evidenceSha256) =>
+        void reconcileWorkspaceComponent(effect, outcome, evidenceSha256)
+      }
       workspaceFilesAuthorized={p7WorkspaceFilesAuthorized(workspaceFiles)}
       workspaceFiles={workspaceFiles}
+      componentSurface={componentSurface}
       onAuthorizeWorkspaceFiles={() => void authorizeWorkspaceFiles()}
       onReleaseWorkspaceFiles={releaseWorkspaceFiles}
       onToggleWorkspaceDirectory={toggleWorkspaceDirectory}

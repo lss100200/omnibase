@@ -38,6 +38,18 @@ function bridgeFixture() {
       proposeRollback: async () => ({ ok: false, error: { code: 'not-called' } }),
       decide: async () => ({ ok: false, error: { code: 'not-called' } }),
     },
+    workspaceComponents: {
+      get: async () => ({ ok: false, error: { code: 'not-called' } }),
+      propose: async () => ({ ok: false, error: { code: 'not-called' } }),
+      proposeFromAssistant: async () => ({ ok: false, error: { code: 'not-called' } }),
+      importOwnerPackage: async () => ({ ok: false, error: { code: 'not-called' } }),
+      importAssistantPackage: async () => ({ ok: false, error: { code: 'not-called' } }),
+      decide: async () => ({ ok: false, error: { code: 'not-called' } }),
+      action: async () => ({ ok: false, error: { code: 'not-called' } }),
+      invoke: async () => ({ ok: false, error: { code: 'not-called' } }),
+      emergencyStop: async () => ({ ok: false, error: { code: 'not-called' } }),
+      reconcile: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
     workspaceFiles: {
       authorize: async () => ({ ok: false, error: { code: 'not-called' } }),
       release: async () => ({ ok: false, error: { code: 'not-called' } }),
@@ -99,6 +111,34 @@ test('desktop bridge detection requires the complete closed product surface', ()
     resolveDesktopBridge({
       ...complete,
       workspaceComposition: { ...complete.workspaceComposition, decide: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      workspaceComponents: { ...complete.workspaceComponents, emergencyStop: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      workspaceComponents: { ...complete.workspaceComponents, proposeFromAssistant: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      workspaceComponents: { ...complete.workspaceComponents, importOwnerPackage: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      workspaceComponents: { ...complete.workspaceComponents, importAssistantPackage: undefined },
     }),
     null,
   )

@@ -21,6 +21,7 @@ import {
 import { projectDesktopTeamBudget } from '@/lib/desktop-team-surface'
 import { p7WorkspaceFileDirectory, p7WorkspaceFileErrorMessage } from '@/lib/p7-workspace-files'
 import type { P7WorkbenchProps } from './p7-shell'
+import { P7SidebarComponentSurface } from './p7-component-surface'
 
 export const P7_TEAM_SPECIALISTS = [
   'product',
@@ -478,6 +479,7 @@ export function P7Sidebar({
         {activity === 'agents' && <P7AgentsPanel {...props} />}
         {activity === 'blackboard' && <P7BlackboardPanel {...props} />}
       </div>
+      <P7SidebarComponentSurface projection={props.componentSurface} />
     </aside>
   )
 }

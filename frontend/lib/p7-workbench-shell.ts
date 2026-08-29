@@ -31,6 +31,7 @@ import type {
   PersonalTeamBlackboard,
 } from './desktop-bridge'
 import type { DesktopInvocationPhase } from './desktop-invocation-lifecycle'
+import type { P7WorkspaceComponentHostRegion } from './p7-workspace-components'
 import {
   type DesktopTeamNodeView,
   type DesktopTeamNodeStatusText,
@@ -55,7 +56,14 @@ export const P7_ACTIVITIES = [
 ] as const
 export type P7Activity = (typeof P7_ACTIVITIES)[number]
 
-export const P7_CENTER_VIEWS = ['transcript', 'brief', 'code', 'diff', 'settings'] as const
+export const P7_CENTER_VIEWS = [
+  'transcript',
+  'brief',
+  'code',
+  'diff',
+  'component',
+  'settings',
+] as const
 export type P7CenterView = (typeof P7_CENTER_VIEWS)[number]
 
 export const P7_BOTTOM_TABS = ['terminal', 'problems', 'output', 'agent-log'] as const
@@ -145,6 +153,34 @@ export function p7WorkspaceShellUiProjection(
   viewWorkspaceId: string | null,
 ): P7ShellUiState {
   return state.workspaceId === viewWorkspaceId ? state.ui : createP7ShellUiState()
+}
+
+export function openP7WorkspaceComponentHost(
+  state: P7ShellUiState,
+  region: P7WorkspaceComponentHostRegion,
+): P7ShellUiState {
+  const centerView = state.centerView === 'component' ? 'transcript' : state.centerView
+  switch (region) {
+    case 'editor':
+      return { ...state, centerView: 'component', sidebarOpen: false, bottomOpen: false }
+    case 'sidebar':
+      return { ...state, centerView, sidebarOpen: true }
+    case 'settings':
+      return {
+        ...state,
+        activity: 'settings',
+        centerView: 'settings',
+        sidebarOpen: false,
+        bottomOpen: false,
+        agentPanelOpen: false,
+      }
+    case 'status':
+      return { ...state, centerView }
+  }
+}
+
+export function closeP7WorkspaceComponentHost(state: P7ShellUiState): P7ShellUiState {
+  return state.centerView === 'component' ? { ...state, centerView: 'transcript' } : state
 }
 
 /**
@@ -258,6 +294,7 @@ export function p7ViewAvailability(
   switch (view) {
     case 'transcript':
     case 'brief':
+    case 'component':
     case 'settings':
       return { available: true, reason: null }
     case 'code':
@@ -1084,6 +1121,8 @@ export function p7CenterViewLabel(view: P7CenterView): string {
       return '代码'
     case 'diff':
       return '审阅变更'
+    case 'component':
+      return '组件'
     case 'settings':
       return '设置'
   }

@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,10 @@ def _fixture(tmp_path: Path) -> dict[str, Path]:
     desktop = tmp_path / "desktop"
     _write(desktop / "dist/main.js", b"compiled desktop main")
     _write(desktop / "dist/preload.js", b"compiled desktop preload")
+    _write(
+        desktop / "dist/runtime/p34-sandbox-helper.js",
+        b"compiled source-owned sandbox helper",
+    )
     _write(desktop / "package.json", b'{"name":"@omnibase/desktop"}\n')
     _write(desktop / "pnpm-lock.yaml", b"lockfileVersion: '9.0'\n")
     _write(desktop / "tsconfig.json", b'{"compilerOptions":{}}\n')
@@ -81,6 +86,56 @@ def _file_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def _component_bundle(repo: Path, tmp_path: Path) -> Path:
+    exporter_path = repo / "scripts/release/export_p7_3_component_bundles.py"
+    spec = importlib.util.spec_from_file_location(
+        "export_p7_3_component_bundles_payload_test", exporter_path
+    )
+    assert spec is not None and spec.loader is not None
+    exporter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(exporter)
+    ebook = tmp_path / "ebook"
+    data = ebook / "data"
+    data.mkdir(parents=True)
+    connection = sqlite3.connect(data / "ebook.db")
+    connection.executescript(
+        """
+        CREATE TABLE documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
+            source_path TEXT, doc_type TEXT DEFAULT 'markdown', content TEXT,
+            plain_summary TEXT, imported_at TEXT, file_hash TEXT
+        );
+        CREATE TABLE sections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id INTEGER, level INTEGER,
+            heading TEXT, content TEXT, plain_explanation TEXT, theme_tag TEXT,
+            position INTEGER, FOREIGN KEY (doc_id) REFERENCES documents(id)
+        );
+        CREATE TABLE invariants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, inv_id TEXT UNIQUE, title TEXT,
+            content TEXT, plain_explanation TEXT, severity TEXT DEFAULT 'high',
+            related_modules TEXT, related_source TEXT, phase TEXT
+        );
+        CREATE TABLE modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, module_key TEXT UNIQUE,
+            name TEXT, description TEXT, source_paths TEXT, dependencies TEXT,
+            invariants TEXT, verification TEXT, plain_summary TEXT
+        );
+        CREATE TABLE glossary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, term TEXT UNIQUE,
+            plain_explanation TEXT, technical_def TEXT, category TEXT
+        );
+        INSERT INTO documents (title) VALUES ('Architecture');
+        """
+    )
+    connection.commit()
+    connection.close()
+    bundle = tmp_path / "components"
+    exporter.export_component_bundles(
+        repo_root=repo, ebook_root=ebook, output_dir=bundle
+    )
+    return bundle
 
 
 def test_build_generates_exact_runtime_schemas_and_pins_only_staged_source(
@@ -155,11 +210,68 @@ def test_build_generates_exact_runtime_schemas_and_pins_only_staged_source(
         output / "desktop-build/prebuilt-dist/main.js"
     ).read_bytes() == b"compiled desktop main"
     assert (
+        output / "runtime/component-host/p34-sandbox-helper.js"
+    ).read_bytes() == b"compiled source-owned sandbox helper"
+    helper_manifest = next(
+        item
+        for item in manifest["files"]
+        if item["path"] == "component-host/p34-sandbox-helper.js"
+    )
+    assert (
+        helper_manifest["sha256"]
+        == hashlib.sha256(b"compiled source-owned sandbox helper").hexdigest()
+    )
+    assert (
         output / "runtime/frontend/.next/static/chunks/app.js"
     ).read_bytes() == b"frontend static"
     assert (
         output / "runtime/frontend/public/brand/omnibase-mark.svg"
     ).read_bytes() == b"<svg></svg>"
+
+
+def test_optional_component_bundle_is_digest_pinned_into_runtime_manifest(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    fixture = _fixture(tmp_path)
+    components = _component_bundle(repo, tmp_path)
+
+    output = tmp_path / "payload"
+    _build(builder, fixture, output, component_bundle_dir=components)
+
+    runtime_catalog = (
+        output / "runtime/components/knowledge-ebook/1.0.0/payload/catalog.json"
+    )
+    catalog = runtime_catalog.read_bytes()
+    assert json.loads(catalog)["component_version"] == "1.0.0"
+    manifest = json.loads((output / "runtime/runtime-manifest.json").read_bytes())
+    item = next(
+        value
+        for value in manifest["files"]
+        if value["path"] == "components/knowledge-ebook/1.0.0/payload/catalog.json"
+    )
+    assert item == {
+        "path": "components/knowledge-ebook/1.0.0/payload/catalog.json",
+        "sha256": hashlib.sha256(catalog).hexdigest(),
+        "size": len(catalog),
+    }
+
+
+def test_arbitrary_component_directory_is_rejected(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    fixture = _fixture(tmp_path)
+    components = tmp_path / "components"
+    _write(components / "knowledge-ebook/catalog.json", b"{}\n")
+
+    with pytest.raises(builder.DesktopPayloadError, match="component_bundle_invalid"):
+        _build(
+            builder,
+            fixture,
+            tmp_path / "payload",
+            component_bundle_dir=components,
+        )
 
 
 def test_build_is_byte_deterministic_for_the_same_inputs(tmp_path: Path) -> None:

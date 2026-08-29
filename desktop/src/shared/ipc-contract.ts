@@ -17,6 +17,25 @@ import type {
   DesktopTeamRunSubmitProposalInput,
   PersonalTeamBlackboard,
 } from "./personal-team.ts";
+import type {
+  DesktopWorkspaceComponentActionInput,
+  DesktopWorkspaceComponentActionResult,
+  DesktopWorkspaceComponentAssistantPackageImportInput,
+  DesktopWorkspaceComponentAssistantProposalInput,
+  DesktopWorkspaceComponentDecisionInput,
+  DesktopWorkspaceComponentDecisionResult,
+  DesktopWorkspaceComponentEmergencyStopInput,
+  DesktopWorkspaceComponentEmergencyStopResult,
+  DesktopWorkspaceComponentInvokeInput,
+  DesktopWorkspaceComponentInvokeResult,
+  DesktopWorkspaceComponentOwnerPackageImportResult,
+  DesktopWorkspaceComponentProposalResult,
+  DesktopWorkspaceComponentProposeInput,
+  DesktopWorkspaceComponentReconcileInput,
+  DesktopWorkspaceComponentReconcileResult,
+  DesktopWorkspaceComponentSettleResult,
+  DesktopWorkspaceComponentSnapshot,
+} from "./workspace-components.ts";
 
 export const IPC_CHANNELS = Object.freeze({
   appGetVersion: "omnibase:app:get-version",
@@ -37,6 +56,20 @@ export const IPC_CHANNELS = Object.freeze({
   workspaceCompositionProposeRollback:
     "omnibase:workspace-composition:propose-rollback",
   workspaceCompositionDecide: "omnibase:workspace-composition:decide",
+  workspaceComponentsGet: "omnibase:workspace-components:get",
+  workspaceComponentsPropose: "omnibase:workspace-components:propose",
+  workspaceComponentsProposeFromAssistant:
+    "omnibase:workspace-components:propose-from-assistant",
+  workspaceComponentsImportOwnerPackage:
+    "omnibase:workspace-components:import-owner-package",
+  workspaceComponentsImportAssistantPackage:
+    "omnibase:workspace-components:import-assistant-package",
+  workspaceComponentsDecide: "omnibase:workspace-components:decide",
+  workspaceComponentsAction: "omnibase:workspace-components:action",
+  workspaceComponentsInvoke: "omnibase:workspace-components:invoke",
+  workspaceComponentsEmergencyStop:
+    "omnibase:workspace-components:emergency-stop",
+  workspaceComponentsReconcile: "omnibase:workspace-components:reconcile",
   workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
   workspaceFilesRelease: "omnibase:workspace-files:release",
   workspaceFilesList: "omnibase:workspace-files:list",
@@ -104,6 +137,64 @@ export {
   type TeamRunState,
   type TeamWaveProposal,
 } from "./personal-team.ts";
+
+export {
+  WORKSPACE_COMPONENT_FAMILIES,
+  WORKSPACE_COMPONENT_LIFECYCLE_ACTIONS,
+  WORKSPACE_COMPONENT_OPERATIONS,
+  type DesktopWorkspaceComponentActionInput,
+  type DesktopWorkspaceComponentActionResult,
+  type DesktopWorkspaceComponentAssistantPackageImportInput,
+  type DesktopWorkspaceComponentAssistantProposalInput,
+  type DesktopWorkspaceComponentAuditEvent,
+  type DesktopWorkspaceComponentAuditEventType,
+  type DesktopWorkspaceComponentBeginInput,
+  type DesktopWorkspaceComponentBeginResult,
+  type DesktopWorkspaceComponentCatalogItem,
+  type DesktopWorkspaceComponentDecision,
+  type DesktopWorkspaceComponentDecisionInput,
+  type DesktopWorkspaceComponentDecisionResult,
+  type DesktopWorkspaceComponentEffect,
+  type DesktopWorkspaceComponentEffectState,
+  type DesktopWorkspaceComponentEmergencyStopInput,
+  type DesktopWorkspaceComponentEmergencyStopPrepareResult,
+  type DesktopWorkspaceComponentEmergencyStopResult,
+  type DesktopWorkspaceComponentEmergencyStopSettleResult,
+  type DesktopWorkspaceComponentEmergencyStopTicket,
+  type DesktopWorkspaceComponentExecutionTicket,
+  type DesktopWorkspaceComponentFamily,
+  type DesktopWorkspaceComponentGrantRequest,
+  type DesktopWorkspaceComponentInstallation,
+  type DesktopWorkspaceComponentInvokeInput,
+  type DesktopWorkspaceComponentInvokeResult,
+  type DesktopWorkspaceComponentJsonValue,
+  type DesktopWorkspaceComponentLifecycleAction,
+  type DesktopWorkspaceComponentLifecycleTicket,
+  type DesktopWorkspaceComponentNativeActionInput,
+  type DesktopWorkspaceComponentNativeEmergencyStopInput,
+  type DesktopWorkspaceComponentNativeEmergencyStopResult,
+  type DesktopWorkspaceComponentOperation,
+  type DesktopWorkspaceComponentOperationRecord,
+  type DesktopWorkspaceComponentPackageAttestationInput,
+  type DesktopWorkspaceComponentPackageAttestationResult,
+  type DesktopWorkspaceComponentOwnerPackageImportResult,
+  type DesktopWorkspaceComponentOwnerPackageRegisterInput,
+  type DesktopWorkspaceComponentOwnerPackageRegistration,
+  type DesktopWorkspaceComponentProposal,
+  type DesktopWorkspaceComponentProposalResult,
+  type DesktopWorkspaceComponentProposeInput,
+  type DesktopWorkspaceComponentReconcileInput,
+  type DesktopWorkspaceComponentReconcileResult,
+  type DesktopWorkspaceComponentReconciliation,
+  type DesktopWorkspaceComponentRecoverySettleInput,
+  type DesktopWorkspaceComponentRecoverySettleResult,
+  type DesktopWorkspaceComponentSettleInput,
+  type DesktopWorkspaceComponentSettleResult,
+  type DesktopWorkspaceComponentSnapshot,
+  type DesktopWorkspaceComponentSlotBindingRequest,
+  type DesktopWorkspaceComponentDependencyRequest,
+  type DesktopWorkspaceComponentTerminalState,
+} from "./workspace-components.ts";
 
 export type RuntimePhase = "stopped" | "starting" | "ready" | "failed";
 
@@ -660,6 +751,52 @@ export interface OmniBaseDesktopApi {
       input: DesktopWorkspaceCompositionDecisionInput,
     ) => Promise<
       DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+    >;
+  };
+  readonly workspaceComponents: {
+    readonly get: (
+      input: DesktopWorkspaceIdInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>>;
+    readonly propose: (
+      input: DesktopWorkspaceComponentProposeInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+    >;
+    readonly proposeFromAssistant: (
+      input: DesktopWorkspaceComponentAssistantProposalInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+    >;
+    readonly importOwnerPackage: (
+      input: DesktopWorkspaceIdInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+    >;
+    readonly importAssistantPackage: (
+      input: DesktopWorkspaceComponentAssistantPackageImportInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+    >;
+    readonly decide: (
+      input: DesktopWorkspaceComponentDecisionInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>
+    >;
+    readonly action: (
+      input: DesktopWorkspaceComponentActionInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentActionResult>>;
+    readonly invoke: (
+      input: DesktopWorkspaceComponentInvokeInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentInvokeResult>>;
+    readonly emergencyStop: (
+      input: DesktopWorkspaceComponentEmergencyStopInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentEmergencyStopResult>
+    >;
+    readonly reconcile: (
+      input: DesktopWorkspaceComponentReconcileInput,
+    ) => Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>
     >;
   };
   readonly workspaceFiles: {

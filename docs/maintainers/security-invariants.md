@@ -4727,3 +4727,87 @@ revision, proposal, decision and Audit row. Never repair by editing history,
 resetting a revision, applying a stale proposal, enabling a missing capability,
 replaying an unknown effect or mutating the standard template/another
 Workspace.
+
+## INV-088 p73-unified-workspace-component-lifecycle
+
+P7.3 owns one desktop-local component kernel for declarative UI, instruction
+Skills, MCP connectors, Sandbox workloads and source-owned trusted local
+adapters. Every version has one canonical closed manifest and exact package
+digest. Definitions, versions, package inventory, dependency/conflict edges,
+Slot declarations, authority ceilings, verification evidence, proposals,
+Owner decisions, binding generations, grants, audit transitions and recovery
+receipts are immutable or append-only. A changed byte or permission creates a
+new reviewed version or generation; it never edits a running identity in place.
+
+Composition profiles remain presentation-only. Installation, permission and
+runtime authority live in separate Workspace-scoped aggregates. Assistant or
+Workspace content may stage and propose only. Owner approval must bind the
+exact Workspace, expected installation revision, manifest/package digests,
+complete dependency graph, Slot/config Diff, grant set, budgets, retention and
+recovery policy. Stale proposals may be rejected but never approved. Unknown
+fields, family/entrypoint combinations, package members, logical authorities,
+dependencies, Slots and lifecycle transitions fail closed.
+
+Renderer invocation is one high-level native IPC request. Electron main owns
+the private durable `begin -> typed adapter -> settle` sequence. `begin`
+reserves budget before crossing an adapter boundary and returns a bounded
+identity ticket; it never returns a manifest-selected command or path. `settle`
+binds that exact ticket and a canonical result/evidence digest. A crash after
+dispatch, malformed receipt, timeout or identity drift produces
+`unknown|ambiguous|reconciliation_required`. Exact terminal reads may be
+replayed; adapter dispatch may not.
+
+Every activation and invocation revalidates the live Owner/Workspace,
+installation revision, immutable version/package, binding generation, runtime
+and workload identity, capability action/resource version, append-only
+revocation, workload lease/fencing, independent network lease/fencing when
+required, expiry and remaining wall/call/byte/token/cost/retry/concurrency
+budgets. Grant possession is not authority. Revocation first closes new calls
+and fences grants/leases in durable state, then quiesces and terminates owned
+processes. Cleanup uncertainty cannot restore authority.
+
+The five families share this kernel and may only interpret source-owned closed
+schemas. UI packages cannot inject JavaScript, global CSS, remote iframe/CDN or
+Electron APIs. Instruction Skills cannot gain tool authority through prompt
+text. MCP discovery does not grant invocation and its transport/tool allowlist
+is exact. Sandbox activation requires a real trusted provider, disposable
+workload identity, bounded resources and kill path; absence is honest
+`unavailable`, not emulation. Trusted local adapters use a source-owned native
+catalog and logical IDs, never arbitrary executables, argv or physical paths.
+
+On startup, only committed active pointers are candidates for reconstruction.
+The host revalidates package, compatibility, grant and generation identity,
+fences stale leases and converts incomplete effects to explicit reconciliation.
+It never infers success from a PID, port, file or prior rendered state. Safe
+mode and Workspace emergency stop disable every non-core component while the
+immutable standard workbench, Settings, Audit and recovery controls remain
+available. One component failure or Workspace switch cannot project state into
+another Workspace or collapse those core surfaces.
+
+**Required verification**
+
+- fresh v11 plus v1-v10 upgrade, immutable-row/transition/active-pointer and
+  append-only trigger attacks;
+- hostile manifest/package/dependency/Slot/grant/scope/replay/budget/revocation
+  and cross-Workspace tests;
+- real positive and negative lifecycle journeys for all five families through
+  the same registry and `begin/settle` broker;
+- adapter crash, timeout, malformed output, health failure, partial activation,
+  emergency stop, restart and explicit reconciliation tests with zero automatic
+  replay;
+- strict backend/native-client/IPC/preload/renderer parsing, first-frame
+  isolation and P7.1 read-only file regression;
+- full backend, desktop and frontend gates, maintainer validators, sealed
+  contracts, formatters and `git diff --check`;
+- one fresh unsigned Windows package and one controlled real Electron
+  acceptance covering all families, Owner review, emergency stop and recovery.
+
+**Failure recovery**
+
+Fence and revoke the affected generation, preserve every package/proposal/
+decision/operation/effect/audit identity and keep the last committed healthy
+generation or standard workbench visible. Reconcile an ambiguous effect only
+from new Owner-approved evidence. Never delete evidence, refund an unknown
+reservation, reuse a workload identity, replay dispatch, loosen a manifest or
+grant, expose a physical locator, start/repair host virtualization, or defer a
+missing core path to P7.4.

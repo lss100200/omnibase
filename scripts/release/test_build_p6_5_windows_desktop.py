@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -204,6 +206,97 @@ def test_payload_copy_report_is_strict_and_digest_bound() -> None:
         )
 
 
+def test_component_bundle_report_is_projected_from_the_runtime_manifest(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    manifest = tmp_path / "runtime-manifest.json"
+    files = [
+        {"path": "OmniBase.RuntimeHost.exe", "size": 11, "sha256": "a" * 64},
+        {
+            "path": "components/knowledge-ebook/manifest.json",
+            "size": 23,
+            "sha256": "b" * 64,
+        },
+        {
+            "path": "components/knowledge-ebook/catalog.json",
+            "size": 37,
+            "sha256": "c" * 64,
+        },
+    ]
+    manifest.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "entrypoint": {"path": "OmniBase.RuntimeHost.exe", "args": []},
+                "files": files,
+            }
+        ),
+        encoding="utf-8",
+    )
+    canonical = (
+        b"knowledge-ebook/catalog.json\0" + b"37\0" + b"c" * 64 + b"\n"
+        b"knowledge-ebook/manifest.json\0" + b"23\0" + b"b" * 64 + b"\n"
+    )
+
+    expected = {
+        "bundle_sha256": "d" * 64,
+        "file_count": 2,
+        "output_bytes": 60,
+        "package_count": 10,
+        "tree_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+    assert builder._component_runtime_report(manifest, expected_bundle=expected) == {
+        "file_count": 2,
+        "total_bytes": 60,
+        "tree_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+    with pytest.raises(
+        builder.DesktopReleaseError, match="component_bundle_unexpected"
+    ):
+        builder._component_runtime_report(manifest, expected_bundle=None)
+    with pytest.raises(builder.DesktopReleaseError, match="component_bundle_changed"):
+        builder._component_runtime_report(
+            manifest, expected_bundle={**expected, "tree_sha256": "0" * 64}
+        )
+
+
+def test_component_bundle_report_rejects_a_supplied_empty_bundle(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    manifest = tmp_path / "runtime-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "entrypoint": {"path": "OmniBase.RuntimeHost.exe", "args": []},
+                "files": [
+                    {
+                        "path": "OmniBase.RuntimeHost.exe",
+                        "size": 11,
+                        "sha256": "a" * 64,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert builder._component_runtime_report(manifest, expected_bundle=None) is None
+    with pytest.raises(builder.DesktopReleaseError, match="component_bundle_empty"):
+        builder._component_runtime_report(
+            manifest,
+            expected_bundle={
+                "file_count": 10,
+                "output_bytes": 1,
+                "tree_sha256": "a" * 64,
+            },
+        )
+
+
 def test_release_version_is_fixed_to_1_0_0_before_any_output(tmp_path: Path) -> None:
     repo = Path(__file__).resolve().parents[2]
     builder = _builder(repo)
@@ -220,3 +313,216 @@ def test_release_version_is_fixed_to_1_0_0_before_any_output(tmp_path: Path) -> 
         )
 
     assert not (tmp_path / "artifacts").exists()
+
+
+def _release_tool_inputs(builder, tmp_path: Path) -> dict[str, Path]:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    dotnet = tools / "dotnet.exe"
+    python = tools / "python.exe"
+    node = tools / builder.NODE_EXECUTABLE_NAME
+    corepack = tools / "corepack.cmd"
+    electron = tools / builder.ELECTRON_ZIP_NAME
+    for path in (dotnet, python, node, corepack, electron):
+        path.write_bytes(b"fixture")
+    return {
+        "dotnet_executable": dotnet,
+        "backend_python": python,
+        "node_executable": node,
+        "electron_zip": electron,
+    }
+
+
+def test_clean_release_requires_the_exact_component_bundle_before_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    monkeypatch.setattr(
+        builder,
+        "_repository_state",
+        lambda _repository: builder.RepositoryState("a" * 40, b""),
+    )
+    artifacts = tmp_path / "artifacts"
+
+    with pytest.raises(
+        builder.DesktopReleaseError, match="clean_component_bundle_required"
+    ):
+        builder.build_windows_desktop(
+            repo_root=repo,
+            artifact_root=artifacts,
+            **_release_tool_inputs(builder, tmp_path),
+        )
+
+    assert not artifacts.exists()
+
+
+def test_head_snapshot_ignores_a_post_check_live_worktree_replacement(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "init", "-q", str(source)], check=True)
+    tracked = source / "tracked.txt"
+    tracked.write_text("committed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=OmniBase Test",
+            "-c",
+            "user.email=test@omnibase.local",
+            "-C",
+            str(source),
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    head = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracked.write_text("temporary replacement\n", encoding="utf-8")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+
+    tree_sha256 = builder._materialize_head_snapshot(
+        source,
+        head,
+        artifacts / "source.tar",
+        artifacts / "snapshot",
+    )
+
+    assert (artifacts / "snapshot/tracked.txt").read_text(encoding="utf-8") == (
+        "committed\n"
+    )
+    assert (
+        tree_sha256
+        == hashlib.sha256(
+            b"tracked.txt\0"
+            + b"10\0"
+            + hashlib.sha256(b"committed\n").hexdigest().encode("ascii")
+            + b"\n"
+        ).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("attack", ["escape", "symlink"])
+def test_source_snapshot_rejects_non_regular_or_escaping_members(
+    tmp_path: Path, attack: str
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    archive = tmp_path / f"{attack}.tar"
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as bundle:
+        if attack == "escape":
+            info = tarfile.TarInfo("../escape.txt")
+            raw = b"escape"
+            info.size = len(raw)
+            bundle.addfile(info, io.BytesIO(raw))
+        else:
+            info = tarfile.TarInfo("linked.txt")
+            info.type = tarfile.SYMTYPE
+            info.linkname = "outside.txt"
+            bundle.addfile(info)
+    archive.write_bytes(buffer.getvalue())
+
+    with pytest.raises(builder.DesktopReleaseError, match="source_archive_"):
+        builder._extract_source_archive(archive, tmp_path / "snapshot")
+
+
+@pytest.mark.parametrize("content", ["placeholder", "wrong_digest", "decoy_digest"])
+def test_staged_manifest_pin_rejects_placeholder_or_wrong_digest(
+    tmp_path: Path, content: str
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    expected = "a" * 64
+    path = tmp_path / "trusted-manifest.js"
+    value = builder._TRUST_TOKEN if content == "placeholder" else "b" * 64
+    decoy = f"// {expected}\n" if content == "decoy_digest" else ""
+    path.write_text(
+        decoy
+        + "exports.PINNED_RUNTIME_MANIFEST_SHA256 = void 0;\n"
+        + f'exports.PINNED_RUNTIME_MANIFEST_SHA256 = "{value}";\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(builder.DesktopReleaseError, match="staged_pin_invalid"):
+        builder._verify_manifest_pin_file(
+            path,
+            expected_sha256=expected,
+            code="desktop_release_staged_pin_invalid",
+        )
+
+
+def test_staged_manifest_pin_accepts_the_exact_compiled_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    expected = "a" * 64
+    path = tmp_path / "trusted-manifest.js"
+    raw = (
+        "exports.PINNED_RUNTIME_MANIFEST_SHA256 = void 0;\n"
+        f'exports.PINNED_RUNTIME_MANIFEST_SHA256 = "{expected}";\n'
+    ).encode()
+    path.write_bytes(raw)
+
+    assert builder._verify_manifest_pin_file(
+        path,
+        expected_sha256=expected,
+        code="desktop_release_staged_pin_invalid",
+    ) == {
+        "file_sha256": hashlib.sha256(raw).hexdigest(),
+        "manifest_sha256": expected,
+        "placeholder_absent": True,
+    }
+
+
+def test_packaged_asar_manifest_pin_rejects_a_wrong_extracted_member(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    builder = _builder(repo)
+    staged = tmp_path / "staged"
+    library = (
+        staged
+        / "node_modules/.pnpm/@electron+asar@4.3.0/node_modules/@electron/asar/lib/asar.js"
+    )
+    library.parent.mkdir(parents=True)
+    library.write_text("export function extractFile() {}\n", encoding="utf-8")
+    app_asar = tmp_path / "app.asar"
+    app_asar.write_bytes(b"asar fixture")
+    node = tmp_path / "node.exe"
+    node.write_bytes(b"node fixture")
+
+    def fake_runner(name, command, cwd, environment, timeout, capture=False):
+        assert name == "asar-manifest-extract"
+        Path(command[-1]).write_text(
+            'exports.PINNED_RUNTIME_MANIFEST_SHA256 = "' + "b" * 64 + '";\n',
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with pytest.raises(
+        builder.DesktopReleaseError, match="packaged_manifest_pin_invalid"
+    ):
+        builder._verify_packaged_asar_manifest_pin(
+            runner=fake_runner,
+            node=node,
+            staged_desktop=staged,
+            app_asar=app_asar,
+            output=tmp_path / "extracted.js",
+            cwd=tmp_path,
+            environment={},
+            expected_sha256="a" * 64,
+        )

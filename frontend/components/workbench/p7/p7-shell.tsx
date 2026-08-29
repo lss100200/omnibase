@@ -16,7 +16,7 @@ import {
   Files,
   Bot,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DesktopConversation,
   DesktopInvocationLiveProjection,
@@ -32,10 +32,12 @@ import type { DesktopTeamLiveState } from '@/lib/desktop-team-lifecycle'
 import {
   P7_OMNIA_IMAGES,
   createP7WorkspaceShellUiState,
+  closeP7WorkspaceComponentHost,
   expandP7Omnia,
   minimizeP7Omnia,
   openP7Blackboard,
   openP7Settings,
+  openP7WorkspaceComponentHost,
   p7ActivityLabel,
   p7LiveActive,
   p7LivePendingCollaborations,
@@ -58,9 +60,14 @@ import {
 } from '@/lib/p7-workbench-shell'
 import { p7CompositionSlotEnabled, p7EffectiveDensity } from '@/lib/p7-workspace-composition'
 import { p7WorkspaceFilesAuthorized, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
+import {
+  p7WorkspaceComponentHostProjection,
+  type P7WorkspaceComponentSurfaceProjection,
+} from '@/lib/p7-workspace-components'
 import { P7Sidebar } from './p7-sidebar'
 import { P7Editor } from './p7-editor'
 import { P7AgentPanel } from './p7-agent-panel'
+import { P7StatusComponentSurface } from './p7-component-surface'
 import type { P7SettingsCenterProps } from './p7-settings-center'
 
 export type { P7ProviderForm } from './p7-settings-center'
@@ -85,6 +92,7 @@ export interface P7WorkbenchProps extends P7SettingsCenterProps {
   readonly onWorkspaceNameInputChange: (name: string) => void
 
   readonly workspaceFiles: P7WorkspaceFilesState
+  readonly componentSurface: P7WorkspaceComponentSurfaceProjection
   readonly onAuthorizeWorkspaceFiles: () => void
   readonly onReleaseWorkspaceFiles: () => void
   readonly onToggleWorkspaceDirectory: (directoryPath: string, expanded: boolean) => void
@@ -313,6 +321,7 @@ function P7Statusbar({
   onOpenOmnia,
   onZoomChange,
   zoom,
+  componentSurface,
 }: {
   readonly ownerName: string
   readonly workspaceName: string
@@ -323,6 +332,7 @@ function P7Statusbar({
   readonly onOpenOmnia: () => void
   readonly onZoomChange: (next: number) => void
   readonly zoom: number
+  readonly componentSurface: P7WorkspaceComponentSurfaceProjection
 }) {
   return (
     <footer className="p7-statusbar">
@@ -338,6 +348,7 @@ function P7Statusbar({
           <ShieldCheck size={11} />
           原生控制
         </span>
+        <P7StatusComponentSurface projection={componentSurface} />
       </div>
       <div className="p7-statusbar-group">
         {runningCount > 0 && (
@@ -436,6 +447,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
   const ui = p7WorkspaceShellUiProjection(scopedUi, props.workspaceId)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [paletteQuery, setPaletteQuery] = useState('')
+  const openedComponentSurfaceRef = useRef<string | null>(null)
   const activeProfile =
     props.compositionSnapshot?.profile.workspaceId === props.workspaceId
       ? props.compositionSnapshot.profile
@@ -464,6 +476,32 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
     ui.bottomTab === 'terminal' ||
     ui.bottomTab === 'problems'
   const bottomPanelVisible = !settingsOpen && !focusMode && selectedBottomSlotEnabled
+  const editorComponentSurface = p7WorkspaceComponentHostProjection(
+    props.componentSurface,
+    'editor',
+  )
+  const sidebarComponentSurface = p7WorkspaceComponentHostProjection(
+    props.componentSurface,
+    'sidebar',
+  )
+  const settingsComponentSurface = p7WorkspaceComponentHostProjection(
+    props.componentSurface,
+    'settings',
+  )
+  const statusComponentSurface = p7WorkspaceComponentHostProjection(
+    props.componentSurface,
+    'status',
+  )
+  const componentHostRegion =
+    editorComponentSurface.status !== 'idle'
+      ? 'editor'
+      : sidebarComponentSurface.status !== 'idle'
+        ? 'sidebar'
+        : settingsComponentSurface.status !== 'idle'
+          ? 'settings'
+          : statusComponentSurface.status !== 'idle'
+            ? 'status'
+            : null
 
   useEffect(() => {
     if (activeProfile === null) return
@@ -500,6 +538,40 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
       })
     })
   }, [activeProfile, props.workspaceId])
+
+  useEffect(() => {
+    const surfaceKey =
+      componentHostRegion !== null &&
+      props.componentSurface.status === 'ready' &&
+      props.componentSurface.surface !== null
+        ? `${props.workspaceId}:${componentHostRegion}:${props.componentSurface.surface.operationId}`
+        : componentHostRegion === 'editor' && props.componentSurface.status === 'safe-mode'
+          ? `${props.workspaceId}:editor:safe-mode:${props.componentSurface.safeModeReason ?? 'unknown'}`
+          : null
+    if (surfaceKey === null) {
+      const previousSurfaceKey = openedComponentSurfaceRef.current
+      openedComponentSurfaceRef.current = null
+      if (previousSurfaceKey === null) return
+      setScopedUi((scopedCurrent) => {
+        const current = p7WorkspaceShellUiProjection(scopedCurrent, props.workspaceId)
+        const next = closeP7WorkspaceComponentHost(current)
+        return next === current
+          ? scopedCurrent
+          : createP7WorkspaceShellUiState(props.workspaceId, next)
+      })
+      return
+    }
+    if (openedComponentSurfaceRef.current === surfaceKey) return
+    openedComponentSurfaceRef.current = surfaceKey
+    if (componentHostRegion === null) return
+    setScopedUi((scopedCurrent) => {
+      const current = p7WorkspaceShellUiProjection(scopedCurrent, props.workspaceId)
+      return createP7WorkspaceShellUiState(
+        props.workspaceId,
+        openP7WorkspaceComponentHost(current, componentHostRegion),
+      )
+    })
+  }, [componentHostRegion, props.componentSurface, props.workspaceId])
 
   const presence = useMemo(() => {
     // P7.1 unlocks Code only while an Owner-selected native authorization is
@@ -662,6 +734,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           <P7Sidebar
             activity={ui.activity}
             {...props}
+            componentSurface={sidebarComponentSurface}
             onOpenWorkspaceFile={(path) => {
               props.onOpenWorkspaceFile(path)
               updateUi(setP7CenterView(ui, 'code'))
@@ -684,6 +757,8 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           eventLog={props.eventLog}
           outputLines={props.outputLines}
           workspaceFiles={props.workspaceFiles}
+          componentSurface={editorComponentSurface}
+          settingsComponentSurface={settingsComponentSurface}
           settings={props}
           workspaceBriefEnabled={slotEnabled('workspace.brief')}
           hideBottomPanel={!bottomPanelVisible}
@@ -721,6 +796,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
         onOpenOmnia={() => updateUi(expandP7Omnia(ui))}
         onZoomChange={props.onZoomChange}
         zoom={props.zoom}
+        componentSurface={statusComponentSurface}
       />
       {paletteOpen && (
         <div

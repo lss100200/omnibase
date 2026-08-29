@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Boxes,
   ChevronDown,
   ChevronUp,
   FileCode2,
@@ -29,7 +30,9 @@ import {
   type P7DataSourcePresence,
   type P7ShellUiState,
 } from '@/lib/p7-workbench-shell'
+import type { P7WorkspaceComponentSurfaceProjection } from '@/lib/p7-workspace-components'
 import { p7WorkspaceFileErrorMessage, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
+import { P7ComponentSurface } from './p7-component-surface'
 import { P7SettingsCenter, type P7SettingsCenterProps } from './p7-settings-center'
 
 function invocationStatusLabel(status: string): string {
@@ -410,18 +413,30 @@ export function P7Editor(props: {
   readonly outputLines: readonly string[]
   readonly workspaceFiles: P7WorkspaceFilesState
   readonly settings: P7SettingsCenterProps
+  readonly componentSurface: P7WorkspaceComponentSurfaceProjection
+  readonly settingsComponentSurface: P7WorkspaceComponentSurfaceProjection
   readonly workspaceBriefEnabled: boolean
   readonly hideBottomPanel: boolean
 }) {
   const views: readonly P7CenterView[] =
     props.ui.centerView === 'settings'
       ? ['settings']
-      : ['transcript', ...(props.workspaceBriefEnabled ? (['brief'] as const) : []), 'code', 'diff']
+      : [
+          'transcript',
+          ...(props.workspaceBriefEnabled ? (['brief'] as const) : []),
+          'code',
+          'diff',
+          ...(props.componentSurface.status === 'ready' ||
+          props.componentSurface.status === 'safe-mode'
+            ? (['component'] as const)
+            : []),
+        ]
   const viewIcons: Record<P7CenterView, LucideIcon> = {
     transcript: MessageSquare,
     brief: NotebookPen,
     code: FileCode2,
     diff: GitCompareArrows,
+    component: Boxes,
     settings: Settings,
   }
   return (
@@ -465,9 +480,13 @@ export function P7Editor(props: {
         )}
         {props.ui.centerView === 'code' && <P7CodeView files={props.workspaceFiles} />}
         {props.ui.centerView === 'diff' && <P7UnavailableView title="审阅变更" />}
+        {props.ui.centerView === 'component' && (
+          <P7ComponentSurface projection={props.componentSurface} />
+        )}
         {props.ui.centerView === 'settings' && (
           <P7SettingsCenter
             {...props.settings}
+            componentSurface={props.settingsComponentSurface}
             onClose={() =>
               props.onUiChange({
                 ...props.ui,

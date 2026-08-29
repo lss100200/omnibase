@@ -1,5 +1,10 @@
 # P7.3 Complete Workspace Hot-Plug Platform
 
+Status: source implementation and local source gates complete from accepted
+`main@5ca173a741aca2e176f36f1f1869234bba8deb5b`; source commit identity and
+installed-product evidence are still pending. Production acceptance is not
+signed off.
+
 ## 1. Status and delivery rule
 
 P7.3 is the single implementation phase for the complete personal Workspace

@@ -2626,3 +2626,33 @@ MCP/Skill execution and Sandbox activation remain unavailable. The auxiliary
 ebook may inform a future trusted read-only adapter, but its wildcard messages,
 unauthenticated reimport, hard-coded paths and local self-install launcher are
 not an admitted P7.2 capability.
+
+## P7.3 unified Workspace component lifecycle
+
+Read INV-088 and `docs/architecture/p7-3-workspace-hot-plug-platform.md` before
+changing the component registry, manifest parser, package inventory, dependency
+graph, Owner review, installation generations, grants/budgets, leases/fencing,
+runtime broker, family adapters, Settings management, emergency stop or
+reconciliation.
+
+P7.3 uses one immutable registry and one Workspace-scoped lifecycle for
+declarative UI, instruction Skills, MCP, Sandbox workloads and trusted local
+adapters. Family code is an adapter behind the same proposal, exact Owner
+decision, binding generation, runtime identity, grant, lease, budget, effect
+journal, health and audit contracts. Do not add a family-specific installer,
+direct renderer/native bridge or separate authority model.
+
+The only external execution sequence is a durable budget reservation and
+authorization, one bounded source-owned adapter call outside the database
+transaction, then an exact receipt settlement. Unknown or ambiguous dispatch
+requires explicit reconciliation and is never auto-retried. Revocation and
+emergency stop deny in durable state first, fence both workload and network
+authority, then quiesce/kill. Core standard-workbench, Settings, Audit and
+recovery surfaces are not component-owned and must survive every failure.
+
+The renderer receives logical component/Workspace/Slot/operation IDs, bounded
+validated projections and digests only. It never receives raw grants, secrets,
+physical roots, database locators, arbitrary URLs/commands, stdio or process
+handles. P7.4 may expand compatibility, load, polish, signing and distribution
+evidence; a missing family, lifecycle transition, permission, revocation or
+recovery path is an incomplete P7.3, not P7.4 scope.

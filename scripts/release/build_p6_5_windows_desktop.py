@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import stat
 import subprocess
+import tarfile
 from pathlib import Path
 from typing import Callable, NamedTuple, Sequence
 
@@ -34,6 +36,10 @@ ENGINEERING_CONFIRMATION = "I_UNDERSTAND_THIS_IS_AN_UNSIGNED_ENGINEERING_BUILD"
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_COMPILED_TRUST_PIN = re.compile(
+    r'^exports\.PINNED_RUNTIME_MANIFEST_SHA256 = "([0-9a-f]{64})";$',
+    re.MULTILINE,
+)
 _REPARSE_FLAG = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 _INSTALLER_SOURCE_FILES = (
     "bundle/Bundle.wxs",
@@ -43,6 +49,11 @@ _INSTALLER_SOURCE_FILES = (
     "tools/validate_payload.py",
 )
 _MAX_INSTALLER_SOURCE_FILE_BYTES = 1024 * 1024
+_MAX_SOURCE_FILES = 32_768
+_MAX_SOURCE_FILE_BYTES = 256 * 1024 * 1024
+_MAX_SOURCE_TREE_BYTES = 2 * 1024 * 1024 * 1024
+_TRUST_TOKEN = "__OMNIBASE_RUNTIME_MANIFEST_SHA256__"
+_TRUSTED_MANIFEST_MEMBER = str(Path("dist") / "runtime" / "trusted-manifest.js")
 
 
 class DesktopReleaseError(ValueError):
@@ -254,6 +265,149 @@ def _repository_state(repository: Path) -> RepositoryState:
     return RepositoryState(head, status)
 
 
+def _extract_source_archive(archive: Path, destination: Path) -> str:
+    archive_file = _ordinary_file(
+        archive, code="desktop_release_source_archive_invalid"
+    )
+    target_root = _ordinary_directory(
+        destination, exists=False, code="desktop_release_source_snapshot_invalid"
+    )
+    try:
+        target_root.mkdir()
+    except OSError:
+        raise DesktopReleaseError(
+            "desktop_release_source_snapshot_create_failed"
+        ) from None
+
+    records: list[tuple[str, int, str]] = []
+    folded: set[str] = set()
+    total_bytes = 0
+    member_count = 0
+    try:
+        with tarfile.open(archive_file, mode="r:") as bundle:
+            for member in bundle:
+                member_count += 1
+                if member_count > _MAX_SOURCE_FILES * 2:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_budget_exceeded"
+                    )
+                relative = member.name.rstrip("/")
+                if (
+                    not relative
+                    or "\\" in relative
+                    or ":" in relative
+                    or relative.startswith("/")
+                    or any(part in {"", ".", ".."} for part in relative.split("/"))
+                ):
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_path_invalid"
+                    )
+                key = relative.casefold()
+                if key in folded:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_duplicate"
+                    )
+                folded.add(key)
+                target = target_root.joinpath(*relative.split("/"))
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if (
+                    not member.isreg()
+                    or member.size < 0
+                    or member.size > _MAX_SOURCE_FILE_BYTES
+                ):
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_member_invalid"
+                    )
+                if len(records) >= _MAX_SOURCE_FILES:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_budget_exceeded"
+                    )
+                total_bytes += member.size
+                if total_bytes > _MAX_SOURCE_TREE_BYTES:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_budget_exceeded"
+                    )
+                source = bundle.extractfile(member)
+                if source is None:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_member_invalid"
+                    )
+                target.parent.mkdir(parents=True, exist_ok=True)
+                digest = hashlib.sha256()
+                written = 0
+                with source, target.open("xb") as output:
+                    while chunk := source.read(1024 * 1024):
+                        written += len(chunk)
+                        if written > member.size:
+                            raise DesktopReleaseError(
+                                "desktop_release_source_archive_member_changed"
+                            )
+                        digest.update(chunk)
+                        output.write(chunk)
+                if written != member.size:
+                    raise DesktopReleaseError(
+                        "desktop_release_source_archive_member_changed"
+                    )
+                if member.mode & 0o111:
+                    target.chmod(0o755)
+                records.append((relative, written, digest.hexdigest()))
+    except DesktopReleaseError:
+        raise
+    except (OSError, tarfile.TarError):
+        raise DesktopReleaseError("desktop_release_source_archive_invalid") from None
+    if not records:
+        raise DesktopReleaseError("desktop_release_source_archive_empty")
+    canonical = b"".join(
+        relative.encode("utf-8")
+        + b"\0"
+        + str(size).encode("ascii")
+        + b"\0"
+        + digest.encode("ascii")
+        + b"\n"
+        for relative, size, digest in sorted(records)
+    )
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _materialize_head_snapshot(
+    repository: Path, head: str, archive: Path, destination: Path
+) -> str:
+    if _COMMIT.fullmatch(head) is None:
+        raise DesktopReleaseError("desktop_release_git_head_invalid")
+    command = [
+        "git",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=",
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "diff.external=",
+        "-c",
+        "credential.helper=",
+        "-C",
+        str(repository),
+        "archive",
+        "--format=tar",
+        f"--output={archive}",
+        head,
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            timeout=120,
+            env=_git_environment(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise DesktopReleaseError("desktop_release_git_archive_failed") from None
+    return _extract_source_archive(archive, destination)
+
+
 def _validate_source_mode(
     state: RepositoryState, source_mode: str, engineering_confirmation: str | None
 ) -> None:
@@ -462,6 +616,212 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_component_bundle(
+    source_root: Path, bundle_root: Path
+) -> dict[str, object]:
+    validator_path = source_root / "scripts/release/export_p7_3_component_bundles.py"
+    spec = importlib.util.spec_from_file_location(
+        "omnibase_p73_release_component_bundle_validator", validator_path
+    )
+    if spec is None or spec.loader is None:
+        raise DesktopReleaseError("desktop_release_component_bundle_invalid")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        report = module.validate_component_bundle(bundle_root)
+    except Exception as exc:
+        raise DesktopReleaseError("desktop_release_component_bundle_invalid") from exc
+    if (
+        not isinstance(report, dict)
+        or set(report)
+        != {
+            "bundle_sha256",
+            "file_count",
+            "output_bytes",
+            "package_count",
+            "tree_sha256",
+        }
+        or report["package_count"] != 10
+        or type(report["file_count"]) is not int
+        or type(report["output_bytes"]) is not int
+        or not isinstance(report["bundle_sha256"], str)
+        or _SHA256.fullmatch(report["bundle_sha256"]) is None
+        or not isinstance(report["tree_sha256"], str)
+        or _SHA256.fullmatch(report["tree_sha256"]) is None
+    ):
+        raise DesktopReleaseError("desktop_release_component_bundle_invalid")
+    return report
+
+
+def _verify_manifest_pin_file(
+    path: Path, *, expected_sha256: str, code: str
+) -> dict[str, object]:
+    if _SHA256.fullmatch(expected_sha256) is None:
+        raise DesktopReleaseError(code)
+    source = _ordinary_file(path, code=code)
+    if source.stat().st_size > 2 * 1024 * 1024:
+        raise DesktopReleaseError(code)
+    try:
+        raw = source.read_bytes()
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise DesktopReleaseError(code) from None
+    if (
+        _TRUST_TOKEN in text
+        or text.count(expected_sha256) != 1
+        or _COMPILED_TRUST_PIN.findall(text) != [expected_sha256]
+    ):
+        raise DesktopReleaseError(code)
+    return {
+        "file_sha256": hashlib.sha256(raw).hexdigest(),
+        "manifest_sha256": expected_sha256,
+        "placeholder_absent": True,
+    }
+
+
+def _asar_library(staged_desktop: Path) -> Path:
+    candidates = list(
+        (staged_desktop / "node_modules/.pnpm").glob(
+            "@electron+asar@*/node_modules/@electron/asar/lib/asar.js"
+        )
+    )
+    if len(candidates) != 1:
+        raise DesktopReleaseError("desktop_release_asar_library_invalid")
+    # pnpm's content-addressed store legitimately hardlinks package bytes.
+    return _built_output_file(
+        candidates[0], code="desktop_release_asar_library_invalid"
+    )
+
+
+def _verify_packaged_asar_manifest_pin(
+    *,
+    runner: RunCommand,
+    node: Path,
+    staged_desktop: Path,
+    app_asar: Path,
+    output: Path,
+    cwd: Path,
+    environment: dict[str, str],
+    expected_sha256: str,
+) -> dict[str, object]:
+    asar = _ordinary_file(app_asar, code="desktop_release_app_asar_invalid")
+    library = _asar_library(staged_desktop)
+    if output.exists() or output.is_symlink():
+        raise DesktopReleaseError("desktop_release_asar_extract_output_invalid")
+    script = (
+        "import {pathToFileURL} from 'node:url';"
+        "import {writeFileSync} from 'node:fs';"
+        "const loaded=await import(pathToFileURL(process.argv[1]).href);"
+        "const extractFile=loaded.extractFile??loaded.default?.extractFile;"
+        "if(typeof extractFile!=='function')throw new Error('asar_api_invalid');"
+        "writeFileSync(process.argv[4],extractFile(process.argv[2],process.argv[3]));"
+    )
+    runner(
+        "asar-manifest-extract",
+        [
+            str(node),
+            "--input-type=module",
+            "--eval",
+            script,
+            str(library),
+            str(asar),
+            _TRUSTED_MANIFEST_MEMBER,
+            str(output),
+        ],
+        cwd,
+        environment,
+        120,
+        False,
+    )
+    return _verify_manifest_pin_file(
+        output,
+        expected_sha256=expected_sha256,
+        code="desktop_release_packaged_manifest_pin_invalid",
+    )
+
+
+def _component_runtime_report(
+    runtime_manifest: Path, *, expected_bundle: dict[str, object] | None
+) -> dict[str, object] | None:
+    """Project the digest-pinned component closed set from the runtime manifest."""
+
+    manifest_path = _ordinary_file(
+        runtime_manifest,
+        code="desktop_release_runtime_manifest_invalid",
+    )
+    if manifest_path.stat().st_size > 1024 * 1024:
+        raise DesktopReleaseError("desktop_release_runtime_manifest_invalid")
+    try:
+        value = json.loads(manifest_path.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise DesktopReleaseError("desktop_release_runtime_manifest_invalid") from None
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"schemaVersion", "entrypoint", "files"}
+        or value["schemaVersion"] != 1
+        or not isinstance(value["files"], list)
+    ):
+        raise DesktopReleaseError("desktop_release_runtime_manifest_invalid")
+
+    components: list[tuple[str, int, str]] = []
+    folded_paths: set[str] = set()
+    for item in value["files"]:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "size", "sha256"}
+            or not isinstance(item["path"], str)
+            or type(item["size"]) is not int
+            or item["size"] < 0
+            or not isinstance(item["sha256"], str)
+            or _SHA256.fullmatch(item["sha256"]) is None
+        ):
+            raise DesktopReleaseError("desktop_release_runtime_manifest_invalid")
+        if not item["path"].startswith("components/"):
+            continue
+        relative = item["path"].removeprefix("components/")
+        if (
+            not relative
+            or "\\" in relative
+            or relative.startswith("/")
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+        ):
+            raise DesktopReleaseError("desktop_release_component_bundle_invalid")
+        folded = relative.casefold()
+        if folded in folded_paths:
+            raise DesktopReleaseError("desktop_release_component_bundle_invalid")
+        folded_paths.add(folded)
+        components.append((relative, item["size"], item["sha256"]))
+
+    if not components:
+        if expected_bundle is not None:
+            raise DesktopReleaseError("desktop_release_component_bundle_empty")
+        return None
+    if expected_bundle is None:
+        raise DesktopReleaseError("desktop_release_component_bundle_unexpected")
+    ordered = sorted(components, key=lambda item: (item[0].casefold(), item[0]))
+    canonical = b"".join(
+        path.encode("utf-8")
+        + b"\0"
+        + str(size).encode("ascii")
+        + b"\0"
+        + digest.encode("ascii")
+        + b"\n"
+        for path, size, digest in ordered
+    )
+    report = {
+        "file_count": len(ordered),
+        "total_bytes": sum(size for _, size, _ in ordered),
+        "tree_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+    if (
+        report["file_count"] != expected_bundle.get("file_count")
+        or report["total_bytes"] != expected_bundle.get("output_bytes")
+        or report["tree_sha256"] != expected_bundle.get("tree_sha256")
+    ):
+        raise DesktopReleaseError("desktop_release_component_bundle_changed")
+    return report
+
+
 def _final_installer_artifact(root: Path, project: str, name: str, suffix: str) -> Path:
     if (
         project not in {"bundle", "package"}
@@ -526,6 +886,7 @@ def build_windows_desktop(
     backend_python: Path,
     node_executable: Path,
     electron_zip: Path,
+    component_bundle_dir: Path | None = None,
     version: str = APPLICATION_VERSION,
     source_mode: str = "clean-release",
     engineering_confirmation: str | None = None,
@@ -563,14 +924,40 @@ def build_windows_desktop(
     )
     if electron_archive.name != ELECTRON_ZIP_NAME:
         raise DesktopReleaseError("desktop_release_electron_zip_name_invalid")
+    component_bundle = (
+        None
+        if component_bundle_dir is None
+        else _ordinary_directory(
+            component_bundle_dir,
+            exists=True,
+            code="desktop_release_component_bundle_invalid",
+        )
+    )
     corepack = _ordinary_file(
         node.parent / "corepack.cmd",
         code="desktop_release_corepack_executable_invalid",
     )
     initial_state = _repository_state(repository)
     _validate_source_mode(initial_state, source_mode, engineering_confirmation)
+    if source_mode == "clean-release" and component_bundle is None:
+        raise DesktopReleaseError("desktop_release_clean_component_bundle_required")
 
     artifacts.mkdir()
+    source_tree_sha256: str | None = None
+    build_source = repository
+    if source_mode == "clean-release":
+        build_source = artifacts / "source-head"
+        source_tree_sha256 = _materialize_head_snapshot(
+            repository,
+            initial_state.head,
+            artifacts / "source-head.tar",
+            build_source,
+        )
+    component_input_report = (
+        None
+        if component_bundle is None
+        else _validate_component_bundle(build_source, component_bundle)
+    )
     node_input = artifacts / "node-input"
     node_input.mkdir()
     runtime_node = node_input / NODE_EXECUTABLE_NAME
@@ -589,10 +976,10 @@ def build_windows_desktop(
         expected_sha256=ELECTRON_ZIP_SHA256,
     )
     environment = _safe_environment(artifacts)
-    frontend = repository / "frontend"
-    desktop = repository / "desktop"
-    runtime_host = repository / "packaging/windows/OmniBase.RuntimeHost"
-    runtime_host_tests = repository / "packaging/windows/OmniBase.RuntimeHost.Tests"
+    frontend = build_source / "frontend"
+    desktop = build_source / "desktop"
+    runtime_host = build_source / "packaging/windows/OmniBase.RuntimeHost"
+    runtime_host_tests = build_source / "packaging/windows/OmniBase.RuntimeHost.Tests"
     for source in (frontend, desktop, runtime_host, runtime_host_tests):
         _ordinary_directory(
             source, exists=True, code="desktop_release_source_directory_invalid"
@@ -602,7 +989,7 @@ def build_windows_desktop(
         runner,
         name="dotnet",
         command=[str(dotnet), "--version"],
-        cwd=repository,
+        cwd=build_source,
         environment=environment,
         expected=EXPECTED_DOTNET_SDK,
     )
@@ -610,7 +997,7 @@ def build_windows_desktop(
         runner,
         name="node",
         command=[str(runtime_node), "--version"],
-        cwd=repository,
+        cwd=build_source,
         environment=environment,
         expected=EXPECTED_NODE_VERSION,
     )
@@ -618,7 +1005,7 @@ def build_windows_desktop(
         runner,
         name="python",
         command=[str(python), "--version"],
-        cwd=repository,
+        cwd=build_source,
         environment=environment,
         expected=f"Python {EXPECTED_PYTHON_VERSION}",
     )
@@ -678,17 +1065,17 @@ def build_windows_desktop(
         [
             str(python),
             str(
-                repository
+                build_source
                 / "packaging/windows/OmniBase.DesktopBackend/build_backend.py"
             ),
             "--repo-root",
-            str(repository),
+            str(build_source),
             "--dist-dir",
             str(backend_dist),
             "--work-dir",
             str(backend_work),
         ],
-        repository,
+        build_source,
         environment,
         900,
         False,
@@ -704,7 +1091,7 @@ def build_windows_desktop(
             "-c",
             "Release",
         ],
-        repository,
+        build_source,
         environment,
         600,
         False,
@@ -726,7 +1113,7 @@ def build_windows_desktop(
             "-o",
             str(runtime_publish),
         ],
-        repository,
+        build_source,
         environment,
         900,
         False,
@@ -738,33 +1125,36 @@ def build_windows_desktop(
         expected_sha256=NODE_EXECUTABLE_SHA256,
     )
     payload = artifacts / "payload"
+    payload_command = [
+        str(python),
+        str(build_source / "scripts/release/build_p6_5_desktop_payload.py"),
+        "--frontend-standalone-dir",
+        str(frontend / ".next/standalone"),
+        "--frontend-static-dir",
+        str(frontend / ".next/static"),
+        "--frontend-public-dir",
+        str(frontend / "public"),
+        "--desktop-dist-dir",
+        str(desktop / "dist"),
+        "--runtime-host-publish-dir",
+        str(runtime_publish),
+        "--backend-publish-dir",
+        str(backend_dist / "OmniBase.Desktop.Backend"),
+        "--node-executable",
+        str(runtime_node),
+        "--desktop-project-dir",
+        str(desktop),
+        "--output-dir",
+        str(payload),
+        "--application-version",
+        version,
+    ]
+    if component_bundle is not None:
+        payload_command.extend(["--component-bundle-dir", str(component_bundle)])
     runner(
         "payload-build",
-        [
-            str(python),
-            str(repository / "scripts/release/build_p6_5_desktop_payload.py"),
-            "--frontend-standalone-dir",
-            str(frontend / ".next/standalone"),
-            "--frontend-static-dir",
-            str(frontend / ".next/static"),
-            "--frontend-public-dir",
-            str(frontend / "public"),
-            "--desktop-dist-dir",
-            str(desktop / "dist"),
-            "--runtime-host-publish-dir",
-            str(runtime_publish),
-            "--backend-publish-dir",
-            str(backend_dist / "OmniBase.Desktop.Backend"),
-            "--node-executable",
-            str(runtime_node),
-            "--desktop-project-dir",
-            str(desktop),
-            "--output-dir",
-            str(payload),
-            "--application-version",
-            version,
-        ],
-        repository,
+        payload_command,
+        build_source,
         environment,
         900,
         False,
@@ -774,6 +1164,31 @@ def build_windows_desktop(
         expected_size=NODE_EXECUTABLE_SIZE,
         expected_sha256=NODE_EXECUTABLE_SHA256,
     )
+    component_bundle_report = _component_runtime_report(
+        payload / "runtime/runtime-manifest.json",
+        expected_bundle=component_input_report,
+    )
+    copied_component_report = (
+        None
+        if component_bundle is None
+        else _validate_component_bundle(build_source, payload / "runtime/components")
+    )
+    if component_bundle is not None:
+        current_component_report = _validate_component_bundle(
+            build_source, component_bundle
+        )
+        if (
+            component_input_report != copied_component_report
+            or current_component_report != component_input_report
+            or component_bundle_report is None
+            or component_bundle_report["file_count"]
+            != copied_component_report["file_count"]
+            or component_bundle_report["total_bytes"]
+            != copied_component_report["output_bytes"]
+            or component_bundle_report["tree_sha256"]
+            != copied_component_report["tree_sha256"]
+        ):
+            raise DesktopReleaseError("desktop_release_component_bundle_changed")
 
     staged_desktop = payload / "desktop-build/project"
     runner(
@@ -797,6 +1212,12 @@ def build_windows_desktop(
         environment,
         300,
         False,
+    )
+    runtime_manifest_sha256 = _sha256(payload / "runtime/runtime-manifest.json")
+    staged_pin_report = _verify_manifest_pin_file(
+        staged_desktop / _TRUSTED_MANIFEST_MEMBER,
+        expected_sha256=runtime_manifest_sha256,
+        code="desktop_release_staged_manifest_pin_invalid",
     )
 
     _verify_digest_bound_file(
@@ -822,7 +1243,7 @@ def build_windows_desktop(
             "--version",
             version,
         ],
-        repository,
+        build_source,
         environment,
         1800,
         False,
@@ -837,10 +1258,22 @@ def build_windows_desktop(
         expected_size=NODE_EXECUTABLE_SIZE,
         expected_sha256=NODE_EXECUTABLE_SHA256,
     )
+    packaged_pin_report = _verify_packaged_asar_manifest_pin(
+        runner=runner,
+        node=runtime_node,
+        staged_desktop=staged_desktop,
+        app_asar=packaged_app / "resources/app.asar",
+        output=artifacts / "packaged-trusted-manifest.js",
+        cwd=build_source,
+        environment=environment,
+        expected_sha256=runtime_manifest_sha256,
+    )
+    if packaged_pin_report["file_sha256"] != staged_pin_report["file_sha256"]:
+        raise DesktopReleaseError("desktop_release_packaged_manifest_pin_changed")
 
     installer_source = artifacts / "installer-source"
     _copy_installer_source(
-        repository / "packaging/windows/OmniBase.Installer", installer_source
+        build_source / "packaging/windows/OmniBase.Installer", installer_source
     )
     installer_payload = artifacts / "installer-payload"
     staged_payload_report = _parse_payload_report(
@@ -854,7 +1287,7 @@ def build_windows_desktop(
                 "--copy-to",
                 str(installer_payload),
             ],
-            repository,
+            build_source,
             environment,
             900,
             True,
@@ -874,7 +1307,7 @@ def build_windows_desktop(
             f"-p:ProductVersion={version}",
             f"-p:PythonExecutable={python}",
         ],
-        repository,
+        build_source,
         environment,
         1800,
         False,
@@ -888,7 +1321,7 @@ def build_windows_desktop(
                 "--payload-root",
                 str(installer_payload),
             ],
-            repository,
+            build_source,
             environment,
             900,
             True,
@@ -928,6 +1361,7 @@ def build_windows_desktop(
         "source_commit": initial_state.head,
         "source_clean": initial_state.clean,
         "source_mode": source_mode,
+        "source_tree_sha256": source_tree_sha256,
         "node_runtime_input": {
             "name": NODE_EXECUTABLE_NAME,
             "size": NODE_EXECUTABLE_SIZE,
@@ -942,6 +1376,15 @@ def build_windows_desktop(
             "file_count": staged_payload_report["file_count"],
             "total_bytes": staged_payload_report["total_bytes"],
             "tree_sha256": staged_payload_report["tree_sha256"],
+        },
+        "component_bundle": copied_component_report,
+        "runtime_manifest_pin": {
+            "manifest_sha256": runtime_manifest_sha256,
+            "packaged_asar_verified": True,
+            "packaged_member_sha256": packaged_pin_report["file_sha256"],
+            "placeholder_absent": True,
+            "staged_dist_verified": True,
+            "staged_file_sha256": staged_pin_report["file_sha256"],
         },
         "production_ready": False,
         "authenticode_verified": False,
@@ -974,6 +1417,7 @@ def main() -> int:
     parser.add_argument("--backend-python", type=Path, required=True)
     parser.add_argument("--node-executable", type=Path, required=True)
     parser.add_argument("--electron-zip", type=Path, required=True)
+    parser.add_argument("--component-bundle-dir", type=Path)
     parser.add_argument("--version", default=APPLICATION_VERSION)
     parser.add_argument(
         "--source-mode",

@@ -199,9 +199,7 @@ def _start_run(
 
 def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> None:
     with initialized_database(_config(tmp_path).storage) as connection:
-        assert (
-            connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION == 10
-        )
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DESKTOP_SCHEMA_VERSION
         tables = {
             row["name"]: row["sql"]
             for row in connection.execute(
@@ -227,10 +225,11 @@ def test_schema_v3_has_team_tables_without_secret_columns(tmp_path: Path) -> Non
         history = [
             tuple(row)
             for row in connection.execute(
-                "SELECT version, migration_id FROM desktop_migration_history ORDER BY version"
+                "SELECT version, migration_id FROM desktop_migration_history "
+                "WHERE version BETWEEN 3 AND 10 ORDER BY version"
             )
         ]
-        assert history[-8:] == [
+        assert history == [
             (3, "desktop_0003_personal_agent_team"),
             (4, "desktop_0004_personal_team_runtime"),
             (5, "desktop_0005_team_node_identity_epochs"),

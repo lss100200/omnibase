@@ -324,6 +324,23 @@ runtime evidence; then correct the stale documentation in the same change.
   audit and no-auto-replay semantics locally. Arbitrary plugin code/URLs,
   MCP/Skill execution, Sandbox activation, Save/write, Terminal, Git/search and
   automatic approval remain closed.
+- P7.3 is the complete personal Workspace hot-plug platform lane. Read INV-088
+  and `docs/architecture/p7-3-workspace-hot-plug-platform.md` before changing
+  its component manifest, registry, lifecycle, adapters, grants, runtime broker,
+  Settings management or recovery path. One immutable registry and one
+  generation-fenced lifecycle must cover declarative UI, instruction Skills,
+  MCP connectors, Sandbox workloads and source-owned trusted local adapters.
+  The renderer may request one high-level action but never receives package
+  paths, commands, stdio, grant material, native control tokens or process
+  handles. Assistant output is proposal-only; Owner approval binds the exact
+  package, dependency graph, Slot/config Diff and grant set. Every invocation
+  revalidates Workspace, version, runtime identity, grant, revocation, lease,
+  fencing and budget. `pending`, `unknown` and ambiguous external effects enter
+  explicit reconciliation and are never auto-dispatched. Emergency stop must
+  preserve the immutable standard workbench, Settings and Audit while fencing
+  every non-core component. P7.4 may harden and certify this platform; it may
+  not first implement a missing registry, family adapter, permission,
+  lifecycle, revocation or recovery path.
 
 ## Safe change workflow
 

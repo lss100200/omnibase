@@ -57,6 +57,28 @@ import type {
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
+  DesktopWorkspaceComponentActionResult,
+  DesktopWorkspaceComponentAssistantProposalInput,
+  DesktopWorkspaceComponentNativeActionInput,
+  DesktopWorkspaceComponentPackageAttestationInput,
+  DesktopWorkspaceComponentPackageAttestationResult,
+  DesktopWorkspaceComponentOwnerPackageRegisterInput,
+  DesktopWorkspaceComponentOwnerPackageRegistration,
+  DesktopWorkspaceComponentBeginInput,
+  DesktopWorkspaceComponentBeginResult,
+  DesktopWorkspaceComponentDecisionInput,
+  DesktopWorkspaceComponentDecisionResult,
+  DesktopWorkspaceComponentNativeEmergencyStopInput,
+  DesktopWorkspaceComponentNativeEmergencyStopResult,
+  DesktopWorkspaceComponentProposalResult,
+  DesktopWorkspaceComponentProposeInput,
+  DesktopWorkspaceComponentReconcileInput,
+  DesktopWorkspaceComponentReconcileResult,
+  DesktopWorkspaceComponentRecoverySettleInput,
+  DesktopWorkspaceComponentRecoverySettleResult,
+  DesktopWorkspaceComponentSettleInput,
+  DesktopWorkspaceComponentSettleResult,
+  DesktopWorkspaceComponentSnapshot,
   PersonalEmployeeId,
   PersonalTeamBlackboard,
   SpecialistEmployeeId,
@@ -68,6 +90,24 @@ import {
   SPECIALIST_EMPLOYEE_IDS,
   type EmployeeTeamReport,
 } from "../shared/personal-team.ts";
+import {
+  WORKSPACE_COMPONENT_LIFECYCLE_ACTIONS,
+  WORKSPACE_COMPONENT_OPERATIONS,
+} from "../shared/workspace-components.ts";
+import {
+  parseWorkspaceComponentActionResult,
+  parseWorkspaceComponentBeginResult,
+  parseWorkspaceComponentDecisionResult,
+  parseWorkspaceComponentEmergencyStopPrepareResult,
+  parseWorkspaceComponentEmergencyStopSettleResult,
+  parseWorkspaceComponentPackageAttestationResult,
+  parseWorkspaceComponentOwnerPackageRegistration,
+  parseWorkspaceComponentProposalResult,
+  parseWorkspaceComponentReconcileResult,
+  parseWorkspaceComponentRecoverySettleResult,
+  parseWorkspaceComponentSettleResult,
+  parseWorkspaceComponentSnapshot,
+} from "./native-workspace-components.ts";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/u;
 const ERROR_CODE_PATTERN = /^[a-z][a-z0-9_]{2,95}$/u;
@@ -85,6 +125,16 @@ const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
 const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const TEAM_REV_ID_PATTERN = /^teamrev_[a-f0-9]{32}$/u;
 const COMPOSITION_PROPOSAL_ID_PATTERN = /^proposal_[a-f0-9]{32}$/u;
+const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9.-]{2,127}$/u;
+const COMPONENT_OPERATION_ID_PATTERN = /^compop_[a-f0-9]{32}$/u;
+const COMPONENT_EFFECT_ID_PATTERN = /^effect_[a-f0-9]{32}$/u;
+const COMPONENT_RECOVERY_ID_PATTERN = /^recovery_[a-f0-9]{32}$/u;
+const COMPONENT_RUNTIME_ID_PATTERN = /^runtime_[a-f0-9]{32}$/u;
+const COMPONENT_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
+const COMPONENT_ACTIONS = new Set<string>(
+  WORKSPACE_COMPONENT_LIFECYCLE_ACTIONS,
+);
+const COMPONENT_OPERATIONS = new Set<string>(WORKSPACE_COMPONENT_OPERATIONS);
 const COMPOSITION_ROLLBACK_REFERENCE_PATTERN = /^revision:([1-9][0-9]*)$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const EMPLOYEE_ROLE_SET = new Set<string>(PERSONAL_EMPLOYEE_IDS);
@@ -234,6 +284,64 @@ export interface DesktopTeamParentCallRecord {
   readonly updatedAt: string;
 }
 
+function componentGrantBody(
+  grant: DesktopWorkspaceComponentProposeInput["requestedGrants"][number],
+): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    action: grant.action,
+    logical_resource_id: grant.logicalResourceId,
+    resource_version: grant.resourceVersion,
+    logical_service_id: grant.logicalServiceId,
+    expires_in_seconds: grant.expiresInSeconds,
+    maximum_invocations: grant.maximumInvocations,
+    maximum_bytes_in: grant.maximumBytesIn,
+    maximum_bytes_out: grant.maximumBytesOut,
+    maximum_tokens: grant.maximumTokens,
+    maximum_wall_time_ms: grant.maximumWallTimeMs,
+    maximum_cost_units: grant.maximumCostUnits,
+  });
+}
+
+function componentBaseIdentityValid(input: {
+  readonly workspaceId: string;
+  readonly componentId: string;
+  readonly expectedRevision: number;
+  readonly manifestSha256: string;
+  readonly packageSha256: string;
+  readonly idempotencyKey: string;
+}): boolean {
+  return (
+    WORKSPACE_ID_PATTERN.test(input.workspaceId) &&
+    COMPONENT_ID_PATTERN.test(input.componentId) &&
+    isNonNegativeInteger(input.expectedRevision) &&
+    SHA256_PATTERN.test(input.manifestSha256) &&
+    SHA256_PATTERN.test(input.packageSha256) &&
+    isBoundedString(input.idempotencyKey, 128) &&
+    input.idempotencyKey.length >= 8
+  );
+}
+
+function componentGrantValid(
+  grant: DesktopWorkspaceComponentProposeInput["requestedGrants"][number],
+): boolean {
+  return (
+    isBoundedString(grant.action, 128) &&
+    (grant.logicalResourceId === null ||
+      isBoundedString(grant.logicalResourceId, 128)) &&
+    (grant.resourceVersion === null ||
+      isPositiveInteger(grant.resourceVersion)) &&
+    (grant.logicalServiceId === null ||
+      isBoundedString(grant.logicalServiceId, 128)) &&
+    isPositiveInteger(grant.expiresInSeconds) &&
+    isPositiveInteger(grant.maximumInvocations) &&
+    isNonNegativeInteger(grant.maximumBytesIn) &&
+    isNonNegativeInteger(grant.maximumBytesOut) &&
+    isNonNegativeInteger(grant.maximumTokens) &&
+    isPositiveInteger(grant.maximumWallTimeMs) &&
+    isPositiveInteger(grant.maximumCostUnits)
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -260,6 +368,14 @@ function isNullableNonNegativeInteger(value: unknown): value is number | null {
     value === null ||
     (typeof value === "number" && Number.isInteger(value) && value >= 0)
   );
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 1;
 }
 
 function failure<T>(code: string): DesktopOperationResult<T> {
@@ -2894,6 +3010,497 @@ export class DesktopNativeClient {
         return result.profile.workspaceId === input.workspaceId &&
           result.profile.proposalId === input.proposalId
           ? result
+          : null;
+      },
+    );
+  }
+
+  getWorkspaceComponents(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>> {
+    if (!WORKSPACE_ID_PATTERN.test(input.workspaceId)) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "GET",
+      `/desktop/v1/workspaces/${input.workspaceId}/components`,
+      undefined,
+      (value) => {
+        const parsed = parseWorkspaceComponentSnapshot(value);
+        return parsed?.workspaceId === input.workspaceId ? parsed : null;
+      },
+    );
+  }
+
+  attestWorkspaceComponentPackage(
+    input: DesktopWorkspaceComponentPackageAttestationInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentPackageAttestationResult>
+  > {
+    if (
+      !COMPONENT_ID_PATTERN.test(input.componentId) ||
+      !COMPONENT_VERSION_PATTERN.test(input.version) ||
+      !SHA256_PATTERN.test(input.policyManifestSha256) ||
+      !SHA256_PATTERN.test(input.manifestSha256) ||
+      !SHA256_PATTERN.test(input.packageSha256) ||
+      !SHA256_PATTERN.test(input.inventorySha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      "/desktop/v1/components/catalog/attest",
+      {
+        component_id: input.componentId,
+        version: input.version,
+        adapter_id: input.adapterId,
+        policy_manifest_sha256: input.policyManifestSha256,
+        manifest_sha256: input.manifestSha256,
+        package_sha256: input.packageSha256,
+        inventory_sha256: input.inventorySha256,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentPackageAttestationResult(value);
+        return parsed !== null &&
+          parsed.componentId === input.componentId &&
+          parsed.version === input.version &&
+          parsed.adapterId === input.adapterId &&
+          parsed.policyManifestSha256 === input.policyManifestSha256 &&
+          parsed.manifestSha256 === input.manifestSha256 &&
+          parsed.packageSha256 === input.packageSha256 &&
+          parsed.inventorySha256 === input.inventorySha256
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  registerOwnerWorkspaceComponentPackage(
+    input: DesktopWorkspaceComponentOwnerPackageRegisterInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageRegistration>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !SHA256_PATTERN.test(input.manifestSha256) ||
+      !SHA256_PATTERN.test(input.packageSha256) ||
+      !SHA256_PATTERN.test(input.inventorySha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/catalog/register-owner-package`,
+      {
+        manifest: input.manifest,
+        manifest_sha256: input.manifestSha256,
+        package_sha256: input.packageSha256,
+        inventory_sha256: input.inventorySha256,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentOwnerPackageRegistration(value);
+        return parsed !== null &&
+          parsed.manifestSha256 === input.manifestSha256 &&
+          parsed.packageSha256 === input.packageSha256
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  proposeWorkspaceComponent(
+    input: DesktopWorkspaceComponentProposeInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>> {
+    if (
+      !componentBaseIdentityValid({
+        ...input,
+        manifestSha256: "0".repeat(64),
+        packageSha256: "0".repeat(64),
+      }) ||
+      !COMPONENT_VERSION_PATTERN.test(input.targetVersion) ||
+      !COMPONENT_ACTIONS.has(input.changeKind) ||
+      input.requestedGrants.length > 64 ||
+      input.requestedGrants.some((grant) => !componentGrantValid(grant)) ||
+      input.desiredSlotBindings.length > 64 ||
+      input.dependencyGraph.length > 64
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/proposals`,
+      {
+        component_id: input.componentId,
+        target_version: input.targetVersion,
+        change_kind: input.changeKind,
+        expected_revision: input.expectedRevision,
+        requested_grants: input.requestedGrants.map(componentGrantBody),
+        desired_configuration: input.desiredConfiguration,
+        desired_slot_bindings: input.desiredSlotBindings.map((binding) => ({
+          slot_id: binding.slotId,
+          binding_key: binding.bindingKey,
+          order_index: binding.orderIndex,
+          configuration: binding.configuration,
+        })),
+        dependency_graph: input.dependencyGraph.map((dependency) => ({
+          component_id: dependency.componentId,
+          version: dependency.version,
+          policy_manifest_sha256: dependency.policyManifestSha256,
+          manifest_sha256: dependency.manifestSha256,
+          package_sha256: dependency.packageSha256,
+        })),
+        source_kind: "owner",
+        source_reference: null,
+        idempotency_key: input.idempotencyKey,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentProposalResult(value);
+        return parsed?.proposal.workspaceId === input.workspaceId &&
+          parsed.proposal.componentId === input.componentId &&
+          parsed.proposal.sourceKind === "owner" &&
+          parsed.proposal.sourceReference === null
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  proposeWorkspaceComponentFromAssistant(
+    input: DesktopWorkspaceComponentAssistantProposalInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !MESSAGE_ID_PATTERN.test(input.messageId) ||
+      !isBoundedString(input.idempotencyKey, 128) ||
+      input.idempotencyKey.length < 8
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/proposals/from-assistant`,
+      {
+        message_id: input.messageId,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentProposalResult(value);
+        return parsed !== null &&
+          parsed.proposal.workspaceId === input.workspaceId &&
+          parsed.proposal.sourceKind === "assistant" &&
+          parsed.proposal.sourceReference === input.messageId
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  decideWorkspaceComponent(
+    input: DesktopWorkspaceComponentDecisionInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(input.proposalId) ||
+      (input.decision !== "approve" && input.decision !== "reject") ||
+      !SHA256_PATTERN.test(input.requestSha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/proposals/${input.proposalId}/decide`,
+      {
+        decision: input.decision,
+        request_sha256: input.requestSha256,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentDecisionResult(value);
+        return parsed?.workspaceId === input.workspaceId &&
+          parsed.proposalId === input.proposalId &&
+          parsed.requestSha256 === input.requestSha256
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  applyWorkspaceComponentAction(
+    input: DesktopWorkspaceComponentNativeActionInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentActionResult>> {
+    if (
+      !componentBaseIdentityValid(input) ||
+      !COMPONENT_ACTIONS.has(input.action) ||
+      !COMPOSITION_PROPOSAL_ID_PATTERN.test(input.proposalId) ||
+      !SHA256_PATTERN.test(input.requestSha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/actions`,
+      {
+        component_id: input.componentId,
+        action: input.action,
+        proposal_id: input.proposalId,
+        request_sha256: input.requestSha256,
+        expected_revision: input.expectedRevision,
+        manifest_sha256: input.manifestSha256,
+        package_sha256: input.packageSha256,
+        idempotency_key: input.idempotencyKey,
+        phase: input.phase,
+        operation_id: input.operationId,
+        outcome: input.outcome,
+        evidence_sha256: input.evidenceSha256,
+        health_state: input.healthState,
+        runtime_instance_id: input.runtimeInstanceId,
+        workload_identity_digest: input.workloadIdentityDigest,
+        error_code: input.errorCode,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentActionResult(value);
+        return parsed?.operation.workspaceId === input.workspaceId &&
+          parsed.operation.componentId === input.componentId
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  beginWorkspaceComponentInvocation(
+    input: DesktopWorkspaceComponentBeginInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentBeginResult>> {
+    if (
+      !componentBaseIdentityValid(input) ||
+      !COMPONENT_OPERATIONS.has(input.action) ||
+      !SHA256_PATTERN.test(input.argumentsSha256) ||
+      !isPositiveInteger(input.bindingGeneration) ||
+      (input.logicalResourceId !== undefined &&
+        !isBoundedString(input.logicalResourceId, 128)) ||
+      (input.resourceVersion !== undefined &&
+        !isPositiveInteger(input.resourceVersion)) ||
+      (input.logicalServiceId !== undefined &&
+        !isBoundedString(input.logicalServiceId, 128)) ||
+      !isNonNegativeInteger(input.bytesIn) ||
+      !isNonNegativeInteger(input.bytesOutReserved) ||
+      !isNonNegativeInteger(input.tokensReserved) ||
+      !isPositiveInteger(input.wallTimeMs) ||
+      !isNonNegativeInteger(input.costUnits)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/invocations/begin`,
+      {
+        component_id: input.componentId,
+        action: input.action,
+        arguments_sha256: input.argumentsSha256,
+        expected_revision: input.expectedRevision,
+        binding_generation: input.bindingGeneration,
+        manifest_sha256: input.manifestSha256,
+        package_sha256: input.packageSha256,
+        idempotency_key: input.idempotencyKey,
+        logical_resource_id: input.logicalResourceId ?? null,
+        resource_version: input.resourceVersion ?? null,
+        logical_service_id: input.logicalServiceId ?? null,
+        bytes_in: input.bytesIn,
+        bytes_out_reserved: input.bytesOutReserved,
+        tokens_reserved: input.tokensReserved,
+        wall_time_ms: input.wallTimeMs,
+        cost_units: input.costUnits,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentBeginResult(value);
+        return parsed?.ticket.workspaceId === input.workspaceId &&
+          parsed.ticket.componentId === input.componentId &&
+          parsed.ticket.action === input.action &&
+          parsed.ticket.bindingGeneration === input.bindingGeneration
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  settleWorkspaceComponentInvocation(
+    input: DesktopWorkspaceComponentSettleInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentSettleResult>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !COMPONENT_OPERATION_ID_PATTERN.test(input.operationId) ||
+      !SHA256_PATTERN.test(input.requestSha256) ||
+      !["succeeded", "failed", "cancelled", "unknown"].includes(input.state) ||
+      (input.resultSha256 !== undefined &&
+        !SHA256_PATTERN.test(input.resultSha256)) ||
+      !SHA256_PATTERN.test(input.evidenceSha256) ||
+      (input.errorCode !== undefined &&
+        !ERROR_CODE_PATTERN.test(input.errorCode)) ||
+      !isNonNegativeInteger(input.actualBytesOut) ||
+      !isNonNegativeInteger(input.actualTokens) ||
+      !isNonNegativeInteger(input.actualWallTimeMs)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/invocations/${input.operationId}/settle`,
+      {
+        request_sha256: input.requestSha256,
+        state: input.state,
+        result_sha256: input.resultSha256 ?? null,
+        evidence_sha256: input.evidenceSha256,
+        error_code: input.errorCode ?? null,
+        actual_bytes_out: input.actualBytesOut,
+        actual_tokens: input.actualTokens,
+        actual_wall_time_ms: input.actualWallTimeMs,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentSettleResult(value);
+        return parsed?.operation.workspaceId === input.workspaceId &&
+          parsed.operation.operationId === input.operationId &&
+          parsed.operation.requestSha256 === input.requestSha256
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  emergencyStopWorkspaceComponents(
+    input: DesktopWorkspaceComponentNativeEmergencyStopInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentNativeEmergencyStopResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !isBoundedString(input.idempotencyKey, 128) ||
+      input.idempotencyKey.length < 8 ||
+      !ERROR_CODE_PATTERN.test(input.reasonCode) ||
+      (input.phase === "settle" &&
+        (!COMPONENT_ID_PATTERN.test(input.componentId) ||
+          !COMPONENT_OPERATION_ID_PATTERN.test(input.operationId) ||
+          !COMPONENT_EFFECT_ID_PATTERN.test(input.effectId) ||
+          !SHA256_PATTERN.test(input.requestSha256) ||
+          !["succeeded", "failed", "unknown"].includes(input.outcome) ||
+          !SHA256_PATTERN.test(input.evidenceSha256) ||
+          (input.errorCode !== null &&
+            !ERROR_CODE_PATTERN.test(input.errorCode))))
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/emergency-stop`,
+      input.phase === "prepare"
+        ? {
+            phase: "prepare",
+            idempotency_key: input.idempotencyKey,
+            reason_code: input.reasonCode,
+          }
+        : {
+            phase: "settle",
+            idempotency_key: input.idempotencyKey,
+            reason_code: input.reasonCode,
+            component_id: input.componentId,
+            operation_id: input.operationId,
+            effect_id: input.effectId,
+            request_sha256: input.requestSha256,
+            outcome: input.outcome,
+            evidence_sha256: input.evidenceSha256,
+            error_code: input.errorCode,
+          },
+      (value) => {
+        const parsed =
+          input.phase === "prepare"
+            ? parseWorkspaceComponentEmergencyStopPrepareResult(value)
+            : parseWorkspaceComponentEmergencyStopSettleResult(value);
+        if (parsed?.workspaceId !== input.workspaceId) return null;
+        if (
+          input.phase === "settle" &&
+          ("componentId" in parsed
+            ? parsed.componentId !== input.componentId ||
+              parsed.operation.operationId !== input.operationId ||
+              parsed.effect.effectId !== input.effectId
+            : true)
+        ) {
+          return null;
+        }
+        return parsed;
+      },
+    );
+  }
+
+  reconcileWorkspaceComponent(
+    input: DesktopWorkspaceComponentReconcileInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>> {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !COMPONENT_OPERATION_ID_PATTERN.test(input.operationId) ||
+      !COMPONENT_EFFECT_ID_PATTERN.test(input.effectId) ||
+      !SHA256_PATTERN.test(input.requestSha256) ||
+      (input.outcome !== "succeeded" && input.outcome !== "failed") ||
+      !SHA256_PATTERN.test(input.evidenceSha256)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/reconciliations`,
+      {
+        operation_id: input.operationId,
+        effect_id: input.effectId,
+        request_sha256: input.requestSha256,
+        outcome: input.outcome,
+        evidence_sha256: input.evidenceSha256,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentReconcileResult(value);
+        return parsed?.operation.workspaceId === input.workspaceId &&
+          parsed.operation.operationId === input.operationId &&
+          parsed.effect.effectId === input.effectId
+          ? parsed
+          : null;
+      },
+    );
+  }
+
+  settleWorkspaceComponentRecovery(
+    input: DesktopWorkspaceComponentRecoverySettleInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentRecoverySettleResult>
+  > {
+    if (
+      !WORKSPACE_ID_PATTERN.test(input.workspaceId) ||
+      !COMPONENT_RECOVERY_ID_PATTERN.test(input.recoveryId) ||
+      !COMPONENT_OPERATION_ID_PATTERN.test(input.operationId) ||
+      !["succeeded", "failed", "unknown"].includes(input.outcome) ||
+      !SHA256_PATTERN.test(input.evidenceSha256) ||
+      (input.healthState !== null &&
+        !["healthy", "unhealthy", "unknown"].includes(input.healthState)) ||
+      !COMPONENT_RUNTIME_ID_PATTERN.test(input.runtimeInstanceId) ||
+      !SHA256_PATTERN.test(input.workloadIdentityDigest) ||
+      (input.errorCode !== null && !ERROR_CODE_PATTERN.test(input.errorCode)) ||
+      (input.outcome === "succeeded" &&
+        (input.healthState !== "healthy" || input.errorCode !== null)) ||
+      (input.outcome === "failed" && input.errorCode === null)
+    ) {
+      return Promise.resolve(failure("desktop_native_input_invalid"));
+    }
+    return this.#request(
+      "POST",
+      `/desktop/v1/workspaces/${input.workspaceId}/components/recoveries/${input.recoveryId}/settle`,
+      {
+        operation_id: input.operationId,
+        outcome: input.outcome,
+        evidence_sha256: input.evidenceSha256,
+        health_state: input.healthState,
+        runtime_instance_id: input.runtimeInstanceId,
+        workload_identity_digest: input.workloadIdentityDigest,
+        error_code: input.errorCode,
+      },
+      (value) => {
+        const parsed = parseWorkspaceComponentRecoverySettleResult(value);
+        return parsed?.recoveryId === input.recoveryId &&
+          parsed.operation.workspaceId === input.workspaceId &&
+          parsed.operation.operationId === input.operationId
+          ? parsed
           : null;
       },
     );

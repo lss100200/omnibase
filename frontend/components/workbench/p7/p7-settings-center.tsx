@@ -2,12 +2,18 @@
 
 import {
   Activity,
+  AppWindow,
   Blocks,
   Bot,
   Check,
+  CircleGauge,
+  Download,
   KeyRound,
   Monitor,
+  Network,
   Package,
+  PanelTop,
+  PlugZap,
   RotateCcw,
   Save,
   ScrollText,
@@ -15,6 +21,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   SquareDashed,
+  Wrench,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -38,6 +45,18 @@ import {
   p7PatchCompositionProfile,
   type P7CompositionLoadStatus,
 } from '@/lib/p7-workspace-composition'
+import type { P7WorkspaceComponentSurfaceProjection } from '@/lib/p7-workspace-components'
+import { P7ComponentSurface } from './p7-component-surface'
+import {
+  P7Segmented as Segmented,
+  P7SettingRow as SettingRow,
+  P7SettingsToggle as Toggle,
+} from './settings/p7-settings-shared'
+import {
+  P7WorkspaceComponentView,
+  type P7WorkspaceComponentSettingsProps,
+  type P7WorkspaceComponentSettingsSection,
+} from './settings/p7-workspace-component-views'
 
 export interface P7ProviderForm {
   readonly displayName: string
@@ -52,8 +71,7 @@ export interface P7ProviderForm {
   readonly isEnabled: boolean
 }
 
-export interface P7SettingsCenterProps {
-  readonly workspaceName: string
+export interface P7SettingsCenterProps extends P7WorkspaceComponentSettingsProps {
   readonly applicationPreference: DesktopApplicationPreference | null
   readonly applicationPreferenceStatus: P7CompositionLoadStatus
   readonly onApplicationPreferenceChange: (
@@ -89,106 +107,40 @@ export interface P7SettingsCenterProps {
 type SettingsSection =
   | 'appearance'
   | 'workspace'
-  | 'components'
+  | 'layout-components'
   | 'capabilities'
   | 'providers'
-  | 'extensions'
-  | 'sandbox'
-  | 'review'
-  | 'audit'
+  | 'profile-review'
+  | 'profile-audit'
+  | 'component-extension'
+  | P7WorkspaceComponentSettingsSection
 
 const SECTIONS = [
   { id: 'appearance', label: '外观', icon: Monitor },
   { id: 'workspace', label: 'Workspace', icon: SlidersHorizontal },
-  { id: 'components', label: '组件', icon: Blocks },
+  { id: 'layout-components', label: '布局组件', icon: Blocks },
   { id: 'capabilities', label: '能力', icon: Activity },
   { id: 'providers', label: 'Provider', icon: KeyRound },
-  { id: 'extensions', label: '扩展', icon: Package },
+  { id: 'profile-review', label: '布局审阅', icon: ShieldCheck },
+  { id: 'profile-audit', label: '布局审计', icon: ScrollText },
+  { id: 'component-extension', label: 'Workspace 扩展', icon: Blocks },
+  { id: 'catalog', label: 'Catalog', icon: Package },
+  { id: 'installed', label: 'Installed', icon: Download },
+  { id: 'slots', label: 'Slots', icon: PanelTop },
+  { id: 'skills', label: 'Skills', icon: Sparkles },
+  { id: 'mcp', label: 'MCP', icon: Network },
   { id: 'sandbox', label: 'Sandbox', icon: SquareDashed },
-  { id: 'review', label: '审阅', icon: ShieldCheck },
-  { id: 'audit', label: '审计', icon: ScrollText },
+  { id: 'local-adapters', label: 'Local Adapters', icon: AppWindow },
+  { id: 'permissions', label: 'Permissions', icon: PlugZap },
+  { id: 'health', label: 'Health', icon: CircleGauge },
+  { id: 'component-review', label: '组件审阅', icon: ShieldCheck },
+  { id: 'component-audit', label: '组件审计', icon: ScrollText },
+  { id: 'recovery', label: 'Recovery', icon: Wrench },
 ] as const satisfies readonly {
   readonly id: SettingsSection
   readonly label: string
   readonly icon: typeof Monitor
 }[]
-
-function Toggle({
-  checked,
-  disabled = false,
-  label,
-  onChange,
-}: {
-  readonly checked: boolean
-  readonly disabled?: boolean
-  readonly label: string
-  readonly onChange: (checked: boolean) => void
-}) {
-  return (
-    <label className={`p7-settings-toggle${disabled ? 'p7-disabled' : ''}`}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span aria-hidden="true" />
-      <strong>{label}</strong>
-    </label>
-  )
-}
-
-function SettingRow({
-  label,
-  meta,
-  children,
-}: {
-  readonly label: string
-  readonly meta?: string
-  readonly children: React.ReactNode
-}) {
-  return (
-    <div className="p7-settings-row">
-      <div className="p7-settings-row-copy">
-        <strong>{label}</strong>
-        {meta !== undefined && <span>{meta}</span>}
-      </div>
-      <div className="p7-settings-row-control">{children}</div>
-    </div>
-  )
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  disabled = false,
-}: {
-  readonly value: T
-  readonly options: readonly {
-    readonly value: T
-    readonly label: string
-    readonly disabled?: boolean
-  }[]
-  readonly onChange: (value: T) => void
-  readonly disabled?: boolean
-}) {
-  return (
-    <div className="p7-segmented">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={value === option.value}
-          disabled={disabled || option.disabled === true}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 function slotStatus(slot: DesktopWorkspaceSlotCatalogItem): string {
   if (slot.posture === 'required') return '必需'
@@ -258,7 +210,12 @@ function ProposalDiff({
   )
 }
 
-export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClose: () => void }) {
+export function P7SettingsCenter(
+  props: P7SettingsCenterProps & {
+    readonly onClose: () => void
+    readonly componentSurface: P7WorkspaceComponentSurfaceProjection
+  },
+) {
   const [section, setSection] = useState<SettingsSection>('appearance')
   const preference = props.applicationPreference
   const snapshot = props.compositionSnapshot
@@ -266,19 +223,29 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
   const current = snapshot?.profile.value ?? null
   const pending = snapshot?.proposals.filter((proposal) => proposal.decision === null) ?? []
   const catalog = snapshot?.slotCatalog ?? []
-  const extensionSlots = catalog.filter(
-    (slot) =>
-      slot.id === 'knowledge.ebook' || slot.id === 'mcp.catalog' || slot.id === 'skills.catalog',
-  )
-  const sandboxSlot = catalog.find((slot) => slot.id === 'sandbox.runtime') ?? null
+  const componentPending =
+    props.snapshot?.proposals.filter((proposal) => proposal.decision === null) ?? []
   const providerSettingsEnabled = current?.slots['provider.settings'] === true
-  const sections = SECTIONS.filter((item) => item.id !== 'providers' || providerSettingsEnabled)
+  const componentExtensionVisible = props.componentSurface.status === 'ready'
+  const sections = SECTIONS.filter(
+    (item) =>
+      (item.id !== 'providers' || providerSettingsEnabled) &&
+      (item.id !== 'component-extension' || componentExtensionVisible),
+  )
 
   useEffect(() => {
     if (section === 'providers' && !providerSettingsEnabled) {
       setSection('workspace')
     }
   }, [providerSettingsEnabled, section])
+
+  useEffect(() => {
+    if (componentExtensionVisible) {
+      setSection('component-extension')
+    } else if (section === 'component-extension') {
+      setSection('workspace')
+    }
+  }, [componentExtensionVisible, props.componentSurface.surface?.operationId, section])
 
   const patchDraft = (patch: Parameters<typeof p7PatchCompositionProfile>[1]) => {
     if (draft === null || props.compositionBusy) return
@@ -330,8 +297,11 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
           >
             <Icon size={15} />
             <span>{label}</span>
-            {id === 'review' && pending.length > 0 && (
+            {id === 'profile-review' && pending.length > 0 && (
               <span className="p7-settings-count">{pending.length}</span>
+            )}
+            {id === 'component-review' && componentPending.length > 0 && (
+              <span className="p7-settings-count">{componentPending.length}</span>
             )}
           </button>
         ))}
@@ -345,6 +315,11 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
         {props.compositionNotice !== null && (
           <div className="p7-settings-notice p7-settings-global-notice" role="status">
             {props.compositionNotice}
+          </div>
+        )}
+        {props.notice !== null && (
+          <div className="p7-settings-notice p7-settings-global-notice" role="status">
+            {props.notice}
           </div>
         )}
         {section === 'appearance' && (
@@ -728,7 +703,7 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
           </section>
         )}
 
-        {section === 'components' && (
+        {section === 'layout-components' && (
           <section className="p7-settings-section">
             <header>
               <h1>组件</h1>
@@ -758,58 +733,7 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
           </section>
         )}
 
-        {section === 'extensions' && (
-          <section className="p7-settings-section">
-            <header>
-              <h1>扩展</h1>
-              <span>当前 Workspace</span>
-            </header>
-            <div className="p7-slot-list">
-              {extensionSlots.map((slot) => (
-                <div key={slot.id} className="p7-slot-row p7-slot-row-readonly">
-                  <span className={`p7-slot-state p7-slot-${slot.posture}`} />
-                  <div>
-                    <strong>{slot.label}</strong>
-                    <span>{slot.id}</span>
-                  </div>
-                  <span className="p7-slot-region">{slot.region}</span>
-                  <span className="p7-slot-posture">{slotStatus(slot)}</span>
-                  <span className="p7-capability-live">不可用</span>
-                </div>
-              ))}
-              {extensionSlots.length === 0 && (
-                <div className="p7-settings-empty">扩展目录不可用</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {section === 'sandbox' && (
-          <section className="p7-settings-section">
-            <header>
-              <h1>Sandbox</h1>
-              <span>当前 Workspace</span>
-            </header>
-            {sandboxSlot === null ? (
-              <div className="p7-settings-empty">Sandbox 状态不可用</div>
-            ) : (
-              <div className="p7-slot-list">
-                <div className="p7-slot-row p7-slot-row-readonly">
-                  <span className={`p7-slot-state p7-slot-${sandboxSlot.posture}`} />
-                  <div>
-                    <strong>{sandboxSlot.label}</strong>
-                    <span>{sandboxSlot.id}</span>
-                  </div>
-                  <span className="p7-slot-region">{sandboxSlot.region}</span>
-                  <span className="p7-slot-posture">{slotStatus(sandboxSlot)}</span>
-                  <span className="p7-capability-live">不可用</span>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        {section === 'review' && (
+        {section === 'profile-review' && (
           <section className="p7-settings-section">
             <header>
               <h1>审阅</h1>
@@ -892,7 +816,7 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
           </section>
         )}
 
-        {section === 'audit' && (
+        {section === 'profile-audit' && (
           <section className="p7-settings-section">
             <header>
               <h1>审计</h1>
@@ -922,6 +846,36 @@ export function P7SettingsCenter(props: P7SettingsCenterProps & { readonly onClo
               )}
             </div>
           </section>
+        )}
+        {section === 'component-extension' && componentExtensionVisible && (
+          <section className="p7-settings-section p7-component-settings-slot">
+            <header>
+              <h1>Workspace 扩展</h1>
+              <span>宿主声明式渲染</span>
+            </header>
+            <P7ComponentSurface projection={props.componentSurface} />
+          </section>
+        )}
+        {(
+          [
+            'catalog',
+            'installed',
+            'slots',
+            'skills',
+            'mcp',
+            'sandbox',
+            'local-adapters',
+            'permissions',
+            'health',
+            'component-review',
+            'component-audit',
+            'recovery',
+          ] as const satisfies readonly P7WorkspaceComponentSettingsSection[]
+        ).includes(section as P7WorkspaceComponentSettingsSection) && (
+          <P7WorkspaceComponentView
+            section={section as P7WorkspaceComponentSettingsSection}
+            {...props}
+          />
         )}
       </main>
     </div>

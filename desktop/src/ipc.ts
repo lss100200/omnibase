@@ -54,6 +54,22 @@ import {
   type DesktopWorkspaceCompositionProposalResult,
   type DesktopWorkspaceCompositionRollbackProposalInput,
   type DesktopWorkspaceCompositionSnapshot,
+  type DesktopWorkspaceComponentActionInput,
+  type DesktopWorkspaceComponentActionResult,
+  type DesktopWorkspaceComponentAssistantPackageImportInput,
+  type DesktopWorkspaceComponentAssistantProposalInput,
+  type DesktopWorkspaceComponentOwnerPackageImportResult,
+  type DesktopWorkspaceComponentDecisionInput,
+  type DesktopWorkspaceComponentDecisionResult,
+  type DesktopWorkspaceComponentEmergencyStopInput,
+  type DesktopWorkspaceComponentEmergencyStopResult,
+  type DesktopWorkspaceComponentInvokeInput,
+  type DesktopWorkspaceComponentInvokeResult,
+  type DesktopWorkspaceComponentProposalResult,
+  type DesktopWorkspaceComponentProposeInput,
+  type DesktopWorkspaceComponentReconcileInput,
+  type DesktopWorkspaceComponentReconcileResult,
+  type DesktopWorkspaceComponentSnapshot,
   type DesktopWorkspaceCreateInput,
   type DesktopWorkspaceFileAuthorization,
   type DesktopWorkspaceFileAuthorizeInput,
@@ -136,6 +152,44 @@ export interface IpcDependencies {
     input: DesktopWorkspaceCompositionDecisionInput,
   ) => Promise<
     DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+  >;
+  readonly getWorkspaceComponents: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>>;
+  readonly proposeWorkspaceComponent: (
+    input: DesktopWorkspaceComponentProposeInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>>;
+  readonly proposeWorkspaceComponentFromAssistant: (
+    input: DesktopWorkspaceComponentAssistantProposalInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>>;
+  readonly importOwnerWorkspaceComponentPackage: (
+    input: DesktopWorkspaceIdInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+  >;
+  readonly importAssistantWorkspaceComponentPackage: (
+    input: DesktopWorkspaceComponentAssistantPackageImportInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+  >;
+  readonly decideWorkspaceComponent: (
+    input: DesktopWorkspaceComponentDecisionInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>>;
+  readonly applyWorkspaceComponentAction: (
+    input: DesktopWorkspaceComponentActionInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentActionResult>>;
+  readonly invokeWorkspaceComponent: (
+    input: DesktopWorkspaceComponentInvokeInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceComponentInvokeResult>>;
+  readonly emergencyStopWorkspaceComponents: (
+    input: DesktopWorkspaceComponentEmergencyStopInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentEmergencyStopResult>
+  >;
+  readonly reconcileWorkspaceComponent: (
+    input: DesktopWorkspaceComponentReconcileInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>
   >;
   readonly authorizeWorkspaceFiles: (
     input: DesktopWorkspaceFileAuthorizeInput,
@@ -268,6 +322,15 @@ const TEAM_RUN_ID_PATTERN = /^teamrun_[a-f0-9]{32}$/u;
 const TEAM_NODE_ID_PATTERN = /^teamnode_[a-f0-9]{32}$/u;
 const TEAM_REPORT_ID_PATTERN = /^teamrpt_[a-f0-9]{32}$/u;
 const COMPOSITION_PROPOSAL_ID_PATTERN = /^proposal_[a-f0-9]{32}$/u;
+const COMPONENT_PROPOSAL_ID_PATTERN = /^proposal_[a-f0-9]{32}$/u;
+const COMPONENT_OPERATION_ID_PATTERN = /^compop_[a-f0-9]{32}$/u;
+const COMPONENT_EFFECT_ID_PATTERN = /^effect_[a-f0-9]{32}$/u;
+const COMPONENT_ID_PATTERN = /^[a-z][a-z0-9.-]{2,127}$/u;
+const COMPONENT_OPERATION_PATTERN = /^[a-z][a-z0-9_.]{2,63}$/u;
+const COMPONENT_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/u;
+const LOGICAL_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]{2,127}$/u;
+const ERROR_CODE_PATTERN = /^[a-z][a-z0-9_]{2,95}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const COMPOSITION_SLOT_IDS = Object.freeze([
   "agent.rail",
@@ -325,6 +388,19 @@ function hasExactKeys(
   return (
     actual.length === sortedExpected.length &&
     actual.every((key, index) => key === sortedExpected[index])
+  );
+}
+
+function hasRequiredAndOptionalKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+): boolean {
+  const keys = Object.keys(value);
+  const allowed = new Set([...required, ...optional]);
+  return (
+    required.every((key) => keys.includes(key)) &&
+    keys.every((key) => allowed.has(key))
   );
 }
 
@@ -639,6 +715,663 @@ function parseCompositionDecisionInput(
     proposalId: args[0].proposalId,
     requestSha256: args[0].requestSha256,
     decision: args[0].decision,
+  });
+}
+
+const COMPONENT_LIFECYCLE_ACTIONS = new Set([
+  "install",
+  "bind",
+  "activate",
+  "disable",
+  "upgrade",
+  "rollback",
+  "revoke",
+  "uninstall",
+]);
+const COMPONENT_OPERATIONS = new Set([
+  "ui.render",
+  "skill.resolve",
+  "mcp.call",
+  "sandbox.run",
+  "local_adapter.open",
+]);
+const MCP_TOOLS = new Set([
+  "omnibase_files_list",
+  "omnibase_files_read",
+  "omnibase_files_hash",
+  "omnibase_text_search",
+]);
+
+function validBoundedInteger(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= minimum &&
+    value <= maximum
+  );
+}
+
+function validOptionalLogicalId(value: unknown): value is string | undefined {
+  return (
+    value === undefined ||
+    (typeof value === "string" && LOGICAL_ID_PATTERN.test(value))
+  );
+}
+
+function parseComponentGrant(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "action",
+      "expiresInSeconds",
+      "logicalResourceId",
+      "logicalServiceId",
+      "maximumBytesIn",
+      "maximumBytesOut",
+      "maximumCostUnits",
+      "maximumInvocations",
+      "maximumTokens",
+      "maximumWallTimeMs",
+      "resourceVersion",
+    ]) ||
+    typeof value.action !== "string" ||
+    !COMPONENT_OPERATION_PATTERN.test(value.action) ||
+    (value.logicalResourceId !== null &&
+      (typeof value.logicalResourceId !== "string" ||
+        !LOGICAL_ID_PATTERN.test(value.logicalResourceId))) ||
+    (value.logicalServiceId !== null &&
+      (typeof value.logicalServiceId !== "string" ||
+        !LOGICAL_ID_PATTERN.test(value.logicalServiceId))) ||
+    (value.resourceVersion !== null &&
+      !validBoundedInteger(value.resourceVersion, 1, 2_147_483_647)) ||
+    !validBoundedInteger(value.expiresInSeconds, 1, 86_400) ||
+    !validBoundedInteger(value.maximumInvocations, 1, 10_000) ||
+    !validBoundedInteger(value.maximumBytesIn, 0, 1_073_741_824) ||
+    !validBoundedInteger(value.maximumBytesOut, 0, 1_073_741_824) ||
+    !validBoundedInteger(value.maximumTokens, 0, 10_000_000) ||
+    !validBoundedInteger(value.maximumWallTimeMs, 1, 86_400_000) ||
+    !validBoundedInteger(value.maximumCostUnits, 0, 1_000_000)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    action: value.action,
+    logicalResourceId: value.logicalResourceId,
+    resourceVersion: value.resourceVersion,
+    logicalServiceId: value.logicalServiceId,
+    expiresInSeconds: value.expiresInSeconds,
+    maximumInvocations: value.maximumInvocations,
+    maximumBytesIn: value.maximumBytesIn,
+    maximumBytesOut: value.maximumBytesOut,
+    maximumTokens: value.maximumTokens,
+    maximumWallTimeMs: value.maximumWallTimeMs,
+    maximumCostUnits: value.maximumCostUnits,
+  });
+}
+
+function parseComponentJson(
+  value: unknown,
+  depth = 0,
+): DesktopWorkspaceComponentProposeInput["desiredConfiguration"] | undefined {
+  if (depth > 16) return undefined;
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return value.length <= 65_536 && !value.includes("\0") ? value : undefined;
+  }
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : undefined;
+  if (Array.isArray(value)) {
+    if (value.length > 1024) return undefined;
+    const parsed = value.map((item) => parseComponentJson(item, depth + 1));
+    return parsed.some((item) => item === undefined)
+      ? undefined
+      : (Object.freeze(
+          parsed,
+        ) as DesktopWorkspaceComponentProposeInput["desiredConfiguration"]);
+  }
+  if (!isRecord(value) || Object.keys(value).length > 1024) return undefined;
+  const result: Record<
+    string,
+    Exclude<ReturnType<typeof parseComponentJson>, undefined>
+  > = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      key.length < 1 ||
+      key.length > 128 ||
+      key === "__proto__" ||
+      key === "prototype" ||
+      key === "constructor"
+    ) {
+      return undefined;
+    }
+    const parsed = parseComponentJson(item, depth + 1);
+    if (parsed === undefined) return undefined;
+    result[key] = parsed;
+  }
+  return Object.freeze(result);
+}
+
+function parseComponentSlotBinding(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "bindingKey",
+      "configuration",
+      "orderIndex",
+      "slotId",
+    ]) ||
+    typeof value.slotId !== "string" ||
+    !LOGICAL_ID_PATTERN.test(value.slotId) ||
+    typeof value.bindingKey !== "string" ||
+    !LOGICAL_ID_PATTERN.test(value.bindingKey) ||
+    !validBoundedInteger(value.orderIndex, 0, 10_000)
+  ) {
+    return null;
+  }
+  const configuration = parseComponentJson(value.configuration);
+  return configuration === undefined
+    ? null
+    : Object.freeze({
+        slotId: value.slotId,
+        bindingKey: value.bindingKey,
+        orderIndex: value.orderIndex,
+        configuration,
+      });
+}
+
+function parseComponentDependency(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "componentId",
+      "policyManifestSha256",
+      "manifestSha256",
+      "packageSha256",
+      "version",
+    ]) ||
+    typeof value.componentId !== "string" ||
+    !COMPONENT_ID_PATTERN.test(value.componentId) ||
+    typeof value.version !== "string" ||
+    !COMPONENT_VERSION_PATTERN.test(value.version) ||
+    typeof value.policyManifestSha256 !== "string" ||
+    !SHA256_PATTERN.test(value.policyManifestSha256) ||
+    typeof value.manifestSha256 !== "string" ||
+    !SHA256_PATTERN.test(value.manifestSha256) ||
+    typeof value.packageSha256 !== "string" ||
+    !SHA256_PATTERN.test(value.packageSha256)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    componentId: value.componentId,
+    version: value.version,
+    policyManifestSha256: value.policyManifestSha256,
+    manifestSha256: value.manifestSha256,
+    packageSha256: value.packageSha256,
+  });
+}
+
+function parseWorkspaceComponentProposeInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentProposeInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasRequiredAndOptionalKeys(
+      args[0],
+      [
+        "changeKind",
+        "componentId",
+        "dependencyGraph",
+        "desiredConfiguration",
+        "desiredSlotBindings",
+        "expectedRevision",
+        "idempotencyKey",
+        "requestedGrants",
+        "targetVersion",
+        "workspaceId",
+      ],
+      [],
+    ) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].componentId !== "string" ||
+    !COMPONENT_ID_PATTERN.test(args[0].componentId) ||
+    typeof args[0].targetVersion !== "string" ||
+    !COMPONENT_VERSION_PATTERN.test(args[0].targetVersion) ||
+    typeof args[0].changeKind !== "string" ||
+    !COMPONENT_LIFECYCLE_ACTIONS.has(args[0].changeKind) ||
+    !validRevision(args[0].expectedRevision) ||
+    !Array.isArray(args[0].requestedGrants) ||
+    args[0].requestedGrants.length > 32 ||
+    !Array.isArray(args[0].desiredSlotBindings) ||
+    args[0].desiredSlotBindings.length > 64 ||
+    !Array.isArray(args[0].dependencyGraph) ||
+    args[0].dependencyGraph.length > 64 ||
+    typeof args[0].idempotencyKey !== "string" ||
+    !IDEMPOTENCY_KEY_PATTERN.test(args[0].idempotencyKey)
+  ) {
+    return null;
+  }
+  const grants = args[0].requestedGrants.map(parseComponentGrant);
+  const desiredConfiguration = parseComponentJson(args[0].desiredConfiguration);
+  const desiredSlotBindings = args[0].desiredSlotBindings.map(
+    parseComponentSlotBinding,
+  );
+  const dependencyGraph = args[0].dependencyGraph.map(parseComponentDependency);
+  if (
+    grants.some((grant) => grant === null) ||
+    desiredConfiguration === undefined ||
+    desiredSlotBindings.some((binding) => binding === null) ||
+    dependencyGraph.some((dependency) => dependency === null)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    componentId: args[0].componentId,
+    targetVersion: args[0].targetVersion,
+    changeKind: args[0]
+      .changeKind as DesktopWorkspaceComponentProposeInput["changeKind"],
+    expectedRevision: args[0].expectedRevision,
+    requestedGrants: Object.freeze(
+      grants as DesktopWorkspaceComponentProposeInput["requestedGrants"],
+    ),
+    desiredConfiguration,
+    desiredSlotBindings: Object.freeze(
+      desiredSlotBindings as DesktopWorkspaceComponentProposeInput["desiredSlotBindings"],
+    ),
+    dependencyGraph: Object.freeze(
+      dependencyGraph as DesktopWorkspaceComponentProposeInput["dependencyGraph"],
+    ),
+    idempotencyKey: args[0].idempotencyKey,
+  });
+}
+
+function parseWorkspaceComponentAssistantProposalInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentAssistantProposalInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["idempotencyKey", "messageId", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].messageId !== "string" ||
+    !MESSAGE_ID_PATTERN.test(args[0].messageId) ||
+    typeof args[0].idempotencyKey !== "string" ||
+    !IDEMPOTENCY_KEY_PATTERN.test(args[0].idempotencyKey)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    messageId: args[0].messageId,
+    idempotencyKey: args[0].idempotencyKey,
+  });
+}
+
+function parseWorkspaceComponentAssistantPackageImportInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentAssistantPackageImportInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "conversationId",
+      "manifestSha256",
+      "messageId",
+      "packageJson",
+      "packageSha256",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].conversationId !== "string" ||
+    !CONVERSATION_ID_PATTERN.test(args[0].conversationId) ||
+    typeof args[0].messageId !== "string" ||
+    !MESSAGE_ID_PATTERN.test(args[0].messageId) ||
+    typeof args[0].packageJson !== "string" ||
+    Buffer.byteLength(args[0].packageJson, "utf8") < 2 ||
+    Buffer.byteLength(args[0].packageJson, "utf8") > 256 * 1024 ||
+    args[0].packageJson.includes("\0") ||
+    typeof args[0].manifestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].manifestSha256) ||
+    typeof args[0].packageSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].packageSha256)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    conversationId: args[0].conversationId,
+    messageId: args[0].messageId,
+    packageJson: args[0].packageJson,
+    manifestSha256: args[0].manifestSha256,
+    packageSha256: args[0].packageSha256,
+  });
+}
+
+function parseWorkspaceComponentDecisionInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentDecisionInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "decision",
+      "proposalId",
+      "requestSha256",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].proposalId !== "string" ||
+    !COMPONENT_PROPOSAL_ID_PATTERN.test(args[0].proposalId) ||
+    (args[0].decision !== "approve" && args[0].decision !== "reject") ||
+    typeof args[0].requestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].requestSha256)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    proposalId: args[0].proposalId,
+    decision: args[0].decision,
+    requestSha256: args[0].requestSha256,
+  });
+}
+
+function parseWorkspaceComponentActionInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentActionInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "action",
+      "componentId",
+      "expectedRevision",
+      "idempotencyKey",
+      "manifestSha256",
+      "packageSha256",
+      "proposalId",
+      "requestSha256",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].componentId !== "string" ||
+    !COMPONENT_ID_PATTERN.test(args[0].componentId) ||
+    typeof args[0].action !== "string" ||
+    !COMPONENT_LIFECYCLE_ACTIONS.has(args[0].action) ||
+    typeof args[0].proposalId !== "string" ||
+    !COMPONENT_PROPOSAL_ID_PATTERN.test(args[0].proposalId) ||
+    typeof args[0].requestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].requestSha256) ||
+    !validRevision(args[0].expectedRevision) ||
+    typeof args[0].manifestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].manifestSha256) ||
+    typeof args[0].packageSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].packageSha256) ||
+    typeof args[0].idempotencyKey !== "string" ||
+    !IDEMPOTENCY_KEY_PATTERN.test(args[0].idempotencyKey)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    componentId: args[0].componentId,
+    action: args[0].action as DesktopWorkspaceComponentActionInput["action"],
+    proposalId: args[0].proposalId,
+    requestSha256: args[0].requestSha256,
+    expectedRevision: args[0].expectedRevision,
+    manifestSha256: args[0].manifestSha256,
+    packageSha256: args[0].packageSha256,
+    idempotencyKey: args[0].idempotencyKey,
+  });
+}
+
+function validComponentInvokeBase(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.workspaceId === "string" &&
+    WORKSPACE_ID_PATTERN.test(value.workspaceId) &&
+    typeof value.componentId === "string" &&
+    COMPONENT_ID_PATTERN.test(value.componentId) &&
+    typeof value.operation === "string" &&
+    COMPONENT_OPERATIONS.has(value.operation) &&
+    validRevision(value.expectedRevision) &&
+    validRevision(value.bindingGeneration) &&
+    typeof value.manifestSha256 === "string" &&
+    SHA256_PATTERN.test(value.manifestSha256) &&
+    typeof value.packageSha256 === "string" &&
+    SHA256_PATTERN.test(value.packageSha256) &&
+    typeof value.idempotencyKey === "string" &&
+    IDEMPOTENCY_KEY_PATTERN.test(value.idempotencyKey) &&
+    validOptionalLogicalId(value.logicalResourceId) &&
+    (value.resourceVersion === undefined ||
+      validRevision(value.resourceVersion)) &&
+    validOptionalLogicalId(value.logicalServiceId) &&
+    validBoundedInteger(value.bytesOutReserved, 0, 4_194_304) &&
+    validBoundedInteger(value.tokensReserved, 0, 131_072) &&
+    validBoundedInteger(value.wallTimeMs, 1, 600_000) &&
+    validBoundedInteger(value.costUnits, 0, 1_000)
+  );
+}
+
+function parseWorkspaceComponentInvokeArguments(
+  operation: string,
+  value: unknown,
+): DesktopWorkspaceComponentInvokeInput["arguments"] | null {
+  if (!isRecord(value)) return null;
+  if (operation === "ui.render") {
+    return hasExactKeys(value, ["slotId", "viewId"]) &&
+      typeof value.slotId === "string" &&
+      LOGICAL_ID_PATTERN.test(value.slotId) &&
+      typeof value.viewId === "string" &&
+      LOGICAL_ID_PATTERN.test(value.viewId)
+      ? Object.freeze({ slotId: value.slotId, viewId: value.viewId })
+      : null;
+  }
+  if (operation === "skill.resolve") {
+    return hasExactKeys(value, ["skillId", "task"]) &&
+      typeof value.skillId === "string" &&
+      COMPONENT_ID_PATTERN.test(value.skillId) &&
+      typeof value.task === "string" &&
+      value.task.length >= 1 &&
+      value.task.length <= 32_768 &&
+      !CONTROL_CHARACTER_PATTERN.test(value.task)
+      ? Object.freeze({ skillId: value.skillId, task: value.task })
+      : null;
+  }
+  if (operation === "mcp.call") {
+    const toolName = value.toolName;
+    if (
+      typeof toolName !== "string" ||
+      !MCP_TOOLS.has(toolName) ||
+      (toolName === "omnibase_files_list"
+        ? !hasRequiredAndOptionalKeys(value, ["toolName"], ["path"]) ||
+          (value.path !== undefined && !validLogicalPathValue(value.path, true))
+        : toolName === "omnibase_text_search"
+          ? !hasExactKeys(value, ["path", "query", "toolName"]) ||
+            !validLogicalPathValue(value.path, false) ||
+            typeof value.query !== "string" ||
+            value.query.length < 1 ||
+            value.query.length > 256 ||
+            CONTROL_CHARACTER_PATTERN.test(value.query)
+          : !hasExactKeys(value, ["path", "toolName"]) ||
+            !validLogicalPathValue(value.path, false))
+    )
+      return null;
+    return Object.freeze({
+      toolName,
+      ...(value.path === undefined ? {} : { path: value.path }),
+      ...(value.query === undefined ? {} : { query: value.query }),
+    }) as DesktopWorkspaceComponentInvokeInput["arguments"];
+  }
+  if (operation === "sandbox.run") {
+    if (
+      !hasExactKeys(value, ["inputArtifactIds", "workloadId"]) ||
+      typeof value.workloadId !== "string" ||
+      !LOGICAL_ID_PATTERN.test(value.workloadId) ||
+      !Array.isArray(value.inputArtifactIds) ||
+      value.inputArtifactIds.length > 64 ||
+      !value.inputArtifactIds.every(
+        (item) => typeof item === "string" && LOGICAL_ID_PATTERN.test(item),
+      )
+    )
+      return null;
+    return Object.freeze({
+      workloadId: value.workloadId,
+      inputArtifactIds: Object.freeze([
+        ...value.inputArtifactIds,
+      ]) as readonly string[],
+    });
+  }
+  if (operation === "local_adapter.open") {
+    if (
+      !hasRequiredAndOptionalKeys(
+        value,
+        ["adapterId", "destination"],
+        ["logicalId"],
+      ) ||
+      value.adapterId !== "knowledge.ebook" ||
+      (value.destination !== "workspace" &&
+        value.destination !== "phase" &&
+        value.destination !== "document") ||
+      (value.logicalId !== undefined &&
+        (typeof value.logicalId !== "string" ||
+          !LOGICAL_ID_PATTERN.test(value.logicalId)))
+    )
+      return null;
+    return Object.freeze({
+      adapterId: "knowledge.ebook" as const,
+      destination: value.destination,
+      ...(value.logicalId === undefined ? {} : { logicalId: value.logicalId }),
+    });
+  }
+  return null;
+}
+
+function parseWorkspaceComponentInvokeInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentInvokeInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasRequiredAndOptionalKeys(
+      args[0],
+      [
+        "arguments",
+        "bindingGeneration",
+        "bytesOutReserved",
+        "componentId",
+        "costUnits",
+        "expectedRevision",
+        "idempotencyKey",
+        "manifestSha256",
+        "operation",
+        "packageSha256",
+        "tokensReserved",
+        "wallTimeMs",
+        "workspaceId",
+      ],
+      ["logicalResourceId", "logicalServiceId", "resourceVersion"],
+    ) ||
+    !validComponentInvokeBase(args[0])
+  )
+    return null;
+  const parsedArguments = parseWorkspaceComponentInvokeArguments(
+    args[0].operation as string,
+    args[0].arguments,
+  );
+  if (parsedArguments === null) return null;
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    componentId: args[0].componentId,
+    operation: args[0].operation,
+    expectedRevision: args[0].expectedRevision,
+    bindingGeneration: args[0].bindingGeneration,
+    manifestSha256: args[0].manifestSha256,
+    packageSha256: args[0].packageSha256,
+    idempotencyKey: args[0].idempotencyKey,
+    ...(args[0].logicalResourceId === undefined
+      ? {}
+      : { logicalResourceId: args[0].logicalResourceId }),
+    ...(args[0].resourceVersion === undefined
+      ? {}
+      : { resourceVersion: args[0].resourceVersion }),
+    ...(args[0].logicalServiceId === undefined
+      ? {}
+      : { logicalServiceId: args[0].logicalServiceId }),
+    bytesOutReserved: args[0].bytesOutReserved,
+    tokensReserved: args[0].tokensReserved,
+    wallTimeMs: args[0].wallTimeMs,
+    costUnits: args[0].costUnits,
+    arguments: parsedArguments,
+  }) as DesktopWorkspaceComponentInvokeInput;
+}
+
+function parseWorkspaceComponentEmergencyStopInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentEmergencyStopInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["idempotencyKey", "reasonCode", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].idempotencyKey !== "string" ||
+    !IDEMPOTENCY_KEY_PATTERN.test(args[0].idempotencyKey) ||
+    typeof args[0].reasonCode !== "string" ||
+    !ERROR_CODE_PATTERN.test(args[0].reasonCode)
+  )
+    return null;
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    idempotencyKey: args[0].idempotencyKey,
+    reasonCode: args[0].reasonCode,
+  });
+}
+
+function parseWorkspaceComponentReconcileInput(
+  args: readonly unknown[],
+): DesktopWorkspaceComponentReconcileInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], [
+      "effectId",
+      "evidenceSha256",
+      "operationId",
+      "outcome",
+      "requestSha256",
+      "workspaceId",
+    ]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    typeof args[0].operationId !== "string" ||
+    !COMPONENT_OPERATION_ID_PATTERN.test(args[0].operationId) ||
+    typeof args[0].effectId !== "string" ||
+    !COMPONENT_EFFECT_ID_PATTERN.test(args[0].effectId) ||
+    typeof args[0].requestSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].requestSha256) ||
+    (args[0].outcome !== "succeeded" && args[0].outcome !== "failed") ||
+    typeof args[0].evidenceSha256 !== "string" ||
+    !SHA256_PATTERN.test(args[0].evidenceSha256)
+  )
+    return null;
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    operationId: args[0].operationId,
+    effectId: args[0].effectId,
+    requestSha256: args[0].requestSha256,
+    outcome: args[0].outcome,
+    evidenceSha256: args[0].evidenceSha256,
   });
 }
 
@@ -1467,6 +2200,106 @@ export function registerClosedIpcHandlers(
       return input === null
         ? invalidInput<DesktopWorkspaceCompositionDecisionResult>()
         : dependencies.decideWorkspaceComposition(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsGet,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentSnapshot>()
+        : dependencies.getWorkspaceComponents(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsPropose,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentProposeInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentProposalResult>()
+        : dependencies.proposeWorkspaceComponent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsProposeFromAssistant,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentAssistantProposalInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentProposalResult>()
+        : dependencies.proposeWorkspaceComponentFromAssistant(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsImportOwnerPackage,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentOwnerPackageImportResult>()
+        : dependencies.importOwnerWorkspaceComponentPackage(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsImportAssistantPackage,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentAssistantPackageImportInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentOwnerPackageImportResult>()
+        : dependencies.importAssistantWorkspaceComponentPackage(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsDecide,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentDecisionInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentDecisionResult>()
+        : dependencies.decideWorkspaceComponent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsAction,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentActionInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentActionResult>()
+        : dependencies.applyWorkspaceComponentAction(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsInvoke,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentInvokeInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentInvokeResult>()
+        : dependencies.invokeWorkspaceComponent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsEmergencyStop,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentEmergencyStopInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentEmergencyStopResult>()
+        : dependencies.emergencyStopWorkspaceComponents(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceComponentsReconcile,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceComponentReconcileInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceComponentReconcileResult>()
+        : dependencies.reconcileWorkspaceComponent(input);
     },
   );
   ipcMain.handle(
