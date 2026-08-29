@@ -18,6 +18,10 @@ const unused = async () => ({
 
 const productStubs = {
   getWorkspaceAgent: unused,
+  authorizeWorkspaceFiles: unused,
+  releaseWorkspaceFiles: unused,
+  listWorkspaceFiles: unused,
+  readWorkspaceFile: unused,
   listProviders: async () => ({ ok: true as const, value: { items: [] } }),
   upsertProvider: unused,
   deleteProvider: unused,
@@ -238,6 +242,144 @@ test("IPC rejects unexpected arguments and non-loopback senders", async () => {
     }),
     { ok: false, error: { code: "desktop_native_input_invalid" } },
   );
+});
+
+test("workspace file IPC accepts only the exact scoped generation contract", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  const calls: unknown[] = [];
+  registerClosedIpcHandlers(
+    {
+      handle: (
+        channel: string,
+        listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+      ) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    },
+    {
+      getVersion: () => "1.0.0",
+      getRuntimeStatus: () => ({ phase: "ready", attempts: 1, lastError: null }),
+      retryRuntimeStartup: async () => ({ phase: "ready", attempts: 1, lastError: null }),
+      getOwnerStatus: unused,
+      bootstrapOwner: unused,
+      listWorkspaces: unused,
+      createWorkspace: unused,
+      archiveWorkspace: unused,
+      ...productStubs,
+      authorizeWorkspaceFiles: async (input) => {
+        calls.push(input);
+        return {
+          ok: true,
+          value: {
+            workspaceId: input.workspaceId,
+            rootName: "project",
+            authorizationGeneration: 7,
+          },
+        };
+      },
+      releaseWorkspaceFiles: async (input) => {
+        calls.push(input);
+        return { ok: true, value: { released: true } };
+      },
+      listWorkspaceFiles: async (input) => {
+        calls.push(input);
+        return {
+          ok: true,
+          value: { directoryPath: input.directoryPath, entries: [], truncated: false },
+        };
+      },
+      readWorkspaceFile: async (input) => {
+        calls.push(input);
+        return {
+          ok: true,
+          value: {
+            path: input.path,
+            content: "hello\n",
+            sizeBytes: 6,
+            lastModifiedMs: 1,
+            sha256: "0".repeat(64),
+          },
+        };
+      },
+    },
+  );
+  const trustedEvent = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+  } as IpcMainInvokeEvent;
+  const workspaceId = `workspace_${"a".repeat(32)}`;
+
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.workspaceFilesAuthorize)?.(trustedEvent, { workspaceId }),
+    {
+      ok: true,
+      value: { workspaceId, rootName: "project", authorizationGeneration: 7 },
+    },
+  );
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.workspaceFilesList)?.(trustedEvent, {
+      workspaceId,
+      authorizationGeneration: 7,
+      directoryPath: "src",
+    }),
+    {
+      ok: true,
+      value: { directoryPath: "src", entries: [], truncated: false },
+    },
+  );
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.workspaceFilesRead)?.(trustedEvent, {
+      workspaceId,
+      authorizationGeneration: 7,
+      path: "src/main.ts",
+    }),
+    {
+      ok: true,
+      value: {
+        path: "src/main.ts",
+        content: "hello\n",
+        sizeBytes: 6,
+        lastModifiedMs: 1,
+        sha256: "0".repeat(64),
+      },
+    },
+  );
+  assert.deepEqual(
+    await handlers.get(IPC_CHANNELS.workspaceFilesRelease)?.(trustedEvent, {
+      workspaceId,
+      authorizationGeneration: 7,
+    }),
+    { ok: true, value: { released: true } },
+  );
+  assert.deepEqual(calls, [
+    { workspaceId },
+    { workspaceId, authorizationGeneration: 7, directoryPath: "src" },
+    { workspaceId, authorizationGeneration: 7, path: "src/main.ts" },
+    { workspaceId, authorizationGeneration: 7 },
+  ]);
+
+  for (const [channel, payload] of [
+    [IPC_CHANNELS.workspaceFilesAuthorize, { workspaceId, extra: true }],
+    [
+      IPC_CHANNELS.workspaceFilesRelease,
+      { workspaceId, authorizationGeneration: 1.5 },
+    ],
+    [
+      IPC_CHANNELS.workspaceFilesList,
+      { workspaceId, authorizationGeneration: 7, directoryPath: "bad\npath" },
+    ],
+    [
+      IPC_CHANNELS.workspaceFilesRead,
+      { workspaceId, authorizationGeneration: 7, path: "" },
+    ],
+  ] as const) {
+    assert.deepEqual(await handlers.get(channel)?.(trustedEvent, payload), {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    });
+  }
+  assert.equal(calls.length, 4);
 });
 
 test("destroyed renderer cannot receive conversation stream events", async () => {

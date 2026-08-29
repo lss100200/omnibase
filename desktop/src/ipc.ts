@@ -45,6 +45,13 @@ import {
   type DesktopTeamRunSubmitProposalInput,
   type DesktopWorkspaceArchiveInput,
   type DesktopWorkspaceCreateInput,
+  type DesktopWorkspaceFileAuthorization,
+  type DesktopWorkspaceFileAuthorizeInput,
+  type DesktopWorkspaceFileList,
+  type DesktopWorkspaceFileListInput,
+  type DesktopWorkspaceFileReadInput,
+  type DesktopWorkspaceFileReadResult,
+  type DesktopWorkspaceFileReleaseInput,
   type DesktopWorkspaceIdInput,
   type DesktopWorkspaceList,
   type DesktopWorkspaceMutationResult,
@@ -85,6 +92,18 @@ export interface IpcDependencies {
   readonly getWorkspaceAgent: (
     input: DesktopWorkspaceIdInput,
   ) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>;
+  readonly authorizeWorkspaceFiles: (
+    input: DesktopWorkspaceFileAuthorizeInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>>;
+  readonly releaseWorkspaceFiles: (
+    input: DesktopWorkspaceFileReleaseInput,
+  ) => Promise<DesktopOperationResult<{ readonly released: true }>>;
+  readonly listWorkspaceFiles: (
+    input: DesktopWorkspaceFileListInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceFileList>>;
+  readonly readWorkspaceFile: (
+    input: DesktopWorkspaceFileReadInput,
+  ) => Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>>;
   readonly listProviders: () => Promise<DesktopOperationResult<DesktopProviderList>>;
   readonly upsertProvider: (
     input: DesktopProviderUpsertInput,
@@ -304,6 +323,80 @@ function parseWorkspaceIdInput(
     return null;
   }
   return Object.freeze({ workspaceId: args[0].workspaceId });
+}
+
+function validAuthorizationGeneration(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 1;
+}
+
+function validLogicalPathValue(value: unknown, allowRoot: boolean): value is string {
+  return (
+    typeof value === "string" &&
+    (allowRoot || value.length > 0) &&
+    value.length <= 4_096 &&
+    !CONTROL_CHARACTER_PATTERN.test(value)
+  );
+}
+
+function parseWorkspaceFileReleaseInput(
+  args: readonly unknown[],
+): DesktopWorkspaceFileReleaseInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["authorizationGeneration", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validAuthorizationGeneration(args[0].authorizationGeneration)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    authorizationGeneration: args[0].authorizationGeneration,
+  });
+}
+
+function parseWorkspaceFileListInput(
+  args: readonly unknown[],
+): DesktopWorkspaceFileListInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["authorizationGeneration", "directoryPath", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validAuthorizationGeneration(args[0].authorizationGeneration) ||
+    !validLogicalPathValue(args[0].directoryPath, true)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    authorizationGeneration: args[0].authorizationGeneration,
+    directoryPath: args[0].directoryPath,
+  });
+}
+
+function parseWorkspaceFileReadInput(
+  args: readonly unknown[],
+): DesktopWorkspaceFileReadInput | null {
+  if (
+    args.length !== 1 ||
+    !isRecord(args[0]) ||
+    !hasExactKeys(args[0], ["authorizationGeneration", "path", "workspaceId"]) ||
+    typeof args[0].workspaceId !== "string" ||
+    !WORKSPACE_ID_PATTERN.test(args[0].workspaceId) ||
+    !validAuthorizationGeneration(args[0].authorizationGeneration) ||
+    !validLogicalPathValue(args[0].path, false)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    workspaceId: args[0].workspaceId,
+    authorizationGeneration: args[0].authorizationGeneration,
+    path: args[0].path,
+  });
 }
 
 function parseProviderIdInput(
@@ -964,6 +1057,46 @@ export function registerClosedIpcHandlers(
       return input === null
         ? invalidInput<{ readonly agent: DesktopParentAgent }>()
         : dependencies.getWorkspaceAgent(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceFilesAuthorize,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceIdInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceFileAuthorization>()
+        : dependencies.authorizeWorkspaceFiles(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceFilesRelease,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceFileReleaseInput(args);
+      return input === null
+        ? invalidInput<{ readonly released: true }>()
+        : dependencies.releaseWorkspaceFiles(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceFilesList,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceFileListInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceFileList>()
+        : dependencies.listWorkspaceFiles(input);
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.workspaceFilesRead,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => {
+      requireTrustedSender(event);
+      const input = parseWorkspaceFileReadInput(args);
+      return input === null
+        ? invalidInput<DesktopWorkspaceFileReadResult>()
+        : dependencies.readWorkspaceFile(input);
     },
   );
   ipcMain.handle(

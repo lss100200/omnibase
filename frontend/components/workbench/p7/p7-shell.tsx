@@ -45,6 +45,7 @@ import {
   selectP7BottomTab,
   setP7AgentPanelOpen,
   setP7BottomOpen,
+  setP7CenterView,
   toggleP7Activity,
   toggleP7OmniaPopover,
   type P7Activity,
@@ -53,6 +54,7 @@ import {
   type P7OmniaSnapshot,
   type P7ShellUiState,
 } from '@/lib/p7-workbench-shell'
+import { p7WorkspaceFilesAuthorized, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
 import { P7Sidebar } from './p7-sidebar'
 import { P7Editor } from './p7-editor'
 import { P7AgentPanel } from './p7-agent-panel'
@@ -88,6 +90,12 @@ export interface P7WorkbenchProps {
   readonly onArchiveConversation: (conversationId: string) => void
   readonly workspaceNameInput: string
   readonly onWorkspaceNameInputChange: (name: string) => void
+
+  readonly workspaceFiles: P7WorkspaceFilesState
+  readonly onAuthorizeWorkspaceFiles: () => void
+  readonly onReleaseWorkspaceFiles: () => void
+  readonly onToggleWorkspaceDirectory: (directoryPath: string, expanded: boolean) => void
+  readonly onOpenWorkspaceFile: (path: string) => void
 
   readonly messages: readonly DesktopMessage[]
   readonly messagesStatus: 'empty' | 'loading' | 'ready' | 'error'
@@ -441,10 +449,10 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
   const [paletteQuery, setPaletteQuery] = useState('')
 
   const presence = useMemo(() => {
-    // Wave 1: no trusted file/diff/terminal/problems/search/source catalog.
-    // See p7-workbench-shell.ts for the availability projection.
+    // P7.1 unlocks Code only while an Owner-selected native authorization is
+    // live. Every other previously unavailable catalog stays unavailable.
     return {
-      files: false,
+      files: p7WorkspaceFilesAuthorized(props.workspaceFiles),
       diff: false,
       terminal: false,
       problems: false,
@@ -452,7 +460,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
       search: false,
       source: false,
     } satisfies P7DataSourcePresence
-  }, [])
+  }, [props.workspaceFiles])
 
   const runningCount = p7RunningCount({
     teamPhase: props.teamLive.phase,
@@ -567,7 +575,16 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           runningCount={runningCount}
           omnia={omnia}
         />
-        {ui.sidebarOpen && <P7Sidebar activity={ui.activity} {...props} />}
+        {ui.sidebarOpen && (
+          <P7Sidebar
+            activity={ui.activity}
+            {...props}
+            onOpenWorkspaceFile={(path) => {
+              props.onOpenWorkspaceFile(path)
+              updateUi(setP7CenterView(ui, 'code'))
+            }}
+          />
+        )}
         <P7Editor
           ui={ui}
           onUiChange={updateUi}
@@ -583,6 +600,7 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
           blackboardStatus={props.blackboardStatus}
           eventLog={props.eventLog}
           outputLines={props.outputLines}
+          workspaceFiles={props.workspaceFiles}
         />
         {ui.agentPanelOpen && (
           <P7AgentPanel

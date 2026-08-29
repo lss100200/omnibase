@@ -2,6 +2,7 @@
 
 > **状态同步日期**：2026-08-29
 > **当前个人桌面线**：P7.0 Wave 1 已进入 `main@9913742`；Wave 2 fresh unsigned 1.0.0 EXE/MSI 与真实 P7 Electron UI 已通过工程验收。Windows Sandbox 生命周期由 Owner 亲自执行并按记录偏离接受；非管理员/medium-integrity、目标 viewport/DPI、1.0.1 runtime 启动、Provider-backed SSE/Stop/retry、Authenticode 与生产发布仍未证明。当前权威交接见 `docs/reviews/p7-0-wave2-engineering-acceptance-r0.md`。
+> **当前 P7.1 入口**：Owner 已批准 Wave 1 的只读本地文件合同，权威产品法为 `docs/architecture/p7-1-local-development-loop.md`。源码实现、攻击矩阵与全量门禁已完成；`2e6693e` 的 BOM 字节合同修复已进入 R3 unsigned Windows 包，并在 fresh Windows Sandbox 完成真实 Electron 授权、目录枚举、只读打开、Workspace 隔离、release 清空与窗口关闭旅程，工程证据等待 PR/Owner 审核。Sandbox 为 elevated/High integrity；非管理员/medium-integrity、目标 viewport/DPI、完整进程树收敛、卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、Git、搜索、重命名/删除、Next/backend 文件路由和数据库迁移继续关闭。当前证据见 `docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`。
 > **历史基线**：本路线图的大部分基础设施叙述基于 `main` `eb0a173` 及其后续阶段记录；具体运行事实以源码、维护者地图、最终交接和可复现门禁为准。
 > **远景对齐**："数据库 + RAG + 自持生态 + Agent"
 
@@ -321,6 +322,8 @@ P7.x 后续工作，不与 P7.0 的产品与安装真实性混为一项。
 | P7.0 Wave 1：editor-first source UI | 设计批准；源码已通过审计（`11895e9`） | 中央 Code/Diff/Artifact，右侧真实 SSE Agent 面板，互斥侧栏，折叠底部面板，深黑/淡紫/粉白主题，Logo 与 OMNIA 接口；不得伪造文件、Diff、Agent 事件或测试状态 |
 | P7.0 Wave 2：fresh Windows EXE | 工程验收通过（有边界） | 从 clean `9913742` 构建 unsigned 1.0.0 EXE/MSI；EXE SHA256 `7bbc1c4f...29b23b`、MSI SHA256 `fc858c10...f170529`、runtime manifest SHA256 `d64dbab7...85c76f7`。这不是签名或生产发行 |
 | P7.0 Wave 2：隔离生命周期 | 工程验收通过（记录偏离） | Owner 在可丢弃 Windows Sandbox 完成 1.0.0 安装、真实 P7 窗口、关闭、降级拒绝、回滚探针与卸载；Codex 视觉复核通过。非管理员/medium-integrity、viewport/DPI、1.0.1 runtime 启动和 Provider-backed SSE/Stop/retry 保持 NOT_PROVEN |
+| P7.1 Wave 1：只读本地文件 | R3 Windows 工程证据就绪；等待 PR/Owner 审核 | `2e6693e` 的 BOM 字节合同修复已在 fresh unsigned Windows 包中完成真实 Electron 授权/list/read/Workspace 隔离/release/关闭旅程。renderer 无 Node、绝对路径或 handle；elevated Sandbox 偏离及非管理员、DPI、卸载、Provider、签名、生产发布继续 NOT_PROVEN；保存、Agent 文件工具、Terminal、Git、搜索、重命名/删除继续关闭 |
+| P7.1 后续：写入/Terminal/Git | 冻结 | 写入须另过 reviewed buffer、digest CAS、atomic replace、post-write verify 和 recovery Gate；Terminal/Git 各自需要独立执行与仓库身份/变更合同，不由 Wave 1 推断 |
 | P7.x：开源与发布准备 | 后续 | README/架构/API/贡献文档、Demo、CI/CD、安全复审、许可证与社区模板；不得提前宣称 1.0.0、签名或生产发布 |
 
 ---
@@ -339,6 +342,10 @@ Phase 5: Agent 编排（工作空间内运行）
 Phase 6: Skill/MCP 扩展生态（企业/第三方扩展仍按安全 Gate 推进）
     ↓
 P7.0: Editor-first UI → fresh EXE → disposable Windows lifecycle
+    ↓
+P7.1 Wave 1: Owner-authorized read-only local files
+    ↓
+P7.1 later gates: write/save → Terminal → Git/search
     ↓
 P7.x: 开源、社区与发布准备
 ```

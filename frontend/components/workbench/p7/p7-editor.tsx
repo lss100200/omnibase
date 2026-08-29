@@ -28,6 +28,7 @@ import {
   type P7DataSourcePresence,
   type P7ShellUiState,
 } from '@/lib/p7-workbench-shell'
+import { p7WorkspaceFileErrorMessage, type P7WorkspaceFilesState } from '@/lib/p7-workspace-files'
 
 function invocationStatusLabel(status: string): string {
   switch (status) {
@@ -266,6 +267,49 @@ function P7BriefView({
   )
 }
 
+function P7CodeView({ files }: { readonly files: P7WorkspaceFilesState }) {
+  const error = p7WorkspaceFileErrorMessage(files.errorCode)
+  if (files.readPhase === 'loading') {
+    return (
+      <div className="p7-code-empty" role="status">
+        <FileCode2 size={18} />
+        <span>正在读取 {files.selectedPath ?? '文件'}…</span>
+      </div>
+    )
+  }
+  if (files.readPhase === 'error') {
+    return (
+      <div className="p7-code-empty" role="alert">
+        <FileCode2 size={18} />
+        <strong>无法打开 {files.selectedPath ?? '文件'}</strong>
+        <span>{error ?? '本机文件操作未完成。'}</span>
+      </div>
+    )
+  }
+  if (files.openFile === null) {
+    return (
+      <div className="p7-code-empty" role="status">
+        <FileCode2 size={18} />
+        <span>未打开文件</span>
+      </div>
+    )
+  }
+  return (
+    <div className="p7-code-view">
+      <div className="p7-code-head">
+        <span className="p7-code-path">{files.openFile.path}</span>
+        <span className="p7-code-meta">
+          {files.openFile.sizeBytes.toLocaleString()} B · SHA-256{' '}
+          {files.openFile.sha256.slice(0, 12)} · 只读
+        </span>
+      </div>
+      <pre className="p7-code-content" tabIndex={0} aria-label={`只读代码：${files.openFile.path}`}>
+        <code>{files.openFile.content}</code>
+      </pre>
+    </div>
+  )
+}
+
 function P7BottomPanel({
   ui,
   onUiChange,
@@ -362,6 +406,7 @@ export function P7Editor(props: {
   readonly blackboardStatus: 'idle' | 'loading' | 'ready' | 'error'
   readonly eventLog: readonly string[]
   readonly outputLines: readonly string[]
+  readonly workspaceFiles: P7WorkspaceFilesState
 }) {
   const views: readonly P7CenterView[] = ['transcript', 'brief', 'code', 'diff']
   const viewIcons: Record<P7CenterView, LucideIcon> = {
@@ -409,7 +454,7 @@ export function P7Editor(props: {
         {props.ui.centerView === 'brief' && (
           <P7BriefView blackboard={props.blackboard} blackboardStatus={props.blackboardStatus} />
         )}
-        {props.ui.centerView === 'code' && <P7UnavailableView title="代码" />}
+        {props.ui.centerView === 'code' && <P7CodeView files={props.workspaceFiles} />}
         {props.ui.centerView === 'diff' && <P7UnavailableView title="审阅变更" />}
       </div>
       <P7BottomPanel

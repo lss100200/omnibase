@@ -295,6 +295,19 @@ runtime evidence; then correct the stale documentation in the same change.
   `ENTERPRISE_MULTI_AGENT_DISABLED`. Loopback D may claim
   `PERSONAL_MULTI_AGENT_IMPLEMENTED`; paid/live Provider window is still
   unproven. Do not announce 1.0.0, Authenticode, or EXE.
+- P7.1 Wave 1 is the forward-only read-only local-file exception to the P6.7
+  file freeze and P7.0 unavailable editor state. Read INV-086 and
+  `docs/architecture/p7-1-local-development-loop.md` before changing the
+  workspace-files bridge, IPC, Electron filesystem service, Explorer or editor
+  buffers. Only a direct Owner directory-picker gesture may establish one
+  in-memory Workspace/generation-bound root. The renderer receives logical
+  relative paths and bounded UTF-8 content, never Node authority, an absolute
+  root, a native handle or a launch token. Every operation revalidates the
+  active Workspace and rejects broad roots/home, traversal, UNC/device/ADS,
+  reserved/secret names, links/junctions/reparse points and non-regular objects.
+  Root replacement, release, Workspace switch and window destruction invalidate
+  prior generations. This lane adds no save/write, Agent file tool, Terminal,
+  Git, search, rename/delete, Next/backend file route or database migration.
 
 ## Safe change workflow
 

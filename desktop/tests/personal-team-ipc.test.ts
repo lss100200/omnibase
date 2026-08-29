@@ -18,6 +18,10 @@ const unused = async () => ({
 
 const productStubs = {
   getWorkspaceAgent: unused,
+  authorizeWorkspaceFiles: unused,
+  releaseWorkspaceFiles: unused,
+  listWorkspaceFiles: unused,
+  readWorkspaceFile: unused,
   listProviders: async () => ({ ok: true as const, value: { items: [] } }),
   upsertProvider: unused,
   deleteProvider: unused,

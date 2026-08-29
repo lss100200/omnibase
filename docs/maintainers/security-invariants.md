@@ -4597,3 +4597,68 @@ Stop Electron and let RuntimeHost reap the child group. Preserve
 unvalidated model JSON blob as dispatch, copy Provider secrets into role
 config, open Alembic 0017, skip CAS on role config, or claim a paid/live
 multi-agent window from loopback evidence.
+
+## INV-086 p71-owner-authorized-readonly-local-files-boundary
+
+P7.1 Wave 1 is a forward-only exception to the P6.7 file freeze and the P7.0
+unavailable file/editor state. It admits only Owner-authorized, read-only local
+directory browse and bounded UTF-8 file open inside the Electron desktop
+workbench. It does not change the P6.7/P7.0 evidence, create a Browser/Next/
+backend file route, add a SQLite migration, or authorize save/write, Agent file
+tools, Terminal, Git, search, rename or deletion.
+
+Only `workspaceFiles.authorize({workspaceId})` may display the native directory
+picker. Electron main owns one root handle/path identity in memory and returns
+only its display name plus a monotonic `authorizationGeneration`. Authorize
+replaces the prior root; `workspaceFiles.release`, Workspace switch, renderer
+release, window destruction and shutdown clear it and advance the generation.
+Every authorize/list/read operation revalidates the exact active Workspace
+through the existing native `getWorkspaceAgent` authority. Stale generations,
+inactive/archived/mismatched Workspaces and late results fail closed.
+Generation exhaustion is a stable fail-closed error, never a wrap or reset.
+
+The renderer has no Node.js filesystem access, absolute/physical root path,
+native handle, launch identity or control token. Exact origin-checked preload
+methods map only to `omnibase:workspace-files:authorize|release|list|read`.
+List/read requests carry the exact Workspace id, authorization generation and a
+normalized logical relative path. Unknown keys, arbitrary channel names and
+unvalidated DTOs fail before filesystem access.
+
+The selected root cannot be a filesystem/drive root, the user's home directory
+or another broad ambient root. Logical paths are limited to 4,096 characters,
+32 components and 255 characters per name. Absolute/drive-relative, UNC,
+device, traversal, empty/dot, ADS, control, trailing-dot/space, reserved Windows
+and secret-shaped names are rejected before enumeration/open. `.git`, `.ssh`,
+cloud credential directories, `.env*`, private-key names and equivalent secret
+components are closed. Symlink, junction, reparse, other-link and non-regular
+objects are forbidden. Canonical containment and stable object identity are
+checked at every component and again on the opened object; ambiguity or drift
+is a stable denial, never a fallback read.
+
+Enumeration is lazy, returns at most 500 entries and visits at most 2,048.
+Reads accept only strict UTF-8 regular files up to 1 MiB. Results use logical
+paths and closed DTOs and bind the returned bytes to size, modification time and
+SHA-256. Physical roots, native errors and file bodies are absent from logs,
+SQLite, local storage, Agent prompts, team blackboards and audit payloads.
+
+**Required verification**
+
+- exact origin/channel/request/response IPC and renderer-no-Node tests;
+- replace/release/Workspace-switch/window-destroy generation attacks, including
+  late list/read completion from the prior authorization;
+- root/home, traversal, UNC/device/ADS/reserved/secret, link/junction/reparse,
+  non-regular, containment and identity-drift attacks on Windows semantics;
+- list/visit/read/path budgets, strict UTF-8, SHA-256, deterministic ordering
+  and closed error-shape tests;
+- frontend bridge/workbench tests proving stale data cannot cross Workspace or
+  generation and write/Terminal/Git/search actions remain unavailable;
+- desktop/frontend tests, typecheck and production builds, payload/freeze
+  contract tests, both maintainer validators and `git diff --check`.
+
+**Failure recovery**
+
+Clear the in-memory authorization, tree and buffers and require a new Owner
+picker gesture. Preserve every user file unchanged. Never persist a physical
+path or handle, weaken containment/link/secret checks, add a Next/backend file
+route, rewrite SQLite or enable a later write, Terminal, Git or Agent-tool gate
+to repair a read failure.

@@ -38,6 +38,34 @@ export interface DesktopWorkspaceMutationResult {
   readonly workspace: DesktopWorkspace
 }
 
+export interface DesktopWorkspaceFileAuthorization {
+  readonly workspaceId: string
+  readonly rootName: string
+  readonly authorizationGeneration: number
+}
+
+export interface DesktopWorkspaceFileEntry {
+  readonly path: string
+  readonly name: string
+  readonly kind: 'file' | 'directory'
+  readonly sizeBytes: number | null
+  readonly lastModifiedMs: number
+}
+
+export interface DesktopWorkspaceFileList {
+  readonly directoryPath: string
+  readonly entries: readonly DesktopWorkspaceFileEntry[]
+  readonly truncated: boolean
+}
+
+export interface DesktopWorkspaceFileRead {
+  readonly path: string
+  readonly content: string
+  readonly sizeBytes: number
+  readonly lastModifiedMs: number
+  readonly sha256: string
+}
+
 export type DesktopOperationResult<T> =
   | Readonly<{ ok: true; value: T }>
   | Readonly<{ ok: false; error: Readonly<{ code: string }> }>
@@ -371,6 +399,25 @@ export interface OmniBaseDesktopBridge {
       readonly workspaceId: string
     }) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>
   }
+  readonly workspaceFiles: {
+    readonly authorize: (input: {
+      readonly workspaceId: string
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>>
+    readonly release: (input: {
+      readonly workspaceId: string
+      readonly authorizationGeneration: number
+    }) => Promise<DesktopOperationResult<{ readonly released: true }>>
+    readonly list: (input: {
+      readonly workspaceId: string
+      readonly authorizationGeneration: number
+      readonly directoryPath: string
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceFileList>>
+    readonly read: (input: {
+      readonly workspaceId: string
+      readonly authorizationGeneration: number
+      readonly path: string
+    }) => Promise<DesktopOperationResult<DesktopWorkspaceFileRead>>
+  }
   readonly providers: {
     readonly list: () => Promise<DesktopOperationResult<{ readonly items: readonly DesktopProvider[] }>>
     readonly upsert: (input: {
@@ -571,6 +618,11 @@ export function resolveDesktopBridge(value: unknown): OmniBaseDesktopBridge | nu
     !hasFunction(value.workspaces, 'create') ||
     !hasFunction(value.workspaces, 'archive') ||
     !hasFunction(value.workspaces, 'agent') ||
+    !isRecord(value.workspaceFiles) ||
+    !hasFunction(value.workspaceFiles, 'authorize') ||
+    !hasFunction(value.workspaceFiles, 'release') ||
+    !hasFunction(value.workspaceFiles, 'list') ||
+    !hasFunction(value.workspaceFiles, 'read') ||
     !isRecord(value.providers) ||
     !hasFunction(value.providers, 'list') ||
     !hasFunction(value.providers, 'upsert') ||

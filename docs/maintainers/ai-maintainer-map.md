@@ -890,7 +890,7 @@ embedding readiness 与 reranker readiness 分离，reranker 缺失时显式
 | `backend/src/omnibase/production/phase5_admission.py`、`scripts/production/validate_p5_0_admission.py`、`deployment/production/phase5-admission.example.json` | P5.0 Phase 5 admission 决策（gate 解析、Evidence Manifest、clean-checkout verify） | P34.7 decision/composition、migration head、SDK/OpenAPI snapshot、runbook、maintainer map | INV-005, INV-010, INV-035, INV-039 |
 | `backend/src/omnibase/production/phase5_task_ledger_contract.py`、`scripts/production/validate_p5_2a_task_ledger_contract.py`、`deployment/production/phase5-task-ledger-contract.example.json` | P5.2A 离线 Task/Run/Lease/fencing 账本合同（身份层级、状态机、Task Lease TTL/fencing、预算、hash profile、checkpoint 限制） | P34.7/P5.0/P5.1 formal state、migration 基线（0001–0010）、P5.1A 合同 sealed digest、维护者文档 sealed digest | INV-005, INV-010, INV-035, INV-039, INV-040, INV-043 |
 | `frontend/**` | Browser UX、same-origin `/api/v1` client、session bootstrap | Main API paths、production build、production frontend smoke | INV-001, INV-005, INV-010 |
-| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、parent-directed personal team contract、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084, INV-085 |
+| `backend/src/omnibase/desktop_local/**`、`desktop/**`、P6.5 RuntimeHost/payload/installer | per-user SQLite desktop、native identity、Provider vault、single parent Agent、parent-directed personal team contract、P7.1 Owner-authorized read-only local files、child supervision、Windows package/upgrade/uninstall | Next server proxy、runtime manifest、pinned Python/Node/.NET/WiX inputs、clean-Windows lifecycle and signing | INV-005, INV-006, INV-010, INV-072, INV-073, INV-080, INV-082, INV-083, INV-084, INV-085, INV-086 |
 | Compose、Dockerfile、CI、operator scripts | clean rebuild、服务连通、migration/recovery 操作 | 锁文件、health、secret injection、restore verification | INV-008, INV-009, INV-010 |
 
 跨两行以上的修改应取各行验证命令的并集；涉及 Principal、tenant binding、Gateway、Controlled Data 或 migration 时，不能只运行局部 happy-path 测试。
@@ -2562,3 +2562,36 @@ Enterprise Planner / `MULTI_AGENT_ENABLED` stay disabled. Do not announce
 1.0.0, Authenticode, or EXE. The P34.3 maintainer-map benchmark suite
 (`docs/maintainers/benchmark/benchmark-suite.json`) remains MMB-001–008 and
 does not score P6.9; INV-085 still appears on the desktop impact row.
+
+## P7.1 Owner-authorized read-only local files
+
+Read INV-086 and
+`docs/architecture/p7-1-local-development-loop.md` before changing
+`workspaceFiles`, the four workspace-files IPC channels, Explorer tree state or
+Code editor buffers.
+
+P7.1 Wave 1 is a forward-only exception to P6.7's file freeze and P7.0's honest
+unavailable state. It admits only one Owner-picked directory at a time. Electron
+main owns the root handle/path identity in memory; the renderer receives only a
+display name, one monotonic authorization generation, normalized logical paths
+and bounded read DTOs. Authorize/release, Workspace switch, renderer release,
+window destruction and shutdown invalidate the old generation. Every authorize,
+list and read revalidates the exact active Workspace through the existing native
+`getWorkspaceAgent` authority. There is no Browser, Next or backend file route
+and no desktop SQLite migration.
+
+The closed preload catalog is `workspaceFiles.authorize|release|list|read`,
+backed only by `omnibase:workspace-files:authorize|release|list|read`. Reject
+broad roots/home, absolute/drive-relative/UNC/device/traversal/ADS/reserved and
+secret-shaped names before access. Reject symlinks, junctions, reparse points,
+other links and non-regular objects; revalidate containment and stable opened
+identity. Enumeration is lazy and bounded; reads are strict UTF-8, at most 1
+MiB, and return size, mtime and SHA-256 over the returned bytes. Physical roots,
+handles, native errors, file content and launch identities must not be logged or
+persisted.
+
+Save/write, Agent file tools, Terminal/process execution, Git, global search,
+watchers, file context injection, rename, deletion and root persistence remain
+closed. Their UI must stay unavailable. A green P7.1 Wave 1 gate proves none of
+those later capabilities, a new Windows package, Authenticode or production
+release.

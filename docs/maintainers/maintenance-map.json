@@ -1333,6 +1333,29 @@
         "frontend/lib/desktop-bridge.test.ts",
         "frontend/lib/desktop-team-lifecycle.test.ts"
       ]
+    },
+    {
+      "id": "INV-086",
+      "title": "P7.1 local files are Owner-authorized, read-only, generation-bound and renderer-isolated",
+      "document": "docs/maintainers/security-invariants.md#inv-086-p71-owner-authorized-readonly-local-files-boundary",
+      "source_paths": [
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/workspace-files.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/p7-workspace-files.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/components/workbench/p7/**",
+        "docs/architecture/p7-1-local-development-loop.md"
+      ],
+      "test_paths": [
+        "desktop/tests/workspace-files.test.ts",
+        "desktop/tests/ipc.test.ts",
+        "frontend/lib/desktop-bridge.test.ts",
+        "frontend/lib/p7-workspace-files.test.ts"
+      ]
     }
   ],
   "modules": [
@@ -4383,6 +4406,7 @@
         "docs/architecture/p6-7-desktop-single-agent-core.md",
         "docs/architecture/p6-9-multi-agent-planning.md",
         "docs/architecture/p7-0-editor-first-workbench.md",
+        "docs/architecture/p7-1-local-development-loop.md",
         "docs/reviews/p6-9-final-acceptance-p7-0-handoff.md",
         "docs/maintainers/security-invariants.md",
         "AGENTS.md"
@@ -4433,7 +4457,8 @@
         "INV-082",
         "INV-083",
         "INV-084",
-        "INV-085"
+        "INV-085",
+        "INV-086"
       ],
       "verification": [
         "python -m pytest backend/tests/test_desktop_local_foundation.py backend/tests/test_desktop_local_safety.py backend/tests/test_desktop_local_app.py backend/tests/test_desktop_local_provider.py backend/tests/test_desktop_local_conversation.py backend/tests/test_desktop_local_personal_team.py backend/tests/test_desktop_local_endpoint.py -q",
@@ -4491,7 +4516,8 @@
         "INV-082",
         "INV-083",
         "INV-084",
-        "INV-085"
+        "INV-085",
+        "INV-086"
       ],
       "verification": [
         "cd frontend && pnpm test",
@@ -4502,6 +4528,62 @@
       "recovery": [
         "If the workbench fails to render, revert frontend/app/desktop/workbench-client.tsx and the p7 component/lib modules without touching the desktop bridge contract; the shell has no HTTP fallback and must stay behind preload/IPC.",
         "Blackboard slot inconsistencies (stale boards, cross-conversation projections) are fixed in the pure state machine lib/p7-live-slot.ts plus its tests before any wiring change."
+      ]
+    },
+    {
+      "id": "p7-1-local-development-loop",
+      "name": "P7.1 Wave 1 Owner-authorized read-only local file browse and UTF-8 editor open",
+      "source_paths": [
+        "desktop/src/ipc.ts",
+        "desktop/src/main.ts",
+        "desktop/src/preload.ts",
+        "desktop/src/runtime/workspace-files.ts",
+        "desktop/src/shared/ipc-contract.ts",
+        "frontend/lib/desktop-bridge.ts",
+        "frontend/lib/p7-workspace-files.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/components/workbench/p7/**",
+        "docs/architecture/p7-0-editor-first-workbench.md",
+        "docs/architecture/p7-1-local-development-loop.md"
+      ],
+      "entrypoints": [
+        "desktop/src/runtime/workspace-files.ts:WorkspaceFiles",
+        "desktop/src/ipc.ts:registerClosedIpcHandlers",
+        "desktop/src/preload.ts:workspaceFiles",
+        "frontend/lib/p7-workspace-files.ts:createP7WorkspaceFilesState",
+        "frontend/app/desktop/workbench-client.tsx:DesktopWorkbench"
+      ],
+      "public_interfaces": [
+        "Origin-checked workspaceFiles.authorize/release/list/read preload methods over four exact Electron IPC channels",
+        "One in-memory Owner-picked root bound to active Workspace id and monotonic authorization generation",
+        "Lazy bounded logical-relative file tree and strict UTF-8 read DTO with size, modification time and SHA-256",
+        "Read-only Code editor projection; save/write, Agent file tools, Terminal, Git, search, rename and deletion remain unavailable",
+        "No renderer Node/absolute-path/handle authority, Next/backend file route or SQLite migration"
+      ],
+      "depends_on": [
+        "p7-editor-first-workbench",
+        "p6-5-windows-desktop-distribution"
+      ],
+      "invariants": [
+        "INV-005",
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085",
+        "INV-086"
+      ],
+      "verification": [
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "python -m pytest scripts/release/test_build_p6_5_desktop_payload.py packaging/windows/OmniBase.DesktopBackend/tests/test_backend_packaging.py -q",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "git diff --check"
+      ],
+      "recovery": [
+        "Release the in-memory root authorization, clear tree/editor buffers and require a new Owner picker gesture; never persist or infer a physical root.",
+        "Preserve user files untouched and keep save/write, Agent file tools, Terminal, Git, search, rename and deletion closed after any read failure.",
+        "Forward-fix Electron/frontend bytes without adding a Next/backend file route, SQLite migration, renderer Node access or weaker path/link/secret validation."
       ]
     }
   ]

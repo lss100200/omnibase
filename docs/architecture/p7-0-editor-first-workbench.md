@@ -74,6 +74,13 @@ does not authorize a new backend protocol, SQLite migration, Next-to-native
 bypass, renderer credential, direct filesystem access or direct Provider
 request.
 
+Forward-only note (2026-08-29): this statement remains authoritative for the
+accepted P7.0 Wave 1 source and Wave 2 package. The later P7.1 Wave 1 contract
+in `docs/architecture/p7-1-local-development-loop.md` supersedes only the
+direct-filesystem unavailable state for its exact Owner-picked, read-only,
+generation-bound Electron IPC lane. It does not retroactively expand P7.0
+evidence or authorize writes, Agent file tools, Terminal, Git or search.
+
 Explorer, Code, Diff, Artifact and Terminal content may render only when an
 existing trusted source supplies it. If the current desktop contracts do not
 provide a file tree, editor buffer, diff or terminal stream, the corresponding

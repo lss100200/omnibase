@@ -1,5 +1,6 @@
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron";
+import type { OpenDialogOptions } from "electron";
 
 import { enforceSingleInstance } from "./app-lifecycle.ts";
 import { registerClosedIpcHandlers } from "./ipc.ts";
@@ -11,10 +12,12 @@ import {
 } from "./security/window-policy.ts";
 import { RuntimeManager } from "./runtime/runtime-manager.ts";
 import { PINNED_RUNTIME_MANIFEST_SHA256 } from "./runtime/trusted-manifest.ts";
+import { WorkspaceFiles } from "./runtime/workspace-files.ts";
 import type { DesktopOperationResult } from "./shared/ipc-contract.ts";
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeManager: RuntimeManager | null = null;
+let workspaceFiles: WorkspaceFiles | null = null;
 
 function runtimeUnavailable<T>(): Promise<DesktopOperationResult<T>> {
   return Promise.resolve(
@@ -46,6 +49,25 @@ if (hasInstanceLock) {
       hostEnvironment: process.env,
       secretVault: safeStorage,
     });
+    const workspaceFileService = new WorkspaceFiles({
+      getWorkspaceAgent: (input) =>
+        runtimeManager?.getWorkspaceAgent(input) ?? runtimeUnavailable(),
+      chooseDirectory: async () => {
+        const options: OpenDialogOptions = {
+          title: "Open local project",
+          buttonLabel: "Open Project",
+          properties: ["openDirectory", "dontAddToRecent"],
+        };
+        const result =
+          mainWindow === null
+            ? await dialog.showOpenDialog(options)
+            : await dialog.showOpenDialog(mainWindow, options);
+        return result.canceled || result.filePaths.length !== 1
+          ? null
+          : (result.filePaths[0] ?? null);
+      },
+    });
+    workspaceFiles = workspaceFileService;
     installFailClosedPermissionPolicy(session.defaultSession);
     registerClosedIpcHandlers(ipcMain, {
       getVersion: () => app.getVersion(),
@@ -77,6 +99,10 @@ if (hasInstanceLock) {
         runtimeManager?.archiveWorkspace(input) ?? runtimeUnavailable(),
       getWorkspaceAgent: (input) =>
         runtimeManager?.getWorkspaceAgent(input) ?? runtimeUnavailable(),
+      authorizeWorkspaceFiles: (input) => workspaceFileService.authorize(input),
+      releaseWorkspaceFiles: (input) => workspaceFileService.release(input),
+      listWorkspaceFiles: (input) => workspaceFileService.list(input),
+      readWorkspaceFile: (input) => workspaceFileService.read(input),
       listProviders: () =>
         runtimeManager?.listProviders() ?? runtimeUnavailable(),
       upsertProvider: (input) =>
@@ -141,9 +167,17 @@ if (hasInstanceLock) {
     mainWindow = new BrowserWindow(
       buildSecureWindowOptions(path.join(__dirname, "preload.js")),
     );
+    mainWindow.webContents.on(
+      "did-start-navigation",
+      (_event, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) workspaceFileService.invalidate();
+      },
+    );
+    mainWindow.webContents.on("render-process-gone", () => workspaceFileService.invalidate());
     installNavigationPolicy(mainWindow.webContents);
     mainWindow.once("ready-to-show", () => mainWindow?.show());
     mainWindow.on("closed", () => {
+      workspaceFileService.invalidate();
       mainWindow = null;
     });
     await mainWindow.loadURL(DESKTOP_UI_ORIGIN);
@@ -155,6 +189,7 @@ if (hasInstanceLock) {
   });
 
   app.on("before-quit", () => {
+    workspaceFiles?.invalidate();
     runtimeManager?.stop();
   });
 }

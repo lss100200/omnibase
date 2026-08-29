@@ -28,6 +28,10 @@ export const IPC_CHANNELS = Object.freeze({
   workspacesCreate: "omnibase:workspaces:create",
   workspacesArchive: "omnibase:workspaces:archive",
   workspaceAgent: "omnibase:workspace:agent",
+  workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
+  workspaceFilesRelease: "omnibase:workspace-files:release",
+  workspaceFilesList: "omnibase:workspace-files:list",
+  workspaceFilesRead: "omnibase:workspace-files:read",
   providersList: "omnibase:providers:list",
   providersUpsert: "omnibase:providers:upsert",
   providersDelete: "omnibase:providers:delete",
@@ -153,6 +157,51 @@ export interface DesktopWorkspaceCreateInput {
 export interface DesktopWorkspaceArchiveInput {
   readonly workspaceId: string;
   readonly expectedRowVersion: number;
+}
+
+export interface DesktopWorkspaceFileAuthorizeInput {
+  readonly workspaceId: string;
+}
+
+export interface DesktopWorkspaceFileAuthorization {
+  readonly workspaceId: string;
+  readonly rootName: string;
+  readonly authorizationGeneration: number;
+}
+
+export interface DesktopWorkspaceFileReleaseInput {
+  readonly workspaceId: string;
+  readonly authorizationGeneration: number;
+}
+
+export interface DesktopWorkspaceFileListInput extends DesktopWorkspaceFileReleaseInput {
+  readonly directoryPath: string;
+}
+
+export interface DesktopWorkspaceFileReadInput extends DesktopWorkspaceFileReleaseInput {
+  readonly path: string;
+}
+
+export interface DesktopWorkspaceFileEntry {
+  readonly path: string;
+  readonly name: string;
+  readonly kind: "file" | "directory";
+  readonly sizeBytes: number | null;
+  readonly lastModifiedMs: number;
+}
+
+export interface DesktopWorkspaceFileList {
+  readonly directoryPath: string;
+  readonly entries: readonly DesktopWorkspaceFileEntry[];
+  readonly truncated: boolean;
+}
+
+export interface DesktopWorkspaceFileReadResult {
+  readonly path: string;
+  readonly content: string;
+  readonly sizeBytes: number;
+  readonly lastModifiedMs: number;
+  readonly sha256: string;
 }
 
 export type DesktopProviderFamily =
@@ -365,6 +414,20 @@ export interface OmniBaseDesktopApi {
     readonly agent: (
       input: DesktopWorkspaceIdInput,
     ) => Promise<DesktopOperationResult<{ readonly agent: DesktopParentAgent }>>;
+  };
+  readonly workspaceFiles: {
+    readonly authorize: (
+      input: DesktopWorkspaceFileAuthorizeInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>>;
+    readonly release: (
+      input: DesktopWorkspaceFileReleaseInput,
+    ) => Promise<DesktopOperationResult<{ readonly released: true }>>;
+    readonly list: (
+      input: DesktopWorkspaceFileListInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceFileList>>;
+    readonly read: (
+      input: DesktopWorkspaceFileReadInput,
+    ) => Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>>;
   };
   readonly providers: {
     readonly list: () => Promise<DesktopOperationResult<DesktopProviderList>>;

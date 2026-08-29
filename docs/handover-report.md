@@ -18,6 +18,21 @@
 > `PROVIDER_BACKED_SSE_STOP_RETRY_NOT_PROVEN`、`PAID_PROVIDER_NOT_PROVEN`、
 > `AUTHENTICODE_NOT_PROVEN`、`ENTERPRISE_MULTI_AGENT_DISABLED` 与
 > `PRODUCTION_RELEASE_NOT_APPROVED` 继续保持。
+>
+> **P7.1 当前授权（2026-08-29）**：Owner 已批准 Wave 1 只读本地文件合同；
+> 先读 `docs/architecture/p7-1-local-development-loop.md` 与 INV-086。本轮只
+> 允许 `workspaceFiles.authorize|release|list|read`：Owner 原生选择一个仅
+> 内存、active Workspace/monotonic generation 绑定的根，renderer 仅接收显示名、
+> 逻辑相对路径和有界 UTF-8/SHA-256 读取结果。根替换、release、Workspace 切换、
+> window destruction 都使旧 generation 失效。P6.7/P7.0 的文件冻结由该合同仅对
+> 此只读 lane 前向替代，不改写旧验收。源码实现、攻击矩阵与全量门禁已有工程
+> 证据；`2e6693e` 的 BOM 字节合同修复已进入 R3 unsigned Windows 包，并在 fresh
+> Windows Sandbox 完成真实 Electron 授权、目录枚举、只读打开、Workspace 隔离、
+> release 清空与窗口关闭旅程，等待 PR/Owner 审核。权威证据见
+> `docs/reviews/p7-1-wave1-engineering-acceptance-r0.md`。Sandbox 身份为
+> elevated/High integrity；非管理员/medium-integrity、viewport/DPI、完整进程树收敛、
+> 卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、
+> Git、搜索、重命名/删除、Next/backend 文件路由与数据库迁移继续关闭。
 
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。
