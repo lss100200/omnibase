@@ -1,6 +1,16 @@
 'use client'
 
-import { Archive, Plus } from 'lucide-react'
+import {
+  Archive,
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  LoaderCircle,
+  Plus,
+  Unplug,
+} from 'lucide-react'
 import {
   p7ActivityLabel,
   projectP7Blackboard,
@@ -9,6 +19,7 @@ import {
   type P7Activity,
 } from '@/lib/p7-workbench-shell'
 import { projectDesktopTeamBudget } from '@/lib/desktop-team-surface'
+import { p7WorkspaceFileDirectory, p7WorkspaceFileErrorMessage } from '@/lib/p7-workspace-files'
 import type { P7WorkbenchProps } from './p7-shell'
 
 export const P7_TEAM_SPECIALISTS = [
@@ -39,6 +50,90 @@ function P7UnavailablePanel({ title }: { readonly title: string }) {
 function P7ExplorerPanel(props: P7WorkbenchProps) {
   const activeWorkspaces = props.workspaces.filter((item) => item.state === 'active')
   const activeConversations = props.conversations.filter((item) => item.state === 'active')
+  const fileState = props.workspaceFiles
+  const authorization = fileState.authorization
+  const fileError = p7WorkspaceFileErrorMessage(fileState.errorCode)
+
+  function renderDirectory(directoryPath: string, depth: number): React.ReactNode {
+    const directory = p7WorkspaceFileDirectory(fileState, directoryPath)
+    if (directory === null) return null
+    return (
+      <>
+        {directory.entries.map((entry) => {
+          const expanded = fileState.expandedDirectoryPaths.includes(entry.path)
+          const selected = fileState.selectedPath === entry.path
+          return (
+            <div key={entry.path}>
+              <button
+                type="button"
+                className={`p7-file-entry${selected ? 'p7-active' : ''}`}
+                style={{ paddingLeft: `${12 + depth * 13}px` }}
+                onClick={() => {
+                  if (entry.kind === 'directory') {
+                    props.onToggleWorkspaceDirectory(entry.path, !expanded)
+                  } else {
+                    props.onOpenWorkspaceFile(entry.path)
+                  }
+                }}
+              >
+                {entry.kind === 'directory' ? (
+                  expanded ? (
+                    <ChevronDown size={12} />
+                  ) : (
+                    <ChevronRight size={12} />
+                  )
+                ) : (
+                  <span className="p7-file-spacer" />
+                )}
+                {entry.kind === 'directory' ? (
+                  expanded ? (
+                    <FolderOpen size={14} />
+                  ) : (
+                    <Folder size={14} />
+                  )
+                ) : (
+                  <FileCode2 size={14} />
+                )}
+                <span className="p7-row-text">{entry.name}</span>
+                {entry.kind === 'file' && entry.sizeBytes !== null && (
+                  <span className="p7-row-meta">{entry.sizeBytes.toLocaleString()} B</span>
+                )}
+              </button>
+              {entry.kind === 'directory' && expanded && (
+                <>
+                  {p7WorkspaceFileDirectory(fileState, entry.path)?.status === 'loading' && (
+                    <div
+                      className="p7-file-loading"
+                      style={{ paddingLeft: `${38 + depth * 13}px` }}
+                    >
+                      正在读取…
+                    </div>
+                  )}
+                  {p7WorkspaceFileDirectory(fileState, entry.path)?.status === 'error' && (
+                    <div
+                      className="p7-file-loading"
+                      style={{ paddingLeft: `${38 + depth * 13}px` }}
+                    >
+                      {p7WorkspaceFileErrorMessage(
+                        p7WorkspaceFileDirectory(fileState, entry.path)?.errorCode ?? null,
+                      )}
+                    </div>
+                  )}
+                  {renderDirectory(entry.path, depth + 1)}
+                </>
+              )}
+            </div>
+          )
+        })}
+        {directory.truncated && (
+          <div className="p7-file-loading" style={{ paddingLeft: `${25 + depth * 13}px` }}>
+            此目录仅显示前 500 项。
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
     <div>
       <P7SectionLabel>工作空间</P7SectionLabel>
@@ -123,6 +218,73 @@ function P7ExplorerPanel(props: P7WorkbenchProps) {
           </button>
         </div>
       ))}
+      <P7SectionLabel>本地文件</P7SectionLabel>
+      {authorization === null ? (
+        <div className="p7-file-empty">
+          <button
+            type="button"
+            className="p7-text-button"
+            title="选择本地文件夹（只读）"
+            disabled={props.workspaceId === null || fileState.phase === 'authorizing'}
+            onClick={props.onAuthorizeWorkspaceFiles}
+          >
+            {fileState.phase === 'authorizing' ? (
+              <LoaderCircle className="p7-spin" size={13} />
+            ) : (
+              <FolderOpen size={13} />
+            )}
+            {fileState.phase === 'authorizing' ? '正在选择…' : '选择文件夹'}
+          </button>
+          <div>未打开文件夹</div>
+          {fileError !== null && fileState.phase === 'error' && (
+            <div className="p7-file-error">{fileError}</div>
+          )}
+        </div>
+      ) : (
+        <div className="p7-file-tree" aria-label={`本地文件：${authorization.rootName}`}>
+          <div className="p7-file-root">
+            <button
+              type="button"
+              className="p7-file-entry"
+              onClick={() =>
+                props.onToggleWorkspaceDirectory('', !fileState.expandedDirectoryPaths.includes(''))
+              }
+            >
+              {fileState.expandedDirectoryPaths.includes('') ? (
+                <ChevronDown size={12} />
+              ) : (
+                <ChevronRight size={12} />
+              )}
+              <FolderOpen size={14} />
+              <span className="p7-row-text">{authorization.rootName}</span>
+            </button>
+            <button
+              type="button"
+              className="p7-file-release"
+              aria-label="释放本地目录授权"
+              title="释放目录授权"
+              onClick={props.onReleaseWorkspaceFiles}
+            >
+              <Unplug size={13} />
+            </button>
+          </div>
+          {fileState.expandedDirectoryPaths.includes('') && (
+            <>
+              {p7WorkspaceFileDirectory(fileState, '')?.status === 'loading' && (
+                <div className="p7-file-loading">正在读取目录…</div>
+              )}
+              {p7WorkspaceFileDirectory(fileState, '')?.status === 'error' && (
+                <div className="p7-file-loading">
+                  {p7WorkspaceFileErrorMessage(
+                    p7WorkspaceFileDirectory(fileState, '')?.errorCode ?? null,
+                  )}
+                </div>
+              )}
+              {renderDirectory('', 0)}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

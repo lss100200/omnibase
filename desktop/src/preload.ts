@@ -38,6 +38,13 @@ import type {
   DesktopTeamRunSubmitProposalInput,
   DesktopWorkspaceArchiveInput,
   DesktopWorkspaceCreateInput,
+  DesktopWorkspaceFileAuthorization,
+  DesktopWorkspaceFileAuthorizeInput,
+  DesktopWorkspaceFileList,
+  DesktopWorkspaceFileListInput,
+  DesktopWorkspaceFileReadInput,
+  DesktopWorkspaceFileReadResult,
+  DesktopWorkspaceFileReleaseInput,
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
@@ -56,6 +63,10 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   workspacesCreate: "omnibase:workspaces:create",
   workspacesArchive: "omnibase:workspaces:archive",
   workspaceAgent: "omnibase:workspace:agent",
+  workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
+  workspaceFilesRelease: "omnibase:workspace-files:release",
+  workspaceFilesList: "omnibase:workspace-files:list",
+  workspaceFilesRead: "omnibase:workspace-files:read",
   providersList: "omnibase:providers:list",
   providersUpsert: "omnibase:providers:upsert",
   providersDelete: "omnibase:providers:delete",
@@ -138,6 +149,34 @@ const api: OmniBaseDesktopApi = Object.freeze({
     > =>
       ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceAgent, input) as Promise<
         DesktopOperationResult<{ readonly agent: DesktopParentAgent }>
+      >,
+  }),
+  workspaceFiles: Object.freeze({
+    authorize: (
+      input: DesktopWorkspaceFileAuthorizeInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceFilesAuthorize,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopWorkspaceFileAuthorization>>,
+    release: (
+      input: DesktopWorkspaceFileReleaseInput,
+    ): Promise<DesktopOperationResult<{ readonly released: true }>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceFilesRelease,
+        input,
+      ) as Promise<DesktopOperationResult<{ readonly released: true }>>,
+    list: (
+      input: DesktopWorkspaceFileListInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceFileList>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceFilesList, input) as Promise<
+        DesktopOperationResult<DesktopWorkspaceFileList>
+      >,
+    read: (
+      input: DesktopWorkspaceFileReadInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>> =>
+      ipcRenderer.invoke(PRELOAD_IPC_CHANNELS.workspaceFilesRead, input) as Promise<
+        DesktopOperationResult<DesktopWorkspaceFileReadResult>
       >,
   }),
   providers: Object.freeze({

@@ -27,6 +27,12 @@ function bridgeFixture() {
       archive: async () => ({ ok: false, error: { code: 'not-called' } }),
       agent: async () => ({ ok: false, error: { code: 'not-called' } }),
     },
+    workspaceFiles: {
+      authorize: async () => ({ ok: false, error: { code: 'not-called' } }),
+      release: async () => ({ ok: false, error: { code: 'not-called' } }),
+      list: async () => ({ ok: false, error: { code: 'not-called' } }),
+      read: async () => ({ ok: false, error: { code: 'not-called' } }),
+    },
     providers: {
       list: async () => ({ ok: true, value: { items: [] } }),
       upsert: async () => ({ ok: false, error: { code: 'not-called' } }),
@@ -75,6 +81,13 @@ test('desktop bridge detection requires the complete closed product surface', ()
     resolveDesktopBridge({
       ...complete,
       workspaces: { ...complete.workspaces, archive: undefined },
+    }),
+    null,
+  )
+  assert.equal(
+    resolveDesktopBridge({
+      ...complete,
+      workspaceFiles: { ...complete.workspaceFiles, read: undefined },
     }),
     null,
   )

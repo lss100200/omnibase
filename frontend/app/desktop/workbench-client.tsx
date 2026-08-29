@@ -35,6 +35,7 @@ import {
   switchDesktopTeamScope,
   type DesktopReasoningGear,
   type DesktopThinkingDepth,
+  type DesktopWorkspaceFileAuthorization,
 } from '@/lib/desktop-bridge'
 import { parseEmployeeInvocation, prepareEmployeeRoleMessage } from '@/lib/p6-workbench'
 import {
@@ -74,6 +75,25 @@ import {
   p7RunHistoryProjection,
   p7TeamEventLogLine,
 } from '@/lib/p7-workbench-shell'
+import {
+  beginP7WorkspaceDirectoryList,
+  beginP7WorkspaceFileAuthorization,
+  beginP7WorkspaceFileRead,
+  createP7WorkspaceFilesState,
+  failP7WorkspaceDirectoryList,
+  failP7WorkspaceFileAuthorization,
+  failP7WorkspaceFileRead,
+  p7WorkspaceFileDirectory,
+  p7WorkspaceFileErrorMessage,
+  parseP7WorkspaceFileAuthorization,
+  releaseP7WorkspaceFilesAuthorization,
+  setP7WorkspaceDirectoryExpanded,
+  settleP7WorkspaceDirectoryList,
+  settleP7WorkspaceFileAuthorization,
+  settleP7WorkspaceFileRead,
+  switchP7WorkspaceFilesWorkspace,
+  type P7WorkspaceFilesState,
+} from '@/lib/p7-workspace-files'
 import { P7WorkbenchShell, type P7ProviderForm } from '@/components/workbench/p7/p7-shell'
 import './p7-workbench.css'
 
@@ -173,6 +193,10 @@ export function DesktopWorkbench({
   const [zoom, setZoom] = useState(100)
   const initialWorkspaceId = workspaces.find((item) => item.state === 'active')?.id ?? null
   const [workspaceId, setWorkspaceId] = useState<string | null>(initialWorkspaceId)
+  const [workspaceFiles, setWorkspaceFiles] = useState<P7WorkspaceFilesState>(() =>
+    createP7WorkspaceFilesState(initialWorkspaceId),
+  )
+  const workspaceFilesRef = useRef(workspaceFiles)
   const [conversations, setConversations] = useState<readonly DesktopConversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<readonly DesktopMessage[]>([])
@@ -257,6 +281,43 @@ export function DesktopWorkbench({
     setEventLog((current) => [...current, line].slice(-MAX_EVENT_LOG_LINES))
   }, [])
 
+  const applyWorkspaceFilesState = useCallback((next: P7WorkspaceFilesState) => {
+    workspaceFilesRef.current = next
+    setWorkspaceFiles(next)
+  }, [])
+
+  const releaseNativeWorkspaceFiles = useCallback(
+    async (authorization: DesktopWorkspaceFileAuthorization) => {
+      const result = await bridge.workspaceFiles.release({
+        workspaceId: authorization.workspaceId,
+        authorizationGeneration: authorization.authorizationGeneration,
+      })
+      if (!mountedRef.current || result.ok) return
+      if (
+        result.error.code === 'desktop_workspace_files_not_authorized' ||
+        result.error.code === 'desktop_workspace_files_generation_conflict'
+      ) {
+        return
+      }
+      onError(p7WorkspaceFileErrorMessage(result.error.code))
+    },
+    [bridge, onError],
+  )
+
+  const moveWorkspaceFilesScope = useCallback(
+    (nextWorkspaceId: string | null) => {
+      const current = workspaceFilesRef.current
+      if (current.workspaceId === nextWorkspaceId) return
+      const released = releaseP7WorkspaceFilesAuthorization(current)
+      const next = switchP7WorkspaceFilesWorkspace(released.state, nextWorkspaceId)
+      applyWorkspaceFilesState(next)
+      if (released.authorization !== null) {
+        void releaseNativeWorkspaceFiles(released.authorization)
+      }
+    },
+    [applyWorkspaceFilesState, releaseNativeWorkspaceFiles],
+  )
+
   const applySlotState = useCallback((next: P7LiveSlotState) => {
     slotStateRef.current = next
     setSlotState(next)
@@ -276,6 +337,7 @@ export function DesktopWorkbench({
 
   const applyViewScope = useCallback(
     (nextWorkspaceId: string | null, nextConversationId: string | null) => {
+      moveWorkspaceFilesScope(nextWorkspaceId)
       const next = advanceDesktopSurfaceScope(
         surfaceScopeRef.current,
         nextWorkspaceId,
@@ -300,7 +362,7 @@ export function DesktopWorkbench({
       setTeamLive(nextTeam)
       return next
     },
-    [],
+    [moveWorkspaceFilesScope],
   )
   const [submitting, setSubmitting] = useState(false)
   const [providerForm, setProviderForm] = useState<P7ProviderForm>({
@@ -412,6 +474,156 @@ export function DesktopWorkbench({
     [bridge],
   )
 
+  const loadWorkspaceDirectory = useCallback(
+    async (directoryPath: string, sourceState?: P7WorkspaceFilesState) => {
+      const started = beginP7WorkspaceDirectoryList(
+        sourceState ?? workspaceFilesRef.current,
+        directoryPath,
+      )
+      if (started === null) return
+      applyWorkspaceFilesState(started.state)
+      const result = await bridge.workspaceFiles.list({
+        workspaceId: started.request.workspaceId,
+        authorizationGeneration: started.request.authorizationGeneration!,
+        directoryPath: started.request.path,
+      })
+      if (!mountedRef.current) return
+      const current = workspaceFilesRef.current
+      const authorizationBefore = current.authorization
+      const next = result.ok
+        ? settleP7WorkspaceDirectoryList(current, started.request, result.value)
+        : failP7WorkspaceDirectoryList(current, started.request, result.error.code)
+      if (next === current) return
+      applyWorkspaceFilesState(next)
+      if (authorizationBefore !== null && next.authorization === null) {
+        void releaseNativeWorkspaceFiles(authorizationBefore)
+      }
+      if (next.phase === 'error' && next.authorization === null) {
+        onError(p7WorkspaceFileErrorMessage(next.errorCode))
+        return
+      }
+      const directory = p7WorkspaceFileDirectory(next, directoryPath)
+      if (directory?.status === 'error') {
+        onError(p7WorkspaceFileErrorMessage(directory.errorCode))
+      }
+    },
+    [applyWorkspaceFilesState, bridge, onError, releaseNativeWorkspaceFiles],
+  )
+
+  const authorizeWorkspaceFiles = useCallback(async () => {
+    const current = workspaceFilesRef.current
+    const previousAuthorization = current.authorization
+    const started = beginP7WorkspaceFileAuthorization(current)
+    if (started === null) return
+    applyWorkspaceFilesState(started.state)
+    onError(null)
+    if (previousAuthorization !== null) {
+      void releaseNativeWorkspaceFiles(previousAuthorization)
+    }
+    const result = await bridge.workspaceFiles.authorize({
+      workspaceId: started.request.workspaceId,
+    })
+    if (!mountedRef.current) {
+      if (result.ok) {
+        const staleAuthorization = parseP7WorkspaceFileAuthorization(
+          result.value,
+          started.request.workspaceId,
+        )
+        if (staleAuthorization !== null) void releaseNativeWorkspaceFiles(staleAuthorization)
+      }
+      return
+    }
+    const latest = workspaceFilesRef.current
+    const next = result.ok
+      ? settleP7WorkspaceFileAuthorization(latest, started.request, result.value)
+      : failP7WorkspaceFileAuthorization(latest, started.request, result.error.code)
+    if (next === latest) {
+      // The native picker may complete after a Workspace switch. The reducer
+      // correctly refuses projection; release that late native binding too.
+      if (result.ok) {
+        const staleAuthorization = parseP7WorkspaceFileAuthorization(
+          result.value,
+          started.request.workspaceId,
+        )
+        if (staleAuthorization !== null) void releaseNativeWorkspaceFiles(staleAuthorization)
+      }
+      return
+    }
+    applyWorkspaceFilesState(next)
+    if (next.authorization === null) {
+      if (next.errorCode !== 'desktop_workspace_files_picker_cancelled') {
+        onError(p7WorkspaceFileErrorMessage(next.errorCode))
+      }
+      return
+    }
+    pushOutput(`已授权本地目录：${next.authorization.rootName}`)
+    void loadWorkspaceDirectory('', next)
+  }, [
+    applyWorkspaceFilesState,
+    bridge,
+    loadWorkspaceDirectory,
+    onError,
+    pushOutput,
+    releaseNativeWorkspaceFiles,
+  ])
+
+  const releaseWorkspaceFiles = useCallback(() => {
+    const released = releaseP7WorkspaceFilesAuthorization(workspaceFilesRef.current)
+    applyWorkspaceFilesState(released.state)
+    if (released.authorization !== null) {
+      void releaseNativeWorkspaceFiles(released.authorization)
+      pushOutput(`已释放本地目录授权：${released.authorization.rootName}`)
+    }
+  }, [applyWorkspaceFilesState, pushOutput, releaseNativeWorkspaceFiles])
+
+  const toggleWorkspaceDirectory = useCallback(
+    (directoryPath: string, expanded: boolean) => {
+      const current = workspaceFilesRef.current
+      const next = setP7WorkspaceDirectoryExpanded(current, directoryPath, expanded)
+      applyWorkspaceFilesState(next)
+      if (!expanded) return
+      const directory = p7WorkspaceFileDirectory(next, directoryPath)
+      if (directory === null || directory.status === 'idle' || directory.status === 'error') {
+        void loadWorkspaceDirectory(directoryPath, next)
+      }
+    },
+    [applyWorkspaceFilesState, loadWorkspaceDirectory],
+  )
+
+  const openWorkspaceFile = useCallback(
+    async (path: string) => {
+      const started = beginP7WorkspaceFileRead(workspaceFilesRef.current, path)
+      if (started === null) {
+        onError('文件路径不符合工作区边界。')
+        return
+      }
+      applyWorkspaceFilesState(started.state)
+      onError(null)
+      const result = await bridge.workspaceFiles.read({
+        workspaceId: started.request.workspaceId,
+        authorizationGeneration: started.request.authorizationGeneration!,
+        path: started.request.path,
+      })
+      if (!mountedRef.current) return
+      const current = workspaceFilesRef.current
+      const authorizationBefore = current.authorization
+      const next = result.ok
+        ? settleP7WorkspaceFileRead(current, started.request, result.value)
+        : failP7WorkspaceFileRead(current, started.request, result.error.code)
+      if (next === current) return
+      applyWorkspaceFilesState(next)
+      if (authorizationBefore !== null && next.authorization === null) {
+        void releaseNativeWorkspaceFiles(authorizationBefore)
+      }
+      if (next.readPhase !== 'ready' || next.openFile === null) {
+        onError(p7WorkspaceFileErrorMessage(next.errorCode))
+        return
+      }
+      pushOutput(`已只读打开：${path}`)
+    },
+    [applyWorkspaceFilesState, bridge, onError, pushOutput, releaseNativeWorkspaceFiles],
+  )
+
   const selectRun = useCallback(
     (teamRunId: string) => {
       if (workspaceId === null) return
@@ -518,11 +730,13 @@ export function DesktopWorkbench({
     conversationSurfaceRef.current = { ...conversationSurfaceRef.current, mounted: true }
     return () => {
       mountedRef.current = false
+      const authorization = workspaceFilesRef.current.authorization
+      if (authorization !== null) void releaseNativeWorkspaceFiles(authorization)
       conversationSurfaceRef.current = unmountDesktopConversationSurface(
         conversationSurfaceRef.current,
       )
     }
-  }, [])
+  }, [releaseNativeWorkspaceFiles])
 
   useEffect(() => {
     if (workspaceId !== null) void loadWorkspaceSurface(workspaceId)
@@ -1183,6 +1397,11 @@ export function DesktopWorkbench({
       onArchiveConversation={(conversationId) => void archiveConversation(conversationId)}
       workspaceNameInput={workspaceName}
       onWorkspaceNameInputChange={setWorkspaceName}
+      workspaceFiles={workspaceFiles}
+      onAuthorizeWorkspaceFiles={() => void authorizeWorkspaceFiles()}
+      onReleaseWorkspaceFiles={releaseWorkspaceFiles}
+      onToggleWorkspaceDirectory={toggleWorkspaceDirectory}
+      onOpenWorkspaceFile={(path) => void openWorkspaceFile(path)}
       messages={messages}
       messagesStatus={messagesStatus}
       messagesError={messagesError}
