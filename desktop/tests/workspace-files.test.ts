@@ -98,6 +98,30 @@ test("Owner-picked root lists and reads bounded logical paths without leaking th
   assert.deepEqual(verified, [WORKSPACE_A, WORKSPACE_A, WORKSPACE_A, WORKSPACE_A]);
 });
 
+test("UTF-8 BOM content remains byte-faithful across the read contract", async (t) => {
+  const { base, root, service } = await fixture();
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const content = '\ufeffexport const value = "bom";\n';
+  const bytes = Buffer.from(content, "utf8");
+  await writeFile(path.join(root, "src", "bom.ts"), bytes);
+
+  const authorized = await service.authorize({ workspaceId: WORKSPACE_A });
+  assert.equal(authorized.ok, true);
+  if (!authorized.ok) return;
+  const read = await service.read({
+    workspaceId: WORKSPACE_A,
+    authorizationGeneration: authorized.value.authorizationGeneration,
+    path: "src/bom.ts",
+  });
+
+  assert.equal(read.ok, true);
+  if (!read.ok) return;
+  assert.equal(read.value.content, content);
+  assert.equal(Buffer.byteLength(read.value.content, "utf8"), read.value.sizeBytes);
+  assert.equal(read.value.sizeBytes, bytes.byteLength);
+  assert.equal(read.value.sha256, createHash("sha256").update(bytes).digest("hex"));
+});
+
 test("authorization replacement and release invalidate stale generations", async (t) => {
   const { base, root, service } = await fixture();
   t.after(() => rm(base, { recursive: true, force: true }));

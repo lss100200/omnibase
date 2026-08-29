@@ -588,7 +588,7 @@ export class WorkspaceFiles {
       const bytes = Buffer.concat(chunks, total);
       let content: string;
       try {
-        content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
       } catch {
         throw new WorkspaceFilesError("desktop_workspace_files_not_utf8");
       }
