@@ -56,7 +56,9 @@
 > 3000/8765 监听清零，程序移除、应用数据保留；唯一 Sandbox 已关闭且宿主无
 > Sandbox/vmwp 残留。证据目录标识为
 > `p7-2-workspace-composition-sandbox-evidence-r1-20260830`。源码审计未发现 P0/P1/P2；
-> 仍需最终门禁、受控提交、远端 CI 与合并。包保持 engineering-dirty/unsigned，
+> 源码已受控提交并在 `8cb0020255202cb197ffdbf46393265db9a0ef28` 接受工程证据，
+> 权威登记为 `docs/reviews/p7-2-workspace-composition-engineering-acceptance-r0.md`；
+> 仍需远端 Linux CI 与合并。包保持 engineering-dirty/unsigned，
 > clean-source release、标准用户/medium-integrity、Authenticode、Provider live 与
 > 生产发布仍未证明。
 >

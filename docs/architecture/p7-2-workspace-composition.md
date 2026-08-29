@@ -1,7 +1,8 @@
 # P7.2 Workbench Refinement and Workspace Composition
 
-Status: product law frozen; engineering implementation and installed-product
-evidence ready for source/CI review. Production release is not approved.
+Status: product law frozen; source and installed-product engineering evidence
+accepted at `8cb0020255202cb197ffdbf46393265db9a0ef28`; remote Linux CI and merge
+remain pending. Production release is not approved.
 
 P7.2 turns the P7 editor-first shell into a lower-density personal workbench
 with a full-screen settings center and a versioned, declarative Workspace
