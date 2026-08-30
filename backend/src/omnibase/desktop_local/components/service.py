@@ -684,7 +684,7 @@ def _operation_payload(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def _effect_payload(row: sqlite3.Row) -> dict[str, object]:
+def _effect_payload(row: sqlite3.Row, *, component_id: str) -> dict[str, object]:
     state = {
         "pending": "pending",
         "committed": "succeeded",
@@ -698,7 +698,7 @@ def _effect_payload(row: sqlite3.Row) -> dict[str, object]:
         "effect_id": row["id"],
         "operation_id": row["operation_id"],
         "workspace_id": row["workspace_id"],
-        "component_id": row["logical_target_id"],
+        "component_id": component_id,
         "state": state,
         "evidence_sha256": row["evidence_sha256"],
         "created_at": row["created_at"],
@@ -891,10 +891,12 @@ def get_component_snapshot(connection: sqlite3.Connection, workspace_id: str) ->
         )
     ]
     effects = [
-        _effect_payload(row)
+        _effect_payload(row, component_id=str(row["operation_component_id"]))
         for row in connection.execute(
-            "SELECT * FROM workspace_component_effect WHERE workspace_id = ? "
-            "ORDER BY created_at DESC, id DESC",
+            "SELECT effect.*, operation.component_id AS operation_component_id "
+            "FROM workspace_component_effect AS effect "
+            "JOIN workspace_component_operation AS operation ON operation.id = effect.operation_id "
+            "WHERE effect.workspace_id = ? ORDER BY effect.created_at DESC, effect.id DESC",
             (workspace_id,),
         )
     ]
@@ -3767,7 +3769,7 @@ def settle_component_invocation(  # noqa: C901
             connection.execute("COMMIT")
             return {
                 "operation": _operation_payload(operation),
-                "effect": _effect_payload(effect),
+                "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
                 "replayed": True,
             }
         if operation["state"] != "dispatching" or effect["state"] != "pending":
@@ -3845,7 +3847,7 @@ def settle_component_invocation(  # noqa: C901
         connection.execute("COMMIT")
         return {
             "operation": _operation_payload(operation),
-            "effect": _effect_payload(effect),
+            "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
             "replayed": False,
         }
     except DesktopApiError:
@@ -4152,7 +4154,7 @@ def emergency_stop_components(  # noqa: C901
                 "workspace_id": workspace_id,
                 "component_id": component_id,
                 "operation": _operation_payload(operation),
-                "effect": _effect_payload(effect),
+                "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
                 "replayed": True,
             }
         if operation["state"] != "dispatching" or effect["state"] != "pending":
@@ -4262,7 +4264,7 @@ def emergency_stop_components(  # noqa: C901
             "workspace_id": workspace_id,
             "component_id": component_id,
             "operation": _operation_payload(operation),
-            "effect": _effect_payload(effect),
+            "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
             "replayed": False,
         }
     except DesktopApiError:
@@ -4318,7 +4320,7 @@ def reconcile_component_effect(  # noqa: C901
             connection.execute("COMMIT")
             return {
                 "operation": _operation_payload(operation),
-                "effect": _effect_payload(effect),
+                "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
                 "reconciliation_id": existing["id"],
                 "replayed": True,
             }
@@ -4414,7 +4416,7 @@ def reconcile_component_effect(  # noqa: C901
         connection.execute("COMMIT")
         return {
             "operation": _operation_payload(operation),
-            "effect": _effect_payload(effect),
+            "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
             "reconciliation_id": reconciliation_id,
             "replayed": False,
         }
@@ -4504,7 +4506,7 @@ def settle_component_recovery(  # noqa: C901
             return {
                 "recovery_id": recovery_id,
                 "operation": _operation_payload(operation),
-                "effect": _effect_payload(effect),
+                "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
                 "replayed": True,
             }
         installation = _installation(
@@ -4630,7 +4632,7 @@ def settle_component_recovery(  # noqa: C901
             return {
                 "recovery_id": recovery_id,
                 "operation": _operation_payload(operation),
-                "effect": _effect_payload(effect),
+                "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
                 "replayed": False,
             }
         assert previous_grant is not None
@@ -4822,7 +4824,7 @@ def settle_component_recovery(  # noqa: C901
         return {
             "recovery_id": recovery_id,
             "operation": _operation_payload(operation),
-            "effect": _effect_payload(effect),
+            "effect": _effect_payload(effect, component_id=str(operation["component_id"])),
             "replayed": False,
         }
     except DesktopApiError:

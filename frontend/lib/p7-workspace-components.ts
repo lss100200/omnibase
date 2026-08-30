@@ -9,6 +9,26 @@ import type {
 
 export type P7WorkspaceComponentsLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
+export interface P7WorkspaceComponentInvocationReservation {
+  readonly bytesOutReserved: number
+  readonly tokensReserved: number
+  readonly wallTimeMs: number
+  readonly costUnits: number
+}
+
+export function p7WorkspaceComponentInvocationReservation(
+  budgets: DesktopWorkspaceComponentCatalogItem['budgets'],
+): P7WorkspaceComponentInvocationReservation {
+  const fairShare = (maximum: number, perInvocationCap: number) =>
+    Math.min(Math.floor(maximum / budgets.maxCalls), perInvocationCap)
+  return Object.freeze({
+    bytesOutReserved: fairShare(budgets.maxBytesOut, 4_194_304),
+    tokensReserved: fairShare(budgets.maxTokens, 131_072),
+    wallTimeMs: Math.max(1, fairShare(budgets.maxWallTimeMs, 600_000)),
+    costUnits: fairShare(budgets.maxCostUnits, 1_000),
+  })
+}
+
 export function p7DefaultWorkspaceComponentGrant(
   catalog: DesktopWorkspaceComponentCatalogItem,
   operation: DesktopWorkspaceComponentOperation,

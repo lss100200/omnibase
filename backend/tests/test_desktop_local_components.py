@@ -2955,6 +2955,14 @@ def test_invocation_reserves_before_dispatch_and_records_actual_receipt(
         actual_wall_time_ms=500,
     )
     assert settled["operation"]["state"] == "succeeded"
+    assert settled["effect"]["component_id"] == COMPONENT_ID
+    assert settled["effect"]["component_id"] != "ui.render"
+    snapshot_effect = next(
+        effect
+        for effect in get_component_snapshot(component_database, WORKSPACE_ID)["effects"]
+        if effect["effect_id"] == settled["effect"]["effect_id"]
+    )
+    assert snapshot_effect["component_id"] == COMPONENT_ID
     receipt = component_database.execute(
         "SELECT * FROM workspace_component_invocation_receipt"
     ).fetchone()

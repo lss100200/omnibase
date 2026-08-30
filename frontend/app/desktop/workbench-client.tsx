@@ -105,6 +105,7 @@ import {
   p7WorkspaceComponentCommittedUiBindings,
   p7WorkspaceComponentAssistantPrompt,
   p7WorkspaceComponentHostSlotId,
+  p7WorkspaceComponentInvocationReservation,
   p7WorkspaceComponentInvocationScope,
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentSurfaceProjection,
@@ -1959,10 +1960,7 @@ export function DesktopWorkbench({
       manifestSha256: installation.manifestSha256,
       packageSha256: installation.packageSha256,
       idempotencyKey: p7ComponentIdempotencyKey('invoke'),
-      bytesOutReserved: Math.min(catalog.budgets.maxBytesOut, 4_194_304),
-      tokensReserved: Math.min(catalog.budgets.maxTokens, 131_072),
-      wallTimeMs: Math.min(catalog.budgets.maxWallTimeMs, 600_000),
-      costUnits: Math.min(catalog.budgets.maxCostUnits, 1_000),
+      ...p7WorkspaceComponentInvocationReservation(catalog.budgets),
     } as const
     const input = { ...base, ...request, ...invocationScope }
     const result = await bridge.workspaceComponents.invoke(input)
@@ -2578,10 +2576,7 @@ export function DesktopWorkbench({
             manifestSha256: binding.manifestSha256,
             packageSha256: binding.packageSha256,
             idempotencyKey: p7ComponentIdempotencyKey('reconstruct_ui'),
-            bytesOutReserved: Math.min(binding.budgets.maxBytesOut, 4_194_304),
-            tokensReserved: Math.min(binding.budgets.maxTokens, 131_072),
-            wallTimeMs: Math.min(binding.budgets.maxWallTimeMs, 600_000),
-            costUnits: Math.min(binding.budgets.maxCostUnits, 1_000),
+            ...p7WorkspaceComponentInvocationReservation(binding.budgets),
             operation: 'ui.render',
             arguments: { slotId: binding.slotId, viewId: binding.componentId },
           })

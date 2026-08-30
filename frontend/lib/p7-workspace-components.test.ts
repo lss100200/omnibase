@@ -25,6 +25,7 @@ import {
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentAssistantPrompt,
   p7WorkspaceComponentHostSlotId,
+  p7WorkspaceComponentInvocationReservation,
   p7WorkspaceComponentInvocationScope,
   p7WorkspaceComponentLifecycleActions,
   p7WorkspaceComponentHostProjection,
@@ -153,6 +154,56 @@ test('component proposal defaults stay inside manifest resource and service clas
       logicalServiceId: 'ambient_network',
     }),
     false,
+  )
+})
+
+test('invocation reservation fair-shares cumulative budgets across the call ceiling', () => {
+  const budgets = {
+    maxCalls: 64,
+    maxBytesIn: 32_768,
+    maxBytesOut: 32_768,
+    maxTokens: 131_072,
+    maxWallTimeMs: 600_000,
+    maxCostUnits: 1_000,
+    maxRetries: 2,
+    maxConcurrency: 1,
+  }
+  const reservation = p7WorkspaceComponentInvocationReservation(budgets)
+
+  assert.deepEqual(reservation, {
+    bytesOutReserved: 512,
+    tokensReserved: 2_048,
+    wallTimeMs: 9_375,
+    costUnits: 15,
+  })
+  assert.ok(reservation.bytesOutReserved < budgets.maxBytesOut)
+  assert.ok(reservation.tokensReserved < budgets.maxTokens)
+  assert.ok(reservation.wallTimeMs < budgets.maxWallTimeMs)
+  assert.ok(reservation.costUnits < budgets.maxCostUnits)
+  assert.ok(reservation.bytesOutReserved * budgets.maxCalls <= budgets.maxBytesOut)
+  assert.ok(reservation.tokensReserved * budgets.maxCalls <= budgets.maxTokens)
+  assert.ok(reservation.wallTimeMs * budgets.maxCalls <= budgets.maxWallTimeMs)
+  assert.ok(reservation.costUnits * budgets.maxCalls <= budgets.maxCostUnits)
+})
+
+test('invocation reservation preserves zero dimensions and the positive wall-time contract', () => {
+  assert.deepEqual(
+    p7WorkspaceComponentInvocationReservation({
+      maxCalls: 8,
+      maxBytesIn: 1_024,
+      maxBytesOut: 2_048,
+      maxTokens: 0,
+      maxWallTimeMs: 5_000,
+      maxCostUnits: 4,
+      maxRetries: 0,
+      maxConcurrency: 1,
+    }),
+    {
+      bytesOutReserved: 256,
+      tokensReserved: 0,
+      wallTimeMs: 625,
+      costUnits: 0,
+    },
   )
 })
 
