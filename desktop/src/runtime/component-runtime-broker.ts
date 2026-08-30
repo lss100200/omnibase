@@ -25,8 +25,10 @@ import type { WorkspaceFiles } from "./workspace-files.ts";
 import type { RuntimeManagerComponentRecoveryContext } from "./runtime-manager.ts";
 import { ClosedMcpHost } from "./closed-mcp-host.ts";
 import {
+  readSourceComponentBinaryAsset,
   readSourceComponentPayload,
   readSourceComponentPayloadAsset,
+  type SourceComponentBinaryAsset,
   type SourceComponentPayloadAsset,
 } from "./component-package-registry.ts";
 
@@ -101,10 +103,19 @@ export interface ComponentNativeExecutionBoundary {
   >;
 }
 
+export interface TrustedSandboxWorkload {
+  readonly bytes: Buffer;
+  readonly entrypoint: "transform";
+  readonly memoryMaxBytes: 65_536;
+  readonly network: "no_imports";
+  readonly sha256: string;
+}
+
 export interface TrustedSandboxComponentAdapter {
   activate?(
     input: Readonly<{
       ticket: DesktopWorkspaceComponentLifecycleTicket;
+      workload: TrustedSandboxWorkload;
       signal: AbortSignal;
     }>,
   ): Promise<Readonly<{ health: "healthy"; evidence: AdapterOutput }>>;
@@ -118,6 +129,7 @@ export interface TrustedSandboxComponentAdapter {
     input: Readonly<{
       ticket: DesktopWorkspaceComponentExecutionTicket;
       workloadId: string;
+      workload: TrustedSandboxWorkload;
       inputArtifactIds: readonly string[];
       signal: AbortSignal;
     }>,
@@ -133,6 +145,7 @@ export interface ComponentRuntimeBrokerOptions {
   ) => string | null;
   readonly readSourceComponentPayload?: typeof readSourceComponentPayload;
   readonly readSourceComponentPayloadAsset?: typeof readSourceComponentPayloadAsset;
+  readonly readSourceComponentBinaryAsset?: typeof readSourceComponentBinaryAsset;
   readonly sandboxAdapter?: TrustedSandboxComponentAdapter;
   readonly ownerPackageStore?: Readonly<{
     readView(
@@ -733,11 +746,12 @@ export class ComponentRuntimeBroker {
               "desktop_component_sandbox_runtime_unavailable",
             );
           }
-          await this.#sourceSandboxWorkload(identity);
+          const workload = await this.#sourceSandboxWorkload(identity);
           sandboxDispatched = true;
           adapterEvidence = (
             await this.#options.sandboxAdapter.activate({
               ticket,
+              workload,
               signal: new AbortController().signal,
             })
           ).evidence;
@@ -1379,9 +1393,13 @@ export class ComponentRuntimeBroker {
           "desktop_component_sandbox_runtime_unavailable",
         );
       }
-      await this.#sourceSandboxWorkload(ticket);
+      const workload = await this.#sourceSandboxWorkload(ticket);
       try {
-        return await this.#options.sandboxAdapter.activate({ ticket, signal });
+        return await this.#options.sandboxAdapter.activate({
+          ticket,
+          workload,
+          signal,
+        });
       } catch {
         throw new ComponentAdapterError(
           "desktop_component_lifecycle_outcome_unknown",
@@ -1653,10 +1671,8 @@ export class ComponentRuntimeBroker {
             "desktop_component_sandbox_runtime_unavailable",
           );
         }
-        if (
-          input.arguments.workloadId !==
-          (await this.#sourceSandboxWorkload(ticket))
-        ) {
+        const workload = await this.#sourceSandboxWorkload(ticket);
+        if (input.arguments.workloadId !== workload.workloadId) {
           throw new ComponentAdapterError(
             "desktop_component_sandbox_workload_mismatch",
           );
@@ -1664,6 +1680,7 @@ export class ComponentRuntimeBroker {
         return await this.#options.sandboxAdapter.execute({
           ticket,
           workloadId: input.arguments.workloadId,
+          workload,
           inputArtifactIds: input.arguments.inputArtifactIds,
           signal,
         });
@@ -1774,6 +1791,43 @@ export class ComponentRuntimeBroker {
         });
       }
       return await readSourceComponentPayloadAsset(options);
+    } catch {
+      throw new ComponentAdapterError(
+        "desktop_component_source_package_invalid",
+      );
+    }
+  }
+
+  async #sourceBinaryAsset(
+    ticket: SourceComponentIdentity,
+    payloadName: string,
+  ): Promise<SourceComponentBinaryAsset> {
+    const verifier = this.#options.getVerifiedRuntimeFileSha256;
+    const reader = this.#options.readSourceComponentBinaryAsset;
+    if (verifier === undefined && reader === undefined) {
+      throw new ComponentAdapterError(
+        "desktop_component_source_package_unavailable",
+      );
+    }
+    try {
+      const options = {
+        runtimeRoot: this.#options.runtimeRoot,
+        getVerifiedRuntimeFileSha256: verifier ?? (() => null),
+        componentId: ticket.componentId,
+        version: ticket.version,
+        manifestSha256: ticket.manifestSha256,
+        packageSha256: ticket.packageSha256,
+        payloadName,
+      };
+      const asset =
+        reader === undefined
+          ? await readSourceComponentBinaryAsset(options)
+          : await reader(options);
+      return Object.freeze({
+        bytes: Buffer.from(asset.bytes),
+        sha256: asset.sha256,
+        size: asset.size,
+      });
     } catch {
       throw new ComponentAdapterError(
         "desktop_component_source_package_invalid",
@@ -1912,13 +1966,22 @@ export class ComponentRuntimeBroker {
 
   async #sourceSandboxWorkload(
     ticket: SourceComponentIdentity,
-  ): Promise<string> {
-    const value = await this.#sourcePayload(ticket, "workload.json");
+  ): Promise<TrustedSandboxWorkload & Readonly<{ workloadId: string }>> {
+    const [value, moduleAsset] = await Promise.all([
+      this.#sourcePayload(ticket, "workload.json"),
+      this.#sourceBinaryAsset(ticket, "workload.wasm"),
+    ]);
     if (
       !isRecord(value) ||
       !hasExactKeys(value, [
         "component_id",
+        "entrypoint",
         "input_contract",
+        "memory_max_bytes",
+        "module_format",
+        "module_path",
+        "module_sha256",
+        "network",
         "output_contract",
         "provider",
         "schema_version",
@@ -1929,6 +1992,12 @@ export class ComponentRuntimeBroker {
       value.version !== ticket.version ||
       value.schema_version !== 1 ||
       value.provider !== "p34-sandbox.v1" ||
+      value.module_format !== "webassembly_v1" ||
+      value.module_path !== "payload/workload.wasm" ||
+      value.module_sha256 !== moduleAsset.sha256 ||
+      value.entrypoint !== "transform" ||
+      value.memory_max_bytes !== 64 * 1024 ||
+      value.network !== "no_imports" ||
       value.input_contract !== "logical_artifact_ids" ||
       value.output_contract !== "artifact_inventory" ||
       value.workload_id !== "bounded-transform"
@@ -1937,7 +2006,31 @@ export class ComponentRuntimeBroker {
         "desktop_component_sandbox_package_invalid",
       );
     }
-    return value.workload_id;
+    let module: WebAssembly.Module;
+    try {
+      module = new WebAssembly.Module(moduleAsset.bytes);
+    } catch {
+      throw new ComponentAdapterError(
+        "desktop_component_sandbox_package_invalid",
+      );
+    }
+    if (
+      WebAssembly.Module.imports(module).length !== 0 ||
+      JSON.stringify(WebAssembly.Module.exports(module)) !==
+        JSON.stringify([{ name: "transform", kind: "function" }])
+    ) {
+      throw new ComponentAdapterError(
+        "desktop_component_sandbox_package_invalid",
+      );
+    }
+    return Object.freeze({
+      bytes: Buffer.from(moduleAsset.bytes),
+      entrypoint: "transform" as const,
+      memoryMaxBytes: 65_536 as const,
+      network: "no_imports" as const,
+      sha256: moduleAsset.sha256,
+      workloadId: value.workload_id,
+    });
   }
 
   async #loadKnowledgeEbook(

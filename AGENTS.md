@@ -341,6 +341,23 @@ runtime evidence; then correct the stale documentation in the same change.
   every non-core component. P7.4 may harden and certify this platform; it may
   not first implement a missing registry, family adapter, permission,
   lifecycle, revocation or recovery path.
+- P7.4 is the hot-plug hardening and product-acceptance lane. Read INV-089 and
+  `docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` before
+  changing desktop component migrations, fencing, scale/soak/attack gates,
+  Settings accessibility or Windows acceptance evidence. Desktop schema v12
+  uses a persistent per-Workspace/installation/logical-service Network Lease
+  cursor; allocation, activation and recovery are one transaction, and begin,
+  replay and settlement must reject a Lease whose token is not the cursor's
+  current value. Never reset or delete a cursor, infer the next token by
+  scanning runtime history, or reuse workload fencing as Network fencing.
+  The local source-owned Sandbox journey executes the exact inventory-bound
+  zero-import `payload/workload.wasm` through a trusted same-host helper. It is
+  not an independent P34 Runner/provider attestation or production isolation
+  claim; keep that external provider unavailable/not-proven.
+  P7.4 evidence must distinguish source, bounded CI, Windows engineering,
+  human visual and external signing/Marketplace authority. CI or a Sandbox
+  cannot self-issue Authenticode, Publisher, Marketplace or production-release
+  approval.
 
 ## Safe change workflow
 

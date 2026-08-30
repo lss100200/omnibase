@@ -47,11 +47,11 @@ process.stdin.on("end", () => {
     send({
       adapter: "p34-sandbox.v1",
       isolation: {
-        execution: "zero_import_webassembly",
+        execution: "package_bound_zero_import_webassembly",
         host_capabilities: "none",
         memory_max_bytes: 65536,
         network: "no_imports",
-        workload_sha256: "${"9".repeat(64)}"
+        workload_sha256: request.workload_sha256
       },
       schema_version: 1,
       status: "ready"
@@ -76,13 +76,15 @@ process.stdin.on("end", () => {
         fingerprint_sha256: createHash("sha256")
           .update(request.component_version + JSON.stringify(request.input_artifact_ids))
           .digest("hex"),
-        kind: "artifact_inventory"
+        kind: "artifact_inventory",
+        transform_value: request.input_artifact_ids.length ^ 202
       },
       runtime_instance_id: request.runtime_instance_id,
       schema_version: 1,
       status: "completed",
       usage: { bytes_in: 1, bytes_out: 1, wall_time_ms: 1 },
-      workload_id: request.workload_id
+      workload_id: request.workload_id,
+      workload_sha256: request.workload_sha256
     }
   });
 });

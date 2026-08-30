@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import type { DesktopWorkspaceComponentSnapshot } from './desktop-bridge'
+
 import {
   createP7WorkspaceComponentSurfaceState,
   p7AssistantDeclarativePackagePrompt,
@@ -16,6 +18,7 @@ import {
   p7ParseAssistantDeclarativePackage,
   p7ParseDeclarativeSettingsSchema,
   p7ParseWorkspaceComponentSurface,
+  p7ReconcileWorkspaceComponentSurfaces,
   p7SetWorkspaceComponentSurface,
   p7ValidateDeclarativeSettings,
   p7WorkspaceComponentGrantMatchesCatalog,
@@ -24,7 +27,9 @@ import {
   p7WorkspaceComponentHostSlotId,
   p7WorkspaceComponentLifecycleActions,
   p7WorkspaceComponentHostProjection,
+  p7WorkspaceComponentCommittedUiBindings,
   p7WorkspaceComponentSurfaceProjection,
+  p7WorkspaceComponentSurfaceRequests,
   p7WorkspaceComponentsProjection,
   p7WorkspaceComponentVersionChangeAction,
 } from './p7-workspace-components'
@@ -852,6 +857,105 @@ const canvasOutput = {
   },
 } as const
 
+function committedUiSnapshot(
+  items: readonly Readonly<{
+    componentId: string
+    slotId: 'editor.component' | 'sidebar.component' | 'settings.component' | 'status.component'
+    bindingKey: string
+    orderIndex: number
+    bindingGeneration?: number
+    state?: 'active' | 'disabled' | 'revoked' | 'uninstalled'
+    health?: 'healthy' | 'degraded' | 'unknown' | 'unavailable'
+  }>[],
+  workspaceId = WORKSPACE_A,
+): DesktopWorkspaceComponentSnapshot {
+  return {
+    workspaceId,
+    catalog: items.map((item, index) => ({
+      componentId: item.componentId,
+      version: '1.0.0',
+      family: 'declarative_ui',
+      displayName: item.componentId,
+      publisherClass: 'owner_reviewed',
+      adapterId: 'builtin-ui.v1',
+      policyManifestSha256: String((index + 1) % 10).repeat(64),
+      manifestSha256: 'a'.repeat(64),
+      packageSha256: 'b'.repeat(64),
+      operations: ['ui.render'],
+      permissions: [],
+      slots: [
+        {
+          slotId: item.slotId,
+          cardinality: 'many',
+          minimumOrder: 0,
+          maximumOrder: 100,
+          installationRevision: 1,
+        },
+      ],
+      dependencies: [],
+      conflicts: [],
+      budgets: {
+        maxCalls: 10,
+        maxBytesIn: 0,
+        maxBytesOut: 4096,
+        maxTokens: 0,
+        maxWallTimeMs: 5000,
+        maxCostUnits: 1,
+        maxRetries: 0,
+        maxConcurrency: 4,
+      },
+      network: { required: false, serviceClasses: [] },
+      recovery: {
+        autoReplayUnknown: false,
+        retention: 'retain_workspace_data',
+        safeMode: 'disable_component',
+      },
+      stateSchema: { kind: 'canonical_json', version: 1 },
+      settingsSchema: {
+        kind: 'closed_object',
+        version: 1,
+        additionalProperties: false,
+        properties: {},
+        required: [],
+      },
+      available: true,
+      unavailableReason: null,
+    })),
+    installations: items.map((item, index) => ({
+      installationId: `installation_${String(index + 1).repeat(32)}`,
+      workspaceId,
+      componentId: item.componentId,
+      version: '1.0.0',
+      manifestSha256: 'a'.repeat(64),
+      packageSha256: 'b'.repeat(64),
+      state: item.state ?? 'active',
+      revision: 1,
+      bindingGeneration: item.bindingGeneration ?? 1,
+      desiredConfiguration: {},
+      currentSlotBindings: [
+        {
+          slotId: item.slotId,
+          bindingKey: item.bindingKey,
+          orderIndex: item.orderIndex,
+          configuration: {},
+        },
+      ],
+      dependencyGraph: [],
+      health: item.health ?? 'healthy',
+      lastErrorCode: null,
+      updatedAt: '2026-08-30T00:00:00.000Z',
+    })),
+    proposals: [],
+    operations: [],
+    effects: [],
+    grants: [],
+    revocations: [],
+    recoveries: [],
+    reconciliations: [],
+    audit: [],
+  }
+}
+
 test('host canvas parser accepts only the typed editor Slot and exact closed output', () => {
   const input = {
     workspaceId: WORKSPACE_A,
@@ -994,6 +1098,199 @@ test('declarative UI Slots project into exactly one host-owned region', () => {
   assert.equal(p7WorkspaceComponentHostSlotId('terminal.component'), false)
 })
 
+test('ready snapshot reconstructs every exact committed declarative UI binding', () => {
+  const snapshot = committedUiSnapshot([
+    {
+      componentId: 'owner.editor-board',
+      slotId: 'editor.component',
+      bindingKey: 'primary',
+      orderIndex: 20,
+    },
+    {
+      componentId: 'owner.sidebar-board',
+      slotId: 'sidebar.component',
+      bindingKey: 'secondary',
+      orderIndex: 5,
+    },
+  ])
+  const bindings = p7WorkspaceComponentCommittedUiBindings(snapshot)
+  assert.deepEqual(
+    bindings.map((binding) => [binding.componentId, binding.slotId, binding.bindingKey]),
+    [
+      ['owner.editor-board', 'editor.component', 'primary'],
+      ['owner.sidebar-board', 'sidebar.component', 'secondary'],
+    ],
+  )
+  const empty = createP7WorkspaceComponentSurfaceState(WORKSPACE_A)
+  assert.deepEqual(
+    p7WorkspaceComponentSurfaceRequests(empty, snapshot).map((binding) => binding.key),
+    bindings.map((binding) => binding.key),
+  )
+
+  let state = empty
+  for (const binding of bindings) {
+    state = p7SetWorkspaceComponentSurface(state, {
+      workspaceId: WORKSPACE_A,
+      componentId: binding.componentId,
+      operationId: `${OPERATION_ID}_${binding.bindingKey}`,
+      operation: 'ui.render',
+      state: 'succeeded',
+      output: {
+        ...canvasOutput,
+        component_id: binding.componentId,
+        view_id: binding.componentId,
+        slot_id: binding.slotId,
+      },
+      bindingGeneration: binding.bindingGeneration,
+      slotId: binding.slotId,
+      bindingKey: binding.bindingKey,
+      orderIndex: binding.orderIndex,
+    })
+  }
+  assert.deepEqual(p7WorkspaceComponentSurfaceRequests(state, snapshot), [])
+  const projection = p7WorkspaceComponentSurfaceProjection({
+    state,
+    viewWorkspaceId: WORKSPACE_A,
+    activeComponentIds: snapshot.installations.map((item) => item.componentId),
+  })
+  assert.equal(p7WorkspaceComponentHostProjection(projection, 'editor').surfaces.length, 1)
+  assert.equal(p7WorkspaceComponentHostProjection(projection, 'sidebar').surfaces.length, 1)
+})
+
+test('many-cardinality Slot ordering is stable and one failed entry preserves siblings', () => {
+  const items = [
+    {
+      componentId: 'owner.z-board',
+      slotId: 'sidebar.component' as const,
+      bindingKey: 'z',
+      orderIndex: 10,
+    },
+    {
+      componentId: 'owner.b-board',
+      slotId: 'sidebar.component' as const,
+      bindingKey: 'b',
+      orderIndex: 5,
+    },
+    {
+      componentId: 'owner.a-board',
+      slotId: 'sidebar.component' as const,
+      bindingKey: 'a',
+      orderIndex: 5,
+    },
+  ]
+  const snapshot = committedUiSnapshot(items)
+  const bindings = p7WorkspaceComponentCommittedUiBindings(snapshot)
+  let state = createP7WorkspaceComponentSurfaceState(WORKSPACE_A)
+  for (const binding of bindings.toReversed()) {
+    state = p7SetWorkspaceComponentSurface(state, {
+      workspaceId: WORKSPACE_A,
+      componentId: binding.componentId,
+      operationId: `${OPERATION_ID}_${binding.bindingKey}`,
+      operation: 'ui.render',
+      state: binding.componentId === 'owner.b-board' ? 'failed' : 'succeeded',
+      output:
+        binding.componentId === 'owner.b-board'
+          ? null
+          : {
+              ...canvasOutput,
+              component_id: binding.componentId,
+              view_id: binding.componentId,
+              slot_id: binding.slotId,
+            },
+      bindingGeneration: binding.bindingGeneration,
+      slotId: binding.slotId,
+      bindingKey: binding.bindingKey,
+      orderIndex: binding.orderIndex,
+    })
+  }
+  const projection = p7WorkspaceComponentSurfaceProjection({
+    state,
+    viewWorkspaceId: WORKSPACE_A,
+    activeComponentIds: items.map((item) => item.componentId),
+  })
+  assert.deepEqual(
+    projection.entries.map((entry) => entry.componentId),
+    ['owner.a-board', 'owner.b-board', 'owner.z-board'],
+  )
+  assert.deepEqual(
+    projection.surfaces.map((surface) => surface.componentId),
+    ['owner.a-board', 'owner.z-board'],
+  )
+  assert.equal(projection.failures[0]?.componentId, 'owner.b-board')
+  assert.equal(projection.failures[0]?.safeModeReason, 'invocation-failed')
+})
+
+test('generation and lifecycle drift invalidate only stale entries and request replacements', () => {
+  const initialSnapshot = committedUiSnapshot([
+    {
+      componentId: 'owner.keep-board',
+      slotId: 'editor.component',
+      bindingKey: 'keep',
+      orderIndex: 0,
+    },
+    {
+      componentId: 'owner.change-board',
+      slotId: 'sidebar.component',
+      bindingKey: 'old',
+      orderIndex: 0,
+    },
+  ])
+  let state = createP7WorkspaceComponentSurfaceState(WORKSPACE_A)
+  for (const binding of p7WorkspaceComponentCommittedUiBindings(initialSnapshot)) {
+    state = p7SetWorkspaceComponentSurface(state, {
+      workspaceId: WORKSPACE_A,
+      componentId: binding.componentId,
+      operationId: `${OPERATION_ID}_${binding.bindingKey}`,
+      operation: 'ui.render',
+      state: 'succeeded',
+      output: {
+        ...canvasOutput,
+        component_id: binding.componentId,
+        view_id: binding.componentId,
+        slot_id: binding.slotId,
+      },
+      bindingGeneration: binding.bindingGeneration,
+      slotId: binding.slotId,
+      bindingKey: binding.bindingKey,
+      orderIndex: binding.orderIndex,
+    })
+  }
+  const nextSnapshot = committedUiSnapshot([
+    {
+      componentId: 'owner.keep-board',
+      slotId: 'editor.component',
+      bindingKey: 'keep',
+      orderIndex: 0,
+    },
+    {
+      componentId: 'owner.change-board',
+      slotId: 'sidebar.component',
+      bindingKey: 'new',
+      orderIndex: 1,
+      bindingGeneration: 2,
+    },
+    {
+      componentId: 'owner.disabled-board',
+      slotId: 'status.component',
+      bindingKey: 'disabled',
+      orderIndex: 0,
+      state: 'disabled',
+    },
+  ])
+  const committed = p7WorkspaceComponentCommittedUiBindings(nextSnapshot)
+  const reconciled = p7ReconcileWorkspaceComponentSurfaces(state, WORKSPACE_A, committed)
+  assert.deepEqual(
+    reconciled.entries.map((entry) => entry.componentId),
+    ['owner.keep-board'],
+  )
+  assert.deepEqual(
+    p7WorkspaceComponentSurfaceRequests(reconciled, nextSnapshot).map(
+      (binding) => binding.componentId,
+    ),
+    ['owner.change-board'],
+  )
+})
+
 test('host Slot projection rejects cross-Workspace and inactive component content', () => {
   const componentId = 'owner.focus-board'
   const state = p7SetWorkspaceComponentSurface(
@@ -1017,27 +1314,19 @@ test('host Slot projection rejects cross-Workspace and inactive component conten
     viewWorkspaceId: WORKSPACE_B,
     activeComponentIds: [componentId],
   })
-  assert.deepEqual(p7WorkspaceComponentHostProjection(parked, 'status'), {
-    status: 'idle',
-    surface: null,
-    safeModeReason: null,
-  })
+  assert.equal(p7WorkspaceComponentHostProjection(parked, 'status').status, 'idle')
 
   const inactive = p7WorkspaceComponentSurfaceProjection({
     state,
     viewWorkspaceId: WORKSPACE_A,
     activeComponentIds: [],
   })
-  assert.deepEqual(p7WorkspaceComponentHostProjection(inactive, 'status'), {
-    status: 'idle',
-    surface: null,
-    safeModeReason: null,
-  })
-  assert.deepEqual(p7WorkspaceComponentHostProjection(inactive, 'editor'), {
-    status: 'safe-mode',
-    surface: null,
-    safeModeReason: 'component-inactive',
-  })
+  assert.equal(p7WorkspaceComponentHostProjection(inactive, 'status').status, 'idle')
+  assert.equal(p7WorkspaceComponentHostProjection(inactive, 'editor').status, 'safe-mode')
+  assert.equal(
+    p7WorkspaceComponentHostProjection(inactive, 'editor').safeModeReason,
+    'component-inactive',
+  )
 })
 
 test('knowledge ebook parser accepts the verified closed catalog and rejects drift', () => {
@@ -1293,14 +1582,13 @@ test('component surface never projects across Workspaces on the first frame', ()
       output: canvasOutput,
     },
   )
-  assert.deepEqual(
-    p7WorkspaceComponentSurfaceProjection({
-      state,
-      viewWorkspaceId: WORKSPACE_B,
-      activeComponentIds: ['builtin.workspace-canvas'],
-    }),
-    { status: 'loading', surface: null, safeModeReason: null },
-  )
+  const projection = p7WorkspaceComponentSurfaceProjection({
+    state,
+    viewWorkspaceId: WORKSPACE_B,
+    activeComponentIds: ['builtin.workspace-canvas'],
+  })
+  assert.equal(projection.status, 'loading')
+  assert.deepEqual(projection.entries, [])
 })
 
 test('malformed output and inactive components fail into standard-workbench safe mode', () => {
@@ -1315,14 +1603,13 @@ test('malformed output and inactive components fail into standard-workbench safe
       output: { renderer: 'host_declarative' },
     },
   )
-  assert.deepEqual(
-    p7WorkspaceComponentSurfaceProjection({
-      state: malformed,
-      viewWorkspaceId: WORKSPACE_A,
-      activeComponentIds: ['builtin.workspace-canvas'],
-    }),
-    { status: 'safe-mode', surface: null, safeModeReason: 'malformed-output' },
-  )
+  const malformedProjection = p7WorkspaceComponentSurfaceProjection({
+    state: malformed,
+    viewWorkspaceId: WORKSPACE_A,
+    activeComponentIds: ['builtin.workspace-canvas'],
+  })
+  assert.equal(malformedProjection.status, 'ready')
+  assert.equal(malformedProjection.failures[0]?.safeModeReason, 'malformed-output')
 
   const ready = p7SetWorkspaceComponentSurface(
     createP7WorkspaceComponentSurfaceState(WORKSPACE_A),
@@ -1347,12 +1634,12 @@ test('malformed output and inactive components fail into standard-workbench safe
 
 test('emergency stop clears every non-core surface without changing Workspace identity', () => {
   const stopped = p7EnterWorkspaceComponentSafeMode(WORKSPACE_A, 'emergency-stop')
-  assert.deepEqual(
-    p7WorkspaceComponentSurfaceProjection({
-      state: stopped,
-      viewWorkspaceId: WORKSPACE_A,
-      activeComponentIds: [],
-    }),
-    { status: 'safe-mode', surface: null, safeModeReason: 'emergency-stop' },
-  )
+  const projection = p7WorkspaceComponentSurfaceProjection({
+    state: stopped,
+    viewWorkspaceId: WORKSPACE_A,
+    activeComponentIds: [],
+  })
+  assert.equal(projection.status, 'safe-mode')
+  assert.equal(projection.safeModeReason, 'emergency-stop')
+  assert.deepEqual(projection.entries, [])
 })

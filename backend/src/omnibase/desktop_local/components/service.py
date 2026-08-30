@@ -8,12 +8,17 @@ adapter call.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import uuid
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
+from threading import Lock
 from typing import cast
 
 from omnibase.desktop_local.components.catalog import (
@@ -32,6 +37,17 @@ _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 _MESSAGE_ID = re.compile(r"^message_[0-9a-f]{32}$")
 _LOGICAL_ID = re.compile(r"^[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*$")
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+_CATALOG_BASE_CACHE_LIMIT = 4
+_CATALOG_BASE_CACHE: OrderedDict[tuple[str, int, int, int, int], tuple[dict[str, object], ...]] = (
+    OrderedDict()
+)
+_CATALOG_BASE_CACHE_LOCK = Lock()
+_PACKAGE_IDENTITY_CACHE_LIMIT = 64
+_PACKAGE_IDENTITY_CACHE: OrderedDict[
+    tuple[str, int, int, int, int, str, int, int],
+    dict[tuple[str, str, str], tuple[str, str]],
+] = OrderedDict()
+_PACKAGE_IDENTITY_CACHE_LOCK = Lock()
 _ASSISTANT_PROPOSAL_KEYS = frozenset(
     {
         "change_kind",
@@ -64,6 +80,15 @@ def _decode_json(value: str) -> object:
     return json.loads(value)
 
 
+@lru_cache(maxsize=16384)
+def _cached_projection_json(value: str) -> object:
+    return json.loads(value)
+
+
+def _project_json(value: str) -> object:
+    return copy.deepcopy(_cached_projection_json(value))
+
+
 def _live_workspace(connection: sqlite3.Connection, workspace_id: str) -> sqlite3.Row:
     row = connection.execute(
         "SELECT workspace.* FROM workspace JOIN owner ON owner.id = workspace.owner_id "
@@ -92,6 +117,28 @@ def _catalog_row(connection: sqlite3.Connection, component_id: str, version: str
     if digest_json(manifest) != row["manifest_sha256"]:
         raise DesktopApiError(409, "desktop_component_catalog_digest_drift")
     return row
+
+
+@lru_cache(maxsize=4096)
+def _validated_catalog_conflicts(
+    component_id: str,
+    version: str,
+    manifest_json: str,
+    manifest_sha256: str,
+) -> tuple[str, ...]:
+    del component_id, version
+    manifest = _decode_json(manifest_json)
+    try:
+        validate_closed_manifest(manifest)
+    except ValueError as exc:
+        raise DesktopApiError(409, "desktop_component_catalog_manifest_invalid") from exc
+    if digest_json(manifest) != manifest_sha256:
+        raise DesktopApiError(409, "desktop_component_catalog_digest_drift")
+    assert isinstance(manifest, dict)
+    conflicts = manifest.get("conflicts")
+    if not isinstance(conflicts, list) or any(not isinstance(item, str) for item in conflicts):
+        raise DesktopApiError(409, "desktop_component_conflicts_invalid")
+    return tuple(conflicts)
 
 
 def _find_package_identity(
@@ -128,6 +175,81 @@ def _package_identity(
     if row is None:
         raise DesktopApiError(409, "desktop_component_package_not_attested")
     return row
+
+
+def _snapshot_package_identities(
+    connection: sqlite3.Connection, workspace_id: str
+) -> dict[tuple[str, str, str], tuple[str, str]]:
+    database = next(row for row in connection.execute("PRAGMA database_list") if row[1] == "main")
+    database_path = str(database[2])
+    source_revision = connection.execute(
+        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM component_package_attestation "
+        "WHERE attested_by = 'runtime_manifest'"
+    ).fetchone()
+    workspace_revision = connection.execute(
+        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM component_catalog_registration "
+        "WHERE workspace_id = ?",
+        (workspace_id,),
+    ).fetchone()
+    assert source_revision is not None
+    assert workspace_revision is not None
+    key: tuple[str, int, int, int, int, str, int, int] | None = None
+    if database_path:
+        try:
+            metadata = os.stat(database_path)
+        except OSError:
+            pass
+        else:
+            key = (
+                os.path.realpath(database_path),
+                int(metadata.st_dev),
+                int(metadata.st_ino),
+                int(source_revision[0]),
+                int(source_revision[1]),
+                workspace_id,
+                int(workspace_revision[0]),
+                int(workspace_revision[1]),
+            )
+            with _PACKAGE_IDENTITY_CACHE_LOCK:
+                cached = _PACKAGE_IDENTITY_CACHE.get(key)
+                if cached is not None:
+                    _PACKAGE_IDENTITY_CACHE.move_to_end(key)
+                    return cached
+
+    packages: dict[tuple[str, str, str], tuple[str, str]] = {}
+    for row in connection.execute(
+        "SELECT * FROM component_package_attestation "
+        "WHERE attested_by = 'runtime_manifest' "
+        "ORDER BY component_id, version, created_at DESC, manifest_sha256, package_sha256"
+    ):
+        packages.setdefault(
+            (str(row["component_id"]), str(row["version"]), "source_owned"),
+            (str(row["manifest_sha256"]), str(row["package_sha256"])),
+        )
+    for row in connection.execute(
+        "SELECT package.* FROM component_package_attestation AS package "
+        "JOIN component_catalog_registration AS registration "
+        "ON registration.component_id = package.component_id "
+        "AND registration.version = package.version "
+        "AND registration.manifest_sha256 = package.manifest_sha256 "
+        "AND registration.package_sha256 = package.package_sha256 "
+        "WHERE package.attested_by = 'owner_native_review' "
+        "AND registration.workspace_id = ? "
+        "ORDER BY package.component_id, package.version, package.created_at DESC, "
+        "package.manifest_sha256, package.package_sha256",
+        (workspace_id,),
+    ):
+        packages.setdefault(
+            (str(row["component_id"]), str(row["version"]), "owner_reviewed"),
+            (str(row["manifest_sha256"]), str(row["package_sha256"])),
+        )
+    if key is not None:
+        with _PACKAGE_IDENTITY_CACHE_LOCK:
+            _PACKAGE_IDENTITY_CACHE[key] = packages
+            _PACKAGE_IDENTITY_CACHE.move_to_end(key)
+            while len(_PACKAGE_IDENTITY_CACHE) > _PACKAGE_IDENTITY_CACHE_LIMIT:
+                _PACKAGE_IDENTITY_CACHE.popitem(last=False)
+    return packages
 
 
 def attest_component_package(
@@ -503,10 +625,15 @@ def _validate_lifecycle_transition(  # noqa: C901 - one closed lifecycle matrix
 
 
 def _proposal_payload(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, object]:
-    decision = connection.execute(
-        "SELECT decision, decided_at FROM workspace_component_decision WHERE proposal_id = ?",
-        (row["id"],),
-    ).fetchone()
+    column_names = frozenset(row.keys())
+    if "projected_decision" in column_names:
+        decision = row["projected_decision"]
+    else:
+        decision_row = connection.execute(
+            "SELECT decision FROM workspace_component_decision WHERE proposal_id = ?",
+            (row["id"],),
+        ).fetchone()
+        decision = None if decision_row is None else decision_row["decision"]
     return {
         "proposal_id": row["id"],
         "workspace_id": row["workspace_id"],
@@ -516,14 +643,14 @@ def _proposal_payload(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[
         "base_revision": row["expected_revision"],
         "manifest_sha256": row["manifest_sha256"],
         "package_sha256": row["package_sha256"],
-        "requested_grants": _decode_json(str(row["requested_grants_json"])),
-        "desired_configuration": _decode_json(str(row["desired_configuration_json"])),
-        "desired_slot_bindings": _decode_json(str(row["desired_slot_bindings_json"])),
-        "dependency_graph": _decode_json(str(row["dependency_graph_json"])),
+        "requested_grants": _project_json(str(row["requested_grants_json"])),
+        "desired_configuration": _project_json(str(row["desired_configuration_json"])),
+        "desired_slot_bindings": _project_json(str(row["desired_slot_bindings_json"])),
+        "dependency_graph": _project_json(str(row["dependency_graph_json"])),
         "source_kind": row["source_kind"],
         "source_reference": row["source_reference"],
         "request_sha256": row["request_sha256"],
-        "decision": None if decision is None else decision["decision"],
+        "decision": decision,
         "created_at": row["created_at"],
     }
 
@@ -591,9 +718,9 @@ def _installation_payload(row: sqlite3.Row) -> dict[str, object]:
         "package_sha256": row["package_sha256"],
         "state": row["state"],
         "binding_generation": row["binding_generation"],
-        "desired_configuration": _decode_json(str(row["configuration_json"])),
-        "current_slot_bindings": _decode_json(str(row["slot_bindings_json"])),
-        "dependency_graph": _decode_json(str(row["dependency_graph_json"])),
+        "desired_configuration": _project_json(str(row["configuration_json"])),
+        "current_slot_bindings": _project_json(str(row["slot_bindings_json"])),
+        "dependency_graph": _project_json(str(row["dependency_graph_json"])),
         "health": row["projected_health"] if "projected_health" in column_names else "unknown",
         "last_error_code": row["projected_error_code"]
         if "projected_error_code" in column_names
@@ -602,19 +729,31 @@ def _installation_payload(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def _catalog_payload(row: sqlite3.Row, package: sqlite3.Row | None = None) -> dict[str, object]:
-    manifest = _decode_json(str(row["manifest_json"]))
+@lru_cache(maxsize=4096)
+def _cached_catalog_payload(
+    component_id: str,
+    version: str,
+    family: str,
+    publisher_class: str,
+    display_name: str,
+    adapter_id: str,
+    policy_manifest_sha256: str,
+    manifest_json: str,
+    package_manifest_sha256: str | None,
+    package_sha256: str | None,
+) -> dict[str, object]:
+    manifest = _decode_json(manifest_json)
     assert isinstance(manifest, dict)
     return {
-        "component_id": row["component_id"],
-        "version": row["version"],
-        "family": row["family"],
-        "publisher_class": row["publisher_class"],
-        "display_name": row["display_name"],
-        "adapter_id": row["adapter_id"],
-        "policy_manifest_sha256": row["manifest_sha256"],
-        "manifest_sha256": None if package is None else package["manifest_sha256"],
-        "package_sha256": None if package is None else package["package_sha256"],
+        "component_id": component_id,
+        "version": version,
+        "family": family,
+        "publisher_class": publisher_class,
+        "display_name": display_name,
+        "adapter_id": adapter_id,
+        "policy_manifest_sha256": policy_manifest_sha256,
+        "manifest_sha256": package_manifest_sha256,
+        "package_sha256": package_sha256,
         "operations": manifest["operations"],
         "permissions": manifest["permissions"],
         "slots": manifest["slots"],
@@ -625,19 +764,98 @@ def _catalog_payload(row: sqlite3.Row, package: sqlite3.Row | None = None) -> di
         "recovery": manifest["recovery"],
         "state_schema": manifest["state_schema"],
         "settings_schema": manifest["configuration_schema"],
-        "available": package is not None,
-        "unavailable_reason": None if package is not None else "package_not_attested",
+        "available": package_sha256 is not None,
+        "unavailable_reason": None if package_sha256 is not None else "package_not_attested",
     }
+
+
+def _catalog_payload(row: sqlite3.Row, package: sqlite3.Row | None = None) -> dict[str, object]:
+    cached = _cached_catalog_payload(
+        str(row["component_id"]),
+        str(row["version"]),
+        str(row["family"]),
+        str(row["publisher_class"]),
+        str(row["display_name"]),
+        str(row["adapter_id"]),
+        str(row["manifest_sha256"]),
+        str(row["manifest_json"]),
+        None if package is None else str(package["manifest_sha256"]),
+        None if package is None else str(package["package_sha256"]),
+    )
+    return dict(cached)
+
+
+def _catalog_base_snapshot(connection: sqlite3.Connection) -> tuple[dict[str, object], ...]:
+    database = next(row for row in connection.execute("PRAGMA database_list") if row[1] == "main")
+    database_path = str(database[2])
+    revision = connection.execute(
+        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM component_catalog_version"
+    ).fetchone()
+    assert revision is not None
+    if not database_path:
+        return tuple(
+            _catalog_payload(row)
+            for row in connection.execute(
+                "SELECT * FROM component_catalog_version ORDER BY component_id, version"
+            )
+        )
+    try:
+        metadata = os.stat(database_path)
+    except OSError:
+        return tuple(
+            _catalog_payload(row)
+            for row in connection.execute(
+                "SELECT * FROM component_catalog_version ORDER BY component_id, version"
+            )
+        )
+    key = (
+        os.path.realpath(database_path),
+        int(metadata.st_dev),
+        int(metadata.st_ino),
+        int(revision[0]),
+        int(revision[1]),
+    )
+    with _CATALOG_BASE_CACHE_LOCK:
+        cached = _CATALOG_BASE_CACHE.get(key)
+        if cached is not None:
+            _CATALOG_BASE_CACHE.move_to_end(key)
+            return cached
+    projected = tuple(
+        _catalog_payload(row)
+        for row in connection.execute(
+            "SELECT * FROM component_catalog_version ORDER BY component_id, version"
+        )
+    )
+    with _CATALOG_BASE_CACHE_LOCK:
+        _CATALOG_BASE_CACHE[key] = projected
+        _CATALOG_BASE_CACHE.move_to_end(key)
+        while len(_CATALOG_BASE_CACHE) > _CATALOG_BASE_CACHE_LIMIT:
+            _CATALOG_BASE_CACHE.popitem(last=False)
+    return projected
 
 
 def get_component_snapshot(connection: sqlite3.Connection, workspace_id: str) -> dict[str, object]:
     workspace = _live_workspace(connection, workspace_id)
-    catalog = []
-    for row in connection.execute(
-        "SELECT * FROM component_catalog_version ORDER BY component_id, version"
-    ):
-        package = _find_package_identity(connection, row, workspace_id)
-        catalog.append(_catalog_payload(row, package))
+    package_identities = _snapshot_package_identities(connection, workspace_id)
+    catalog: list[dict[str, object]] = []
+    for base in _catalog_base_snapshot(connection):
+        package = package_identities.get(
+            (
+                str(base["component_id"]),
+                str(base["version"]),
+                str(base["publisher_class"]),
+            )
+        )
+        projected = dict(base)
+        projected.update(
+            {
+                "manifest_sha256": None if package is None else package[0],
+                "package_sha256": None if package is None else package[1],
+                "available": package is not None,
+                "unavailable_reason": None if package is not None else "package_not_attested",
+            }
+        )
+        catalog.append(projected)
     installations = [
         _installation_payload(row)
         for row in connection.execute(
@@ -657,8 +875,10 @@ def get_component_snapshot(connection: sqlite3.Connection, workspace_id: str) ->
     proposals = [
         _proposal_payload(connection, row)
         for row in connection.execute(
-            "SELECT * FROM workspace_component_proposal WHERE workspace_id = ? "
-            "ORDER BY created_at DESC, id DESC",
+            "SELECT proposal.*, decision.decision AS projected_decision "
+            "FROM workspace_component_proposal AS proposal "
+            "LEFT JOIN workspace_component_decision AS decision ON decision.proposal_id = proposal.id "
+            "WHERE proposal.workspace_id = ? ORDER BY proposal.created_at DESC, proposal.id DESC",
             (workspace_id,),
         )
     ]
@@ -696,8 +916,8 @@ def get_component_snapshot(connection: sqlite3.Connection, workspace_id: str) ->
                 "runtime_instance_id": row["runtime_instance_id"],
                 "component_id": row["component_id"],
                 "version": row["version"],
-                "actions": _decode_json(str(row["actions_json"])),
-                "scope": _decode_json(str(row["scope_json"])),
+                "actions": _project_json(str(row["actions_json"])),
+                "scope": _project_json(str(row["scope_json"])),
                 "requires_network": bool(row["requires_network"]),
                 "state": row["state"],
                 "not_before": row["not_before"],
@@ -775,7 +995,7 @@ def get_component_snapshot(connection: sqlite3.Connection, workspace_id: str) ->
             "sequence": row["sequence"],
             "event_id": row["event_id"],
             "event_type": row["event_type"],
-            "payload": _decode_json(str(row["payload_json"])),
+            "payload": _project_json(str(row["payload_json"])),
             "created_at": row["created_at"],
         }
         for row in connection.execute(
@@ -1072,6 +1292,7 @@ def _validate_component_composition(  # noqa: C901
         sorted(expected_dependencies, key=lambda item: str(item.get("component_id", "")))
     ):
         raise DesktopApiError(409, "desktop_component_dependency_graph_mismatch")
+    _validate_catalog_dependency_graph_acyclic(connection, catalog)
     for dependency in normalized_dependencies:
         if not isinstance(dependency, dict) or set(dependency) != {
             "component_id",
@@ -1113,21 +1334,22 @@ def _validate_component_composition(  # noqa: C901
         if installed_conflict is not None:
             raise DesktopApiError(409, "desktop_component_conflict_installed")
     installed_components = connection.execute(
-        "SELECT component_id, version FROM workspace_component_installation "
-        "WHERE workspace_id = ? AND component_id <> ? AND state <> 'uninstalled'",
+        "SELECT catalog.component_id, catalog.version, catalog.manifest_json, "
+        "catalog.manifest_sha256 FROM workspace_component_installation AS installation "
+        "JOIN component_catalog_version AS catalog "
+        "ON catalog.component_id = installation.component_id "
+        "AND catalog.version = installation.version "
+        "WHERE installation.workspace_id = ? AND installation.component_id <> ? "
+        "AND installation.state <> 'uninstalled'",
         (workspace_id, catalog["component_id"]),
     ).fetchall()
     for installed in installed_components:
-        installed_catalog = _catalog_row(
-            connection, str(installed["component_id"]), str(installed["version"])
+        installed_conflicts = _validated_catalog_conflicts(
+            str(installed["component_id"]),
+            str(installed["version"]),
+            str(installed["manifest_json"]),
+            str(installed["manifest_sha256"]),
         )
-        installed_manifest = _decode_json(str(installed_catalog["manifest_json"]))
-        assert isinstance(installed_manifest, dict)
-        installed_conflicts = installed_manifest.get("conflicts")
-        if not isinstance(installed_conflicts, list) or any(
-            not isinstance(item, str) for item in installed_conflicts
-        ):
-            raise DesktopApiError(409, "desktop_component_conflicts_invalid")
         if catalog["component_id"] in installed_conflicts:
             raise DesktopApiError(409, "desktop_component_conflict_installed")
     configuration_json = canonical_json(desired_configuration)
@@ -1136,6 +1358,49 @@ def _validate_component_composition(  # noqa: C901
     )
     dependencies_json = canonical_json(normalized_dependencies)
     return configuration_json, slots_json, dependencies_json
+
+
+def _validate_catalog_dependency_graph_acyclic(
+    connection: sqlite3.Connection, root_catalog: sqlite3.Row
+) -> None:
+    """Reject transitive component cycles across exact immutable catalog versions."""
+
+    visited: set[tuple[str, str]] = set()
+    visiting_components: set[str] = set()
+
+    def visit(catalog: sqlite3.Row) -> None:
+        component_id = str(catalog["component_id"])
+        version = str(catalog["version"])
+        key = (component_id, version)
+        if component_id in visiting_components:
+            raise DesktopApiError(409, "desktop_component_dependency_cycle")
+        if key in visited:
+            return
+        visiting_components.add(component_id)
+        manifest = _decode_json(str(catalog["manifest_json"]))
+        dependencies = manifest.get("dependencies") if isinstance(manifest, dict) else None
+        if not isinstance(dependencies, list):
+            raise DesktopApiError(409, "desktop_component_dependencies_invalid")
+        for dependency in dependencies:
+            if (
+                not isinstance(dependency, dict)
+                or not isinstance(dependency.get("component_id"), str)
+                or not isinstance(dependency.get("version"), str)
+                or not isinstance(dependency.get("policy_manifest_sha256"), str)
+            ):
+                raise DesktopApiError(409, "desktop_component_dependencies_invalid")
+            dependency_catalog = _catalog_row(
+                connection,
+                str(dependency["component_id"]),
+                str(dependency["version"]),
+            )
+            if dependency_catalog["manifest_sha256"] != dependency["policy_manifest_sha256"]:
+                raise DesktopApiError(409, "desktop_component_dependency_policy_mismatch")
+            visit(dependency_catalog)
+        visiting_components.remove(component_id)
+        visited.add(key)
+
+    visit(root_catalog)
 
 
 def _trusted_assistant_message_content(
@@ -1886,6 +2151,54 @@ def _revoke_authority(
                 now,
             ),
         )
+
+
+def _allocate_network_fencing_token(
+    connection: sqlite3.Connection,
+    *,
+    workspace_id: str,
+    installation_id: str,
+    logical_service_id: str,
+    now: str,
+) -> int:
+    """Allocate one durable Network Lease token inside the caller transaction."""
+
+    connection.execute(
+        "INSERT INTO workspace_component_network_lease_cursor "
+        "(workspace_id, installation_id, logical_service_id, current_fencing_token, "
+        "next_fencing_token, row_version, created_at, updated_at) "
+        "VALUES (?, ?, ?, NULL, 1, 1, ?, ?) "
+        "ON CONFLICT(workspace_id, installation_id, logical_service_id) DO NOTHING",
+        (workspace_id, installation_id, logical_service_id, now, now),
+    )
+    cursor = connection.execute(
+        "SELECT next_fencing_token, row_version "
+        "FROM workspace_component_network_lease_cursor "
+        "WHERE workspace_id = ? AND installation_id = ? AND logical_service_id = ?",
+        (workspace_id, installation_id, logical_service_id),
+    ).fetchone()
+    if cursor is None:
+        raise DesktopApiError(409, "desktop_component_network_lease_cursor_unavailable")
+    token = int(cursor["next_fencing_token"])
+    updated = connection.execute(
+        "UPDATE workspace_component_network_lease_cursor "
+        "SET current_fencing_token = ?, next_fencing_token = ?, row_version = row_version + 1, "
+        "updated_at = ? WHERE workspace_id = ? AND installation_id = ? "
+        "AND logical_service_id = ? AND row_version = ? AND next_fencing_token = ?",
+        (
+            token,
+            token + 1,
+            now,
+            workspace_id,
+            installation_id,
+            logical_service_id,
+            cursor["row_version"],
+            token,
+        ),
+    )
+    if updated.rowcount != 1:
+        raise DesktopApiError(409, "desktop_component_network_lease_cursor_conflict")
+    return token
 
 
 def _lifecycle_ticket(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, object]:
@@ -2739,11 +3052,18 @@ def apply_component_action_v2(  # noqa: C901
                     }
                 )
                 for service in services:
+                    network_fencing_token = _allocate_network_fencing_token(
+                        connection,
+                        workspace_id=workspace_id,
+                        installation_id=str(current["id"]),
+                        logical_service_id=service,
+                        now=now,
+                    )
                     connection.execute(
                         "INSERT INTO workspace_component_network_lease "
                         "(id, workspace_id, grant_id, workload_lease_id, runtime_instance_id, installation_id, "
                         "generation, logical_service_id, fencing_token, state, not_before, expires_at, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
                         (
                             _id("networklease"),
                             workspace_id,
@@ -2753,6 +3073,7 @@ def apply_component_action_v2(  # noqa: C901
                             current["id"],
                             current["binding_generation"],
                             service,
+                            network_fencing_token,
                             not_before,
                             expires_at,
                             now,
@@ -3018,8 +3339,14 @@ def begin_component_invocation(  # noqa: C901
             if effect is None:
                 raise DesktopApiError(409, "desktop_component_invocation_reconciliation_required")
             network = connection.execute(
-                "SELECT fencing_token FROM workspace_component_network_lease "
-                "WHERE grant_id = ? AND logical_service_id IS ? AND state = 'active'",
+                "SELECT lease.fencing_token FROM workspace_component_network_lease AS lease "
+                "JOIN workspace_component_network_lease_cursor AS cursor "
+                "ON cursor.workspace_id = lease.workspace_id "
+                "AND cursor.installation_id = lease.installation_id "
+                "AND cursor.logical_service_id = lease.logical_service_id "
+                "AND cursor.current_fencing_token = lease.fencing_token "
+                "WHERE lease.grant_id = ? AND lease.logical_service_id IS ? "
+                "AND lease.state = 'active'",
                 (grant["id"], logical_service_id),
             ).fetchone()
             connection.execute("COMMIT")
@@ -3092,9 +3419,14 @@ def begin_component_invocation(  # noqa: C901
         network_fencing: int | None = None
         if grant["requires_network"]:
             network = connection.execute(
-                "SELECT * FROM workspace_component_network_lease "
-                "WHERE grant_id = ? AND logical_service_id = ? AND runtime_instance_id = ? "
-                "AND state = 'active'",
+                "SELECT lease.* FROM workspace_component_network_lease AS lease "
+                "JOIN workspace_component_network_lease_cursor AS cursor "
+                "ON cursor.workspace_id = lease.workspace_id "
+                "AND cursor.installation_id = lease.installation_id "
+                "AND cursor.logical_service_id = lease.logical_service_id "
+                "AND cursor.current_fencing_token = lease.fencing_token "
+                "WHERE lease.grant_id = ? AND lease.logical_service_id = ? "
+                "AND lease.runtime_instance_id = ? AND lease.state = 'active'",
                 (grant["id"], logical_service_id, runtime_id),
             ).fetchone()
             if network is None or not (network["not_before"] <= now < network["expires_at"]):
@@ -3302,9 +3634,15 @@ def _invocation_authority_is_current(
         if not isinstance(request, dict) or not isinstance(request.get("logical_service_id"), str):
             return False
         network = connection.execute(
-            "SELECT * FROM workspace_component_network_lease WHERE grant_id = ? "
-            "AND workload_lease_id = ? AND runtime_instance_id = ? AND installation_id = ? "
-            "AND generation = ? AND logical_service_id = ?",
+            "SELECT lease.* FROM workspace_component_network_lease AS lease "
+            "JOIN workspace_component_network_lease_cursor AS cursor "
+            "ON cursor.workspace_id = lease.workspace_id "
+            "AND cursor.installation_id = lease.installation_id "
+            "AND cursor.logical_service_id = lease.logical_service_id "
+            "AND cursor.current_fencing_token = lease.fencing_token "
+            "WHERE lease.grant_id = ? AND lease.workload_lease_id = ? "
+            "AND lease.runtime_instance_id = ? AND lease.installation_id = ? "
+            "AND lease.generation = ? AND lease.logical_service_id = ?",
             (
                 grant["id"],
                 lease["id"],
@@ -4380,12 +4718,19 @@ def settle_component_recovery(  # noqa: C901
             (recovery["previous_runtime_instance_id"],),
         ).fetchall()
         for service in old_services:
+            network_fencing_token = _allocate_network_fencing_token(
+                connection,
+                workspace_id=workspace_id,
+                installation_id=str(installation["id"]),
+                logical_service_id=str(service["logical_service_id"]),
+                now=now,
+            )
             connection.execute(
                 "INSERT INTO workspace_component_network_lease "
                 "(id, workspace_id, grant_id, workload_lease_id, runtime_instance_id, "
                 "installation_id, generation, logical_service_id, fencing_token, state, "
                 "not_before, expires_at, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
                 (
                     _id("networklease"),
                     workspace_id,
@@ -4395,6 +4740,7 @@ def settle_component_recovery(  # noqa: C901
                     installation["id"],
                     installation["binding_generation"],
                     service["logical_service_id"],
+                    network_fencing_token,
                     not_before,
                     expires_at,
                     now,

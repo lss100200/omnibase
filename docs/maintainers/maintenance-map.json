@@ -1432,6 +1432,40 @@
         "scripts/release/test_export_p7_3_knowledge_ebook.py",
         "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py"
       ]
+    },
+    {
+      "id": "INV-089",
+      "title": "P7.4 hardening evidence is identity-bound and Network Lease fencing is persistently monotonic",
+      "document": "docs/maintainers/security-invariants.md#inv-089-p74-hot-plug-hardening-and-product-certification",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/components/service.py",
+        "desktop/src/runtime/component-package-registry.ts",
+        "desktop/src/runtime/component-runtime-broker.ts",
+        "desktop/src/runtime/native-workspace-components.ts",
+        "desktop/src/runtime/p34-sandbox-adapter.ts",
+        "desktop/src/runtime/p34-sandbox-helper.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/components/workbench/p7/**",
+        "scripts/release/export_p7_3_component_bundles.py",
+        "scripts/release/run_p7_4_hardening_matrix.py",
+        "scripts/release/validate_p7_3_windows_acceptance_receipt.py",
+        "docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md"
+      ],
+      "test_paths": [
+        "backend/tests/test_desktop_local_components.py",
+        "backend/tests/test_desktop_local_foundation.py",
+        "desktop/tests/component-package-registry.test.ts",
+        "desktop/tests/component-runtime-broker-packages.test.ts",
+        "desktop/tests/component-runtime-broker.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/p34-sandbox-adapter.test.ts",
+        "frontend/lib/p7-workspace-components.test.ts",
+        "frontend/lib/p7-workbench-shell.test.ts",
+        "scripts/release/test_export_p7_3_component_bundles.py",
+        "scripts/release/test_run_p7_4_hardening_matrix.py",
+        "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py"
+      ]
     }
   ],
   "modules": [
@@ -4896,6 +4930,120 @@
         "Leave pending, unknown or ambiguous external effects blocked for explicit reconciliation; never replay an adapter call because a process, port, file or prior UI state appears present.",
         "Use Workspace emergency stop to fence all non-core components while preserving the immutable standard workbench, Settings center and append-only Audit.",
         "After a package, adapter or renderer failure, project a bounded unavailable component surface and keep all other Workspaces and core controls reachable."
+      ]
+    },
+    {
+      "id": "p7-4-hot-plug-product-certification",
+      "name": "P7.4 hot-plug security hardening, scale certification and product acceptance",
+      "source_paths": [
+        "backend/src/omnibase/desktop_local/schema.py",
+        "backend/src/omnibase/desktop_local/components/service.py",
+        "backend/tests/test_desktop_local_components.py",
+        "backend/tests/test_desktop_local_foundation.py",
+        "desktop/src/runtime/component-package-registry.ts",
+        "desktop/src/runtime/component-runtime-broker.ts",
+        "desktop/src/runtime/native-workspace-components.ts",
+        "desktop/src/runtime/p34-sandbox-adapter.ts",
+        "desktop/src/runtime/p34-sandbox-helper.ts",
+        "desktop/tests/component-package-fixture.ts",
+        "desktop/tests/component-package-registry.test.ts",
+        "desktop/tests/component-runtime-broker-packages.test.ts",
+        "desktop/tests/component-runtime-broker.test.ts",
+        "desktop/tests/native-client.test.ts",
+        "desktop/tests/p34-sandbox-adapter.test.ts",
+        "frontend/app/desktop/workbench-client.tsx",
+        "frontend/app/desktop/p7-workbench.css",
+        "frontend/components/workbench/p7/**",
+        "frontend/lib/p7-workspace-components*.ts",
+        "frontend/lib/p7-workbench-shell*.ts",
+        "scripts/release/export_p7_3_component_bundles.py",
+        "scripts/release/test_export_p7_3_component_bundles.py",
+        "scripts/release/run_p7_4_hardening_matrix.py",
+        "scripts/release/test_run_p7_4_hardening_matrix.py",
+        "scripts/release/validate_p7_3_windows_acceptance_receipt.py",
+        "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py",
+        "docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md",
+        "docs/maintainers/security-invariants.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/handover-report.md",
+        "docs/roadmap.md",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "backend/src/omnibase/desktop_local/components/service.py:_allocate_network_fencing_token",
+        "backend/src/omnibase/desktop_local/components/service.py:apply_component_action_v2",
+        "backend/src/omnibase/desktop_local/components/service.py:begin_component_invocation",
+        "backend/src/omnibase/desktop_local/components/service.py:settle_component_invocation",
+        "backend/src/omnibase/desktop_local/components/service.py:settle_component_recovery",
+        "desktop/src/runtime/component-package-registry.ts:readSourceComponentBinaryAsset",
+        "desktop/src/runtime/p34-sandbox-adapter.ts:P34SandboxComponentAdapter",
+        "desktop/src/runtime/p34-sandbox-helper.ts:runP34SandboxHelperRequest",
+        "scripts/release/export_p7_3_component_bundles.py:export_component_bundles",
+        "scripts/release/run_p7_4_hardening_matrix.py:run_hardening_matrix",
+        "desktop/src/runtime/component-runtime-broker.ts:ComponentRuntimeBroker",
+        "frontend/app/desktop/workbench-client.tsx:DesktopWorkbench",
+        "frontend/components/workbench/p7/p7-settings-center.tsx:P7SettingsCenter"
+      ],
+      "public_interfaces": [
+        "Desktop schema v12 persistent Network Lease fencing cursor with atomic monotonic allocation and v11 history-preserving backfill",
+        "Cursor-bound activation, recovery, invocation replay, begin and settlement checks independent from workload fencing",
+        "Inventory-bound raw Sandbox workload bytes with zero imports, exact transform export, version-distinct execution evidence and no embedded helper workload",
+        "Explicit boundary between trusted same-host WebAssembly execution and still-unproven independent P34 provider isolation",
+        "Identity-bound compatibility, scale, soak, attack, migration, recovery, accessibility and Windows engineering evidence",
+        "Explicit separation between automated source evidence, Windows engineering evidence, human visual review and external signing/Marketplace/release authority"
+      ],
+      "depends_on": [
+        "p7-3-workspace-hot-plug-platform",
+        "p7-2-workspace-composition",
+        "p6-5-windows-desktop-distribution"
+      ],
+      "invariants": [
+        "INV-003",
+        "INV-004",
+        "INV-005",
+        "INV-006",
+        "INV-007",
+        "INV-011",
+        "INV-012",
+        "INV-013",
+        "INV-014",
+        "INV-015",
+        "INV-016",
+        "INV-017",
+        "INV-018",
+        "INV-019",
+        "INV-020",
+        "INV-021",
+        "INV-022",
+        "INV-023",
+        "INV-024",
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085",
+        "INV-086",
+        "INV-087",
+        "INV-088",
+        "INV-089"
+      ],
+      "verification": [
+        "cd backend && uv run pytest -q tests/test_desktop_local_foundation.py tests/test_desktop_local_components.py",
+        "cd backend && uv run ruff check src/omnibase/desktop_local/schema.py src/omnibase/desktop_local/components/service.py tests/test_desktop_local_foundation.py tests/test_desktop_local_components.py",
+        "cd backend && uv run ruff format --check src/omnibase/desktop_local/schema.py src/omnibase/desktop_local/components/service.py tests/test_desktop_local_foundation.py tests/test_desktop_local_components.py",
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "python -m pytest scripts/release/test_validate_p7_3_windows_acceptance_receipt.py -q",
+        "backend/.venv/Scripts/python.exe -m pytest scripts/release/test_export_p7_3_component_bundles.py scripts/release/test_run_p7_4_hardening_matrix.py -q",
+        "backend/.venv/Scripts/python.exe scripts/release/run_p7_4_hardening_matrix.py --repo-root . --output \"../OmniBase Artifacts/p7-4-hardening-pr/report.json\" --profile pr",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
+        "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
+        "git diff --check"
+      ],
+      "recovery": [
+        "Forward-fix schema and service code while preserving every prior cursor, Lease, operation, effect, receipt and Audit identity.",
+        "Restore only into a controlled new database copy; never reset or delete a fencing cursor or replay an unknown external effect.",
+        "Retain failed raw scale, soak, attack and Windows evidence and create a new identity-bound run after the fix.",
+        "Keep Authenticode, Publisher, Marketplace and production release claims false until independent external authority evidence exists."
       ]
     }
   ]

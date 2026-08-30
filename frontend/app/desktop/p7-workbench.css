@@ -152,6 +152,16 @@
   white-space: nowrap;
 }
 
+.p7-component-identity strong,
+.p7-component-identity span,
+.p7-slot-binding-row strong,
+.p7-component-audit-row strong {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .p7-component-row button,
 .p7-component-row-actions button,
 .p7-emergency-row button,
@@ -2345,7 +2355,8 @@
   gap: 2px;
 }
 
-.p7-settings-row-copy strong {
+.p7-settings-row-copy strong,
+.p7-settings-row-copy label {
   color: var(--p7-text);
   font-weight: 500;
 }
@@ -3310,4 +3321,9 @@
     grid-column: 2;
     text-align: left;
   }
+}
+
+.p7-root :is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--p7-accent);
+  outline-offset: 2px;
 }

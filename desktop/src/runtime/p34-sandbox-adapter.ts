@@ -9,7 +9,10 @@ import type {
   DesktopWorkspaceComponentJsonValue,
   DesktopWorkspaceComponentLifecycleTicket,
 } from "../shared/ipc-contract.ts";
-import type { TrustedSandboxComponentAdapter } from "./component-runtime-broker.ts";
+import type {
+  TrustedSandboxComponentAdapter,
+  TrustedSandboxWorkload,
+} from "./component-runtime-broker.ts";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const COMPONENT_ID = /^[a-z][a-z0-9_.-]{1,127}$/u;
@@ -18,6 +21,7 @@ const LOGICAL_ID = /^[a-z][a-z0-9_.:-]{0,127}$/u;
 const RUNTIME_INSTANCE_ID = /^runtime_[a-f0-9]{32}$/u;
 const WORKLOAD_ID = "bounded-transform";
 const MAX_ARTIFACTS = 32;
+const MAX_WORKLOAD_BYTES = 32 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 const MAX_RUNTIME_FILE_BYTES = 256 * 1024 * 1024;
@@ -140,7 +144,58 @@ async function verifyOrdinaryRuntimeFile(
   return target;
 }
 
-function parseProbe(value: unknown): AdapterOutput {
+function validateWorkload(workload: TrustedSandboxWorkload): Buffer {
+  const bytes = Buffer.from(workload.bytes);
+  if (
+    workload.entrypoint !== "transform" ||
+    workload.memoryMaxBytes !== 64 * 1024 ||
+    workload.network !== "no_imports" ||
+    !SHA256.test(workload.sha256) ||
+    bytes.byteLength < 8 ||
+    bytes.byteLength > MAX_WORKLOAD_BYTES ||
+    createHash("sha256").update(bytes).digest("hex") !== workload.sha256
+  ) {
+    throw new P34SandboxAdapterError(
+      "desktop_component_sandbox_workload_invalid",
+    );
+  }
+  let module: WebAssembly.Module;
+  try {
+    module = new WebAssembly.Module(bytes);
+  } catch {
+    throw new P34SandboxAdapterError(
+      "desktop_component_sandbox_workload_invalid",
+    );
+  }
+  if (
+    WebAssembly.Module.imports(module).length !== 0 ||
+    JSON.stringify(WebAssembly.Module.exports(module)) !==
+      JSON.stringify([{ name: "transform", kind: "function" }])
+  ) {
+    throw new P34SandboxAdapterError(
+      "desktop_component_sandbox_workload_invalid",
+    );
+  }
+  return bytes;
+}
+
+function workloadRequest(
+  workload: TrustedSandboxWorkload,
+  bytes: Buffer,
+): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    entrypoint: workload.entrypoint,
+    memory_max_bytes: workload.memoryMaxBytes,
+    network: workload.network,
+    workload_base64: bytes.toString("base64"),
+    workload_sha256: workload.sha256,
+  });
+}
+
+function parseProbe(
+  value: unknown,
+  expectedWorkloadSha256: string,
+): AdapterOutput {
   if (
     !isRecord(value) ||
     !exact(value, ["adapter", "isolation", "schema_version", "status"]) ||
@@ -155,12 +210,12 @@ function parseProbe(value: unknown): AdapterOutput {
       "network",
       "workload_sha256",
     ]) ||
-    value.isolation.execution !== "zero_import_webassembly" ||
+    value.isolation.execution !== "package_bound_zero_import_webassembly" ||
     value.isolation.host_capabilities !== "none" ||
     value.isolation.memory_max_bytes !== 64 * 1024 ||
     value.isolation.network !== "no_imports" ||
     typeof value.isolation.workload_sha256 !== "string" ||
-    !SHA256.test(value.isolation.workload_sha256)
+    value.isolation.workload_sha256 !== expectedWorkloadSha256
   ) {
     throw new P34SandboxAdapterError(
       "desktop_component_sandbox_response_invalid",
@@ -173,6 +228,7 @@ function parseCompleted(
   value: unknown,
   ticket: DesktopWorkspaceComponentExecutionTicket,
   workloadId: string,
+  workloadSha256: string,
   inputArtifactIds: readonly string[],
 ): AdapterOutput {
   if (
@@ -211,6 +267,7 @@ function parseCompleted(
       "status",
       "usage",
       "workload_id",
+      "workload_sha256",
     ]) ||
     output.adapter !== "p34-sandbox.v1" ||
     output.component_id !== ticket.componentId ||
@@ -218,17 +275,26 @@ function parseCompleted(
     output.schema_version !== 1 ||
     output.status !== "completed" ||
     output.workload_id !== workloadId ||
+    output.workload_sha256 !== workloadSha256 ||
     !Array.isArray(output.input_artifact_ids) ||
     output.input_artifact_ids.length !== inputArtifactIds.length ||
     output.input_artifact_ids.some(
       (item, index) => item !== inputArtifactIds[index],
     ) ||
     !isRecord(output.result) ||
-    !exact(output.result, ["artifact_count", "fingerprint_sha256", "kind"]) ||
+    !exact(output.result, [
+      "artifact_count",
+      "fingerprint_sha256",
+      "kind",
+      "transform_value",
+    ]) ||
     output.result.kind !== "artifact_inventory" ||
     output.result.artifact_count !== inputArtifactIds.length ||
     typeof output.result.fingerprint_sha256 !== "string" ||
     !SHA256.test(output.result.fingerprint_sha256) ||
+    !Number.isInteger(output.result.transform_value) ||
+    Number(output.result.transform_value) < -2_147_483_648 ||
+    Number(output.result.transform_value) > 2_147_483_647 ||
     !isRecord(output.usage) ||
     !exact(output.usage, ["bytes_in", "bytes_out", "wall_time_ms"]) ||
     !safeInteger(output.usage.bytes_in, 64 * 1024) ||
@@ -300,21 +366,29 @@ export class P34SandboxComponentAdapter
   }
 
   async preflight(
+    workload: TrustedSandboxWorkload,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<void> {
+    const bytes = validateWorkload(workload);
     parseProbe(
       await this.#invokeHelper(
-        Object.freeze({ kind: "probe", schema_version: 1 }),
+        Object.freeze({
+          kind: "probe",
+          schema_version: 1,
+          ...workloadRequest(workload, bytes),
+        }),
         "preflight",
         "p34-sandbox.v1",
         signal,
       ),
+      workload.sha256,
     );
   }
 
   async activate(
     input: Readonly<{
       ticket: DesktopWorkspaceComponentLifecycleTicket;
+      workload: TrustedSandboxWorkload;
       signal: AbortSignal;
     }>,
   ): Promise<Readonly<{ health: "healthy"; evidence: AdapterOutput }>> {
@@ -327,7 +401,7 @@ export class P34SandboxComponentAdapter
         "desktop_component_sandbox_input_invalid",
       );
     }
-    await this.preflight(input.signal);
+    await this.preflight(input.workload, input.signal);
     return Object.freeze({
       health: "healthy" as const,
       evidence: Object.freeze({
@@ -336,6 +410,7 @@ export class P34SandboxComponentAdapter
         isolation: "zero_import_webassembly",
         runtime_instance_id: input.ticket.runtimeInstanceId,
         status: "ready",
+        workload_sha256: input.workload.sha256,
       }),
     });
   }
@@ -389,6 +464,7 @@ export class P34SandboxComponentAdapter
     input: Readonly<{
       ticket: DesktopWorkspaceComponentExecutionTicket;
       workloadId: string;
+      workload: TrustedSandboxWorkload;
       inputArtifactIds: readonly string[];
       signal: AbortSignal;
     }>,
@@ -398,6 +474,7 @@ export class P34SandboxComponentAdapter
       input.workloadId,
       input.inputArtifactIds,
     );
+    const workloadBytes = validateWorkload(input.workload);
     const response = await this.#invokeHelper(
       Object.freeze({
         component_id: input.ticket.componentId,
@@ -412,6 +489,7 @@ export class P34SandboxComponentAdapter
         workload_fencing_token: input.ticket.workloadFencingToken,
         workload_id: WORKLOAD_ID,
         workspace_id: input.ticket.workspaceId,
+        ...workloadRequest(input.workload, workloadBytes),
       }),
       input.ticket.workspaceId,
       input.ticket.componentId,
@@ -421,6 +499,7 @@ export class P34SandboxComponentAdapter
       response,
       input.ticket,
       input.workloadId,
+      input.workload.sha256,
       input.inputArtifactIds,
     );
   }

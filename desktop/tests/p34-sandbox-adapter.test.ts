@@ -10,6 +10,7 @@ import {
   P34SandboxComponentAdapter,
 } from "../src/runtime/p34-sandbox-adapter.ts";
 import { runP34SandboxHelperRequest } from "../src/runtime/p34-sandbox-helper.ts";
+import type { TrustedSandboxWorkload } from "../src/runtime/component-runtime-broker.ts";
 import type {
   DesktopWorkspaceComponentExecutionTicket,
   DesktopWorkspaceComponentLifecycleTicket,
@@ -21,6 +22,36 @@ const WORKSPACE_ID = "ws_0123456789abcdef0123456789abcdef";
 const COMPONENT_ID = "builtin.sandbox-workload";
 const EXECUTABLE_PATH = "node/node.exe";
 const HELPER_PATH = "component-host/p34-sandbox-helper.js";
+const WORKLOAD_PREFIX =
+  "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041";
+const WORKLOAD_SUFFIX = "00730b";
+
+function workload(constant: "ca" | "cb" = "ca"): TrustedSandboxWorkload {
+  const bytes = Buffer.from(
+    `${WORKLOAD_PREFIX}${constant}${WORKLOAD_SUFFIX}`,
+    "hex",
+  );
+  return Object.freeze({
+    bytes,
+    entrypoint: "transform" as const,
+    memoryMaxBytes: 65_536 as const,
+    network: "no_imports" as const,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+}
+
+const WORKLOAD_1_0 = workload();
+const WORKLOAD_1_1 = workload("cb");
+
+function workloadEnvelope(value: TrustedSandboxWorkload) {
+  return {
+    entrypoint: value.entrypoint,
+    memory_max_bytes: value.memoryMaxBytes,
+    network: value.network,
+    workload_base64: Buffer.from(value.bytes).toString("base64"),
+    workload_sha256: value.sha256,
+  };
+}
 
 let runtimeRoot = "";
 let digests = new Map<string, string>();
@@ -38,11 +69,11 @@ process.stdin.on("end", () => {
     send({
       adapter: "p34-sandbox.v1",
       isolation: {
-        execution: "zero_import_webassembly",
+        execution: "package_bound_zero_import_webassembly",
         host_capabilities: "none",
         memory_max_bytes: 65536,
         network: "no_imports",
-        workload_sha256: "${"9".repeat(64)}"
+        workload_sha256: request.workload_sha256
       },
       schema_version: 1,
       status: "ready"
@@ -55,7 +86,8 @@ process.stdin.on("end", () => {
   const result = {
     artifact_count: request.input_artifact_ids.length,
     fingerprint_sha256: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
-    kind: "artifact_inventory"
+    kind: "artifact_inventory",
+    transform_value: request.input_artifact_ids.length ^ 202
   };
   send({
     binding: {
@@ -75,7 +107,8 @@ process.stdin.on("end", () => {
       schema_version: 1,
       status: "completed",
       usage: { bytes_in: 1, bytes_out: 1, wall_time_ms: 1 },
-      workload_id: request.workload_id
+      workload_id: request.workload_id,
+      workload_sha256: request.workload_sha256
     }
   });
 });
@@ -208,6 +241,7 @@ test("source-owned helper has a zero-import bounded positive journey", () => {
     workload_fencing_token: 1,
     network_fencing_token: null,
     input_artifact_ids: ["artifact.alpha"],
+    ...workloadEnvelope(WORKLOAD_1_0),
   });
   const second = runP34SandboxHelperRequest({
     kind: "run",
@@ -222,6 +256,7 @@ test("source-owned helper has a zero-import bounded positive journey", () => {
     workload_fencing_token: 1,
     network_fencing_token: null,
     input_artifact_ids: ["artifact.alpha"],
+    ...workloadEnvelope(WORKLOAD_1_1),
   });
   assert.equal(
     (first as { output: { status: string } }).output.status,
@@ -232,6 +267,16 @@ test("source-owned helper has a zero-import bounded positive journey", () => {
       .result.fingerprint_sha256,
     (second as { output: { result: { fingerprint_sha256: string } } }).output
       .result.fingerprint_sha256,
+  );
+  assert.equal(
+    (first as { output: { result: { transform_value: number } } }).output.result
+      .transform_value,
+    75,
+  );
+  assert.equal(
+    (second as { output: { result: { transform_value: number } } }).output
+      .result.transform_value,
+    74,
   );
   assert.throws(
     () =>
@@ -248,22 +293,68 @@ test("source-owned helper has a zero-import bounded positive journey", () => {
         workload_fencing_token: 1,
         network_fencing_token: null,
         input_artifact_ids: ["C:\\host\\secret"],
+        ...workloadEnvelope(WORKLOAD_1_0),
       }),
     /sandbox_helper_request_invalid/u,
   );
 });
 
+test("helper and adapter reject workload identity or contract drift", async () => {
+  assert.throws(
+    () =>
+      runP34SandboxHelperRequest({
+        kind: "probe",
+        schema_version: 1,
+        ...workloadEnvelope({ ...WORKLOAD_1_0, sha256: "0".repeat(64) }),
+      }),
+    /sandbox_helper_workload_identity_invalid/u,
+  );
+  const changedBytes = Buffer.from(WORKLOAD_1_0.bytes);
+  changedBytes[changedBytes.length - 1] =
+    (changedBytes[changedBytes.length - 1] ?? 0) ^ 1;
+  await expectCode(
+    adapter().execute({
+      ticket: executionTicket(),
+      workloadId: "bounded-transform",
+      workload: Object.freeze({ ...WORKLOAD_1_0, bytes: changedBytes }),
+      inputArtifactIds: [],
+      signal: new AbortController().signal,
+    }),
+    "desktop_component_sandbox_workload_invalid",
+  );
+  const wrongExport = Buffer.from(
+    "0061736d0100000001060160017f017f030201000707010372756e00000a0601040020000b",
+    "hex",
+  );
+  await expectCode(
+    adapter().execute({
+      ticket: executionTicket(),
+      workloadId: "bounded-transform",
+      workload: Object.freeze({
+        ...WORKLOAD_1_0,
+        bytes: wrongExport,
+        sha256: createHash("sha256").update(wrongExport).digest("hex"),
+      }),
+      inputArtifactIds: [],
+      signal: new AbortController().signal,
+    }),
+    "desktop_component_sandbox_workload_invalid",
+  );
+});
+
 test("adapter preflight and subprocess execution return the exact completed DTO", async () => {
   const sandbox = adapter();
-  await sandbox.preflight();
+  await sandbox.preflight(WORKLOAD_1_0);
   const activated = await sandbox.activate({
     ticket: lifecycleTicket(),
+    workload: WORKLOAD_1_0,
     signal: new AbortController().signal,
   });
   assert.equal(activated.health, "healthy");
   const output = await sandbox.execute({
     ticket: executionTicket(),
     workloadId: "bounded-transform",
+    workload: WORKLOAD_1_0,
     inputArtifactIds: ["artifact.alpha"],
     signal: new AbortController().signal,
   });
@@ -277,16 +368,18 @@ test("adapter preflight and subprocess execution return the exact completed DTO"
     "status",
     "usage",
     "workload_id",
+    "workload_sha256",
   ]);
   assert.equal((output as { status: string }).status, "completed");
 });
 
 test("adapter kills a timed out subprocess and releases the single slot", async () => {
-  const sandbox = adapter(100);
+  const sandbox = adapter(1_000);
   await expectCode(
     sandbox.execute({
       ticket: executionTicket("1.0.1"),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: [],
       signal: new AbortController().signal,
     }),
@@ -295,6 +388,7 @@ test("adapter kills a timed out subprocess and releases the single slot", async 
   const output = await sandbox.execute({
     ticket: executionTicket(),
     workloadId: "bounded-transform",
+    workload: WORKLOAD_1_0,
     inputArtifactIds: [],
     signal: new AbortController().signal,
   });
@@ -307,6 +401,7 @@ test("adapter abort kills the subprocess and concurrency remains one", async () 
   const first = sandbox.execute({
     ticket: executionTicket("1.0.1"),
     workloadId: "bounded-transform",
+    workload: WORKLOAD_1_0,
     inputArtifactIds: [],
     signal: controller.signal,
   });
@@ -318,6 +413,7 @@ test("adapter abort kills the subprocess and concurrency remains one", async () 
     sandbox.execute({
       ticket: executionTicket(),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: [],
       signal: new AbortController().signal,
     }),
@@ -333,6 +429,7 @@ test("adapter reserves the one slot before cold runtime verification completes",
   const first = sandbox.execute({
     ticket: executionTicket("1.0.1"),
     workloadId: "bounded-transform",
+    workload: WORKLOAD_1_0,
     inputArtifactIds: [],
     signal: controller.signal,
   });
@@ -344,6 +441,7 @@ test("adapter reserves the one slot before cold runtime verification completes",
     sandbox.execute({
       ticket: executionTicket(),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: [],
       signal: new AbortController().signal,
     }),
@@ -359,6 +457,7 @@ test("adapter rejects oversized and malformed subprocess output, then cleans up"
     sandbox.execute({
       ticket: executionTicket("1.0.2"),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: [],
       signal: new AbortController().signal,
     }),
@@ -368,6 +467,7 @@ test("adapter rejects oversized and malformed subprocess output, then cleans up"
     sandbox.execute({
       ticket: executionTicket("1.0.3"),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: [],
       signal: new AbortController().signal,
     }),
@@ -376,6 +476,7 @@ test("adapter rejects oversized and malformed subprocess output, then cleans up"
   const output = await sandbox.execute({
     ticket: executionTicket(),
     workloadId: "bounded-transform",
+    workload: WORKLOAD_1_0,
     inputArtifactIds: [],
     signal: new AbortController().signal,
   });
@@ -388,6 +489,7 @@ test("adapter rejects a subprocess response with drifted operation binding", asy
     sandbox.execute({
       ticket: executionTicket("1.0.4"),
       workloadId: "bounded-transform",
+      workload: WORKLOAD_1_0,
       inputArtifactIds: ["artifact.alpha"],
       signal: new AbortController().signal,
     }),
@@ -406,7 +508,7 @@ test("adapter fails closed on unattested helper identity", async () => {
         : null,
   });
   await expectCode(
-    sandbox.preflight(),
+    sandbox.preflight(WORKLOAD_1_0),
     "desktop_component_sandbox_runtime_unavailable",
   );
 });

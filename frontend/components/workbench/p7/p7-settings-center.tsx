@@ -24,7 +24,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import type {
   DesktopApplicationPreference,
@@ -45,6 +45,10 @@ import {
   p7PatchCompositionProfile,
   type P7CompositionLoadStatus,
 } from '@/lib/p7-workspace-composition'
+import {
+  p7SettingsNavigationTargetIndex,
+  type P7SettingsNavigationKey,
+} from '@/lib/p7-settings-accessibility'
 import type { P7WorkspaceComponentSurfaceProjection } from '@/lib/p7-workspace-components'
 import { P7ComponentSurface } from './p7-component-surface'
 import {
@@ -217,6 +221,12 @@ export function P7SettingsCenter(
   },
 ) {
   const [section, setSection] = useState<SettingsSection>('appearance')
+  const settingsId = useId().replaceAll(':', '')
+  const settingsPanelId = `${settingsId}-panel`
+  const navButtonsRef = useRef(new Map<SettingsSection, HTMLButtonElement>())
+  const settingsPanelRef = useRef<HTMLElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
+  const focusPanelAfterSectionRef = useRef(false)
   const preference = props.applicationPreference
   const snapshot = props.compositionSnapshot
   const draft = props.compositionDraft
@@ -232,6 +242,24 @@ export function P7SettingsCenter(
       (item.id !== 'providers' || providerSettingsEnabled) &&
       (item.id !== 'component-extension' || componentExtensionVisible),
   )
+
+  useEffect(() => {
+    restoreFocusRef.current =
+      typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    navButtonsRef.current.get('appearance')?.focus()
+    return () => {
+      const restore = restoreFocusRef.current
+      if (restore?.isConnected) restore.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!focusPanelAfterSectionRef.current) return
+    focusPanelAfterSectionRef.current = false
+    settingsPanelRef.current?.focus()
+  }, [section])
 
   useEffect(() => {
     if (section === 'providers' && !providerSettingsEnabled) {
@@ -278,8 +306,32 @@ export function P7SettingsCenter(
     patchDraft({ slots: { [slot.id]: enabled }, layout })
   }
 
+  const activateSection = (next: SettingsSection) => {
+    if (next === section) {
+      settingsPanelRef.current?.focus()
+      return
+    }
+    focusPanelAfterSectionRef.current = true
+    setSection(next)
+  }
+
+  const moveNavFocus = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const key = event.key as P7SettingsNavigationKey
+    const nextIndex = p7SettingsNavigationTargetIndex(currentIndex, sections.length, key)
+    if (nextIndex === null) return
+    event.preventDefault()
+    navButtonsRef.current.get(sections[nextIndex]!.id)?.focus()
+  }
+
   return (
-    <div className="p7-settings-center">
+    <div
+      className="p7-settings-center"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return
+        event.preventDefault()
+        props.onClose()
+      }}
+    >
       <aside className="p7-settings-nav" aria-label="设置分类">
         <div className="p7-settings-nav-head">
           <span>设置</span>
@@ -287,13 +339,21 @@ export function P7SettingsCenter(
             <X size={15} />
           </button>
         </div>
-        {sections.map(({ id, label, icon: Icon }) => (
+        {sections.map(({ id, label, icon: Icon }, index) => (
           <button
             key={id}
+            id={`${settingsId}-nav-${id}`}
+            ref={(element) => {
+              if (element === null) navButtonsRef.current.delete(id)
+              else navButtonsRef.current.set(id, element)
+            }}
             type="button"
             className="p7-settings-nav-item"
             aria-current={section === id ? 'page' : undefined}
-            onClick={() => setSection(id)}
+            aria-controls={settingsPanelId}
+            tabIndex={section === id ? 0 : -1}
+            onKeyDown={(event) => moveNavFocus(event, index)}
+            onClick={() => activateSection(id)}
           >
             <Icon size={15} />
             <span>{label}</span>
@@ -311,7 +371,14 @@ export function P7SettingsCenter(
         </div>
       </aside>
 
-      <main className="p7-settings-main">
+      <main
+        id={settingsPanelId}
+        ref={settingsPanelRef}
+        className="p7-settings-main"
+        role="region"
+        aria-labelledby={`${settingsId}-nav-${section}`}
+        tabIndex={-1}
+      >
         {props.compositionNotice !== null && (
           <div className="p7-settings-notice p7-settings-global-notice" role="status">
             {props.compositionNotice}

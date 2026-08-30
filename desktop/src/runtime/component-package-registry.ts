@@ -306,15 +306,21 @@ export interface SourceComponentPayloadAsset {
   readonly size: number;
 }
 
-export async function readSourceComponentPayloadAsset(
+export interface SourceComponentBinaryAsset {
+  readonly bytes: Buffer;
+  readonly sha256: string;
+  readonly size: number;
+}
+
+async function readSourceComponentPayloadRaw(
   options: Readonly<SourceComponentPayloadOptions>,
-): Promise<SourceComponentPayloadAsset> {
+): Promise<Readonly<{ raw: Buffer; sha256: string; size: number }>> {
   if (
     !COMPONENT_ID.test(options.componentId) ||
     !VERSION.test(options.version) ||
     !SHA256.test(options.manifestSha256) ||
     !SHA256.test(options.packageSha256) ||
-    !/^[a-z][a-z0-9._-]{1,63}\.json$/u.test(options.payloadName)
+    !/^[a-z][a-z0-9._-]{1,63}\.(?:json|wasm)$/u.test(options.payloadName)
   ) {
     throw new Error("runtime_component_asset_identity_invalid");
   }
@@ -387,7 +393,7 @@ export async function readSourceComponentPayloadAsset(
     !SHA256.test(files[0].sha256) ||
     typeof files[0].size !== "number" ||
     !Number.isSafeInteger(files[0].size) ||
-    files[0].size < 2 ||
+    files[0].size < 8 ||
     files[0].size > 32 * 1024 * 1024 ||
     typeof entry.manifest_path !== "string"
   ) {
@@ -409,15 +415,43 @@ export async function readSourceComponentPayloadAsset(
   ) {
     throw new Error("runtime_component_asset_changed");
   }
+  return Object.freeze({
+    raw: payloadRaw,
+    sha256: files[0].sha256,
+    size: files[0].size,
+  });
+}
+
+export async function readSourceComponentPayloadAsset(
+  options: Readonly<SourceComponentPayloadOptions>,
+): Promise<SourceComponentPayloadAsset> {
+  if (!options.payloadName.endsWith(".json")) {
+    throw new Error("runtime_component_asset_identity_invalid");
+  }
+  const asset = await readSourceComponentPayloadRaw(options);
   try {
     return Object.freeze({
-      value: JSON.parse(payloadRaw.toString("utf8")),
-      sha256: files[0].sha256,
-      size: files[0].size,
+      value: JSON.parse(asset.raw.toString("utf8")),
+      sha256: asset.sha256,
+      size: asset.size,
     });
   } catch {
     throw new Error("runtime_component_asset_json_invalid");
   }
+}
+
+export async function readSourceComponentBinaryAsset(
+  options: Readonly<SourceComponentPayloadOptions>,
+): Promise<SourceComponentBinaryAsset> {
+  if (!options.payloadName.endsWith(".wasm")) {
+    throw new Error("runtime_component_asset_identity_invalid");
+  }
+  const asset = await readSourceComponentPayloadRaw(options);
+  return Object.freeze({
+    bytes: asset.raw,
+    sha256: asset.sha256,
+    size: asset.size,
+  });
 }
 
 export async function readSourceComponentPayload(

@@ -97,13 +97,17 @@ import {
 import {
   createP7WorkspaceComponentSurfaceState,
   p7AssistantDeclarativePackagePrompt,
+  p7ReconcileWorkspaceComponentSurfaces,
   p7EnterWorkspaceComponentSafeMode,
   p7FindNewCompletedComponentAssistantMessage,
   p7ParseAssistantDeclarativePackage,
   p7SetWorkspaceComponentSurface,
+  p7WorkspaceComponentCommittedUiBindings,
   p7WorkspaceComponentAssistantPrompt,
+  p7WorkspaceComponentHostSlotId,
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentSurfaceProjection,
+  p7WorkspaceComponentSurfaceRequests,
   p7WorkspaceComponentsProjection,
   type P7AssistantDeclarativePackageReview,
   type P7WorkspaceComponentSurfaceState,
@@ -476,6 +480,12 @@ export function DesktopWorkbench({
     useState<P7WorkspaceComponentSurfaceState>(() =>
       createP7WorkspaceComponentSurfaceState(initialWorkspaceId),
     )
+  const componentSurfaceStateRef = useRef(componentSurfaceState)
+  const componentSurfaceInFlightRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    componentSurfaceStateRef.current = componentSurfaceState
+  }, [componentSurfaceState])
 
   const liveProjection = desktopInvocationLiveProjection(live, workspaceId, conversationId)
   const teamProjection = desktopTeamLiveProjection(teamLive, workspaceId, conversationId)
@@ -635,7 +645,10 @@ export function DesktopWorkbench({
       setComponentsWorkspaceId(nextWorkspaceId)
       setComponentsStatus(nextWorkspaceId === null ? 'idle' : 'loading')
       applyComponentsSnapshot(null)
-      setComponentSurfaceState(createP7WorkspaceComponentSurfaceState(nextWorkspaceId))
+      componentSurfaceInFlightRef.current.clear()
+      const nextSurfaceState = createP7WorkspaceComponentSurfaceState(nextWorkspaceId)
+      componentSurfaceStateRef.current = nextSurfaceState
+      setComponentSurfaceState(nextSurfaceState)
       setComponentIntent('')
       setAssistantPackageReview(null)
       setComponentsNotice(null)
@@ -1950,25 +1963,42 @@ export function DesktopWorkbench({
     }
     const reloaded = await loadComponents(started.workspaceId)
     if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
-      const nextSurface = p7SetWorkspaceComponentSurface(
-        createP7WorkspaceComponentSurfaceState(started.workspaceId),
-        {
-          workspaceId: started.workspaceId,
-          componentId: installation.componentId,
-          operationId: result.value.operationId,
-          operation,
-          state: result.value.state,
-          output: result.value.output,
-        },
-      )
+      const uiBinding =
+        request.operation === 'ui.render'
+          ? installation.currentSlotBindings.find(
+              (binding) => binding.slotId === request.arguments.slotId,
+            )
+          : undefined
+      const nextSurface = p7SetWorkspaceComponentSurface(componentSurfaceStateRef.current, {
+        workspaceId: started.workspaceId,
+        componentId: installation.componentId,
+        operationId: result.value.operationId,
+        operation,
+        state: result.value.state,
+        output: result.value.output,
+        bindingGeneration: installation.bindingGeneration,
+        ...(request.operation === 'ui.render'
+          ? {
+              ...(p7WorkspaceComponentHostSlotId(request.arguments.slotId)
+                ? { slotId: request.arguments.slotId }
+                : {}),
+              bindingKey: uiBinding?.bindingKey ?? request.arguments.viewId,
+              orderIndex: uiBinding?.orderIndex ?? 0,
+            }
+          : {}),
+      })
+      componentSurfaceStateRef.current = nextSurface
       setComponentSurfaceState(nextSurface)
+      const openedEntry = nextSurface.entries.find(
+        (entry) => entry.surface?.operationId === result.value.operationId,
+      )
       setComponentsNotice(
-        nextSurface.surface === null
+        openedEntry?.surface === null || openedEntry === undefined
           ? '组件输出未进入编辑区；标准工作台保持可用。'
           : '组件调用结果已在工作台中打开。',
       )
-      if (nextSurface.surface !== null) {
-        appendEvent(p7WorkspaceComponentResultEventLogLine(nextSurface.surface))
+      if (openedEntry?.surface !== null && openedEntry?.surface !== undefined) {
+        appendEvent(p7WorkspaceComponentResultEventLogLine(openedEntry.surface))
       }
       pushOutput(`Workspace 组件调用 ${operation}：${result.value.state}`)
     }
@@ -1991,9 +2021,10 @@ export function DesktopWorkbench({
     }
     const reloaded = await loadComponents(started.workspaceId)
     if (componentsOperationIsCurrent(started.epoch, started.workspaceId) && reloaded) {
-      setComponentSurfaceState(
-        p7EnterWorkspaceComponentSafeMode(started.workspaceId, 'emergency-stop'),
-      )
+      const safeState = p7EnterWorkspaceComponentSafeMode(started.workspaceId, 'emergency-stop')
+      componentSurfaceStateRef.current = safeState
+      componentSurfaceInFlightRef.current.clear()
+      setComponentSurfaceState(safeState)
       setComponentsNotice(`紧急停止已完成：${result.value.stoppedComponentIds.length} 个组件。`)
       pushOutput(`Workspace 组件紧急停止：${result.value.stoppedComponentIds.length} 个组件`)
     }
@@ -2501,6 +2532,99 @@ export function DesktopWorkbench({
         }
       })
   }
+
+  useEffect(() => {
+    if (
+      workspaceId === null ||
+      componentsWorkspaceId !== workspaceId ||
+      componentsStatus !== 'ready' ||
+      componentsSnapshot?.workspaceId !== workspaceId
+    ) {
+      return
+    }
+    const snapshot = componentsSnapshot
+    const bindings = p7WorkspaceComponentCommittedUiBindings(snapshot)
+    const reconciled = p7ReconcileWorkspaceComponentSurfaces(
+      componentSurfaceStateRef.current,
+      workspaceId,
+      bindings,
+    )
+    if (reconciled !== componentSurfaceStateRef.current) {
+      componentSurfaceStateRef.current = reconciled
+      setComponentSurfaceState(reconciled)
+    }
+    const requests = p7WorkspaceComponentSurfaceRequests(reconciled, snapshot)
+    for (const binding of requests) {
+      if (componentSurfaceInFlightRef.current.has(binding.key)) continue
+      componentSurfaceInFlightRef.current.add(binding.key)
+      void (async () => {
+        const result = await bridge.workspaceComponents
+          .invoke({
+            workspaceId: binding.workspaceId,
+            componentId: binding.componentId,
+            expectedRevision: binding.installationRevision,
+            bindingGeneration: binding.bindingGeneration,
+            manifestSha256: binding.manifestSha256,
+            packageSha256: binding.packageSha256,
+            idempotencyKey: p7ComponentIdempotencyKey('reconstruct_ui'),
+            bytesOutReserved: Math.min(binding.budgets.maxBytesOut, 4_194_304),
+            tokensReserved: Math.min(binding.budgets.maxTokens, 131_072),
+            wallTimeMs: Math.min(binding.budgets.maxWallTimeMs, 600_000),
+            costUnits: Math.min(binding.budgets.maxCostUnits, 1_000),
+            operation: 'ui.render',
+            arguments: { slotId: binding.slotId, viewId: binding.componentId },
+          })
+          .catch(() => null)
+        if (!mountedRef.current || surfaceScopeRef.current.workspaceId !== binding.workspaceId) {
+          return
+        }
+        const latestSnapshot = componentsSnapshotRef.current
+        if (
+          latestSnapshot?.workspaceId !== binding.workspaceId ||
+          !p7WorkspaceComponentCommittedUiBindings(latestSnapshot).some(
+            (candidate) => candidate.key === binding.key,
+          )
+        ) {
+          return
+        }
+        const succeeded = result !== null && result.ok
+        const nextSurface = p7SetWorkspaceComponentSurface(componentSurfaceStateRef.current, {
+          workspaceId: binding.workspaceId,
+          componentId: binding.componentId,
+          operationId: succeeded ? result.value.operationId : `reconstruct:${binding.key}`,
+          operation: 'ui.render',
+          state: succeeded ? result.value.state : 'failed',
+          output: succeeded ? result.value.output : null,
+          bindingGeneration: binding.bindingGeneration,
+          slotId: binding.slotId,
+          bindingKey: binding.bindingKey,
+          orderIndex: binding.orderIndex,
+        })
+        componentSurfaceStateRef.current = nextSurface
+        setComponentSurfaceState(nextSurface)
+        const entry = nextSurface.entries.find((candidate) => candidate.key === binding.key)
+        if (entry?.surface !== null && entry?.surface !== undefined) {
+          appendEvent(p7WorkspaceComponentResultEventLogLine(entry.surface))
+        }
+        pushOutput(
+          `Workspace UI 重建 ${binding.componentId}/${binding.bindingKey}：${
+            succeeded ? result.value.state : 'failed'
+          }`,
+        )
+      })().finally(() => {
+        componentSurfaceInFlightRef.current.delete(binding.key)
+      })
+    }
+  }, [
+    appendEvent,
+    bridge,
+    componentSurfaceState,
+    componentsSnapshot,
+    componentsStatus,
+    componentsWorkspaceId,
+    pushOutput,
+    workspaceId,
+  ])
 
   // The live slot only applies while the user views the live run's origin
   // conversation; elsewhere the brief falls back to the history selection,

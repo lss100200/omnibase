@@ -97,6 +97,7 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "workspace_component_grant_usage",
             "workspace_component_workload_lease",
             "workspace_component_network_lease",
+            "workspace_component_network_lease_cursor",
             "workspace_component_operation",
             "workspace_component_operation_transition",
             "workspace_component_budget_reservation",
@@ -112,6 +113,28 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "workspace_component_revocation",
         ):
             assert table_sql[table].rstrip().endswith("STRICT")
+
+        index_names = {
+            str(row["name"])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name IS NOT NULL"
+            )
+        }
+        assert {
+            "audit_event_workspace_snapshot",
+            "component_catalog_registration_workspace_snapshot",
+            "component_package_attestation_source_snapshot",
+            "workspace_component_effect_snapshot",
+            "workspace_component_grant_snapshot",
+            "workspace_component_health_snapshot",
+            "workspace_component_installation_snapshot",
+            "workspace_component_operation_error_snapshot",
+            "workspace_component_operation_snapshot",
+            "workspace_component_proposal_snapshot",
+            "workspace_component_reconciliation_snapshot",
+            "workspace_component_recovery_snapshot",
+            "workspace_component_revocation_snapshot",
+        } <= index_names
 
         health = local_health(connection)
         assert health.status == "healthy"
@@ -144,6 +167,7 @@ def test_restart_is_idempotent_and_preserves_application_migration_record(tmp_pa
             (9, "desktop_0009_parent_call_proof", "1.0.0"),
             (10, "desktop_0010_workspace_composition", "1.0.0"),
             (11, "desktop_0011_workspace_component_kernel", "1.0.0"),
+            (12, "desktop_0012_component_network_fencing_cursor", "1.0.0"),
         ]
         assert restarted.execute("SELECT COUNT(*) FROM runtime_job").fetchone()[0] == 1
         assert local_health(restarted).status == "healthy"
@@ -365,8 +389,8 @@ def test_schema_upgrades_from_desktop_0001_and_backfills_parent_agent(tmp_path: 
         connection.close()
 
 
-@pytest.mark.parametrize("starting_version", range(1, 11))
-def test_schema_upgrades_from_every_supported_version_to_v11(
+@pytest.mark.parametrize("starting_version", range(1, 12))
+def test_schema_upgrades_from_every_supported_version_to_v12(
     tmp_path: Path, starting_version: int
 ) -> None:
     from omnibase.desktop_local.database import utc_now_text

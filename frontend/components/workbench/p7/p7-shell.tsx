@@ -541,10 +541,10 @@ export function P7WorkbenchShell(props: P7WorkbenchProps) {
 
   useEffect(() => {
     const surfaceKey =
-      componentHostRegion !== null &&
-      props.componentSurface.status === 'ready' &&
-      props.componentSurface.surface !== null
-        ? `${props.workspaceId}:${componentHostRegion}:${props.componentSurface.surface.operationId}`
+      componentHostRegion !== null && props.componentSurface.status === 'ready'
+        ? `${props.workspaceId}:${componentHostRegion}:${props.componentSurface.entries
+            .map((entry) => `${entry.key}:${entry.surface?.operationId ?? entry.safeModeReason}`)
+            .join('|')}`
         : componentHostRegion === 'editor' && props.componentSurface.status === 'safe-mode'
           ? `${props.workspaceId}:editor:safe-mode:${props.componentSurface.safeModeReason ?? 'unknown'}`
           : null

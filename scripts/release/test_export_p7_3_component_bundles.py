@@ -201,6 +201,32 @@ def test_existing_output_is_rejected_without_mutation(tmp_path: Path) -> None:
     assert marker.read_text(encoding="utf-8") == "preserve"
 
 
+def test_sandbox_packages_bind_distinct_zero_import_wasm_bytes(tmp_path: Path) -> None:
+    exporter = _exporter(_repo())
+    source = _source(tmp_path)
+    bundle = tmp_path / "bundle"
+    exporter.export_component_bundles(
+        repo_root=_repo(), ebook_root=source, output_dir=bundle
+    )
+    index = json.loads((bundle / "index.json").read_bytes())
+    module_digests: set[str] = set()
+    for item in index["packages"]:
+        if item["component_id"] != "builtin.sandbox-workload":
+            continue
+        package_root = (bundle / item["manifest_path"]).parent
+        descriptor = json.loads((package_root / "payload/workload.json").read_bytes())
+        module = (package_root / "payload/workload.wasm").read_bytes()
+        assert module.startswith(b"\x00asm\x01\x00\x00\x00")
+        assert descriptor["module_path"] == "payload/workload.wasm"
+        assert descriptor["module_sha256"] == exporter._sha256(module)
+        assert descriptor["module_format"] == "webassembly_v1"
+        assert descriptor["entrypoint"] == "transform"
+        assert descriptor["network"] == "no_imports"
+        assert descriptor["memory_max_bytes"] == 64 * 1024
+        module_digests.add(descriptor["module_sha256"])
+    assert len(module_digests) == 2
+
+
 @pytest.mark.parametrize("drift", ["missing", "duplicate", "family"])
 def test_catalog_closed_set_drift_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drift: str

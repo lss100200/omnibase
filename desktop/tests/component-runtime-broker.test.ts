@@ -7,6 +7,7 @@ import {
   ComponentRuntimeBroker,
   type ComponentNativeExecutionBoundary,
   type TrustedSandboxComponentAdapter,
+  type TrustedSandboxWorkload,
 } from "../src/runtime/component-runtime-broker.ts";
 import { WorkspaceFiles } from "../src/runtime/workspace-files.ts";
 import type {
@@ -35,6 +36,45 @@ const MANIFEST = "d".repeat(64);
 const PACKAGE = "e".repeat(64);
 const EVIDENCE = "f".repeat(64);
 const NOW = "2026-08-30T00:00:00.000Z";
+const SANDBOX_WORKLOAD_BYTES = Buffer.from(
+  "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041ca00730b",
+  "hex",
+);
+const SANDBOX_WORKLOAD_SHA256 = createHash("sha256")
+  .update(SANDBOX_WORKLOAD_BYTES)
+  .digest("hex");
+const SANDBOX_WORKLOAD: TrustedSandboxWorkload = Object.freeze({
+  bytes: SANDBOX_WORKLOAD_BYTES,
+  entrypoint: "transform",
+  memoryMaxBytes: 65_536,
+  network: "no_imports",
+  sha256: SANDBOX_WORKLOAD_SHA256,
+});
+
+function sandboxPackageOptions(workloadId = "bounded-transform") {
+  return {
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      entrypoint: "transform",
+      input_contract: "logical_artifact_ids",
+      memory_max_bytes: 65_536,
+      module_format: "webassembly_v1",
+      module_path: "payload/workload.wasm",
+      module_sha256: SANDBOX_WORKLOAD_SHA256,
+      network: "no_imports",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: workloadId,
+    }),
+    readSourceComponentBinaryAsset: async () => ({
+      bytes: Buffer.from(SANDBOX_WORKLOAD_BYTES),
+      sha256: SANDBOX_WORKLOAD_SHA256,
+      size: SANDBOX_WORKLOAD_BYTES.byteLength,
+    }),
+  };
+}
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
@@ -751,15 +791,7 @@ test("activation settles the backend-reserved runtime identity and health proof"
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async ({ ticket: lifecycleTicket }) => {
         adapterTicket = lifecycleTicket;
@@ -815,15 +847,7 @@ test("a successful uninstall accepts the backend's removed installation projecti
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({
         health: "healthy",
@@ -866,15 +890,7 @@ test("a failed activation settlement stops the uncommitted sandbox runtime", asy
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({
         health: "healthy",
@@ -914,15 +930,7 @@ test("a drifted activation settlement stops the uncommitted sandbox runtime", as
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({
         health: "healthy",
@@ -966,15 +974,7 @@ test("sandbox activation requires a kill path before the external boundary", asy
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => {
         activations += 1;
@@ -1014,15 +1014,7 @@ test("a failed activation compensation remains fail closed without an active poi
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({
         health: "healthy",
@@ -1075,15 +1067,7 @@ test("a malformed sandbox package fails before the external adapter boundary", a
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "unreviewed-workload",
-    }),
+    ...sandboxPackageOptions("unreviewed-workload"),
     sandboxAdapter: {
       activate: async () => {
         activations += 1;
@@ -1129,15 +1113,7 @@ test("a sandbox lifecycle crash becomes unknown and is never reported as failed"
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => {
         throw new Error("provider disconnected");
@@ -1196,15 +1172,7 @@ test("a lifecycle quiesce timeout cannot release authority as a success", async 
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       execute: async () => {
         started.resolve(undefined);
@@ -1367,15 +1335,7 @@ test("a lifecycle remains quiesce-visible until its durable settlement completes
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({ health: "healthy", evidence: {} }),
       execute: async () => ({}),
@@ -1435,15 +1395,7 @@ test("emergency stop durably fences first and only then aborts host execution", 
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter,
   });
   const invoke = broker.invoke(input);
@@ -1599,15 +1551,7 @@ test("a replayed emergency prepare never repeats host cleanup", async () => {
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       execute: async ({ signal }) => {
         started.resolve(signal);
@@ -1658,15 +1602,7 @@ test("a failed durable emergency fence does not pretend host revocation succeede
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       execute: async ({ signal }) => {
         started.resolve(signal);
@@ -1748,15 +1684,7 @@ test("ambiguous sandbox restart settles unknown once without replay", async () =
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => {
         activations += 1;
@@ -1796,15 +1724,7 @@ test("a failed recovery settlement stops the newly started sandbox runtime", asy
     }),
     workspaceFiles: workspaceFiles(),
     runtimeRoot: path.resolve("."),
-    readSourceComponentPayload: async () => ({
-      component_id: COMPONENT,
-      input_contract: "logical_artifact_ids",
-      output_contract: "artifact_inventory",
-      provider: "p34-sandbox.v1",
-      schema_version: 1,
-      version: "1.0.0",
-      workload_id: "bounded-transform",
-    }),
+    ...sandboxPackageOptions(),
     sandboxAdapter: {
       activate: async () => ({ health: "healthy", evidence: { ready: true } }),
       stop: async () => {

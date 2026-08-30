@@ -156,12 +156,14 @@ function P7WorkspaceCanvas({ surface }: { readonly surface: P7WorkspaceComponent
   )
 }
 
-function readyCanvasSurface(
+function readyCanvasSurfaces(
   projection: P7WorkspaceComponentSurfaceProjection,
-): P7WorkspaceCanvasSurface | null {
-  return projection.status === 'ready' && projection.surface?.kind === 'workspace-canvas'
-    ? projection.surface
-    : null
+): readonly P7WorkspaceCanvasSurface[] {
+  return projection.status === 'ready'
+    ? projection.surfaces.filter(
+        (surface): surface is P7WorkspaceCanvasSurface => surface.kind === 'workspace-canvas',
+      )
+    : []
 }
 
 export function P7SidebarComponentSurface({
@@ -169,23 +171,35 @@ export function P7SidebarComponentSurface({
 }: {
   readonly projection: P7WorkspaceComponentSurfaceProjection
 }) {
-  const surface = readyCanvasSurface(projection)
-  if (surface === null) return null
+  const surfaces = readyCanvasSurfaces(projection)
+  if (surfaces.length === 0 && projection.failures.length === 0) return null
   return (
-    <section className="p7-component-sidebar-slot" aria-label={`组件 · ${surface.title}`}>
-      <header>
-        <Boxes size={14} />
-        <span>{surface.title}</span>
-      </header>
-      <dl>
-        {surface.sections.map((section) => (
-          <div key={section.label}>
-            <dt>{section.label}</dt>
-            <dd>{section.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <>
+      {surfaces.map((surface) => (
+        <P7ComponentSurfaceErrorBoundary
+          key={`${surface.componentId}:${surface.operationId}`}
+          resetKey={`${surface.workspaceId}:${surface.operationId}`}
+        >
+          <section className="p7-component-sidebar-slot" aria-label={`组件 · ${surface.title}`}>
+            <header>
+              <Boxes size={14} />
+              <span>{surface.title}</span>
+            </header>
+            <dl>
+              {surface.sections.map((section) => (
+                <div key={section.label}>
+                  <dt>{section.label}</dt>
+                  <dd>{section.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </P7ComponentSurfaceErrorBoundary>
+      ))}
+      {projection.failures.map((entry) => (
+        <P7ComponentSafeMode key={entry.key} reason={entry.safeModeReason} />
+      ))}
+    </>
   )
 }
 
@@ -194,17 +208,30 @@ export function P7StatusComponentSurface({
 }: {
   readonly projection: P7WorkspaceComponentSurfaceProjection
 }) {
-  const surface = readyCanvasSurface(projection)
-  if (surface === null) return null
-  const detail = surface.sections.map((section) => `${section.label}: ${section.value}`).join(' · ')
+  const surfaces = readyCanvasSurfaces(projection)
+  if (surfaces.length === 0) return null
   return (
-    <span
-      className="p7-status-item p7-status-static p7-component-status-slot"
-      title={detail === '' ? surface.componentId : detail}
-    >
-      <Boxes size={11} />
-      <span>{surface.title}</span>
-    </span>
+    <>
+      {surfaces.map((surface) => {
+        const detail = surface.sections
+          .map((section) => `${section.label}: ${section.value}`)
+          .join(' · ')
+        return (
+          <P7ComponentSurfaceErrorBoundary
+            key={`${surface.componentId}:${surface.operationId}`}
+            resetKey={`${surface.workspaceId}:${surface.operationId}`}
+          >
+            <span
+              className="p7-status-item p7-status-static p7-component-status-slot"
+              title={detail === '' ? surface.componentId : detail}
+            >
+              <Boxes size={11} />
+              <span>{surface.title}</span>
+            </span>
+          </P7ComponentSurfaceErrorBoundary>
+        )
+      })}
+    </>
   )
 }
 
@@ -409,17 +436,35 @@ export function P7ComponentSurface({
   if (projection.status === 'safe-mode') {
     return <P7ComponentSafeMode reason={projection.safeModeReason} />
   }
-  if (projection.surface === null) {
+  if (projection.entries.length === 0) {
     return <div className="p7-component-view-empty">当前工作空间没有打开的组件视图。</div>
   }
-  const surface = projection.surface
   return (
-    <P7ComponentSurfaceErrorBoundary resetKey={`${surface.workspaceId}:${surface.operationId}`}>
-      {surface.kind === 'workspace-canvas' && <P7WorkspaceCanvas surface={surface} />}
-      {surface.kind === 'instruction-skill' && <P7InstructionSkill surface={surface} />}
-      {surface.kind === 'readonly-mcp' && <P7McpResult surface={surface} />}
-      {surface.kind === 'sandbox-workload' && <P7SandboxResult surface={surface} />}
-      {surface.kind === 'knowledge-ebook' && <P7KnowledgeEbook surface={surface} />}
-    </P7ComponentSurfaceErrorBoundary>
+    <>
+      {projection.entries.map((entry) =>
+        entry.surface === null ? (
+          <P7ComponentSafeMode key={entry.key} reason={entry.safeModeReason} />
+        ) : (
+          <P7ComponentSurfaceErrorBoundary
+            key={entry.key}
+            resetKey={`${entry.key}:${entry.surface.operationId}`}
+          >
+            {entry.surface.kind === 'workspace-canvas' && (
+              <P7WorkspaceCanvas surface={entry.surface} />
+            )}
+            {entry.surface.kind === 'instruction-skill' && (
+              <P7InstructionSkill surface={entry.surface} />
+            )}
+            {entry.surface.kind === 'readonly-mcp' && <P7McpResult surface={entry.surface} />}
+            {entry.surface.kind === 'sandbox-workload' && (
+              <P7SandboxResult surface={entry.surface} />
+            )}
+            {entry.surface.kind === 'knowledge-ebook' && (
+              <P7KnowledgeEbook surface={entry.surface} />
+            )}
+          </P7ComponentSurfaceErrorBoundary>
+        ),
+      )}
+    </>
   )
 }

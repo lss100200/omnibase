@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { loadSourceComponentAttestations } from "../src/runtime/component-package-registry.ts";
+import {
+  loadSourceComponentAttestations,
+  readSourceComponentBinaryAsset,
+} from "../src/runtime/component-package-registry.ts";
 import {
   canonicalJson,
   createSourceComponentRuntimeFixture,
@@ -36,6 +39,69 @@ test("source registry admits the exact ten source-owned package versions", async
     assert.equal(attestation.packageSha256, expected.packageSha256);
     assert.equal(attestation.inventorySha256, expected.inventorySha256);
   }
+});
+
+test("source registry returns the exact inventory-bound sandbox bytes", async (t) => {
+  const fixture = await createSourceComponentRuntimeFixture();
+  t.after(fixture.dispose);
+  const first = fixture.entries.get("builtin.sandbox-workload@1.0.0");
+  const second = fixture.entries.get("builtin.sandbox-workload@1.1.0");
+  assert.ok(first);
+  assert.ok(second);
+
+  const read = async (entry: typeof first) =>
+    await readSourceComponentBinaryAsset({
+      runtimeRoot: fixture.root,
+      getVerifiedRuntimeFileSha256: fixture.verifiedSha256,
+      componentId: entry.componentId,
+      version: entry.version,
+      manifestSha256: entry.manifestSha256,
+      packageSha256: entry.packageSha256,
+      payloadName: "workload.wasm",
+    });
+  const firstAsset = await read(first);
+  const secondAsset = await read(second);
+
+  assert.equal(firstAsset.sha256, digestRaw(firstAsset.bytes));
+  assert.equal(secondAsset.sha256, digestRaw(secondAsset.bytes));
+  assert.notEqual(firstAsset.sha256, secondAsset.sha256);
+  assert.deepEqual(
+    WebAssembly.Module.imports(new WebAssembly.Module(firstAsset.bytes)),
+    [],
+  );
+  assert.deepEqual(
+    WebAssembly.Module.exports(new WebAssembly.Module(firstAsset.bytes)),
+    [{ name: "transform", kind: "function" }],
+  );
+});
+
+test("source registry rejects a sandbox binary changed after inventory review", async (t) => {
+  const fixture = await createSourceComponentRuntimeFixture();
+  t.after(fixture.dispose);
+  const entry = fixture.entries.get("builtin.sandbox-workload@1.0.0");
+  assert.ok(entry);
+  const runtimePath = `components/builtin-sandbox-workload/1.0.0/payload/workload.wasm`;
+  const original = await readFile(
+    path.join(fixture.root, ...runtimePath.split("/")),
+  );
+  await fixture.replaceFile(
+    runtimePath,
+    Buffer.concat([original, Buffer.from([0])]),
+    true,
+  );
+
+  await assert.rejects(
+    readSourceComponentBinaryAsset({
+      runtimeRoot: fixture.root,
+      getVerifiedRuntimeFileSha256: fixture.verifiedSha256,
+      componentId: entry.componentId,
+      version: entry.version,
+      manifestSha256: entry.manifestSha256,
+      packageSha256: entry.packageSha256,
+      payloadName: "workload.wasm",
+    }),
+    /runtime_component_asset_unverified/u,
+  );
 });
 
 for (const target of ["manifest", "package", "inventory", "payload"] as const) {

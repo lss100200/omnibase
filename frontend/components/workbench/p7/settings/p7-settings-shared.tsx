@@ -5,20 +5,31 @@ import type { LucideIcon } from 'lucide-react'
 export function P7SettingsToggle({
   checked,
   disabled = false,
+  describedBy,
+  id,
+  invalid = false,
   label,
   onChange,
 }: {
   readonly checked: boolean
   readonly disabled?: boolean
+  readonly describedBy?: string
+  readonly id?: string
+  readonly invalid?: boolean
   readonly label: string
   readonly onChange: (checked: boolean) => void
 }) {
   return (
-    <label className={`p7-settings-toggle${disabled ? 'p7-disabled' : ''}`}>
+    <label
+      className={['p7-settings-toggle', disabled ? 'p7-disabled' : null].filter(Boolean).join(' ')}
+    >
       <input
+        id={id}
         type="checkbox"
         checked={checked}
         disabled={disabled}
+        aria-describedby={describedBy}
+        aria-invalid={invalid || undefined}
         onChange={(event) => onChange(event.target.checked)}
       />
       <span aria-hidden="true" />
@@ -29,18 +40,32 @@ export function P7SettingsToggle({
 
 export function P7SettingRow({
   label,
+  labelFor,
   meta,
+  metaId,
+  invalid = false,
   children,
 }: {
   readonly label: string
+  readonly labelFor?: string
   readonly meta?: string
+  readonly metaId?: string
+  readonly invalid?: boolean
   readonly children: React.ReactNode
 }) {
   return (
     <div className="p7-settings-row">
       <div className="p7-settings-row-copy">
-        <strong>{label}</strong>
-        {meta !== undefined && <span>{meta}</span>}
+        {labelFor === undefined ? (
+          <strong>{label}</strong>
+        ) : (
+          <label htmlFor={labelFor}>{label}</label>
+        )}
+        {meta !== undefined && (
+          <span id={metaId} role={invalid ? 'alert' : undefined}>
+            {meta}
+          </span>
+        )}
       </div>
       <div className="p7-settings-row-control">{children}</div>
     </div>
@@ -101,8 +126,22 @@ export function P7SettingsSection({
   )
 }
 
-export function P7SettingsEmpty({ children }: { readonly children: React.ReactNode }) {
-  return <div className="p7-settings-empty">{children}</div>
+export function P7SettingsEmpty({
+  children,
+  state = 'empty',
+}: {
+  readonly children: React.ReactNode
+  readonly state?: 'empty' | 'loading' | 'error'
+}) {
+  return (
+    <div
+      className="p7-settings-empty"
+      role={state === 'error' ? 'alert' : state === 'loading' ? 'status' : undefined}
+      aria-live={state === 'loading' ? 'polite' : undefined}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function P7SettingsNavItem({

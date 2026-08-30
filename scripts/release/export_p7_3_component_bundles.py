@@ -25,12 +25,12 @@ SCHEMA_VERSION = 1
 MAX_PACKAGE_FILES = 128
 MAX_PACKAGE_BYTES = 64 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_PAYLOAD_PATH = re.compile(r"^payload/[a-z][a-z0-9._-]{1,63}\.json$")
+_PAYLOAD_PATH = re.compile(r"^payload/[a-z][a-z0-9._-]{1,63}\.(?:json|wasm)$")
 _EXPECTED_PAYLOAD_PATHS = {
     "declarative_ui": {"payload/view.json"},
     "instruction_skill": {"payload/instruction.json"},
     "mcp_connector": {"payload/mcp.json"},
-    "sandbox_workload": {"payload/workload.json"},
+    "sandbox_workload": {"payload/workload.json", "payload/workload.wasm"},
     "trusted_local_adapter": {"payload/adapter.json", "payload/catalog.json"},
 }
 _EXPECTED_SOURCE_COMPONENTS = {
@@ -77,6 +77,64 @@ _INDEX_KEYS = {
     "policy_manifest_sha256",
     "version",
 }
+
+# A closed zero-import WebAssembly transform. v1.1 changes only the reviewed
+# transform constant so upgrade/rollback bind distinct executable bytes.
+_SANDBOX_WORKLOAD_PREFIX = bytes(
+    [
+        0x00,
+        0x61,
+        0x73,
+        0x6D,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x06,
+        0x01,
+        0x60,
+        0x01,
+        0x7F,
+        0x01,
+        0x7F,
+        0x03,
+        0x02,
+        0x01,
+        0x00,
+        0x07,
+        0x0D,
+        0x01,
+        0x09,
+        0x74,
+        0x72,
+        0x61,
+        0x6E,
+        0x73,
+        0x66,
+        0x6F,
+        0x72,
+        0x6D,
+        0x00,
+        0x00,
+        0x0A,
+        0x0A,
+        0x01,
+        0x08,
+        0x00,
+        0x20,
+        0x00,
+        0x41,
+    ]
+)
+_SANDBOX_WORKLOAD_SUFFIX = bytes([0x00, 0x73, 0x0B])
+
+
+def _sandbox_workload_bytes(version: str) -> bytes:
+    constant = {"1.0.0": 0xCA, "1.1.0": 0xCB}.get(version)
+    if constant is None:
+        raise ComponentBundleExportError("sandbox_workload_version_invalid")
+    return _SANDBOX_WORKLOAD_PREFIX + bytes([constant]) + _SANDBOX_WORKLOAD_SUFFIX
 
 
 class ComponentBundleExportError(RuntimeError):
@@ -583,16 +641,26 @@ def _family_payload(component: Any, *, ebook_catalog: bytes | None) -> dict[str,
         }
         return {"payload/mcp.json": _canonical_json(mcp)}
     if component.family == "sandbox_workload":
+        workload_bytes = _sandbox_workload_bytes(version)
         workload = {
             "component_id": component.component_id,
+            "entrypoint": "transform",
             "input_contract": "logical_artifact_ids",
+            "memory_max_bytes": 64 * 1024,
+            "module_format": "webassembly_v1",
+            "module_path": "payload/workload.wasm",
+            "module_sha256": _sha256(workload_bytes),
+            "network": "no_imports",
             "output_contract": "artifact_inventory",
             "provider": "p34-sandbox.v1",
             "schema_version": 1,
             "version": version,
             "workload_id": "bounded-transform",
         }
-        return {"payload/workload.json": _canonical_json(workload)}
+        return {
+            "payload/workload.json": _canonical_json(workload),
+            "payload/workload.wasm": workload_bytes,
+        }
     if component.family == "trusted_local_adapter":
         if ebook_catalog is None:
             raise ComponentBundleExportError("ebook_catalog_missing")

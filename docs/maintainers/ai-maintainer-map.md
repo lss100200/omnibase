@@ -2656,3 +2656,30 @@ physical roots, database locators, arbitrary URLs/commands, stdio or process
 handles. P7.4 may expand compatibility, load, polish, signing and distribution
 evidence; a missing family, lifecycle transition, permission, revocation or
 recovery path is an incomplete P7.3, not P7.4 scope.
+
+## P7.4 hot-plug hardening and product certification
+
+Read INV-089 and
+`docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` before
+changing the desktop component schema, Network Lease fencing, hardening matrix,
+Settings accessibility or Windows receipt. Schema v12 owns a durable
+Workspace/installation/logical-service cursor. Allocate its next token in the
+same transaction as the Lease and revalidate the cursor at begin, replay and
+settlement. Do not compute runtime tokens from `MAX(lease)` or binding/workload
+generation, reset/delete a cursor, or allow migration to normalize ambiguous
+multiple-active authority.
+
+The source Sandbox bundle must contain the inventory-bound raw
+`payload/workload.wasm`. Revalidate its size, SHA-256, zero imports and exact
+`transform` export before passing the same bytes to the helper; bind execution
+evidence to that workload digest. The source-owned same-host helper is not an
+independent P34 provider or OS isolation boundary. Do not describe its positive
+journey as independent Runner/provider attestation or production hostile-code
+isolation.
+
+Keep raw scale/latency/memory/soak/attack/recovery evidence bound to the exact
+source and toolchain. A PR soak is not an 8-hour nightly or 24-hour release
+candidate soak. A fresh unsigned Sandbox run can establish bounded Windows
+engineering behavior only; Authenticode custody, Publisher identity,
+Marketplace control and production release authorization remain independent
+external claims.

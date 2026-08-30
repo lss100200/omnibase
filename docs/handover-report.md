@@ -71,9 +71,23 @@
 > 性能、攻击/恢复演练、签名分发和产品精修，不得把任何核心热插拔路径延期到
 > P7.4 或更晚。
 > P7.3 已从接受后的 `main@5ca173a741aca2e176f36f1f1869234bba8deb5b`
-> 在分支 `cursor/p7-3-workspace-hot-plug-r0` 完成源码实现与本地源码门禁；
-> 源码提交身份、fresh Windows 安装包和单实例隔离产品证据仍待生成，当前不宣称
-> 安装产品或生产验收已经完成。
+> 在分支 `cursor/p7-3-workspace-hot-plug-r0` 完成源码实现、本地源码门禁与提交
+> `cc9c0d3d77797fb3d5e3dc9b9c5449bd08b911c0`；fresh unsigned r6 包已从该 clean
+> 提交生成（EXE SHA256 `286b4d0a...bc0b3a6`、MSI SHA256
+> `b89aba1f...dab11ef`、runtime manifest `bd8672e6...fbcc5d`）。单实例 fresh
+> Windows 产品验收尚未执行，不能宣称安装产品或生产验收完成。
+>
+> **P7.4 当前授权（2026-08-30）**：只做热插拔平台加固与产品验收，不补 P7.3
+> 核心能力。权威产品法为
+> `docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` 与 INV-089。
+> 源码正在以 desktop schema v12 修复 Network Lease token 在激活/恢复中复用 `1`
+> 的缺口，并建立兼容、规模、soak、攻击、恢复、Settings 可访问性与 Windows
+> receipt 门槛。Authenticode、Publisher、Marketplace 与生产发布仍需独立外部证据。
+> Sandbox 路径现已把版本不同的 `payload/workload.wasm` 原始字节纳入 package
+> inventory/SHA，native registry、broker 与 helper 重验并执行同一份 zero-import、
+> exact-`transform` 字节；回执绑定 workload SHA 与结果。该 source-owned helper
+> 仍是同机可信进程，不构成独立 P34 Linux Runner/provider attestation 或生产隔离
+> 证据；外部 P34 provider 保持 unavailable/not-proven。
 
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。

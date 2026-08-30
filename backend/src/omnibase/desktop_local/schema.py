@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from omnibase.desktop_local.components.catalog import SEEDED_COMPONENT_VERSIONS, canonical_json
 
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 11
+DESKTOP_SCHEMA_VERSION = 12
 
 STANDARD_WORKBENCH_PROFILE = {
     "appearance": {"density": "inherit", "quiet_chrome": True},
@@ -3069,6 +3069,144 @@ DESKTOP_0011 = DesktopMigration(
     ),
 )
 
+DESKTOP_0012 = DesktopMigration(
+    version=12,
+    migration_id="desktop_0012_component_network_fencing_cursor",
+    statements=(
+        """
+        CREATE INDEX workspace_component_installation_snapshot
+        ON workspace_component_installation(workspace_id, component_id, created_at)
+        """,
+        """
+        CREATE INDEX component_package_attestation_source_snapshot
+        ON component_package_attestation(attested_by, component_id, version, created_at DESC)
+        """,
+        """
+        CREATE INDEX component_catalog_registration_workspace_snapshot
+        ON component_catalog_registration(workspace_id, component_id, version)
+        """,
+        """
+        CREATE INDEX workspace_component_health_snapshot
+        ON workspace_component_health(runtime_instance_id, generation, observed_at DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_operation_error_snapshot
+        ON workspace_component_operation(installation_id, updated_at DESC)
+        WHERE error_code IS NOT NULL
+        """,
+        """
+        CREATE INDEX workspace_component_proposal_snapshot
+        ON workspace_component_proposal(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_operation_snapshot
+        ON workspace_component_operation(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_effect_snapshot
+        ON workspace_component_effect(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_grant_snapshot
+        ON workspace_component_grant(workspace_id, created_at DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_revocation_snapshot
+        ON workspace_component_revocation(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_reconciliation_snapshot
+        ON workspace_component_reconciliation(workspace_id, decided_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_recovery_snapshot
+        ON workspace_component_recovery_request(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX audit_event_workspace_snapshot
+        ON audit_event(owner_id, workspace_id, sequence DESC)
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_active_network_lease_scope
+        ON workspace_component_network_lease(workspace_id, installation_id, logical_service_id)
+        WHERE state = 'active'
+        """,
+        """
+        CREATE TABLE workspace_component_network_lease_cursor (
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            logical_service_id TEXT NOT NULL CHECK (length(logical_service_id) BETWEEN 3 AND 128),
+            current_fencing_token INTEGER CHECK (
+                current_fencing_token IS NULL OR current_fencing_token >= 1
+            ),
+            next_fencing_token INTEGER NOT NULL CHECK (next_fencing_token >= 1),
+            row_version INTEGER NOT NULL CHECK (row_version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, installation_id, logical_service_id),
+            FOREIGN KEY (installation_id, workspace_id)
+                REFERENCES workspace_component_installation(id, workspace_id)
+                ON DELETE RESTRICT,
+            CHECK (
+                current_fencing_token IS NULL
+                OR next_fencing_token > current_fencing_token
+            )
+        ) STRICT
+        """,
+        """
+        INSERT INTO workspace_component_network_lease_cursor
+        (workspace_id, installation_id, logical_service_id, current_fencing_token,
+         next_fencing_token, row_version, created_at, updated_at)
+        SELECT
+            workspace_id,
+            installation_id,
+            logical_service_id,
+            MAX(CASE WHEN state = 'active' THEN fencing_token END),
+            MAX(fencing_token) + 1,
+            1,
+            MIN(created_at),
+            MAX(updated_at)
+        FROM workspace_component_network_lease
+        GROUP BY workspace_id, installation_id, logical_service_id
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_insert_guard
+        BEFORE INSERT ON workspace_component_network_lease_cursor
+        WHEN
+            NEW.current_fencing_token IS NOT NULL
+            OR NEW.next_fencing_token <> 1
+            OR NEW.row_version <> 1
+            OR NEW.created_at <> NEW.updated_at
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_insert_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_guard
+        BEFORE UPDATE ON workspace_component_network_lease_cursor
+        WHEN
+            NEW.workspace_id <> OLD.workspace_id
+            OR NEW.installation_id <> OLD.installation_id
+            OR NEW.logical_service_id <> OLD.logical_service_id
+            OR NEW.current_fencing_token IS NOT OLD.next_fencing_token
+            OR NEW.next_fencing_token <> OLD.next_fencing_token + 1
+            OR NEW.row_version <> OLD.row_version + 1
+            OR NEW.created_at <> OLD.created_at
+            OR NEW.updated_at < OLD.updated_at
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_delete_forbidden
+        BEFORE DELETE ON workspace_component_network_lease_cursor
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_delete_forbidden');
+        END
+        """,
+    ),
+)
+
 DESKTOP_MIGRATIONS = (
     DESKTOP_0001,
     DESKTOP_0002,
@@ -3081,4 +3219,5 @@ DESKTOP_MIGRATIONS = (
     DESKTOP_0009,
     DESKTOP_0010,
     DESKTOP_0011,
+    DESKTOP_0012,
 )

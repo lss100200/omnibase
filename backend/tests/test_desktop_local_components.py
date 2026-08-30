@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -13,6 +15,8 @@ from omnibase.desktop_local import (
     create_owner,
     create_workspace,
     initialized_database,
+    migrate_database,
+    open_database,
 )
 from omnibase.desktop_local.components import service as component_service
 from omnibase.desktop_local.components.catalog import (
@@ -117,6 +121,109 @@ def _register_owner_conflicting_component(
         inventory_sha256=digest_json({"manifest.json": manifest_sha}),
     )
     return component_id
+
+
+def _register_owner_dependency_component(
+    connection: sqlite3.Connection,
+    *,
+    component_id: str,
+    version: str,
+    dependencies: list[dict[str, object]],
+) -> dict[str, str]:
+    manifest = deepcopy(SEEDED_BY_ID_VERSION[(COMPONENT_ID, VERSION)].manifest)
+    manifest["component_id"] = component_id
+    manifest["version"] = version
+    manifest["publisher"] = {"classification": "owner_reviewed", "id": "owner.local"}
+    manifest["dependencies"] = dependencies
+    manifest["conflicts"] = []
+    manifest_sha = digest_json(manifest)
+    package_sha = digest_json({"component_id": component_id, "version": version})
+    register_owner_reviewed_component(
+        connection,
+        workspace_id=WORKSPACE_ID,
+        manifest=manifest,
+        manifest_sha256=manifest_sha,
+        package_sha256=package_sha,
+        inventory_sha256=digest_json({"manifest": manifest_sha, "package": package_sha}),
+    )
+    return {
+        "component_id": component_id,
+        "version": version,
+        "policy_manifest_sha256": manifest_sha,
+        "manifest_sha256": manifest_sha,
+        "package_sha256": package_sha,
+    }
+
+
+def _owner_component_lifecycle(
+    connection: sqlite3.Connection,
+    *,
+    identity: dict[str, str],
+    action: str,
+    expected_revision: int,
+    dependency_graph: list[dict[str, object]],
+) -> dict[str, object]:
+    component_id = identity["component_id"]
+    version = identity["version"]
+    proposed = create_component_proposal(
+        connection,
+        workspace_id=WORKSPACE_ID,
+        component_id=component_id,
+        target_version=version,
+        change_kind=action,
+        expected_revision=expected_revision,
+        requested_grants=[_grant()],
+        desired_configuration={},
+        desired_slot_bindings=[],
+        dependency_graph=dependency_graph,
+        source_kind="owner",
+        source_reference=None,
+        idempotency_key=f"dependency:proposal:{component_id}:{version}:{action}:{expected_revision}",
+    )
+    proposal = proposed["proposal"]
+    assert isinstance(proposal, dict)
+    decide_component_proposal(
+        connection,
+        workspace_id=WORKSPACE_ID,
+        proposal_id=str(proposal["proposal_id"]),
+        decision="approve",
+        request_sha256=str(proposal["request_sha256"]),
+    )
+    common = {
+        "workspace_id": WORKSPACE_ID,
+        "component_id": component_id,
+        "action": action,
+        "proposal_id": str(proposal["proposal_id"]),
+        "request_sha256": str(proposal["request_sha256"]),
+        "expected_revision": expected_revision,
+        "manifest_sha256": identity["manifest_sha256"],
+        "package_sha256": identity["package_sha256"],
+        "idempotency_key": f"dependency:action:{component_id}:{version}:{action}:{expected_revision}",
+    }
+    prepared = apply_component_action_v2(
+        connection,
+        **common,
+        phase="prepare",
+        operation_id=None,
+        outcome=None,
+        evidence_sha256=None,
+        health_state=None,
+    )
+    ticket = prepared["lifecycle_ticket"]
+    assert isinstance(ticket, dict)
+    return apply_component_action_v2(
+        connection,
+        **common,
+        phase="settle",
+        operation_id=str(ticket["operation_id"]),
+        outcome="succeeded",
+        evidence_sha256=digest_json(
+            {"action": action, "component_id": component_id, "version": version}
+        ),
+        health_state="healthy" if action == "activate" else None,
+        runtime_instance_id=ticket["runtime_instance_id"],
+        workload_identity_digest=ticket["workload_identity_digest"],
+    )
 
 
 def _insert_assistant_message(
@@ -424,6 +531,92 @@ def _activate_readonly_mcp(
     return manifest_sha, package_sha, revision
 
 
+def _mcp_lifecycle(
+    connection: sqlite3.Connection,
+    *,
+    action: str,
+    expected_revision: int,
+    version: str,
+    workspace_id: str = WORKSPACE_ID,
+) -> dict[str, object]:
+    component_id = "builtin.readonly-mcp"
+    policy = SEEDED_BY_ID_VERSION[(component_id, version)]
+    manifest_sha = digest_json({"bundle": component_id, "version": version})
+    package_sha = digest_json({"files": ["mcp.json"], "version": version})
+    attest_component_package(
+        connection,
+        component_id=component_id,
+        version=version,
+        policy_manifest_sha256=policy.manifest_sha256,
+        manifest_sha256=manifest_sha,
+        package_sha256=package_sha,
+        inventory_sha256=digest_json({"inventory": package_sha}),
+        adapter_id=policy.adapter_id,
+    )
+    grant = _grant()
+    grant["action"] = "mcp.call"
+    grant["logical_service_id"] = "reviewed_https"
+    proposed = create_component_proposal(
+        connection,
+        workspace_id=workspace_id,
+        component_id=component_id,
+        target_version=version,
+        change_kind=action,
+        expected_revision=expected_revision,
+        requested_grants=[grant],
+        desired_configuration={},
+        desired_slot_bindings=[],
+        dependency_graph=[],
+        source_kind="owner",
+        source_reference=None,
+        idempotency_key=f"fencing:proposal:{workspace_id}:{version}:{action}:{expected_revision}",
+    )
+    proposal = proposed["proposal"]
+    assert isinstance(proposal, dict)
+    decide_component_proposal(
+        connection,
+        workspace_id=workspace_id,
+        proposal_id=str(proposal["proposal_id"]),
+        decision="approve",
+        request_sha256=str(proposal["request_sha256"]),
+    )
+    common = {
+        "workspace_id": workspace_id,
+        "component_id": component_id,
+        "action": action,
+        "proposal_id": str(proposal["proposal_id"]),
+        "request_sha256": str(proposal["request_sha256"]),
+        "expected_revision": expected_revision,
+        "manifest_sha256": manifest_sha,
+        "package_sha256": package_sha,
+        "idempotency_key": f"fencing:action:{workspace_id}:{version}:{action}:{expected_revision}",
+    }
+    prepared = apply_component_action_v2(
+        connection,
+        **common,
+        phase="prepare",
+        operation_id=None,
+        outcome=None,
+        evidence_sha256=None,
+        health_state=None,
+    )
+    ticket = prepared["lifecycle_ticket"]
+    assert isinstance(ticket, dict)
+    return apply_component_action_v2(
+        connection,
+        **common,
+        phase="settle",
+        operation_id=str(ticket["operation_id"]),
+        outcome="succeeded",
+        evidence_sha256=digest_json(
+            {"action": action, "native": "ok", "version": version, "workspace": workspace_id}
+        ),
+        health_state="healthy" if action == "activate" else None,
+        runtime_instance_id=ticket["runtime_instance_id"],
+        workload_identity_digest=ticket["workload_identity_digest"],
+    )
+
+
 def test_catalog_requires_native_package_attestation(
     component_database: sqlite3.Connection,
 ) -> None:
@@ -449,6 +642,20 @@ def test_catalog_requires_native_package_attestation(
             manifest_sha="0" * 64,
             package_sha="1" * 64,
         )
+
+
+def test_snapshot_json_projection_cache_never_shares_mutable_values() -> None:
+    first = component_service._project_json('{"nested":{"values":[1,2]}}')
+    assert isinstance(first, dict)
+    nested = first["nested"]
+    assert isinstance(nested, dict)
+    values = nested["values"]
+    assert isinstance(values, list)
+    values.append(3)
+
+    assert component_service._project_json('{"nested":{"values":[1,2]}}') == {
+        "nested": {"values": [1, 2]}
+    }
 
 
 def test_attestation_rejects_arbitrary_policy_digest_and_adapter_collision(
@@ -913,6 +1120,395 @@ def test_emergency_prepare_durably_fences_before_native_cleanup(
     )
     assert replayed["replayed"] is True
     assert replayed["tickets"] == [ticket]
+
+
+def test_concurrent_component_prepare_replays_one_exact_operation(tmp_path: Path) -> None:
+    config = DesktopLocalConfig(data_root=tmp_path / "concurrent", application_version="1.0.0")
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha = _attest(connection)
+        proposal = _proposal(
+            connection,
+            change_kind="install",
+            expected_revision=0,
+            manifest_sha=manifest_sha,
+            package_sha=package_sha,
+        )
+    common = {
+        "workspace_id": WORKSPACE_ID,
+        "component_id": COMPONENT_ID,
+        "action": "install",
+        "proposal_id": str(proposal["proposal_id"]),
+        "request_sha256": str(proposal["request_sha256"]),
+        "expected_revision": 0,
+        "manifest_sha256": manifest_sha,
+        "package_sha256": package_sha,
+        "idempotency_key": "concurrent:exact:install",
+        "phase": "prepare",
+        "operation_id": None,
+        "outcome": None,
+        "evidence_sha256": None,
+        "health_state": None,
+    }
+    workers = 8
+    barrier = Barrier(workers)
+
+    def prepare(_: int) -> dict[str, object]:
+        connection = open_database(config)
+        try:
+            barrier.wait(timeout=10)
+            return apply_component_action_v2(connection, **common)
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(prepare, range(workers)))
+
+    operation_ids = {
+        str(result["lifecycle_ticket"]["operation_id"])
+        for result in results
+        if isinstance(result["lifecycle_ticket"], dict)
+    }
+    assert len(operation_ids) == 1
+    assert sum(bool(result["replayed"]) for result in results) == workers - 1
+    with initialized_database(config) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_operation WHERE kind = 'install'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_effect WHERE effect_kind = 'lifecycle'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_lifecycle_dispatch"
+            ).fetchone()[0]
+            == 1
+        )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_concurrent_component_invocations_have_exact_budget_winners(tmp_path: Path) -> None:
+    config = DesktopLocalConfig(data_root=tmp_path / "budget", application_version="1.0.0")
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha, revision = _activate_default_component(connection)
+    workers = 8
+    barrier = Barrier(workers)
+
+    def begin(index: int) -> str:
+        connection = open_database(config)
+        try:
+            barrier.wait(timeout=10)
+            try:
+                _begin_default_invocation(
+                    connection,
+                    manifest_sha=manifest_sha,
+                    package_sha=package_sha,
+                    revision=revision,
+                    idempotency_key=f"concurrent:budget:{index}",
+                )
+            except DesktopApiError as exc:
+                return str(exc)
+            return "winner"
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(begin, range(workers)))
+
+    assert results.count("winner") == 2
+    assert results.count("desktop_component_budget_concurrency_exhausted") == workers - 2
+    with initialized_database(config) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_operation WHERE kind = 'invoke'"
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_budget_reservation"
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            connection.execute("SELECT calls FROM workspace_component_grant_usage").fetchone()[0]
+            == 2
+        )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_invocation_begin_transaction_rolls_back_at_effect_cutpoint(tmp_path: Path) -> None:
+    config = DesktopLocalConfig(data_root=tmp_path / "begin-cutpoint", application_version="1.0.0")
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha, revision = _activate_default_component(connection)
+        connection.execute(
+            "CREATE TEMP TRIGGER p74_abort_adapter_effect BEFORE INSERT "
+            "ON workspace_component_effect WHEN NEW.effect_kind = 'adapter_invoke' "
+            "BEGIN SELECT RAISE(ABORT, 'p74_begin_cutpoint'); END"
+        )
+        with pytest.raises(DesktopApiError, match="^desktop_component_invocation_begin_failed$"):
+            _begin_default_invocation(
+                connection,
+                manifest_sha=manifest_sha,
+                package_sha=package_sha,
+                revision=revision,
+                idempotency_key="crash:begin:before-effect",
+            )
+
+    with initialized_database(config) as reopened:
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_operation WHERE kind = 'invoke'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_effect WHERE effect_kind = 'adapter_invoke'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_budget_reservation"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            reopened.execute("SELECT calls FROM workspace_component_grant_usage").fetchone()[0] == 0
+        )
+        assert reopened.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert reopened.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_committed_pending_invocation_becomes_reconciliation_required_after_reopen(
+    tmp_path: Path,
+) -> None:
+    config = DesktopLocalConfig(
+        data_root=tmp_path / "pending-cutpoint", application_version="1.0.0"
+    )
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha, revision = _activate_default_component(connection)
+        begun = _begin_default_invocation(
+            connection,
+            manifest_sha=manifest_sha,
+            package_sha=package_sha,
+            revision=revision,
+            idempotency_key="crash:pending:after-commit",
+        )
+        ticket = begun["ticket"]
+        assert isinstance(ticket, dict)
+
+    with initialized_database(config) as reopened:
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_operation WHERE id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "dispatching"
+        )
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_effect WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "pending"
+        )
+        recover_component_kernel(reopened)
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_operation WHERE id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "reconciliation_required"
+        )
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_effect WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "reconciliation_required"
+        )
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_invocation_receipt WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == 0
+        )
+        with pytest.raises(DesktopApiError, match="^desktop_component_invocation_binding_stale$"):
+            _begin_default_invocation(
+                reopened,
+                manifest_sha=manifest_sha,
+                package_sha=package_sha,
+                revision=revision,
+                idempotency_key="crash:pending:after-commit",
+            )
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_operation WHERE kind = 'invoke'"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_invocation_settlement_rolls_back_after_receipt_cutpoint_and_requires_reconciliation(
+    tmp_path: Path,
+) -> None:
+    config = DesktopLocalConfig(data_root=tmp_path / "settle-cutpoint", application_version="1.0.0")
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha, revision = _activate_default_component(connection)
+        begun = _begin_default_invocation(
+            connection,
+            manifest_sha=manifest_sha,
+            package_sha=package_sha,
+            revision=revision,
+            idempotency_key="crash:settle:after-receipt",
+        )
+        ticket = begun["ticket"]
+        assert isinstance(ticket, dict)
+        connection.execute(
+            "CREATE TEMP TRIGGER p74_abort_effect_commit BEFORE INSERT "
+            "ON workspace_component_effect_transition WHEN NEW.state = 'committed' "
+            "BEGIN SELECT RAISE(ABORT, 'p74_settle_cutpoint'); END"
+        )
+        with pytest.raises(DesktopApiError, match="^desktop_component_invocation_settle_failed$"):
+            settle_component_invocation(
+                connection,
+                workspace_id=WORKSPACE_ID,
+                operation_id=str(ticket["operation_id"]),
+                request_sha256=str(ticket["request_sha256"]),
+                state="succeeded",
+                result_sha256=digest_json({"result": "returned-before-crash"}),
+                evidence_sha256=digest_json({"adapter": "returned-before-crash"}),
+                error_code=None,
+                actual_bytes_out=1,
+                actual_tokens=0,
+                actual_wall_time_ms=1,
+            )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM workspace_component_invocation_receipt WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == 0
+        )
+
+    with initialized_database(config) as reopened:
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_operation WHERE id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "dispatching"
+        )
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_effect WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "pending"
+        )
+        recover_component_kernel(reopened)
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_operation WHERE id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "reconciliation_required"
+        )
+        assert (
+            reopened.execute(
+                "SELECT state FROM workspace_component_effect WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == "reconciliation_required"
+        )
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_invocation_receipt WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_committed_invocation_settlement_replays_once_after_reopen(tmp_path: Path) -> None:
+    config = DesktopLocalConfig(
+        data_root=tmp_path / "response-cutpoint", application_version="1.0.0"
+    )
+    result_sha = digest_json({"result": "committed-before-response-loss"})
+    evidence_sha = digest_json({"adapter": "committed-before-response-loss"})
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        manifest_sha, package_sha, revision = _activate_default_component(connection)
+        begun = _begin_default_invocation(
+            connection,
+            manifest_sha=manifest_sha,
+            package_sha=package_sha,
+            revision=revision,
+            idempotency_key="crash:settle:after-commit",
+        )
+        ticket = begun["ticket"]
+        assert isinstance(ticket, dict)
+        settled = settle_component_invocation(
+            connection,
+            workspace_id=WORKSPACE_ID,
+            operation_id=str(ticket["operation_id"]),
+            request_sha256=str(ticket["request_sha256"]),
+            state="succeeded",
+            result_sha256=result_sha,
+            evidence_sha256=evidence_sha,
+            error_code=None,
+            actual_bytes_out=1,
+            actual_tokens=0,
+            actual_wall_time_ms=1,
+        )
+        assert settled["replayed"] is False
+
+    with initialized_database(config) as reopened:
+        recover_component_kernel(reopened)
+        replayed = settle_component_invocation(
+            reopened,
+            workspace_id=WORKSPACE_ID,
+            operation_id=str(ticket["operation_id"]),
+            request_sha256=str(ticket["request_sha256"]),
+            state="succeeded",
+            result_sha256=result_sha,
+            evidence_sha256=evidence_sha,
+            error_code=None,
+            actual_bytes_out=1,
+            actual_tokens=0,
+            actual_wall_time_ms=1,
+        )
+        assert replayed["replayed"] is True
+        assert (
+            reopened.execute(
+                "SELECT COUNT(*) FROM workspace_component_invocation_receipt WHERE operation_id = ?",
+                (ticket["operation_id"],),
+            ).fetchone()[0]
+            == 1
+        )
+        assert reopened.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert reopened.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
 def test_emergency_prepare_revokes_runtime_even_after_its_grant_expired(
@@ -1732,6 +2328,119 @@ def test_closed_manifest_accepts_disjoint_dependencies_and_conflicts() -> None:
 
     assert validated["dependencies"] == manifest["dependencies"]
     assert validated["conflicts"] == manifest["conflicts"]
+
+
+def test_proposal_rejects_transitive_dependency_cycle_without_mutation(
+    component_database: sqlite3.Connection,
+) -> None:
+    component_b_v1 = _register_owner_dependency_component(
+        component_database,
+        component_id="owner.dependency-b",
+        version="1.0.0",
+        dependencies=[],
+    )
+    revision_b = 0
+    for action in ("install", "bind"):
+        settled = _owner_component_lifecycle(
+            component_database,
+            identity=component_b_v1,
+            action=action,
+            expected_revision=revision_b,
+            dependency_graph=[],
+        )
+        revision_b = int(settled["installation"]["revision"])
+
+    component_a_v1 = _register_owner_dependency_component(
+        component_database,
+        component_id="owner.dependency-a",
+        version="1.0.0",
+        dependencies=[component_b_v1],
+    )
+    revision_a = 0
+    for action in ("install", "bind"):
+        settled = _owner_component_lifecycle(
+            component_database,
+            identity=component_a_v1,
+            action=action,
+            expected_revision=revision_a,
+            dependency_graph=[component_b_v1],
+        )
+        revision_a = int(settled["installation"]["revision"])
+
+    component_b_v11 = _register_owner_dependency_component(
+        component_database,
+        component_id="owner.dependency-b",
+        version="1.1.0",
+        dependencies=[component_a_v1],
+    )
+    proposals_before = component_database.execute(
+        "SELECT COUNT(*) FROM workspace_component_proposal"
+    ).fetchone()[0]
+    audits_before = component_database.execute("SELECT COUNT(*) FROM audit_event").fetchone()[0]
+
+    with pytest.raises(DesktopApiError, match="^desktop_component_dependency_cycle$"):
+        create_component_proposal(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            component_id=component_b_v11["component_id"],
+            target_version=component_b_v11["version"],
+            change_kind="upgrade",
+            expected_revision=revision_b,
+            requested_grants=[_grant()],
+            desired_configuration={},
+            desired_slot_bindings=[],
+            dependency_graph=[component_a_v1],
+            source_kind="owner",
+            source_reference=None,
+            idempotency_key="dependency:cycle:b-v11",
+        )
+
+    assert (
+        component_database.execute("SELECT COUNT(*) FROM workspace_component_proposal").fetchone()[
+            0
+        ]
+        == proposals_before
+    )
+    assert (
+        component_database.execute("SELECT COUNT(*) FROM audit_event").fetchone()[0]
+        == audits_before
+    )
+
+
+def test_proposal_accepts_thirty_two_level_acyclic_dependency_chain(
+    component_database: sqlite3.Connection,
+) -> None:
+    previous: dict[str, str] | None = None
+    for index in range(32):
+        dependencies: list[dict[str, object]] = [] if previous is None else [previous]
+        identity = _register_owner_dependency_component(
+            component_database,
+            component_id=f"owner.chain-{index:02d}",
+            version="1.0.0",
+            dependencies=dependencies,
+        )
+        revision = 0
+        for action in ("install", "bind"):
+            settled = _owner_component_lifecycle(
+                component_database,
+                identity=identity,
+                action=action,
+                expected_revision=revision,
+                dependency_graph=dependencies,
+            )
+            revision = int(settled["installation"]["revision"])
+        assert settled["installation"]["component_id"] == identity["component_id"]
+        previous = identity
+
+    assert previous is not None
+    assert (
+        component_database.execute(
+            "SELECT COUNT(*) FROM workspace_component_installation "
+            "WHERE workspace_id = ? AND component_id LIKE 'owner.chain-%'",
+            (WORKSPACE_ID,),
+        ).fetchone()[0]
+        == 32
+    )
 
 
 def test_proposal_rejects_live_conflict_in_the_same_workspace(
@@ -2650,6 +3359,384 @@ def test_invocation_stale_network_fencing_is_rejected_before_dispatch(
         ).fetchone()[0]
         == 0
     )
+
+
+def test_network_fencing_cursor_advances_across_generations_and_recovery(
+    component_database: sqlite3.Connection,
+) -> None:
+    _activate_readonly_mcp(component_database)
+    installation = component_database.execute(
+        "SELECT id, revision FROM workspace_component_installation "
+        "WHERE workspace_id = ? AND component_id = 'builtin.readonly-mcp'",
+        (WORKSPACE_ID,),
+    ).fetchone()
+    assert installation is not None
+    revision = int(installation["revision"])
+    assert [
+        row[0]
+        for row in component_database.execute(
+            "SELECT fencing_token FROM workspace_component_network_lease ORDER BY created_at, id"
+        )
+    ] == [1]
+
+    disabled = _mcp_lifecycle(
+        component_database,
+        action="disable",
+        expected_revision=revision,
+        version="1.0.0",
+    )
+    revision = int(disabled["installation"]["revision"])
+    upgraded = _mcp_lifecycle(
+        component_database,
+        action="upgrade",
+        expected_revision=revision,
+        version="1.1.0",
+    )
+    revision = int(upgraded["installation"]["revision"])
+    activated_v11 = _mcp_lifecycle(
+        component_database,
+        action="activate",
+        expected_revision=revision,
+        version="1.1.0",
+    )
+    revision = int(activated_v11["installation"]["revision"])
+    rolled_back = _mcp_lifecycle(
+        component_database,
+        action="rollback",
+        expected_revision=revision,
+        version="1.0.0",
+    )
+    revision = int(rolled_back["installation"]["revision"])
+    _mcp_lifecycle(
+        component_database,
+        action="activate",
+        expected_revision=revision,
+        version="1.0.0",
+    )
+    assert [
+        row[0]
+        for row in component_database.execute(
+            "SELECT fencing_token FROM workspace_component_network_lease ORDER BY fencing_token"
+        )
+    ] == [1, 2, 3]
+
+    previous_workload_token = component_database.execute(
+        "SELECT fencing_token FROM workspace_component_workload_lease " "WHERE state = 'active'"
+    ).fetchone()[0]
+    recover_component_kernel(component_database)
+    recovery = get_component_snapshot(component_database, WORKSPACE_ID)["recoveries"][0]
+    settle_component_recovery(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        recovery_id=recovery["recovery_id"],
+        operation_id=recovery["operation_id"],
+        outcome="succeeded",
+        evidence_sha256=digest_json({"native": "recovered-with-fresh-network-fence"}),
+        health_state="healthy",
+        runtime_instance_id=recovery["runtime_instance_id"],
+        workload_identity_digest=recovery["workload_identity_digest"],
+        error_code=None,
+    )
+    assert (
+        component_database.execute(
+            "SELECT fencing_token FROM workspace_component_network_lease " "WHERE state = 'active'"
+        ).fetchone()[0]
+        == 4
+    )
+    assert (
+        component_database.execute(
+            "SELECT fencing_token FROM workspace_component_workload_lease " "WHERE state = 'active'"
+        ).fetchone()[0]
+        == previous_workload_token
+    )
+    cursor = component_database.execute(
+        "SELECT current_fencing_token, next_fencing_token, row_version "
+        "FROM workspace_component_network_lease_cursor WHERE workspace_id = ? "
+        "AND installation_id = ? AND logical_service_id = 'reviewed_https'",
+        (WORKSPACE_ID, installation["id"]),
+    ).fetchone()
+    assert tuple(cursor) == (4, 5, 5)
+
+
+def test_network_fencing_cursor_isolated_by_workspace_and_installation(
+    component_database: sqlite3.Connection,
+) -> None:
+    _activate_readonly_mcp(component_database)
+    workspace_b = "workspace_" + "2" * 32
+    create_workspace(component_database, workspace_b, OWNER_ID, "Workspace B")
+    revision = 0
+    for action in ("install", "bind", "activate"):
+        settled = _mcp_lifecycle(
+            component_database,
+            action=action,
+            expected_revision=revision,
+            version="1.0.0",
+            workspace_id=workspace_b,
+        )
+        revision = int(settled["installation"]["revision"])
+    rows = component_database.execute(
+        "SELECT workspace_id, current_fencing_token, next_fencing_token "
+        "FROM workspace_component_network_lease_cursor ORDER BY workspace_id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (WORKSPACE_ID, 1, 2),
+        (workspace_b, 1, 2),
+    ]
+    assert (
+        len(
+            {
+                row[0]
+                for row in component_database.execute(
+                    "SELECT installation_id FROM workspace_component_network_lease_cursor"
+                )
+            }
+        )
+        == 2
+    )
+
+
+def test_stale_network_token_cannot_settle_dispatched_effect(
+    component_database: sqlite3.Connection,
+) -> None:
+    manifest_sha, package_sha, revision = _activate_readonly_mcp(component_database)
+    begun = begin_component_invocation(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        component_id="builtin.readonly-mcp",
+        action="mcp.call",
+        expected_revision=revision,
+        binding_generation=1,
+        manifest_sha256=manifest_sha,
+        package_sha256=package_sha,
+        idempotency_key="matrix:network:cursor-before-stale",
+        arguments_sha256=digest_json({"request": "before-stale-network-cursor"}),
+        logical_resource_id="workspace.component.input",
+        resource_version=1,
+        logical_service_id="reviewed_https",
+        bytes_in=1,
+        bytes_out_reserved=1,
+        tokens_reserved=0,
+        wall_time_ms=1,
+        cost_units=1,
+    )
+    ticket = begun["ticket"]
+    assert isinstance(ticket, dict)
+    installation_id = component_database.execute(
+        "SELECT id FROM workspace_component_installation "
+        "WHERE component_id = 'builtin.readonly-mcp'"
+    ).fetchone()[0]
+    component_database.execute("BEGIN IMMEDIATE")
+    assert (
+        component_service._allocate_network_fencing_token(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            installation_id=installation_id,
+            logical_service_id="reviewed_https",
+            now=component_service.utc_now_text(),
+        )
+        == 2
+    )
+    component_database.execute("COMMIT")
+
+    with pytest.raises(
+        DesktopApiError, match="desktop_component_invocation_reconciliation_required"
+    ):
+        settle_component_invocation(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            operation_id=str(ticket["operation_id"]),
+            request_sha256=str(ticket["request_sha256"]),
+            state="succeeded",
+            result_sha256=digest_json({"result": "stale-must-not-settle"}),
+            evidence_sha256=digest_json({"evidence": "stale-must-not-settle"}),
+            error_code=None,
+            actual_bytes_out=1,
+            actual_tokens=0,
+            actual_wall_time_ms=1,
+        )
+
+
+def test_stale_network_token_cannot_begin_dispatch(
+    component_database: sqlite3.Connection,
+) -> None:
+    manifest_sha, package_sha, revision = _activate_readonly_mcp(component_database)
+    installation_id = component_database.execute(
+        "SELECT id FROM workspace_component_installation "
+        "WHERE component_id = 'builtin.readonly-mcp'"
+    ).fetchone()[0]
+    component_database.execute("BEGIN IMMEDIATE")
+    assert (
+        component_service._allocate_network_fencing_token(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            installation_id=installation_id,
+            logical_service_id="reviewed_https",
+            now=component_service.utc_now_text(),
+        )
+        == 2
+    )
+    component_database.execute("COMMIT")
+
+    with pytest.raises(DesktopApiError, match="desktop_component_network_lease_unavailable"):
+        begin_component_invocation(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            component_id="builtin.readonly-mcp",
+            action="mcp.call",
+            expected_revision=revision,
+            binding_generation=1,
+            manifest_sha256=manifest_sha,
+            package_sha256=package_sha,
+            idempotency_key="matrix:network:cursor-stale",
+            arguments_sha256=digest_json({"request": "stale-network-cursor"}),
+            logical_resource_id="workspace.component.input",
+            resource_version=1,
+            logical_service_id="reviewed_https",
+            bytes_in=1,
+            bytes_out_reserved=1,
+            tokens_reserved=0,
+            wall_time_ms=1,
+            cost_units=1,
+        )
+
+
+def test_network_fencing_cursor_allocation_rolls_back_with_transaction_failure(
+    component_database: sqlite3.Connection,
+) -> None:
+    _activate_readonly_mcp(component_database)
+    installation_id = component_database.execute(
+        "SELECT id FROM workspace_component_installation "
+        "WHERE component_id = 'builtin.readonly-mcp'"
+    ).fetchone()[0]
+    before = tuple(
+        component_database.execute(
+            "SELECT current_fencing_token, next_fencing_token, row_version "
+            "FROM workspace_component_network_lease_cursor"
+        ).fetchone()
+    )
+    component_database.execute("BEGIN IMMEDIATE")
+    assert (
+        component_service._allocate_network_fencing_token(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            installation_id=installation_id,
+            logical_service_id="reviewed_https",
+            now=component_service.utc_now_text(),
+        )
+        == 2
+    )
+    component_database.execute("ROLLBACK")
+    after = tuple(
+        component_database.execute(
+            "SELECT current_fencing_token, next_fencing_token, row_version "
+            "FROM workspace_component_network_lease_cursor"
+        ).fetchone()
+    )
+    assert after == before == (1, 2, 2)
+
+
+def test_network_fencing_cursor_rejects_reset_delete_and_duplicate_active_scope(
+    component_database: sqlite3.Connection,
+) -> None:
+    _activate_readonly_mcp(component_database)
+    with pytest.raises(sqlite3.IntegrityError, match="network_lease_cursor_invalid"):
+        component_database.execute(
+            "UPDATE workspace_component_network_lease_cursor "
+            "SET current_fencing_token = current_fencing_token"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="cursor_delete_forbidden"):
+        component_database.execute("DELETE FROM workspace_component_network_lease_cursor")
+    cursor = component_database.execute(
+        "SELECT installation_id, created_at FROM workspace_component_network_lease_cursor"
+    ).fetchone()
+    with pytest.raises(sqlite3.IntegrityError, match="cursor_insert_invalid"):
+        component_database.execute(
+            "INSERT INTO workspace_component_network_lease_cursor "
+            "(workspace_id, installation_id, logical_service_id, current_fencing_token, "
+            "next_fencing_token, row_version, created_at, updated_at) "
+            "VALUES (?, ?, 'other_service', 9, 10, 1, ?, ?)",
+            (WORKSPACE_ID, cursor["installation_id"], cursor["created_at"], cursor["created_at"]),
+        )
+    lease = component_database.execute(
+        "SELECT * FROM workspace_component_network_lease WHERE state = 'active'"
+    ).fetchone()
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        component_database.execute(
+            "INSERT INTO workspace_component_network_lease "
+            "(id, workspace_id, grant_id, workload_lease_id, runtime_instance_id, "
+            "installation_id, generation, logical_service_id, fencing_token, state, "
+            "not_before, expires_at, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
+            (
+                "networklease_" + "f" * 32,
+                lease["workspace_id"],
+                lease["grant_id"],
+                lease["workload_lease_id"],
+                lease["runtime_instance_id"],
+                lease["installation_id"],
+                lease["generation"],
+                lease["logical_service_id"],
+                2,
+                lease["not_before"],
+                lease["expires_at"],
+                lease["created_at"],
+                lease["updated_at"],
+            ),
+        )
+
+
+def test_v11_to_v12_migration_seeds_network_cursor_without_reusing_token(
+    tmp_path: Path,
+) -> None:
+    config = DesktopLocalConfig(data_root=tmp_path / "migration", application_version="1.0.0")
+    with initialized_database(config) as connection:
+        create_owner(connection, OWNER_ID, "Owner")
+        create_workspace(connection, WORKSPACE_ID, OWNER_ID, "Workspace")
+        _activate_readonly_mcp(connection)
+        lease_before = tuple(
+            connection.execute(
+                "SELECT id, fencing_token, state FROM workspace_component_network_lease"
+            ).fetchone()
+        )
+        for index_name in (
+            "audit_event_workspace_snapshot",
+            "component_catalog_registration_workspace_snapshot",
+            "component_package_attestation_source_snapshot",
+            "workspace_component_effect_snapshot",
+            "workspace_component_grant_snapshot",
+            "workspace_component_health_snapshot",
+            "workspace_component_installation_snapshot",
+            "workspace_component_one_active_network_lease_scope",
+            "workspace_component_operation_error_snapshot",
+            "workspace_component_operation_snapshot",
+            "workspace_component_proposal_snapshot",
+            "workspace_component_reconciliation_snapshot",
+            "workspace_component_recovery_snapshot",
+            "workspace_component_revocation_snapshot",
+        ):
+            connection.execute(f"DROP INDEX {index_name}")
+        connection.execute("DROP TABLE workspace_component_network_lease_cursor")
+        connection.execute("DELETE FROM desktop_migration_history WHERE version = 12")
+        connection.execute(
+            "UPDATE desktop_schema_metadata SET schema_version = 11 WHERE singleton_key = 1"
+        )
+        connection.execute("PRAGMA user_version = 11")
+
+        assert migrate_database(connection, config) == 12
+        assert migrate_database(connection, config) == 12
+        cursor = connection.execute(
+            "SELECT current_fencing_token, next_fencing_token, row_version "
+            "FROM workspace_component_network_lease_cursor"
+        ).fetchone()
+        assert tuple(cursor) == (1, 2, 1)
+        assert (
+            tuple(
+                connection.execute(
+                    "SELECT id, fencing_token, state FROM workspace_component_network_lease"
+                ).fetchone()
+            )
+            == lease_before
+        )
 
 
 def test_invocation_cannot_cross_workspace_scope(

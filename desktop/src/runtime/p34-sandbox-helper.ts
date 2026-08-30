@@ -2,24 +2,17 @@ import { createHash } from "node:crypto";
 
 const MAX_INPUT_BYTES = 64 * 1024;
 const MAX_ARTIFACTS = 32;
+const MAX_WORKLOAD_BYTES = 32 * 1024;
 const LOGICAL_ID = /^[a-z][a-z0-9_.:-]{0,127}$/u;
 const COMPONENT_ID = /^[a-z][a-z0-9_.-]{1,127}$/u;
 const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
 const RUNTIME_INSTANCE_ID = /^runtime_[a-f0-9]{32}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
+const BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 const WORKLOAD_ID = "bounded-transform";
-const WASM_MEMORY_BYTES = 64 * 1024;
-const WASM_SHA256 =
-  "99eebd6e301ac000f3e71a4566e72daa99034b005d438b0a7a952f1151fce5ec";
-
-// (module (memory (export "memory") 1 1)
-//   (func (export "run") (param i32) (result i32) local.get 0))
-// The admitted workload has no imports, so it cannot obtain filesystem,
-// network, process, clock or secret authority from its trusted host wrapper.
-const BOUNDED_TRANSFORM_WASM = Buffer.from(
-  "0061736d0100000001060160017f017f03020100050401010101071002066d656d6f727902000372756e00000a0601040020000b",
-  "hex",
-);
+const WORKLOAD_ENTRYPOINT = "transform";
+const WORKLOAD_MEMORY_MAX_BYTES = 64 * 1024;
 
 type JsonValue =
   | null
@@ -29,9 +22,17 @@ type JsonValue =
   | readonly JsonValue[]
   | Readonly<{ readonly [key: string]: JsonValue }>;
 
+type WorkloadEnvelope = Readonly<{
+  entrypoint: typeof WORKLOAD_ENTRYPOINT;
+  memory_max_bytes: typeof WORKLOAD_MEMORY_MAX_BYTES;
+  network: "no_imports";
+  workload_base64: string;
+  workload_sha256: string;
+}>;
+
 type HelperRequest =
-  | Readonly<{ kind: "probe"; schema_version: 1 }>
-  | Readonly<{
+  | (Readonly<{ kind: "probe"; schema_version: 1 }> & WorkloadEnvelope)
+  | (Readonly<{
       kind: "run";
       schema_version: 1;
       component_id: string;
@@ -44,7 +45,8 @@ type HelperRequest =
       workload_fencing_token: number;
       workload_id: typeof WORKLOAD_ID;
       workspace_id: string;
-    }>;
+    }> &
+      WorkloadEnvelope);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -76,29 +78,75 @@ function canonicalJson(value: JsonValue): string {
   return JSON.stringify(value);
 }
 
+function validWorkloadEnvelope(value: Record<string, unknown>): boolean {
+  return (
+    value.entrypoint === WORKLOAD_ENTRYPOINT &&
+    value.memory_max_bytes === WORKLOAD_MEMORY_MAX_BYTES &&
+    value.network === "no_imports" &&
+    typeof value.workload_base64 === "string" &&
+    value.workload_base64.length > 0 &&
+    value.workload_base64.length <= Math.ceil(MAX_WORKLOAD_BYTES / 3) * 4 &&
+    BASE64.test(value.workload_base64) &&
+    typeof value.workload_sha256 === "string" &&
+    SHA256.test(value.workload_sha256)
+  );
+}
+
+function workloadEnvelope(value: Record<string, unknown>): WorkloadEnvelope {
+  return Object.freeze({
+    entrypoint: WORKLOAD_ENTRYPOINT,
+    memory_max_bytes: WORKLOAD_MEMORY_MAX_BYTES,
+    network: "no_imports",
+    workload_base64: String(value.workload_base64),
+    workload_sha256: String(value.workload_sha256),
+  });
+}
+
 function parseRequest(value: unknown): HelperRequest {
   if (!isRecord(value) || value.schema_version !== 1) {
     throw new Error("sandbox_helper_request_invalid");
   }
-  if (value.kind === "probe" && exact(value, ["kind", "schema_version"])) {
-    return Object.freeze({ kind: "probe", schema_version: 1 });
+  if (
+    value.kind === "probe" &&
+    exact(value, [
+      "entrypoint",
+      "kind",
+      "memory_max_bytes",
+      "network",
+      "schema_version",
+      "workload_base64",
+      "workload_sha256",
+    ]) &&
+    validWorkloadEnvelope(value)
+  ) {
+    return Object.freeze({
+      kind: "probe",
+      schema_version: 1,
+      ...workloadEnvelope(value),
+    });
   }
   if (
     value.kind !== "run" ||
     !exact(value, [
       "component_id",
       "component_version",
+      "entrypoint",
       "input_artifact_ids",
       "kind",
+      "memory_max_bytes",
+      "network",
       "network_fencing_token",
       "operation_id",
       "request_sha256",
       "runtime_instance_id",
       "schema_version",
+      "workload_base64",
       "workload_fencing_token",
       "workload_id",
+      "workload_sha256",
       "workspace_id",
     ]) ||
+    !validWorkloadEnvelope(value) ||
     typeof value.component_id !== "string" ||
     !COMPONENT_ID.test(value.component_id) ||
     typeof value.component_version !== "string" ||
@@ -139,64 +187,73 @@ function parseRequest(value: unknown): HelperRequest {
     workload_fencing_token: Number(value.workload_fencing_token),
     workload_id: WORKLOAD_ID,
     workspace_id: value.workspace_id,
+    ...workloadEnvelope(value),
   });
 }
 
-function instantiateBoundedWorkload(): Readonly<{
-  memory: WebAssembly.Memory;
-  run: (artifactCount: number) => number;
+function instantiatePackageWorkload(request: WorkloadEnvelope): Readonly<{
+  transform: (artifactCount: number) => number;
 }> {
+  const bytes = Buffer.from(request.workload_base64, "base64");
   if (
-    createHash("sha256").update(BOUNDED_TRANSFORM_WASM).digest("hex") !==
-    WASM_SHA256
+    bytes.byteLength < 8 ||
+    bytes.byteLength > MAX_WORKLOAD_BYTES ||
+    bytes.toString("base64") !== request.workload_base64 ||
+    createHash("sha256").update(bytes).digest("hex") !== request.workload_sha256
   ) {
     throw new Error("sandbox_helper_workload_identity_invalid");
   }
-  const module = new WebAssembly.Module(BOUNDED_TRANSFORM_WASM);
+  let module: WebAssembly.Module;
+  try {
+    module = new WebAssembly.Module(bytes);
+  } catch {
+    throw new Error("sandbox_helper_workload_contract_invalid");
+  }
   if (
     WebAssembly.Module.imports(module).length !== 0 ||
     JSON.stringify(WebAssembly.Module.exports(module)) !==
-      JSON.stringify([
-        { name: "memory", kind: "memory" },
-        { name: "run", kind: "function" },
-      ])
+      JSON.stringify([{ name: WORKLOAD_ENTRYPOINT, kind: "function" }])
   ) {
     throw new Error("sandbox_helper_workload_contract_invalid");
   }
-  const instance = new WebAssembly.Instance(module);
-  const memory = instance.exports.memory;
-  const run = instance.exports.run;
-  if (
-    !(memory instanceof WebAssembly.Memory) ||
-    memory.buffer.byteLength !== WASM_MEMORY_BYTES ||
-    typeof run !== "function"
-  ) {
+  const instance = new WebAssembly.Instance(module, Object.freeze({}));
+  const transform = instance.exports[WORKLOAD_ENTRYPOINT];
+  if (typeof transform !== "function") {
     throw new Error("sandbox_helper_workload_contract_invalid");
-  }
-  try {
-    memory.grow(1);
-    throw new Error("sandbox_helper_workload_memory_unbounded");
-  } catch (error) {
-    if (!(error instanceof RangeError)) throw error;
   }
   return Object.freeze({
-    memory,
-    run: (artifactCount: number) => Number(run(artifactCount)),
+    transform: (artifactCount: number): number => {
+      let result: unknown;
+      try {
+        result = transform(artifactCount);
+      } catch {
+        throw new Error("sandbox_helper_workload_execution_failed");
+      }
+      if (
+        !Number.isInteger(result) ||
+        Number(result) < -2_147_483_648 ||
+        Number(result) > 2_147_483_647
+      ) {
+        throw new Error("sandbox_helper_workload_result_invalid");
+      }
+      return Number(result);
+    },
   });
 }
 
 export function runP34SandboxHelperRequest(value: unknown): JsonValue {
   const request = parseRequest(value);
-  const workload = instantiateBoundedWorkload();
+  const workload = instantiatePackageWorkload(request);
   if (request.kind === "probe") {
+    workload.transform(0);
     return Object.freeze({
       adapter: "p34-sandbox.v1",
       isolation: Object.freeze({
-        execution: "zero_import_webassembly",
+        execution: "package_bound_zero_import_webassembly",
         host_capabilities: "none",
-        memory_max_bytes: WASM_MEMORY_BYTES,
-        network: "no_imports",
-        workload_sha256: WASM_SHA256,
+        memory_max_bytes: request.memory_max_bytes,
+        network: request.network,
+        workload_sha256: request.workload_sha256,
       }),
       schema_version: 1,
       status: "ready",
@@ -204,28 +261,25 @@ export function runP34SandboxHelperRequest(value: unknown): JsonValue {
   }
 
   const startedAt = performance.now();
-  const artifactCount = workload.run(request.input_artifact_ids.length);
-  if (
-    artifactCount !== request.input_artifact_ids.length ||
-    workload.memory.buffer.byteLength !== WASM_MEMORY_BYTES
-  ) {
-    throw new Error("sandbox_helper_workload_result_invalid");
-  }
+  const transformValue = workload.transform(request.input_artifact_ids.length);
   const fingerprintSha256 = createHash("sha256")
     .update(
       canonicalJson({
         component_id: request.component_id,
         component_version: request.component_version,
         input_artifact_ids: request.input_artifact_ids,
+        transform_value: transformValue,
         workload_id: request.workload_id,
+        workload_sha256: request.workload_sha256,
       }),
       "utf8",
     )
     .digest("hex");
   const result = Object.freeze({
-    artifact_count: artifactCount,
+    artifact_count: request.input_artifact_ids.length,
     fingerprint_sha256: fingerprintSha256,
     kind: "artifact_inventory",
+    transform_value: transformValue,
   });
   return Object.freeze({
     binding: Object.freeze({
@@ -253,6 +307,7 @@ export function runP34SandboxHelperRequest(value: unknown): JsonValue {
         wall_time_ms: Math.max(0, Math.ceil(performance.now() - startedAt)),
       }),
       workload_id: request.workload_id,
+      workload_sha256: request.workload_sha256,
     }),
   });
 }

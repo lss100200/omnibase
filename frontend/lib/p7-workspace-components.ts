@@ -4,6 +4,7 @@ import type {
   DesktopWorkspaceComponentInstallation,
   DesktopWorkspaceComponentLifecycleAction,
   DesktopWorkspaceComponentOperation,
+  DesktopWorkspaceComponentSnapshot,
 } from './desktop-bridge'
 
 export type P7WorkspaceComponentsLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -1567,14 +1568,46 @@ export type P7WorkspaceComponentSafeModeReason =
   | 'invocation-failed'
   | 'malformed-output'
 
+export interface P7WorkspaceComponentCommittedUiBinding {
+  readonly key: string
+  readonly workspaceId: string
+  readonly componentId: string
+  readonly version: string
+  readonly installationRevision: number
+  readonly bindingGeneration: number
+  readonly manifestSha256: string
+  readonly packageSha256: string
+  readonly slotId: P7WorkspaceComponentHostSlotId
+  readonly bindingKey: string
+  readonly orderIndex: number
+  readonly budgets: DesktopWorkspaceComponentCatalogItem['budgets']
+}
+
+export interface P7WorkspaceComponentSurfaceEntry {
+  readonly key: string
+  readonly workspaceId: string
+  readonly componentId: string
+  readonly bindingGeneration: number
+  readonly slotId: P7WorkspaceComponentHostSlotId
+  readonly bindingKey: string
+  readonly orderIndex: number
+  readonly committedBinding: boolean
+  readonly surface: P7WorkspaceComponentSurface | null
+  readonly safeModeReason: P7WorkspaceComponentSafeModeReason | null
+}
+
 export interface P7WorkspaceComponentSurfaceState {
   readonly workspaceId: string | null
-  readonly surface: P7WorkspaceComponentSurface | null
+  readonly entries: readonly P7WorkspaceComponentSurfaceEntry[]
   readonly safeModeReason: P7WorkspaceComponentSafeModeReason | null
 }
 
 export interface P7WorkspaceComponentSurfaceProjection {
   readonly status: 'idle' | 'loading' | 'ready' | 'safe-mode'
+  readonly entries: readonly P7WorkspaceComponentSurfaceEntry[]
+  readonly surfaces: readonly P7WorkspaceComponentSurface[]
+  readonly failures: readonly P7WorkspaceComponentSurfaceEntry[]
+  /** Compatibility accessor for callers that still need the first ordered surface. */
   readonly surface: P7WorkspaceComponentSurface | null
   readonly safeModeReason: P7WorkspaceComponentSafeModeReason | null
 }
@@ -2187,7 +2220,134 @@ export function p7ParseWorkspaceComponentSurface(
 export function createP7WorkspaceComponentSurfaceState(
   workspaceId: string | null,
 ): P7WorkspaceComponentSurfaceState {
-  return Object.freeze({ workspaceId, surface: null, safeModeReason: null })
+  return Object.freeze({ workspaceId, entries: Object.freeze([]), safeModeReason: null })
+}
+
+export function p7WorkspaceComponentSurfaceEntryKey(
+  input: Readonly<{
+    workspaceId: string
+    componentId: string
+    bindingGeneration: number
+    slotId: P7WorkspaceComponentHostSlotId
+    bindingKey: string
+  }>,
+): string {
+  return [
+    input.workspaceId,
+    input.componentId,
+    String(input.bindingGeneration),
+    input.slotId,
+    input.bindingKey,
+  ].join('\u001f')
+}
+
+function p7CompareWorkspaceComponentSurfaceEntry(
+  left: Pick<
+    P7WorkspaceComponentSurfaceEntry,
+    'slotId' | 'orderIndex' | 'componentId' | 'bindingKey'
+  >,
+  right: Pick<
+    P7WorkspaceComponentSurfaceEntry,
+    'slotId' | 'orderIndex' | 'componentId' | 'bindingKey'
+  >,
+): number {
+  const leftSlot = P7_WORKSPACE_COMPONENT_HOST_SLOT_IDS.indexOf(left.slotId)
+  const rightSlot = P7_WORKSPACE_COMPONENT_HOST_SLOT_IDS.indexOf(right.slotId)
+  return (
+    leftSlot - rightSlot ||
+    left.orderIndex - right.orderIndex ||
+    left.componentId.localeCompare(right.componentId) ||
+    left.bindingKey.localeCompare(right.bindingKey)
+  )
+}
+
+export function p7WorkspaceComponentCommittedUiBindings(
+  snapshot: DesktopWorkspaceComponentSnapshot,
+): readonly P7WorkspaceComponentCommittedUiBinding[] {
+  const bindings: P7WorkspaceComponentCommittedUiBinding[] = []
+  for (const installation of snapshot.installations) {
+    if (
+      installation.workspaceId !== snapshot.workspaceId ||
+      installation.state !== 'active' ||
+      installation.health !== 'healthy' ||
+      !Number.isSafeInteger(installation.bindingGeneration) ||
+      installation.bindingGeneration <= 0
+    ) {
+      continue
+    }
+    const catalog = snapshot.catalog.find(
+      (item) =>
+        item.componentId === installation.componentId &&
+        item.version === installation.version &&
+        item.family === 'declarative_ui' &&
+        item.available &&
+        item.manifestSha256 === installation.manifestSha256 &&
+        item.packageSha256 === installation.packageSha256 &&
+        item.operations.includes('ui.render'),
+    )
+    if (catalog === undefined) continue
+    for (const binding of installation.currentSlotBindings) {
+      if (
+        !p7WorkspaceComponentHostSlotId(binding.slotId) ||
+        !catalog.slots.some((slot) => slot.slotId === binding.slotId)
+      ) {
+        continue
+      }
+      const value = {
+        workspaceId: snapshot.workspaceId,
+        componentId: installation.componentId,
+        version: installation.version,
+        installationRevision: installation.revision,
+        bindingGeneration: installation.bindingGeneration,
+        manifestSha256: installation.manifestSha256,
+        packageSha256: installation.packageSha256,
+        slotId: binding.slotId,
+        bindingKey: binding.bindingKey,
+        orderIndex: binding.orderIndex,
+        budgets: catalog.budgets,
+      } satisfies Omit<P7WorkspaceComponentCommittedUiBinding, 'key'>
+      bindings.push(Object.freeze({ ...value, key: p7WorkspaceComponentSurfaceEntryKey(value) }))
+    }
+  }
+  return Object.freeze(bindings.sort(p7CompareWorkspaceComponentSurfaceEntry))
+}
+
+export function p7ReconcileWorkspaceComponentSurfaces(
+  state: P7WorkspaceComponentSurfaceState,
+  workspaceId: string,
+  bindings: readonly P7WorkspaceComponentCommittedUiBinding[],
+): P7WorkspaceComponentSurfaceState {
+  if (state.workspaceId !== workspaceId) {
+    return createP7WorkspaceComponentSurfaceState(workspaceId)
+  }
+  if (state.safeModeReason !== null) return state
+  const committedKeys = new Set(bindings.map((binding) => binding.key))
+  const entries = state.entries
+    .filter((entry) => !entry.committedBinding || committedKeys.has(entry.key))
+    .slice()
+    .sort(p7CompareWorkspaceComponentSurfaceEntry)
+  if (
+    entries.length === state.entries.length &&
+    entries.every((entry, index) => entry === state.entries[index])
+  ) {
+    return state
+  }
+  return Object.freeze({ workspaceId, entries: Object.freeze(entries), safeModeReason: null })
+}
+
+export function p7WorkspaceComponentSurfaceRequests(
+  state: P7WorkspaceComponentSurfaceState,
+  snapshot: DesktopWorkspaceComponentSnapshot,
+): readonly P7WorkspaceComponentCommittedUiBinding[] {
+  if (state.workspaceId !== snapshot.workspaceId || state.safeModeReason !== null) {
+    return Object.freeze([])
+  }
+  const existingKeys = new Set(state.entries.map((entry) => entry.key))
+  return Object.freeze(
+    p7WorkspaceComponentCommittedUiBindings(snapshot).filter(
+      (binding) => !existingKeys.has(binding.key),
+    ),
+  )
 }
 
 export function p7SetWorkspaceComponentSurface(
@@ -2199,24 +2359,56 @@ export function p7SetWorkspaceComponentSurface(
     operation: P7ComponentOperation
     state: 'succeeded' | 'failed' | 'cancelled' | 'unknown'
     output: unknown
+    bindingGeneration?: number
+    slotId?: P7WorkspaceComponentHostSlotId
+    bindingKey?: string
+    orderIndex?: number
   }>,
 ): P7WorkspaceComponentSurfaceState {
   if (state.workspaceId !== input.workspaceId) return state
-  if (input.state !== 'succeeded') {
-    return Object.freeze({
+  const parsedSurface = input.state === 'succeeded' ? p7ParseWorkspaceComponentSurface(input) : null
+  const slotId =
+    input.slotId ??
+    (parsedSurface?.kind === 'workspace-canvas' || parsedSurface?.kind === 'knowledge-ebook'
+      ? parsedSurface.slotId
+      : 'editor.component')
+  const surface =
+    parsedSurface?.kind === 'workspace-canvas' && parsedSurface.slotId !== slotId
+      ? null
+      : parsedSurface
+  const bindingGeneration = input.bindingGeneration ?? 1
+  const bindingKey = input.bindingKey ?? input.componentId
+  const entry = Object.freeze({
+    key: p7WorkspaceComponentSurfaceEntryKey({
       workspaceId: input.workspaceId,
-      surface: null,
-      safeModeReason: 'invocation-failed',
-    })
-  }
-  const surface = p7ParseWorkspaceComponentSurface(input)
-  return surface === null
-    ? Object.freeze({
-        workspaceId: input.workspaceId,
-        surface: null,
-        safeModeReason: 'malformed-output',
-      })
-    : Object.freeze({ workspaceId: input.workspaceId, surface, safeModeReason: null })
+      componentId: input.componentId,
+      bindingGeneration,
+      slotId,
+      bindingKey,
+    }),
+    workspaceId: input.workspaceId,
+    componentId: input.componentId,
+    bindingGeneration,
+    slotId,
+    bindingKey,
+    orderIndex: input.orderIndex ?? 0,
+    committedBinding: input.operation === 'ui.render',
+    surface,
+    safeModeReason:
+      input.state !== 'succeeded'
+        ? ('invocation-failed' as const)
+        : surface === null
+          ? ('malformed-output' as const)
+          : null,
+  })
+  const entries = state.entries.filter((candidate) => candidate.key !== entry.key)
+  entries.push(entry)
+  entries.sort(p7CompareWorkspaceComponentSurfaceEntry)
+  return Object.freeze({
+    workspaceId: input.workspaceId,
+    entries: Object.freeze(entries),
+    safeModeReason: state.safeModeReason,
+  })
 }
 
 export function p7WorkspaceComponentResultEventLogLine(
@@ -2239,7 +2431,24 @@ export function p7EnterWorkspaceComponentSafeMode(
   workspaceId: string | null,
   reason: P7WorkspaceComponentSafeModeReason,
 ): P7WorkspaceComponentSurfaceState {
-  return Object.freeze({ workspaceId, surface: null, safeModeReason: reason })
+  return Object.freeze({ workspaceId, entries: Object.freeze([]), safeModeReason: reason })
+}
+
+function p7WorkspaceComponentProjection(
+  status: P7WorkspaceComponentSurfaceProjection['status'],
+  entries: readonly P7WorkspaceComponentSurfaceEntry[],
+  safeModeReason: P7WorkspaceComponentSafeModeReason | null,
+): P7WorkspaceComponentSurfaceProjection {
+  const surfaces = entries.flatMap((entry) => (entry.surface === null ? [] : [entry.surface]))
+  const failures = entries.filter((entry) => entry.safeModeReason !== null)
+  return Object.freeze({
+    status,
+    entries: Object.freeze(entries),
+    surfaces: Object.freeze(surfaces),
+    failures: Object.freeze(failures),
+    surface: surfaces[0] ?? null,
+    safeModeReason,
+  })
 }
 
 export function p7WorkspaceComponentSurfaceProjection(
@@ -2250,29 +2459,23 @@ export function p7WorkspaceComponentSurfaceProjection(
   }>,
 ): P7WorkspaceComponentSurfaceProjection {
   if (input.viewWorkspaceId === null) {
-    return Object.freeze({ status: 'idle', surface: null, safeModeReason: null })
+    return p7WorkspaceComponentProjection('idle', [], null)
   }
   if (input.state.workspaceId !== input.viewWorkspaceId) {
-    return Object.freeze({ status: 'loading', surface: null, safeModeReason: null })
+    return p7WorkspaceComponentProjection('loading', [], null)
   }
   if (input.state.safeModeReason !== null) {
-    return Object.freeze({
-      status: 'safe-mode',
-      surface: null,
-      safeModeReason: input.state.safeModeReason,
-    })
+    return p7WorkspaceComponentProjection('safe-mode', [], input.state.safeModeReason)
   }
-  if (input.state.surface === null) {
-    return Object.freeze({ status: 'idle', surface: null, safeModeReason: null })
+  const entries = input.state.entries.filter((entry) =>
+    input.activeComponentIds.includes(entry.componentId),
+  )
+  if (entries.length === 0) {
+    return input.state.entries.length === 0
+      ? p7WorkspaceComponentProjection('idle', [], null)
+      : p7WorkspaceComponentProjection('safe-mode', [], 'component-inactive')
   }
-  if (!input.activeComponentIds.includes(input.state.surface.componentId)) {
-    return Object.freeze({
-      status: 'safe-mode',
-      surface: null,
-      safeModeReason: 'component-inactive',
-    })
-  }
-  return Object.freeze({ status: 'ready', surface: input.state.surface, safeModeReason: null })
+  return p7WorkspaceComponentProjection('ready', entries, null)
 }
 
 export type P7WorkspaceComponentHostRegion = 'editor' | 'sidebar' | 'settings' | 'status'
@@ -2283,24 +2486,25 @@ export function p7WorkspaceComponentHostProjection(
   region: P7WorkspaceComponentHostRegion,
 ): P7WorkspaceComponentSurfaceProjection {
   if (projection.status === 'safe-mode') {
-    return region === 'editor'
-      ? projection
-      : Object.freeze({ status: 'idle', surface: null, safeModeReason: null })
+    return region === 'editor' ? projection : p7WorkspaceComponentProjection('idle', [], null)
   }
-  if (projection.status !== 'ready' || projection.surface === null) {
-    return Object.freeze({ status: 'idle', surface: null, safeModeReason: null })
+  if (projection.status !== 'ready') {
+    return p7WorkspaceComponentProjection('idle', [], null)
   }
-  const targetRegion =
-    projection.surface.kind !== 'workspace-canvas'
-      ? 'editor'
-      : projection.surface.slotId === 'editor.component'
+  const entries = projection.entries.filter((entry) => {
+    const targetRegion =
+      entry.surface !== null && entry.surface.kind !== 'workspace-canvas'
         ? 'editor'
-        : projection.surface.slotId === 'sidebar.component'
-          ? 'sidebar'
-          : projection.surface.slotId === 'settings.component'
-            ? 'settings'
-            : 'status'
-  return targetRegion === region
-    ? projection
-    : Object.freeze({ status: 'idle', surface: null, safeModeReason: null })
+        : entry.slotId === 'editor.component'
+          ? 'editor'
+          : entry.slotId === 'sidebar.component'
+            ? 'sidebar'
+            : entry.slotId === 'settings.component'
+              ? 'settings'
+              : 'status'
+    return targetRegion === region
+  })
+  return entries.length === 0
+    ? p7WorkspaceComponentProjection('idle', [], null)
+    : p7WorkspaceComponentProjection('ready', entries, null)
 }

@@ -4786,7 +4786,7 @@ another Workspace or collapse those core surfaces.
 
 **Required verification**
 
-- fresh v11 plus v1-v10 upgrade, immutable-row/transition/active-pointer and
+- fresh v12 plus v1-v11 upgrade, immutable-row/transition/active-pointer and
   append-only trigger attacks;
 - hostile manifest/package/dependency/Slot/grant/scope/replay/budget/revocation
   and cross-Workspace tests;
@@ -4811,3 +4811,61 @@ from new Owner-approved evidence. Never delete evidence, refund an unknown
 reservation, reuse a workload identity, replay dispatch, loosen a manifest or
 grant, expose a physical locator, start/repair host virtualization, or defer a
 missing core path to P7.4.
+
+## INV-089 p74-hot-plug-hardening-and-product-certification
+
+P7.4 certifies the complete P7.3 platform; it cannot first supply a missing
+registry, family adapter, lifecycle transition, permission, revocation or
+recovery path. Certification results bind exact source, dependency/toolchain,
+schema, package, runtime manifest, component bundle, command receipt and target
+environment identities. A shorter CI run, one Windows Sandbox or human visual
+review cannot be promoted into signing, Marketplace or production authority.
+
+Desktop Network Lease fencing is allocated from a durable cursor scoped to the
+exact Workspace, installation and logical service. The cursor is seeded above
+all v11-issued tokens, advances in the same `BEGIN IMMEDIATE` transaction as a
+new Lease, is immutable except for one monotonic allocation step and cannot be
+deleted. Workload and Network fencing remain independent. Activation, recovery,
+begin, idempotent replay and settlement revalidate the cursor. Stale tokens,
+cursor resets, failed-transaction consumption and history-scan allocation fail
+closed.
+
+Scale, soak, concurrency, migration, backup, crash-cutpoint, attack,
+accessibility and Windows product journeys retain raw evidence and fixed
+thresholds. `pending|unknown` effects are never automatically replayed under
+load or recovery. One component or Workspace cannot project into another or
+collapse the immutable standard workbench, Settings, Audit and recovery
+surfaces.
+
+The source-owned Sandbox path executes only the exact raw WebAssembly member
+bound by package inventory and package SHA-256. Registry and broker revalidate
+the bytes, zero imports and exact `transform` export; the trusted helper must
+execute those supplied bytes and return the same workload digest in evidence.
+This same-host helper is not an independent P34 isolation provider. Independent
+provider attestation, OS identity and resource/kill identity remain
+unavailable/not-proven without separate external evidence.
+
+**Required verification**
+
+- fresh v12, every v1-v11 upgrade, v11 Network Lease backfill and cursor
+  insert/update/delete/rollback attacks;
+- monotonic activation, upgrade, rollback and recovery tokens with independent
+  workload fencing, stale begin/settle denial and cross-Workspace isolation;
+- fixed-seed large catalog/dependency/Workspace matrices with raw latency and
+  memory samples, bounded PR soak and separately identified nightly/RC soak;
+- hostile package/path/identity/grant/lease/budget/replay/concurrency and every
+  durable crash-cutpoint campaign, including workload byte/import/export and
+  version-selection drift;
+- Settings keyboard/focus/zoom/contrast/layout and truthful state coverage;
+- full backend/desktop/frontend/release gates, maintainer validators, iterative
+  sealed-contract reseal and `git diff --check`;
+- one fresh final-commit Windows package and exactly one fresh controlled
+  engineering acceptance run before human review.
+
+**Failure recovery**
+
+Preserve failed raw evidence and forward-fix. Restore only into a controlled new
+copy, fence stale authority and require exact recovery settlement. Never reset a
+cursor, edit old Lease/effect/audit evidence, replay an unknown effect, weaken a
+threshold after observing failure, repair host virtualization to manufacture a
+pass, or claim signing/Marketplace/production authority from CI or Sandbox.

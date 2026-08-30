@@ -86,6 +86,19 @@ const COMPONENTS: readonly ComponentDefinition[] = Object.freeze([
 ]);
 
 const VERSIONS = Object.freeze(["1.0.0", "1.1.0"] as const);
+const SANDBOX_WORKLOAD_PREFIX =
+  "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041";
+const SANDBOX_WORKLOAD_SUFFIX = "00730b";
+
+export function sandboxWorkloadBytes(version: string): Buffer {
+  const constant =
+    version === "1.0.0" ? "ca" : version === "1.1.0" ? "cb" : null;
+  if (constant === null) throw new Error("sandbox_workload_version_invalid");
+  return Buffer.from(
+    `${SANDBOX_WORKLOAD_PREFIX}${constant}${SANDBOX_WORKLOAD_SUFFIX}`,
+    "hex",
+  );
+}
 
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -178,18 +191,27 @@ function payloads(
           version,
         }),
       });
-    case "sandbox_workload":
+    case "sandbox_workload": {
+      const workload = sandboxWorkloadBytes(version);
       return Object.freeze({
         "payload/workload.json": encoded({
           component_id: component.componentId,
+          entrypoint: "transform",
           input_contract: "logical_artifact_ids",
+          memory_max_bytes: 64 * 1024,
+          module_format: "webassembly_v1",
+          module_path: "payload/workload.wasm",
+          module_sha256: digestRaw(workload),
+          network: "no_imports",
           output_contract: "artifact_inventory",
           provider: "p34-sandbox.v1",
           schema_version: 1,
           version,
           workload_id: "bounded-transform",
         }),
+        "payload/workload.wasm": workload,
       });
+    }
     case "trusted_local_adapter":
       return Object.freeze({
         "payload/adapter.json": encoded({

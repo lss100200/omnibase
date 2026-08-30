@@ -19,7 +19,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import type {
   DesktopWorkspaceComponentCatalogItem,
@@ -214,9 +214,11 @@ function statusTone(value: string): 'ready' | 'warning' | 'error' | 'muted' {
 }
 
 function LoadingState({ status }: { readonly status: P7WorkspaceComponentsLoadStatus }) {
-  if (status === 'error') return <P7SettingsEmpty>组件控制面读取失败。</P7SettingsEmpty>
+  if (status === 'error') {
+    return <P7SettingsEmpty state="error">组件控制面读取失败。</P7SettingsEmpty>
+  }
   if (status === 'idle') return <P7SettingsEmpty>请选择 Workspace。</P7SettingsEmpty>
-  return <P7SettingsEmpty>正在读取 Workspace 组件…</P7SettingsEmpty>
+  return <P7SettingsEmpty state="loading">正在读取 Workspace 组件…</P7SettingsEmpty>
 }
 
 function Digest({ children }: { readonly children: string }) {
@@ -299,6 +301,7 @@ function P7ValidatedDeclarativeSettingsForm({
   readonly disabled: boolean
   readonly onChange: (value: P7DeclarativeSettings) => void
 }) {
+  const formId = useId().replaceAll(':', '')
   const validation = p7ValidateDeclarativeSettings(schema, value)
   const patch = (id: string, next: string | number | boolean | null) =>
     onChange(Object.freeze({ ...value, [id]: next }))
@@ -309,23 +312,36 @@ function P7ValidatedDeclarativeSettingsForm({
           <h2 className="p7-settings-subtitle">{section.label}</h2>
           {section.fields.map((field) => {
             const current = value[field.id]
+            const error = validation.errors[field.id]
+            const controlId = `${formId}-${section.id}-${field.id}`
+            const metaId =
+              error !== undefined || field.description != null ? `${controlId}-meta` : undefined
             return (
               <P7SettingRow
                 key={field.id}
                 label={field.label}
-                meta={validation.errors[field.id] ?? field.description ?? undefined}
+                labelFor={field.control === 'boolean' ? undefined : controlId}
+                meta={error ?? field.description ?? undefined}
+                metaId={metaId}
+                invalid={error !== undefined}
               >
                 {field.control === 'boolean' ? (
                   <P7SettingsToggle
+                    id={controlId}
                     label={field.label}
                     checked={current === true}
                     disabled={disabled}
+                    describedBy={metaId}
+                    invalid={error !== undefined}
                     onChange={(checked) => patch(field.id, checked)}
                   />
                 ) : field.control === 'select' ? (
                   <select
+                    id={controlId}
                     value={current === undefined || current === null ? '' : String(current)}
                     disabled={disabled}
+                    aria-describedby={metaId}
+                    aria-invalid={error !== undefined || undefined}
                     onChange={(event) =>
                       patch(
                         field.id,
@@ -348,13 +364,17 @@ function P7ValidatedDeclarativeSettingsForm({
                   </select>
                 ) : field.control === 'multiline' ? (
                   <textarea
+                    id={controlId}
                     value={typeof current === 'string' ? current : ''}
                     maxLength={field.maxLength ?? undefined}
                     disabled={disabled}
+                    aria-describedby={metaId}
+                    aria-invalid={error !== undefined || undefined}
                     onChange={(event) => patch(field.id, event.target.value)}
                   />
                 ) : (
                   <input
+                    id={controlId}
                     type={
                       field.control === 'integer' || field.control === 'number' ? 'number' : 'text'
                     }
@@ -366,6 +386,8 @@ function P7ValidatedDeclarativeSettingsForm({
                     step={field.step ?? undefined}
                     maxLength={field.maxLength ?? undefined}
                     disabled={disabled}
+                    aria-describedby={metaId}
+                    aria-invalid={error !== undefined || undefined}
                     autoComplete="off"
                     onChange={(event) =>
                       patch(
@@ -1122,7 +1144,7 @@ function P7InvokeControl({
 
 export function P7ComponentCatalogView(props: P7WorkspaceComponentSettingsProps) {
   return (
-    <P7SettingsSection title="Catalog" scope="当前 Workspace">
+    <P7SettingsSection title="Catalog" scope="当前 Workspace" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1190,7 +1212,7 @@ export function P7ComponentCatalogView(props: P7WorkspaceComponentSettingsProps)
 
 export function P7InstalledComponentsView(props: P7WorkspaceComponentSettingsProps) {
   return (
-    <P7SettingsSection title="Installed" scope={props.workspaceName}>
+    <P7SettingsSection title="Installed" scope={props.workspaceName} busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1252,7 +1274,7 @@ export function P7SlotsView(props: P7WorkspaceComponentSettingsProps) {
     props.snapshot?.catalog.flatMap((item) => (item.slots ?? []).map((slot) => ({ item, slot }))) ??
     []
   return (
-    <P7SettingsSection title="Slots" scope="Host-owned">
+    <P7SettingsSection title="Slots" scope="Host-owned" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1295,7 +1317,7 @@ function P7FamilyView(
 ) {
   const items = props.snapshot?.catalog.filter((item) => item.family === family) ?? []
   return (
-    <P7SettingsSection title={title} scope="统一组件生命周期">
+    <P7SettingsSection title={title} scope="统一组件生命周期" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1365,7 +1387,11 @@ export function P7PermissionsView(props: P7WorkspaceComponentSettingsProps) {
       proposal.requestedGrants.map((grant, index) => ({ proposal, grant, index })),
     ) ?? []
   return (
-    <P7SettingsSection title="Permissions" scope="Live grants / revocations / proposal requests">
+    <P7SettingsSection
+      title="Permissions"
+      scope="Live grants / revocations / proposal requests"
+      busy={props.busy}
+    >
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1456,8 +1482,10 @@ export function P7HealthView(props: P7WorkspaceComponentSettingsProps) {
     managedComponentCount,
     stopInFlight: props.busy,
   })
+  const healthItems =
+    props.snapshot?.installations.filter((item) => item.state !== 'uninstalled') ?? []
   return (
-    <P7SettingsSection title="Health" scope="实时持久状态">
+    <P7SettingsSection title="Health" scope="实时持久状态" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1479,21 +1507,22 @@ export function P7HealthView(props: P7WorkspaceComponentSettingsProps) {
             </button>
           </div>
           <div className="p7-health-list">
-            {props.snapshot.installations
-              .filter((item) => item.state !== 'uninstalled')
-              .map((item) => (
-                <div key={item.installationId} className="p7-health-row">
-                  <Activity size={14} />
-                  <div className="p7-component-identity">
-                    <strong>{item.componentId}</strong>
-                    <span>generation {item.bindingGeneration}</span>
-                  </div>
-                  <P7SettingsStatus tone={statusTone(item.state)}>{item.state}</P7SettingsStatus>
-                  <P7SettingsStatus tone={statusTone(item.health)}>{item.health}</P7SettingsStatus>
-                  <span>{item.lastErrorCode ?? '无错误'}</span>
-                  <time>{item.updatedAt}</time>
+            {healthItems.map((item) => (
+              <div key={item.installationId} className="p7-health-row">
+                <Activity size={14} />
+                <div className="p7-component-identity">
+                  <strong>{item.componentId}</strong>
+                  <span>generation {item.bindingGeneration}</span>
                 </div>
-              ))}
+                <P7SettingsStatus tone={statusTone(item.state)}>{item.state}</P7SettingsStatus>
+                <P7SettingsStatus tone={statusTone(item.health)}>{item.health}</P7SettingsStatus>
+                <span>{item.lastErrorCode ?? '无错误'}</span>
+                <time>{item.updatedAt}</time>
+              </div>
+            ))}
+            {healthItems.length === 0 && (
+              <P7SettingsEmpty>当前 Workspace 没有受管组件。</P7SettingsEmpty>
+            )}
           </div>
         </>
       )}
@@ -1507,6 +1536,7 @@ export function P7ComponentReviewView(props: P7WorkspaceComponentSettingsProps) 
     <P7SettingsSection
       title="Review"
       scope={`${proposals.filter((item) => item.decision === null).length} 个待决`}
+      busy={props.busy}
     >
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
@@ -1519,6 +1549,7 @@ export function P7ComponentReviewView(props: P7WorkspaceComponentSettingsProps) 
               <span>生成新声明式包，或从 Catalog 生成生命周期提案。</span>
             </div>
             <textarea
+              aria-label="Agent 组件工作流描述"
               value={props.assistantIntent}
               maxLength={2_000}
               disabled={props.busy}
@@ -1755,7 +1786,7 @@ export function P7ComponentReviewView(props: P7WorkspaceComponentSettingsProps) 
 export function P7ComponentAuditView(props: P7WorkspaceComponentSettingsProps) {
   const events = props.snapshot?.audit ?? []
   return (
-    <P7SettingsSection title="Audit" scope="Append-only projections">
+    <P7SettingsSection title="Audit" scope="Append-only projections" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1789,7 +1820,7 @@ export function P7RecoveryView(props: P7WorkspaceComponentSettingsProps) {
         p7ComponentEffectNeedsReconciliation(effect.state === 'none' ? 'failed' : effect.state),
     ) ?? []
   return (
-    <P7SettingsSection title="Recovery" scope="No automatic replay">
+    <P7SettingsSection title="Recovery" scope="No automatic replay" busy={props.busy}>
       {props.snapshot === null ? (
         <LoadingState status={props.status} />
       ) : (
@@ -1828,6 +1859,8 @@ export function P7RecoveryView(props: P7WorkspaceComponentSettingsProps) {
                 {actionable && (
                   <div className="p7-recovery-reconcile">
                     <input
+                      aria-label={`${recovery.componentId} recovery evidence SHA-256`}
+                      aria-invalid={(evidence.length > 0 && !validEvidence) || undefined}
                       value={evidence}
                       maxLength={64}
                       placeholder="evidence SHA-256"
@@ -1877,6 +1910,8 @@ export function P7RecoveryView(props: P7WorkspaceComponentSettingsProps) {
                   </span>
                 </div>
                 <input
+                  aria-label={`${effect.componentId} effect evidence SHA-256`}
+                  aria-invalid={(evidence.length > 0 && !validEvidence) || undefined}
                   value={evidence}
                   maxLength={64}
                   placeholder="evidence SHA-256"
