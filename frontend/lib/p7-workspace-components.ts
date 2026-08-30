@@ -1,10 +1,84 @@
 import type {
   DesktopWorkspaceComponentCatalogItem,
+  DesktopWorkspaceComponentGrantRequest,
   DesktopWorkspaceComponentInstallation,
   DesktopWorkspaceComponentLifecycleAction,
+  DesktopWorkspaceComponentOperation,
 } from './desktop-bridge'
 
 export type P7WorkspaceComponentsLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+export function p7DefaultWorkspaceComponentGrant(
+  catalog: DesktopWorkspaceComponentCatalogItem,
+  operation: DesktopWorkspaceComponentOperation,
+): DesktopWorkspaceComponentGrantRequest | null {
+  const permission = catalog.permissions.find((item) => item.action === operation)
+  if (permission === undefined) return null
+  const logicalResourceId =
+    permission.dataScope === 'workspace_logical'
+      ? (permission.logicalResourceClasses[0] ?? null)
+      : null
+  const logicalServiceId = catalog.network.required
+    ? (catalog.network.serviceClasses[0] ?? null)
+    : null
+  if (
+    (permission.dataScope === 'workspace_logical' && logicalResourceId === null) ||
+    (catalog.network.required && logicalServiceId === null)
+  ) {
+    return null
+  }
+  return Object.freeze({
+    action: operation,
+    logicalResourceId,
+    resourceVersion: logicalResourceId === null ? null : 1,
+    logicalServiceId,
+    expiresInSeconds: 3_600,
+    maximumInvocations: catalog.budgets.maxCalls,
+    maximumBytesIn: catalog.budgets.maxBytesIn,
+    maximumBytesOut: catalog.budgets.maxBytesOut,
+    maximumTokens: catalog.budgets.maxTokens,
+    maximumWallTimeMs: catalog.budgets.maxWallTimeMs,
+    maximumCostUnits: catalog.budgets.maxCostUnits,
+  })
+}
+
+export function p7WorkspaceComponentGrantMatchesCatalog(
+  catalog: DesktopWorkspaceComponentCatalogItem,
+  grant: DesktopWorkspaceComponentGrantRequest,
+): boolean {
+  const permission = catalog.permissions.find((item) => item.action === grant.action)
+  if (permission === undefined) return false
+  const resourceValid =
+    permission.dataScope === 'none'
+      ? grant.logicalResourceId === null && grant.resourceVersion === null
+      : grant.logicalResourceId !== null &&
+        permission.logicalResourceClasses.includes(grant.logicalResourceId) &&
+        grant.resourceVersion !== null &&
+        Number.isSafeInteger(grant.resourceVersion) &&
+        grant.resourceVersion > 0
+  const serviceValid = catalog.network.required
+    ? grant.logicalServiceId !== null &&
+      catalog.network.serviceClasses.includes(grant.logicalServiceId)
+    : grant.logicalServiceId === null
+  return (
+    resourceValid &&
+    serviceValid &&
+    grant.expiresInSeconds >= 60 &&
+    grant.expiresInSeconds <= 86_400 &&
+    grant.maximumInvocations > 0 &&
+    grant.maximumInvocations <= catalog.budgets.maxCalls &&
+    grant.maximumBytesIn >= 0 &&
+    grant.maximumBytesIn <= catalog.budgets.maxBytesIn &&
+    grant.maximumBytesOut >= 0 &&
+    grant.maximumBytesOut <= catalog.budgets.maxBytesOut &&
+    grant.maximumTokens >= 0 &&
+    grant.maximumTokens <= catalog.budgets.maxTokens &&
+    grant.maximumWallTimeMs > 0 &&
+    grant.maximumWallTimeMs <= catalog.budgets.maxWallTimeMs &&
+    grant.maximumCostUnits > 0 &&
+    grant.maximumCostUnits <= catalog.budgets.maxCostUnits
+  )
+}
 
 function p7NextWorkspaceComponentLifecycleAction(
   installation: Pick<DesktopWorkspaceComponentInstallation, 'state'>,
@@ -93,6 +167,12 @@ export interface P7ComponentAssistantSnapshot {
     packageSha256: string | null
     available: boolean
     operations: readonly string[]
+    permissions: readonly Readonly<{
+      action: string
+      dataScope: 'none' | 'workspace_logical'
+      logicalResourceClasses: readonly string[]
+      secretReferenceClasses: readonly string[]
+    }>[]
     slots: readonly Readonly<{
       slotId: string
       cardinality: 'one' | 'many'
@@ -536,6 +616,12 @@ export function p7WorkspaceComponentAssistantPrompt(
         manifest_sha256: item.manifestSha256,
         package_sha256: item.packageSha256,
         operations: item.operations,
+        permissions: item.permissions.map((permission) => ({
+          action: permission.action,
+          data_scope: permission.dataScope,
+          logical_resource_classes: permission.logicalResourceClasses,
+          secret_reference_classes: permission.secretReferenceClasses,
+        })),
         slots: item.slots.map((slot) => ({
           slot_id: slot.slotId,
           cardinality: slot.cardinality,
@@ -574,7 +660,7 @@ export function p7WorkspaceComponentAssistantPrompt(
     'Return exactly one JSON object and no prose or markdown.',
     'Use exactly these keys: type, component_id, target_version, change_kind, expected_revision, policy_manifest_sha256, manifest_sha256, package_sha256, requested_grants, desired_configuration, desired_slot_bindings, dependency_graph.',
     'type must be omnibase.workspace-component.proposal.v1. Select one available catalog identity exactly. change_kind is install, bind, activate, disable, upgrade, rollback, revoke, or uninstall. expected_revision is 0 when current_installation is null, otherwise its exact revision.',
-    'Each requested_grants item uses action, logical_resource_id, resource_version, logical_service_id, expires_in_seconds, maximum_invocations, maximum_bytes_in, maximum_bytes_out, maximum_tokens, maximum_wall_time_ms, maximum_cost_units. Stay within catalog budgets and use logical identifiers only.',
+    'Each requested_grants item uses action, logical_resource_id, resource_version, logical_service_id, expires_in_seconds, maximum_invocations, maximum_bytes_in, maximum_bytes_out, maximum_tokens, maximum_wall_time_ms, maximum_cost_units. Every action must use its exact permissions data_scope and one declared logical_resource_class; network-required components must use one declared service class. Stay within catalog budgets.',
     'Each desired_slot_bindings item uses slot_id, binding_key, order_index, configuration. dependency_graph must exactly reproduce the selected catalog dependency identities. desired_configuration must satisfy settings_schema.',
     'Do not approve, install, execute, reconcile, invent a digest, add an unknown field, output a path, command, URL, secret, token, stdio, or process handle.',
   ].join('\n')

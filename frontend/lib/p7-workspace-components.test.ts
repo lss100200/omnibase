@@ -7,6 +7,7 @@ import {
   p7ComponentActionEligibility,
   p7ComponentEffectNeedsReconciliation,
   p7ComponentInvocationEligible,
+  p7DefaultWorkspaceComponentGrant,
   p7DeclarativeSettingsDefaults,
   p7DeclarativeSettingsDiff,
   p7EmergencyStopEligible,
@@ -17,6 +18,7 @@ import {
   p7ParseWorkspaceComponentSurface,
   p7SetWorkspaceComponentSurface,
   p7ValidateDeclarativeSettings,
+  p7WorkspaceComponentGrantMatchesCatalog,
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentAssistantPrompt,
   p7WorkspaceComponentHostSlotId,
@@ -76,6 +78,78 @@ test('component lifecycle requires an attested package and covers every transiti
   assert.equal(p7WorkspaceComponentVersionChangeAction('2.0', '2.1.0'), null)
 })
 
+test('component proposal defaults stay inside manifest resource and service classes', () => {
+  const catalog: Parameters<typeof p7DefaultWorkspaceComponentGrant>[0] = {
+    componentId: 'builtin.readonly-mcp',
+    version: '1.0.0',
+    family: 'mcp_connector',
+    displayName: 'Read-only MCP Connector',
+    publisherClass: 'source_owned',
+    adapterId: 'readonly-mcp.v1',
+    policyManifestSha256: '1'.repeat(64),
+    manifestSha256: '2'.repeat(64),
+    packageSha256: '3'.repeat(64),
+    operations: ['mcp.call'],
+    permissions: [
+      {
+        action: 'mcp.call',
+        dataScope: 'workspace_logical',
+        logicalResourceClasses: ['workspace.component.input'],
+        secretReferenceClasses: [],
+      },
+    ],
+    slots: [],
+    dependencies: [],
+    conflicts: [],
+    budgets: {
+      maxCalls: 8,
+      maxBytesIn: 1_024,
+      maxBytesOut: 2_048,
+      maxTokens: 0,
+      maxWallTimeMs: 5_000,
+      maxCostUnits: 4,
+      maxRetries: 0,
+      maxConcurrency: 1,
+    },
+    network: { required: true, serviceClasses: ['reviewed_https'] },
+    recovery: {
+      autoReplayUnknown: false,
+      retention: 'retain_workspace_data',
+      safeMode: 'disable_component',
+    },
+    stateSchema: { kind: 'canonical_json', version: 1 },
+    settingsSchema: {
+      kind: 'closed_object',
+      version: 1,
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    available: true,
+    unavailableReason: null,
+  }
+  const grant = p7DefaultWorkspaceComponentGrant(catalog, 'mcp.call')
+  assert.ok(grant)
+  assert.equal(grant.logicalResourceId, 'workspace.component.input')
+  assert.equal(grant.resourceVersion, 1)
+  assert.equal(grant.logicalServiceId, 'reviewed_https')
+  assert.equal(p7WorkspaceComponentGrantMatchesCatalog(catalog, grant), true)
+  assert.equal(
+    p7WorkspaceComponentGrantMatchesCatalog(catalog, {
+      ...grant,
+      logicalResourceId: 'workspace.component.other',
+    }),
+    false,
+  )
+  assert.equal(
+    p7WorkspaceComponentGrantMatchesCatalog(catalog, {
+      ...grant,
+      logicalServiceId: 'ambient_network',
+    }),
+    false,
+  )
+})
+
 test('component Agent prompt exposes only available exact identities and never grants authority', () => {
   const prompt = p7WorkspaceComponentAssistantPrompt('Install the canvas for review', {
     workspaceId: WORKSPACE_A,
@@ -89,6 +163,14 @@ test('component Agent prompt exposes only available exact identities and never g
         packageSha256: '3'.repeat(64),
         available: true,
         operations: ['ui.render'],
+        permissions: [
+          {
+            action: 'ui.render',
+            dataScope: 'workspace_logical',
+            logicalResourceClasses: ['workspace.component.input'],
+            secretReferenceClasses: [],
+          },
+        ],
         slots: [
           {
             slotId: 'editor.component',
@@ -124,6 +206,14 @@ test('component Agent prompt exposes only available exact identities and never g
         packageSha256: null,
         available: false,
         operations: ['ui.render'],
+        permissions: [
+          {
+            action: 'ui.render',
+            dataScope: 'none',
+            logicalResourceClasses: [],
+            secretReferenceClasses: [],
+          },
+        ],
         slots: [],
         dependencies: [],
         settingsSchema: {},

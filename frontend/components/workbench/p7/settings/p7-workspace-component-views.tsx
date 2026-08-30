@@ -29,18 +29,19 @@ import type {
   DesktopWorkspaceComponentInstallation,
   DesktopWorkspaceComponentJsonValue,
   DesktopWorkspaceComponentLifecycleAction,
-  DesktopWorkspaceComponentOperation,
   DesktopWorkspaceComponentProposal,
   DesktopWorkspaceComponentSnapshot,
   DesktopWorkspaceComponentSlotBindingRequest,
 } from '@/lib/desktop-bridge'
 import {
   p7ComponentEffectNeedsReconciliation,
+  p7DefaultWorkspaceComponentGrant,
   p7DeclarativeSettingsDefaults,
   p7DeclarativeSettingsDiff,
   p7EmergencyStopEligible,
   p7ParseDeclarativeSettingsSchema,
   p7ValidateDeclarativeSettings,
+  p7WorkspaceComponentGrantMatchesCatalog,
   p7WorkspaceComponentHostSlotId,
   p7WorkspaceComponentLifecycleActions,
   type P7AssistantDeclarativePackageReview,
@@ -387,25 +388,6 @@ function P7ValidatedDeclarativeSettingsForm({
   )
 }
 
-function defaultGrant(
-  catalog: DesktopWorkspaceComponentCatalogItem,
-  operation: DesktopWorkspaceComponentOperation,
-): DesktopWorkspaceComponentGrantRequest {
-  return Object.freeze({
-    action: operation,
-    logicalResourceId: null,
-    resourceVersion: null,
-    logicalServiceId: null,
-    expiresInSeconds: 3_600,
-    maximumInvocations: catalog.budgets.maxCalls,
-    maximumBytesIn: catalog.budgets.maxBytesIn,
-    maximumBytesOut: catalog.budgets.maxBytesOut,
-    maximumTokens: catalog.budgets.maxTokens,
-    maximumWallTimeMs: catalog.budgets.maxWallTimeMs,
-    maximumCostUnits: catalog.budgets.maxCostUnits,
-  })
-}
-
 function initialDependencyGraph(
   catalog: DesktopWorkspaceComponentCatalogItem,
 ): readonly DesktopWorkspaceComponentDependencyRequest[] {
@@ -474,7 +456,14 @@ function P7ComponentProposalComposer({
   )
   const [requestedGrants, setRequestedGrants] = useState<
     readonly DesktopWorkspaceComponentGrantRequest[]
-  >(() => Object.freeze(catalog.operations.map((operation) => defaultGrant(catalog, operation))))
+  >(() =>
+    Object.freeze(
+      catalog.operations.flatMap((operation) => {
+        const grant = p7DefaultWorkspaceComponentGrant(catalog, operation)
+        return grant === null ? [] : [grant]
+      }),
+    ),
+  )
 
   const configurationValidation =
     schema === null
@@ -508,32 +497,7 @@ function P7ComponentProposalComposer({
     catalog.operations.every((operation) =>
       requestedGrants.some((grant) => grant.action === operation),
     ) &&
-    requestedGrants.every(
-      (grant) =>
-        grant.expiresInSeconds >= 60 &&
-        grant.maximumInvocations > 0 &&
-        grant.maximumInvocations <= catalog.budgets.maxCalls &&
-        grant.maximumBytesIn >= 0 &&
-        grant.maximumBytesIn <= catalog.budgets.maxBytesIn &&
-        grant.maximumBytesOut >= 0 &&
-        grant.maximumBytesOut <= catalog.budgets.maxBytesOut &&
-        grant.maximumTokens >= 0 &&
-        grant.maximumTokens <= catalog.budgets.maxTokens &&
-        grant.maximumWallTimeMs > 0 &&
-        grant.maximumWallTimeMs <= catalog.budgets.maxWallTimeMs &&
-        grant.maximumCostUnits > 0 &&
-        grant.maximumCostUnits <= catalog.budgets.maxCostUnits &&
-        (catalog.network.required
-          ? grant.logicalServiceId !== null &&
-            /^[a-z][a-z0-9_.:-]{1,127}$/u.test(grant.logicalServiceId)
-          : grant.logicalServiceId === null) &&
-        ((grant.logicalResourceId === null && grant.resourceVersion === null) ||
-          (grant.logicalResourceId !== null &&
-            /^[a-z][a-z0-9_.:-]{1,127}$/u.test(grant.logicalResourceId) &&
-            grant.resourceVersion !== null &&
-            Number.isSafeInteger(grant.resourceVersion) &&
-            grant.resourceVersion > 0)),
-    )
+    requestedGrants.every((grant) => p7WorkspaceComponentGrantMatchesCatalog(catalog, grant))
   const canSubmit =
     catalog.available &&
     configurationValidation.valid &&
@@ -673,6 +637,7 @@ function P7ComponentProposalComposer({
         <h2 className="p7-settings-subtitle">Permissions & Budgets</h2>
         {catalog.operations.map((operation) => {
           const grant = requestedGrants.find((item) => item.action === operation)
+          const permission = catalog.permissions.find((item) => item.action === operation)
           return (
             <div key={operation} className="p7-component-grant-draft">
               <div className="p7-component-grant-head">
@@ -683,7 +648,10 @@ function P7ComponentProposalComposer({
                   onChange={(enabled) =>
                     setRequestedGrants((current) =>
                       enabled
-                        ? Object.freeze([...current, defaultGrant(catalog, operation)])
+                        ? (() => {
+                            const grant = p7DefaultWorkspaceComponentGrant(catalog, operation)
+                            return grant === null ? current : Object.freeze([...current, grant])
+                          })()
                         : Object.freeze(current.filter((item) => item.action !== operation)),
                     )
                   }
@@ -694,17 +662,25 @@ function P7ComponentProposalComposer({
                 <div className="p7-component-grant-grid">
                   <label>
                     Logical resource
-                    <input
+                    <select
                       value={grant.logicalResourceId ?? ''}
                       disabled={busy}
-                      placeholder="optional logical id"
                       onChange={(event) =>
                         patchGrant(operation, {
                           logicalResourceId: event.target.value || null,
                           resourceVersion: event.target.value ? (grant.resourceVersion ?? 1) : null,
                         })
                       }
-                    />
+                    >
+                      {permission?.dataScope === 'none' && (
+                        <option value="">No logical resource</option>
+                      )}
+                      {permission?.logicalResourceClasses.map((resourceClass) => (
+                        <option key={resourceClass} value={resourceClass}>
+                          {resourceClass}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Resource version
@@ -723,20 +699,27 @@ function P7ComponentProposalComposer({
                   </label>
                   <label>
                     Logical service
-                    <input
+                    <select
                       value={grant.logicalServiceId ?? ''}
-                      disabled={busy || !catalog.network.required}
-                      placeholder={catalog.network.required ? 'required' : 'no network'}
+                      disabled={busy}
                       onChange={(event) =>
                         patchGrant(operation, { logicalServiceId: event.target.value || null })
                       }
-                    />
+                    >
+                      {!catalog.network.required && <option value="">No network service</option>}
+                      {catalog.network.serviceClasses.map((serviceClass) => (
+                        <option key={serviceClass} value={serviceClass}>
+                          {serviceClass}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Expiry (s)
                     <input
                       type="number"
                       min={60}
+                      max={86_400}
                       value={grant.expiresInSeconds}
                       disabled={busy}
                       onChange={(event) =>

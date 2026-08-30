@@ -80,6 +80,13 @@ export interface DesktopWorkspaceComponentSlotDescriptor {
   readonly maximumOrder: number;
 }
 
+export interface DesktopWorkspaceComponentPermissionDescriptor {
+  readonly action: DesktopWorkspaceComponentOperation;
+  readonly dataScope: "none" | "workspace_logical";
+  readonly logicalResourceClasses: readonly string[];
+  readonly secretReferenceClasses: readonly string[];
+}
+
 export interface DesktopWorkspaceComponentSettingsProperty {
   readonly type: "boolean" | "integer" | "number" | "string";
   readonly default?: DesktopWorkspaceComponentJsonValue;
@@ -115,6 +122,7 @@ export interface DesktopWorkspaceComponentCatalogItem {
   readonly manifestSha256: string | null;
   readonly packageSha256: string | null;
   readonly operations: readonly DesktopWorkspaceComponentOperation[];
+  readonly permissions: readonly DesktopWorkspaceComponentPermissionDescriptor[];
   readonly slots: readonly DesktopWorkspaceComponentSlotDescriptor[];
   readonly dependencies: readonly DesktopWorkspaceComponentDependencyRequest[];
   readonly conflicts: readonly string[];

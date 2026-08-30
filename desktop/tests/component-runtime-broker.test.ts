@@ -326,6 +326,14 @@ function recoverySnapshot(
         operations: [
           adapterId === "builtin-ui.v1" ? "ui.render" : "sandbox.run",
         ],
+        permissions: [
+          {
+            action: adapterId === "builtin-ui.v1" ? "ui.render" : "sandbox.run",
+            dataScope: "workspace_logical",
+            logicalResourceClasses: ["workspace.component.input"],
+            secretReferenceClasses: [],
+          },
+        ],
         slots: [],
         dependencies: [],
         conflicts: [],

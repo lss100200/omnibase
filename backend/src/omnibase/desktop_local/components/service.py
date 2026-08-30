@@ -616,6 +616,7 @@ def _catalog_payload(row: sqlite3.Row, package: sqlite3.Row | None = None) -> di
         "manifest_sha256": None if package is None else package["manifest_sha256"],
         "package_sha256": None if package is None else package["package_sha256"],
         "operations": manifest["operations"],
+        "permissions": manifest["permissions"],
         "slots": manifest["slots"],
         "dependencies": manifest["dependencies"],
         "conflicts": manifest["conflicts"],

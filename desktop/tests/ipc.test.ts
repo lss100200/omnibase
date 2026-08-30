@@ -501,6 +501,82 @@ test("assistant component package IPC accepts one exact bounded identity DTO", a
   assert.equal(calls, 1);
 });
 
+test("component proposal IPC accepts manifest-scoped resource and service defaults", async () => {
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  >();
+  let received: unknown;
+  registerClosedIpcHandlers(
+    {
+      handle: (
+        channel: string,
+        listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+      ) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    },
+    {
+      getVersion: () => "1.0.0",
+      getRuntimeStatus: () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      retryRuntimeStartup: async () => ({
+        phase: "ready",
+        attempts: 1,
+        lastError: null,
+      }),
+      getOwnerStatus: unused,
+      bootstrapOwner: unused,
+      listWorkspaces: unused,
+      createWorkspace: unused,
+      archiveWorkspace: unused,
+      ...productStubs,
+      proposeWorkspaceComponent: async (input) => {
+        received = input;
+        return unused();
+      },
+    },
+  );
+  const trustedEvent = {
+    senderFrame: { url: `${DESKTOP_UI_ORIGIN}/desktop` },
+  } as IpcMainInvokeEvent;
+  const valid = {
+    workspaceId: WORKSPACE_ID,
+    componentId: "builtin.readonly-mcp",
+    targetVersion: "1.0.0",
+    changeKind: "install",
+    expectedRevision: 0,
+    requestedGrants: [
+      {
+        action: "mcp.call",
+        logicalResourceId: "workspace.component.input",
+        resourceVersion: 1,
+        logicalServiceId: "reviewed_https",
+        expiresInSeconds: 3600,
+        maximumInvocations: 8,
+        maximumBytesIn: 1024,
+        maximumBytesOut: 2048,
+        maximumTokens: 0,
+        maximumWallTimeMs: 5000,
+        maximumCostUnits: 4,
+      },
+    ],
+    desiredConfiguration: {},
+    desiredSlotBindings: [],
+    dependencyGraph: [],
+    idempotencyKey: `p73_propose_install_${"1".repeat(32)}`,
+  };
+  const handler = handlers.get(IPC_CHANNELS.workspaceComponentsPropose);
+  await handler?.(trustedEvent, valid);
+  assert.deepEqual(received, valid);
+  assert.deepEqual(await handler?.(trustedEvent, { ...valid, extra: true }), {
+    ok: false,
+    error: { code: "desktop_native_input_invalid" },
+  });
+});
+
 test("IPC rejects unexpected arguments and non-loopback senders", async () => {
   const handlers = new Map<
     string,

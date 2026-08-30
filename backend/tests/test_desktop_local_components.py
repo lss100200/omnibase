@@ -1500,6 +1500,7 @@ def test_owner_reviewed_declarative_package_uses_closed_manifest_and_settings_sc
         if item["component_id"] == "owner.reviewed-canvas"
     )
     assert catalog["available"] is True
+    assert catalog["permissions"] == manifest["permissions"]
     assert catalog["settings_schema"]["properties"]["title"]["max_length"] == 12
     with pytest.raises(DesktopApiError, match="desktop_component_configuration_invalid"):
         create_component_proposal(

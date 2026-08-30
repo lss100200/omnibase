@@ -288,6 +288,51 @@ function parseSlotDescriptor(
   });
 }
 
+function parsePermissionDescriptor(
+  value: unknown,
+): DesktopWorkspaceComponentCatalogItem["permissions"][number] | null {
+  if (
+    !isRecord(value) ||
+    !exact(value, [
+      "action",
+      "data_scope",
+      "logical_resource_classes",
+      "secret_reference_classes",
+    ]) ||
+    typeof value.action !== "string" ||
+    !OPERATIONS.has(value.action) ||
+    (value.data_scope !== "none" && value.data_scope !== "workspace_logical")
+  ) {
+    return null;
+  }
+  const logicalResourceClasses = parseStringArray(
+    value.logical_resource_classes,
+    LOGICAL_ID,
+    32,
+  );
+  const secretReferenceClasses = parseStringArray(
+    value.secret_reference_classes,
+    LOGICAL_ID,
+    32,
+  );
+  if (
+    logicalResourceClasses === null ||
+    secretReferenceClasses === null ||
+    (value.data_scope === "none"
+      ? logicalResourceClasses.length !== 0
+      : logicalResourceClasses.length === 0)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    action:
+      value.action as DesktopWorkspaceComponentCatalogItem["permissions"][number]["action"],
+    dataScope: value.data_scope,
+    logicalResourceClasses,
+    secretReferenceClasses,
+  });
+}
+
 function parseSettingsProperty(
   value: unknown,
 ): DesktopWorkspaceComponentSettingsProperty | null {
@@ -407,6 +452,7 @@ function parseCatalog(
       "manifest_sha256",
       "package_sha256",
       "operations",
+      "permissions",
       "slots",
       "dependencies",
       "conflicts",
@@ -471,6 +517,11 @@ function parseCatalog(
     /^[a-z][a-z0-9_.]{2,63}$/u,
     16,
   );
+  const permissions = parseArray(
+    value.permissions,
+    parsePermissionDescriptor,
+    16,
+  );
   const slots = parseArray(value.slots, parseSlotDescriptor, 64);
   const dependencies = parseArray(value.dependencies, parseDependency, 64);
   const conflicts = parseStringArray(value.conflicts, COMPONENT_ID, 64);
@@ -484,6 +535,13 @@ function parseCatalog(
     operations === null ||
     operations.length === 0 ||
     operations.some((item) => !OPERATIONS.has(item)) ||
+    permissions === null ||
+    permissions.length !== operations.length ||
+    new Set(permissions.map((item) => item.action)).size !==
+      operations.length ||
+    operations.some((operation) =>
+      permissions.every((permission) => permission.action !== operation),
+    ) ||
     slots === null ||
     dependencies === null ||
     conflicts === null ||
@@ -516,6 +574,7 @@ function parseCatalog(
     packageSha256: value.package_sha256,
     operations:
       operations as DesktopWorkspaceComponentCatalogItem["operations"],
+    permissions,
     slots,
     dependencies,
     conflicts,
