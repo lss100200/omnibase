@@ -2227,6 +2227,7 @@ def _lifecycle_ticket(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[
         "effect_id": row["effect_id"],
         "workspace_id": row["workspace_id"],
         "component_id": row["component_id"],
+        "version": proposal["target_version"],
         "action": row["action"],
         "adapter_id": row["adapter_id"],
         "installation_id": row["installation_id"],

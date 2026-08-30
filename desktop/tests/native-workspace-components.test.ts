@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseWorkspaceComponentSnapshot } from "../src/runtime/native-workspace-components.ts";
+import {
+  parseWorkspaceComponentActionResult,
+  parseWorkspaceComponentSnapshot,
+} from "../src/runtime/native-workspace-components.ts";
 
 const WORKSPACE_ID = `workspace_${"1".repeat(32)}`;
 const SHA = "a".repeat(64);
@@ -65,6 +68,54 @@ function rawSnapshot(permission: unknown): Record<string, unknown> {
   };
 }
 
+function rawInstallActionResult(
+  includeVersion: boolean,
+): Record<string, unknown> {
+  const lifecycleTicket: Record<string, unknown> = {
+    operation_id: `compop_${"2".repeat(32)}`,
+    effect_id: `effect_${"3".repeat(32)}`,
+    workspace_id: WORKSPACE_ID,
+    component_id: "builtin.instruction-skill",
+    action: "install",
+    adapter_id: "instruction-skill.v1",
+    installation_id: null,
+    binding_generation: null,
+    runtime_instance_id: null,
+    workload_identity_digest: null,
+    configuration: {},
+    configuration_sha256: SHA,
+    slot_bindings: [],
+    slot_bindings_sha256: SHA,
+    dependency_graph: [],
+    dependency_graph_sha256: SHA,
+    quiesce_timeout_ms: 5_000,
+    request_sha256: SHA,
+    manifest_sha256: SHA,
+    package_sha256: "b".repeat(64),
+  };
+  if (includeVersion) lifecycleTicket.version = "1.0.0";
+  return {
+    operation: {
+      operation_id: lifecycleTicket.operation_id,
+      workspace_id: WORKSPACE_ID,
+      component_id: lifecycleTicket.component_id,
+      installation_id: null,
+      action: "install",
+      request_sha256: SHA,
+      binding_generation: 0,
+      state: "pending",
+      result_sha256: null,
+      evidence_sha256: null,
+      error_code: null,
+      created_at: "2026-08-30T00:00:00.000Z",
+      updated_at: "2026-08-30T00:00:00.000Z",
+    },
+    installation: null,
+    lifecycle_ticket: lifecycleTicket,
+    replayed: false,
+  };
+}
+
 test("component snapshot preserves the exact manifest permission classes", () => {
   const parsed = parseWorkspaceComponentSnapshot(
     rawSnapshot({
@@ -109,4 +160,16 @@ test("component snapshot rejects missing, mismatched, or open permission classes
     secret_reference_classes: [],
   });
   assert.equal(parseWorkspaceComponentSnapshot(unknown), null);
+});
+
+test("component action parser requires the backend lifecycle ticket version", () => {
+  const parsed = parseWorkspaceComponentActionResult(
+    rawInstallActionResult(true),
+  );
+  assert.ok(parsed);
+  assert.equal(parsed.lifecycleTicket.version, "1.0.0");
+  assert.equal(
+    parseWorkspaceComponentActionResult(rawInstallActionResult(false)),
+    null,
+  );
 });

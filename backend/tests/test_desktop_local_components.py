@@ -796,6 +796,7 @@ def test_lifecycle_prepare_settle_never_self_completes(
         == 0
     )
     ticket = prepared["lifecycle_ticket"]
+    assert ticket["version"] == "1.0.0"
     settled = apply_component_action_v2(
         component_database,
         **common,
