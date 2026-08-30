@@ -19,7 +19,7 @@
   --p7-line-strong: #494351;
   --p7-text: #f4eef7;
   --p7-muted: #b9afbd;
-  --p7-faint: #7e7584;
+  --p7-faint: #85808a;
   --p7-accent: #b8a8ed;
   --p7-accent-quiet: #2b253c;
   --p7-pink: #efb8d2;
@@ -2224,6 +2224,7 @@
 .p7-settings-nav-item {
   width: 100%;
   min-height: 31px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2529,7 +2530,7 @@
   color: var(--p7-muted);
 }
 
-.p7-settings-primary {
+button.p7-settings-primary {
   border-color: var(--p7-accent);
   background: var(--p7-accent);
   color: var(--p7-editor);
@@ -3209,6 +3210,35 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+@media (max-width: 800px) {
+  .p7-titlebar {
+    grid-template-columns: minmax(96px, 0.6fr) minmax(180px, 1.5fr) auto;
+  }
+
+  .p7-titlebar-brand-version,
+  .p7-titlebar-actions .p7-text-button {
+    display: none;
+  }
+
+  .p7-status-conversations,
+  .p7-status-native,
+  .p7-status-omnia,
+  .p7-status-owner {
+    display: none;
+  }
+
+  .p7-status-workspace {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .p7-status-events-label {
+    display: none;
+  }
 }
 
 @media (max-width: 920px) {

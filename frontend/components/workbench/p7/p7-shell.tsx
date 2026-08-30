@@ -337,14 +337,14 @@ function P7Statusbar({
   return (
     <footer className="p7-statusbar">
       <div className="p7-statusbar-group">
-        <span className="p7-status-item p7-status-static">
+        <span className="p7-status-item p7-status-static p7-status-workspace">
           <GitBranch size={11} />
           {workspaceName}
         </span>
-        <span className="p7-status-item p7-status-static">
+        <span className="p7-status-item p7-status-static p7-status-conversations">
           {conversationCount} {conversationCount === 1 ? '个会话' : '个会话'}
         </span>
-        <span className="p7-status-item p7-status-static">
+        <span className="p7-status-item p7-status-static p7-status-native">
           <ShieldCheck size={11} />
           原生控制
         </span>
@@ -357,24 +357,31 @@ function P7Statusbar({
             {runningCount} 运行中
           </span>
         )}
-        <button type="button" className="p7-status-item" onClick={onOpenAgentLog}>
-          <Sparkles size={11} />
-          {bridgeSubscribed ? '事件通道已订阅' : '事件通道未连接'}
-        </button>
-        <button type="button" className="p7-status-item" onClick={onOpenOmnia}>
-          OMNIA
-        </button>
-        <span className="p7-status-item p7-status-static">{ownerName}</span>
         <button
           type="button"
-          className="p7-status-item"
+          className="p7-status-item p7-status-events"
+          aria-label={bridgeSubscribed ? '事件通道已订阅' : '事件通道未连接'}
+          onClick={onOpenAgentLog}
+        >
+          <Sparkles size={11} />
+          <span className="p7-status-events-label">
+            {bridgeSubscribed ? '事件通道已订阅' : '事件通道未连接'}
+          </span>
+        </button>
+        <button type="button" className="p7-status-item p7-status-omnia" onClick={onOpenOmnia}>
+          OMNIA
+        </button>
+        <span className="p7-status-item p7-status-static p7-status-owner">{ownerName}</span>
+        <button
+          type="button"
+          className="p7-status-item p7-status-zoom"
           onClick={() => onZoomChange(Math.max(90, zoom - 10))}
         >
           A−
         </button>
         <button
           type="button"
-          className="p7-status-item"
+          className="p7-status-item p7-status-zoom"
           onClick={() => onZoomChange(Math.min(140, zoom + 10))}
         >
           A+

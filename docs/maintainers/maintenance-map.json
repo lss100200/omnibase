@@ -1438,6 +1438,7 @@
       "title": "P7.4 hardening evidence is identity-bound and Network Lease fencing is persistently monotonic",
       "document": "docs/maintainers/security-invariants.md#inv-089-p74-hot-plug-hardening-and-product-certification",
       "source_paths": [
+        ".github/workflows/infrastructure-gates.yml",
         "backend/src/omnibase/desktop_local/schema.py",
         "backend/src/omnibase/desktop_local/components/service.py",
         "desktop/src/runtime/component-package-registry.ts",
@@ -1446,7 +1447,9 @@
         "desktop/src/runtime/p34-sandbox-adapter.ts",
         "desktop/src/runtime/p34-sandbox-helper.ts",
         "frontend/app/desktop/workbench-client.tsx",
+        "frontend/app/desktop/p7-workbench.css",
         "frontend/components/workbench/p7/**",
+        "frontend/playwright.p7.config.ts",
         "scripts/release/export_p7_3_component_bundles.py",
         "scripts/release/run_p7_4_hardening_matrix.py",
         "scripts/release/validate_p7_3_windows_acceptance_receipt.py",
@@ -1462,6 +1465,8 @@
         "desktop/tests/p34-sandbox-adapter.test.ts",
         "frontend/lib/p7-workspace-components.test.ts",
         "frontend/lib/p7-workbench-shell.test.ts",
+        "frontend/visual-tests/p7-desktop-visual-bridge.ts",
+        "frontend/visual-tests/p7-settings-visual.spec.ts",
         "scripts/release/test_export_p7_3_component_bundles.py",
         "scripts/release/test_run_p7_4_hardening_matrix.py",
         "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py"
@@ -4936,6 +4941,7 @@
       "id": "p7-4-hot-plug-product-certification",
       "name": "P7.4 hot-plug security hardening, scale certification and product acceptance",
       "source_paths": [
+        ".github/workflows/infrastructure-gates.yml",
         "backend/src/omnibase/desktop_local/schema.py",
         "backend/src/omnibase/desktop_local/components/service.py",
         "backend/tests/test_desktop_local_components.py",
@@ -4956,6 +4962,10 @@
         "frontend/components/workbench/p7/**",
         "frontend/lib/p7-workspace-components*.ts",
         "frontend/lib/p7-workbench-shell*.ts",
+        "frontend/package.json",
+        "frontend/playwright.p7.config.ts",
+        "frontend/pnpm-lock.yaml",
+        "frontend/visual-tests/**",
         "scripts/release/export_p7_3_component_bundles.py",
         "scripts/release/test_export_p7_3_component_bundles.py",
         "scripts/release/run_p7_4_hardening_matrix.py",
@@ -4990,6 +5000,7 @@
         "Inventory-bound raw Sandbox workload bytes with zero imports, exact transform export, version-distinct execution evidence and no embedded helper workload",
         "Explicit boundary between trusted same-host WebAssembly execution and still-unproven independent P34 provider isolation",
         "Identity-bound compatibility, scale, soak, attack, migration, recovery, accessibility and Windows engineering evidence",
+        "Repository-enforced Playwright and axe rendering evidence for all Settings views at 1440x900, 1024x700 and 200% zoom, including keyboard, focus, reduced-motion and forced-color behavior",
         "Explicit separation between automated source evidence, Windows engineering evidence, human visual review and external signing/Marketplace/release authority"
       ],
       "depends_on": [
@@ -5032,6 +5043,7 @@
         "cd backend && uv run ruff format --check src/omnibase/desktop_local/schema.py src/omnibase/desktop_local/components/service.py tests/test_desktop_local_foundation.py tests/test_desktop_local_components.py",
         "cd desktop && pnpm test && pnpm typecheck && pnpm build",
         "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
+        "cd frontend && pnpm test:visual",
         "python -m pytest scripts/release/test_validate_p7_3_windows_acceptance_receipt.py -q",
         "backend/.venv/Scripts/python.exe -m pytest scripts/release/test_export_p7_3_component_bundles.py scripts/release/test_run_p7_4_hardening_matrix.py -q",
         "backend/.venv/Scripts/python.exe scripts/release/run_p7_4_hardening_matrix.py --repo-root . --output \"../OmniBase Artifacts/p7-4-hardening-pr/report.json\" --profile pr",

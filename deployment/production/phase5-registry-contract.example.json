@@ -105,7 +105,7 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "e9fdb01d090050c6d0bb15c6830747606ec2f9c510644cb76a627599fc5ab3e5"
+      "sha256": "df55885791196edfee4f8c30ef90f28480df64fa21aae13466807938aea42b15"
     },
     {
       "name": "security_invariants",

@@ -215,6 +215,22 @@ jobs:
           pnpm typecheck
           pnpm lint
           pnpm build
+      - name: Install Chromium for the P7 Settings rendering gate
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: P7 Settings rendering and accessibility gate
+        working-directory: frontend
+        run: pnpm test:visual
+      - name: Retain P7 Settings rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7-settings-rendering-${{ github.run_id }}
+          path: |
+            frontend/test-results/p7-visual
+            frontend/test-results/p7-visual-report.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Install locked TypeScript SDK dependencies
         working-directory: sdk/typescript
         run: pnpm install --frozen-lockfile

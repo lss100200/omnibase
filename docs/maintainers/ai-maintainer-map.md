@@ -2683,3 +2683,12 @@ candidate soak. A fresh unsigned Sandbox run can establish bounded Windows
 engineering behavior only; Authenticode custody, Publisher identity,
 Marketplace control and production release authorization remain independent
 external claims.
+
+Settings changes must run `cd frontend && pnpm test:visual` after a production
+build. The closed visual bridge supplies deterministic logical projections but
+no native authority. The gate traverses every Settings section at 1440x900,
+1024x700 and a 200% equivalent viewport, then checks keyboard focus and restore,
+Escape, reduced motion, forced colors, serious/critical axe violations and
+visible clipping/overlap. CI retains the raw reports, screenshots and failure
+traces. This source rendering evidence remains distinct from a packaged
+Electron window and the controlled Windows product receipt.

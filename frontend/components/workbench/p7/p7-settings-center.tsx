@@ -377,7 +377,7 @@ export function P7SettingsCenter(
         className="p7-settings-main"
         role="region"
         aria-labelledby={`${settingsId}-nav-${section}`}
-        tabIndex={-1}
+        tabIndex={0}
       >
         {props.compositionNotice !== null && (
           <div className="p7-settings-notice p7-settings-global-notice" role="status">
@@ -458,8 +458,9 @@ export function P7SettingsCenter(
                       onChange={(quietChrome) => patchDraft({ appearance: { quietChrome } })}
                     />
                   </SettingRow>
-                  <SettingRow label="主侧栏">
+                  <SettingRow label="主侧栏" labelFor={`${settingsId}-workspace-sidebar`}>
                     <select
+                      id={`${settingsId}-workspace-sidebar`}
                       value={draft.layout.sidebar}
                       disabled={props.compositionBusy}
                       onChange={(event) =>
@@ -524,8 +525,9 @@ export function P7SettingsCenter(
                       onChange={(agentPanel) => patchDraft({ layout: { agentPanel } })}
                     />
                   </SettingRow>
-                  <SettingRow label="底部面板">
+                  <SettingRow label="底部面板" labelFor={`${settingsId}-workspace-bottom-panel`}>
                     <select
+                      id={`${settingsId}-workspace-bottom-panel`}
                       value={draft.layout.bottomPanel}
                       disabled={props.compositionBusy}
                       onChange={(event) =>
