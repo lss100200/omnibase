@@ -133,7 +133,7 @@ def _component_runtime_files(component_root: Path) -> list[dict[str, object]]:
     return files
 
 
-def _build_fixture(tmp_path: Path, validator):  # noqa: C901, PLR0915
+def _build_fixture(tmp_path: Path, validator):
     ids = _Ids()
     source_commit = "a" * 40
     source_tree = "b" * 64
@@ -184,9 +184,7 @@ def _build_fixture(tmp_path: Path, validator):  # noqa: C901, PLR0915
     screenshot_path.write_bytes(screenshot_raw)
     setup = _artifact(setup_path, name=setup_path.name, kind="burn_exe")
     msi = _artifact(msi_path, name=msi_path.name, kind="msi")
-    runtime_manifest = _artifact(
-        manifest_path, name=manifest_path.name, kind="runtime_manifest"
-    )
+    runtime_manifest = _artifact(manifest_path, name=manifest_path.name, kind="runtime_manifest")
     report = {
         "artifacts": [
             {
@@ -246,9 +244,7 @@ def _build_fixture(tmp_path: Path, validator):  # noqa: C901, PLR0915
             result_revision,
         ) in enumerate(validator._LIFECYCLE):
             operation_id = ids.next()
-            request_sha256 = _sha(
-                f"{family}:{operation}:{index_value}:{expected_revision}:request"
-            )
+            request_sha256 = _sha(f"{family}:{operation}:{index_value}:{expected_revision}:request")
             owner_review = None
             if operation in validator._MUTATIONS:
                 owner_review = {
@@ -263,9 +259,7 @@ def _build_fixture(tmp_path: Path, validator):  # noqa: C901, PLR0915
             health = None
             if operation == "activate":
                 runtime_identity = ids.next()
-                workload_identity = _sha(
-                    f"{family}:{version}:{generation}:workload-identity"
-                )
+                workload_identity = _sha(f"{family}:{version}:{generation}:workload-identity")
                 health = {
                     "binding_generation": generation,
                     "evidence_sha256": _sha(f"{family}:{version}:{generation}:health"),
@@ -281,9 +275,7 @@ def _build_fixture(tmp_path: Path, validator):  # noqa: C901, PLR0915
             if operation in validator._QUIESCE_ACTIONS:
                 quiesce = {
                     "automatic_replay": False,
-                    "evidence_sha256": _sha(
-                        f"{family}:{version}:{generation}:{operation}:quiesce"
-                    ),
+                    "evidence_sha256": _sha(f"{family}:{version}:{generation}:{operation}:quiesce"),
                     "new_calls_closed": True,
                     "owned_processes_zero": True,
                     "pending_effects": 0,
@@ -511,9 +503,7 @@ def _load_external(validator, path: Path, artifact_root: Path, commit: str):
     )
 
 
-def _refresh_build_report_claim(
-    validator, receipt: dict[str, object], artifact_root: Path
-) -> None:
+def _refresh_build_report_claim(validator, receipt: dict[str, object], artifact_root: Path) -> None:
     report_path = artifact_root / "desktop-build-report.json"
     receipt["artifacts"]["build_report"] = _artifact(
         report_path, name=report_path.name, kind="build_report"
@@ -522,9 +512,7 @@ def _refresh_build_report_claim(
 
 def test_schema_is_closed_and_tracks_the_validator_contract() -> None:
     schema = json.loads(
-        (
-            _repo() / "scripts/release/p7_3_windows_acceptance_receipt.schema.json"
-        ).read_bytes()
+        (_repo() / "scripts/release/p7_3_windows_acceptance_receipt.schema.json").read_bytes()
     )
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert set(schema["required"]) == set(schema["properties"])
@@ -533,9 +521,7 @@ def test_schema_is_closed_and_tracks_the_validator_contract() -> None:
         if isinstance(value, dict):
             if value.get("type") == "object":
                 assert value.get("additionalProperties") is False
-                assert set(value.get("required", [])) == set(
-                    value.get("properties", {})
-                )
+                assert set(value.get("required", [])) == set(value.get("properties", {}))
             for child in value.values():
                 visit(child)
         elif isinstance(value, list):
@@ -694,12 +680,8 @@ def test_mutations_require_independent_exact_owner_reviews(tmp_path: Path) -> No
         if step["operation"] in validator._MUTATIONS
     ]
     assert len({step["request_sha256"] for step in mutations}) == len(mutations)
-    assert len({step["owner_review"]["proposal_id"] for step in mutations}) == len(
-        mutations
-    )
-    assert len({step["owner_review"]["review_id"] for step in mutations}) == len(
-        mutations
-    )
+    assert len({step["owner_review"]["proposal_id"] for step in mutations}) == len(mutations)
+    assert len({step["owner_review"]["review_id"] for step in mutations}) == len(mutations)
 
     first, second = mutations[:2]
     second["owner_review"]["proposal_id"] = first["owner_review"]["proposal_id"]
@@ -794,9 +776,9 @@ def test_runtime_manifest_component_projection_is_closed_and_digest_bound(
     )
     report_path = artifact_root / "desktop-build-report.json"
     report = json.loads(report_path.read_bytes())
-    report["runtime_manifest_pin"]["manifest_sha256"] = receipt["artifacts"][
-        "runtime_manifest"
-    ]["sha256"]
+    report["runtime_manifest_pin"]["manifest_sha256"] = receipt["artifacts"]["runtime_manifest"][
+        "sha256"
+    ]
     report_path.write_bytes(validator.canonical_json(report))
     _refresh_build_report_claim(validator, receipt, artifact_root)
     path = tmp_path / "receipt.json"
@@ -1090,9 +1072,7 @@ def test_external_expected_head_and_artifact_digest_drift_are_rejected(
         match="p73_acceptance_build_report_binding_invalid",
     ):
         _load_external(validator, path, artifact_root, "f" * 40)
-    (artifact_root / "release/OmniBase-1.0.0-windows-x64-setup.exe").write_bytes(
-        b"drift\n"
-    )
+    (artifact_root / "release/OmniBase-1.0.0-windows-x64-setup.exe").write_bytes(b"drift\n")
     with pytest.raises(
         validator.P73AcceptanceReceiptError,
         match="p73_acceptance_artifact_digest_mismatch",

@@ -15,7 +15,7 @@ import json
 import os
 import re
 import stat
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -29,9 +29,7 @@ MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024
 _REPARSE_FLAG = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
-_UUID = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -84,8 +82,7 @@ class P73AcceptanceReceiptError(ValueError):
 
 def canonical_json(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
 
@@ -115,9 +112,7 @@ def _matching_string(value: object, pattern: re.Pattern[str], code: str) -> str:
 def _timestamp(value: object, code: str) -> datetime:
     raw = _matching_string(value, _TIMESTAMP, code)
     try:
-        parsed = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
-        )
+        parsed = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     except ValueError as exc:
         raise P73AcceptanceReceiptError(code) from exc
     return parsed
@@ -144,9 +139,7 @@ def _safe_relative_path(value: object, code: str) -> str:
     return value
 
 
-def _artifact(
-    value: object, *, expected_name: str, expected_kind: str
-) -> dict[str, Any]:
+def _artifact(value: object, *, expected_name: str, expected_kind: str) -> dict[str, Any]:
     item = _exact(
         value,
         {"kind", "name", "sha256", "size"},
@@ -236,9 +229,7 @@ def _validate_owner_review(
         or review["expected_revision"] != expected_revision
     ):
         raise P73AcceptanceReceiptError("p73_acceptance_owner_review_identity_invalid")
-    _strict_bool(
-        review["explicit_owner_action"], True, "p73_acceptance_owner_action_required"
-    )
+    _strict_bool(review["explicit_owner_action"], True, "p73_acceptance_owner_action_required")
     for field, seen in (("proposal_id", proposal_ids), ("review_id", review_ids)):
         identity = _matching_string(
             review[field], _UUID, "p73_acceptance_owner_review_identity_invalid"
@@ -280,9 +271,7 @@ def _validate_health(
         _SHA256,
         "p73_acceptance_health_identity_invalid",
     )
-    _matching_string(
-        health["evidence_sha256"], _SHA256, "p73_acceptance_health_evidence_invalid"
-    )
+    _matching_string(health["evidence_sha256"], _SHA256, "p73_acceptance_health_evidence_invalid")
     if (
         health["state"] != "healthy"
         or health["binding_generation"] != generation
@@ -299,9 +288,7 @@ def _validate_health(
 def _validate_quiesce(value: object, *, expected: bool) -> None:
     if not expected:
         if value is not None:
-            raise P73AcceptanceReceiptError(
-                "p73_acceptance_unexpected_quiesce_evidence"
-            )
+            raise P73AcceptanceReceiptError("p73_acceptance_unexpected_quiesce_evidence")
         return
     quiesce = _exact(
         value,
@@ -341,7 +328,7 @@ def _validate_quiesce(value: object, *, expected: bool) -> None:
     )
 
 
-def _validate_invocation(
+def _validate_invocation(  # noqa: C901
     value: object,
     *,
     expected: bool,
@@ -352,9 +339,7 @@ def _validate_invocation(
 ) -> None:
     if not expected:
         if value is not None:
-            raise P73AcceptanceReceiptError(
-                "p73_acceptance_unexpected_invocation_evidence"
-            )
+            raise P73AcceptanceReceiptError("p73_acceptance_unexpected_invocation_evidence")
         return
     if expected_runtime is None:
         raise P73AcceptanceReceiptError("p73_acceptance_invocation_health_missing")
@@ -395,9 +380,7 @@ def _validate_invocation(
         if authority_id in authority_ids:
             raise P73AcceptanceReceiptError("p73_acceptance_invocation_identity_reused")
         authority_ids.add(authority_id)
-    _matching_string(
-        item["result_sha256"], _SHA256, "p73_acceptance_result_digest_invalid"
-    )
+    _matching_string(item["result_sha256"], _SHA256, "p73_acceptance_result_digest_invalid")
     _matching_string(
         item["capability_action"],
         _SAFE_NAME,
@@ -422,9 +405,7 @@ def _validate_invocation(
         "scope_revalidated",
         "settled",
     ):
-        _strict_bool(
-            item[field], True, "p73_acceptance_invocation_revalidation_incomplete"
-        )
+        _strict_bool(item[field], True, "p73_acceptance_invocation_revalidation_incomplete")
     network_required = item["network_lease_required"]
     if type(network_required) is not bool:
         raise P73AcceptanceReceiptError("p73_acceptance_network_lease_invalid")
@@ -441,10 +422,7 @@ def _validate_invocation(
             maximum=2**63 - 1,
             code="p73_acceptance_network_lease_invalid",
         )
-    elif (
-        item["network_lease_id"] is not None
-        or item["network_fencing_token"] is not None
-    ):
+    elif item["network_lease_id"] is not None or item["network_fencing_token"] is not None:
         raise P73AcceptanceReceiptError("p73_acceptance_network_lease_invalid")
     budget = _exact(
         item["remaining_budget"],
@@ -468,7 +446,7 @@ def _validate_invocation(
         )
 
 
-def _validate_lifecycle_step(  # noqa: PLR0913
+def _validate_lifecycle_step(
     value: object,
     *,
     expected_operation: str,
@@ -564,9 +542,7 @@ def _validate_lifecycle_step(  # noqa: PLR0913
         maximum=1,
         code="p73_acceptance_lifecycle_dispatch_count_invalid",
     )
-    _strict_bool(
-        step["automatic_replay"], False, "p73_acceptance_automatic_replay_forbidden"
-    )
+    _strict_bool(step["automatic_replay"], False, "p73_acceptance_automatic_replay_forbidden")
     operation_id = _matching_string(
         step["operation_id"], _UUID, "p73_acceptance_operation_id_invalid"
     )
@@ -602,7 +578,7 @@ def _validate_lifecycle_step(  # noqa: PLR0913
     )
 
 
-def _validate_families(  # noqa: PLR0913
+def _validate_families(
     value: object,
     *,
     owner_id: str,
@@ -635,11 +611,7 @@ def _validate_families(  # noqa: PLR0913
             "p73_acceptance_family_fields_invalid",
         )
         family = item["family"]
-        if (
-            family not in _FAMILIES
-            or family in seen
-            or item["component_id"] != _FAMILIES[family]
-        ):
+        if family not in _FAMILIES or family in seen or item["component_id"] != _FAMILIES[family]:
             raise P73AcceptanceReceiptError("p73_acceptance_family_set_invalid")
         if (
             item["workspace_id"] != workspace_id
@@ -681,9 +653,7 @@ def _validate_families(  # noqa: PLR0913
                 workload_identities=workload_identities,
             )
         if set(health_by_generation) != {1, 2, 3}:
-            raise P73AcceptanceReceiptError(
-                "p73_acceptance_health_generation_set_invalid"
-            )
+            raise P73AcceptanceReceiptError("p73_acceptance_health_generation_set_invalid")
         seen.add(family)
     if seen != set(_FAMILIES):
         raise P73AcceptanceReceiptError("p73_acceptance_family_set_invalid")
@@ -812,20 +782,14 @@ def _validate_component_bundle_binding(  # noqa: C901
         spec.loader.exec_module(module)
         bundle_report = module.validate_component_bundle(component_root)
     except Exception as exc:
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_component_bundle_invalid"
-        ) from exc
+        raise P73AcceptanceReceiptError("p73_acceptance_component_bundle_invalid") from exc
     if build_report_component_bundle != bundle_report:
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_build_report_component_bundle_invalid"
-        )
+        raise P73AcceptanceReceiptError("p73_acceptance_build_report_component_bundle_invalid")
     try:
         runtime_manifest = json.loads(runtime_manifest_raw)
         runtime_canonical = canonical_json(runtime_manifest)
     except (UnicodeDecodeError, UnicodeEncodeError, json.JSONDecodeError) as exc:
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_runtime_manifest_invalid"
-        ) from exc
+        raise P73AcceptanceReceiptError("p73_acceptance_runtime_manifest_invalid") from exc
     if (
         not isinstance(runtime_manifest, dict)
         or set(runtime_manifest) != {"entrypoint", "files", "schemaVersion"}
@@ -859,9 +823,7 @@ def _validate_component_bundle_binding(  # noqa: C901
             or any(part in {"", ".", ".."} for part in relative.split("/"))
             or relative.casefold() in folded_paths
         ):
-            raise P73AcceptanceReceiptError(
-                "p73_acceptance_runtime_component_set_invalid"
-            )
+            raise P73AcceptanceReceiptError("p73_acceptance_runtime_component_set_invalid")
         folded_paths.add(relative.casefold())
         components.append((relative, item["size"], item["sha256"]))
     ordered = sorted(components, key=lambda item: (item[0].casefold(), item[0]))
@@ -892,9 +854,7 @@ def _validate_component_bundle_binding(  # noqa: C901
     try:
         index = json.loads(index_raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_component_bundle_index_invalid"
-        ) from exc
+        raise P73AcceptanceReceiptError("p73_acceptance_component_bundle_index_invalid") from exc
     actual_versions = {
         (item["component_id"], item["version"]): (
             item["manifest_sha256"],
@@ -911,9 +871,7 @@ def _validate_component_bundle_binding(  # noqa: C901
         for version in family["versions"]
     }
     if claimed_versions != actual_versions:
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_component_version_binding_invalid"
-        )
+        raise P73AcceptanceReceiptError("p73_acceptance_component_version_binding_invalid")
 
 
 def _validate_actual_artifacts(
@@ -928,18 +886,13 @@ def _validate_actual_artifacts(
     artifact_paths = {
         "setup_exe": artifact_root / "release" / "OmniBase-1.0.0-windows-x64-setup.exe",
         "msi": artifact_root / "release" / "OmniBase-1.0.0-windows-x64.msi",
-        "runtime_manifest": artifact_root
-        / "payload"
-        / "runtime"
-        / "runtime-manifest.json",
+        "runtime_manifest": artifact_root / "payload" / "runtime" / "runtime-manifest.json",
         "build_report": artifact_root / "desktop-build-report.json",
     }
     actual: dict[str, tuple[int, str]] = {}
     captured: dict[str, bytes] = {}
     for key, path in artifact_paths.items():
-        _validate_parent_chain(
-            artifact_root, path, "p73_acceptance_artifact_root_invalid"
-        )
+        _validate_parent_chain(artifact_root, path, "p73_acceptance_artifact_root_invalid")
         capture = key in {"build_report", "runtime_manifest"}
         maximum = (
             MAX_BUILD_REPORT_BYTES
@@ -994,9 +947,7 @@ def _validate_actual_artifacts(
         or runtime_pin.get("placeholder_absent") is not True
         or runtime_pin.get("staged_dist_verified") is not True
     ):
-        raise P73AcceptanceReceiptError(
-            "p73_acceptance_runtime_manifest_binding_invalid"
-        )
+        raise P73AcceptanceReceiptError("p73_acceptance_runtime_manifest_binding_invalid")
     report_artifacts = report.get("artifacts")
     expected_report_artifacts = [
         {
@@ -1016,18 +967,12 @@ def _validate_actual_artifacts(
         raise P73AcceptanceReceiptError("p73_acceptance_build_report_artifacts_invalid")
 
 
-def _validate_actual_screenshots(
-    receipt: dict[str, Any], *, evidence_root: Path
-) -> None:
+def _validate_actual_screenshots(receipt: dict[str, Any], *, evidence_root: Path) -> None:
     _validate_directory(evidence_root, "p73_acceptance_evidence_root_invalid")
     for item in receipt["screenshots"]["items"]:
         path = evidence_root.joinpath(*PurePosixPath(item["path"]).parts)
-        _validate_parent_chain(
-            evidence_root, path, "p73_acceptance_evidence_root_invalid"
-        )
-        _, digest, raw = _read_regular_file(
-            path, maximum=MAX_SCREENSHOT_BYTES, capture=True
-        )
+        _validate_parent_chain(evidence_root, path, "p73_acceptance_evidence_root_invalid")
+        _, digest, raw = _read_regular_file(path, maximum=MAX_SCREENSHOT_BYTES, capture=True)
         assert raw is not None
         if digest != item["sha256"]:
             raise P73AcceptanceReceiptError("p73_acceptance_screenshot_digest_mismatch")
@@ -1042,7 +987,7 @@ def _validate_actual_screenshots(
             raise P73AcceptanceReceiptError("p73_acceptance_screenshot_file_invalid")
 
 
-def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912, PLR0915
+def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901
     receipt = _exact(
         value,
         {
@@ -1076,9 +1021,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
         "p73_acceptance_run_window_invalid",
     )
     started = _timestamp(run_window["started_at"], "p73_acceptance_run_window_invalid")
-    completed = _timestamp(
-        run_window["completed_at"], "p73_acceptance_run_window_invalid"
-    )
+    completed = _timestamp(run_window["completed_at"], "p73_acceptance_run_window_invalid")
     if completed <= started:
         raise P73AcceptanceReceiptError("p73_acceptance_run_window_invalid")
 
@@ -1088,9 +1031,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
         "p73_acceptance_source_fields_invalid",
     )
     _matching_string(source["commit"], _COMMIT, "p73_acceptance_source_commit_invalid")
-    _matching_string(
-        source["tree_sha256"], _SHA256, "p73_acceptance_source_tree_invalid"
-    )
+    _matching_string(source["tree_sha256"], _SHA256, "p73_acceptance_source_tree_invalid")
     _strict_bool(source["clean"], True, "p73_acceptance_clean_source_required")
     if source["mode"] != "clean-release":
         raise P73AcceptanceReceiptError("p73_acceptance_clean_source_required")
@@ -1146,9 +1087,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
     instance_ids = target["instance_ids"]
     if not isinstance(instance_ids, list) or len(instance_ids) != 1:
         raise P73AcceptanceReceiptError("p73_acceptance_single_instance_required")
-    sandbox_id = _matching_string(
-        instance_ids[0], _UUID, "p73_acceptance_sandbox_identity_invalid"
-    )
+    sandbox_id = _matching_string(instance_ids[0], _UUID, "p73_acceptance_sandbox_identity_invalid")
     _strict_bool(target["disposable"], True, "p73_acceptance_target_not_disposable")
     _strict_bool(
         target["preexisting_install"],
@@ -1169,9 +1108,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
         {"acceptance_run_id", "owner_id", "sandbox_instance_id", "workspace_id"},
         "p73_acceptance_scope_fields_invalid",
     )
-    owner_id = _matching_string(
-        scope["owner_id"], _UUID, "p73_acceptance_owner_identity_invalid"
-    )
+    owner_id = _matching_string(scope["owner_id"], _UUID, "p73_acceptance_owner_identity_invalid")
     workspace_id = _matching_string(
         scope["workspace_id"], _UUID, "p73_acceptance_workspace_identity_invalid"
     )
@@ -1226,9 +1163,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
         "first_frame_projection_empty",
         "standard_workbench_available",
     ):
-        _strict_bool(
-            isolation[field], True, "p73_acceptance_workspace_isolation_incomplete"
-        )
+        _strict_bool(isolation[field], True, "p73_acceptance_workspace_isolation_incomplete")
     _strict_bool(
         isolation["automatic_replay"],
         False,
@@ -1389,9 +1324,7 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
         "mcp_read_only",
         "write_attempt_rejected",
     ):
-        _strict_bool(
-            regression[field], True, "p73_acceptance_p71_regression_incomplete"
-        )
+        _strict_bool(regression[field], True, "p73_acceptance_p71_regression_incomplete")
     if regression["mcp_tools"] != list(_MCP_TOOLS):
         raise P73AcceptanceReceiptError("p73_acceptance_mcp_tool_set_invalid")
     _strict_bool(
@@ -1472,15 +1405,11 @@ def validate_receipt(value: object) -> dict[str, object]:  # noqa: C901, PLR0912
             {"height", "path", "sha256", "width"},
             "p73_acceptance_screenshot_item_invalid",
         )
-        path = _safe_relative_path(
-            item["path"], "p73_acceptance_screenshot_path_invalid"
-        )
+        path = _safe_relative_path(item["path"], "p73_acceptance_screenshot_path_invalid")
         if path in screenshot_paths:
             raise P73AcceptanceReceiptError("p73_acceptance_screenshot_path_duplicate")
         screenshot_paths.add(path)
-        _matching_string(
-            item["sha256"], _SHA256, "p73_acceptance_screenshot_digest_invalid"
-        )
+        _matching_string(item["sha256"], _SHA256, "p73_acceptance_screenshot_digest_invalid")
         for dimension in ("width", "height"):
             _strict_int(
                 item[dimension],
