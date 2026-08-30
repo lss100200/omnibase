@@ -492,6 +492,19 @@ function validRevision(value: unknown): value is number {
   );
 }
 
+function validComponentProposalRevision(
+  value: unknown,
+  changeKind: unknown,
+): value is number {
+  if (changeKind !== "install") return validRevision(value);
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 2_147_483_647
+  );
+}
+
 function parseApplicationPreferenceUpdateInput(
   args: readonly unknown[],
 ): DesktopApplicationPreferenceUpdateInput | null {
@@ -945,7 +958,10 @@ function parseWorkspaceComponentProposeInput(
     !COMPONENT_VERSION_PATTERN.test(args[0].targetVersion) ||
     typeof args[0].changeKind !== "string" ||
     !COMPONENT_LIFECYCLE_ACTIONS.has(args[0].changeKind) ||
-    !validRevision(args[0].expectedRevision) ||
+    !validComponentProposalRevision(
+      args[0].expectedRevision,
+      args[0].changeKind,
+    ) ||
     !Array.isArray(args[0].requestedGrants) ||
     args[0].requestedGrants.length > 32 ||
     !Array.isArray(args[0].desiredSlotBindings) ||

@@ -571,6 +571,20 @@ test("component proposal IPC accepts manifest-scoped resource and service defaul
   const handler = handlers.get(IPC_CHANNELS.workspaceComponentsPropose);
   await handler?.(trustedEvent, valid);
   assert.deepEqual(received, valid);
+  assert.deepEqual(
+    await handler?.(trustedEvent, { ...valid, expectedRevision: -1 }),
+    {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    },
+  );
+  assert.deepEqual(
+    await handler?.(trustedEvent, { ...valid, changeKind: "upgrade" }),
+    {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    },
+  );
   assert.deepEqual(await handler?.(trustedEvent, { ...valid, extra: true }), {
     ok: false,
     error: { code: "desktop_native_input_invalid" },
