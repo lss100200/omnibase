@@ -35,6 +35,7 @@ _REPARSE_FLAG = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 _WINDOWS_PATH = re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Z]:\\[^\r\n\t\"'<>|?*]+")
 _UNC_PATH = re.compile(r"\\\\[^\\\s]+\\[^\r\n\t\"'<>|?*]+")
 _SECRET = re.compile(r"(?i)\b(?:sk|key|token)-[A-Za-z0-9_-]{16,}\b")
+_LOGICAL_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 
 _TABLE_COLUMNS = {
     "documents": (
@@ -103,8 +104,7 @@ class FileIdentity(NamedTuple):
 
 def _canonical_json(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
 
@@ -225,15 +225,9 @@ def _safe_root(path: Path) -> Path:
 def _sanitize_text(value: object, *, required: bool = False) -> str | None:
     if value is None and not required:
         return None
-    if (
-        not isinstance(value, str)
-        or (required and not value.strip())
-        or "\x00" in value
-    ):
+    if not isinstance(value, str) or (required and not value.strip()) or "\x00" in value:
         raise EbookExportError("ebook_export_text_invalid")
-    sanitized = _SECRET.sub(
-        "<redacted-secret>", _UNC_PATH.sub("<redacted-local-path>", value)
-    )
+    sanitized = _SECRET.sub("<redacted-secret>", _UNC_PATH.sub("<redacted-local-path>", value))
     sanitized = _WINDOWS_PATH.sub("<redacted-local-path>", sanitized)
     if len(sanitized.encode("utf-8")) > MAX_TEXT_BYTES:
         raise EbookExportError("ebook_export_text_too_large")
@@ -255,7 +249,7 @@ def _verify_schema(connection: sqlite3.Connection) -> None:
             raise EbookExportError("ebook_export_schema_incompatible")
 
 
-def _string_list(value: object) -> list[str]:
+def _string_list(value: object, *, allow_comma_delimited_tags: bool = False) -> list[str]:
     if value is None or value == "":
         return []
     if not isinstance(value, str):
@@ -263,7 +257,11 @@ def _string_list(value: object) -> list[str]:
     try:
         parsed = json.loads(value)
     except ValueError as exc:
-        raise EbookExportError("ebook_export_list_invalid") from exc
+        if not allow_comma_delimited_tags:
+            raise EbookExportError("ebook_export_list_invalid") from exc
+        parsed = [item.strip() for item in value.split(",")]
+        if not parsed or any(_LOGICAL_TAG.fullmatch(item) is None for item in parsed):
+            raise EbookExportError("ebook_export_list_invalid") from exc
     if (
         not isinstance(parsed, list)
         or len(parsed) > 256
@@ -324,8 +322,7 @@ def _catalog(
     )
     glossary_rows = _bounded_rows(
         connection.execute(
-            "SELECT term, plain_explanation, technical_def, category "
-            "FROM glossary ORDER BY term"
+            "SELECT term, plain_explanation, technical_def, category " "FROM glossary ORDER BY term"
         ),
         limit=MAX_ROWS_PER_COLLECTION,
     )
@@ -358,7 +355,7 @@ def _catalog(
                 "content": _sanitize_text(row["content"]),
                 "explanation": _sanitize_text(row["plain_explanation"]),
                 "id": _sanitize_text(row["inv_id"], required=True),
-                "modules": _string_list(row["related_modules"]),
+                "modules": _string_list(row["related_modules"], allow_comma_delimited_tags=True),
                 "phase": _sanitize_text(row["phase"]),
                 "severity": _sanitize_text(row["severity"]),
                 "title": _sanitize_text(row["title"], required=True),

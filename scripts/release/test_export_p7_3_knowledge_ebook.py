@@ -80,8 +80,10 @@ def _source(tmp_path: Path) -> Path:
     )
     connection.execute(
         "INSERT INTO invariants "
-        "(inv_id, title, content, plain_explanation, severity, related_modules, phase) "
-        "VALUES ('INV-TEST', 'Test', 'Bounded', 'Bounded', 'high', '[\"desktop\"]', 'P7')"
+        "(inv_id, title, content, plain_explanation, severity, related_modules, "
+        "related_source, phase) VALUES "
+        "('INV-TEST', 'Test', 'Bounded', 'Bounded', 'high', "
+        "'desktop,hotplug', 'E:\\\\private\\\\security-invariants.md', 'P7')"
     )
     connection.execute(
         "INSERT INTO modules "
@@ -109,9 +111,7 @@ def test_export_is_canonical_bounded_and_omits_physical_source_fields(
     first = tmp_path / "components-a"
     second = tmp_path / "components-b"
     first_result = exporter.export_knowledge_ebook(source_root=source, output_dir=first)
-    second_result = exporter.export_knowledge_ebook(
-        source_root=source, output_dir=second
-    )
+    second_result = exporter.export_knowledge_ebook(source_root=source, output_dir=second)
 
     assert first_result == second_result
     assert (first / "knowledge-ebook/catalog.json").read_bytes() == (
@@ -122,8 +122,10 @@ def test_export_is_canonical_bounded_and_omits_physical_source_fields(
     catalog = json.loads(catalog_raw)
     assert catalog["component_id"] == "knowledge.ebook"
     assert catalog["documents"][0]["content"] == "Use <redacted-local-path>"
+    assert catalog["invariants"][0]["modules"] == ["desktop", "hotplug"]
     assert "source_path" not in json.dumps(catalog)
     assert "source_paths" not in json.dumps(catalog)
+    assert "security-invariants.md" not in json.dumps(catalog)
     manifest = json.loads((first / "knowledge-ebook/manifest.json").read_bytes())
     assert manifest["package_sha256"] == first_result["catalog_sha256"]
     assert manifest["entrypoint"] == {
@@ -174,9 +176,7 @@ def test_complete_bundle_export_pins_two_versions_of_all_five_families(
             assert payload.stat().st_size == file["size"]
             assert exporter._sha256(payload.read_bytes()) == file["sha256"]
     ebook_versions = {
-        item["version"]
-        for item in index["packages"]
-        if item["component_id"] == "knowledge.ebook"
+        item["version"] for item in index["packages"] if item["component_id"] == "knowledge.ebook"
     }
     assert ebook_versions == {"1.0.0", "1.1.0"}
 
@@ -197,16 +197,39 @@ def test_export_rejects_schema_drift_and_uncheckpointed_wal(tmp_path: Path) -> N
     source = _source(tmp_path / "wal-case")
     (source / "data/ebook.db-wal").write_bytes(b"pending")
     with pytest.raises(exporter.EbookExportError, match="wal_not_checkpointed"):
-        exporter.export_knowledge_ebook(
-            source_root=source, output_dir=tmp_path / "wal-out"
-        )
+        exporter.export_knowledge_ebook(source_root=source, output_dir=tmp_path / "wal-out")
 
     source = _source(tmp_path / "journal-case")
     (source / "data/ebook.db-journal").write_bytes(b"pending")
     with pytest.raises(exporter.EbookExportError, match="journal_not_checkpointed"):
-        exporter.export_knowledge_ebook(
-            source_root=source, output_dir=tmp_path / "journal-out"
-        )
+        exporter.export_knowledge_ebook(source_root=source, output_dir=tmp_path / "journal-out")
+
+
+@pytest.mark.parametrize(
+    ("related_modules",),
+    [
+        ("desktop,,hotplug",),
+        ("desktop,../host",),
+        ("desktop,C:\\\\private",),
+    ],
+)
+def test_export_rejects_malformed_delimited_invariant_modules(
+    tmp_path: Path, related_modules: str
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    exporter = _exporter(repo)
+    source = _source(tmp_path)
+    database = source / "data/ebook.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        "UPDATE invariants SET related_modules = ? WHERE inv_id = 'INV-TEST'",
+        (related_modules,),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(exporter.EbookExportError, match="list_invalid"):
+        exporter.export_knowledge_ebook(source_root=source, output_dir=tmp_path / "bad-modules")
 
 
 def _symlink_or_skip(link: Path, target: Path, *, directory: bool) -> None:
@@ -225,9 +248,7 @@ def test_export_rejects_data_directory_and_database_link_escape(tmp_path: Path) 
     (source / "data").rename(external_data)
     _symlink_or_skip(source / "data", external_data, directory=True)
     with pytest.raises(exporter.EbookExportError, match="root_identity_invalid"):
-        exporter.export_knowledge_ebook(
-            source_root=source, output_dir=tmp_path / "data-link-out"
-        )
+        exporter.export_knowledge_ebook(source_root=source, output_dir=tmp_path / "data-link-out")
 
     source = _source(tmp_path / "database-link")
     database = source / "data/ebook.db"
@@ -257,10 +278,6 @@ def test_export_rechecks_wal_after_the_initial_identity_check(
         if calls == 1:
             database.with_name("ebook.db-wal").write_bytes(b"pending")
 
-    monkeypatch.setattr(
-        exporter, "_assert_no_pending_journal", inject_wal_after_first_check
-    )
+    monkeypatch.setattr(exporter, "_assert_no_pending_journal", inject_wal_after_first_check)
     with pytest.raises(exporter.EbookExportError, match="wal_not_checkpointed"):
-        exporter.export_knowledge_ebook(
-            source_root=source, output_dir=tmp_path / "race-out"
-        )
+        exporter.export_knowledge_ebook(source_root=source, output_dir=tmp_path / "race-out")
