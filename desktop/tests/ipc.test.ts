@@ -501,12 +501,13 @@ test("assistant component package IPC accepts one exact bounded identity DTO", a
   assert.equal(calls, 1);
 });
 
-test("component proposal IPC accepts manifest-scoped resource and service defaults", async () => {
+test("component proposal and action IPC admit only a fresh install at revision zero", async () => {
   const handlers = new Map<
     string,
     (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
   >();
   let received: unknown;
+  let actionReceived: unknown;
   registerClosedIpcHandlers(
     {
       handle: (
@@ -535,6 +536,10 @@ test("component proposal IPC accepts manifest-scoped resource and service defaul
       ...productStubs,
       proposeWorkspaceComponent: async (input) => {
         received = input;
+        return unused();
+      },
+      applyWorkspaceComponentAction: async (input) => {
+        actionReceived = input;
         return unused();
       },
     },
@@ -589,6 +594,35 @@ test("component proposal IPC accepts manifest-scoped resource and service defaul
     ok: false,
     error: { code: "desktop_native_input_invalid" },
   });
+
+  const action = {
+    workspaceId: WORKSPACE_ID,
+    componentId: valid.componentId,
+    action: "install",
+    proposalId: COMPOSITION_PROPOSAL_ID,
+    requestSha256: REQUEST_SHA256,
+    expectedRevision: 0,
+    manifestSha256: "6".repeat(64),
+    packageSha256: "7".repeat(64),
+    idempotencyKey: `p73_action_install_${"8".repeat(32)}`,
+  };
+  const actionHandler = handlers.get(IPC_CHANNELS.workspaceComponentsAction);
+  await actionHandler?.(trustedEvent, action);
+  assert.deepEqual(actionReceived, action);
+  assert.deepEqual(
+    await actionHandler?.(trustedEvent, { ...action, action: "upgrade" }),
+    {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    },
+  );
+  assert.deepEqual(
+    await actionHandler?.(trustedEvent, { ...action, expectedRevision: -1 }),
+    {
+      ok: false,
+      error: { code: "desktop_native_input_invalid" },
+    },
+  );
 });
 
 test("IPC rejects unexpected arguments and non-loopback senders", async () => {

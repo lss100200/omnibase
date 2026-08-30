@@ -1129,7 +1129,7 @@ function parseWorkspaceComponentActionInput(
     !COMPONENT_PROPOSAL_ID_PATTERN.test(args[0].proposalId) ||
     typeof args[0].requestSha256 !== "string" ||
     !SHA256_PATTERN.test(args[0].requestSha256) ||
-    !validRevision(args[0].expectedRevision) ||
+    !validComponentProposalRevision(args[0].expectedRevision, args[0].action) ||
     typeof args[0].manifestSha256 !== "string" ||
     !SHA256_PATTERN.test(args[0].manifestSha256) ||
     typeof args[0].packageSha256 !== "string" ||
