@@ -143,6 +143,48 @@ export type RuntimeManagerComponentRecoveryHandler = (
   input: RuntimeManagerComponentRecoveryContext,
 ) => Promise<void>;
 
+export type RuntimeManagerComponentRecoveryClient = Pick<
+  DesktopNativeClient,
+  | "getOwnerStatus"
+  | "getWorkspaceComponents"
+  | "listWorkspaces"
+  | "settleWorkspaceComponentRecovery"
+>;
+
+export async function recoverWorkspaceComponentsOnStartup(
+  nativeClient: RuntimeManagerComponentRecoveryClient,
+  handler: RuntimeManagerComponentRecoveryHandler,
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  const owner = await nativeClient.getOwnerStatus();
+  if (!isCurrent()) return;
+  if (!owner.ok) throw new Error(owner.error.code);
+  if (!owner.value.initialized) return;
+
+  const workspaces = await nativeClient.listWorkspaces();
+  if (!isCurrent()) return;
+  if (!workspaces.ok) throw new Error(workspaces.error.code);
+  for (const workspace of workspaces.value.items) {
+    if (!isCurrent()) return;
+    if (workspace.state !== "active") continue;
+    const snapshot = await nativeClient.getWorkspaceComponents({
+      workspaceId: workspace.id,
+    });
+    if (!isCurrent()) return;
+    if (!snapshot.ok) throw new Error(snapshot.error.code);
+    for (const recovery of snapshot.value.recoveries) {
+      if (!isCurrent()) return;
+      if (recovery.state !== "pending") continue;
+      await handler({
+        snapshot: snapshot.value,
+        recovery,
+        settle: (input) => nativeClient.settleWorkspaceComponentRecovery(input),
+      });
+      if (!isCurrent()) return;
+    }
+  }
+}
+
 const SEND_ABORTED = Object.freeze({ aborted: true as const });
 
 function teamEventFromRun(
@@ -1302,27 +1344,14 @@ export class RuntimeManager {
         );
         this.#nativeClient = nativeClient;
         if (this.#componentRecoveryHandler !== null) {
-          const workspaces = await nativeClient.listWorkspaces();
-          if (!workspaces.ok) throw new Error(workspaces.error.code);
-          for (const workspace of workspaces.value.items) {
-            if (workspace.state !== "active") continue;
-            const snapshot = await nativeClient.getWorkspaceComponents({
-              workspaceId: workspace.id,
-            });
-            if (!snapshot.ok) throw new Error(snapshot.error.code);
-            for (const recovery of snapshot.value.recoveries) {
-              if (recovery.state !== "pending") continue;
-              await this.#componentRecoveryHandler({
-                snapshot: snapshot.value,
-                recovery,
-                settle: (input) =>
-                  nativeClient.settleWorkspaceComponentRecovery(input),
-              });
-              if (generation !== this.#generation) {
-                supervisor.stop();
-                return this.#status;
-              }
-            }
+          await recoverWorkspaceComponentsOnStartup(
+            nativeClient,
+            this.#componentRecoveryHandler,
+            () => generation === this.#generation,
+          );
+          if (generation !== this.#generation) {
+            supervisor.stop();
+            return this.#status;
           }
         }
       }
