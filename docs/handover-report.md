@@ -80,9 +80,15 @@
 > **P7.4 当前授权（2026-08-30）**：只做热插拔平台加固与产品验收，不补 P7.3
 > 核心能力。权威产品法为
 > `docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` 与 INV-089。
-> 源码正在以 desktop schema v12 修复 Network Lease token 在激活/恢复中复用 `1`
-> 的缺口，并建立兼容、规模、soak、攻击、恢复、Settings 可访问性与 Windows
-> receipt 门槛。Authenticode、Publisher、Marketplace 与生产发布仍需独立外部证据。
+> clean `a17d03d` 已以 desktop schema v12 修复 Network Lease token 在激活/恢复中
+> 复用 `1` 的缺口，并通过兼容、规模、bounded soak、攻击、恢复、Settings 可访问性
+> 与 clean package 门槛。500 组件/1,510 版本、20 Workspace/2,000 安装的规模矩阵
+> 达标。fresh unsigned Windows R0 只证明安装、真实 Electron/loopback、Owner/Workspace
+> 初始化、Settings 与五类 Catalog；实例在执行五类安装/调用、升级/回滚、紧急停止、
+> 重启恢复和卸载前关闭。因此状态为 `P7_4_WINDOWS_PRODUCT_ACCEPTANCE_INCOMPLETE`，
+> 不能签发 P7.4 engineering acceptance。证据见
+> `docs/reviews/p7-4-hardening-windows-evidence-r0.md`。Authenticode、Publisher、
+> Marketplace 与生产发布仍需独立外部证据。
 > Sandbox 路径现已把版本不同的 `payload/workload.wasm` 原始字节纳入 package
 > inventory/SHA，native registry、broker 与 helper 重验并执行同一份 zero-import、
 > exact-`transform` 字节；回执绑定 workload SHA 与结果。该 source-owned helper
