@@ -686,6 +686,7 @@ test("a replayed lifecycle prepare never dispatches its adapter again", async ()
         activations += 1;
         return { health: "healthy", evidence: {} };
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });
@@ -716,6 +717,7 @@ test("lifecycle dispatch rejects a native ticket with drifted package identity",
         activations += 1;
         return { health: "healthy", evidence: {} };
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });
@@ -766,6 +768,7 @@ test("activation settles the backend-reserved runtime identity and health proof"
           evidence: { adapter: "p34-sandbox.v1", ready: true },
         };
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });
@@ -782,6 +785,272 @@ test("activation settles the backend-reserved runtime identity and health proof"
     assert.equal(settledCall.workloadIdentityDigest, "1".repeat(64));
     assert.equal(settledCall.errorCode, null);
   }
+  broker.dispose();
+});
+
+test("a successful uninstall accepts the backend's removed installation projection", async () => {
+  const input: DesktopWorkspaceComponentActionInput = {
+    ...actionInput(),
+    action: "uninstall",
+    idempotencyKey: "sandbox.uninstall.1",
+  };
+  let stops = 0;
+  const broker = new ComponentRuntimeBroker({
+    native: boundary({
+      begin: async () => {
+        throw new Error("unused");
+      },
+      action: async (call) => {
+        const result = actionResult(input, {
+          state: call.phase === "prepare" ? "pending" : "succeeded",
+        });
+        return {
+          ok: true,
+          value:
+            call.phase === "settle"
+              ? { ...result, installation: null }
+              : result,
+        };
+      },
+    }),
+    workspaceFiles: workspaceFiles(),
+    runtimeRoot: path.resolve("."),
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      input_contract: "logical_artifact_ids",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: "bounded-transform",
+    }),
+    sandboxAdapter: {
+      activate: async () => ({
+        health: "healthy",
+        evidence: { ready: true },
+      }),
+      stop: async () => {
+        stops += 1;
+        return { evidence: { stopped: true } };
+      },
+      execute: async () => ({}),
+    },
+  });
+
+  const result = await broker.applyAction(input);
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.value.operation.state, "succeeded");
+    assert.equal(result.value.installation, null);
+  }
+  assert.equal(stops, 1);
+  broker.dispose();
+});
+
+test("a failed activation settlement stops the uncommitted sandbox runtime", async () => {
+  const input = actionInput();
+  let stops = 0;
+  const broker = new ComponentRuntimeBroker({
+    native: boundary({
+      begin: async () => {
+        throw new Error("unused");
+      },
+      action: async (call) =>
+        call.phase === "prepare"
+          ? { ok: true, value: actionResult(input) }
+          : {
+              ok: false,
+              error: { code: "desktop_component_lifecycle_settle_failed" },
+            },
+    }),
+    workspaceFiles: workspaceFiles(),
+    runtimeRoot: path.resolve("."),
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      input_contract: "logical_artifact_ids",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: "bounded-transform",
+    }),
+    sandboxAdapter: {
+      activate: async () => ({
+        health: "healthy",
+        evidence: { ready: true },
+      }),
+      stop: async () => {
+        stops += 1;
+        return { evidence: { stopped: true } };
+      },
+      execute: async () => ({}),
+    },
+  });
+  assert.deepEqual(await broker.applyAction(input), {
+    ok: false,
+    error: { code: "desktop_component_lifecycle_settle_failed" },
+  });
+  assert.equal(stops, 1);
+  broker.dispose();
+});
+
+test("a drifted activation settlement stops the uncommitted sandbox runtime", async () => {
+  const input = actionInput();
+  let stops = 0;
+  const broker = new ComponentRuntimeBroker({
+    native: boundary({
+      begin: async () => {
+        throw new Error("unused");
+      },
+      action: async (call) => ({
+        ok: true,
+        value: actionResult(input, {
+          state: call.phase === "prepare" ? "pending" : "succeeded",
+          manifestSha256:
+            call.phase === "prepare" ? input.manifestSha256 : "7".repeat(64),
+        }),
+      }),
+    }),
+    workspaceFiles: workspaceFiles(),
+    runtimeRoot: path.resolve("."),
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      input_contract: "logical_artifact_ids",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: "bounded-transform",
+    }),
+    sandboxAdapter: {
+      activate: async () => ({
+        health: "healthy",
+        evidence: { ready: true },
+      }),
+      stop: async () => {
+        stops += 1;
+        return { evidence: { stopped: true } };
+      },
+      execute: async () => ({}),
+    },
+  });
+  assert.deepEqual(await broker.applyAction(input), {
+    ok: false,
+    error: {
+      code: "desktop_component_lifecycle_settle_ticket_identity_mismatch",
+    },
+  });
+  assert.equal(stops, 1);
+  broker.dispose();
+});
+
+test("sandbox activation requires a kill path before the external boundary", async () => {
+  const input = actionInput();
+  const calls: DesktopWorkspaceComponentNativeActionInput[] = [];
+  let activations = 0;
+  const broker = new ComponentRuntimeBroker({
+    native: boundary({
+      begin: async () => {
+        throw new Error("unused");
+      },
+      action: async (call) => {
+        calls.push(call);
+        return {
+          ok: true,
+          value: actionResult(input, {
+            state: call.phase === "prepare" ? "pending" : "failed",
+          }),
+        };
+      },
+    }),
+    workspaceFiles: workspaceFiles(),
+    runtimeRoot: path.resolve("."),
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      input_contract: "logical_artifact_ids",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: "bounded-transform",
+    }),
+    sandboxAdapter: {
+      activate: async () => {
+        activations += 1;
+        return { health: "healthy", evidence: { ready: true } };
+      },
+      execute: async () => ({}),
+    },
+  });
+  assert.equal((await broker.applyAction(input)).ok, true);
+  assert.equal(activations, 0);
+  assert.equal(calls[1]?.phase, "settle");
+  if (calls[1]?.phase === "settle") {
+    assert.equal(calls[1].outcome, "failed");
+    assert.equal(
+      calls[1].errorCode,
+      "desktop_component_sandbox_runtime_unavailable",
+    );
+  }
+  broker.dispose();
+});
+
+test("a failed activation compensation remains fail closed without an active pointer", async () => {
+  const input = actionInput();
+  let stops = 0;
+  const broker = new ComponentRuntimeBroker({
+    native: boundary({
+      begin: async () => {
+        throw new Error("unused");
+      },
+      action: async (call) =>
+        call.phase === "prepare"
+          ? { ok: true, value: actionResult(input) }
+          : {
+              ok: false,
+              error: { code: "desktop_component_lifecycle_settle_failed" },
+            },
+    }),
+    workspaceFiles: workspaceFiles(),
+    runtimeRoot: path.resolve("."),
+    readSourceComponentPayload: async () => ({
+      component_id: COMPONENT,
+      input_contract: "logical_artifact_ids",
+      output_contract: "artifact_inventory",
+      provider: "p34-sandbox.v1",
+      schema_version: 1,
+      version: "1.0.0",
+      workload_id: "bounded-transform",
+    }),
+    sandboxAdapter: {
+      activate: async () => ({
+        health: "healthy",
+        evidence: { ready: true },
+      }),
+      stop: async () => {
+        stops += 1;
+        throw new Error("stop failed");
+      },
+      execute: async () => ({}),
+    },
+  });
+  assert.deepEqual(await broker.applyAction(input), {
+    ok: false,
+    error: { code: "desktop_component_lifecycle_compensation_failed" },
+  });
+  assert.equal(stops, 1);
+  assert.equal(
+    (
+      await broker.emergencyStop({
+        workspaceId: WORKSPACE,
+        idempotencyKey: "emergency.stop.uncommitted",
+        reasonCode: "owner_emergency_stop",
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(stops, 1);
   broker.dispose();
 });
 
@@ -820,6 +1089,7 @@ test("a malformed sandbox package fails before the external adapter boundary", a
         activations += 1;
         return { health: "healthy", evidence: {} };
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });
@@ -872,6 +1142,7 @@ test("a sandbox lifecycle crash becomes unknown and is never reported as failed"
       activate: async () => {
         throw new Error("provider disconnected");
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });
@@ -997,11 +1268,17 @@ for (const action of [
         settlements,
         action: async (call) => {
           lifecycleCalls.push(call);
+          const result = actionResult(destructiveInput, {
+            state: call.phase === "prepare" ? "pending" : call.outcome,
+          });
           return {
             ok: true,
-            value: actionResult(destructiveInput, {
-              state: call.phase === "prepare" ? "pending" : call.outcome,
-            }),
+            value:
+              action === "uninstall" &&
+              call.phase === "settle" &&
+              call.outcome === "succeeded"
+                ? { ...result, installation: null }
+                : result,
           };
         },
       }),
@@ -1485,6 +1762,7 @@ test("ambiguous sandbox restart settles unknown once without replay", async () =
         activations += 1;
         throw new Error("provider outcome unavailable");
       },
+      stop: async () => ({ evidence: { stopped: true } }),
       execute: async () => ({}),
     },
   });

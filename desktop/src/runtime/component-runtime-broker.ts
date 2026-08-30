@@ -544,6 +544,9 @@ function thisActiveMismatch(
   if (ticket.action === "install") {
     return ticket.installationId !== null || ticket.bindingGeneration !== null;
   }
+  if (ticket.action === "uninstall" && result.operation.state === "succeeded") {
+    return installation !== null;
+  }
   return (
     installation === null ||
     ticket.installationId !== installation.installationId ||
@@ -722,7 +725,10 @@ export class ComponentRuntimeBroker {
           break;
         }
         case "p34-sandbox.v1":
-          if (this.#options.sandboxAdapter?.activate === undefined) {
+          if (
+            this.#options.sandboxAdapter?.activate === undefined ||
+            this.#options.sandboxAdapter.stop === undefined
+          ) {
             throw new ComponentAdapterError(
               "desktop_component_sandbox_runtime_unavailable",
             );
@@ -1134,6 +1140,7 @@ export class ComponentRuntimeBroker {
     let healthState: "healthy" | "unhealthy" | "unknown" = "unknown";
     let evidence: AdapterOutput;
     let errorCode: string | null = null;
+    let sandboxActivated = false;
     try {
       try {
         const result = await this.#executeLifecycle(
@@ -1143,6 +1150,9 @@ export class ComponentRuntimeBroker {
         );
         healthState = result.health;
         evidence = result.evidence;
+        sandboxActivated =
+          input.action === "activate" &&
+          lifecycleTicket.adapterId === "p34-sandbox.v1";
       } catch (error) {
         const external =
           error instanceof ComponentAdapterError && error.outcomeUnknown;
@@ -1174,6 +1184,16 @@ export class ComponentRuntimeBroker {
         !lifecycleTicketMatches(input, settled.value) ||
         !sameLifecycleTicket(lifecycleTicket, settled.value.lifecycleTicket)
       ) {
+        if (sandboxActivated) {
+          try {
+            await this.#options.sandboxAdapter!.stop!({
+              ticket: lifecycleTicket,
+              signal: new AbortController().signal,
+            });
+          } catch {
+            return failure("desktop_component_lifecycle_compensation_failed");
+          }
+        }
         return settled.ok
           ? failure(
               "desktop_component_lifecycle_settle_ticket_identity_mismatch",
@@ -1351,7 +1371,10 @@ export class ComponentRuntimeBroker {
       });
     }
     if (ticket.adapterId === "p34-sandbox.v1") {
-      if (this.#options.sandboxAdapter?.activate === undefined) {
+      if (
+        this.#options.sandboxAdapter?.activate === undefined ||
+        this.#options.sandboxAdapter.stop === undefined
+      ) {
         throw new ComponentAdapterError(
           "desktop_component_sandbox_runtime_unavailable",
         );

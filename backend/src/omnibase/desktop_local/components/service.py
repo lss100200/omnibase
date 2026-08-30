@@ -1101,6 +1101,35 @@ def _validate_component_composition(  # noqa: C901
         )
         if dependency_catalog["manifest_sha256"] != dependency["policy_manifest_sha256"]:
             raise DesktopApiError(409, "desktop_component_dependency_policy_mismatch")
+    conflicts = manifest.get("conflicts")
+    if not isinstance(conflicts, list) or any(not isinstance(item, str) for item in conflicts):
+        raise DesktopApiError(409, "desktop_component_conflicts_invalid")
+    for conflict_id in conflicts:
+        installed_conflict = connection.execute(
+            "SELECT 1 FROM workspace_component_installation WHERE workspace_id = ? "
+            "AND component_id = ? AND state <> 'uninstalled' LIMIT 1",
+            (workspace_id, conflict_id),
+        ).fetchone()
+        if installed_conflict is not None:
+            raise DesktopApiError(409, "desktop_component_conflict_installed")
+    installed_components = connection.execute(
+        "SELECT component_id, version FROM workspace_component_installation "
+        "WHERE workspace_id = ? AND component_id <> ? AND state <> 'uninstalled'",
+        (workspace_id, catalog["component_id"]),
+    ).fetchall()
+    for installed in installed_components:
+        installed_catalog = _catalog_row(
+            connection, str(installed["component_id"]), str(installed["version"])
+        )
+        installed_manifest = _decode_json(str(installed_catalog["manifest_json"]))
+        assert isinstance(installed_manifest, dict)
+        installed_conflicts = installed_manifest.get("conflicts")
+        if not isinstance(installed_conflicts, list) or any(
+            not isinstance(item, str) for item in installed_conflicts
+        ):
+            raise DesktopApiError(409, "desktop_component_conflicts_invalid")
+        if catalog["component_id"] in installed_conflicts:
+            raise DesktopApiError(409, "desktop_component_conflict_installed")
     configuration_json = canonical_json(desired_configuration)
     slots_json = canonical_json(
         sorted(normalized_slots, key=lambda item: (str(item["slot_id"]), str(item["binding_key"])))
@@ -2739,7 +2768,7 @@ def apply_component_action_v2(  # noqa: C901
                 reason_code=f"component_{action}",
                 actor_type="owner",
             )
-            binding_state = "revoked" if action == "revoke" else "disabled"
+            binding_state = "revoked" if action in {"revoke", "uninstall"} else "disabled"
             connection.execute(
                 "UPDATE workspace_component_binding_generation SET state = ?, updated_at = ? "
                 "WHERE installation_id = ? AND state IN ('installed','bound','active')",
@@ -2749,6 +2778,21 @@ def apply_component_action_v2(  # noqa: C901
                 action
             ]
             next_revision = int(current["revision"]) + 1
+            if action == "uninstall" and current["state"] in {"bound", "active"}:
+                _audit_state(
+                    connection,
+                    workspace,
+                    current,
+                    revision=next_revision,
+                    state="revoked",
+                    operation_id=str(operation_id),
+                )
+                connection.execute(
+                    "UPDATE workspace_component_installation SET state = 'revoked', revision = ?, "
+                    "current_runtime_instance_id = NULL, updated_at = ? WHERE id = ?",
+                    (next_revision, now, current["id"]),
+                )
+                next_revision += 1
             _audit_state(
                 connection,
                 workspace,

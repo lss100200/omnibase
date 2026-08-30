@@ -1411,6 +1411,8 @@
         "frontend/components/workbench/p7/**",
         "frontend/lib/desktop-bridge.ts",
         "frontend/lib/p7-workspace-components.ts",
+        "scripts/release/validate_p7_3_windows_acceptance_receipt.py",
+        "scripts/release/p7_3_windows_acceptance_receipt.schema.json",
         "docs/architecture/p7-3-workspace-hot-plug-platform.md"
       ],
       "test_paths": [
@@ -1427,7 +1429,8 @@
         "frontend/lib/desktop-bridge.test.ts",
         "frontend/lib/p7-workspace-components.test.ts",
         "frontend/lib/p7-workbench-shell.test.ts",
-        "scripts/release/test_export_p7_3_knowledge_ebook.py"
+        "scripts/release/test_export_p7_3_knowledge_ebook.py",
+        "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py"
       ]
     }
   ],
@@ -4806,6 +4809,9 @@
         "scripts/release/build_p6_5_windows_desktop.py",
         "scripts/release/test_build_p6_5_desktop_payload.py",
         "scripts/release/test_build_p6_5_windows_desktop.py",
+        "scripts/release/validate_p7_3_windows_acceptance_receipt.py",
+        "scripts/release/p7_3_windows_acceptance_receipt.schema.json",
+        "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py",
         "docs/architecture/p7-3-workspace-hot-plug-platform.md",
         "docs/maintainers/security-invariants.md",
         "docs/maintainers/ai-maintainer-map.md",
@@ -4828,6 +4834,7 @@
         "desktop/src/runtime/p34-sandbox-helper.ts:runP34SandboxHelperRequest",
         "desktop/src/runtime/native-client.ts:DesktopNativeClient",
         "desktop/src/ipc.ts:registerClosedIpcHandlers",
+        "scripts/release/validate_p7_3_windows_acceptance_receipt.py:load_and_validate_receipt",
         "frontend/app/desktop/workbench-client.tsx:DesktopWorkbench",
         "frontend/components/workbench/p7/p7-settings-center.tsx:P7SettingsCenter",
         "frontend/components/workbench/p7/p7-component-surface.tsx:P7ComponentSurface"
@@ -4879,7 +4886,7 @@
         "python -m ruff format --check backend/src/omnibase/desktop_local/components backend/src/omnibase/desktop_local/app.py backend/src/omnibase/desktop_local/schema.py backend/tests/test_desktop_local_components.py backend/tests/test_desktop_local_foundation.py",
         "cd desktop && pnpm test && pnpm typecheck && pnpm build",
         "cd frontend && pnpm test && pnpm typecheck && pnpm lint && pnpm build",
-        "python -m pytest scripts/release/test_export_p7_3_knowledge_ebook.py scripts/release/test_export_p7_3_component_bundles.py scripts/release/test_build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_windows_desktop.py -q",
+        "python -m pytest scripts/release/test_export_p7_3_knowledge_ebook.py scripts/release/test_export_p7_3_component_bundles.py scripts/release/test_build_p6_5_desktop_payload.py scripts/release/test_build_p6_5_windows_desktop.py scripts/release/test_validate_p7_3_windows_acceptance_receipt.py -q",
         "python scripts/maintenance/validate_maintainer_map.py --repo-root .",
         "python scripts/maintenance/validate_maintainer_benchmark.py --repo-root .",
         "git diff --check"

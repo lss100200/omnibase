@@ -25,7 +25,7 @@
     "formal_state": "blocked/not_proven",
     "registry_contract": {
       "path": "deployment/production/phase5-registry-contract.example.json",
-      "sha256": "d69886c8ccc99c8da43356463423b2977118b74ae48964cb84c8a79f1e845ae4"
+      "sha256": "a60ddc24ad01e973b70306b3fe06c480b3f9c9d5d681fe8d8b03da0f454f74d2"
     }
   },
   "source": {
@@ -645,7 +645,7 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "f8f16dc6152bc81956e63aeb66d630cbe191de0ad3c59870eed4e62b3de4e541"
+      "sha256": "ebbfae88d30fae1fe474e223aa6d3732aeeb522dd7761e8811c478a7fecf82e4"
     },
     {
       "name": "security_invariants",

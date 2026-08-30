@@ -15,7 +15,11 @@ from omnibase.desktop_local import (
     initialized_database,
 )
 from omnibase.desktop_local.components import service as component_service
-from omnibase.desktop_local.components.catalog import SEEDED_BY_ID_VERSION, digest_json
+from omnibase.desktop_local.components.catalog import (
+    SEEDED_BY_ID_VERSION,
+    digest_json,
+    validate_closed_manifest,
+)
 from omnibase.desktop_local.components.service import (
     apply_component_action_v2,
     attest_component_package,
@@ -82,6 +86,39 @@ def _attest(connection: sqlite3.Connection, version: str = VERSION) -> tuple[str
     return manifest_sha, package_sha
 
 
+def _manifest_dependency(component_id: str, version: str = "1.0.0") -> dict[str, object]:
+    policy = SEEDED_BY_ID_VERSION[(component_id, version)]
+    return {
+        "component_id": component_id,
+        "version": version,
+        "policy_manifest_sha256": policy.manifest_sha256,
+        "manifest_sha256": digest_json({"manifest": component_id, "version": version}),
+        "package_sha256": digest_json({"package": component_id, "version": version}),
+    }
+
+
+def _register_owner_conflicting_component(
+    connection: sqlite3.Connection,
+    *,
+    workspace_id: str = WORKSPACE_ID,
+) -> str:
+    component_id = "owner.conflicting-canvas"
+    manifest = deepcopy(SEEDED_BY_ID_VERSION[(COMPONENT_ID, VERSION)].manifest)
+    manifest["component_id"] = component_id
+    manifest["publisher"] = {"classification": "owner_reviewed", "id": "owner.local"}
+    manifest["conflicts"] = [COMPONENT_ID]
+    manifest_sha = digest_json(manifest)
+    register_owner_reviewed_component(
+        connection,
+        workspace_id=workspace_id,
+        manifest=manifest,
+        manifest_sha256=manifest_sha,
+        package_sha256=digest_json({"declarative": manifest_sha}),
+        inventory_sha256=digest_json({"manifest.json": manifest_sha}),
+    )
+    return component_id
+
+
 def _insert_assistant_message(
     connection: sqlite3.Connection,
     *,
@@ -138,10 +175,11 @@ def _proposal(
     manifest_sha: str,
     package_sha: str,
     target_version: str = VERSION,
+    workspace_id: str = WORKSPACE_ID,
 ) -> dict[str, object]:
     result = create_component_proposal(
         connection,
-        workspace_id=WORKSPACE_ID,
+        workspace_id=workspace_id,
         component_id=COMPONENT_ID,
         target_version=target_version,
         change_kind=change_kind,
@@ -167,7 +205,7 @@ def _proposal(
     assert proposal["package_sha256"] == package_sha
     decide_component_proposal(
         connection,
-        workspace_id=WORKSPACE_ID,
+        workspace_id=workspace_id,
         proposal_id=str(proposal["proposal_id"]),
         decision="approve",
         request_sha256=str(proposal["request_sha256"]),
@@ -181,9 +219,10 @@ def _lifecycle(
     action: str,
     expected_revision: int,
     proposal: dict[str, object],
+    workspace_id: str = WORKSPACE_ID,
 ) -> dict[str, object]:
     common = {
-        "workspace_id": WORKSPACE_ID,
+        "workspace_id": workspace_id,
         "component_id": COMPONENT_ID,
         "action": action,
         "proposal_id": str(proposal["proposal_id"]),
@@ -1283,6 +1322,191 @@ def test_all_five_families_share_the_complete_lifecycle(
     assert uninstalled["installation"] is None
 
 
+@pytest.mark.parametrize(
+    ("starting_state", "actions", "expected_binding_state"),
+    [
+        ("bound", ("install", "bind"), "revoked"),
+        ("active", ("install", "bind", "activate"), "revoked"),
+        ("disabled", ("install", "bind", "disable"), "disabled"),
+        ("revoked", ("install", "revoke"), "revoked"),
+    ],
+)
+def test_uninstall_from_supported_states_preserves_exact_binding_identity(
+    component_database: sqlite3.Connection,
+    starting_state: str,
+    actions: tuple[str, ...],
+    expected_binding_state: str,
+) -> None:
+    manifest_sha, package_sha = _attest(component_database)
+    revision = 0
+    for action in actions:
+        proposal = _proposal(
+            component_database,
+            change_kind=action,
+            expected_revision=revision,
+            manifest_sha=manifest_sha,
+            package_sha=package_sha,
+        )
+        settled = _lifecycle(
+            component_database,
+            action=action,
+            expected_revision=revision,
+            proposal=proposal,
+        )
+        installation = settled["installation"]
+        assert isinstance(installation, dict)
+        revision = int(installation["revision"])
+    assert installation["state"] == starting_state
+
+    before = component_database.execute(
+        "SELECT * FROM workspace_component_installation WHERE workspace_id = ? "
+        "AND component_id = ?",
+        (WORKSPACE_ID, COMPONENT_ID),
+    ).fetchone()
+    assert before is not None
+    binding_before = component_database.execute(
+        "SELECT * FROM workspace_component_binding_generation WHERE installation_id = ? "
+        "AND generation = ?",
+        (before["id"], before["binding_generation"]),
+    ).fetchone()
+    assert binding_before is not None
+    uninstall_proposal = _proposal(
+        component_database,
+        change_kind="uninstall",
+        expected_revision=revision,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+    )
+
+    uninstalled = _lifecycle(
+        component_database,
+        action="uninstall",
+        expected_revision=revision,
+        proposal=uninstall_proposal,
+    )
+
+    assert uninstalled["installation"] is None
+    after = component_database.execute(
+        "SELECT * FROM workspace_component_installation WHERE id = ?", (before["id"],)
+    ).fetchone()
+    assert after is not None
+    assert after["state"] == "uninstalled"
+    expected_revision = revision + (2 if starting_state in {"bound", "active"} else 1)
+    assert after["revision"] == expected_revision
+    assert after["current_runtime_instance_id"] is None
+    immutable_installation_fields = (
+        "id",
+        "owner_id",
+        "workspace_id",
+        "component_id",
+        "version",
+        "manifest_sha256",
+        "package_sha256",
+        "binding_generation",
+        "proposal_id",
+        "request_sha256",
+        "configuration_sha256",
+        "slot_bindings_sha256",
+        "dependency_graph_sha256",
+        "created_at",
+    )
+    assert {field: after[field] for field in immutable_installation_fields} == {
+        field: before[field] for field in immutable_installation_fields
+    }
+    binding_after = component_database.execute(
+        "SELECT * FROM workspace_component_binding_generation WHERE installation_id = ? "
+        "AND generation = ?",
+        (after["id"], after["binding_generation"]),
+    ).fetchone()
+    assert binding_after is not None
+    assert binding_after["state"] == expected_binding_state
+    immutable_binding_fields = (
+        "installation_id",
+        "workspace_id",
+        "component_id",
+        "generation",
+        "version",
+        "manifest_sha256",
+        "package_sha256",
+        "proposal_id",
+        "request_sha256",
+        "configuration_sha256",
+        "slot_bindings_sha256",
+        "dependency_graph_sha256",
+        "created_at",
+    )
+    assert {field: binding_after[field] for field in immutable_binding_fields} == {
+        field: binding_before[field] for field in immutable_binding_fields
+    }
+    decision = component_database.execute(
+        "SELECT * FROM workspace_component_decision WHERE proposal_id = ?",
+        (uninstall_proposal["proposal_id"],),
+    ).fetchone()
+    assert decision is not None
+    assert decision["workspace_id"] == WORKSPACE_ID
+    assert decision["request_sha256"] == uninstall_proposal["request_sha256"]
+    ticket = uninstalled["lifecycle_ticket"]
+    assert isinstance(ticket, dict)
+    operation = component_database.execute(
+        "SELECT * FROM workspace_component_operation WHERE id = ?", (ticket["operation_id"],)
+    ).fetchone()
+    assert operation is not None
+    operation_request = json.loads(str(operation["request_json"]))
+    assert operation_request["proposal_id"] == uninstall_proposal["proposal_id"]
+    assert operation_request["request_sha256"] == uninstall_proposal["request_sha256"]
+    assert operation["manifest_sha256"] == manifest_sha
+    assert operation["package_sha256"] == package_sha
+    audit_states = {
+        json.loads(str(row["payload_json"]))["state"]
+        for row in component_database.execute(
+            "SELECT payload_json FROM audit_event WHERE workspace_id = ? "
+            "AND event_type = 'workspace_component_state_changed' "
+            "AND json_extract(payload_json, '$.operation_id') = ?",
+            (WORKSPACE_ID, ticket["operation_id"]),
+        )
+    }
+    assert audit_states == (
+        {"revoked", "uninstalled"} if starting_state in {"bound", "active"} else {"uninstalled"}
+    )
+
+
+def test_binding_identity_guard_still_rejects_installed_to_disabled_drift(
+    component_database: sqlite3.Connection,
+) -> None:
+    manifest_sha, package_sha = _attest(component_database)
+    proposal = _proposal(
+        component_database,
+        change_kind="install",
+        expected_revision=0,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+    )
+    installed = _lifecycle(
+        component_database,
+        action="install",
+        expected_revision=0,
+        proposal=proposal,
+    )
+    installation = installed["installation"]
+    assert isinstance(installation, dict)
+
+    with pytest.raises(sqlite3.IntegrityError, match="desktop_component_binding_identity_drift"):
+        component_database.execute(
+            "UPDATE workspace_component_binding_generation SET state = 'disabled', "
+            "updated_at = updated_at WHERE installation_id = ? AND generation = ?",
+            (installation["installation_id"], installation["binding_generation"]),
+        )
+
+    assert (
+        component_database.execute(
+            "SELECT state FROM workspace_component_binding_generation WHERE installation_id = ? "
+            "AND generation = ?",
+            (installation["installation_id"], installation["binding_generation"]),
+        ).fetchone()[0]
+        == "installed"
+    )
+
+
 def test_component_history_and_receipts_are_database_immutable(
     component_database: sqlite3.Connection,
 ) -> None:
@@ -1465,6 +1689,272 @@ def test_grant_usage_rejects_regression_and_non_cas_updates(
         component_database.execute(
             "UPDATE workspace_component_grant_usage SET row_version = row_version + 2"
         )
+
+
+@pytest.mark.parametrize(
+    ("case", "error_code"),
+    [
+        ("duplicate_dependency", "component_manifest_dependencies_invalid"),
+        ("self_dependency", "component_manifest_dependencies_invalid"),
+        ("self_conflict", "component_manifest_conflicts_invalid"),
+        ("dependency_conflict_overlap", "component_manifest_conflicts_invalid"),
+    ],
+)
+def test_closed_manifest_rejects_ambiguous_dependency_and_conflict_graphs(
+    case: str,
+    error_code: str,
+) -> None:
+    manifest = deepcopy(SEEDED_BY_ID_VERSION[(COMPONENT_ID, VERSION)].manifest)
+    dependency = _manifest_dependency("builtin.readonly-mcp")
+    if case == "duplicate_dependency":
+        manifest["dependencies"] = [
+            dependency,
+            _manifest_dependency("builtin.readonly-mcp", "1.1.0"),
+        ]
+    elif case == "self_dependency":
+        manifest["dependencies"] = [_manifest_dependency(COMPONENT_ID)]
+    elif case == "self_conflict":
+        manifest["conflicts"] = [COMPONENT_ID]
+    else:
+        manifest["dependencies"] = [dependency]
+        manifest["conflicts"] = [dependency["component_id"]]
+
+    with pytest.raises(ValueError, match=rf"^{error_code}$"):
+        validate_closed_manifest(manifest)
+
+
+def test_closed_manifest_accepts_disjoint_dependencies_and_conflicts() -> None:
+    manifest = deepcopy(SEEDED_BY_ID_VERSION[(COMPONENT_ID, VERSION)].manifest)
+    manifest["dependencies"] = [_manifest_dependency("builtin.readonly-mcp")]
+    manifest["conflicts"] = ["builtin.instruction-skill"]
+
+    validated = validate_closed_manifest(manifest)
+
+    assert validated["dependencies"] == manifest["dependencies"]
+    assert validated["conflicts"] == manifest["conflicts"]
+
+
+def test_proposal_rejects_live_conflict_in_the_same_workspace(
+    component_database: sqlite3.Connection,
+) -> None:
+    manifest_sha, package_sha = _attest(component_database)
+    proposal = _proposal(
+        component_database,
+        change_kind="install",
+        expected_revision=0,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+    )
+    _lifecycle(
+        component_database,
+        action="install",
+        expected_revision=0,
+        proposal=proposal,
+    )
+    owner_component_id = _register_owner_conflicting_component(component_database)
+
+    with pytest.raises(DesktopApiError, match="^desktop_component_conflict_installed$"):
+        create_component_proposal(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            component_id=owner_component_id,
+            target_version=VERSION,
+            change_kind="install",
+            expected_revision=0,
+            requested_grants=[_grant()],
+            desired_configuration={},
+            desired_slot_bindings=[],
+            dependency_graph=[],
+            source_kind="owner",
+            source_reference=None,
+            idempotency_key="owner-package-conflict-same-workspace",
+        )
+    assert (
+        component_database.execute(
+            "SELECT COUNT(*) FROM workspace_component_proposal WHERE workspace_id = ? "
+            "AND component_id = ?",
+            (WORKSPACE_ID, owner_component_id),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_proposal_rejects_reverse_conflict_declared_by_live_component(
+    component_database: sqlite3.Connection,
+) -> None:
+    owner_component_id = _register_owner_conflicting_component(component_database)
+    owner_proposal = create_component_proposal(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        component_id=owner_component_id,
+        target_version=VERSION,
+        change_kind="install",
+        expected_revision=0,
+        requested_grants=[_grant()],
+        desired_configuration={},
+        desired_slot_bindings=[],
+        dependency_graph=[],
+        source_kind="owner",
+        source_reference=None,
+        idempotency_key="owner-package-conflict-install-first",
+    )["proposal"]
+    assert isinstance(owner_proposal, dict)
+    decide_component_proposal(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        proposal_id=str(owner_proposal["proposal_id"]),
+        decision="approve",
+        request_sha256=str(owner_proposal["request_sha256"]),
+    )
+    action = {
+        "workspace_id": WORKSPACE_ID,
+        "component_id": owner_component_id,
+        "action": "install",
+        "proposal_id": str(owner_proposal["proposal_id"]),
+        "request_sha256": str(owner_proposal["request_sha256"]),
+        "expected_revision": 0,
+        "manifest_sha256": str(owner_proposal["manifest_sha256"]),
+        "package_sha256": str(owner_proposal["package_sha256"]),
+        "idempotency_key": "owner-package-conflict-install-first-action",
+    }
+    prepared = apply_component_action_v2(
+        component_database,
+        **action,
+        phase="prepare",
+        operation_id=None,
+        outcome=None,
+        evidence_sha256=None,
+        health_state=None,
+    )
+    ticket = prepared["lifecycle_ticket"]
+    assert isinstance(ticket, dict)
+    apply_component_action_v2(
+        component_database,
+        **action,
+        phase="settle",
+        operation_id=str(ticket["operation_id"]),
+        outcome="succeeded",
+        evidence_sha256=digest_json({"installed": owner_component_id}),
+        health_state=None,
+    )
+    _attest(component_database)
+
+    with pytest.raises(DesktopApiError, match="^desktop_component_conflict_installed$"):
+        create_component_proposal(
+            component_database,
+            workspace_id=WORKSPACE_ID,
+            component_id=COMPONENT_ID,
+            target_version=VERSION,
+            change_kind="install",
+            expected_revision=0,
+            requested_grants=[_grant()],
+            desired_configuration={},
+            desired_slot_bindings=[],
+            dependency_graph=[],
+            source_kind="owner",
+            source_reference=None,
+            idempotency_key="builtin-conflict-reverse-declaration",
+        )
+
+
+def test_proposal_ignores_conflict_installed_in_another_workspace(
+    component_database: sqlite3.Connection,
+) -> None:
+    workspace_b = "workspace_" + "2" * 32
+    create_workspace(component_database, workspace_b, OWNER_ID, "Workspace B")
+    manifest_sha, package_sha = _attest(component_database)
+    conflicting_proposal = _proposal(
+        component_database,
+        change_kind="install",
+        expected_revision=0,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+        workspace_id=workspace_b,
+    )
+    _lifecycle(
+        component_database,
+        action="install",
+        expected_revision=0,
+        proposal=conflicting_proposal,
+        workspace_id=workspace_b,
+    )
+    owner_component_id = _register_owner_conflicting_component(component_database)
+
+    result = create_component_proposal(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        component_id=owner_component_id,
+        target_version=VERSION,
+        change_kind="install",
+        expected_revision=0,
+        requested_grants=[_grant()],
+        desired_configuration={},
+        desired_slot_bindings=[],
+        dependency_graph=[],
+        source_kind="owner",
+        source_reference=None,
+        idempotency_key="owner-package-conflict-other-workspace",
+    )
+
+    proposal = result["proposal"]
+    assert isinstance(proposal, dict)
+    assert proposal["component_id"] == owner_component_id
+
+
+def test_proposal_ignores_historical_uninstalled_conflict(
+    component_database: sqlite3.Connection,
+) -> None:
+    manifest_sha, package_sha = _attest(component_database)
+    install_proposal = _proposal(
+        component_database,
+        change_kind="install",
+        expected_revision=0,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+    )
+    installed = _lifecycle(
+        component_database,
+        action="install",
+        expected_revision=0,
+        proposal=install_proposal,
+    )
+    installation = installed["installation"]
+    assert isinstance(installation, dict)
+    revision = int(installation["revision"])
+    uninstall_proposal = _proposal(
+        component_database,
+        change_kind="uninstall",
+        expected_revision=revision,
+        manifest_sha=manifest_sha,
+        package_sha=package_sha,
+    )
+    _lifecycle(
+        component_database,
+        action="uninstall",
+        expected_revision=revision,
+        proposal=uninstall_proposal,
+    )
+    owner_component_id = _register_owner_conflicting_component(component_database)
+
+    result = create_component_proposal(
+        component_database,
+        workspace_id=WORKSPACE_ID,
+        component_id=owner_component_id,
+        target_version=VERSION,
+        change_kind="install",
+        expected_revision=0,
+        requested_grants=[_grant()],
+        desired_configuration={},
+        desired_slot_bindings=[],
+        dependency_graph=[],
+        source_kind="owner",
+        source_reference=None,
+        idempotency_key="owner-package-conflict-uninstalled-history",
+    )
+
+    proposal = result["proposal"]
+    assert isinstance(proposal, dict)
+    assert proposal["component_id"] == owner_component_id
 
 
 def test_owner_reviewed_declarative_package_uses_closed_manifest_and_settings_schema(

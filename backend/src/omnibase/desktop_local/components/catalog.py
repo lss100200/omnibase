@@ -176,6 +176,7 @@ def validate_closed_manifest(value: object) -> dict[str, object]:  # noqa: C901
     dependencies = value.get("dependencies")
     if not isinstance(dependencies, list) or len(dependencies) > 64:
         raise ValueError("component_manifest_dependencies_invalid")
+    dependency_ids: set[str] = set()
     for dependency in dependencies:
         if (
             not isinstance(dependency, dict)
@@ -197,6 +198,10 @@ def validate_closed_manifest(value: object) -> dict[str, object]:  # noqa: C901
             )
         ):
             raise ValueError("component_manifest_dependency_invalid")
+        dependency_id = str(dependency["component_id"])
+        if dependency_id == component_id or dependency_id in dependency_ids:
+            raise ValueError("component_manifest_dependencies_invalid")
+        dependency_ids.add(dependency_id)
     conflicts = value.get("conflicts")
     if (
         not isinstance(conflicts, list)
@@ -205,6 +210,8 @@ def validate_closed_manifest(value: object) -> dict[str, object]:  # noqa: C901
         or any(
             not isinstance(item, str) or _COMPONENT_ID.fullmatch(item) is None for item in conflicts
         )
+        or component_id in conflicts
+        or bool(dependency_ids.intersection(conflicts))
     ):
         raise ValueError("component_manifest_conflicts_invalid")
     slots = value.get("slots")
