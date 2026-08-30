@@ -484,7 +484,10 @@ export interface DesktopWorkspaceComponentAuditEvent {
     | 'workspace_component_invocation_begun'
     | 'workspace_component_invocation_settled'
     | 'workspace_component_reconciled'
-    | 'workspace_component_emergency_stopped'
+    | 'workspace_component_emergency_fenced'
+    | 'workspace_component_emergency_cleanup_settled'
+    | 'workspace_component_recovery_authority_reissued'
+    | 'workspace_component_destructive_recovery_blocked'
     | 'workspace_component_recovery_blocked'
   readonly payload: DesktopWorkspaceComponentJsonValue
   readonly createdAt: string

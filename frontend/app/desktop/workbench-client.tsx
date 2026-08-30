@@ -105,6 +105,7 @@ import {
   p7WorkspaceComponentCommittedUiBindings,
   p7WorkspaceComponentAssistantPrompt,
   p7WorkspaceComponentHostSlotId,
+  p7WorkspaceComponentInvocationScope,
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentSurfaceProjection,
   p7WorkspaceComponentSurfaceRequests,
@@ -1940,6 +1941,16 @@ export function DesktopWorkbench({
       finishComponentsOperation(started.epoch)
       return
     }
+    const invocationScope = p7WorkspaceComponentInvocationScope({
+      snapshot: started.snapshot,
+      installation,
+      operation,
+    })
+    if (invocationScope === null) {
+      setComponentsNotice('当前运行身份没有唯一、精确且有效的 Owner 授权 scope。')
+      finishComponentsOperation(started.epoch)
+      return
+    }
     const base = {
       workspaceId: started.workspaceId,
       componentId: installation.componentId,
@@ -1953,7 +1964,7 @@ export function DesktopWorkbench({
       wallTimeMs: Math.min(catalog.budgets.maxWallTimeMs, 600_000),
       costUnits: Math.min(catalog.budgets.maxCostUnits, 1_000),
     } as const
-    const input = { ...base, ...request }
+    const input = { ...base, ...request, ...invocationScope }
     const result = await bridge.workspaceComponents.invoke(input)
     if (!componentsOperationIsCurrent(started.epoch, started.workspaceId)) return
     if (!result.ok) {

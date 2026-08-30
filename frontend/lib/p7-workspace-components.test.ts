@@ -25,6 +25,7 @@ import {
   p7WorkspaceComponentResultEventLogLine,
   p7WorkspaceComponentAssistantPrompt,
   p7WorkspaceComponentHostSlotId,
+  p7WorkspaceComponentInvocationScope,
   p7WorkspaceComponentLifecycleActions,
   p7WorkspaceComponentHostProjection,
   p7WorkspaceComponentCommittedUiBindings,
@@ -955,6 +956,289 @@ function committedUiSnapshot(
     audit: [],
   }
 }
+
+const INVOCATION_SCOPE_CASES = [
+  {
+    componentId: 'builtin.workspace-canvas',
+    family: 'declarative_ui',
+    adapterId: 'builtin-ui.v1',
+    operation: 'ui.render',
+    requiresNetwork: false,
+  },
+  {
+    componentId: 'builtin.instruction-skill',
+    family: 'instruction_skill',
+    adapterId: 'instruction-skill.v1',
+    operation: 'skill.resolve',
+    requiresNetwork: false,
+  },
+  {
+    componentId: 'builtin.readonly-mcp',
+    family: 'mcp_connector',
+    adapterId: 'readonly-mcp.v1',
+    operation: 'mcp.call',
+    requiresNetwork: true,
+  },
+  {
+    componentId: 'builtin.sandbox-workload',
+    family: 'sandbox_workload',
+    adapterId: 'p34-sandbox.v1',
+    operation: 'sandbox.run',
+    requiresNetwork: false,
+  },
+  {
+    componentId: 'knowledge.ebook',
+    family: 'trusted_local_adapter',
+    adapterId: 'trusted-local-app.v1',
+    operation: 'local_adapter.open',
+    requiresNetwork: false,
+  },
+] as const
+
+function invocationScopeFixture(input: (typeof INVOCATION_SCOPE_CASES)[number]): Readonly<{
+  snapshot: DesktopWorkspaceComponentSnapshot
+  installation: DesktopWorkspaceComponentSnapshot['installations'][number]
+}> {
+  const installation = {
+    installationId: `installation_${'1'.repeat(32)}`,
+    workspaceId: WORKSPACE_A,
+    componentId: input.componentId,
+    version: '1.0.0',
+    manifestSha256: 'a'.repeat(64),
+    packageSha256: 'b'.repeat(64),
+    state: 'active' as const,
+    revision: 4,
+    bindingGeneration: 2,
+    desiredConfiguration: {},
+    currentSlotBindings: [],
+    dependencyGraph: [],
+    health: 'healthy' as const,
+    lastErrorCode: null,
+    updatedAt: '2026-08-30T00:00:00.000Z',
+  }
+  const scope = {
+    action: input.operation,
+    logicalResourceId: 'workspace.component.input',
+    resourceVersion: 7,
+    logicalServiceId: input.requiresNetwork ? 'reviewed_https' : null,
+    expiresInSeconds: 3_600,
+    maximumInvocations: 8,
+    maximumBytesIn: 1_024,
+    maximumBytesOut: 2_048,
+    maximumTokens: 0,
+    maximumWallTimeMs: 5_000,
+    maximumCostUnits: 4,
+  }
+  const snapshot: DesktopWorkspaceComponentSnapshot = {
+    workspaceId: WORKSPACE_A,
+    catalog: [
+      {
+        componentId: input.componentId,
+        version: '1.0.0',
+        family: input.family,
+        displayName: input.componentId,
+        publisherClass: 'source_owned',
+        adapterId: input.adapterId,
+        policyManifestSha256: 'c'.repeat(64),
+        manifestSha256: installation.manifestSha256,
+        packageSha256: installation.packageSha256,
+        operations: [input.operation],
+        permissions: [
+          {
+            action: input.operation,
+            dataScope: 'workspace_logical',
+            logicalResourceClasses: ['workspace.component.input'],
+            secretReferenceClasses: [],
+          },
+        ],
+        slots: [],
+        dependencies: [],
+        conflicts: [],
+        budgets: {
+          maxCalls: 8,
+          maxBytesIn: 1_024,
+          maxBytesOut: 2_048,
+          maxTokens: 0,
+          maxWallTimeMs: 5_000,
+          maxCostUnits: 4,
+          maxRetries: 0,
+          maxConcurrency: 1,
+        },
+        network: {
+          required: input.requiresNetwork,
+          serviceClasses: input.requiresNetwork ? ['reviewed_https'] : [],
+        },
+        recovery: {
+          autoReplayUnknown: false,
+          retention: 'retain_workspace_data',
+          safeMode: 'disable_component',
+        },
+        stateSchema: { kind: 'canonical_json', version: 1 },
+        settingsSchema: {
+          kind: 'closed_object',
+          version: 1,
+          additionalProperties: false,
+          properties: {},
+          required: [],
+        },
+        available: true,
+        unavailableReason: null,
+      },
+    ],
+    installations: [installation],
+    proposals: [],
+    operations: [],
+    effects: [],
+    grants: [
+      {
+        grantId: `grant_${'2'.repeat(32)}`,
+        workspaceId: WORKSPACE_A,
+        installationId: installation.installationId,
+        bindingGeneration: installation.bindingGeneration,
+        runtimeInstanceId: `runtime_${'3'.repeat(32)}`,
+        componentId: installation.componentId,
+        version: installation.version,
+        actions: [input.operation],
+        scope: [scope],
+        requiresNetwork: input.requiresNetwork,
+        state: 'active',
+        notBefore: '2026-08-30T00:00:00.000Z',
+        expiresAt: '2026-08-31T00:00:00.000Z',
+        limits: {
+          calls: 8,
+          bytesIn: 1_024,
+          bytesOut: 2_048,
+          tokens: 0,
+          wallTimeMs: 5_000,
+          costUnits: 4,
+          retries: 0,
+          concurrency: 1,
+        },
+        used: {
+          calls: 0,
+          bytesIn: 0,
+          bytesOut: 0,
+          tokens: 0,
+          wallTimeMs: 0,
+          costUnits: 0,
+          retries: 0,
+        },
+        remaining: {
+          calls: 8,
+          bytesIn: 1_024,
+          bytesOut: 2_048,
+          tokens: 0,
+          wallTimeMs: 5_000,
+          costUnits: 4,
+          retries: 0,
+        },
+      },
+    ],
+    revocations: [],
+    recoveries: [],
+    reconciliations: [],
+    audit: [],
+  }
+  return Object.freeze({ snapshot, installation })
+}
+
+test('invocation scope comes from the unique active Owner grant for all five families', () => {
+  for (const input of INVOCATION_SCOPE_CASES) {
+    const fixture = invocationScopeFixture(input)
+    assert.deepEqual(
+      p7WorkspaceComponentInvocationScope({
+        ...fixture,
+        operation: input.operation,
+      }),
+      {
+        logicalResourceId: 'workspace.component.input',
+        resourceVersion: 7,
+        ...(input.requiresNetwork ? { logicalServiceId: 'reviewed_https' } : {}),
+      },
+    )
+  }
+})
+
+test('invocation scope fails closed for missing, ambiguous, revoked or mismatched authority', () => {
+  const fixture = invocationScopeFixture(INVOCATION_SCOPE_CASES[1])
+  const input = { ...fixture, operation: 'skill.resolve' as const }
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      ...input,
+      snapshot: { ...fixture.snapshot, grants: [] },
+    }),
+    null,
+  )
+  const currentGrant = fixture.snapshot.grants[0]!
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      ...input,
+      snapshot: {
+        ...fixture.snapshot,
+        grants: [
+          currentGrant,
+          {
+            ...currentGrant,
+            grantId: `grant_${'4'.repeat(32)}`,
+            runtimeInstanceId: `runtime_${'5'.repeat(32)}`,
+          },
+        ],
+      },
+    }),
+    null,
+  )
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      ...input,
+      snapshot: {
+        ...fixture.snapshot,
+        grants: [{ ...currentGrant, scope: [] }],
+      },
+    }),
+    null,
+  )
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      ...input,
+      snapshot: {
+        ...fixture.snapshot,
+        grants: [{ ...currentGrant, version: '1.1.0' }],
+      },
+    }),
+    null,
+  )
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      ...input,
+      snapshot: {
+        ...fixture.snapshot,
+        revocations: [
+          {
+            revocationId: `revocation_${'6'.repeat(32)}`,
+            workspaceId: WORKSPACE_A,
+            installationId: fixture.installation.installationId,
+            componentId: fixture.installation.componentId,
+            bindingGeneration: fixture.installation.bindingGeneration,
+            runtimeInstanceId: currentGrant.runtimeInstanceId,
+            grantId: currentGrant.grantId,
+            reasonCode: 'owner_revoked',
+            actorType: 'owner',
+            createdAt: '2026-08-30T00:00:00.000Z',
+          },
+        ],
+      },
+    }),
+    null,
+  )
+  assert.equal(
+    p7WorkspaceComponentInvocationScope({
+      snapshot: fixture.snapshot,
+      installation: { ...fixture.installation, workspaceId: WORKSPACE_B },
+      operation: 'skill.resolve',
+    }),
+    null,
+  )
+})
 
 test('host canvas parser accepts only the typed editor Slot and exact closed output', () => {
   const input = {

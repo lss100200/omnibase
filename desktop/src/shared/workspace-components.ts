@@ -25,6 +25,20 @@ export const WORKSPACE_COMPONENT_OPERATIONS = Object.freeze([
   "local_adapter.open",
 ] as const);
 
+export const WORKSPACE_COMPONENT_AUDIT_EVENT_TYPES = Object.freeze([
+  "workspace_component_proposed",
+  "workspace_component_decided",
+  "workspace_component_state_changed",
+  "workspace_component_invocation_begun",
+  "workspace_component_invocation_settled",
+  "workspace_component_reconciled",
+  "workspace_component_emergency_fenced",
+  "workspace_component_emergency_cleanup_settled",
+  "workspace_component_recovery_authority_reissued",
+  "workspace_component_destructive_recovery_blocked",
+  "workspace_component_recovery_blocked",
+] as const);
+
 export type DesktopWorkspaceComponentFamily =
   (typeof WORKSPACE_COMPONENT_FAMILIES)[number];
 export type DesktopWorkspaceComponentLifecycleAction =
@@ -319,14 +333,7 @@ export interface DesktopWorkspaceComponentReconciliation {
 }
 
 export type DesktopWorkspaceComponentAuditEventType =
-  | "workspace_component_proposed"
-  | "workspace_component_decided"
-  | "workspace_component_state_changed"
-  | "workspace_component_invocation_begun"
-  | "workspace_component_invocation_settled"
-  | "workspace_component_reconciled"
-  | "workspace_component_emergency_stopped"
-  | "workspace_component_recovery_blocked";
+  (typeof WORKSPACE_COMPONENT_AUDIT_EVENT_TYPES)[number];
 
 export interface DesktopWorkspaceComponentAuditEvent {
   readonly sequence: number;

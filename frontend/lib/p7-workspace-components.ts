@@ -81,6 +81,84 @@ export function p7WorkspaceComponentGrantMatchesCatalog(
   )
 }
 
+export interface P7WorkspaceComponentInvocationScope {
+  readonly logicalResourceId?: string
+  readonly resourceVersion?: number
+  readonly logicalServiceId?: string
+}
+
+export function p7WorkspaceComponentInvocationScope(
+  input: Readonly<{
+    snapshot: DesktopWorkspaceComponentSnapshot
+    installation: DesktopWorkspaceComponentInstallation
+    operation: DesktopWorkspaceComponentOperation
+  }>,
+): P7WorkspaceComponentInvocationScope | null {
+  const { snapshot, installation, operation } = input
+  if (
+    installation.workspaceId !== snapshot.workspaceId ||
+    installation.state !== 'active' ||
+    installation.health !== 'healthy'
+  ) {
+    return null
+  }
+  const catalogs = snapshot.catalog.filter(
+    (item) =>
+      item.componentId === installation.componentId &&
+      item.version === installation.version &&
+      item.available &&
+      item.manifestSha256 === installation.manifestSha256 &&
+      item.packageSha256 === installation.packageSha256 &&
+      item.operations.includes(operation),
+  )
+  if (catalogs.length !== 1) return null
+  const catalog = catalogs[0]!
+  const grants = snapshot.grants.filter(
+    (grant) =>
+      grant.workspaceId === snapshot.workspaceId &&
+      grant.installationId === installation.installationId &&
+      grant.bindingGeneration === installation.bindingGeneration &&
+      grant.componentId === installation.componentId &&
+      grant.version === installation.version &&
+      grant.state === 'active' &&
+      grant.actions.includes(operation) &&
+      grant.requiresNetwork === catalog.network.required,
+  )
+  if (grants.length !== 1) return null
+  const grant = grants[0]!
+  if (
+    snapshot.revocations.some(
+      (revocation) =>
+        revocation.workspaceId === snapshot.workspaceId &&
+        revocation.installationId === installation.installationId &&
+        revocation.componentId === installation.componentId &&
+        revocation.bindingGeneration === installation.bindingGeneration &&
+        (revocation.grantId === grant.grantId ||
+          revocation.runtimeInstanceId === grant.runtimeInstanceId),
+    )
+  ) {
+    return null
+  }
+  const scopes = grant.scope.filter((scope) => scope.action === operation)
+  if (scopes.length !== 1) return null
+  const scope = scopes[0]!
+  if (
+    !p7WorkspaceComponentGrantMatchesCatalog(catalog, scope) ||
+    (scope.logicalResourceId === null) !== (scope.resourceVersion === null)
+  ) {
+    return null
+  }
+  return Object.freeze({
+    ...(scope.logicalResourceId === null
+      ? {}
+      : {
+          logicalResourceId: scope.logicalResourceId,
+          resourceVersion: scope.resourceVersion!,
+        }),
+    ...(scope.logicalServiceId === null ? {} : { logicalServiceId: scope.logicalServiceId }),
+  })
+}
+
 function p7NextWorkspaceComponentLifecycleAction(
   installation: Pick<DesktopWorkspaceComponentInstallation, 'state'>,
 ): DesktopWorkspaceComponentLifecycleAction | null {

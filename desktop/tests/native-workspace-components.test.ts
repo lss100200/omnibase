@@ -138,6 +138,21 @@ function rawRecovery(): Record<string, unknown> {
   };
 }
 
+function rawAudit(eventType: string): Record<string, unknown> {
+  return {
+    sequence: 13,
+    event_id: `event_${"a".repeat(32)}`,
+    event_type: eventType,
+    payload: {
+      ancestor_grant_id: `grant_${"b".repeat(32)}`,
+      grant_id: `grant_${"c".repeat(32)}`,
+      recovery_id: `recovery_${"4".repeat(32)}`,
+      runtime_instance_id: `runtime_${"9".repeat(32)}`,
+    },
+    created_at: "2026-08-30T00:00:00.000Z",
+  };
+}
+
 test("component snapshot preserves the exact manifest permission classes", () => {
   const parsed = parseWorkspaceComponentSnapshot(
     rawSnapshot({
@@ -205,11 +220,56 @@ test("component snapshot accepts the exact backend recovery projection", () => {
     secret_reference_classes: [],
   });
   input.recoveries = [recovery];
+  input.audit = [rawAudit("workspace_component_recovery_authority_reissued")];
 
   const parsed = parseWorkspaceComponentSnapshot(input);
   assert.ok(parsed);
   assert.equal(parsed.recoveries[0]?.recoveryId, recovery.recovery_id);
+  assert.equal(
+    parsed.audit[0]?.eventType,
+    "workspace_component_recovery_authority_reissued",
+  );
 
   input.recoveries = [{ ...recovery, configuration: {} }];
   assert.equal(parseWorkspaceComponentSnapshot(input), null);
+});
+
+test("component snapshot accepts only the backend component audit event set", () => {
+  const eventTypes = [
+    "workspace_component_proposed",
+    "workspace_component_decided",
+    "workspace_component_state_changed",
+    "workspace_component_invocation_begun",
+    "workspace_component_invocation_settled",
+    "workspace_component_reconciled",
+    "workspace_component_emergency_fenced",
+    "workspace_component_emergency_cleanup_settled",
+    "workspace_component_recovery_authority_reissued",
+    "workspace_component_destructive_recovery_blocked",
+    "workspace_component_recovery_blocked",
+  ] as const;
+  for (const eventType of eventTypes) {
+    const input = rawSnapshot({
+      action: "ui.render",
+      data_scope: "workspace_logical",
+      logical_resource_classes: ["workspace.component.input"],
+      secret_reference_classes: [],
+    });
+    input.audit = [rawAudit(eventType)];
+    assert.equal(
+      parseWorkspaceComponentSnapshot(input)?.audit[0]?.eventType,
+      eventType,
+    );
+  }
+
+  const unknown = rawSnapshot({
+    action: "ui.render",
+    data_scope: "workspace_logical",
+    logical_resource_classes: ["workspace.component.input"],
+    secret_reference_classes: [],
+  });
+  unknown.audit = [
+    rawAudit("workspace_component_recovery_authority_reissued_extra"),
+  ];
+  assert.equal(parseWorkspaceComponentSnapshot(unknown), null);
 });

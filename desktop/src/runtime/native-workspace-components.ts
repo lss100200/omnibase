@@ -1,4 +1,5 @@
 import {
+  WORKSPACE_COMPONENT_AUDIT_EVENT_TYPES,
   WORKSPACE_COMPONENT_FAMILIES,
   WORKSPACE_COMPONENT_LIFECYCLE_ACTIONS,
   WORKSPACE_COMPONENT_OPERATIONS,
@@ -59,6 +60,9 @@ const ADAPTER_IDS = new Set([
 const FAMILIES = new Set<string>(WORKSPACE_COMPONENT_FAMILIES);
 const ACTIONS = new Set<string>(WORKSPACE_COMPONENT_LIFECYCLE_ACTIONS);
 const OPERATIONS = new Set<string>(WORKSPACE_COMPONENT_OPERATIONS);
+const AUDIT_EVENT_TYPES = new Set<string>(
+  WORKSPACE_COMPONENT_AUDIT_EVENT_TYPES,
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -957,16 +961,8 @@ function parseAudit(
     !isPositiveInteger(value.sequence) ||
     typeof value.event_id !== "string" ||
     !/^[a-z][a-z0-9_]{2,63}_[a-f0-9]{32}$/u.test(value.event_id) ||
-    ![
-      "workspace_component_proposed",
-      "workspace_component_decided",
-      "workspace_component_state_changed",
-      "workspace_component_invocation_begun",
-      "workspace_component_invocation_settled",
-      "workspace_component_reconciled",
-      "workspace_component_emergency_stopped",
-      "workspace_component_recovery_blocked",
-    ].includes(String(value.event_type)) ||
+    typeof value.event_type !== "string" ||
+    !AUDIT_EVENT_TYPES.has(value.event_type) ||
     !isTimestamp(value.created_at)
   ) {
     return null;
