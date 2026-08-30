@@ -54,6 +54,53 @@ P5 contract tests, 76 release/receipt tests, 25 ebook/bundle tests, 229 desktop
 tests, 420 frontend tests, typechecks/builds, focused Ruff, Prettier,
 maintainer-map validation and maintainer benchmark validation.
 
+## Settings rendering supplement at `23d99a3`
+
+Clean source commit
+`23d99a3de4e4c224ff857ad7d09a1d8ef93d737e` adds the repository-enforced
+Playwright and axe gate that was missing from the earlier source evidence. The
+gate uses a closed read-only desktop bridge with deterministic logical
+projections and no native token, package path, grant, secret or process
+authority. It does not replace a packaged Electron or Windows product journey.
+
+All nine tests passed: every one of the 19 Settings views was traversed at
+1440x900, 1024x700 and a 720x450 CSS viewport with device scale factor 2 (the
+200% equivalent). The same run verified keyboard-only navigation, visible
+focus, focus restore, Escape, reduced motion and forced colors. It reported
+zero critical/serious WCAG 2.0/2.1 A/AA violations and zero clipped controls,
+horizontal overflow, overlap or outside-viewport controls. Codex visually
+inspected all six retained screenshots and observed no incoherent overlap or
+unreadable control; this is still not human review of the packaged Electron
+window.
+
+The clean-SHA PR hardening profile also passed with schema v12, zero automatic
+replays, zero unresolved effects and no child/listener residue. Its p95 values
+were snapshot `26.2459 ms`, mutation `16.3759 ms`, begin `4.7440 ms` and settle
+`4.0837 ms`; the bounded RSS growth was `4,214,784` bytes. The report keeps
+`human_visual_reviewed=false`, `authenticode_verified=false`,
+`marketplace_verified=false`, `production_ready=false` and
+`release_authorized=false`.
+
+Evidence is retained at:
+
+`E:\Agent IDE\OmniBase Artifacts\p7-4-settings-visual-gate-clean-23d99a3-20260830`
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `hardening-report.json` | `d20f274a336673f7959804092a08eb17f611baff94bfc7d3812075cedfac8659` |
+| `p7-visual-report.json` | `d5c3fdf70db895af74db0a482d984b2ba4fa295fed1c5d468411cd2004b26536` |
+| `p7-1440x900-settings.png` | `883a813017f428b16263aca820e3dcf591487aecd14cb85f05fcf77cd1a229db` |
+| `p7-1024x700-settings.png` | `f69fdc01d3cad501b2d05e8d474d347ff9b6386e45eeaf39fe72f91372481d82` |
+| `p7-zoom-200-settings.png` | `1bc00f6c279d5c67b729675341dc30019409d8bd5936fefa3f34a5de2effa22d` |
+| `p7-1440x900-forced-colors.png` | `11e29340f761b0521bbc94cdf98b3ec54ba5892f3e2699a7885ac257a1b4d483` |
+| `p7-1024x700-forced-colors.png` | `d0bf657cbbef1a9a6f024cb40ea87ca5942c3065033136b6c78f43218f9402f4` |
+| `p7-zoom-200-forced-colors.png` | `a8670495cb86664501193107846b7959cc69f55a6ae3221013c3b28dcd3d48cc` |
+
+This supplement closes the automated requirement in section 7 of the P7.4
+product law. The missing Windows journeys below remain unchanged, so neither
+`P7_4_ENGINEERING_EVIDENCE_READY_FOR_REVIEW` nor
+`P7_4_ENGINEERING_ACCEPTED` is issued.
+
 ## Partial Windows evidence
 
 Exactly one fresh Windows Sandbox instance was started with networking and

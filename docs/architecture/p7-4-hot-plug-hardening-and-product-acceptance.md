@@ -1,8 +1,9 @@
 # P7.4 Hot-Plug Hardening and Product Acceptance
 
 Status: clean source hardening and bounded certification passed at `a17d03d`;
-Windows R0 produced partial install/UI evidence only, so product acceptance and
-production release remain unapproved.
+the repository-enforced Settings rendering/accessibility gate passed at
+`23d99a3`; Windows R0 produced partial install/UI evidence only, so product
+acceptance and production release remain unapproved.
 
 P7.4 certifies the complete P7.3 Workspace component platform. It may correct a
 security defect discovered by certification, expand compatibility, exercise

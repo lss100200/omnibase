@@ -89,6 +89,11 @@
 > 不能签发 P7.4 engineering acceptance。证据见
 > `docs/reviews/p7-4-hardening-windows-evidence-r0.md`。Authenticode、Publisher、
 > Marketplace 与生产发布仍需独立外部证据。
+> clean `23d99a3` 进一步补齐仓库内 Settings 自动渲染门禁：19 个真实设置视图在
+> 1440x900、1024x700 与 200% 等效视口完成 axe、键盘/焦点/Escape、reduced-motion、
+> forced-colors 及裁切/重叠检查，共 9/9 通过；六张截图已由 Codex 目视检查并按 SHA
+> 归档。该补充是 source rendering evidence，不是 packaged Electron/Windows receipt，
+> 因而不改变 `P7_4_WINDOWS_PRODUCT_ACCEPTANCE_INCOMPLETE`。
 > Sandbox 路径现已把版本不同的 `payload/workload.wasm` 原始字节纳入 package
 > inventory/SHA，native registry、broker 与 helper 重验并执行同一份 zero-import、
 > exact-`transform` 字节；回执绑定 workload SHA 与结果。该 source-owned helper
