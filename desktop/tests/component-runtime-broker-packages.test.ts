@@ -588,6 +588,44 @@ test("all five families use package-backed begin, real adapter, and settle paths
   }
 });
 
+test("knowledge ebook returns the acceptance-sized catalog within the 4 MiB per-call boundary", async (t) => {
+  const fixture = await createSourceComponentRuntimeFixture({
+    acceptanceSizedKnowledgeCatalog: true,
+  });
+  t.after(fixture.dispose);
+  const files = await workspaceFiles(t);
+  const entry = fixture.entries.get("knowledge.ebook@1.0.0");
+  assert.ok(entry);
+  const invocation = inputFor(entry, "acceptance-sized-catalog");
+  const begins: DesktopWorkspaceComponentBeginInput[] = [];
+  const settlements: DesktopWorkspaceComponentSettleInput[] = [];
+  const broker = new ComponentRuntimeBroker({
+    native: invocationBoundary(
+      invocation,
+      entry,
+      `compop_${"e".repeat(32)}`,
+      begins,
+      settlements,
+    ),
+    workspaceFiles: files,
+    runtimeRoot: fixture.root,
+    getVerifiedRuntimeFileSha256: fixture.verifiedSha256,
+  });
+  t.after(() => broker.dispose());
+
+  const result = await broker.invoke(invocation);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.state, "succeeded");
+  const outputBytes = Buffer.byteLength(
+    canonicalJson(result.value.output),
+    "utf8",
+  );
+  assert.ok(outputBytes > 3_400_000);
+  assert.ok(outputBytes <= invocation.bytesOutReserved);
+  assert.equal(settlements[0]?.actualBytesOut, outputBytes);
+});
+
 test("upgrade selects the 1.1 package payload and rollback restores the 1.0 payload", async (t) => {
   const fixture = await createSourceComponentRuntimeFixture();
   t.after(fixture.dispose);

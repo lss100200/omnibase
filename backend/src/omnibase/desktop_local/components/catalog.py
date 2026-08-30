@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 _COMPONENT_ID = re.compile(r"^[a-z][a-z0-9.-]{2,127}$")
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+_HOST_ADAPTER_OUTPUT_BYTES_PER_CALL = 4_194_304
 _OPERATION = re.compile(r"^[a-z][a-z0-9_.]{2,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -582,6 +583,7 @@ SEEDED_COMPONENT_VERSIONS = (
         requires_network=False,
         slots=("editor.component", "settings.component"),
         max_calls=32,
+        max_bytes_out=32 * _HOST_ADAPTER_OUTPUT_BYTES_PER_CALL,
         max_concurrency=1,
     ),
     SeededComponentVersion(
@@ -595,6 +597,7 @@ SEEDED_COMPONENT_VERSIONS = (
         requires_network=False,
         slots=("editor.component", "settings.component"),
         max_calls=48,
+        max_bytes_out=48 * _HOST_ADAPTER_OUTPUT_BYTES_PER_CALL,
         max_concurrency=1,
         state_schema_version=2,
     ),

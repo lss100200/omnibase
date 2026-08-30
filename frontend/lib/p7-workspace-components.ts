@@ -16,6 +16,31 @@ export interface P7WorkspaceComponentInvocationReservation {
   readonly costUnits: number
 }
 
+export const P7_WORKSPACE_COMPONENT_MCP_TOOLS = Object.freeze([
+  'omnibase_files_list',
+  'omnibase_files_read',
+  'omnibase_files_hash',
+  'omnibase_text_search',
+] as const)
+
+export type P7WorkspaceComponentMcpToolName = (typeof P7_WORKSPACE_COMPONENT_MCP_TOOLS)[number]
+
+export function p7WorkspaceComponentMcpRequirements(
+  toolName: string,
+): Readonly<{ pathRequired: boolean; queryRequired: boolean }> | null {
+  switch (toolName) {
+    case 'omnibase_files_list':
+      return Object.freeze({ pathRequired: false, queryRequired: false })
+    case 'omnibase_files_read':
+    case 'omnibase_files_hash':
+      return Object.freeze({ pathRequired: true, queryRequired: false })
+    case 'omnibase_text_search':
+      return Object.freeze({ pathRequired: true, queryRequired: true })
+    default:
+      return null
+  }
+}
+
 export function p7WorkspaceComponentInvocationReservation(
   budgets: DesktopWorkspaceComponentCatalogItem['budgets'],
 ): P7WorkspaceComponentInvocationReservation {
@@ -1594,10 +1619,12 @@ export interface P7SandboxSurface {
   readonly runtimeInstanceId: string
   readonly status: 'completed'
   readonly inputArtifactIds: readonly string[]
+  readonly workloadSha256: string
   readonly result: Readonly<{
     kind: 'artifact_inventory'
     artifactCount: number
     fingerprintSha256: string
+    transformValue: number
   }>
   readonly usage: Readonly<{
     bytesIn: number
@@ -1895,6 +1922,14 @@ function safePositiveInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0
 }
 
+function signedInt32(value: unknown): value is number {
+  return (
+    Number.isSafeInteger(value) &&
+    (value as number) >= -2_147_483_648 &&
+    (value as number) <= 2_147_483_647
+  )
+}
+
 function parseCanvasView(value: unknown): Readonly<{
   title: string
   sections: readonly P7WorkspaceCanvasSection[]
@@ -1993,6 +2028,7 @@ function parseSandboxResult(
       inputArtifactIds: readonly string[]
       result: P7SandboxSurface['result']
       usage: P7SandboxSurface['usage']
+      workloadSha256: string
     }> | null {
   if (
     !exactRecord(value, [
@@ -2005,11 +2041,14 @@ function parseSandboxResult(
       'status',
       'usage',
       'workload_id',
+      'workload_sha256',
     ]) ||
     value.adapter !== 'p34-sandbox.v1' ||
     value.component_id !== componentId ||
     value.schema_version !== 1 ||
     value.workload_id !== 'bounded-transform' ||
+    typeof value.workload_sha256 !== 'string' ||
+    !SHA256.test(value.workload_sha256) ||
     value.status !== 'completed' ||
     typeof value.runtime_instance_id !== 'string' ||
     !COMPONENT_SURFACE_ID.test(value.runtime_instance_id) ||
@@ -2019,12 +2058,18 @@ function parseSandboxResult(
       (item) => typeof item !== 'string' || !COMPONENT_SURFACE_ID.test(item),
     ) ||
     new Set(value.input_artifact_ids).size !== value.input_artifact_ids.length ||
-    !exactRecord(value.result, ['artifact_count', 'fingerprint_sha256', 'kind']) ||
+    !exactRecord(value.result, [
+      'artifact_count',
+      'fingerprint_sha256',
+      'kind',
+      'transform_value',
+    ]) ||
     value.result.kind !== 'artifact_inventory' ||
     !safeNonNegativeInteger(value.result.artifact_count) ||
     value.result.artifact_count > 100_000 ||
     typeof value.result.fingerprint_sha256 !== 'string' ||
     !SHA256.test(value.result.fingerprint_sha256) ||
+    !signedInt32(value.result.transform_value) ||
     !exactRecord(value.usage, ['bytes_in', 'bytes_out', 'wall_time_ms']) ||
     !safeNonNegativeInteger(value.usage.bytes_in) ||
     !safeNonNegativeInteger(value.usage.bytes_out) ||
@@ -2039,12 +2084,14 @@ function parseSandboxResult(
       kind: 'artifact_inventory',
       artifactCount: value.result.artifact_count,
       fingerprintSha256: value.result.fingerprint_sha256,
+      transformValue: value.result.transform_value,
     }),
     usage: Object.freeze({
       bytesIn: value.usage.bytes_in,
       bytesOut: value.usage.bytes_out,
       wallTimeMs: value.usage.wall_time_ms,
     }),
+    workloadSha256: value.workload_sha256,
   })
 }
 
@@ -2254,6 +2301,7 @@ export function p7ParseWorkspaceComponentSurface(
       runtimeInstanceId: parsed.runtimeInstanceId,
       status: 'completed',
       inputArtifactIds: parsed.inputArtifactIds,
+      workloadSha256: parsed.workloadSha256,
       result: parsed.result,
       usage: parsed.usage,
     })

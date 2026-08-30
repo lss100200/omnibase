@@ -57,6 +57,10 @@ export interface SourceComponentRuntimeFixture {
   readonly dispose: () => Promise<void>;
 }
 
+export interface SourceComponentRuntimeFixtureOptions {
+  readonly acceptanceSizedKnowledgeCatalog?: boolean;
+}
+
 const COMPONENTS: readonly ComponentDefinition[] = Object.freeze([
   Object.freeze({
     componentId: "builtin.workspace-canvas",
@@ -123,6 +127,7 @@ function encoded(value: unknown): Buffer {
 function payloads(
   component: ComponentDefinition,
   version: string,
+  options: SourceComponentRuntimeFixtureOptions,
 ): Readonly<Record<string, Buffer>> {
   switch (component.family) {
     case "declarative_ui":
@@ -212,7 +217,18 @@ function payloads(
         "payload/workload.wasm": workload,
       });
     }
-    case "trusted_local_adapter":
+    case "trusted_local_adapter": {
+      const documents = options.acceptanceSizedKnowledgeCatalog
+        ? Array.from({ length: 7 }, (_, index) => ({
+            content: `${version}:${index}:` + "x".repeat(495_000),
+            file_hash: digestRaw(`${version}:${index}`),
+            id: `document:${index}`,
+            sections: [],
+            summary: "Acceptance-sized bounded catalog fixture.",
+            title: `Document ${index}`,
+            type: "guide",
+          }))
+        : [];
       return Object.freeze({
         "payload/adapter.json": encoded({
           adapter_id: "trusted-local-app.v1",
@@ -225,7 +241,7 @@ function payloads(
         "payload/catalog.json": encoded({
           component_id: component.componentId,
           component_version: version,
-          documents: [],
+          documents,
           glossary: [],
           invariants: [],
           modules: [],
@@ -233,6 +249,7 @@ function payloads(
           source_snapshot_sha256: digestRaw(`ebook-${version}`),
         }),
       });
+    }
   }
 }
 
@@ -251,7 +268,9 @@ async function writeRuntimeFile(
   });
 }
 
-export async function createSourceComponentRuntimeFixture(): Promise<SourceComponentRuntimeFixture> {
+export async function createSourceComponentRuntimeFixture(
+  options: SourceComponentRuntimeFixtureOptions = {},
+): Promise<SourceComponentRuntimeFixture> {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "omnibase-p73-component-packages-"),
   );
@@ -276,7 +295,7 @@ export async function createSourceComponentRuntimeFixture(): Promise<SourceCompo
         "utf8",
       );
       const manifestSha256 = digestRaw(manifestRaw);
-      const familyPayloads = payloads(component, version);
+      const familyPayloads = payloads(component, version, options);
       const inventoryFiles = Object.entries(familyPayloads).map(
         ([payloadPath, raw]) => ({
           path: payloadPath,

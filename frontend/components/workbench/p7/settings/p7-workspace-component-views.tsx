@@ -34,6 +34,7 @@ import type {
   DesktopWorkspaceComponentSlotBindingRequest,
 } from '@/lib/desktop-bridge'
 import {
+  P7_WORKSPACE_COMPONENT_MCP_TOOLS,
   p7ComponentEffectNeedsReconciliation,
   p7DefaultWorkspaceComponentGrant,
   p7DeclarativeSettingsDefaults,
@@ -44,6 +45,7 @@ import {
   p7WorkspaceComponentGrantMatchesCatalog,
   p7WorkspaceComponentHostSlotId,
   p7WorkspaceComponentLifecycleActions,
+  p7WorkspaceComponentMcpRequirements,
   type P7AssistantDeclarativePackageReview,
   type P7DeclarativeSettings,
   type P7DeclarativeSettingsSchema,
@@ -908,13 +910,6 @@ function P7ProposalControl({
   )
 }
 
-const MCP_TOOLS = Object.freeze([
-  'omnibase_files_list',
-  'omnibase_files_read',
-  'omnibase_files_hash',
-  'omnibase_text_search',
-] as const)
-
 function P7InvokeControl({
   catalog,
   installation,
@@ -931,7 +926,8 @@ function P7InvokeControl({
   const [slotId, setSlotId] = useState('')
   const [viewId, setViewId] = useState(catalog.componentId)
   const [task, setTask] = useState('')
-  const [toolName, setToolName] = useState<(typeof MCP_TOOLS)[number]>('omnibase_files_list')
+  const [toolName, setToolName] =
+    useState<(typeof P7_WORKSPACE_COMPONENT_MCP_TOOLS)[number]>('omnibase_files_list')
   const [path, setPath] = useState('')
   const [query, setQuery] = useState('')
   const [artifactIds, setArtifactIds] = useState('')
@@ -957,8 +953,9 @@ function P7InvokeControl({
     .map((value) => value.trim())
     .filter(Boolean)
   const artifactsValid = artifacts.every((value) => /^[a-z][a-z0-9_.:-]{1,127}$/u.test(value))
-  const pathRequired = toolName === 'omnibase_files_read' || toolName === 'omnibase_files_hash'
-  const queryRequired = toolName === 'omnibase_text_search'
+  const mcpRequirements = p7WorkspaceComponentMcpRequirements(toolName)
+  const pathRequired = mcpRequirements?.pathRequired ?? true
+  const queryRequired = mcpRequirements?.queryRequired ?? true
   const canInvoke =
     operation === 'ui.render'
       ? p7WorkspaceComponentHostSlotId(slotId) &&
@@ -967,7 +964,9 @@ function P7InvokeControl({
       : operation === 'skill.resolve'
         ? task.trim().length > 0 && task.length <= 32_768
         : operation === 'mcp.call'
-          ? (!pathRequired || path.trim().length > 0) && (!queryRequired || query.trim().length > 0)
+          ? mcpRequirements !== null &&
+            (!pathRequired || path.trim().length > 0) &&
+            (!queryRequired || query.trim().length > 0)
           : operation === 'sandbox.run'
             ? artifactsValid
             : operation === 'local_adapter.open'
@@ -1068,9 +1067,11 @@ function P7InvokeControl({
             <select
               value={toolName}
               disabled={busy}
-              onChange={(event) => setToolName(event.target.value as (typeof MCP_TOOLS)[number])}
+              onChange={(event) =>
+                setToolName(event.target.value as (typeof P7_WORKSPACE_COMPONENT_MCP_TOOLS)[number])
+              }
             >
-              {MCP_TOOLS.map((tool) => (
+              {P7_WORKSPACE_COMPONENT_MCP_TOOLS.map((tool) => (
                 <option key={tool} value={tool}>
                   {tool}
                 </option>

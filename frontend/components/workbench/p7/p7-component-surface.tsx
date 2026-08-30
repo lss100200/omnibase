@@ -58,9 +58,11 @@ function P7SandboxResult({ surface }: { readonly surface: P7SandboxSurface }) {
           <div>
             <strong>{surface.result.artifactCount} output artifacts</strong>
             <span>
-              {surface.usage.bytesIn} B in · {surface.usage.bytesOut} B out
+              transform {surface.result.transformValue} · {surface.usage.bytesIn} B in ·{' '}
+              {surface.usage.bytesOut} B out
             </span>
             <code>{surface.result.fingerprintSha256}</code>
+            <code>{surface.workloadSha256}</code>
           </div>
         </div>
       </div>

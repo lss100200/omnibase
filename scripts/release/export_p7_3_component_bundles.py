@@ -24,6 +24,7 @@ from typing import Any
 SCHEMA_VERSION = 1
 MAX_PACKAGE_FILES = 128
 MAX_PACKAGE_BYTES = 64 * 1024 * 1024
+MAX_KNOWLEDGE_EBOOK_CATALOG_BYTES = (4 * 1024 * 1024) - (64 * 1024)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PAYLOAD_PATH = re.compile(r"^payload/[a-z][a-z0-9._-]{1,63}\.(?:json|wasm)$")
 _EXPECTED_PAYLOAD_PATHS = {
@@ -697,6 +698,8 @@ def _ebook_catalogs(
                 component_version=version,
             )
             catalog_raw = (output / "knowledge-ebook" / "catalog.json").read_bytes()
+            if len(catalog_raw) > MAX_KNOWLEDGE_EBOOK_CATALOG_BYTES:
+                raise ComponentBundleExportError("ebook_catalog_output_budget_exceeded")
             try:
                 catalog = json.loads(catalog_raw)
             except ValueError as exc:

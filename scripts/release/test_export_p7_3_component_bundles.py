@@ -354,6 +354,25 @@ def test_bundle_size_budget_is_fail_closed(
         )
 
     assert not output.exists()
+
+
+def test_knowledge_ebook_catalog_keeps_headroom_inside_adapter_output_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exporter = _exporter(_repo())
+    source = _source(tmp_path)
+    output = tmp_path / "oversized-ebook-bundle"
+    monkeypatch.setattr(exporter, "MAX_KNOWLEDGE_EBOOK_CATALOG_BYTES", 1)
+
+    with pytest.raises(
+        exporter.ComponentBundleExportError,
+        match="ebook_catalog_output_budget_exceeded",
+    ):
+        exporter.export_component_bundles(
+            repo_root=_repo(), ebook_root=source, output_dir=output
+        )
+
+    assert not output.exists()
     assert not list(tmp_path.glob(".bundle.staging-*"))
 
 

@@ -28,6 +28,7 @@ import {
   p7WorkspaceComponentInvocationReservation,
   p7WorkspaceComponentInvocationScope,
   p7WorkspaceComponentLifecycleActions,
+  p7WorkspaceComponentMcpRequirements,
   p7WorkspaceComponentHostProjection,
   p7WorkspaceComponentCommittedUiBindings,
   p7WorkspaceComponentSurfaceProjection,
@@ -205,6 +206,41 @@ test('invocation reservation preserves zero dimensions and the positive wall-tim
       costUnits: 0,
     },
   )
+})
+
+test('knowledge ebook reserves one bounded 4 MiB catalog result per admitted call', () => {
+  const maximumCalls = 32
+  const reservation = p7WorkspaceComponentInvocationReservation({
+    maxCalls: maximumCalls,
+    maxBytesIn: 1_048_576,
+    maxBytesOut: maximumCalls * 4_194_304,
+    maxTokens: 0,
+    maxWallTimeMs: 600_000,
+    maxCostUnits: 1_000,
+    maxRetries: 2,
+    maxConcurrency: 1,
+  })
+  assert.equal(reservation.bytesOutReserved, 4_194_304)
+})
+
+test('MCP invocation requirements match the native closed schema', () => {
+  assert.deepEqual(p7WorkspaceComponentMcpRequirements('omnibase_files_list'), {
+    pathRequired: false,
+    queryRequired: false,
+  })
+  assert.deepEqual(p7WorkspaceComponentMcpRequirements('omnibase_files_read'), {
+    pathRequired: true,
+    queryRequired: false,
+  })
+  assert.deepEqual(p7WorkspaceComponentMcpRequirements('omnibase_files_hash'), {
+    pathRequired: true,
+    queryRequired: false,
+  })
+  assert.deepEqual(p7WorkspaceComponentMcpRequirements('omnibase_text_search'), {
+    pathRequired: true,
+    queryRequired: true,
+  })
+  assert.equal(p7WorkspaceComponentMcpRequirements('ambient_search'), null)
 })
 
 test('component Agent prompt exposes only available exact identities and never grants authority', () => {
@@ -1882,12 +1918,16 @@ test('sandbox output is an exact bounded host surface and rejects generic adapte
         kind: 'artifact_inventory',
         artifact_count: 2,
         fingerprint_sha256: '3'.repeat(64),
+        transform_value: 200,
       },
       usage: { bytes_in: 24, bytes_out: 96, wall_time_ms: 14 },
+      workload_sha256: '4'.repeat(64),
     },
   }
   const parsed = p7ParseWorkspaceComponentSurface(input)
   assert.equal(parsed?.kind, 'sandbox-workload')
+  assert.equal(parsed?.kind === 'sandbox-workload' ? parsed.result.transformValue : null, 200)
+  assert.equal(parsed?.kind === 'sandbox-workload' ? parsed.workloadSha256 : null, '4'.repeat(64))
   assert.match(
     parsed === null ? '' : p7WorkspaceComponentResultEventLogLine(parsed),
     /artifact_inventory/,
@@ -1900,6 +1940,13 @@ test('sandbox output is an exact bounded host surface and rejects generic adapte
     p7ParseWorkspaceComponentSurface({
       ...input,
       output: { ...input.output, result: { ...input.output.result, kind: 'generic_json' } },
+    }),
+    null,
+  )
+  assert.equal(
+    p7ParseWorkspaceComponentSurface({
+      ...input,
+      output: { ...input.output, workload_sha256: undefined },
     }),
     null,
   )

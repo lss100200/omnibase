@@ -644,6 +644,13 @@ def test_catalog_requires_native_package_attestation(
         )
 
 
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
+def test_knowledge_ebook_budget_supports_each_bounded_catalog_open(version: str) -> None:
+    policy = SEEDED_BY_ID_VERSION[("knowledge.ebook", version)]
+    assert policy.max_bytes_out == policy.max_calls * 4_194_304
+    assert policy.manifest["budgets"]["max_bytes_out"] == policy.max_bytes_out
+
+
 def test_snapshot_json_projection_cache_never_shares_mutable_values() -> None:
     first = component_service._project_json('{"nested":{"values":[1,2]}}')
     assert isinstance(first, dict)
