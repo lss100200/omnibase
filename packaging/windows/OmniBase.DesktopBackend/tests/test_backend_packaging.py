@@ -96,6 +96,32 @@ def test_publish_validation_accepts_only_closed_ordinary_output(tmp_path: Path) 
         builder._validate_output(publish)
 
 
+def test_publish_validation_allows_only_empty_wheel_requested_markers(
+    tmp_path: Path,
+) -> None:
+    builder = _builder()
+    publish = tmp_path / builder.EXPECTED_OUTPUT_NAME
+    internal = publish / "_internal"
+    wheel_metadata = internal / "click-8.4.2.dist-info"
+    wheel_metadata.mkdir(parents=True)
+    (publish / builder.EXPECTED_EXECUTABLE).write_bytes(b"backend executable")
+    (internal / "runtime.dll").write_bytes(b"runtime")
+    (wheel_metadata / "REQUESTED").write_bytes(b"")
+
+    assert builder._validate_output(publish) == (3, 25)
+
+    (internal / "empty.dll").write_bytes(b"")
+    with pytest.raises(builder.BackendBuildError, match="publish_file_invalid"):
+        builder._validate_output(publish)
+
+    (internal / "empty.dll").write_bytes(b"not empty")
+    nested = wheel_metadata / "licenses"
+    nested.mkdir()
+    (nested / "REQUESTED").write_bytes(b"")
+    with pytest.raises(builder.BackendBuildError, match="publish_file_invalid"):
+        builder._validate_output(publish)
+
+
 def test_build_outputs_are_forbidden_inside_repository(tmp_path: Path) -> None:
     builder = _builder()
     repository = tmp_path / "repo"
