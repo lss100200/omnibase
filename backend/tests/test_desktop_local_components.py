@@ -1885,6 +1885,7 @@ def test_all_five_families_share_the_complete_lifecycle(
     )
     ticket = begun["ticket"]
     assert isinstance(ticket, dict)
+    assert ticket["version"] == "1.0.0"
     result_sha = digest_json({"component_id": component_id, "invoked": True})
     invocation = settle_component_invocation(
         component_database,

@@ -3525,6 +3525,7 @@ def _ticket(
         "operation_id": operation["id"],
         "workspace_id": operation["workspace_id"],
         "component_id": operation["component_id"],
+        "version": grant["version"],
         "action": operation["action"],
         "request_sha256": operation["request_sha256"],
         "arguments_sha256": request["arguments_sha256"],

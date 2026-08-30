@@ -116,6 +116,28 @@ function rawInstallActionResult(
   };
 }
 
+function rawRecovery(): Record<string, unknown> {
+  return {
+    recovery_id: `recovery_${"4".repeat(32)}`,
+    workspace_id: WORKSPACE_ID,
+    component_id: "builtin.instruction-skill",
+    installation_id: `installation_${"5".repeat(32)}`,
+    binding_generation: 1,
+    previous_runtime_instance_id: `runtime_${"6".repeat(32)}`,
+    operation_id: `compop_${"7".repeat(32)}`,
+    effect_id: `effect_${"8".repeat(32)}`,
+    adapter_id: "instruction-skill.v1",
+    runtime_instance_id: `runtime_${"9".repeat(32)}`,
+    workload_identity_digest: "b".repeat(64),
+    request_sha256: "c".repeat(64),
+    manifest_sha256: "d".repeat(64),
+    package_sha256: "e".repeat(64),
+    state: "pending",
+    reason_code: "startup_native_revalidation_required",
+    created_at: "2026-08-30T00:00:00.000Z",
+  };
+}
+
 test("component snapshot preserves the exact manifest permission classes", () => {
   const parsed = parseWorkspaceComponentSnapshot(
     rawSnapshot({
@@ -172,4 +194,22 @@ test("component action parser requires the backend lifecycle ticket version", ()
     parseWorkspaceComponentActionResult(rawInstallActionResult(false)),
     null,
   );
+});
+
+test("component snapshot accepts the exact backend recovery projection", () => {
+  const recovery = rawRecovery();
+  const input = rawSnapshot({
+    action: "ui.render",
+    data_scope: "workspace_logical",
+    logical_resource_classes: ["workspace.component.input"],
+    secret_reference_classes: [],
+  });
+  input.recoveries = [recovery];
+
+  const parsed = parseWorkspaceComponentSnapshot(input);
+  assert.ok(parsed);
+  assert.equal(parsed.recoveries[0]?.recoveryId, recovery.recovery_id);
+
+  input.recoveries = [{ ...recovery, configuration: {} }];
+  assert.equal(parseWorkspaceComponentSnapshot(input), null);
 });
