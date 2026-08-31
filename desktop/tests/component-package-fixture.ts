@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -118,6 +126,20 @@ export function canonicalJson(value: unknown): string {
 
 export function digestRaw(raw: Buffer | string): string {
   return createHash("sha256").update(raw).digest("hex");
+}
+
+export async function writeNodeLauncherFixture(target: string): Promise<void> {
+  await mkdir(path.dirname(target), { recursive: true });
+  if (process.platform === "win32") {
+    await copyFile(process.execPath, target);
+    return;
+  }
+  const executable = process.execPath.replaceAll("'", "'\"'\"'");
+  await writeFile(target, `#!/bin/sh\nexec '${executable}' \"$@\"\n`, {
+    encoding: "utf8",
+    mode: 0o755,
+  });
+  await chmod(target, 0o755);
 }
 
 function encoded(value: unknown): Buffer {

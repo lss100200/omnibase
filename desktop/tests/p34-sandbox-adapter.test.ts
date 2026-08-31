@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -15,6 +15,7 @@ import type {
   DesktopWorkspaceComponentExecutionTicket,
   DesktopWorkspaceComponentLifecycleTicket,
 } from "../src/shared/ipc-contract.ts";
+import { writeNodeLauncherFixture } from "./component-package-fixture.ts";
 
 const SHA = "a".repeat(64);
 const RUNTIME_ID = "runtime_0123456789abcdef0123456789abcdef";
@@ -203,8 +204,7 @@ before(async () => {
   runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "omnibase-p73-sandbox-"));
   await mkdir(path.join(runtimeRoot, "node"), { recursive: true });
   await mkdir(path.join(runtimeRoot, "component-host"), { recursive: true });
-  await copyFile(
-    process.execPath,
+  await writeNodeLauncherFixture(
     path.join(runtimeRoot, ...EXECUTABLE_PATH.split("/")),
   );
   await writeFile(

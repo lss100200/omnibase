@@ -204,13 +204,113 @@ export async function loadConfig(root) {
   return value;
 }
 
-function groupSignal(child, signal) {
-  if (!child || child.pid === undefined) return;
+function groupSignal(child, signal, signalProcessGroup) {
+  if (!child || child.pid === undefined) return true;
   try {
-    process.kill(-child.pid, signal);
+    signalProcessGroup(child.pid, signal);
+    return true;
   } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
+    return error?.code === "ESRCH";
   }
+}
+
+async function waitForSettlements(childSettlements, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.all(childSettlements).then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function processGroupGone(child, signalProcessGroup) {
+  if (!child || child.pid === undefined) return true;
+  try {
+    signalProcessGroup(child.pid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === "ESRCH";
+  }
+}
+
+async function waitForProcessGroupsGone(
+  children,
+  timeoutMs,
+  signalProcessGroup,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (children.every((child) => processGroupGone(child, signalProcessGroup))) {
+      return true;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(25, remaining)));
+  }
+}
+
+function retainProcessGroupCleanup(children, signalProcessGroup) {
+  const timer = setInterval(() => {
+    let remaining = false;
+    for (const child of children) {
+      if (!processGroupGone(child, signalProcessGroup)) {
+        remaining = true;
+        groupSignal(child, "SIGKILL", signalProcessGroup);
+      }
+    }
+    if (!remaining) clearInterval(timer);
+  }, 250);
+}
+
+export async function terminateChildGroups(
+  children,
+  childSettlements,
+  shutdownTimeoutMs,
+  options = {},
+) {
+  const signalProcessGroup =
+    options.signalProcessGroup ??
+    ((pid, signal) => {
+      process.kill(-pid, signal);
+    });
+  const retainCleanup =
+    options.retainProcessGroupCleanup ?? retainProcessGroupCleanup;
+  const finalWaitMs = options.finalWaitMs ?? Math.min(shutdownTimeoutMs, 1000);
+  let signalsSucceeded = true;
+  for (const child of children) {
+    signalsSucceeded =
+      groupSignal(child, "SIGTERM", signalProcessGroup) && signalsSucceeded;
+  }
+  let groupsGone = await waitForProcessGroupsGone(
+    children,
+    shutdownTimeoutMs,
+    signalProcessGroup,
+  );
+  if (!groupsGone) {
+    for (const child of children) {
+      signalsSucceeded =
+        groupSignal(child, "SIGKILL", signalProcessGroup) && signalsSucceeded;
+    }
+    groupsGone = await waitForProcessGroupsGone(
+      children,
+      finalWaitMs,
+      signalProcessGroup,
+    );
+  }
+  if (!groupsGone) {
+    retainCleanup(children, signalProcessGroup);
+    return false;
+  }
+  if (!(await waitForSettlements(childSettlements, finalWaitMs))) {
+    for (const child of children) child.unref?.();
+    return false;
+  }
+  return signalsSucceeded;
 }
 
 async function waitForHealth(
@@ -286,7 +386,7 @@ async function main() {
   const children = [];
   const childSettlements = [];
   let ready = false;
-  let stopping = false;
+  let stopPromise = null;
   let childExited = false;
   const trackChild = (child) => {
     const settlement = new Promise((resolve) => {
@@ -301,25 +401,19 @@ async function main() {
     childSettlements.push(settlement);
   };
   const stop = async (exitCode = EXIT_READY) => {
-    if (stopping) return;
-    stopping = true;
-    for (const child of children) groupSignal(child, "SIGTERM");
-    let shutdownTimer;
-    try {
-      await Promise.race([
-        Promise.all(childSettlements),
-        new Promise((resolve) => {
-          shutdownTimer = setTimeout(
-            resolve,
-            config.shutdown_timeout_seconds * 1000,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(shutdownTimer);
-    }
-    for (const child of children) groupSignal(child, "SIGKILL");
-    process.exitCode = exitCode;
+    if (stopPromise) return stopPromise;
+    stopPromise = terminateChildGroups(
+      children,
+      childSettlements,
+      config.shutdown_timeout_seconds * 1000,
+    )
+      .then((terminated) => {
+        process.exitCode = terminated ? exitCode : EXIT_SECURITY;
+      })
+      .catch(() => {
+        process.exitCode = EXIT_SECURITY;
+      });
+    return stopPromise;
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
@@ -357,9 +451,10 @@ async function main() {
       instanceToken,
       proofKey,
       deadline,
-      () => childExited,
+      () => childExited || stopPromise !== null,
     )) ||
-    childExited
+    childExited ||
+    stopPromise !== null
   ) {
     await stop(EXIT_START);
     return;
@@ -367,7 +462,7 @@ async function main() {
   ready = true;
   process.stdout.write("runtime_host_ready\n");
   await Promise.race(childSettlements);
-  if (ready && !stopping) await stop(EXIT_CHILD);
+  if (ready && !stopPromise) await stop(EXIT_CHILD);
 }
 
 if (IS_MAIN) {

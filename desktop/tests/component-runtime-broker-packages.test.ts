@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -27,6 +27,7 @@ import {
   digestRaw,
   type SourceComponentRuntimeFixture,
   type SourcePackageFixtureEntry,
+  writeNodeLauncherFixture,
 } from "./component-package-fixture.ts";
 
 const WORKSPACE = `workspace_${"a".repeat(32)}`;
@@ -332,18 +333,13 @@ async function workspaceFiles(t: TestContext): Promise<WorkspaceFiles> {
 async function installSandboxRuntime(
   fixture: SourceComponentRuntimeFixture,
 ): Promise<P34SandboxComponentAdapter> {
-  await mkdir(path.join(fixture.root, "node"), { recursive: true });
-  await copyFile(
-    process.execPath,
-    path.join(fixture.root, ...NODE_PATH.split("/")),
-  );
+  const nodePath = path.join(fixture.root, ...NODE_PATH.split("/"));
+  await writeNodeLauncherFixture(nodePath);
   await fixture.addDeclaredFile(
     HELPER_PATH,
     Buffer.from(SANDBOX_HELPER, "utf8"),
   );
-  const nodeRaw = await import("node:fs/promises").then((fs) =>
-    fs.readFile(path.join(fixture.root, ...NODE_PATH.split("/"))),
-  );
+  const nodeRaw = await readFile(nodePath);
   await fixture.addDeclaredFile(NODE_PATH, nodeRaw);
   return new P34SandboxComponentAdapter({
     runtimeRoot: fixture.root,

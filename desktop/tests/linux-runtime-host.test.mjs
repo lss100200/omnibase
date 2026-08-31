@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +18,7 @@ import {
   buildChildEnvironments,
   loadConfig,
   requireDistinctArtifacts,
+  terminateChildGroups,
   verifiedFile,
 } from "../../packaging/linux/omnibase-runtime-host.mjs";
 
@@ -149,4 +159,145 @@ test("Linux RuntimeHost keeps proof and control identities backend-only", () => 
     "OMNIBASE_DESKTOP_NATIVE_CONTROL_TOKEN" in environments.frontend,
     false,
   );
+});
+
+test("Linux RuntimeHost escalates timed-out process groups and waits for exit", async () => {
+  let settle;
+  let gone = false;
+  const settlement = new Promise((resolve) => {
+    settle = resolve;
+  });
+  const signals = [];
+  const terminated = await terminateChildGroups(
+    [{ pid: 101 }],
+    [settlement],
+    1,
+    {
+      finalWaitMs: 20,
+      signalProcessGroup: (pid, signal) => {
+        if (signal === 0) {
+          if (gone) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+          return;
+        }
+        signals.push([pid, signal]);
+        if (signal === "SIGKILL") {
+          gone = true;
+          settle();
+        }
+      },
+    },
+  );
+  assert.equal(terminated, true);
+  assert.deepEqual(signals, [
+    [101, "SIGTERM"],
+    [101, "SIGKILL"],
+  ]);
+});
+
+test("Linux RuntimeHost continues group cleanup after a signal error", async () => {
+  const signals = [];
+  const terminated = await terminateChildGroups(
+    [{ pid: 101 }, { pid: 102 }],
+    [Promise.resolve(), Promise.resolve()],
+    10,
+    {
+      signalProcessGroup: (pid, signal) => {
+        if (signal === 0) {
+          throw Object.assign(new Error("gone"), { code: "ESRCH" });
+        }
+        signals.push([pid, signal]);
+        if (pid === 101) {
+          throw Object.assign(new Error("denied"), { code: "EPERM" });
+        }
+      },
+    },
+  );
+  assert.equal(terminated, false);
+  assert.deepEqual(signals, [
+    [101, "SIGTERM"],
+    [102, "SIGTERM"],
+  ]);
+});
+
+test("Linux RuntimeHost retains supervision when SIGKILL cannot settle", async () => {
+  let retained = 0;
+  const signals = [];
+  const terminated = await terminateChildGroups(
+    [{ pid: 101 }],
+    [new Promise(() => undefined)],
+    1,
+    {
+      finalWaitMs: 1,
+      retainProcessGroupCleanup: () => (retained += 1),
+      signalProcessGroup: (pid, signal) => {
+        if (signal !== 0) signals.push([pid, signal]);
+      },
+    },
+  );
+  assert.equal(terminated, false);
+  assert.equal(retained, 1);
+  assert.deepEqual(signals, [
+    [101, "SIGTERM"],
+    [101, "SIGKILL"],
+  ]);
+});
+
+test("Linux RuntimeHost kills a SIGTERM-resistant descendant before returning", async (t) => {
+  if (process.platform !== "linux") {
+    t.skip("POSIX process-group integration requires Linux");
+    return;
+  }
+  const root = await mkdtemp(path.join(os.tmpdir(), "omnibase-linux-group-"));
+  const helper = path.join(root, "leader.mjs");
+  const pidFile = path.join(root, "descendant.pid");
+  await writeFile(
+    helper,
+    `import { spawn } from "node:child_process";\n` +
+      `import { writeFileSync } from "node:fs";\n` +
+      `const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)"], { stdio: ["ignore", "pipe", "ignore"] });\n` +
+      `process.on("SIGTERM", () => process.exit(0));\n` +
+      `child.stdout.once("data", () => writeFileSync(process.argv[2], String(child.pid)));\n` +
+      `setInterval(() => {}, 1000);\n`,
+    "utf8",
+  );
+  const leader = spawn(process.execPath, [helper, pidFile], {
+    detached: true,
+    stdio: "ignore",
+  });
+  const settlement = new Promise((resolve) => {
+    leader.once("error", resolve);
+    leader.once("exit", resolve);
+  });
+  let descendantPid;
+  try {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        descendantPid = Number.parseInt(await readFile(pidFile, "utf8"), 10);
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    assert.ok(Number.isInteger(descendantPid));
+    assert.equal(
+      await terminateChildGroups([leader], [settlement], 100, {
+        finalWaitMs: 2_000,
+      }),
+      true,
+    );
+    assert.throws(
+      () => process.kill(descendantPid, 0),
+      (error) => error?.code === "ESRCH",
+    );
+  } finally {
+    if (leader.pid !== undefined) {
+      try {
+        process.kill(-leader.pid, "SIGKILL");
+      } catch {
+        // The expected path already removed the complete process group.
+      }
+    }
+    await rm(root, { force: true, recursive: true });
+  }
 });
