@@ -1,8 +1,13 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import type {
   DesktopWorkspaceComponentExecutionTicket,
@@ -25,18 +30,58 @@ const MAX_WORKLOAD_BYTES = 32 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 const MAX_RUNTIME_FILE_BYTES = 256 * 1024 * 1024;
-const NODE_ARGUMENTS = Object.freeze([
+const NODE_BASE_ARGUMENTS = Object.freeze([
   "--max-old-space-size=32",
   "--max-semi-space-size=1",
   "--stack-size=256",
   "--no-addons",
-  "--permission",
 ]);
 const HELPER_RELATIVE_PATH = "component-host/p34-sandbox-helper.js";
 const NODE_RELATIVE_PATH =
   process.platform === "win32" ? "node/node.exe" : "node/node";
 
 type AdapterOutput = DesktopWorkspaceComponentJsonValue;
+const execFileAsync = promisify(execFile);
+
+/** Node 20 calls the permission flag experimental; Node 22 made it stable. */
+export function p34NodePermissionArguments(
+  nodeMajor: number,
+): readonly string[] {
+  if (!Number.isSafeInteger(nodeMajor) || nodeMajor < 20) {
+    throw new P34SandboxAdapterError(
+      "desktop_component_sandbox_runtime_unavailable",
+    );
+  }
+  return nodeMajor >= 22
+    ? Object.freeze(["--permission"])
+    : Object.freeze(["--no-warnings", "--experimental-permission"]);
+}
+
+async function detectNodeMajor(
+  executable: string,
+  cwd: string,
+): Promise<number> {
+  try {
+    const { stdout, stderr } = await execFileAsync(executable, ["--version"], {
+      cwd,
+      encoding: "utf8",
+      env: Object.freeze({}),
+      maxBuffer: 128,
+      timeout: 2_000,
+      windowsHide: true,
+    });
+    if (stderr.length !== 0) throw new Error("node_version_stderr");
+    const match = /^v([0-9]+)\.[0-9]+\.[0-9]+\r?\n?$/u.exec(stdout);
+    if (match === null) throw new Error("node_version_invalid");
+    const major = Number(match[1]);
+    p34NodePermissionArguments(major);
+    return major;
+  } catch {
+    throw new P34SandboxAdapterError(
+      "desktop_component_sandbox_runtime_unavailable",
+    );
+  }
+}
 
 export class P34SandboxAdapterError extends Error {
   constructor(readonly code: string) {
@@ -340,7 +385,11 @@ export class P34SandboxComponentAdapter
   > &
     P34SandboxComponentAdapterOptions;
   #runtimeFiles: Promise<
-    Readonly<{ executable: string; helper: string }>
+    Readonly<{
+      executable: string;
+      helper: string;
+      nodeArguments: readonly string[];
+    }>
   > | null = null;
   #active: ActiveChild | null = null;
   #reserved = false;
@@ -506,7 +555,11 @@ export class P34SandboxComponentAdapter
   }
 
   async #verifiedRuntimeFiles(): Promise<
-    Readonly<{ executable: string; helper: string }>
+    Readonly<{
+      executable: string;
+      helper: string;
+      nodeArguments: readonly string[];
+    }>
   > {
     this.#runtimeFiles ??= (async () => {
       const executableRelativePath =
@@ -523,17 +576,27 @@ export class P34SandboxComponentAdapter
           "desktop_component_sandbox_runtime_unavailable",
         );
       }
+      const executable = await verifyOrdinaryRuntimeFile(
+        this.#options.runtimeRoot,
+        executableRelativePath,
+        executableSha256,
+      );
+      const helper = await verifyOrdinaryRuntimeFile(
+        this.#options.runtimeRoot,
+        helperRelativePath,
+        helperSha256,
+      );
+      const nodeMajor = await detectNodeMajor(
+        executable,
+        this.#options.runtimeRoot,
+      );
       return Object.freeze({
-        executable: await verifyOrdinaryRuntimeFile(
-          this.#options.runtimeRoot,
-          executableRelativePath,
-          executableSha256,
-        ),
-        helper: await verifyOrdinaryRuntimeFile(
-          this.#options.runtimeRoot,
-          helperRelativePath,
-          helperSha256,
-        ),
+        executable,
+        helper,
+        nodeArguments: Object.freeze([
+          ...NODE_BASE_ARGUMENTS,
+          ...p34NodePermissionArguments(nodeMajor),
+        ]),
       });
     })().catch((error: unknown) => {
       this.#runtimeFiles = null;
@@ -557,7 +620,11 @@ export class P34SandboxComponentAdapter
       );
     }
     this.#reserved = true;
-    let runtime: Readonly<{ executable: string; helper: string }>;
+    let runtime: Readonly<{
+      executable: string;
+      helper: string;
+      nodeArguments: readonly string[];
+    }>;
     try {
       runtime = await this.#verifiedRuntimeFiles();
       if (signal.aborted) {
@@ -575,7 +642,7 @@ export class P34SandboxComponentAdapter
     const child = spawnProcess(
       runtime.executable,
       [
-        ...NODE_ARGUMENTS,
+        ...runtime.nodeArguments,
         `--allow-fs-read=${runtime.helper}`,
         runtime.helper,
         "--p7-sandbox-helper",

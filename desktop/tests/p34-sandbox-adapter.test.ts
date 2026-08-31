@@ -8,6 +8,7 @@ import { after, before, test } from "node:test";
 import {
   P34SandboxAdapterError,
   P34SandboxComponentAdapter,
+  p34NodePermissionArguments,
 } from "../src/runtime/p34-sandbox-adapter.ts";
 import { runP34SandboxHelperRequest } from "../src/runtime/p34-sandbox-helper.ts";
 import type { TrustedSandboxWorkload } from "../src/runtime/component-runtime-broker.ts";
@@ -27,6 +28,24 @@ const HELPER_PATH = "component-host/p34-sandbox-helper.js";
 const WORKLOAD_PREFIX =
   "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041";
 const WORKLOAD_SUFFIX = "00730b";
+
+test("sandbox permission flags match the verified Node major", () => {
+  assert.deepEqual(p34NodePermissionArguments(20), [
+    "--no-warnings",
+    "--experimental-permission",
+  ]);
+  assert.deepEqual(p34NodePermissionArguments(21), [
+    "--no-warnings",
+    "--experimental-permission",
+  ]);
+  assert.deepEqual(p34NodePermissionArguments(22), ["--permission"]);
+  assert.throws(
+    () => p34NodePermissionArguments(19),
+    (error: unknown) =>
+      error instanceof P34SandboxAdapterError &&
+      error.code === "desktop_component_sandbox_runtime_unavailable",
+  );
+});
 
 function workload(constant: "ca" | "cb" = "ca"): TrustedSandboxWorkload {
   const bytes = Buffer.from(
