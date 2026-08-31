@@ -32,7 +32,7 @@ import {
 const WORKSPACE = `workspace_${"a".repeat(32)}`;
 const RUNTIME = `runtime_${"b".repeat(32)}`;
 const NOW = "2026-08-30T00:00:00.000Z";
-const NODE_PATH = "node/node.exe";
+const NODE_PATH = process.platform === "win32" ? "node/node.exe" : "node/node";
 const HELPER_PATH = "component-host/p34-sandbox-helper.js";
 
 const SANDBOX_HELPER = String.raw`

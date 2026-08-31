@@ -20,7 +20,8 @@ const SHA = "a".repeat(64);
 const RUNTIME_ID = "runtime_0123456789abcdef0123456789abcdef";
 const WORKSPACE_ID = "ws_0123456789abcdef0123456789abcdef";
 const COMPONENT_ID = "builtin.sandbox-workload";
-const EXECUTABLE_PATH = "node/node.exe";
+const EXECUTABLE_PATH =
+  process.platform === "win32" ? "node/node.exe" : "node/node";
 const HELPER_PATH = "component-host/p34-sandbox-helper.js";
 const WORKLOAD_PREFIX =
   "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041";

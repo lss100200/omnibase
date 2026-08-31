@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, open, rmdir, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -32,7 +32,7 @@ async function makeBundle(): Promise<{
   await mkdir(bin, { recursive: false });
   const runtimePath = path.join(bin, "omnibase-runtime.exe");
   const payload = Buffer.from("deterministic-runtime-payload", "utf8");
-  await writeFile(runtimePath, payload, { flag: "wx" });
+  await writeFile(runtimePath, payload, { flag: "wx", mode: 0o755 });
   const configPath = path.join(root, "runtime-host.json");
   const config = Buffer.from(
     '{"startup_timeout_seconds":60,"backend_port":47431}\n',
@@ -135,6 +135,27 @@ test("an unpinned or tampered manifest fails before runtime execution", async ()
         expectedManifestSha256: "0".repeat(64),
       }),
       /runtime_manifest_digest_mismatch/u,
+    );
+  } finally {
+    await bundle.dispose();
+  }
+});
+
+test("Linux refuses a digest-valid runtime entrypoint without an execute bit", async (t) => {
+  if (process.platform !== "linux") {
+    t.skip("POSIX execute-bit enforcement requires Linux");
+    return;
+  }
+  const bundle = await makeBundle();
+  try {
+    await chmod(bundle.runtimePath, 0o644);
+    await assert.rejects(
+      verifyRuntimeBundle({
+        bundleRoot: bundle.root,
+        manifestPath: bundle.manifestPath,
+        expectedManifestSha256: bundle.manifestDigest,
+      }),
+      /runtime_entrypoint_not_executable/u,
     );
   } finally {
     await bundle.dispose();

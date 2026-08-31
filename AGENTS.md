@@ -358,6 +358,17 @@ runtime evidence; then correct the stale documentation in the same change.
   human visual and external signing/Marketplace authority. CI or a Sandbox
   cannot self-issue Authenticode, Publisher, Marketplace or production-release
   approval.
+- P7.5 is the Linux desktop packaging R0 lane. Read INV-090 and
+  `docs/architecture/p7-5-linux-desktop-packaging.md` before changing the Linux
+  AppDir packager, XDG data-root resolver or Linux runtime-host prototype.
+  Linux payload staging must consume offline, already-built Linux backend/Node
+  inputs and preserve POSIX executable bits; the repository source trust token
+  may only be replaced in the copied staging project. Linux artifacts require
+  an explicit Electron archive digest and a closed runtime tree. A Linux AppDir,
+  source test or CI job does not prove a supported
+  distribution, independent P3.4 Runner isolation, signing or production
+  readiness; those claims require a separately built Linux payload and a
+  disposable Linux lifecycle receipt.
 
 ## Safe change workflow
 

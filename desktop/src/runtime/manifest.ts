@@ -174,9 +174,11 @@ function containedPath(root: string, relativePath: string): string {
 }
 
 function samePhysicalPath(left: string, right: string): boolean {
-  return (
-    path.normalize(left).toLowerCase() === path.normalize(right).toLowerCase()
-  );
+  const normalize = (value: string): string =>
+    process.platform === "win32"
+      ? path.normalize(value).toLowerCase()
+      : path.normalize(value);
+  return normalize(left) === normalize(right);
 }
 
 async function inventoryRuntimeTree(root: string): Promise<{
@@ -401,6 +403,12 @@ export async function verifyRuntimeBundle(options: {
   const command = containedPath(root, manifest.entrypoint.path);
   if (!path.isAbsolute(command)) {
     throw new Error("runtime_entrypoint_not_absolute");
+  }
+  if (process.platform === "linux") {
+    const commandStat = await lstat(command);
+    if ((commandStat.mode & 0o111) === 0) {
+      throw new Error("runtime_entrypoint_not_executable");
+    }
   }
   const launchConfig = await readRuntimeHostLaunchConfig(root);
   return Object.freeze({

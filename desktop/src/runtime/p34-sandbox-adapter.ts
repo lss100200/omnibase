@@ -33,7 +33,8 @@ const NODE_ARGUMENTS = Object.freeze([
   "--permission",
 ]);
 const HELPER_RELATIVE_PATH = "component-host/p34-sandbox-helper.js";
-const NODE_RELATIVE_PATH = "node/node.exe";
+const NODE_RELATIVE_PATH =
+  process.platform === "win32" ? "node/node.exe" : "node/node";
 
 type AdapterOutput = DesktopWorkspaceComponentJsonValue;
 

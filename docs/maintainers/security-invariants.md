@@ -4869,3 +4869,50 @@ copy, fence stale authority and require exact recovery settlement. Never reset a
 cursor, edit old Lease/effect/audit evidence, replay an unknown effect, weaken a
 threshold after observing failure, repair host virtualization to manufacture a
 pass, or claim signing/Marketplace/production authority from CI or Sandbox.
+
+## INV-090 p75-linux-desktop-packaging-r0
+
+P7.5 adds a separate Linux `linux-x64` AppDir and offline payload-staging lane;
+it must not weaken or replace the accepted Windows WiX/Burn path. Linux staging
+consumes only already-built Linux backend, bundled Node, Next standalone,
+desktop compilation and optional validated component-bundle inputs. It never
+downloads a tool, reads repository secrets, mutates the source trust token,
+follows a link, accepts a hard-linked file, overwrites an output or treats a
+Windows executable as Linux evidence.
+
+The runtime tree is a closed, digest-pinned inventory. The manifest launches
+the verified absolute `node/node` with the source-owned RuntimeHost script;
+Node and backend require POSIX execute bits while frontend JavaScript remains a
+read-only artifact. AppDir packaging requires the exact declared Electron ZIP
+SHA-256 and re-verifies every runtime byte and POSIX mode after packaging.
+Linux physical-path comparisons are case-sensitive. XDG/HOME data-root
+resolution fails closed when neither standard absolute root is available.
+
+RuntimeHost generates a fresh per-launch instance token, gives proof/control
+identity only to the backend, gives the instance token to the frontend proxy,
+uses explicit closed child environments, binds loopback only, proves readiness
+with challenge-HMAC and owns both child process groups through bounded
+termination. This host is application supervision, not a P3.4 independent
+Runner, cgroup/namespace isolation proof or hostile-code authority.
+
+**Required verification**
+
+- Windows and Ubuntu Node 20/24 desktop tests, typecheck and build;
+- Linux path, manifest, execute-bit, RuntimeHost identity/environment and
+  packager byte/mode-drift attacks;
+- POSIX-host payload builder tests covering closed inventory, source/staging
+  identity, executable bits, trust injection and existing-output refusal;
+- maintainer validators, iterative Registry -> Task Ledger -> Planner sealed
+  contract reseal and `git diff --check`;
+- before any Linux support claim, a separately built Ubuntu payload plus a
+  disposable Linux Electron readiness, process-tree, shutdown and data-root
+  lifecycle receipt.
+
+**Failure recovery**
+
+Retain failed staging/AppDir trees and receipts outside the repository, fence
+and terminate owned process groups, then rebuild from fresh verified Linux
+inputs into a new output identity. Never patch an artifact in place, reuse an
+ambiguous runtime, relax executable/digest/path checks, repair host
+virtualization to manufacture evidence or promote CI/source tests into signing,
+distribution support, P3.4 isolation or production readiness.

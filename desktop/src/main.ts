@@ -21,6 +21,7 @@ import { RuntimeManager } from "./runtime/runtime-manager.ts";
 import { ComponentRuntimeBroker } from "./runtime/component-runtime-broker.ts";
 import { OwnerComponentPackageStore } from "./runtime/owner-component-package-store.ts";
 import { P34SandboxComponentAdapter } from "./runtime/p34-sandbox-adapter.ts";
+import { resolveDesktopDataRoot } from "./runtime/platform.ts";
 import { PINNED_RUNTIME_MANIFEST_SHA256 } from "./runtime/trusted-manifest.ts";
 import { WorkspaceFiles } from "./runtime/workspace-files.ts";
 import type { DesktopOperationResult } from "./shared/ipc-contract.ts";
@@ -43,8 +44,14 @@ const hasInstanceLock = enforceSingleInstance(app, () => mainWindow);
 
 if (hasInstanceLock) {
   app.whenReady().then(async () => {
-    const localAppData = process.env.LOCALAPPDATA;
-    if (typeof localAppData !== "string" || !path.isAbsolute(localAppData)) {
+    let dataRoot: string;
+    try {
+      dataRoot = resolveDesktopDataRoot(
+        process.platform,
+        process.env,
+        app.getPath("userData"),
+      );
+    } catch {
       dialog.showErrorBox(
         "OmniBase data directory unavailable",
         "desktop_local_app_data_unavailable",
@@ -52,7 +59,6 @@ if (hasInstanceLock) {
       app.quit();
       return;
     }
-    const dataRoot = path.join(localAppData, "OmniBase");
     const runtimeRoot = path.join(process.resourcesPath, "runtime");
     runtimeManager = new RuntimeManager({
       runtimeRoot,
