@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "package:windows": "node scripts/package-windows.mjs",
+    "package:linux": "node scripts/package-linux.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.mjs"
   },

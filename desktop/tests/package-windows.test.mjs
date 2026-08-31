@@ -9,6 +9,7 @@ import { packageWindows } from '../scripts/package-windows.mjs'
 
 const ELECTRON_ZIP_BYTES = 'verified electron archive'
 const ELECTRON_ZIP_SHA256 = createHash('sha256').update(ELECTRON_ZIP_BYTES).digest('hex')
+const windowsTest = process.platform === 'win32' ? test : test.skip
 
 async function write(file, value) {
   await mkdir(path.dirname(file), { recursive: true })
@@ -61,7 +62,7 @@ async function writePackagedOutput(options, { tamperRuntime = false } = {}) {
   return [target]
 }
 
-test('Windows packager copies an exact runtime and excludes build dependencies', async () => {
+windowsTest('Windows packager copies an exact runtime and excludes build dependencies', async () => {
   const current = await fixture('valid')
   let seenOptions
   const target = await packageWindows(current.argv, {
@@ -81,14 +82,14 @@ test('Windows packager copies an exact runtime and excludes build dependencies',
   assert.equal(seenOptions.ignore.length, 4)
 })
 
-test('Windows packager rejects malformed arguments before filesystem access', async () => {
+windowsTest('Windows packager rejects malformed arguments before filesystem access', async () => {
   await assert.rejects(
     () => packageWindows(['--version', '1.0.0']),
     /desktop_packager_arguments_invalid/u,
   )
 })
 
-test('Windows packager rejects an unverified local Electron archive', async () => {
+windowsTest('Windows packager rejects an unverified local Electron archive', async () => {
   const current = await fixture('electron-digest')
   let called = false
   await assert.rejects(
@@ -104,7 +105,7 @@ test('Windows packager rejects an unverified local Electron archive', async () =
   assert.equal(called, false)
 })
 
-test('Windows packager rejects a pre-existing target without overwriting it', async () => {
+windowsTest('Windows packager rejects a pre-existing target without overwriting it', async () => {
   const current = await fixture('existing')
   await mkdir(path.join(current.outputDir, 'OmniBase-win32-x64'))
   let called = false
@@ -122,7 +123,7 @@ test('Windows packager rejects a pre-existing target without overwriting it', as
   assert.equal(called, false)
 })
 
-test('Windows packager rejects an unpinned local Electron archive', async () => {
+windowsTest('Windows packager rejects an unpinned local Electron archive', async () => {
   const current = await fixture('electron-digest')
   await write(
     path.join(current.electronZipDir, 'electron-v43.4.0-win32-x64.zip'),
@@ -143,7 +144,7 @@ test('Windows packager rejects an unpinned local Electron archive', async () => 
   assert.equal(called, false)
 })
 
-test('Windows packager rejects copied runtime drift', async () => {
+windowsTest('Windows packager rejects copied runtime drift', async () => {
   const current = await fixture('tamper')
   await assert.rejects(
     () =>

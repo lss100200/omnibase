@@ -19,6 +19,16 @@
 > `AUTHENTICODE_NOT_PROVEN`、`ENTERPRISE_MULTI_AGENT_DISABLED` 与
 > `PRODUCTION_RELEASE_NOT_APPROVED` 继续保持。
 >
+> **P7.5 Linux Desktop Packaging R0（2026-08-31）**：从 clean
+> `main@095614676984da4f4eca0e43e1debc67d3b29732` 建立独立 lane。INV-090、
+> XDG/HOME 数据根、Linux 大小写路径语义、`node/node` RuntimeHost、显式
+> Electron ZIP SHA-256 的 `linux-x64` AppDir 打包合同、离线闭集 payload
+> staging 与 Ubuntu Node 20/24 CI 合同已实现。当前 Windows 主机只完成源码、
+> 类型、构建和合同测试；没有 Linux backend/Node payload、AppDir artifact 或
+> disposable Linux Electron 生命周期回执。因此 Linux distribution support、
+> AppImage/deb、签名、更新/回滚、独立 P3.4 Runner 隔离与生产就绪均保持
+> `not_proven`。
+>
 > **P7.1 当前授权（2026-08-29）**：Owner 已批准 Wave 1 只读本地文件合同；
 > 先读 `docs/architecture/p7-1-local-development-loop.md` 与 INV-086。本轮只
 > 允许 `workspaceFiles.authorize|release|list|read`：Owner 原生选择一个仅

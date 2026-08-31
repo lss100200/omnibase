@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -8,6 +8,7 @@ import { after, before, test } from "node:test";
 import {
   P34SandboxAdapterError,
   P34SandboxComponentAdapter,
+  p34NodePermissionArguments,
 } from "../src/runtime/p34-sandbox-adapter.ts";
 import { runP34SandboxHelperRequest } from "../src/runtime/p34-sandbox-helper.ts";
 import type { TrustedSandboxWorkload } from "../src/runtime/component-runtime-broker.ts";
@@ -15,16 +16,36 @@ import type {
   DesktopWorkspaceComponentExecutionTicket,
   DesktopWorkspaceComponentLifecycleTicket,
 } from "../src/shared/ipc-contract.ts";
+import { writeNodeLauncherFixture } from "./component-package-fixture.ts";
 
 const SHA = "a".repeat(64);
 const RUNTIME_ID = "runtime_0123456789abcdef0123456789abcdef";
 const WORKSPACE_ID = "ws_0123456789abcdef0123456789abcdef";
 const COMPONENT_ID = "builtin.sandbox-workload";
-const EXECUTABLE_PATH = "node/node.exe";
+const EXECUTABLE_PATH =
+  process.platform === "win32" ? "node/node.exe" : "node/node";
 const HELPER_PATH = "component-host/p34-sandbox-helper.js";
 const WORKLOAD_PREFIX =
   "0061736d0100000001060160017f017f03020100070d01097472616e73666f726d00000a0a010800200041";
 const WORKLOAD_SUFFIX = "00730b";
+
+test("sandbox permission flags match the verified Node major", () => {
+  assert.deepEqual(p34NodePermissionArguments(20), [
+    "--no-warnings",
+    "--experimental-permission",
+  ]);
+  assert.deepEqual(p34NodePermissionArguments(21), [
+    "--no-warnings",
+    "--experimental-permission",
+  ]);
+  assert.deepEqual(p34NodePermissionArguments(22), ["--permission"]);
+  assert.throws(
+    () => p34NodePermissionArguments(19),
+    (error: unknown) =>
+      error instanceof P34SandboxAdapterError &&
+      error.code === "desktop_component_sandbox_runtime_unavailable",
+  );
+});
 
 function workload(constant: "ca" | "cb" = "ca"): TrustedSandboxWorkload {
   const bytes = Buffer.from(
@@ -202,8 +223,7 @@ before(async () => {
   runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "omnibase-p73-sandbox-"));
   await mkdir(path.join(runtimeRoot, "node"), { recursive: true });
   await mkdir(path.join(runtimeRoot, "component-host"), { recursive: true });
-  await copyFile(
-    process.execPath,
+  await writeNodeLauncherFixture(
     path.join(runtimeRoot, ...EXECUTABLE_PATH.split("/")),
   );
   await writeFile(

@@ -1471,6 +1471,29 @@
         "scripts/release/test_run_p7_4_hardening_matrix.py",
         "scripts/release/test_validate_p7_3_windows_acceptance_receipt.py"
       ]
+    },
+    {
+      "id": "INV-090",
+      "title": "P7.5 Linux packaging preserves a closed executable runtime without claiming distribution or Runner readiness",
+      "document": "docs/maintainers/security-invariants.md#inv-090-p75-linux-desktop-packaging-r0",
+      "source_paths": [
+        ".github/workflows/infrastructure-gates.yml",
+        "desktop/src/main.ts",
+        "desktop/src/runtime/platform.ts",
+        "desktop/src/runtime/manifest.ts",
+        "desktop/src/runtime/p34-sandbox-adapter.ts",
+        "desktop/scripts/package-linux.mjs",
+        "packaging/linux/**",
+        "scripts/release/build_p7_5_linux_desktop_payload.py",
+        "docs/architecture/p7-5-linux-desktop-packaging.md"
+      ],
+      "test_paths": [
+        "desktop/tests/linux-runtime-host.test.mjs",
+        "desktop/tests/package-linux.test.mjs",
+        "desktop/tests/platform.test.ts",
+        "desktop/tests/runtime-manifest.test.ts",
+        "scripts/release/test_build_p7_5_linux_desktop_payload.py"
+      ]
     }
   ],
   "modules": [
@@ -5056,6 +5079,70 @@
         "Restore only into a controlled new database copy; never reset or delete a fencing cursor or replay an unknown external effect.",
         "Retain failed raw scale, soak, attack and Windows evidence and create a new identity-bound run after the fix.",
         "Keep Authenticode, Publisher, Marketplace and production release claims false until independent external authority evidence exists."
+      ]
+    },
+    {
+      "id": "p7-5-linux-desktop-packaging",
+      "name": "P7.5 Linux desktop AppDir packaging and platform runtime bootstrap",
+      "source_paths": [
+        "desktop/package.json",
+        "desktop/src/main.ts",
+        "desktop/src/runtime/platform.ts",
+        "desktop/src/runtime/manifest.ts",
+        "desktop/src/runtime/p34-sandbox-adapter.ts",
+        "desktop/scripts/package-linux.mjs",
+        "desktop/tests/platform.test.ts",
+        "desktop/tests/linux-runtime-host.test.mjs",
+        "desktop/tests/package-linux.test.mjs",
+        "desktop/tests/runtime-manifest.test.ts",
+        "scripts/release/build_p7_5_linux_desktop_payload.py",
+        "scripts/release/test_build_p7_5_linux_desktop_payload.py",
+        "packaging/linux/**",
+        "docs/architecture/p7-5-linux-desktop-packaging.md",
+        "docs/maintainers/security-invariants.md",
+        "docs/maintainers/ai-maintainer-map.md",
+        "docs/handover-report.md",
+        "docs/roadmap.md",
+        "AGENTS.md"
+      ],
+      "entrypoints": [
+        "desktop/src/runtime/platform.ts:resolveDesktopDataRoot",
+        "desktop/scripts/package-linux.mjs:packageLinux",
+        "packaging/linux/omnibase-runtime-host.mjs:main",
+        "scripts/release/build_p7_5_linux_desktop_payload.py:build_linux_payload"
+      ],
+      "public_interfaces": [
+        "Linux per-user data root resolution using XDG_DATA_HOME or HOME/.local/share",
+        "Digest-pinned Electron linux-x64 AppDir packaging with closed runtime-tree verification",
+        "Offline Linux runtime payload staging with node/node entrypoint and manifest SHA injection",
+        "Linux runtime-host process-group bootstrap with loopback challenge/HMAC readiness and bounded shutdown"
+      ],
+      "depends_on": [
+        "p7-4-hot-plug-product-certification",
+        "p6-5-windows-desktop-distribution"
+      ],
+      "invariants": [
+        "INV-073",
+        "INV-082",
+        "INV-083",
+        "INV-084",
+        "INV-085",
+        "INV-086",
+        "INV-087",
+        "INV-088",
+        "INV-089",
+        "INV-090"
+      ],
+      "verification": [
+        "cd desktop && pnpm test && pnpm typecheck && pnpm build",
+        "python scripts/release/test_build_p7_5_linux_desktop_payload.py",
+        "git diff --check",
+        "python scripts/maintenance/validate_maintainer_map.py --repo-root ."
+      ],
+      "recovery": [
+        "Keep Linux artifacts outside the repository and never overwrite an existing AppDir or runtime tree.",
+        "If a Linux runtime host or child process fails, preserve the raw receipt and converge its process groups before retrying.",
+        "Do not infer Linux distribution support, P3.4 isolation, package signing or production readiness from an AppDir build."
       ]
     }
   ]
