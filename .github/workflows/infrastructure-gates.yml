@@ -4,8 +4,26 @@ on:
   pull_request:
   push:
   workflow_dispatch:
+    inputs:
+      component_bundle_run_id:
+        description: Same-repository Actions run containing the validated P7.3 component bundle
+        required: true
+        type: string
+      component_bundle_artifact_name:
+        description: Artifact whose archive root is the exact component bundle root
+        required: true
+        type: string
+      component_bundle_sha256:
+        description: Expected SHA-256 of the component index.json
+        required: true
+        type: string
+      component_bundle_tree_sha256:
+        description: Expected SHA-256 of the canonical component tree
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -299,7 +317,130 @@ jobs:
           pnpm typecheck
           pnpm build
       - name: Linux payload contract tests
-        run: python scripts/release/test_build_p7_5_linux_desktop_payload.py
+        run: |
+          python scripts/release/test_build_p7_5_linux_desktop_payload.py
+          python scripts/release/test_build_p7_5_linux_desktop.py
+
+  linux-desktop-appdir:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    env:
+      ELECTRON_ZIP_NAME: electron-v43.4.0-linux-x64.zip
+      ELECTRON_ZIP_SHA256: 7c5f7918bcae74a05a814543940eb28469c055edaa3cfcf41d0ff1787b314c52
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download the validated P7.3 component bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.component_bundle_artifact_name }}
+          path: ${{ runner.temp }}/omnibase-p75/component-bundle
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.component_bundle_run_id }}
+      - name: Validate and bind the component bundle identity
+        shell: bash
+        env:
+          EXPECTED_COMPONENT_BUNDLE_SHA256: ${{ inputs.component_bundle_sha256 }}
+          EXPECTED_COMPONENT_BUNDLE_TREE_SHA256: ${{ inputs.component_bundle_tree_sha256 }}
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "omnibase-p75/component-bundle"
+          module_path = Path("scripts/release/export_p7_3_component_bundles.py")
+          spec = importlib.util.spec_from_file_location("bundle_validator", module_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("component_bundle_validator_unavailable")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          report = module.validate_component_bundle(root)
+          if report["bundle_sha256"] != os.environ["EXPECTED_COMPONENT_BUNDLE_SHA256"]:
+              raise SystemExit("component_bundle_sha256_mismatch")
+          if report["tree_sha256"] != os.environ["EXPECTED_COMPONENT_BUNDLE_TREE_SHA256"]:
+              raise SystemExit("component_bundle_tree_sha256_mismatch")
+          print(report)
+          PY
+
+      - name: Install and build the standalone frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Install and build the desktop shell
+        working-directory: desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Install pinned Linux backend build dependencies
+        run: python -m pip install --disable-pip-version-check --requirement packaging/linux/OmniBase.DesktopBackend/requirements-build.txt
+      - name: Build the Linux desktop backend
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/omnibase-p75"
+          python packaging/linux/OmniBase.DesktopBackend/build_backend.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --dist-dir "$RUNNER_TEMP/omnibase-p75/backend-dist" \
+            --work-dir "$RUNNER_TEMP/omnibase-p75/backend-work" \
+            | tee "$RUNNER_TEMP/omnibase-p75/backend-build.json"
+      - name: Download and verify the pinned Linux Electron archive
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/omnibase-p75/electron"
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/omnibase-p75/electron/$ELECTRON_ZIP_NAME" \
+            "https://github.com/electron/electron/releases/download/v43.4.0/$ELECTRON_ZIP_NAME"
+          echo "$ELECTRON_ZIP_SHA256  $RUNNER_TEMP/omnibase-p75/electron/$ELECTRON_ZIP_NAME" | sha256sum --check --status
+      - name: Build the unsigned Linux AppDir and report
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/omnibase-p75/appdir"
+          python scripts/release/build_p7_5_linux_desktop.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --frontend-standalone-dir "$GITHUB_WORKSPACE/frontend/.next/standalone" \
+            --frontend-static-dir "$GITHUB_WORKSPACE/frontend/.next/static" \
+            --frontend-public-dir "$GITHUB_WORKSPACE/frontend/public" \
+            --desktop-dist-dir "$GITHUB_WORKSPACE/desktop/dist" \
+            --runtime-host-script "$GITHUB_WORKSPACE/packaging/linux/omnibase-runtime-host.mjs" \
+            --backend-executable "$RUNNER_TEMP/omnibase-p75/backend-dist/OmniBase.Desktop.Backend/OmniBase.Desktop.Backend" \
+            --node-executable "$(readlink -f "$(command -v node)")" \
+            --desktop-project-dir "$GITHUB_WORKSPACE/desktop" \
+            --electron-zip-dir "$RUNNER_TEMP/omnibase-p75/electron" \
+            --electron-zip-sha256 "$ELECTRON_ZIP_SHA256" \
+            --component-bundle-dir "$RUNNER_TEMP/omnibase-p75/component-bundle" \
+            --component-bundle-sha256 "${{ inputs.component_bundle_sha256 }}" \
+            --component-bundle-tree-sha256 "${{ inputs.component_bundle_tree_sha256 }}" \
+            --payload-dir "$RUNNER_TEMP/omnibase-p75/payload" \
+            --output-dir "$RUNNER_TEMP/omnibase-p75/appdir" \
+            --application-version "1.0.0" \
+            | tee "$RUNNER_TEMP/omnibase-p75/linux-desktop-build.json"
+      - name: Upload Linux AppDir and raw build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7-5-linux-appdir-${{ matrix.os }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/omnibase-p75
+          if-no-files-found: warn
+          retention-days: 14
 
   compose-config:
     runs-on: ubuntu-24.04

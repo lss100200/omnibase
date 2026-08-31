@@ -364,7 +364,8 @@ runtime evidence; then correct the stale documentation in the same change.
   Linux payload staging must consume offline, already-built Linux backend/Node
   inputs and preserve POSIX executable bits; the repository source trust token
   may only be replaced in the copied staging project. Linux artifacts require
-  an explicit Electron archive digest and a closed runtime tree. A Linux AppDir,
+  an explicit Electron archive digest, the validated exact ten-package P7.3
+  component bundle and a closed runtime tree. A Linux AppDir,
   source test or CI job does not prove a supported
   distribution, independent P3.4 Runner isolation, signing or production
   readiness; those claims require a separately built Linux payload and a

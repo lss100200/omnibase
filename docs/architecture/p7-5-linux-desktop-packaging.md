@@ -1,9 +1,10 @@
-# P7.5 Linux Desktop Packaging R0
+# P7.5 Linux Desktop Packaging R1
 
-Status: Linux packaging lane opened from clean `main@0956146`; INV-090, the AppDir
+Status: Linux packaging lane opened from clean `main@96711e8`; INV-090, the AppDir
 packaging contract, offline Linux payload staging contract and platform path
-tests are implemented, but no Linux artifact or Linux lifecycle acceptance has
-been issued.
+tests are implemented. R1 adds a POSIX-only backend builder, staged desktop
+build orchestrator and manual Ubuntu 22.04/24.04 artifact workflow. No Linux
+lifecycle acceptance or distribution support claim has been issued.
 
 ## Scope
 
@@ -39,13 +40,38 @@ paths and non-canonical relative paths. The builder must run on Ubuntu for a
 real payload because this Windows host cannot authoritatively produce Linux
 executable-bit or ELF evidence.
 
+R1 adds `packaging/linux/OmniBase.DesktopBackend/build_backend.py`, which runs
+only on 64-bit POSIX Python 3.12 with the exact pinned FastAPI, Uvicorn and
+PyInstaller build dependencies. `scripts/release/build_p7_5_linux_desktop.py`
+then stages the desktop project offline, invokes the Linux Electron packager
+with the published Electron archive digest, and writes an exclusive build
+report outside the repository. The AppDir path requires the exact validated
+ten-package P7.3 component bundle because RuntimeManager loads its source-owned
+attestations before the product becomes ready. The build report records the
+bundle and tree SHA-256, package/file counts and byte budget, and the copied
+runtime bundle is revalidated before the report is written.
+
+The manual workflow accepts that bundle only as an existing same-repository
+Actions artifact selected by explicit `run_id`, artifact name, bundle SHA-256
+and tree SHA-256. The artifact archive root must be the bundle root containing
+`index.json`; a missing, ambiguous, invalid or digest-mismatched artifact fails
+closed. The workflow runs on Ubuntu 22.04 and 24.04 and uploads the raw AppDir
+and reports for review. It refuses
+repository-local outputs, duplicate output identities and digest values other
+than the source-pinned `electron-v43.4.0-linux-x64.zip` archive.
+
+This repository does not currently contain a CI producer for that bundle: the
+P7.3 exporter requires the separately maintained knowledge-ebook source root.
+An owner-controlled P7.3 release run must therefore publish the validated
+artifact before this workflow can be dispatched. A missing artifact is a
+blocked prerequisite, not permission to substitute a local path, synthetic
+catalog or unvalidated package tree.
+
 ## Not yet supported
 
-R0 does not provide a Linux backend/Node build toolchain or payload artifact,
-distribution-specific
-dependencies, AppImage or `.deb` metadata, package signing, update/rollback
-semantics, or a real Linux VM receipt. A Windows `.exe` RuntimeHost and Windows
-backend cannot be placed in a Linux package. The next implementation must build
-the backend, Node runtime and host on Ubuntu 22.04 and 24.04, preserve executable
-bits, generate and pin a Linux manifest, then run a disposable Linux Electron
-smoke and lifecycle test before Linux support is announced.
+R1 does not provide distribution-specific dependencies, AppImage or `.deb`
+metadata, package signing, update/rollback semantics, or a real Linux VM
+receipt. A Windows `.exe` RuntimeHost and Windows backend cannot be placed in a
+Linux package. A successful workflow run is an unsigned engineering AppDir
+artifact only; a disposable Linux Electron smoke and lifecycle receipt is
+still required before Linux support is announced.

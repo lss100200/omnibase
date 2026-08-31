@@ -1484,7 +1484,9 @@
         "desktop/src/runtime/p34-sandbox-adapter.ts",
         "desktop/scripts/package-linux.mjs",
         "packaging/linux/**",
+        "scripts/release/export_p7_3_component_bundles.py",
         "scripts/release/build_p7_5_linux_desktop_payload.py",
+        "scripts/release/build_p7_5_linux_desktop.py",
         "docs/architecture/p7-5-linux-desktop-packaging.md"
       ],
       "test_paths": [
@@ -1492,7 +1494,8 @@
         "desktop/tests/package-linux.test.mjs",
         "desktop/tests/platform.test.ts",
         "desktop/tests/runtime-manifest.test.ts",
-        "scripts/release/test_build_p7_5_linux_desktop_payload.py"
+        "scripts/release/test_build_p7_5_linux_desktop_payload.py",
+        "scripts/release/test_build_p7_5_linux_desktop.py"
       ]
     }
   ],
@@ -5085,6 +5088,7 @@
       "id": "p7-5-linux-desktop-packaging",
       "name": "P7.5 Linux desktop AppDir packaging and platform runtime bootstrap",
       "source_paths": [
+        ".github/workflows/infrastructure-gates.yml",
         "desktop/package.json",
         "desktop/src/main.ts",
         "desktop/src/runtime/platform.ts",
@@ -5095,8 +5099,11 @@
         "desktop/tests/linux-runtime-host.test.mjs",
         "desktop/tests/package-linux.test.mjs",
         "desktop/tests/runtime-manifest.test.ts",
+        "scripts/release/export_p7_3_component_bundles.py",
         "scripts/release/build_p7_5_linux_desktop_payload.py",
         "scripts/release/test_build_p7_5_linux_desktop_payload.py",
+        "scripts/release/build_p7_5_linux_desktop.py",
+        "scripts/release/test_build_p7_5_linux_desktop.py",
         "packaging/linux/**",
         "docs/architecture/p7-5-linux-desktop-packaging.md",
         "docs/maintainers/security-invariants.md",
@@ -5109,12 +5116,16 @@
         "desktop/src/runtime/platform.ts:resolveDesktopDataRoot",
         "desktop/scripts/package-linux.mjs:packageLinux",
         "packaging/linux/omnibase-runtime-host.mjs:main",
-        "scripts/release/build_p7_5_linux_desktop_payload.py:build_linux_payload"
+        "scripts/release/build_p7_5_linux_desktop_payload.py:build_linux_payload",
+        "scripts/release/build_p7_5_linux_desktop_payload.py:validate_component_bundle",
+        "scripts/release/build_p7_5_linux_desktop.py:build_linux_desktop",
+        "packaging/linux/OmniBase.DesktopBackend/build_backend.py:build_backend"
       ],
       "public_interfaces": [
         "Linux per-user data root resolution using XDG_DATA_HOME or HOME/.local/share",
         "Digest-pinned Electron linux-x64 AppDir packaging with closed runtime-tree verification",
         "Offline Linux runtime payload staging with node/node entrypoint and manifest SHA injection",
+        "AppDir builds require an identity-validated ten-package P7.3 component bundle selected from a same-repository Actions artifact",
         "Linux runtime-host process-group bootstrap with loopback challenge/HMAC readiness and bounded shutdown"
       ],
       "depends_on": [
@@ -5136,6 +5147,8 @@
       "verification": [
         "cd desktop && pnpm test && pnpm typecheck && pnpm build",
         "python scripts/release/test_build_p7_5_linux_desktop_payload.py",
+        "python scripts/release/test_build_p7_5_linux_desktop.py",
+        "python scripts/release/test_export_p7_3_component_bundles.py",
         "git diff --check",
         "python scripts/maintenance/validate_maintainer_map.py --repo-root ."
       ],
