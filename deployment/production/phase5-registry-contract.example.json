@@ -105,12 +105,12 @@
     {
       "name": "maintainer_map",
       "path": "docs/maintainers/maintenance-map.json",
-      "sha256": "314b51354620c083868dbba441c8cc30fdb4246afaeeca49589d4c99c7c7172e"
+      "sha256": "df55885791196edfee4f8c30ef90f28480df64fa21aae13466807938aea42b15"
     },
     {
       "name": "security_invariants",
       "path": "docs/maintainers/security-invariants.md",
-      "sha256": "a91bda35d0bdfc97e49ae19ed5c6846939fbffafff84adba60cb234f4b5f3535"
+      "sha256": "c70213a454cc79c5d2a319b6a12b6e3edfa68df388571804c6d0c8ab869e7124"
     },
     {
       "name": "registry_tests",

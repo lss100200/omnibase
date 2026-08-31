@@ -31,6 +31,23 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from omnibase.desktop_local.components.service import (
+    apply_component_action_v2 as apply_component_action,
+)
+from omnibase.desktop_local.components.service import (
+    attest_component_package,
+    begin_component_invocation,
+    create_assistant_component_proposal,
+    create_component_proposal,
+    decide_component_proposal,
+    emergency_stop_components,
+    get_component_snapshot,
+    reconcile_component_effect,
+    recover_component_kernel,
+    register_owner_reviewed_component,
+    settle_component_invocation,
+    settle_component_recovery,
+)
 from omnibase.desktop_local.composition import (
     create_assistant_proposal,
     create_owner_proposal,
@@ -229,6 +246,193 @@ class WorkspaceCompositionDecisionRequest(BaseModel):
 
     decision: Literal["approve", "reject"]
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkspaceComponentGrantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    action: str = Field(pattern=r"^[a-z][a-z0-9_.]{2,63}$")
+    logical_resource_id: str | None = Field(default=None, min_length=3, max_length=128)
+    resource_version: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    logical_service_id: str | None = Field(default=None, min_length=3, max_length=128)
+    expires_in_seconds: int = Field(ge=60, le=86_400)
+    maximum_invocations: int = Field(ge=1, le=1_000_000)
+    maximum_bytes_in: int = Field(ge=0, le=1_073_741_824)
+    maximum_bytes_out: int = Field(ge=0, le=1_073_741_824)
+    maximum_tokens: int = Field(ge=0, le=100_000_000)
+    maximum_wall_time_ms: int = Field(ge=1, le=86_400_000)
+    maximum_cost_units: int = Field(ge=1, le=100_000_000)
+
+
+class WorkspaceComponentSlotBindingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    slot_id: str = Field(pattern=r"^[a-z][a-z0-9._-]{2,63}$")
+    binding_key: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9._:-]{2,127}$")
+    order_index: int = Field(ge=0, le=10_000)
+    configuration: dict[str, object]
+
+
+class WorkspaceComponentDependencyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    component_id: str = Field(pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    policy_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkspaceComponentProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    component_id: str = Field(pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    target_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    change_kind: Literal[
+        "install", "bind", "activate", "disable", "upgrade", "rollback", "revoke", "uninstall"
+    ]
+    expected_revision: int = Field(ge=0, le=2_147_483_647)
+    requested_grants: list[WorkspaceComponentGrantRequest] = Field(min_length=1, max_length=32)
+    desired_configuration: dict[str, object]
+    desired_slot_bindings: list[WorkspaceComponentSlotBindingRequest] = Field(max_length=64)
+    dependency_graph: list[WorkspaceComponentDependencyRequest] = Field(max_length=64)
+    source_kind: Literal["owner", "assistant"]
+    source_reference: str | None = Field(default=None, max_length=128)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9._:-]{8,128}$")
+
+
+class WorkspaceComponentAssistantProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    message_id: str = Field(pattern=r"^message_[0-9a-f]{32}$")
+
+
+class WorkspaceComponentDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    decision: Literal["approve", "reject"]
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkspaceComponentActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    component_id: str = Field(pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    action: Literal[
+        "install", "bind", "activate", "disable", "upgrade", "rollback", "revoke", "uninstall"
+    ]
+    phase: Literal["prepare", "settle"] = "prepare"
+    proposal_id: str = Field(pattern=r"^proposal_[0-9a-f]{32}$")
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_revision: int = Field(ge=0, le=2_147_483_647)
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9._:-]{8,128}$")
+    operation_id: str | None = Field(default=None, pattern=r"^compop_[0-9a-f]{32}$")
+    outcome: Literal["succeeded", "failed", "unknown"] | None = None
+    evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    health_state: Literal["healthy", "unhealthy", "unknown"] | None = None
+    runtime_instance_id: str | None = Field(default=None, pattern=r"^runtime_[0-9a-f]{32}$")
+    workload_identity_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{2,95}$")
+
+
+class WorkspaceComponentInvocationBeginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    component_id: str = Field(pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    action: Literal["ui.render", "skill.resolve", "mcp.call", "sandbox.run", "local_adapter.open"]
+    expected_revision: int = Field(ge=1, le=2_147_483_647)
+    binding_generation: int = Field(ge=1, le=2_147_483_647)
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9._:-]{8,128}$")
+    arguments_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    logical_resource_id: str | None = Field(default=None, min_length=3, max_length=128)
+    resource_version: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    logical_service_id: str | None = Field(default=None, min_length=3, max_length=128)
+    bytes_in: int = Field(ge=0, le=1_073_741_824)
+    bytes_out_reserved: int = Field(ge=0, le=1_073_741_824)
+    tokens_reserved: int = Field(ge=0, le=100_000_000)
+    wall_time_ms: int = Field(ge=0, le=86_400_000)
+    cost_units: int = Field(ge=0, le=100_000_000)
+
+
+class WorkspaceComponentInvocationSettleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    state: Literal["succeeded", "failed", "cancelled", "unknown"]
+    result_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{2,95}$")
+    actual_bytes_out: int = Field(ge=0, le=1_073_741_824)
+    actual_tokens: int = Field(ge=0, le=100_000_000)
+    actual_wall_time_ms: int = Field(ge=0, le=86_400_000)
+
+
+class WorkspaceComponentEmergencyStopRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    phase: Literal["prepare", "settle"] = "prepare"
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9._:-]{8,128}$")
+    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]{2,95}$")
+    component_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    operation_id: str | None = Field(default=None, pattern=r"^compop_[0-9a-f]{32}$")
+    effect_id: str | None = Field(default=None, pattern=r"^effect_[0-9a-f]{32}$")
+    request_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    outcome: Literal["succeeded", "failed", "unknown"] | None = None
+    evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{2,95}$")
+
+
+class WorkspaceComponentReconciliationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    operation_id: str = Field(pattern=r"^compop_[0-9a-f]{32}$")
+    effect_id: str = Field(pattern=r"^effect_[0-9a-f]{32}$")
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome: Literal["succeeded", "failed"]
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class WorkspaceComponentRecoverySettleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    operation_id: str = Field(pattern=r"^compop_[0-9a-f]{32}$")
+    outcome: Literal["succeeded", "failed", "unknown"]
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    health_state: Literal["healthy", "unhealthy", "unknown"] | None = None
+    runtime_instance_id: str = Field(pattern=r"^runtime_[0-9a-f]{32}$")
+    workload_identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{2,95}$")
+
+
+class WorkspaceComponentPackageAttestationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    component_id: str = Field(pattern=r"^[a-z][a-z0-9.-]{2,127}$")
+    version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    policy_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    inventory_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    adapter_id: Literal[
+        "builtin-ui.v1",
+        "instruction-skill.v1",
+        "readonly-mcp.v1",
+        "p34-sandbox.v1",
+        "trusted-local-app.v1",
+    ]
+
+
+class WorkspaceComponentOwnerPackageRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    manifest: dict[str, object]
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    inventory_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProviderUpsertRequest(BaseModel):
@@ -950,6 +1154,165 @@ def _workspace_composition_decide(
         )
 
 
+def _workspace_components_get(workspace_id: str, request: Request) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return get_component_snapshot(runtime.connection, workspace_id)
+
+
+def _workspace_components_propose(
+    workspace_id: str,
+    payload: WorkspaceComponentProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_component_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_propose_from_assistant(
+    workspace_id: str,
+    payload: WorkspaceComponentAssistantProposalRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return create_assistant_component_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            message_id=payload.message_id,
+        )
+
+
+def _workspace_components_decide(
+    workspace_id: str,
+    proposal_id: str,
+    payload: WorkspaceComponentDecisionRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return decide_component_proposal(
+            runtime.connection,
+            workspace_id=workspace_id,
+            proposal_id=proposal_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_action(
+    workspace_id: str,
+    payload: WorkspaceComponentActionRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return apply_component_action(
+            runtime.connection,
+            workspace_id=workspace_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_invocation_begin(
+    workspace_id: str,
+    payload: WorkspaceComponentInvocationBeginRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return begin_component_invocation(
+            runtime.connection,
+            workspace_id=workspace_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_invocation_settle(
+    workspace_id: str,
+    operation_id: str,
+    payload: WorkspaceComponentInvocationSettleRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return settle_component_invocation(
+            runtime.connection,
+            workspace_id=workspace_id,
+            operation_id=operation_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_emergency_stop(
+    workspace_id: str,
+    payload: WorkspaceComponentEmergencyStopRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return emergency_stop_components(
+            runtime.connection,
+            workspace_id=workspace_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_reconcile(
+    workspace_id: str,
+    payload: WorkspaceComponentReconciliationRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return reconcile_component_effect(
+            runtime.connection,
+            workspace_id=workspace_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_settle_recovery(
+    workspace_id: str,
+    recovery_id: str,
+    payload: WorkspaceComponentRecoverySettleRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return settle_component_recovery(
+            runtime.connection,
+            workspace_id=workspace_id,
+            recovery_id=recovery_id,
+            **payload.model_dump(),
+        )
+
+
+def _workspace_components_attest_package(
+    payload: WorkspaceComponentPackageAttestationRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return attest_component_package(runtime.connection, **payload.model_dump())
+
+
+def _workspace_components_register_owner_package(
+    workspace_id: str,
+    payload: WorkspaceComponentOwnerPackageRegisterRequest,
+    request: Request,
+) -> dict[str, object]:
+    runtime = _runtime(request)
+    with runtime.lock:
+        return register_owner_reviewed_component(
+            runtime.connection, workspace_id=workspace_id, **payload.model_dump()
+        )
+
+
 def _providers_list(request: Request) -> dict[str, object]:
     runtime = _runtime(request)
     with runtime.lock:
@@ -1447,6 +1810,7 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
             )
             recover_interrupted_invocations(connection)
             recover_interrupted_team_runs(connection)
+            recover_component_kernel(connection)
             yield
         finally:
             connection.close()
@@ -1533,6 +1897,66 @@ def create_desktop_local_app(config: DesktopLocalAppConfig) -> FastAPI:
     app.add_api_route(
         "/desktop/v1/workspaces/{workspace_id}/composition/proposals/{proposal_id}/decision",
         _workspace_composition_decide,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/components/catalog/attest",
+        _workspace_components_attest_package,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/catalog/register-owner-package",
+        _workspace_components_register_owner_package,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components",
+        _workspace_components_get,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/proposals",
+        _workspace_components_propose,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/proposals/from-assistant",
+        _workspace_components_propose_from_assistant,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/proposals/{proposal_id}/decide",
+        _workspace_components_decide,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/actions",
+        _workspace_components_action,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/invocations/begin",
+        _workspace_components_invocation_begin,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/invocations/{operation_id}/settle",
+        _workspace_components_invocation_settle,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/emergency-stop",
+        _workspace_components_emergency_stop,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/reconciliations",
+        _workspace_components_reconcile,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/desktop/v1/workspaces/{workspace_id}/components/recoveries/{recovery_id}/settle",
+        _workspace_components_settle_recovery,
         methods=["POST"],
     )
     app.add_api_route("/desktop/v1/providers", _providers_list, methods=["GET"])

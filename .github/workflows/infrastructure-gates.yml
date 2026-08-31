@@ -97,6 +97,8 @@ jobs:
             ../scripts/production/validate_p5_6a_skill_contract.py \
             ../scripts/production/validate_p34_7_trust_policy_candidate.py \
             ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
+            ../scripts/release/validate_p7_3_windows_acceptance_receipt.py \
+            ../scripts/release/test_validate_p7_3_windows_acceptance_receipt.py \
             tests/test_rate_limit.py \
             tests/test_reranker_boundary.py \
             tests/test_tenants.py
@@ -136,6 +138,8 @@ jobs:
             ../scripts/production/validate_p5_6a_skill_contract.py \
             ../scripts/production/validate_p34_7_trust_policy_candidate.py \
             ../scripts/production/validate_p34_7_trust_policy_r1_assignment.py \
+            ../scripts/release/validate_p7_3_windows_acceptance_receipt.py \
+            ../scripts/release/test_validate_p7_3_windows_acceptance_receipt.py \
             tests/integration/test_p34_*.py
       - name: Full backend typecheck
         run: uv run mypy src
@@ -143,6 +147,7 @@ jobs:
         run: |
           uv run python -m compileall -q src tests
           uv run python -m compileall -q ../scripts/database ../scripts/maintenance ../scripts/production
+          uv run python -m compileall -q ../scripts/release/validate_p7_3_windows_acceptance_receipt.py ../scripts/release/test_validate_p7_3_windows_acceptance_receipt.py
       - name: Validate AI maintainer map and benchmark protocol
         run: |
           uv run python ../scripts/maintenance/validate_maintainer_map.py --repo-root ..
@@ -172,6 +177,8 @@ jobs:
         run: uv run pytest ../scripts/production/test_run_p5_1b_registry_disposable_gate.py -q
       - name: P5.1C browser registry API gate contract tests
         run: uv run pytest ../scripts/production/test_run_p5_1c_browser_registry_disposable_gate.py -q
+      - name: P7.3 Windows acceptance receipt contract tests
+        run: uv run pytest ../scripts/release/test_validate_p7_3_windows_acceptance_receipt.py -q
       - name: Backend non-integration tests
         run: uv run pytest -m "not integration"
       - name: OpenAPI and Python SDK contracts
@@ -208,6 +215,22 @@ jobs:
           pnpm typecheck
           pnpm lint
           pnpm build
+      - name: Install Chromium for the P7 Settings rendering gate
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: P7 Settings rendering and accessibility gate
+        working-directory: frontend
+        run: pnpm test:visual
+      - name: Retain P7 Settings rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7-settings-rendering-${{ github.run_id }}
+          path: |
+            frontend/test-results/p7-visual
+            frontend/test-results/p7-visual-report.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Install locked TypeScript SDK dependencies
         working-directory: sdk/typescript
         run: pnpm install --frozen-lockfile
@@ -216,6 +239,33 @@ jobs:
         run: |
           pnpm test
           pnpm typecheck
+
+  windows-desktop-compatibility:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install locked desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Windows desktop tests and build
+        working-directory: desktop
+        run: |
+          pnpm test
+          pnpm typecheck
+          pnpm build
 
   compose-config:
     runs-on: ubuntu-24.04

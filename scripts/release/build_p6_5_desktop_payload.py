@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -30,6 +31,8 @@ from typing import Any, NamedTuple
 RUNTIME_SCHEMA_VERSION = 1
 RUNTIME_HOST_SCHEMA_VERSION = 1
 RUNTIME_ENTRYPOINT = "OmniBase.RuntimeHost.exe"
+P7_SANDBOX_HELPER_SOURCE = "desktop-build/prebuilt-dist/runtime/p34-sandbox-helper.js"
+P7_SANDBOX_HELPER_TARGET = "component-host/p34-sandbox-helper.js"
 TRUST_TOKEN = "__OMNIBASE_RUNTIME_MANIFEST_SHA256__"
 MAX_RUNTIME_FILES = 4096
 MAX_STAGING_FILES = 8192
@@ -568,6 +571,35 @@ def _assert_output_is_separate(output: Path, sources: list[Path]) -> None:
             raise DesktopPayloadError("desktop_payload_output_inside_source")
 
 
+def _validate_component_bundle(path: Path) -> dict[str, object]:
+    exporter_path = Path(__file__).with_name("export_p7_3_component_bundles.py")
+    spec = importlib.util.spec_from_file_location(
+        "omnibase_p73_component_bundle_validator", exporter_path
+    )
+    if spec is None or spec.loader is None:
+        raise DesktopPayloadError("desktop_payload_component_bundle_invalid")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        report = module.validate_component_bundle(path)
+    except Exception as exc:
+        raise DesktopPayloadError("desktop_payload_component_bundle_invalid") from exc
+    if (
+        not isinstance(report, dict)
+        or set(report)
+        != {
+            "bundle_sha256",
+            "file_count",
+            "output_bytes",
+            "package_count",
+            "tree_sha256",
+        }
+        or report["package_count"] != 10
+    ):
+        raise DesktopPayloadError("desktop_payload_component_bundle_invalid")
+    return report
+
+
 def build_desktop_payload(
     *,
     frontend_standalone_dir: Path,
@@ -579,6 +611,7 @@ def build_desktop_payload(
     node_executable: Path,
     desktop_project_dir: Path,
     output_dir: Path,
+    component_bundle_dir: Path | None = None,
     backend_executable: str = "OmniBase.Desktop.Backend.exe",
     frontend_entry: str = "server.js",
     desktop_entry: str = "main.js",
@@ -605,7 +638,14 @@ def build_desktop_payload(
         node_executable,
         desktop_project_dir,
     ]
+    if component_bundle_dir is not None:
+        sources.append(component_bundle_dir)
     _assert_output_is_separate(output, sources)
+    component_report = (
+        None
+        if component_bundle_dir is None
+        else _validate_component_bundle(component_bundle_dir)
+    )
 
     host = _scan_tree(runtime_host_publish_dir, target_prefix="runtime")
     # RuntimeHost is placed at the runtime root, not under a configurable path.
@@ -627,12 +667,29 @@ def build_desktop_payload(
     desktop_dist = _scan_tree(
         desktop_dist_dir, target_prefix="desktop-build/prebuilt-dist"
     )
+    sandbox_helper_source = _select_tree_file(
+        desktop_dist,
+        target=P7_SANDBOX_HELPER_SOURCE,
+        label="p7_sandbox_helper",
+    )
+    sandbox_helper = SourceArtifact(
+        sandbox_helper_source.source,
+        P7_SANDBOX_HELPER_TARGET,
+        sandbox_helper_source.identity,
+    )
+    components = (
+        []
+        if component_bundle_dir is None
+        else _scan_tree(component_bundle_dir, target_prefix="components")
+    )
     runtime_sources = [
         *host,
         *backend,
         *frontend,
         *frontend_static,
         *frontend_public,
+        *components,
+        sandbox_helper,
         node,
     ]
     all_sources = [*runtime_sources, *desktop_dist]
@@ -709,6 +766,12 @@ def build_desktop_payload(
         expected_manifest=manifest,
         expected_manifest_raw=manifest_raw,
     )
+    if component_report is not None:
+        copied_component_report = _validate_component_bundle(
+            staging / "runtime/components"
+        )
+        if copied_component_report != component_report:
+            raise DesktopPayloadError("desktop_payload_component_bundle_changed")
 
     if output.exists():
         raise DesktopPayloadError("desktop_payload_output_raced")
@@ -735,6 +798,7 @@ def main() -> int:
     parser.add_argument("--node-executable", type=Path, required=True)
     parser.add_argument("--desktop-project-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--component-bundle-dir", type=Path)
     parser.add_argument("--backend-executable", default="OmniBase.Desktop.Backend.exe")
     parser.add_argument("--frontend-entry", default="server.js")
     parser.add_argument("--desktop-entry", default="main.js")

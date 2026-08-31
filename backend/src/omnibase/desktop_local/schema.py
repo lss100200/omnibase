@@ -6,8 +6,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from omnibase.desktop_local.components.catalog import SEEDED_COMPONENT_VERSIONS, canonical_json
+
 DESKTOP_APPLICATION_ID = 0x4F4D4E42  # ASCII "OMNB"
-DESKTOP_SCHEMA_VERSION = 10
+DESKTOP_SCHEMA_VERSION = 12
 
 STANDARD_WORKBENCH_PROFILE = {
     "appearance": {"density": "inherit", "quiet_chrome": True},
@@ -1455,6 +1457,1756 @@ DESKTOP_0010 = DesktopMigration(
     ),
 )
 
+
+def _sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+_COMPONENT_CATALOG_SEEDS = tuple(
+    "INSERT INTO component_catalog_version "  # noqa: S608 - canonical source-owned seed
+    "(component_id, version, family, publisher_class, display_name, adapter_id, "
+    "manifest_json, manifest_sha256, package_sha256, operation_allowlist_json, "
+    "requires_network, max_calls, max_bytes_in, max_bytes_out, max_tokens, "
+    "max_wall_time_ms, max_cost_units, max_retries, max_concurrency, created_at) VALUES ("
+    + ", ".join(
+        (
+            _sql_literal(item.component_id),
+            _sql_literal(item.version),
+            _sql_literal(item.family),
+            "'source_owned'",
+            _sql_literal(item.display_name),
+            _sql_literal(item.adapter_id),
+            _sql_literal(item.manifest_json),
+            _sql_literal(item.manifest_sha256),
+            _sql_literal(item.package_sha256),
+            _sql_literal(canonical_json(list(item.operations))),
+            "1" if item.requires_network else "0",
+            str(item.max_calls),
+            str(item.max_bytes_in),
+            str(item.max_bytes_out),
+            str(item.max_tokens),
+            str(item.max_wall_time_ms),
+            str(item.max_cost_units),
+            str(item.max_retries),
+            str(item.max_concurrency),
+            "'1970-01-01T00:00:00.000000Z'",
+        )
+    )
+    + ")"
+    for item in SEEDED_COMPONENT_VERSIONS
+)
+
+# Runtime package identity is external evidence.  Catalog-derived digests are
+# policy identities and must never self-attest the bytes shipped by Electron.
+_COMPONENT_PACKAGE_ATTESTATION_SEEDS: tuple[str, ...] = ()
+
+
+def _immutable_table_triggers(table: str, error_code: str) -> tuple[str, str]:
+    return (
+        f"""
+        CREATE TRIGGER {table}_update_forbidden
+        BEFORE UPDATE ON {table}
+        BEGIN
+            SELECT RAISE(ABORT, '{error_code}');
+        END
+        """,
+        f"""
+        CREATE TRIGGER {table}_delete_forbidden
+        BEFORE DELETE ON {table}
+        BEGIN
+            SELECT RAISE(ABORT, '{error_code}');
+        END
+        """,
+    )
+
+
+DESKTOP_0011 = DesktopMigration(
+    version=11,
+    migration_id="desktop_0011_workspace_component_kernel",
+    statements=(
+        """
+        CREATE TABLE workbench_component_slot (
+            slot_id TEXT PRIMARY KEY CHECK (
+                length(slot_id) BETWEEN 3 AND 64
+                AND slot_id NOT GLOB '*[^a-z0-9._-]*'
+            ),
+            slot_kind TEXT NOT NULL CHECK (
+                slot_kind IN ('editor', 'sidebar', 'settings', 'status')
+            ),
+            component_allowed INTEGER NOT NULL CHECK (component_allowed IN (0, 1)),
+            created_at TEXT NOT NULL
+        ) STRICT
+        """,
+        """
+        CREATE TABLE component_catalog_version (
+            component_id TEXT NOT NULL CHECK (
+                length(component_id) BETWEEN 3 AND 128
+                AND component_id GLOB '[a-z]*'
+                AND component_id NOT GLOB '*[^a-z0-9.-]*'
+            ),
+            version TEXT NOT NULL CHECK (
+                length(version) BETWEEN 5 AND 32
+                AND version NOT GLOB '*[^0-9.]*'
+            ),
+            family TEXT NOT NULL CHECK (
+                family IN (
+                    'declarative_ui', 'instruction_skill', 'mcp_connector',
+                    'sandbox_workload', 'trusted_local_adapter'
+                )
+            ),
+            publisher_class TEXT NOT NULL CHECK (
+                publisher_class IN ('source_owned', 'owner_reviewed')
+            ),
+            display_name TEXT NOT NULL CHECK (length(display_name) BETWEEN 1 AND 128),
+            adapter_id TEXT NOT NULL CHECK (
+                length(adapter_id) BETWEEN 3 AND 64
+                AND adapter_id NOT GLOB '*[^a-z0-9.-]*'
+            ),
+            manifest_json TEXT NOT NULL CHECK (json_valid(manifest_json) = 1),
+            manifest_sha256 TEXT NOT NULL CHECK (
+                length(manifest_sha256) = 64
+                AND manifest_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            package_sha256 TEXT NOT NULL CHECK (
+                length(package_sha256) = 64
+                AND package_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            operation_allowlist_json TEXT NOT NULL CHECK (
+                json_valid(operation_allowlist_json) = 1
+                AND json_type(operation_allowlist_json) = 'array'
+                AND json_array_length(operation_allowlist_json) BETWEEN 1 AND 32
+            ),
+            requires_network INTEGER NOT NULL CHECK (requires_network IN (0, 1)),
+            max_calls INTEGER NOT NULL CHECK (max_calls BETWEEN 1 AND 1000000),
+            max_bytes_in INTEGER NOT NULL CHECK (max_bytes_in BETWEEN 0 AND 1073741824),
+            max_bytes_out INTEGER NOT NULL CHECK (max_bytes_out BETWEEN 0 AND 1073741824),
+            max_tokens INTEGER NOT NULL CHECK (max_tokens BETWEEN 0 AND 100000000),
+            max_wall_time_ms INTEGER NOT NULL CHECK (max_wall_time_ms BETWEEN 1 AND 86400000),
+            max_cost_units INTEGER NOT NULL CHECK (max_cost_units BETWEEN 1 AND 100000000),
+            max_retries INTEGER NOT NULL CHECK (max_retries BETWEEN 0 AND 100),
+            max_concurrency INTEGER NOT NULL CHECK (max_concurrency BETWEEN 1 AND 64),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (component_id, version),
+            UNIQUE (component_id, manifest_sha256, package_sha256)
+        ) STRICT
+        """,
+        """
+        CREATE TABLE component_package_attestation (
+            component_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            policy_manifest_sha256 TEXT NOT NULL CHECK (
+                length(policy_manifest_sha256) = 64
+                AND policy_manifest_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            manifest_sha256 TEXT NOT NULL CHECK (
+                length(manifest_sha256) = 64
+                AND manifest_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            package_sha256 TEXT NOT NULL CHECK (
+                length(package_sha256) = 64
+                AND package_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            inventory_sha256 TEXT NOT NULL CHECK (
+                length(inventory_sha256) = 64
+                AND inventory_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            attested_by TEXT NOT NULL CHECK (
+                attested_by IN ('runtime_manifest', 'owner_native_review')
+            ),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (component_id, version, manifest_sha256, package_sha256),
+            FOREIGN KEY (component_id, version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE component_catalog_registration (
+            component_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            manifest_sha256 TEXT NOT NULL,
+            package_sha256 TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            inventory_sha256 TEXT NOT NULL CHECK (length(inventory_sha256) = 64),
+            request_sha256 TEXT NOT NULL UNIQUE CHECK (length(request_sha256) = 64),
+            registered_by TEXT NOT NULL CHECK (registered_by = 'owner_native_review'),
+            registered_at TEXT NOT NULL,
+            PRIMARY KEY (component_id, version, workspace_id),
+            FOREIGN KEY (component_id, version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT,
+            FOREIGN KEY (component_id, version, manifest_sha256, package_sha256)
+                REFERENCES component_package_attestation(
+                    component_id, version, manifest_sha256, package_sha256
+                ) ON DELETE RESTRICT,
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_proposal (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 41 AND id GLOB 'proposal_[0-9a-f]*'
+                AND substr(id, 10) NOT GLOB '*[^0-9a-f]*'
+            ),
+            owner_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            target_version TEXT NOT NULL,
+            change_kind TEXT NOT NULL CHECK (
+                change_kind IN (
+                    'install', 'bind', 'activate', 'disable', 'upgrade', 'rollback',
+                    'revoke', 'uninstall'
+                )
+            ),
+            expected_revision INTEGER NOT NULL CHECK (expected_revision >= 0),
+            manifest_sha256 TEXT NOT NULL CHECK (
+                length(manifest_sha256) = 64
+                AND manifest_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            package_sha256 TEXT NOT NULL CHECK (
+                length(package_sha256) = 64
+                AND package_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            requested_grants_json TEXT NOT NULL CHECK (
+                json_valid(requested_grants_json) = 1
+                AND json_type(requested_grants_json) = 'array'
+            ),
+            desired_configuration_json TEXT NOT NULL CHECK (
+                json_valid(desired_configuration_json) = 1
+                AND json_type(desired_configuration_json) = 'object'
+            ),
+            desired_configuration_sha256 TEXT NOT NULL CHECK (
+                length(desired_configuration_sha256) = 64
+                AND desired_configuration_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            desired_slot_bindings_json TEXT NOT NULL CHECK (
+                json_valid(desired_slot_bindings_json) = 1
+                AND json_type(desired_slot_bindings_json) = 'array'
+            ),
+            desired_slot_bindings_sha256 TEXT NOT NULL CHECK (
+                length(desired_slot_bindings_sha256) = 64
+                AND desired_slot_bindings_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            dependency_graph_json TEXT NOT NULL CHECK (
+                json_valid(dependency_graph_json) = 1
+                AND json_type(dependency_graph_json) = 'array'
+            ),
+            dependency_graph_sha256 TEXT NOT NULL CHECK (
+                length(dependency_graph_sha256) = 64
+                AND dependency_graph_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            source_kind TEXT NOT NULL CHECK (source_kind IN ('owner', 'assistant')),
+            source_reference TEXT,
+            idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 8 AND 128),
+            request_json TEXT NOT NULL CHECK (json_valid(request_json) = 1),
+            request_sha256 TEXT NOT NULL CHECK (
+                length(request_sha256) = 64
+                AND request_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            created_at TEXT NOT NULL,
+            UNIQUE (id, workspace_id),
+            UNIQUE (workspace_id, component_id, idempotency_key),
+            UNIQUE (request_sha256),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (component_id, target_version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT,
+            CHECK (
+                (source_kind = 'owner' AND source_reference IS NULL)
+                OR (source_kind = 'assistant' AND source_reference IS NOT NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_decision (
+            proposal_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+            request_sha256 TEXT NOT NULL CHECK (
+                length(request_sha256) = 64
+                AND request_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
+            decided_by TEXT NOT NULL CHECK (decided_by = 'owner'),
+            decided_at TEXT NOT NULL,
+            FOREIGN KEY (proposal_id, workspace_id)
+                REFERENCES workspace_component_proposal(id, workspace_id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_installation (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 45 AND id GLOB 'installation_[0-9a-f]*'
+                AND substr(id, 14) NOT GLOB '*[^0-9a-f]*'
+            ),
+            owner_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            version TEXT NOT NULL,
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            state TEXT NOT NULL CHECK (
+                state IN ('installed', 'bound', 'active', 'disabled', 'blocked', 'revoked', 'uninstalled')
+            ),
+            binding_generation INTEGER NOT NULL CHECK (binding_generation >= 1),
+            current_runtime_instance_id TEXT,
+            proposal_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            configuration_json TEXT NOT NULL CHECK (
+                json_valid(configuration_json) = 1 AND json_type(configuration_json) = 'object'
+            ),
+            configuration_sha256 TEXT NOT NULL CHECK (length(configuration_sha256) = 64),
+            slot_bindings_json TEXT NOT NULL CHECK (
+                json_valid(slot_bindings_json) = 1 AND json_type(slot_bindings_json) = 'array'
+            ),
+            slot_bindings_sha256 TEXT NOT NULL CHECK (length(slot_bindings_sha256) = 64),
+            dependency_graph_json TEXT NOT NULL CHECK (
+                json_valid(dependency_graph_json) = 1 AND json_type(dependency_graph_json) = 'array'
+            ),
+            dependency_graph_sha256 TEXT NOT NULL CHECK (length(dependency_graph_sha256) = 64),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (id, workspace_id),
+            UNIQUE (id, workspace_id, component_id),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (component_id, version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT,
+            FOREIGN KEY (proposal_id) REFERENCES workspace_component_decision(proposal_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_live_installation
+        ON workspace_component_installation(workspace_id, component_id)
+        WHERE state <> 'uninstalled'
+        """,
+        """
+        CREATE TABLE workspace_component_binding_generation (
+            installation_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            generation INTEGER NOT NULL CHECK (generation >= 1),
+            version TEXT NOT NULL,
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            proposal_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            configuration_json TEXT NOT NULL CHECK (
+                json_valid(configuration_json) = 1 AND json_type(configuration_json) = 'object'
+            ),
+            configuration_sha256 TEXT NOT NULL CHECK (length(configuration_sha256) = 64),
+            slot_bindings_json TEXT NOT NULL CHECK (
+                json_valid(slot_bindings_json) = 1 AND json_type(slot_bindings_json) = 'array'
+            ),
+            slot_bindings_sha256 TEXT NOT NULL CHECK (length(slot_bindings_sha256) = 64),
+            dependency_graph_json TEXT NOT NULL CHECK (
+                json_valid(dependency_graph_json) = 1 AND json_type(dependency_graph_json) = 'array'
+            ),
+            dependency_graph_sha256 TEXT NOT NULL CHECK (length(dependency_graph_sha256) = 64),
+            state TEXT NOT NULL CHECK (
+                state IN ('installed', 'bound', 'active', 'disabled', 'failed', 'revoked')
+            ),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (installation_id, generation),
+            UNIQUE (installation_id, generation, workspace_id),
+            UNIQUE (installation_id, generation, workspace_id, component_id),
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (component_id, version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT,
+            FOREIGN KEY (proposal_id) REFERENCES workspace_component_decision(proposal_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_active_binding
+        ON workspace_component_binding_generation(installation_id)
+        WHERE state = 'active'
+        """,
+        """
+        CREATE TABLE workspace_component_slot_binding (
+            installation_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            slot_id TEXT NOT NULL,
+            binding_key TEXT NOT NULL CHECK (length(binding_key) BETWEEN 3 AND 128),
+            order_index INTEGER NOT NULL CHECK (order_index BETWEEN 0 AND 10000),
+            config_json TEXT NOT NULL CHECK (json_valid(config_json) = 1),
+            config_sha256 TEXT NOT NULL CHECK (length(config_sha256) = 64),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (installation_id, generation, slot_id, binding_key),
+            FOREIGN KEY (installation_id, generation)
+                REFERENCES workspace_component_binding_generation(installation_id, generation)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (slot_id) REFERENCES workbench_component_slot(slot_id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_runtime_instance (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 40 AND id GLOB 'runtime_[0-9a-f]*'
+                AND substr(id, 9) NOT GLOB '*[^0-9a-f]*'
+            ),
+            installation_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            generation INTEGER NOT NULL CHECK (generation >= 1),
+            operation_generation INTEGER NOT NULL CHECK (operation_generation >= 1),
+            workload_identity_digest TEXT NOT NULL CHECK (
+                length(workload_identity_digest) = 64
+                AND workload_identity_digest NOT GLOB '*[^0-9a-f]*'
+            ),
+            state TEXT NOT NULL CHECK (
+                state IN ('active', 'stopped', 'unknown', 'revoked')
+            ),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (id, workspace_id),
+            UNIQUE (id, installation_id, generation),
+            UNIQUE (id, workspace_id, installation_id),
+            UNIQUE (id, workspace_id, installation_id, generation),
+            FOREIGN KEY (installation_id, generation, workspace_id)
+                REFERENCES workspace_component_binding_generation(
+                    installation_id, generation, workspace_id
+                ) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_live_runtime
+        ON workspace_component_runtime_instance(installation_id, generation)
+        WHERE state IN ('active', 'unknown')
+        """,
+        """
+        CREATE TABLE workspace_component_grant (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 38 AND id GLOB 'grant_[0-9a-f]*'
+                AND substr(id, 7) NOT GLOB '*[^0-9a-f]*'
+            ),
+            owner_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            workload_identity_digest TEXT NOT NULL CHECK (length(workload_identity_digest) = 64),
+            actions_json TEXT NOT NULL CHECK (
+                json_valid(actions_json) = 1 AND json_type(actions_json) = 'array'
+            ),
+            scope_json TEXT NOT NULL CHECK (
+                json_valid(scope_json) = 1 AND json_type(scope_json) = 'array'
+            ),
+            requires_network INTEGER NOT NULL CHECK (requires_network IN (0, 1)),
+            state TEXT NOT NULL CHECK (state IN ('active', 'revoked', 'expired')),
+            not_before TEXT NOT NULL,
+            expires_at TEXT NOT NULL CHECK (expires_at > not_before),
+            max_calls INTEGER NOT NULL CHECK (max_calls >= 1),
+            max_bytes_in INTEGER NOT NULL CHECK (max_bytes_in >= 0),
+            max_bytes_out INTEGER NOT NULL CHECK (max_bytes_out >= 0),
+            max_tokens INTEGER NOT NULL CHECK (max_tokens >= 0),
+            max_wall_time_ms INTEGER NOT NULL CHECK (max_wall_time_ms >= 1),
+            max_cost_units INTEGER NOT NULL CHECK (max_cost_units >= 1),
+            max_retries INTEGER NOT NULL CHECK (max_retries >= 0),
+            max_concurrency INTEGER NOT NULL CHECK (max_concurrency >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (runtime_instance_id),
+            UNIQUE (id, workspace_id),
+            UNIQUE (id, workspace_id, runtime_instance_id),
+            UNIQUE (id, workspace_id, runtime_instance_id, installation_id, generation),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (runtime_instance_id, installation_id, generation)
+                REFERENCES workspace_component_runtime_instance(id, installation_id, generation)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (component_id, version)
+                REFERENCES component_catalog_version(component_id, version) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_grant_usage (
+            grant_id TEXT PRIMARY KEY,
+            calls INTEGER NOT NULL DEFAULT 0 CHECK (calls >= 0),
+            bytes_in INTEGER NOT NULL DEFAULT 0 CHECK (bytes_in >= 0),
+            bytes_out_reserved INTEGER NOT NULL DEFAULT 0 CHECK (bytes_out_reserved >= 0),
+            tokens_reserved INTEGER NOT NULL DEFAULT 0 CHECK (tokens_reserved >= 0),
+            wall_time_ms_reserved INTEGER NOT NULL DEFAULT 0 CHECK (wall_time_ms_reserved >= 0),
+            cost_units INTEGER NOT NULL DEFAULT 0 CHECK (cost_units >= 0),
+            retries INTEGER NOT NULL DEFAULT 0 CHECK (retries >= 0),
+            row_version INTEGER NOT NULL DEFAULT 1 CHECK (row_version >= 1),
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (grant_id) REFERENCES workspace_component_grant(id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_workload_lease (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 46 AND id GLOB 'workloadlease_[0-9a-f]*'
+                AND substr(id, 15) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            workload_identity_digest TEXT NOT NULL CHECK (length(workload_identity_digest) = 64),
+            fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+            state TEXT NOT NULL CHECK (state IN ('active', 'revoked', 'expired', 'consumed')),
+            not_before TEXT NOT NULL,
+            expires_at TEXT NOT NULL CHECK (expires_at > not_before),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (runtime_instance_id, fencing_token),
+            UNIQUE (id, workspace_id, runtime_instance_id, installation_id, generation),
+            FOREIGN KEY (runtime_instance_id, workspace_id, installation_id, generation)
+                REFERENCES workspace_component_runtime_instance(
+                    id, workspace_id, installation_id, generation
+                )
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_active_workload_lease
+        ON workspace_component_workload_lease(runtime_instance_id)
+        WHERE state = 'active'
+        """,
+        """
+        CREATE TABLE workspace_component_network_lease (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 45 AND id GLOB 'networklease_[0-9a-f]*'
+                AND substr(id, 14) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            grant_id TEXT NOT NULL,
+            workload_lease_id TEXT NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            generation INTEGER NOT NULL CHECK (generation >= 1),
+            logical_service_id TEXT NOT NULL CHECK (length(logical_service_id) BETWEEN 3 AND 128),
+            fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+            state TEXT NOT NULL CHECK (state IN ('active', 'revoked', 'expired', 'consumed')),
+            not_before TEXT NOT NULL,
+            expires_at TEXT NOT NULL CHECK (expires_at > not_before),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (grant_id, logical_service_id, fencing_token),
+            FOREIGN KEY (grant_id, workspace_id, runtime_instance_id, installation_id, generation)
+                REFERENCES workspace_component_grant(
+                    id, workspace_id, runtime_instance_id, installation_id, generation
+                ) ON DELETE RESTRICT,
+            FOREIGN KEY (
+                workload_lease_id, workspace_id, runtime_instance_id, installation_id, generation
+            ) REFERENCES workspace_component_workload_lease(
+                id, workspace_id, runtime_instance_id, installation_id, generation
+            ) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_active_network_lease
+        ON workspace_component_network_lease(grant_id, logical_service_id, runtime_instance_id)
+        WHERE state = 'active'
+        """,
+        """
+        CREATE TABLE workspace_component_operation (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 39 AND id GLOB 'compop_[0-9a-f]*'
+                AND substr(id, 8) NOT GLOB '*[^0-9a-f]*'
+            ),
+            owner_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            installation_id TEXT,
+            kind TEXT NOT NULL CHECK (
+                kind IN (
+                    'install', 'bind', 'activate', 'disable', 'upgrade', 'rollback',
+                    'revoke', 'uninstall', 'invoke', 'emergency_stop', 'reconcile',
+                    'recovery'
+                )
+            ),
+            action TEXT,
+            operation_generation INTEGER NOT NULL CHECK (operation_generation >= 1),
+            expected_revision INTEGER NOT NULL CHECK (expected_revision >= 0),
+            binding_generation INTEGER,
+            runtime_instance_id TEXT,
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 8 AND 128),
+            request_json TEXT NOT NULL CHECK (json_valid(request_json) = 1),
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            state TEXT NOT NULL CHECK (
+                state IN (
+                    'accepted', 'authorized', 'dispatching', 'succeeded', 'failed',
+                    'ambiguous', 'reconciliation_required',
+                    'reconciled_succeeded', 'reconciled_failed'
+                )
+            ),
+            version INTEGER NOT NULL CHECK (version >= 1),
+            result_sha256 TEXT CHECK (result_sha256 IS NULL OR length(result_sha256) = 64),
+            evidence_sha256 TEXT CHECK (evidence_sha256 IS NULL OR length(evidence_sha256) = 64),
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (workspace_id, component_id, operation_generation),
+            UNIQUE (workspace_id, component_id, idempotency_key),
+            UNIQUE (id, workspace_id),
+            UNIQUE (id, workspace_id, component_id),
+            FOREIGN KEY (workspace_id, owner_id)
+                REFERENCES workspace(id, owner_id) ON DELETE RESTRICT,
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            CHECK (
+                (kind = 'invoke' AND action IS NOT NULL AND installation_id IS NOT NULL)
+                OR (kind <> 'invoke' AND action IS NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_operation_transition (
+            operation_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL CHECK (sequence >= 1),
+            state TEXT NOT NULL CHECK (
+                state IN (
+                    'accepted', 'authorized', 'dispatching', 'succeeded', 'failed',
+                    'ambiguous', 'reconciliation_required',
+                    'reconciled_succeeded', 'reconciled_failed'
+                )
+            ),
+            reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 96),
+            evidence_sha256 TEXT CHECK (
+                evidence_sha256 IS NULL OR length(evidence_sha256) = 64
+            ),
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (operation_id, sequence),
+            FOREIGN KEY (operation_id) REFERENCES workspace_component_operation(id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_budget_reservation (
+            operation_id TEXT PRIMARY KEY,
+            grant_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            calls INTEGER NOT NULL CHECK (calls = 1),
+            bytes_in INTEGER NOT NULL CHECK (bytes_in >= 0),
+            bytes_out_reserved INTEGER NOT NULL CHECK (bytes_out_reserved >= 0),
+            tokens_reserved INTEGER NOT NULL CHECK (tokens_reserved >= 0),
+            wall_time_ms_reserved INTEGER NOT NULL CHECK (wall_time_ms_reserved >= 0),
+            cost_units INTEGER NOT NULL CHECK (cost_units >= 0),
+            retries_reserved INTEGER NOT NULL CHECK (retries_reserved IN (0, 1)),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id)
+                REFERENCES workspace_component_operation(id, workspace_id) ON DELETE RESTRICT,
+            FOREIGN KEY (grant_id, workspace_id, runtime_instance_id)
+                REFERENCES workspace_component_grant(id, workspace_id, runtime_instance_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_effect (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 39 AND id GLOB 'effect_[0-9a-f]*'
+                AND substr(id, 8) NOT GLOB '*[^0-9a-f]*'
+            ),
+            operation_id TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL,
+            effect_kind TEXT NOT NULL CHECK (
+                effect_kind IN ('lifecycle', 'adapter_invoke', 'emergency_stop')
+            ),
+            logical_target_id TEXT NOT NULL CHECK (length(logical_target_id) BETWEEN 3 AND 128),
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            state TEXT NOT NULL CHECK (
+                state IN (
+                    'pending', 'committed', 'failed', 'unknown', 'reconciliation_required',
+                    'reconciled_committed', 'reconciled_failed'
+                )
+            ),
+            version INTEGER NOT NULL CHECK (version >= 1),
+            result_sha256 TEXT CHECK (result_sha256 IS NULL OR length(result_sha256) = 64),
+            evidence_sha256 TEXT CHECK (evidence_sha256 IS NULL OR length(evidence_sha256) = 64),
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (id, workspace_id),
+            UNIQUE (id, operation_id, workspace_id),
+            FOREIGN KEY (operation_id, workspace_id)
+                REFERENCES workspace_component_operation(id, workspace_id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_effect_transition (
+            effect_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL CHECK (sequence >= 1),
+            state TEXT NOT NULL CHECK (
+                state IN (
+                    'pending', 'committed', 'failed', 'unknown', 'reconciliation_required',
+                    'reconciled_committed', 'reconciled_failed'
+                )
+            ),
+            reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 96),
+            evidence_sha256 TEXT CHECK (
+                evidence_sha256 IS NULL OR length(evidence_sha256) = 64
+            ),
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (effect_id, sequence),
+            FOREIGN KEY (effect_id) REFERENCES workspace_component_effect(id) ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_reconciliation (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 42 AND id GLOB 'reconcile_[0-9a-f]*'
+                AND substr(id, 11) NOT GLOB '*[^0-9a-f]*'
+            ),
+            operation_id TEXT NOT NULL UNIQUE,
+            effect_id TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            outcome TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed')),
+            evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+            decided_by TEXT NOT NULL CHECK (decided_by = 'owner'),
+            decided_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id)
+                REFERENCES workspace_component_operation(id, workspace_id) ON DELETE RESTRICT,
+            FOREIGN KEY (effect_id, operation_id, workspace_id)
+                REFERENCES workspace_component_effect(id, operation_id, workspace_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_lifecycle_dispatch (
+            operation_id TEXT PRIMARY KEY,
+            effect_id TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            installation_id TEXT,
+            binding_generation INTEGER,
+            action TEXT NOT NULL CHECK (
+                action IN (
+                    'install', 'bind', 'activate', 'disable', 'upgrade', 'rollback',
+                    'revoke', 'uninstall', 'recovery'
+                )
+            ),
+            adapter_id TEXT NOT NULL CHECK (length(adapter_id) BETWEEN 3 AND 64),
+            reserved_runtime_instance_id TEXT,
+            workload_identity_digest TEXT,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id, component_id)
+                REFERENCES workspace_component_operation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (effect_id, operation_id, workspace_id)
+                REFERENCES workspace_component_effect(id, operation_id, workspace_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            CHECK (
+                (action IN ('activate', 'recovery') AND installation_id IS NOT NULL
+                    AND binding_generation IS NOT NULL
+                    AND reserved_runtime_instance_id IS NOT NULL
+                    AND workload_identity_digest IS NOT NULL)
+                OR (action NOT IN ('activate', 'recovery') AND reserved_runtime_instance_id IS NULL
+                    AND workload_identity_digest IS NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_lifecycle_receipt (
+            operation_id TEXT PRIMARY KEY,
+            effect_id TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            installation_id TEXT,
+            binding_generation INTEGER,
+            runtime_instance_id TEXT,
+            adapter_id TEXT NOT NULL CHECK (
+                length(adapter_id) BETWEEN 3 AND 64
+                AND adapter_id NOT GLOB '*[^a-z0-9.-]*'
+            ),
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            outcome TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed', 'unknown')),
+            health_state TEXT CHECK (
+                health_state IS NULL OR health_state IN ('healthy', 'unhealthy', 'unknown')
+            ),
+            workload_identity_digest TEXT CHECK (
+                workload_identity_digest IS NULL OR length(workload_identity_digest) = 64
+            ),
+            result_sha256 TEXT CHECK (result_sha256 IS NULL OR length(result_sha256) = 64),
+            evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+            error_code TEXT,
+            receipt_sha256 TEXT NOT NULL UNIQUE CHECK (length(receipt_sha256) = 64),
+            settled_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id, component_id)
+                REFERENCES workspace_component_operation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (effect_id, operation_id, workspace_id)
+                REFERENCES workspace_component_effect(id, operation_id, workspace_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (operation_id)
+                REFERENCES workspace_component_lifecycle_dispatch(operation_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (
+                runtime_instance_id, workspace_id, installation_id, binding_generation
+            ) REFERENCES workspace_component_runtime_instance(
+                id, workspace_id, installation_id, generation
+            ) ON DELETE RESTRICT,
+            CHECK (
+                (runtime_instance_id IS NULL AND workload_identity_digest IS NULL)
+                OR (runtime_instance_id IS NOT NULL AND installation_id IS NOT NULL
+                    AND binding_generation IS NOT NULL
+                    AND workload_identity_digest IS NOT NULL)
+            ),
+            CHECK (
+                (outcome = 'succeeded' AND result_sha256 IS NOT NULL AND error_code IS NULL)
+                OR (outcome = 'failed' AND error_code IS NOT NULL)
+                OR outcome = 'unknown'
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_invocation_receipt (
+            operation_id TEXT PRIMARY KEY,
+            grant_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            outcome TEXT NOT NULL CHECK (
+                outcome IN ('succeeded', 'failed', 'cancelled', 'unknown')
+            ),
+            reserved_bytes_out INTEGER NOT NULL CHECK (reserved_bytes_out >= 0),
+            reserved_tokens INTEGER NOT NULL CHECK (reserved_tokens >= 0),
+            reserved_wall_time_ms INTEGER NOT NULL CHECK (reserved_wall_time_ms >= 0),
+            actual_bytes_out INTEGER NOT NULL CHECK (actual_bytes_out >= 0),
+            actual_tokens INTEGER NOT NULL CHECK (actual_tokens >= 0),
+            actual_wall_time_ms INTEGER NOT NULL CHECK (actual_wall_time_ms >= 0),
+            result_sha256 TEXT CHECK (result_sha256 IS NULL OR length(result_sha256) = 64),
+            evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+            error_code TEXT,
+            receipt_sha256 TEXT NOT NULL UNIQUE CHECK (length(receipt_sha256) = 64),
+            settled_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id)
+                REFERENCES workspace_component_operation(id, workspace_id) ON DELETE RESTRICT,
+            FOREIGN KEY (operation_id)
+                REFERENCES workspace_component_budget_reservation(operation_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (grant_id, workspace_id, runtime_instance_id)
+                REFERENCES workspace_component_grant(id, workspace_id, runtime_instance_id)
+                ON DELETE RESTRICT,
+            CHECK (actual_bytes_out <= reserved_bytes_out),
+            CHECK (actual_tokens <= reserved_tokens),
+            CHECK (actual_wall_time_ms <= reserved_wall_time_ms),
+            CHECK (
+                (outcome = 'succeeded' AND result_sha256 IS NOT NULL AND error_code IS NULL)
+                OR (outcome IN ('failed', 'cancelled') AND error_code IS NOT NULL)
+                OR outcome = 'unknown'
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_emergency_receipt (
+            operation_id TEXT PRIMARY KEY,
+            effect_id TEXT NOT NULL UNIQUE,
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            outcome TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed', 'unknown')),
+            evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+            error_code TEXT,
+            receipt_sha256 TEXT NOT NULL UNIQUE CHECK (length(receipt_sha256) = 64),
+            settled_at TEXT NOT NULL,
+            FOREIGN KEY (operation_id, workspace_id, component_id)
+                REFERENCES workspace_component_operation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (effect_id, operation_id, workspace_id)
+                REFERENCES workspace_component_effect(id, operation_id, workspace_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            CHECK (
+                (outcome = 'succeeded' AND error_code IS NULL)
+                OR (outcome IN ('failed', 'unknown') AND error_code IS NOT NULL)
+            )
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_recovery_request (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 41 AND id GLOB 'recovery_[0-9a-f]*'
+                AND substr(id, 10) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            binding_generation INTEGER NOT NULL CHECK (binding_generation >= 1),
+            previous_runtime_instance_id TEXT NOT NULL,
+            operation_id TEXT NOT NULL UNIQUE,
+            request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            state TEXT NOT NULL CHECK (state IN ('pending_native_revalidation', 'blocked')),
+            reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 96),
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (installation_id, workspace_id, component_id)
+                REFERENCES workspace_component_installation(id, workspace_id, component_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (previous_runtime_instance_id, workspace_id, installation_id)
+                REFERENCES workspace_component_runtime_instance(id, workspace_id, installation_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (operation_id, workspace_id, component_id)
+                REFERENCES workspace_component_operation(id, workspace_id, component_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_health (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 39 AND id GLOB 'health_[0-9a-f]*'
+                AND substr(id, 8) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            component_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            runtime_instance_id TEXT NOT NULL,
+            operation_id TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('healthy', 'degraded', 'unhealthy', 'unknown')),
+            manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
+            package_sha256 TEXT NOT NULL CHECK (length(package_sha256) = 64),
+            workload_identity_digest TEXT NOT NULL CHECK (length(workload_identity_digest) = 64),
+            evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+            observed_at TEXT NOT NULL,
+            UNIQUE (runtime_instance_id, operation_id),
+            FOREIGN KEY (runtime_instance_id, workspace_id, installation_id, generation)
+                REFERENCES workspace_component_runtime_instance(
+                    id, workspace_id, installation_id, generation
+                )
+                ON DELETE RESTRICT,
+            FOREIGN KEY (operation_id, workspace_id, component_id)
+                REFERENCES workspace_component_operation(id, workspace_id, component_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE TABLE workspace_component_revocation (
+            id TEXT PRIMARY KEY CHECK (
+                length(id) = 43 AND id GLOB 'revocation_[0-9a-f]*'
+                AND substr(id, 12) NOT GLOB '*[^0-9a-f]*'
+            ),
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            runtime_instance_id TEXT,
+            grant_id TEXT,
+            reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 96),
+            actor_type TEXT NOT NULL CHECK (actor_type IN ('owner', 'system')),
+            actor_id TEXT,
+            created_at TEXT NOT NULL,
+            CHECK (
+                (actor_type = 'owner' AND actor_id IS NOT NULL)
+                OR (actor_type = 'system' AND actor_id IS NULL)
+            ),
+            CHECK (runtime_instance_id IS NOT NULL OR grant_id IS NOT NULL),
+            FOREIGN KEY (installation_id, workspace_id)
+                REFERENCES workspace_component_installation(id, workspace_id) ON DELETE RESTRICT,
+            FOREIGN KEY (runtime_instance_id, workspace_id, installation_id)
+                REFERENCES workspace_component_runtime_instance(id, workspace_id, installation_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (grant_id, workspace_id, runtime_instance_id)
+                REFERENCES workspace_component_grant(id, workspace_id, runtime_instance_id)
+                ON DELETE RESTRICT
+        ) STRICT
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_runtime_revocation_unique
+        ON workspace_component_revocation(runtime_instance_id)
+        WHERE runtime_instance_id IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_grant_revocation_unique
+        ON workspace_component_revocation(grant_id)
+        WHERE grant_id IS NOT NULL
+        """,
+        *_immutable_table_triggers("workbench_component_slot", "desktop_component_slot_immutable"),
+        *_immutable_table_triggers(
+            "component_catalog_version", "desktop_component_catalog_immutable"
+        ),
+        *_immutable_table_triggers(
+            "component_package_attestation", "desktop_component_package_attestation_immutable"
+        ),
+        *_immutable_table_triggers(
+            "component_catalog_registration", "desktop_component_catalog_registration_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_proposal", "desktop_component_proposal_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_decision", "desktop_component_decision_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_slot_binding", "desktop_component_slot_binding_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_operation_transition",
+            "desktop_component_operation_transition_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_budget_reservation",
+            "desktop_component_budget_reservation_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_effect_transition",
+            "desktop_component_effect_transition_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_reconciliation", "desktop_component_reconciliation_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_lifecycle_dispatch",
+            "desktop_component_lifecycle_dispatch_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_lifecycle_receipt",
+            "desktop_component_lifecycle_receipt_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_invocation_receipt",
+            "desktop_component_invocation_receipt_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_emergency_receipt",
+            "desktop_component_emergency_receipt_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_recovery_request",
+            "desktop_component_recovery_request_immutable",
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_health", "desktop_component_health_immutable"
+        ),
+        *_immutable_table_triggers(
+            "workspace_component_revocation", "desktop_component_revocation_immutable"
+        ),
+        """
+        CREATE TRIGGER workspace_component_installation_delete_forbidden
+        BEFORE DELETE ON workspace_component_installation
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_installation_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_binding_delete_forbidden
+        BEFORE DELETE ON workspace_component_binding_generation
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_binding_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_runtime_delete_forbidden
+        BEFORE DELETE ON workspace_component_runtime_instance
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_runtime_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_grant_delete_forbidden
+        BEFORE DELETE ON workspace_component_grant
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_grant_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_grant_usage_delete_forbidden
+        BEFORE DELETE ON workspace_component_grant_usage
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_grant_usage_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_workload_lease_delete_forbidden
+        BEFORE DELETE ON workspace_component_workload_lease
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_workload_lease_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_delete_forbidden
+        BEFORE DELETE ON workspace_component_network_lease
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_operation_delete_forbidden
+        BEFORE DELETE ON workspace_component_operation
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_operation_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_effect_delete_forbidden
+        BEFORE DELETE ON workspace_component_effect
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_effect_delete_forbidden');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_revocation_target_binding
+        BEFORE INSERT ON workspace_component_revocation
+        WHEN (
+            NEW.runtime_instance_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM workspace_component_runtime_instance AS runtime
+                WHERE runtime.id = NEW.runtime_instance_id
+                  AND runtime.workspace_id = NEW.workspace_id
+                  AND runtime.installation_id = NEW.installation_id
+            )
+        ) OR (
+            NEW.grant_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM workspace_component_grant AS grant
+                WHERE grant.id = NEW.grant_id
+                  AND grant.workspace_id = NEW.workspace_id
+                  AND grant.installation_id = NEW.installation_id
+                  AND (
+                      NEW.runtime_instance_id IS NULL
+                      OR grant.runtime_instance_id = NEW.runtime_instance_id
+                  )
+            )
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_revocation_target_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_proposal_catalog_binding
+        BEFORE INSERT ON workspace_component_proposal
+        WHEN NOT EXISTS (
+            SELECT 1 FROM component_catalog_version AS version
+            WHERE version.component_id = NEW.component_id
+              AND version.version = NEW.target_version
+        ) OR NOT EXISTS (
+            SELECT 1 FROM component_package_attestation AS package
+            WHERE package.component_id = NEW.component_id
+              AND package.version = NEW.target_version
+              AND package.manifest_sha256 = NEW.manifest_sha256
+              AND package.package_sha256 = NEW.package_sha256
+        ) OR EXISTS (
+            SELECT 1 FROM component_catalog_version AS catalog
+            WHERE catalog.component_id = NEW.component_id
+              AND catalog.version = NEW.target_version
+              AND catalog.publisher_class = 'owner_reviewed'
+              AND NOT EXISTS (
+                  SELECT 1 FROM component_catalog_registration AS registration
+                  WHERE registration.component_id = NEW.component_id
+                    AND registration.version = NEW.target_version
+                    AND registration.workspace_id = NEW.workspace_id
+                    AND registration.owner_id = NEW.owner_id
+                    AND registration.manifest_sha256 = NEW.manifest_sha256
+                    AND registration.package_sha256 = NEW.package_sha256
+              )
+        ) OR (
+            NEW.source_kind = 'assistant' AND NOT EXISTS (
+                SELECT 1 FROM message
+                JOIN invocation ON invocation.id = message.invocation_id
+                  AND invocation.owner_id = message.owner_id
+                  AND invocation.workspace_id = message.workspace_id
+                  AND invocation.conversation_id = message.conversation_id
+                WHERE message.id = NEW.source_reference
+                  AND message.owner_id = NEW.owner_id
+                  AND message.workspace_id = NEW.workspace_id
+                  AND message.role = 'assistant'
+                  AND message.status = 'completed'
+                  AND invocation.status = 'succeeded'
+            )
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_proposal_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER component_package_attestation_policy_binding
+        BEFORE INSERT ON component_package_attestation
+        WHEN NOT EXISTS (
+            SELECT 1 FROM component_catalog_version AS catalog
+            WHERE catalog.component_id = NEW.component_id
+              AND catalog.version = NEW.version
+              AND catalog.manifest_sha256 = NEW.policy_manifest_sha256
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_attestation_policy_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_decision_binding
+        BEFORE INSERT ON workspace_component_decision
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_proposal AS proposal
+            JOIN workspace AS workspace
+              ON workspace.id = proposal.workspace_id
+             AND workspace.owner_id = proposal.owner_id
+             AND workspace.state = 'active'
+            LEFT JOIN workspace_component_installation AS installation
+              ON installation.workspace_id = proposal.workspace_id
+             AND installation.component_id = proposal.component_id
+             AND installation.state <> 'uninstalled'
+            WHERE proposal.id = NEW.proposal_id
+              AND proposal.workspace_id = NEW.workspace_id
+              AND proposal.request_sha256 = NEW.request_sha256
+              AND (
+                  NEW.decision = 'rejected'
+                  OR (
+                      NEW.decision = 'approved'
+                      AND COALESCE(installation.revision, 0) = proposal.expected_revision
+                  )
+              )
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_decision_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_installation_identity_guard
+        BEFORE UPDATE ON workspace_component_installation
+        WHEN NEW.id <> OLD.id OR NEW.owner_id <> OLD.owner_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.component_id <> OLD.component_id
+          OR NEW.created_at <> OLD.created_at
+          OR NEW.revision <> OLD.revision + 1
+          OR NEW.binding_generation < OLD.binding_generation
+          OR (
+              (
+                  NEW.version <> OLD.version
+                  OR NEW.manifest_sha256 <> OLD.manifest_sha256
+                  OR NEW.package_sha256 <> OLD.package_sha256
+                  OR NEW.proposal_id <> OLD.proposal_id
+                  OR NEW.request_sha256 <> OLD.request_sha256
+                  OR NEW.configuration_sha256 <> OLD.configuration_sha256
+                  OR NEW.slot_bindings_sha256 <> OLD.slot_bindings_sha256
+                  OR NEW.dependency_graph_sha256 <> OLD.dependency_graph_sha256
+              ) AND NOT EXISTS (
+                  SELECT 1 FROM workspace_component_binding_generation AS binding
+                  WHERE binding.installation_id = NEW.id
+                    AND binding.workspace_id = NEW.workspace_id
+                    AND binding.component_id = NEW.component_id
+                    AND binding.generation = NEW.binding_generation
+                    AND binding.version = NEW.version
+                    AND binding.manifest_sha256 = NEW.manifest_sha256
+                    AND binding.package_sha256 = NEW.package_sha256
+                    AND binding.proposal_id = NEW.proposal_id
+                    AND binding.request_sha256 = NEW.request_sha256
+                    AND binding.configuration_sha256 = NEW.configuration_sha256
+                    AND binding.slot_bindings_sha256 = NEW.slot_bindings_sha256
+                    AND binding.dependency_graph_sha256 = NEW.dependency_graph_sha256
+              )
+          )
+          OR NOT (
+              NEW.state = OLD.state
+              OR (OLD.state = 'installed' AND NEW.state IN ('bound', 'blocked', 'revoked', 'uninstalled'))
+              OR (OLD.state = 'bound' AND NEW.state IN ('active', 'disabled', 'blocked', 'revoked'))
+              OR (OLD.state = 'active' AND NEW.state IN ('bound', 'disabled', 'blocked', 'revoked'))
+              OR (OLD.state = 'disabled' AND NEW.state IN ('bound', 'blocked', 'revoked', 'uninstalled'))
+              OR (OLD.state = 'blocked' AND NEW.state IN ('bound', 'active', 'disabled', 'revoked', 'uninstalled'))
+              OR (OLD.state = 'revoked' AND NEW.state = 'uninstalled')
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_installation_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_installation_audit_guard
+        BEFORE UPDATE ON workspace_component_installation
+        WHEN NOT EXISTS (
+            SELECT 1 FROM audit_event AS audit
+            WHERE audit.owner_id = NEW.owner_id
+              AND audit.workspace_id = NEW.workspace_id
+              AND audit.event_type = 'workspace_component_state_changed'
+              AND json_extract(audit.payload_json, '$.installation_id') = NEW.id
+              AND json_extract(audit.payload_json, '$.revision') = NEW.revision
+              AND json_extract(audit.payload_json, '$.state') = NEW.state
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_installation_audit_missing');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_active_evidence_guard
+        BEFORE UPDATE OF state ON workspace_component_installation
+        WHEN NEW.state = 'active' AND OLD.state <> 'active' AND NOT EXISTS (
+            SELECT 1 FROM workspace_component_binding_generation AS binding
+            JOIN workspace_component_runtime_instance AS runtime
+              ON runtime.id = NEW.current_runtime_instance_id
+             AND runtime.installation_id = binding.installation_id
+             AND runtime.generation = binding.generation
+             AND runtime.state = 'active'
+            JOIN workspace_component_health AS health
+              ON health.runtime_instance_id = runtime.id
+             AND health.installation_id = binding.installation_id
+             AND health.generation = binding.generation
+             AND health.state = 'healthy'
+             AND health.manifest_sha256 = binding.manifest_sha256
+             AND health.package_sha256 = binding.package_sha256
+            JOIN workspace_component_operation AS operation
+              ON operation.id = health.operation_id
+             AND operation.state = 'succeeded'
+            JOIN workspace_component_effect AS effect
+              ON effect.operation_id = operation.id
+             AND effect.state = 'committed'
+            JOIN workspace_component_lifecycle_receipt AS receipt
+              ON receipt.operation_id = operation.id
+             AND receipt.effect_id = effect.id
+             AND receipt.workspace_id = NEW.workspace_id
+             AND receipt.component_id = NEW.component_id
+             AND receipt.installation_id = NEW.id
+             AND receipt.binding_generation = NEW.binding_generation
+             AND receipt.runtime_instance_id = runtime.id
+             AND receipt.request_sha256 = operation.request_sha256
+             AND receipt.manifest_sha256 = NEW.manifest_sha256
+             AND receipt.package_sha256 = NEW.package_sha256
+             AND receipt.outcome = 'succeeded'
+             AND receipt.health_state = 'healthy'
+             AND receipt.workload_identity_digest = runtime.workload_identity_digest
+             AND receipt.evidence_sha256 = health.evidence_sha256
+            WHERE binding.installation_id = NEW.id
+              AND binding.generation = NEW.binding_generation
+              AND binding.state = 'active'
+              AND binding.manifest_sha256 = NEW.manifest_sha256
+              AND binding.package_sha256 = NEW.package_sha256
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_activation_evidence_missing');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_binding_identity_guard
+        BEFORE UPDATE ON workspace_component_binding_generation
+        WHEN NEW.installation_id <> OLD.installation_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.component_id <> OLD.component_id
+          OR NEW.generation <> OLD.generation OR NEW.version <> OLD.version
+          OR NEW.manifest_sha256 <> OLD.manifest_sha256
+          OR NEW.package_sha256 <> OLD.package_sha256
+          OR NEW.proposal_id <> OLD.proposal_id OR NEW.request_sha256 <> OLD.request_sha256
+          OR NEW.created_at <> OLD.created_at
+          OR NOT (
+              (OLD.state = 'installed' AND NEW.state IN ('bound', 'failed', 'revoked'))
+              OR (OLD.state = 'bound' AND NEW.state IN ('active', 'disabled', 'failed', 'revoked'))
+              OR (OLD.state = 'active' AND NEW.state IN ('disabled', 'failed', 'revoked'))
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_binding_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_runtime_identity_guard
+        BEFORE UPDATE ON workspace_component_runtime_instance
+        WHEN NEW.id <> OLD.id OR NEW.installation_id <> OLD.installation_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.generation <> OLD.generation
+          OR NEW.operation_generation <> OLD.operation_generation
+          OR NEW.workload_identity_digest <> OLD.workload_identity_digest
+          OR NEW.created_at <> OLD.created_at
+          OR NOT (
+              OLD.state = 'active' AND NEW.state IN ('stopped', 'unknown', 'revoked')
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_runtime_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_grant_identity_guard
+        BEFORE UPDATE ON workspace_component_grant
+        WHEN NEW.id <> OLD.id OR NEW.owner_id <> OLD.owner_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.installation_id <> OLD.installation_id
+          OR NEW.generation <> OLD.generation OR NEW.runtime_instance_id <> OLD.runtime_instance_id
+          OR NEW.component_id <> OLD.component_id OR NEW.version <> OLD.version
+          OR NEW.manifest_sha256 <> OLD.manifest_sha256
+          OR NEW.package_sha256 <> OLD.package_sha256
+          OR NEW.request_sha256 <> OLD.request_sha256
+          OR NEW.workload_identity_digest <> OLD.workload_identity_digest
+          OR NEW.actions_json <> OLD.actions_json OR NEW.scope_json <> OLD.scope_json
+          OR NEW.requires_network <> OLD.requires_network
+          OR NEW.not_before <> OLD.not_before OR NEW.expires_at <> OLD.expires_at
+          OR NEW.max_calls <> OLD.max_calls OR NEW.max_bytes_in <> OLD.max_bytes_in
+          OR NEW.max_bytes_out <> OLD.max_bytes_out OR NEW.max_tokens <> OLD.max_tokens
+          OR NEW.max_wall_time_ms <> OLD.max_wall_time_ms
+          OR NEW.max_cost_units <> OLD.max_cost_units OR NEW.max_retries <> OLD.max_retries
+          OR NEW.max_concurrency <> OLD.max_concurrency OR NEW.created_at <> OLD.created_at
+          OR NOT (OLD.state = 'active' AND NEW.state IN ('revoked', 'expired'))
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_grant_identity_drift');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_grant_usage_guard
+        BEFORE UPDATE ON workspace_component_grant_usage
+        WHEN NEW.grant_id <> OLD.grant_id OR NEW.row_version <> OLD.row_version + 1
+          OR NEW.calls < OLD.calls OR NEW.bytes_in < OLD.bytes_in
+          OR NEW.bytes_out_reserved < OLD.bytes_out_reserved
+          OR NEW.tokens_reserved < OLD.tokens_reserved
+          OR NEW.wall_time_ms_reserved < OLD.wall_time_ms_reserved
+          OR NEW.cost_units < OLD.cost_units OR NEW.retries < OLD.retries
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_grant_usage_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_workload_lease_guard
+        BEFORE UPDATE ON workspace_component_workload_lease
+        WHEN NEW.id <> OLD.id OR NEW.workspace_id <> OLD.workspace_id
+          OR NEW.installation_id <> OLD.installation_id OR NEW.generation <> OLD.generation
+          OR NEW.runtime_instance_id <> OLD.runtime_instance_id
+          OR NEW.workload_identity_digest <> OLD.workload_identity_digest
+          OR NEW.fencing_token <> OLD.fencing_token OR NEW.not_before <> OLD.not_before
+          OR NEW.expires_at <> OLD.expires_at OR NEW.created_at <> OLD.created_at
+          OR NOT (OLD.state = 'active' AND NEW.state IN ('revoked', 'expired', 'consumed'))
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_workload_lease_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_guard
+        BEFORE UPDATE ON workspace_component_network_lease
+        WHEN NEW.id <> OLD.id OR NEW.workspace_id <> OLD.workspace_id
+          OR NEW.grant_id <> OLD.grant_id OR NEW.workload_lease_id <> OLD.workload_lease_id
+          OR NEW.runtime_instance_id <> OLD.runtime_instance_id
+          OR NEW.installation_id <> OLD.installation_id OR NEW.generation <> OLD.generation
+          OR NEW.logical_service_id <> OLD.logical_service_id
+          OR NEW.fencing_token <> OLD.fencing_token OR NEW.not_before <> OLD.not_before
+          OR NEW.expires_at <> OLD.expires_at OR NEW.created_at <> OLD.created_at
+          OR NOT (OLD.state = 'active' AND NEW.state IN ('revoked', 'expired', 'consumed'))
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_operation_identity_guard
+        BEFORE UPDATE ON workspace_component_operation
+        WHEN NEW.id <> OLD.id OR NEW.owner_id <> OLD.owner_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.component_id <> OLD.component_id
+          OR NEW.installation_id IS NOT OLD.installation_id OR NEW.kind <> OLD.kind
+          OR NEW.action IS NOT OLD.action OR NEW.operation_generation <> OLD.operation_generation
+          OR NEW.expected_revision <> OLD.expected_revision
+          OR NEW.binding_generation IS NOT OLD.binding_generation
+          OR NEW.runtime_instance_id IS NOT OLD.runtime_instance_id
+          OR NEW.manifest_sha256 <> OLD.manifest_sha256
+          OR NEW.package_sha256 <> OLD.package_sha256
+          OR NEW.idempotency_key <> OLD.idempotency_key
+          OR NEW.request_json <> OLD.request_json OR NEW.request_sha256 <> OLD.request_sha256
+          OR NEW.created_at <> OLD.created_at OR NEW.version <> OLD.version + 1
+          OR NOT (
+              (OLD.state = 'accepted' AND NEW.state IN ('authorized', 'failed'))
+              OR (OLD.state = 'authorized' AND NEW.state IN ('dispatching', 'failed'))
+              OR (OLD.state = 'dispatching' AND NEW.state IN ('succeeded', 'failed', 'ambiguous'))
+              OR (OLD.state = 'ambiguous' AND NEW.state = 'reconciliation_required')
+              OR (OLD.state = 'reconciliation_required'
+                  AND NEW.state IN ('reconciled_succeeded', 'reconciled_failed'))
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_operation_transition_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_operation_transition_binding
+        BEFORE UPDATE ON workspace_component_operation
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_operation_transition AS transition
+            WHERE transition.operation_id = NEW.id
+              AND transition.sequence = NEW.version
+              AND transition.state = NEW.state
+              AND transition.evidence_sha256 IS NEW.evidence_sha256
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_operation_transition_missing');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_effect_identity_guard
+        BEFORE UPDATE ON workspace_component_effect
+        WHEN NEW.id <> OLD.id OR NEW.operation_id <> OLD.operation_id
+          OR NEW.workspace_id <> OLD.workspace_id OR NEW.effect_kind <> OLD.effect_kind
+          OR NEW.logical_target_id <> OLD.logical_target_id
+          OR NEW.request_sha256 <> OLD.request_sha256 OR NEW.created_at <> OLD.created_at
+          OR NEW.version <> OLD.version + 1
+          OR NOT (
+              (OLD.state = 'pending' AND NEW.state IN ('committed', 'failed', 'unknown'))
+              OR (OLD.state = 'unknown' AND NEW.state = 'reconciliation_required')
+              OR (OLD.state = 'reconciliation_required'
+                  AND NEW.state IN ('reconciled_committed', 'reconciled_failed'))
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_effect_transition_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_effect_transition_binding
+        BEFORE UPDATE ON workspace_component_effect
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_effect_transition AS transition
+            WHERE transition.effect_id = NEW.id
+              AND transition.sequence = NEW.version
+              AND transition.state = NEW.state
+              AND transition.evidence_sha256 IS NEW.evidence_sha256
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_effect_transition_missing');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_lifecycle_receipt_binding
+        BEFORE INSERT ON workspace_component_lifecycle_receipt
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_operation AS operation
+            JOIN workspace_component_effect AS effect
+              ON effect.id = NEW.effect_id
+             AND effect.operation_id = operation.id
+             AND effect.workspace_id = operation.workspace_id
+            JOIN workspace_component_lifecycle_dispatch AS dispatch
+              ON dispatch.operation_id = operation.id
+             AND dispatch.effect_id = effect.id
+            JOIN component_catalog_version AS catalog
+              ON catalog.component_id = operation.component_id
+             AND catalog.adapter_id = NEW.adapter_id
+            WHERE operation.id = NEW.operation_id
+              AND operation.workspace_id = NEW.workspace_id
+              AND operation.component_id = NEW.component_id
+              AND operation.installation_id IS NEW.installation_id
+              AND operation.binding_generation IS NEW.binding_generation
+              AND operation.request_sha256 = NEW.request_sha256
+              AND operation.manifest_sha256 = NEW.manifest_sha256
+              AND operation.package_sha256 = NEW.package_sha256
+              AND operation.state = 'dispatching'
+              AND effect.state = 'pending'
+              AND dispatch.installation_id IS NEW.installation_id
+              AND dispatch.binding_generation IS NEW.binding_generation
+              AND dispatch.reserved_runtime_instance_id IS NEW.runtime_instance_id
+              AND dispatch.workload_identity_digest IS NEW.workload_identity_digest
+              AND dispatch.adapter_id = NEW.adapter_id
+              AND dispatch.request_sha256 = NEW.request_sha256
+              AND dispatch.manifest_sha256 = NEW.manifest_sha256
+              AND dispatch.package_sha256 = NEW.package_sha256
+        ) OR (
+            NEW.outcome = 'succeeded' AND NEW.runtime_instance_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM workspace_component_runtime_instance AS runtime
+                WHERE runtime.id = NEW.runtime_instance_id
+                  AND runtime.workspace_id = NEW.workspace_id
+                  AND runtime.installation_id = NEW.installation_id
+                  AND runtime.generation = NEW.binding_generation
+                  AND runtime.workload_identity_digest = NEW.workload_identity_digest
+            )
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_lifecycle_receipt_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_invocation_receipt_binding
+        BEFORE INSERT ON workspace_component_invocation_receipt
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_operation AS operation
+            JOIN workspace_component_budget_reservation AS reservation
+              ON reservation.operation_id = operation.id
+            WHERE operation.id = NEW.operation_id
+              AND operation.kind = 'invoke'
+              AND operation.workspace_id = NEW.workspace_id
+              AND operation.runtime_instance_id = NEW.runtime_instance_id
+              AND operation.request_sha256 = NEW.request_sha256
+              AND operation.state = 'dispatching'
+              AND reservation.grant_id = NEW.grant_id
+              AND reservation.workspace_id = NEW.workspace_id
+              AND reservation.runtime_instance_id = NEW.runtime_instance_id
+              AND reservation.request_sha256 = NEW.request_sha256
+              AND reservation.bytes_out_reserved = NEW.reserved_bytes_out
+              AND reservation.tokens_reserved = NEW.reserved_tokens
+              AND reservation.wall_time_ms_reserved = NEW.reserved_wall_time_ms
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_invocation_receipt_binding_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_emergency_receipt_binding
+        BEFORE INSERT ON workspace_component_emergency_receipt
+        WHEN NOT EXISTS (
+            SELECT 1 FROM workspace_component_operation AS operation
+            JOIN workspace_component_effect AS effect
+              ON effect.id = NEW.effect_id
+             AND effect.operation_id = operation.id
+             AND effect.workspace_id = operation.workspace_id
+            WHERE operation.id = NEW.operation_id
+              AND operation.kind = 'emergency_stop'
+              AND operation.workspace_id = NEW.workspace_id
+              AND operation.component_id = NEW.component_id
+              AND operation.installation_id = NEW.installation_id
+              AND operation.request_sha256 = NEW.request_sha256
+              AND operation.state = 'dispatching'
+              AND effect.effect_kind = 'emergency_stop'
+              AND effect.state = 'pending'
+              AND effect.request_sha256 = NEW.request_sha256
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_emergency_receipt_binding_invalid');
+        END
+        """,
+        """
+        INSERT INTO workbench_component_slot
+        (slot_id, slot_kind, component_allowed, created_at) VALUES
+        ('editor.component', 'editor', 1, '1970-01-01T00:00:00.000000Z'),
+        ('sidebar.component', 'sidebar', 1, '1970-01-01T00:00:00.000000Z'),
+        ('settings.component', 'settings', 1, '1970-01-01T00:00:00.000000Z'),
+        ('status.component', 'status', 1, '1970-01-01T00:00:00.000000Z'),
+        ('settings.center', 'settings', 0, '1970-01-01T00:00:00.000000Z')
+        """,
+        *_COMPONENT_CATALOG_SEEDS,
+    ),
+)
+
+DESKTOP_0012 = DesktopMigration(
+    version=12,
+    migration_id="desktop_0012_component_network_fencing_cursor",
+    statements=(
+        """
+        CREATE INDEX workspace_component_installation_snapshot
+        ON workspace_component_installation(workspace_id, component_id, created_at)
+        """,
+        """
+        CREATE INDEX component_package_attestation_source_snapshot
+        ON component_package_attestation(attested_by, component_id, version, created_at DESC)
+        """,
+        """
+        CREATE INDEX component_catalog_registration_workspace_snapshot
+        ON component_catalog_registration(workspace_id, component_id, version)
+        """,
+        """
+        CREATE INDEX workspace_component_health_snapshot
+        ON workspace_component_health(runtime_instance_id, generation, observed_at DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_operation_error_snapshot
+        ON workspace_component_operation(installation_id, updated_at DESC)
+        WHERE error_code IS NOT NULL
+        """,
+        """
+        CREATE INDEX workspace_component_proposal_snapshot
+        ON workspace_component_proposal(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_operation_snapshot
+        ON workspace_component_operation(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_effect_snapshot
+        ON workspace_component_effect(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_grant_snapshot
+        ON workspace_component_grant(workspace_id, created_at DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_revocation_snapshot
+        ON workspace_component_revocation(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_reconciliation_snapshot
+        ON workspace_component_reconciliation(workspace_id, decided_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX workspace_component_recovery_snapshot
+        ON workspace_component_recovery_request(workspace_id, created_at DESC, id DESC)
+        """,
+        """
+        CREATE INDEX audit_event_workspace_snapshot
+        ON audit_event(owner_id, workspace_id, sequence DESC)
+        """,
+        """
+        CREATE UNIQUE INDEX workspace_component_one_active_network_lease_scope
+        ON workspace_component_network_lease(workspace_id, installation_id, logical_service_id)
+        WHERE state = 'active'
+        """,
+        """
+        CREATE TABLE workspace_component_network_lease_cursor (
+            workspace_id TEXT NOT NULL,
+            installation_id TEXT NOT NULL,
+            logical_service_id TEXT NOT NULL CHECK (length(logical_service_id) BETWEEN 3 AND 128),
+            current_fencing_token INTEGER CHECK (
+                current_fencing_token IS NULL OR current_fencing_token >= 1
+            ),
+            next_fencing_token INTEGER NOT NULL CHECK (next_fencing_token >= 1),
+            row_version INTEGER NOT NULL CHECK (row_version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, installation_id, logical_service_id),
+            FOREIGN KEY (installation_id, workspace_id)
+                REFERENCES workspace_component_installation(id, workspace_id)
+                ON DELETE RESTRICT,
+            CHECK (
+                current_fencing_token IS NULL
+                OR next_fencing_token > current_fencing_token
+            )
+        ) STRICT
+        """,
+        """
+        INSERT INTO workspace_component_network_lease_cursor
+        (workspace_id, installation_id, logical_service_id, current_fencing_token,
+         next_fencing_token, row_version, created_at, updated_at)
+        SELECT
+            workspace_id,
+            installation_id,
+            logical_service_id,
+            MAX(CASE WHEN state = 'active' THEN fencing_token END),
+            MAX(fencing_token) + 1,
+            1,
+            MIN(created_at),
+            MAX(updated_at)
+        FROM workspace_component_network_lease
+        GROUP BY workspace_id, installation_id, logical_service_id
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_insert_guard
+        BEFORE INSERT ON workspace_component_network_lease_cursor
+        WHEN
+            NEW.current_fencing_token IS NOT NULL
+            OR NEW.next_fencing_token <> 1
+            OR NEW.row_version <> 1
+            OR NEW.created_at <> NEW.updated_at
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_insert_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_guard
+        BEFORE UPDATE ON workspace_component_network_lease_cursor
+        WHEN
+            NEW.workspace_id <> OLD.workspace_id
+            OR NEW.installation_id <> OLD.installation_id
+            OR NEW.logical_service_id <> OLD.logical_service_id
+            OR NEW.current_fencing_token IS NOT OLD.next_fencing_token
+            OR NEW.next_fencing_token <> OLD.next_fencing_token + 1
+            OR NEW.row_version <> OLD.row_version + 1
+            OR NEW.created_at <> OLD.created_at
+            OR NEW.updated_at < OLD.updated_at
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_invalid');
+        END
+        """,
+        """
+        CREATE TRIGGER workspace_component_network_lease_cursor_delete_forbidden
+        BEFORE DELETE ON workspace_component_network_lease_cursor
+        BEGIN
+            SELECT RAISE(ABORT, 'desktop_component_network_lease_cursor_delete_forbidden');
+        END
+        """,
+    ),
+)
+
 DESKTOP_MIGRATIONS = (
     DESKTOP_0001,
     DESKTOP_0002,
@@ -1466,4 +3218,6 @@ DESKTOP_MIGRATIONS = (
     DESKTOP_0008,
     DESKTOP_0009,
     DESKTOP_0010,
+    DESKTOP_0011,
+    DESKTOP_0012,
 )

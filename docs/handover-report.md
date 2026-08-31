@@ -34,7 +34,7 @@
 > 卸载、Provider、Authenticode 与生产发布仍未证明。保存/写入、Agent 文件工具、Terminal、
 > Git、搜索、重命名/删除、Next/backend 文件路由与数据库迁移继续关闭。
 >
-> **P7.2 工程证据就绪（2026-08-30）**：P7.1 已通过 PR #48 进入
+> **P7.2 已合并（2026-08-30）**：P7.1 已通过 PR #48 进入
 > `main@cb1295b4b12df9f080eb0dcf94bc908367c8a7e3`。当前分支从该坐标完成
 > Workbench Refinement & Workspace Composition；权威产品法为
 > `docs/architecture/p7-2-workspace-composition.md` 与 INV-087。范围包括紧凑/
@@ -58,7 +58,8 @@
 > `p7-2-workspace-composition-sandbox-evidence-r1-20260830`。源码审计未发现 P0/P1/P2；
 > 源码已受控提交并在 `8cb0020255202cb197ffdbf46393265db9a0ef28` 接受工程证据，
 > 权威登记为 `docs/reviews/p7-2-workspace-composition-engineering-acceptance-r0.md`；
-> 仍需远端 Linux CI 与合并。包保持 engineering-dirty/unsigned，
+> 两组完整远端 Linux CI 均通过，PR #49 以 merge commit `5ca173a` 合入
+> `main`。包保持 engineering-dirty/unsigned，
 > clean-source release、标准用户/medium-integrity、Authenticode、Provider live 与
 > 生产发布仍未证明。
 >
@@ -69,6 +70,35 @@
 > fencing/预算/撤销、故障隔离、恢复、Owner 审批与设置中心管理。P7.4 只能做兼容、
 > 性能、攻击/恢复演练、签名分发和产品精修，不得把任何核心热插拔路径延期到
 > P7.4 或更晚。
+> P7.3 已从接受后的 `main@5ca173a741aca2e176f36f1f1869234bba8deb5b`
+> 在分支 `cursor/p7-3-workspace-hot-plug-r0` 完成源码实现、本地源码门禁与提交
+> `cc9c0d3d77797fb3d5e3dc9b9c5449bd08b911c0`；fresh unsigned r6 包已从该 clean
+> 提交生成（EXE SHA256 `286b4d0a...bc0b3a6`、MSI SHA256
+> `b89aba1f...dab11ef`、runtime manifest `bd8672e6...fbcc5d`）。单实例 fresh
+> Windows 产品验收尚未执行，不能宣称安装产品或生产验收完成。
+>
+> **P7.4 当前授权（2026-08-30）**：只做热插拔平台加固与产品验收，不补 P7.3
+> 核心能力。权威产品法为
+> `docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` 与 INV-089。
+> clean `a17d03d` 已以 desktop schema v12 修复 Network Lease token 在激活/恢复中
+> 复用 `1` 的缺口，并通过兼容、规模、bounded soak、攻击、恢复、Settings 可访问性
+> 与 clean package 门槛。500 组件/1,510 版本、20 Workspace/2,000 安装的规模矩阵
+> 达标。fresh unsigned Windows R0 只证明安装、真实 Electron/loopback、Owner/Workspace
+> 初始化、Settings 与五类 Catalog；实例在执行五类安装/调用、升级/回滚、紧急停止、
+> 重启恢复和卸载前关闭。因此状态为 `P7_4_WINDOWS_PRODUCT_ACCEPTANCE_INCOMPLETE`，
+> 不能签发 P7.4 engineering acceptance。证据见
+> `docs/reviews/p7-4-hardening-windows-evidence-r0.md`。Authenticode、Publisher、
+> Marketplace 与生产发布仍需独立外部证据。
+> clean `23d99a3` 进一步补齐仓库内 Settings 自动渲染门禁：19 个真实设置视图在
+> 1440x900、1024x700 与 200% 等效视口完成 axe、键盘/焦点/Escape、reduced-motion、
+> forced-colors 及裁切/重叠检查，共 9/9 通过；六张截图已由 Codex 目视检查并按 SHA
+> 归档。该补充是 source rendering evidence，不是 packaged Electron/Windows receipt，
+> 因而不改变 `P7_4_WINDOWS_PRODUCT_ACCEPTANCE_INCOMPLETE`。
+> Sandbox 路径现已把版本不同的 `payload/workload.wasm` 原始字节纳入 package
+> inventory/SHA，native registry、broker 与 helper 重验并执行同一份 zero-import、
+> exact-`transform` 字节；回执绑定 workload SHA 与结果。该 source-owned helper
+> 仍是同机可信进程，不构成独立 P34 Linux Runner/provider attestation 或生产隔离
+> 证据；外部 P34 provider 保持 unavailable/not-proven。
 
 > **日期**：2026-08-02
 > **当前状态**：Phase 1.6 BGE-M3 双索引工程与 CPU runtime benchmark 已完成，生产 V2 回填/cutover 仍冻结，V1 继续作为权威主通道。Phase 2 API 基础设施、P34.0–P34.3、P34.4A–D 与 P34.5A0-A4/B/C/D 源码已通过 PR `#9` 进入公开 `main`；post-seal hardening 已修复 A4 requested UID/GID 过去只进入 binding/digest、workload 实际以 namespace root 执行，以及 C/D disposable Gate 依赖 ambient backend image/venv、不能从 public clean checkout 重建的问题。C 已从 fresh Windows clone 使用 source-built dedicated Runner 通过真实 Headscale 0.26.1 control-plane Gate，D 已从 clean checkout 使用 source-built Gateway 与 stdlib-only client 在 guarded `omnibase_test_*` sentinel 完成 credential/schema/rows/RAG/citation 四读及 stale/revocation Gate，两者 cleanup 均为 `0/0/0`。A4 代码已改为 requested non-root UID/GID、空 supplementary groups、精确单项 uid/gid map 与 `setgroups=deny`，攻击矩阵扩展为 12 项；旧 11/11 artifact 与当前 launcher 哈希不匹配，新的 Hyper-V 12/12 在取得真实 VM 访问前明确为 `pending/not_proven`，production Runner 继续 unavailable/fail-closed。P34.6 已实现 Workspace-private/derived 逻辑数据契约、独立 workspace-data capability/profile、Artifact/Derived RAG、Promotion/Snapshot/Restore metadata 与 fail-closed primitives，并通过 focused、非集成、guarded disposable PostgreSQL、Mypy、Ruff、OpenAPI、维护者地图和 Benchmark 验证。Production WorkspaceDataAdapter/provider、Promotion/Restore `COMMITTED`、真实 object transfer/restore、non-disposable tenant/RAG、Core↔Runner/Broker/Gateway 联合激活、真实成员数据面/DERP/节点失陷、容量/SLA 与 P34.7 生产总验收继续关闭。本轮历史上曾发生一次裸 Compose config 隐式展开根 `.env` 的内部诊断异常，已在 P34.5A4-D 小节记录；P34.6 Gate 使用显式 `.env.example` 或专用 disposable env，不覆盖该历史事实。普通业务数据库 migration 未执行。

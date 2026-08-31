@@ -51,10 +51,30 @@ import type {
   DesktopWorkspaceIdInput,
   DesktopWorkspaceList,
   DesktopWorkspaceMutationResult,
+  DesktopWorkspaceComponentActionResult,
+  DesktopWorkspaceComponentAssistantProposalInput,
+  DesktopWorkspaceComponentNativeActionInput,
+  DesktopWorkspaceComponentBeginInput,
+  DesktopWorkspaceComponentBeginResult,
+  DesktopWorkspaceComponentDecisionInput,
+  DesktopWorkspaceComponentDecisionResult,
+  DesktopWorkspaceComponentNativeEmergencyStopInput,
+  DesktopWorkspaceComponentNativeEmergencyStopResult,
+  DesktopWorkspaceComponentProposeInput,
+  DesktopWorkspaceComponentProposalResult,
+  DesktopWorkspaceComponentOwnerPackageRegisterInput,
+  DesktopWorkspaceComponentOwnerPackageRegistration,
+  DesktopWorkspaceComponentReconcileInput,
+  DesktopWorkspaceComponentReconcileResult,
+  DesktopWorkspaceComponentRecoverySettleInput,
+  DesktopWorkspaceComponentRecoverySettleResult,
+  DesktopWorkspaceComponentSettleInput,
+  DesktopWorkspaceComponentSettleResult,
+  DesktopWorkspaceComponentSnapshot,
   PersonalTeamBlackboard,
   RuntimeStatus,
 } from "../shared/ipc-contract.ts";
-import { verifyRuntimeBundle } from "./manifest.ts";
+import { isSafeRuntimeRelativePath, verifyRuntimeBundle } from "./manifest.ts";
 import { DesktopNativeClient } from "./native-client.ts";
 import { PersonalTeamCoordinator } from "./personal-team-coordinator.ts";
 import { createNativePersonalTeamHost } from "./personal-team-native-host.ts";
@@ -66,6 +86,7 @@ import {
   type DesktopSafeStorage,
 } from "./secret-vault.ts";
 import { redactRuntimeError, RuntimeSupervisor } from "./supervisor.ts";
+import { loadSourceComponentAttestations } from "./component-package-registry.ts";
 
 export interface RuntimeManagerNativeSendClient {
   readonly listProviders: DesktopNativeClient["listProviders"];
@@ -79,9 +100,18 @@ export type RuntimeManagerNativeClientForTests =
       Pick<
         DesktopNativeClient,
         | "cancelTeamRun"
+        | "applyWorkspaceComponentAction"
+        | "beginWorkspaceComponentInvocation"
         | "consumeTeamProviderCall"
+        | "decideWorkspaceComponent"
+        | "emergencyStopWorkspaceComponents"
         | "getAgentRole"
+        | "getWorkspaceComponents"
         | "getTeamBlackboard"
+        | "proposeWorkspaceComponent"
+        | "reconcileWorkspaceComponent"
+        | "settleWorkspaceComponentRecovery"
+        | "settleWorkspaceComponentInvocation"
         | "settleTeamParentCall"
         | "setTeamRunState"
         | "startTeamRun"
@@ -97,6 +127,62 @@ export interface RuntimeManagerOptions {
   readonly hostEnvironment?: Readonly<Record<string, string | undefined>>;
   readonly secretVault?: DesktopSafeStorage;
   readonly nativeClientForTests?: RuntimeManagerNativeClientForTests;
+}
+
+export interface RuntimeManagerComponentRecoveryContext {
+  readonly snapshot: DesktopWorkspaceComponentSnapshot;
+  readonly recovery: DesktopWorkspaceComponentSnapshot["recoveries"][number];
+  readonly settle: (
+    input: DesktopWorkspaceComponentRecoverySettleInput,
+  ) => Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentRecoverySettleResult>
+  >;
+}
+
+export type RuntimeManagerComponentRecoveryHandler = (
+  input: RuntimeManagerComponentRecoveryContext,
+) => Promise<void>;
+
+export type RuntimeManagerComponentRecoveryClient = Pick<
+  DesktopNativeClient,
+  | "getOwnerStatus"
+  | "getWorkspaceComponents"
+  | "listWorkspaces"
+  | "settleWorkspaceComponentRecovery"
+>;
+
+export async function recoverWorkspaceComponentsOnStartup(
+  nativeClient: RuntimeManagerComponentRecoveryClient,
+  handler: RuntimeManagerComponentRecoveryHandler,
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  const owner = await nativeClient.getOwnerStatus();
+  if (!isCurrent()) return;
+  if (!owner.ok) throw new Error(owner.error.code);
+  if (!owner.value.initialized) return;
+
+  const workspaces = await nativeClient.listWorkspaces();
+  if (!isCurrent()) return;
+  if (!workspaces.ok) throw new Error(workspaces.error.code);
+  for (const workspace of workspaces.value.items) {
+    if (!isCurrent()) return;
+    if (workspace.state !== "active") continue;
+    const snapshot = await nativeClient.getWorkspaceComponents({
+      workspaceId: workspace.id,
+    });
+    if (!isCurrent()) return;
+    if (!snapshot.ok) throw new Error(snapshot.error.code);
+    for (const recovery of snapshot.value.recoveries) {
+      if (!isCurrent()) return;
+      if (recovery.state !== "pending") continue;
+      await handler({
+        snapshot: snapshot.value,
+        recovery,
+        settle: (input) => nativeClient.settleWorkspaceComponentRecovery(input),
+      });
+      if (!isCurrent()) return;
+    }
+  }
 }
 
 const SEND_ABORTED = Object.freeze({ aborted: true as const });
@@ -254,6 +340,9 @@ export class RuntimeManager {
   #teamCoordinator: PersonalTeamCoordinator | null = null;
   #teamInFlight = false;
   #pendingTeamAbort = false;
+  #verifiedRuntimeFileSha256 = new Map<string, string>();
+  #componentRecoveryHandler: RuntimeManagerComponentRecoveryHandler | null =
+    null;
   #generation = 0;
   #startOperation: {
     readonly generation: number;
@@ -274,6 +363,25 @@ export class RuntimeManager {
 
   getStatus(): RuntimeStatus {
     return this.#supervisor?.getStatus() ?? this.#status;
+  }
+
+  getVerifiedRuntimeFileSha256(relativePath: string): string | null {
+    if (
+      this.#supervisor?.getStatus().phase !== "ready" ||
+      !isSafeRuntimeRelativePath(relativePath)
+    ) {
+      return null;
+    }
+    return this.#verifiedRuntimeFileSha256.get(relativePath) ?? null;
+  }
+
+  setComponentRecoveryHandler(
+    handler: RuntimeManagerComponentRecoveryHandler,
+  ): void {
+    if (this.#supervisor?.getStatus().phase === "ready") {
+      throw new Error("runtime_component_recovery_handler_late");
+    }
+    this.#componentRecoveryHandler = handler;
   }
 
   getOwnerStatus(): Promise<DesktopOperationResult<DesktopOwnerStatus>> {
@@ -330,6 +438,130 @@ export class RuntimeManager {
       client?.getWorkspaceAgent(input) ??
       Promise.resolve(
         this.#nativeUnavailable<{ readonly agent: DesktopParentAgent }>(),
+      )
+    );
+  }
+
+  getWorkspaceComponents(
+    input: DesktopWorkspaceIdInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.getWorkspaceComponents(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentSnapshot>(),
+      )
+    );
+  }
+
+  proposeWorkspaceComponent(
+    input: DesktopWorkspaceComponentProposeInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.proposeWorkspaceComponent(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentProposalResult>(),
+      )
+    );
+  }
+
+  proposeWorkspaceComponentFromAssistant(
+    input: DesktopWorkspaceComponentAssistantProposalInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentProposalResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.proposeWorkspaceComponentFromAssistant(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentProposalResult>(),
+      )
+    );
+  }
+
+  registerOwnerWorkspaceComponentPackage(
+    input: DesktopWorkspaceComponentOwnerPackageRegisterInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageRegistration>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.registerOwnerWorkspaceComponentPackage(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentOwnerPackageRegistration>(),
+      )
+    );
+  }
+
+  decideWorkspaceComponent(
+    input: DesktopWorkspaceComponentDecisionInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.decideWorkspaceComponent(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentDecisionResult>(),
+      )
+    );
+  }
+
+  applyWorkspaceComponentAction(
+    input: DesktopWorkspaceComponentNativeActionInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentActionResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.applyWorkspaceComponentAction(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentActionResult>(),
+      )
+    );
+  }
+
+  beginWorkspaceComponentInvocation(
+    input: DesktopWorkspaceComponentBeginInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentBeginResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.beginWorkspaceComponentInvocation(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentBeginResult>(),
+      )
+    );
+  }
+
+  settleWorkspaceComponentInvocation(
+    input: DesktopWorkspaceComponentSettleInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentSettleResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.settleWorkspaceComponentInvocation(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentSettleResult>(),
+      )
+    );
+  }
+
+  emergencyStopWorkspaceComponents(
+    input: DesktopWorkspaceComponentNativeEmergencyStopInput,
+  ): Promise<
+    DesktopOperationResult<DesktopWorkspaceComponentNativeEmergencyStopResult>
+  > {
+    const client = this.#readyNativeClient();
+    return (
+      client?.emergencyStopWorkspaceComponents(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentNativeEmergencyStopResult>(),
+      )
+    );
+  }
+
+  reconcileWorkspaceComponent(
+    input: DesktopWorkspaceComponentReconcileInput,
+  ): Promise<DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>> {
+    const client = this.#readyNativeClient();
+    return (
+      client?.reconcileWorkspaceComponent(input) ??
+      Promise.resolve(
+        this.#nativeUnavailable<DesktopWorkspaceComponentReconcileResult>(),
       )
     );
   }
@@ -1030,6 +1262,7 @@ export class RuntimeManager {
 
   async #start(generation: number): Promise<RuntimeStatus> {
     this.#nativeClient = null;
+    this.#verifiedRuntimeFileSha256.clear();
     this.#status = Object.freeze({
       phase: "starting",
       attempts: 0,
@@ -1091,16 +1324,44 @@ export class RuntimeManager {
         supervisor.stop();
         return this.#status;
       }
-      this.#status = status;
       if (status.phase === "ready") {
-        this.#nativeClient = new DesktopNativeClient({
+        const attestations = await loadSourceComponentAttestations(bundle);
+        const nativeClient = new DesktopNativeClient({
           backendOrigin: `http://127.0.0.1:${bundle.backendPort}`,
           nativeControlToken,
         });
+        for (const attestation of attestations) {
+          const result =
+            await nativeClient.attestWorkspaceComponentPackage(attestation);
+          if (!result.ok) throw new Error(result.error.code);
+        }
+        if (generation !== this.#generation) {
+          supervisor.stop();
+          return this.#status;
+        }
+        this.#verifiedRuntimeFileSha256 = new Map(
+          bundle.files.map((file) => [file.path, file.sha256] as const),
+        );
+        this.#nativeClient = nativeClient;
+        if (this.#componentRecoveryHandler !== null) {
+          await recoverWorkspaceComponentsOnStartup(
+            nativeClient,
+            this.#componentRecoveryHandler,
+            () => generation === this.#generation,
+          );
+          if (generation !== this.#generation) {
+            supervisor.stop();
+            return this.#status;
+          }
+        }
       }
+      this.#status = status;
     } catch (error) {
       if (generation !== this.#generation) return this.#status;
+      this.#supervisor?.stop();
+      this.#supervisor = null;
       this.#nativeClient = null;
+      this.#verifiedRuntimeFileSha256.clear();
       this.#status = Object.freeze({
         phase: "failed",
         attempts: 0,
@@ -1113,6 +1374,7 @@ export class RuntimeManager {
   stop(): RuntimeStatus {
     this.#generation += 1;
     this.#nativeClient = null;
+    this.#verifiedRuntimeFileSha256.clear();
     this.#status =
       this.#supervisor?.stop() ??
       Object.freeze({

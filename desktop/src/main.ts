@@ -18,6 +18,9 @@ import {
   installNavigationPolicy,
 } from "./security/window-policy.ts";
 import { RuntimeManager } from "./runtime/runtime-manager.ts";
+import { ComponentRuntimeBroker } from "./runtime/component-runtime-broker.ts";
+import { OwnerComponentPackageStore } from "./runtime/owner-component-package-store.ts";
+import { P34SandboxComponentAdapter } from "./runtime/p34-sandbox-adapter.ts";
 import { PINNED_RUNTIME_MANIFEST_SHA256 } from "./runtime/trusted-manifest.ts";
 import { WorkspaceFiles } from "./runtime/workspace-files.ts";
 import type { DesktopOperationResult } from "./shared/ipc-contract.ts";
@@ -25,6 +28,7 @@ import type { DesktopOperationResult } from "./shared/ipc-contract.ts";
 let mainWindow: BrowserWindow | null = null;
 let runtimeManager: RuntimeManager | null = null;
 let workspaceFiles: WorkspaceFiles | null = null;
+let componentRuntimeBroker: ComponentRuntimeBroker | null = null;
 
 function runtimeUnavailable<T>(): Promise<DesktopOperationResult<T>> {
   return Promise.resolve(
@@ -48,13 +52,21 @@ if (hasInstanceLock) {
       app.quit();
       return;
     }
+    const dataRoot = path.join(localAppData, "OmniBase");
+    const runtimeRoot = path.join(process.resourcesPath, "runtime");
     runtimeManager = new RuntimeManager({
-      runtimeRoot: path.join(process.resourcesPath, "runtime"),
+      runtimeRoot,
       expectedManifestSha256: PINNED_RUNTIME_MANIFEST_SHA256,
       uiOrigin: DESKTOP_UI_ORIGIN,
-      dataRoot: path.join(localAppData, "OmniBase"),
+      dataRoot,
       hostEnvironment: process.env,
       secretVault: safeStorage,
+    });
+    const manager = runtimeManager;
+    const sandboxAdapter = new P34SandboxComponentAdapter({
+      runtimeRoot,
+      getVerifiedRuntimeFileSha256: (relativePath) =>
+        manager.getVerifiedRuntimeFileSha256(relativePath),
     });
     const workspaceFileService = new WorkspaceFiles({
       getWorkspaceAgent: (input) =>
@@ -75,6 +87,40 @@ if (hasInstanceLock) {
       },
     });
     workspaceFiles = workspaceFileService;
+    const ownerPackageStore = new OwnerComponentPackageStore({
+      dataRoot,
+      native: manager,
+      choosePackage: async () => {
+        const options: OpenDialogOptions = {
+          title: "Import reviewed Workspace component",
+          buttonLabel: "Review Package",
+          filters: [
+            { name: "OmniBase component package", extensions: ["json"] },
+          ],
+          properties: ["openFile", "dontAddToRecent"],
+        };
+        const result =
+          mainWindow === null
+            ? await dialog.showOpenDialog(options)
+            : await dialog.showOpenDialog(mainWindow, options);
+        return result.canceled || result.filePaths.length !== 1
+          ? null
+          : (result.filePaths[0] ?? null);
+      },
+    });
+    const componentBroker = new ComponentRuntimeBroker({
+      native: manager,
+      workspaceFiles: workspaceFileService,
+      runtimeRoot,
+      getVerifiedRuntimeFileSha256: (relativePath) =>
+        manager.getVerifiedRuntimeFileSha256(relativePath),
+      ownerPackageStore,
+      sandboxAdapter,
+    });
+    componentRuntimeBroker = componentBroker;
+    manager.setComponentRecoveryHandler((input) =>
+      componentBroker.recoverStartup(input),
+    );
     installFailClosedPermissionPolicy(session.defaultSession);
     registerClosedIpcHandlers(ipcMain, {
       getVersion: () => app.getVersion(),
@@ -124,6 +170,28 @@ if (hasInstanceLock) {
         runtimeUnavailable(),
       decideWorkspaceComposition: (input) =>
         runtimeManager?.decideWorkspaceComposition(input) ??
+        runtimeUnavailable(),
+      getWorkspaceComponents: (input) =>
+        runtimeManager?.getWorkspaceComponents(input) ?? runtimeUnavailable(),
+      proposeWorkspaceComponent: (input) =>
+        runtimeManager?.proposeWorkspaceComponent(input) ??
+        runtimeUnavailable(),
+      proposeWorkspaceComponentFromAssistant: (input) =>
+        runtimeManager?.proposeWorkspaceComponentFromAssistant(input) ??
+        runtimeUnavailable(),
+      importOwnerWorkspaceComponentPackage: (input) =>
+        ownerPackageStore.importPackage(input.workspaceId),
+      importAssistantWorkspaceComponentPackage: (input) =>
+        ownerPackageStore.importAssistantPackage(input),
+      decideWorkspaceComponent: (input) =>
+        runtimeManager?.decideWorkspaceComponent(input) ?? runtimeUnavailable(),
+      applyWorkspaceComponentAction: (input) =>
+        componentBroker.applyAction(input),
+      invokeWorkspaceComponent: (input) => componentBroker.invoke(input),
+      emergencyStopWorkspaceComponents: (input) =>
+        componentBroker.emergencyStop(input),
+      reconcileWorkspaceComponent: (input) =>
+        runtimeManager?.reconcileWorkspaceComponent(input) ??
         runtimeUnavailable(),
       authorizeWorkspaceFiles: (input) => workspaceFileService.authorize(input),
       releaseWorkspaceFiles: (input) => workspaceFileService.release(input),
@@ -197,15 +265,20 @@ if (hasInstanceLock) {
     mainWindow.webContents.on(
       "did-start-navigation",
       (_event, _url, isInPlace, isMainFrame) => {
-        if (isMainFrame && !isInPlace) workspaceFileService.invalidate();
+        if (isMainFrame && !isInPlace) {
+          componentBroker.stopAll();
+          workspaceFileService.invalidate();
+        }
       },
     );
-    mainWindow.webContents.on("render-process-gone", () =>
-      workspaceFileService.invalidate(),
-    );
+    mainWindow.webContents.on("render-process-gone", () => {
+      componentBroker.stopAll();
+      workspaceFileService.invalidate();
+    });
     installNavigationPolicy(mainWindow.webContents);
     mainWindow.once("ready-to-show", () => mainWindow?.show());
     mainWindow.on("closed", () => {
+      componentBroker.stopAll();
       workspaceFileService.invalidate();
       mainWindow = null;
     });
@@ -213,11 +286,14 @@ if (hasInstanceLock) {
   });
 
   app.on("window-all-closed", () => {
+    componentRuntimeBroker?.stopAll();
     runtimeManager?.stop();
     app.quit();
   });
 
   app.on("before-quit", () => {
+    componentRuntimeBroker?.dispose();
+    componentRuntimeBroker = null;
     workspaceFiles?.invalidate();
     runtimeManager?.stop();
   });

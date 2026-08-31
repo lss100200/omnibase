@@ -13,6 +13,7 @@ import {
   buildRuntimeEnvironment,
   matchesRuntimeInstanceProof,
   prepareRuntimeDataRoot,
+  recoverWorkspaceComponentsOnStartup,
   RuntimeManager,
   type RuntimeManagerNativeClientForTests,
 } from "../src/runtime/runtime-manager.ts";
@@ -97,6 +98,120 @@ test("runtime data root is created once and must remain an ordinary directory", 
   } finally {
     await rm(parent, { recursive: true, force: true });
   }
+});
+
+test("fresh runtime without an Owner skips Workspace component recovery", async () => {
+  let workspaceListCalls = 0;
+  let recoveryCalls = 0;
+  await recoverWorkspaceComponentsOnStartup(
+    {
+      getOwnerStatus: async () => ({
+        ok: true,
+        value: { initialized: false, owner: null },
+      }),
+      listWorkspaces: async () => {
+        workspaceListCalls += 1;
+        return { ok: true, value: { items: [] } };
+      },
+      getWorkspaceComponents: async () => {
+        throw new Error("fresh_runtime_must_not_read_components");
+      },
+      settleWorkspaceComponentRecovery: async () => {
+        throw new Error("fresh_runtime_must_not_settle_recovery");
+      },
+    },
+    async () => {
+      recoveryCalls += 1;
+    },
+  );
+  assert.equal(workspaceListCalls, 0);
+  assert.equal(recoveryCalls, 0);
+});
+
+test("initialized runtime preserves fail-closed Workspace component recovery", async () => {
+  const calls: string[] = [];
+  const activeWorkspace = {
+    id: WORKSPACE_ID,
+    ownerId: `owner_${"0".repeat(32)}`,
+    name: "Active",
+    state: "active" as const,
+    rowVersion: 1,
+    createdAt: "2026-08-30T00:00:00Z",
+    updatedAt: "2026-08-30T00:00:00Z",
+  };
+  const archivedWorkspace = {
+    ...activeWorkspace,
+    id: `workspace_${"a".repeat(32)}`,
+    name: "Archived",
+    state: "archived" as const,
+  };
+  const snapshot = {
+    workspaceId: WORKSPACE_ID,
+    catalog: [],
+    proposals: [],
+    installations: [],
+    grants: [],
+    operations: [],
+    effects: [],
+    reconciliations: [],
+    revocations: [],
+    recoveries: [
+      {
+        recoveryId: `recovery_${"1".repeat(32)}`,
+        workspaceId: WORKSPACE_ID,
+        componentId: "omnibase.source.declarative-ui",
+        installationId: `installation_${"2".repeat(32)}`,
+        bindingGeneration: 1,
+        previousRuntimeInstanceId: `runtime_${"3".repeat(32)}`,
+        operationId: `operation_${"4".repeat(32)}`,
+        effectId: `effect_${"a".repeat(32)}`,
+        adapterId: "builtin-ui.v1" as const,
+        requestSha256: "5".repeat(64),
+        manifestSha256: "6".repeat(64),
+        packageSha256: "7".repeat(64),
+        state: "pending" as const,
+        reasonCode: "startup_native_revalidation_required",
+        runtimeInstanceId: `runtime_${"8".repeat(32)}`,
+        workloadIdentityDigest: "9".repeat(64),
+        createdAt: "2026-08-30T00:00:00Z",
+      },
+    ],
+    audit: [],
+  };
+  await recoverWorkspaceComponentsOnStartup(
+    {
+      getOwnerStatus: async () => ({
+        ok: true,
+        value: {
+          initialized: true,
+          owner: {
+            id: `owner_${"0".repeat(32)}`,
+            displayName: "Owner",
+            createdAt: "2026-08-30T00:00:00Z",
+            updatedAt: "2026-08-30T00:00:00Z",
+          },
+        },
+      }),
+      listWorkspaces: async () => ({
+        ok: true,
+        value: { items: [activeWorkspace, archivedWorkspace] },
+      }),
+      getWorkspaceComponents: async (input) => {
+        calls.push(`snapshot:${input.workspaceId}`);
+        return { ok: true, value: snapshot };
+      },
+      settleWorkspaceComponentRecovery: async () => {
+        throw new Error("settlement_is_owned_by_handler");
+      },
+    },
+    async ({ recovery }) => {
+      calls.push(`recovery:${recovery.recoveryId}`);
+    },
+  );
+  assert.deepEqual(calls, [
+    `snapshot:${WORKSPACE_ID}`,
+    `recovery:recovery_${"1".repeat(32)}`,
+  ]);
 });
 
 test("runtime manager does not expose an absolute bundle path on verification failure", async () => {

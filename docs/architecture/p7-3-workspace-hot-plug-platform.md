@@ -1,5 +1,10 @@
 # P7.3 Complete Workspace Hot-Plug Platform
 
+Status: source implementation and local source gates complete from accepted
+`main@5ca173a741aca2e176f36f1f1869234bba8deb5b`; source commit identity and
+installed-product evidence are still pending. Production acceptance is not
+signed off.
+
 ## 1. Status and delivery rule
 
 P7.3 is the single implementation phase for the complete personal Workspace
@@ -57,6 +62,20 @@ P7.3 must support these families through the same registry and lifecycle:
 
 Adding a future family must extend this typed kernel. It must not create an
 unreviewed parallel installer, authority model or direct renderer/native path.
+
+The source-owned Sandbox positive path packages an exact
+`payload/workload.wasm` member. Its size and SHA-256 are bound by the package
+inventory and package digest. The native registry re-reads those exact raw
+bytes, the broker rejects byte drift, imports and any export other than the
+declared `transform`, and the trusted helper executes the same supplied bytes
+rather than an embedded workload. Execution evidence returns the exact
+workload SHA-256 and transform result.
+
+This proves package-bound, zero-import WebAssembly execution through the local
+source-owned helper. It does not prove an independent P34 Linux Runner,
+provider attestation, a separate OS identity, VM/container isolation or
+production hostile-code admission. Those external P34 provider claims remain
+unavailable/not-proven and must not be inferred from the local subprocess.
 
 ## 4. Immutable package and registry
 
@@ -169,7 +188,7 @@ deletes unbound paths or data belonging to another component or Workspace.
 
 P7.3 requires all of the following before acceptance:
 
-- schema upgrades and immutable/CAS/append-only enforcement;
+- schema v12 plus v1-v11 upgrades and immutable/CAS/append-only enforcement;
 - strict native response parsing and exact renderer/preload/IPC/native/backend
   contracts for every operation;
 - hostile manifest, package, dependency, scope, stale generation, replay,

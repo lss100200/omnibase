@@ -4,12 +4,14 @@ import path from 'node:path'
 import { test } from 'node:test'
 import {
   P7_NO_TRUSTED_SOURCE_REASON,
+  closeP7WorkspaceComponentHost,
   createP7ShellUiState,
   createP7WorkspaceShellUiState,
   expandP7Omnia,
   minimizeP7Omnia,
   openP7Blackboard,
   openP7Settings,
+  openP7WorkspaceComponentHost,
   p7ActivityLabel,
   p7AssignmentStateLabel,
   p7BottomTabAvailability,
@@ -199,12 +201,67 @@ test('shell: conditional root and grid classes remain separate CSS tokens', () =
   )
 })
 
+test('shell: component host regions preserve the immutable workbench around their Slot', () => {
+  const initial = { ...createP7ShellUiState(), bottomOpen: true, agentPanelOpen: true }
+  assert.deepEqual(openP7WorkspaceComponentHost(initial, 'editor'), {
+    ...initial,
+    centerView: 'component',
+    sidebarOpen: false,
+    bottomOpen: false,
+  })
+  assert.deepEqual(
+    openP7WorkspaceComponentHost({ ...initial, centerView: 'component' }, 'sidebar'),
+    { ...initial, centerView: 'transcript', sidebarOpen: true },
+  )
+  assert.deepEqual(openP7WorkspaceComponentHost(initial, 'settings'), {
+    ...initial,
+    activity: 'settings',
+    centerView: 'settings',
+    sidebarOpen: false,
+    bottomOpen: false,
+    agentPanelOpen: false,
+  })
+  assert.equal(
+    openP7WorkspaceComponentHost({ ...initial, centerView: 'component' }, 'status').centerView,
+    'transcript',
+  )
+  assert.equal(
+    closeP7WorkspaceComponentHost({ ...initial, centerView: 'component' }).centerView,
+    'transcript',
+  )
+})
+
+function mediaBlocks(css: string, query: string): string {
+  const marker = `@media ${query}`
+  const blocks: string[] = []
+  let cursor = 0
+  while (cursor < css.length) {
+    const start = css.indexOf(marker, cursor)
+    if (start < 0) break
+    const open = css.indexOf('{', start + marker.length)
+    assert.notEqual(open, -1, `${marker} must open a block`)
+    let depth = 0
+    let close = -1
+    for (let index = open; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1
+      else if (css[index] === '}') {
+        depth -= 1
+        if (depth === 0) {
+          close = index + 1
+          break
+        }
+      }
+    }
+    assert.notEqual(close, -1, `${marker} must close its block`)
+    blocks.push(css.slice(start, close))
+    cursor = close
+  }
+  return blocks.join('\n')
+}
+
 test('shell: compact viewport CSS defines every visible panel combination', () => {
   const css = readFileSync(path.join(process.cwd(), 'app/desktop/p7-workbench.css'), 'utf8')
-  const responsive = css.slice(
-    css.indexOf('@media (max-width: 920px)'),
-    css.indexOf('@media (max-width: 700px)'),
-  )
+  const responsive = mediaBlocks(css, '(max-width: 920px)')
   assert.match(
     responsive,
     /\.p7-shell \{\s*grid-template-columns: 40px 180px minmax\(0, 1fr\) 252px;/,

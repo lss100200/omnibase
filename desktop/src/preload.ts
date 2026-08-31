@@ -46,6 +46,23 @@ import type {
   DesktopWorkspaceCompositionProposalResult,
   DesktopWorkspaceCompositionRollbackProposalInput,
   DesktopWorkspaceCompositionSnapshot,
+  DesktopWorkspaceComponentActionInput,
+  DesktopWorkspaceComponentActionResult,
+  DesktopWorkspaceComponentAssistantPackageImportInput,
+  DesktopWorkspaceComponentAssistantProposalInput,
+  DesktopWorkspaceComponentOwnerPackageImportResult,
+  DesktopWorkspaceComponentDecisionInput,
+  DesktopWorkspaceComponentDecisionResult,
+  DesktopWorkspaceComponentEmergencyStopInput,
+  DesktopWorkspaceComponentEmergencyStopResult,
+  DesktopWorkspaceComponentInvokeInput,
+  DesktopWorkspaceComponentInvokeResult,
+  DesktopWorkspaceComponentProposalResult,
+  DesktopWorkspaceComponentProposeInput,
+  DesktopWorkspaceComponentReconcileInput,
+  DesktopWorkspaceComponentReconcileResult,
+  DesktopWorkspaceComponentSettleResult,
+  DesktopWorkspaceComponentSnapshot,
   DesktopWorkspaceCreateInput,
   DesktopWorkspaceFileAuthorization,
   DesktopWorkspaceFileAuthorizeInput,
@@ -81,6 +98,20 @@ const PRELOAD_IPC_CHANNELS = Object.freeze({
   workspaceCompositionProposeRollback:
     "omnibase:workspace-composition:propose-rollback",
   workspaceCompositionDecide: "omnibase:workspace-composition:decide",
+  workspaceComponentsGet: "omnibase:workspace-components:get",
+  workspaceComponentsPropose: "omnibase:workspace-components:propose",
+  workspaceComponentsProposeFromAssistant:
+    "omnibase:workspace-components:propose-from-assistant",
+  workspaceComponentsImportOwnerPackage:
+    "omnibase:workspace-components:import-owner-package",
+  workspaceComponentsImportAssistantPackage:
+    "omnibase:workspace-components:import-assistant-package",
+  workspaceComponentsDecide: "omnibase:workspace-components:decide",
+  workspaceComponentsAction: "omnibase:workspace-components:action",
+  workspaceComponentsInvoke: "omnibase:workspace-components:invoke",
+  workspaceComponentsEmergencyStop:
+    "omnibase:workspace-components:emergency-stop",
+  workspaceComponentsReconcile: "omnibase:workspace-components:reconcile",
   workspaceFilesAuthorize: "omnibase:workspace-files:authorize",
   workspaceFilesRelease: "omnibase:workspace-files:release",
   workspaceFilesList: "omnibase:workspace-files:list",
@@ -247,6 +278,110 @@ const api: OmniBaseDesktopApi = Object.freeze({
         input,
       ) as Promise<
         DesktopOperationResult<DesktopWorkspaceCompositionDecisionResult>
+      >,
+  }),
+  workspaceComponents: Object.freeze({
+    get: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsGet,
+        input,
+      ) as Promise<DesktopOperationResult<DesktopWorkspaceComponentSnapshot>>,
+    propose: (
+      input: DesktopWorkspaceComponentProposeInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsPropose,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+      >,
+    proposeFromAssistant: (
+      input: DesktopWorkspaceComponentAssistantProposalInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsProposeFromAssistant,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentProposalResult>
+      >,
+    importOwnerPackage: (
+      input: DesktopWorkspaceIdInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsImportOwnerPackage,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+      >,
+    importAssistantPackage: (
+      input: DesktopWorkspaceComponentAssistantPackageImportInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsImportAssistantPackage,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentOwnerPackageImportResult>
+      >,
+    decide: (
+      input: DesktopWorkspaceComponentDecisionInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsDecide,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentDecisionResult>
+      >,
+    action: (
+      input: DesktopWorkspaceComponentActionInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceComponentActionResult>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsAction,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentActionResult>
+      >,
+    invoke: (
+      input: DesktopWorkspaceComponentInvokeInput,
+    ): Promise<DesktopOperationResult<DesktopWorkspaceComponentInvokeResult>> =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsInvoke,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentInvokeResult>
+      >,
+    emergencyStop: (
+      input: DesktopWorkspaceComponentEmergencyStopInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentEmergencyStopResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsEmergencyStop,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentEmergencyStopResult>
+      >,
+    reconcile: (
+      input: DesktopWorkspaceComponentReconcileInput,
+    ): Promise<
+      DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>
+    > =>
+      ipcRenderer.invoke(
+        PRELOAD_IPC_CHANNELS.workspaceComponentsReconcile,
+        input,
+      ) as Promise<
+        DesktopOperationResult<DesktopWorkspaceComponentReconcileResult>
       >,
   }),
   workspaceFiles: Object.freeze({

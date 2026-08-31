@@ -324,6 +324,40 @@ runtime evidence; then correct the stale documentation in the same change.
   audit and no-auto-replay semantics locally. Arbitrary plugin code/URLs,
   MCP/Skill execution, Sandbox activation, Save/write, Terminal, Git/search and
   automatic approval remain closed.
+- P7.3 is the complete personal Workspace hot-plug platform lane. Read INV-088
+  and `docs/architecture/p7-3-workspace-hot-plug-platform.md` before changing
+  its component manifest, registry, lifecycle, adapters, grants, runtime broker,
+  Settings management or recovery path. One immutable registry and one
+  generation-fenced lifecycle must cover declarative UI, instruction Skills,
+  MCP connectors, Sandbox workloads and source-owned trusted local adapters.
+  The renderer may request one high-level action but never receives package
+  paths, commands, stdio, grant material, native control tokens or process
+  handles. Assistant output is proposal-only; Owner approval binds the exact
+  package, dependency graph, Slot/config Diff and grant set. Every invocation
+  revalidates Workspace, version, runtime identity, grant, revocation, lease,
+  fencing and budget. `pending`, `unknown` and ambiguous external effects enter
+  explicit reconciliation and are never auto-dispatched. Emergency stop must
+  preserve the immutable standard workbench, Settings and Audit while fencing
+  every non-core component. P7.4 may harden and certify this platform; it may
+  not first implement a missing registry, family adapter, permission,
+  lifecycle, revocation or recovery path.
+- P7.4 is the hot-plug hardening and product-acceptance lane. Read INV-089 and
+  `docs/architecture/p7-4-hot-plug-hardening-and-product-acceptance.md` before
+  changing desktop component migrations, fencing, scale/soak/attack gates,
+  Settings accessibility or Windows acceptance evidence. Desktop schema v12
+  uses a persistent per-Workspace/installation/logical-service Network Lease
+  cursor; allocation, activation and recovery are one transaction, and begin,
+  replay and settlement must reject a Lease whose token is not the cursor's
+  current value. Never reset or delete a cursor, infer the next token by
+  scanning runtime history, or reuse workload fencing as Network fencing.
+  The local source-owned Sandbox journey executes the exact inventory-bound
+  zero-import `payload/workload.wasm` through a trusted same-host helper. It is
+  not an independent P34 Runner/provider attestation or production isolation
+  claim; keep that external provider unavailable/not-proven.
+  P7.4 evidence must distinguish source, bounded CI, Windows engineering,
+  human visual and external signing/Marketplace authority. CI or a Sandbox
+  cannot self-issue Authenticode, Publisher, Marketplace or production-release
+  approval.
 
 ## Safe change workflow
 

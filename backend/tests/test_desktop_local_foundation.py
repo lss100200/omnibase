@@ -83,8 +83,58 @@ def test_fresh_database_has_hardened_pragmas_strict_schema_and_health(tmp_path: 
             "workspace_composition_proposal",
             "workspace_composition_current",
             "workspace_composition_decision",
+            "workbench_component_slot",
+            "component_catalog_version",
+            "component_package_attestation",
+            "component_catalog_registration",
+            "workspace_component_proposal",
+            "workspace_component_decision",
+            "workspace_component_installation",
+            "workspace_component_binding_generation",
+            "workspace_component_slot_binding",
+            "workspace_component_runtime_instance",
+            "workspace_component_grant",
+            "workspace_component_grant_usage",
+            "workspace_component_workload_lease",
+            "workspace_component_network_lease",
+            "workspace_component_network_lease_cursor",
+            "workspace_component_operation",
+            "workspace_component_operation_transition",
+            "workspace_component_budget_reservation",
+            "workspace_component_effect",
+            "workspace_component_effect_transition",
+            "workspace_component_reconciliation",
+            "workspace_component_lifecycle_dispatch",
+            "workspace_component_lifecycle_receipt",
+            "workspace_component_invocation_receipt",
+            "workspace_component_emergency_receipt",
+            "workspace_component_recovery_request",
+            "workspace_component_health",
+            "workspace_component_revocation",
         ):
             assert table_sql[table].rstrip().endswith("STRICT")
+
+        index_names = {
+            str(row["name"])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name IS NOT NULL"
+            )
+        }
+        assert {
+            "audit_event_workspace_snapshot",
+            "component_catalog_registration_workspace_snapshot",
+            "component_package_attestation_source_snapshot",
+            "workspace_component_effect_snapshot",
+            "workspace_component_grant_snapshot",
+            "workspace_component_health_snapshot",
+            "workspace_component_installation_snapshot",
+            "workspace_component_operation_error_snapshot",
+            "workspace_component_operation_snapshot",
+            "workspace_component_proposal_snapshot",
+            "workspace_component_reconciliation_snapshot",
+            "workspace_component_recovery_snapshot",
+            "workspace_component_revocation_snapshot",
+        } <= index_names
 
         health = local_health(connection)
         assert health.status == "healthy"
@@ -116,6 +166,8 @@ def test_restart_is_idempotent_and_preserves_application_migration_record(tmp_pa
             (8, "desktop_0008_collaboration_report_binding", "1.0.0"),
             (9, "desktop_0009_parent_call_proof", "1.0.0"),
             (10, "desktop_0010_workspace_composition", "1.0.0"),
+            (11, "desktop_0011_workspace_component_kernel", "1.0.0"),
+            (12, "desktop_0012_component_network_fencing_cursor", "1.0.0"),
         ]
         assert restarted.execute("SELECT COUNT(*) FROM runtime_job").fetchone()[0] == 1
         assert local_health(restarted).status == "healthy"
@@ -333,5 +385,41 @@ def test_schema_upgrades_from_desktop_0001_and_backfills_parent_agent(tmp_path: 
             == 1
         )
         assert local_health(connection).schema_version == DESKTOP_SCHEMA_VERSION
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize("starting_version", range(1, 12))
+def test_schema_upgrades_from_every_supported_version_to_v12(
+    tmp_path: Path, starting_version: int
+) -> None:
+    from omnibase.desktop_local.database import utc_now_text
+    from omnibase.desktop_local.schema import DESKTOP_MIGRATIONS
+
+    config = _config(tmp_path / str(starting_version))
+    connection = open_database(config)
+    try:
+        applied_at = utc_now_text()
+        connection.execute("BEGIN EXCLUSIVE")
+        for migration in DESKTOP_MIGRATIONS[:starting_version]:
+            for statement in migration.statements:
+                connection.execute(statement)
+            connection.execute(
+                "INSERT INTO desktop_migration_history "
+                "(version, migration_id, checksum_sha256, application_version, applied_at) "
+                "VALUES (?, ?, ?, '1.0.0', ?)",
+                (migration.version, migration.migration_id, migration.checksum, applied_at),
+            )
+        connection.execute(f"PRAGMA user_version = {starting_version}")
+        connection.execute(f"PRAGMA application_id = {DESKTOP_APPLICATION_ID}")
+        connection.execute(
+            "UPDATE desktop_schema_metadata SET schema_version = ?, updated_at = ? "
+            "WHERE singleton_key = 1",
+            (starting_version, applied_at),
+        )
+        connection.execute("COMMIT")
+        assert migrate_database(connection, config) == DESKTOP_SCHEMA_VERSION
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         connection.close()

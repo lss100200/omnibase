@@ -151,7 +151,17 @@ def _validate_output(publish_dir: Path) -> tuple[int, int]:
         for name in file_names:
             target = Path(directory) / name
             metadata = os.stat(target, follow_symlinks=False)
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
+            relative = target.relative_to(publish_dir)
+            empty_wheel_marker = (
+                metadata.st_size == 0
+                and len(relative.parts) == 3
+                and relative.parts[0] == "_internal"
+                and relative.parts[1].casefold().endswith(".dist-info")
+                and relative.parts[2] == "REQUESTED"
+            )
+            if not stat.S_ISREG(metadata.st_mode) or (
+                metadata.st_size <= 0 and not empty_wheel_marker
+            ):
                 raise BackendBuildError("desktop_backend_publish_file_invalid")
             count += 1
             total += metadata.st_size

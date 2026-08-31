@@ -27,7 +27,8 @@ export const WORKSPACE_FILE_MAX_READ_BYTES = 1_048_576;
 const READ_CHUNK_BYTES = 64 * 1024;
 const CONTROL_OR_BIDI = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 const ENCODED_PATH_TOKEN = /%(?:2e|2f|3a|5c)/iu;
-const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
+const WINDOWS_RESERVED_NAME =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 const WINDOWS_DRIVE = /^[A-Za-z]:/u;
 
 const SENSITIVE_NAMES = new Set([
@@ -134,7 +135,10 @@ function identity(metadata: BigIntStats): StableIdentity {
   });
 }
 
-function sameDirectoryIdentity(left: StableIdentity, right: StableIdentity): boolean {
+function sameDirectoryIdentity(
+  left: StableIdentity,
+  right: StableIdentity,
+): boolean {
   return (
     left.device === right.device &&
     left.inode === right.inode &&
@@ -142,7 +146,10 @@ function sameDirectoryIdentity(left: StableIdentity, right: StableIdentity): boo
   );
 }
 
-function sameFileIdentity(left: StableIdentity, right: StableIdentity): boolean {
+function sameFileIdentity(
+  left: StableIdentity,
+  right: StableIdentity,
+): boolean {
   return (
     sameDirectoryIdentity(left, right) &&
     left.size === right.size &&
@@ -161,7 +168,9 @@ function samePhysicalPath(left: string, right: string): boolean {
 }
 
 function hasAlternateDataStreamSyntax(candidate: string): boolean {
-  const withoutDrivePrefix = WINDOWS_DRIVE.test(candidate) ? candidate.slice(2) : candidate;
+  const withoutDrivePrefix = WINDOWS_DRIVE.test(candidate)
+    ? candidate.slice(2)
+    : candidate;
   return withoutDrivePrefix.includes(":");
 }
 
@@ -169,7 +178,9 @@ function isContained(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
     relative === "" ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative))
   );
 }
 
@@ -198,8 +209,12 @@ function isSensitiveName(name: string): boolean {
     lowered.startsWith(".env.") ||
     SENSITIVE_NAMES.has(lowered) ||
     SENSITIVE_SUFFIXES.some((suffix) => lowered.endsWith(suffix)) ||
-    /(?:^|[-_.])(?:private[-_.]?key|service[-_.]?account)(?:[-_.]|$)/u.test(lowered) ||
-    /(?:^|[-_.])credentials?(?:[-_.][a-z0-9]+)*\.(?:json|ya?ml|toml)$/u.test(lowered)
+    /(?:^|[-_.])(?:private[-_.]?key|service[-_.]?account)(?:[-_.]|$)/u.test(
+      lowered,
+    ) ||
+    /(?:^|[-_.])credentials?(?:[-_.][a-z0-9]+)*\.(?:json|ya?ml|toml)$/u.test(
+      lowered,
+    )
   );
 }
 
@@ -224,7 +239,10 @@ function logicalParts(value: string, allowRoot: boolean): readonly string[] {
     throw new WorkspaceFilesError("desktop_workspace_files_path_invalid");
   }
   const parts = value.split("/");
-  if (parts.length > WORKSPACE_FILE_MAX_DEPTH || parts.some((part) => !validateName(part))) {
+  if (
+    parts.length > WORKSPACE_FILE_MAX_DEPTH ||
+    parts.some((part) => !validateName(part))
+  ) {
     throw new WorkspaceFilesError("desktop_workspace_files_path_invalid");
   }
   return parts;
@@ -232,7 +250,9 @@ function logicalParts(value: string, allowRoot: boolean): readonly string[] {
 
 function rejectSensitiveParts(parts: readonly string[]): void {
   if (parts.some(isSensitiveName)) {
-    throw new WorkspaceFilesError("desktop_workspace_files_sensitive_forbidden");
+    throw new WorkspaceFilesError(
+      "desktop_workspace_files_sensitive_forbidden",
+    );
   }
 }
 
@@ -271,7 +291,9 @@ function rejectLink(metadata: BigIntStats): void {
   }
 }
 
-async function captureDirectoryIdentity(candidate: string): Promise<StableIdentity> {
+async function captureDirectoryIdentity(
+  candidate: string,
+): Promise<StableIdentity> {
   const metadata = await safeLstat(candidate);
   rejectLink(metadata);
   if (!metadata.isDirectory()) {
@@ -292,7 +314,10 @@ async function captureFileIdentity(candidate: string): Promise<StableIdentity> {
   return identity(metadata);
 }
 
-async function validateRoot(selected: string, homeDirectory: string): Promise<{
+async function validateRoot(
+  selected: string,
+  homeDirectory: string,
+): Promise<{
   readonly root: string;
   readonly rootName: string;
   readonly rootIdentity: StableIdentity;
@@ -364,7 +389,10 @@ async function resolveLogicalPath(
     } catch {
       throw new WorkspaceFilesError("desktop_workspace_files_path_not_found");
     }
-    if (!samePhysicalPath(candidate, canonical) || !isContained(binding.root, canonical)) {
+    if (
+      !samePhysicalPath(candidate, canonical) ||
+      !isContained(binding.root, canonical)
+    ) {
       throw new WorkspaceFilesError("desktop_workspace_files_link_forbidden");
     }
   }
@@ -378,13 +406,22 @@ function compareEntries(
   if (left.kind !== right.kind) return left.kind === "directory" ? -1 : 1;
   const leftName = left.name.toLocaleLowerCase("en-US");
   const rightName = right.name.toLocaleLowerCase("en-US");
-  return leftName < rightName ? -1 : leftName > rightName ? 1 : left.name < right.name ? -1 : 1;
+  return leftName < rightName
+    ? -1
+    : leftName > rightName
+      ? 1
+      : left.name < right.name
+        ? -1
+        : 1;
 }
 
 export class WorkspaceFiles {
   readonly #dependencies: WorkspaceFilesDependencies;
   #authorization: WorkspaceFileBinding | null = null;
   #authorizationGeneration = 0;
+  readonly #invalidationListeners = new Set<
+    (workspaceId: string | null) => void
+  >();
 
   constructor(dependencies: WorkspaceFilesDependencies) {
     this.#dependencies = dependencies;
@@ -445,7 +482,34 @@ export class WorkspaceFiles {
     try {
       this.#invalidate();
     } catch (error) {
-      if (errorCode(error) !== "desktop_workspace_files_generation_exhausted") throw error;
+      if (errorCode(error) !== "desktop_workspace_files_generation_exhausted")
+        throw error;
+    }
+  }
+
+  onInvalidate(listener: (workspaceId: string | null) => void): () => void {
+    this.#invalidationListeners.add(listener);
+    return () => this.#invalidationListeners.delete(listener);
+  }
+
+  captureAuthorization(workspaceId: string): DesktopOperationResult<{
+    readonly workspaceId: string;
+    readonly rootName: string;
+    readonly authorizationGeneration: number;
+  }> {
+    try {
+      const authorization = this.#requireAuthorization({
+        workspaceId,
+        authorizationGeneration:
+          this.#authorization?.authorizationGeneration ?? -1,
+      });
+      return success({
+        workspaceId: authorization.workspaceId,
+        rootName: authorization.rootName,
+        authorizationGeneration: authorization.authorizationGeneration,
+      });
+    } catch (error) {
+      return failure(errorCode(error));
     }
   }
 
@@ -480,9 +544,12 @@ export class WorkspaceFiles {
         for await (const entry of directory) {
           visited += 1;
           if (visited > WORKSPACE_FILE_MAX_VISITED_ENTRIES) {
-            throw new WorkspaceFilesError("desktop_workspace_files_directory_too_large");
+            throw new WorkspaceFilesError(
+              "desktop_workspace_files_directory_too_large",
+            );
           }
-          if (!validateName(entry.name) || isSensitiveName(entry.name)) continue;
+          if (!validateName(entry.name) || isSensitiveName(entry.name))
+            continue;
           const childPath = path.join(candidate, entry.name);
           const metadata = await safeLstat(childPath);
           if (
@@ -509,9 +576,14 @@ export class WorkspaceFiles {
             Object.freeze({
               path: logicalPath,
               name: entry.name,
-              kind: metadata.isDirectory() ? ("directory" as const) : ("file" as const),
+              kind: metadata.isDirectory()
+                ? ("directory" as const)
+                : ("file" as const),
               sizeBytes: metadata.isFile()
-                ? safeNumber(metadata.size, "desktop_workspace_files_file_too_large")
+                ? safeNumber(
+                    metadata.size,
+                    "desktop_workspace_files_file_too_large",
+                  )
                 : null,
               lastModifiedMs: safeNumber(
                 metadata.mtimeMs,
@@ -549,7 +621,11 @@ export class WorkspaceFiles {
   ): Promise<DesktopOperationResult<DesktopWorkspaceFileReadResult>> {
     try {
       const binding = await this.#requireActiveAuthorization(input);
-      const { candidate } = await resolveLogicalPath(binding, input.path, false);
+      const { candidate } = await resolveLogicalPath(
+        binding,
+        input.path,
+        false,
+      );
       const before = await captureFileIdentity(candidate);
       if (before.size > BigInt(WORKSPACE_FILE_MAX_READ_BYTES)) {
         throw new WorkspaceFilesError("desktop_workspace_files_file_too_large");
@@ -560,23 +636,34 @@ export class WorkspaceFiles {
       let total = 0;
       try {
         const openedMetadata = await handle.stat({ bigint: true });
-        if (!openedMetadata.isFile() || !sameFileIdentity(identity(openedMetadata), before)) {
-          throw new WorkspaceFilesError("desktop_workspace_files_identity_drift");
+        if (
+          !openedMetadata.isFile() ||
+          !sameFileIdentity(identity(openedMetadata), before)
+        ) {
+          throw new WorkspaceFilesError(
+            "desktop_workspace_files_identity_drift",
+          );
         }
         while (total <= WORKSPACE_FILE_MAX_READ_BYTES) {
           const remaining = WORKSPACE_FILE_MAX_READ_BYTES + 1 - total;
-          const buffer = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, remaining));
+          const buffer = Buffer.allocUnsafe(
+            Math.min(READ_CHUNK_BYTES, remaining),
+          );
           const result = await handle.read(buffer, 0, buffer.length, total);
           if (result.bytesRead === 0) break;
           chunks.push(buffer.subarray(0, result.bytesRead));
           total += result.bytesRead;
           if (total > WORKSPACE_FILE_MAX_READ_BYTES) {
-            throw new WorkspaceFilesError("desktop_workspace_files_file_too_large");
+            throw new WorkspaceFilesError(
+              "desktop_workspace_files_file_too_large",
+            );
           }
         }
         const afterOpened = await handle.stat({ bigint: true });
         if (!sameFileIdentity(identity(afterOpened), before)) {
-          throw new WorkspaceFilesError("desktop_workspace_files_identity_drift");
+          throw new WorkspaceFilesError(
+            "desktop_workspace_files_identity_drift",
+          );
         }
       } finally {
         await handle.close().catch(() => undefined);
@@ -588,7 +675,10 @@ export class WorkspaceFiles {
       const bytes = Buffer.concat(chunks, total);
       let content: string;
       try {
-        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+        content = new TextDecoder("utf-8", {
+          fatal: true,
+          ignoreBOM: true,
+        }).decode(bytes);
       } catch {
         throw new WorkspaceFilesError("desktop_workspace_files_not_utf8");
       }
@@ -610,11 +700,21 @@ export class WorkspaceFiles {
   }
 
   #invalidate(): number {
+    const invalidatedWorkspaceId = this.#authorization?.workspaceId ?? null;
     this.#authorization = null;
     if (this.#authorizationGeneration >= Number.MAX_SAFE_INTEGER) {
-      throw new WorkspaceFilesError("desktop_workspace_files_generation_exhausted");
+      throw new WorkspaceFilesError(
+        "desktop_workspace_files_generation_exhausted",
+      );
     }
     this.#authorizationGeneration += 1;
+    for (const listener of this.#invalidationListeners) {
+      try {
+        listener(invalidatedWorkspaceId);
+      } catch {
+        // Authorization invalidation is authoritative; observers cannot veto it.
+      }
+    }
     return this.#authorizationGeneration;
   }
 
@@ -623,9 +723,13 @@ export class WorkspaceFiles {
     readonly authorizationGeneration: number;
   }): Promise<WorkspaceFileBinding> {
     const authorization = this.#requireAuthorization(input);
-    let verified: DesktopOperationResult<{ readonly agent: DesktopParentAgent }>;
+    let verified: DesktopOperationResult<{
+      readonly agent: DesktopParentAgent;
+    }>;
     try {
-      verified = await this.#dependencies.getWorkspaceAgent({ workspaceId: input.workspaceId });
+      verified = await this.#dependencies.getWorkspaceAgent({
+        workspaceId: input.workspaceId,
+      });
     } catch {
       this.#requireAuthorization(input);
       this.#invalidate();
@@ -651,7 +755,9 @@ export class WorkspaceFiles {
       authorization.workspaceId !== input.workspaceId ||
       authorization.authorizationGeneration !== input.authorizationGeneration
     ) {
-      throw new WorkspaceFilesError("desktop_workspace_files_generation_conflict");
+      throw new WorkspaceFilesError(
+        "desktop_workspace_files_generation_conflict",
+      );
     }
     return authorization;
   }

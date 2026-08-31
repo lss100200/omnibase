@@ -40,6 +40,7 @@ backend/models/
 
 # --- Testing & coverage ---
 .pytest_cache/
+/frontend/test-results/
 .coverage
 .coverage.*
 htmlcov/
