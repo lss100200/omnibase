@@ -427,7 +427,7 @@ def _runtime_manifest(files: list[CopiedArtifact]) -> dict[str, Any]:
     }
 
 
-def _validate_component_bundle(path: Path) -> dict[str, object]:
+def validate_component_bundle(path: Path) -> dict[str, object]:
     exporter_path = Path(__file__).with_name("export_p7_3_component_bundles.py")
     spec = importlib.util.spec_from_file_location(
         "omnibase_p73_bundle_validator", exporter_path
@@ -539,7 +539,7 @@ def build_linux_payload(
     component_report = (
         None
         if component_bundle_dir is None
-        else _validate_component_bundle(component_bundle_dir)
+        else validate_component_bundle(component_bundle_dir)
     )
     components = (
         []
@@ -600,7 +600,7 @@ def build_linux_payload(
         _copy_project(desktop_project_dir, staging, manifest_copy.sha256)
         _verify_runtime(staging / "runtime", manifest, manifest_raw)
         if component_report is not None:
-            copied_report = _validate_component_bundle(staging / "runtime/components")
+            copied_report = validate_component_bundle(staging / "runtime/components")
             if copied_report != component_report:
                 raise LinuxPayloadError("linux_payload_component_bundle_changed")
         if output.exists():

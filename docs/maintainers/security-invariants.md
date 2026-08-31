@@ -4874,8 +4874,10 @@ pass, or claim signing/Marketplace/production authority from CI or Sandbox.
 
 P7.5 adds a separate Linux `linux-x64` AppDir and offline payload-staging lane;
 it must not weaken or replace the accepted Windows WiX/Burn path. Linux staging
-consumes only already-built Linux backend, bundled Node, Next standalone,
-desktop compilation and optional validated component-bundle inputs. It never
+consumes only already-built Linux backend, bundled Node, Next standalone and
+desktop compilation. A runnable AppDir additionally requires the validated
+exact ten-package P7.3 component bundle; absence or identity drift fails before
+packaging. It never
 downloads a tool, reads repository secrets, mutates the source trust token,
 follows a link, accepts a hard-linked file, overwrites an output or treats a
 Windows executable as Linux evidence.
@@ -4902,6 +4904,10 @@ Runner, cgroup/namespace isolation proof or hostile-code authority.
   packager byte/mode-drift attacks;
 - POSIX-host payload builder tests covering closed inventory, source/staging
   identity, executable bits, trust injection and existing-output refusal;
+- P7.3 component bundle export/validation tests covering the exact ten-package
+  source-owned identity consumed by Linux AppDir builds;
+- AppDir orchestration tests proving the component bundle is mandatory,
+  identity-bound before build and revalidated from the copied runtime;
 - maintainer validators, iterative Registry -> Task Ledger -> Planner sealed
   contract reseal and `git diff --check`;
 - before any Linux support claim, a separately built Ubuntu payload plus a

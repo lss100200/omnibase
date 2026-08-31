@@ -2693,12 +2693,21 @@ visible clipping/overlap. CI retains the raw reports, screenshots and failure
 traces. This source rendering evidence remains distinct from a packaged
 Electron window and the controlled Windows product receipt.
 
-## P7.5 Linux desktop packaging R0
+## P7.5 Linux desktop packaging R1
 
 Read INV-090 and `docs/architecture/p7-5-linux-desktop-packaging.md` before
 changing platform data paths, the Linux RuntimeHost, offline payload builder or
 AppDir packager. This lane is separate from Windows WiX/Burn and currently
-produces only an unsigned engineering AppDir contract.
+produces only an unsigned engineering AppDir contract. R1 adds the POSIX-only
+backend builder and manual Ubuntu 22.04/24.04 build workflow; it does not add a
+distribution package or lifecycle acceptance.
+
+The AppDir orchestrator requires the validated exact ten-package P7.3 component
+bundle and records its content identity. The manual workflow may obtain it only
+from an explicitly selected artifact in another run of the same repository and
+must bind both its index and tree SHA-256. Missing or drifted input fails before
+packaging. Do not weaken this to an
+optional input: RuntimeManager requires the source-owned attestations at ready.
 
 The builder consumes already-built Linux inputs, creates a closed digest-pinned
 runtime and replaces the trusted-manifest placeholder only in a copied staging
@@ -2709,6 +2718,7 @@ follow links, overwrite outputs or substitute Windows artifacts.
 
 RuntimeHost owns backend and Next process groups, keeps proof/control identity
 backend-only and uses a fresh instance token plus loopback challenge-HMAC
-readiness. It is not a P3.4 Runner isolation boundary. Ubuntu payload creation,
-real Electron lifecycle, AppImage/deb, signing, update/rollback and supported
+readiness. It is not a P3.4 Runner isolation boundary. Ubuntu payload creation
+and AppDir publication are now executable by the manual workflow, but real
+Electron lifecycle, AppImage/deb, signing, update/rollback and supported
 distribution claims remain unproven until separately evidenced.

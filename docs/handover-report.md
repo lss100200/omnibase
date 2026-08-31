@@ -19,15 +19,20 @@
 > `AUTHENTICODE_NOT_PROVEN`、`ENTERPRISE_MULTI_AGENT_DISABLED` 与
 > `PRODUCTION_RELEASE_NOT_APPROVED` 继续保持。
 >
-> **P7.5 Linux Desktop Packaging R0（2026-08-31）**：从 clean
+> **P7.5 Linux Desktop Packaging R1（2026-08-31）**：从 clean
 > `main@095614676984da4f4eca0e43e1debc67d3b29732` 建立独立 lane。INV-090、
 > XDG/HOME 数据根、Linux 大小写路径语义、`node/node` RuntimeHost、显式
 > Electron ZIP SHA-256 的 `linux-x64` AppDir 打包合同、离线闭集 payload
-> staging 与 Ubuntu Node 20/24 CI 合同已实现。当前 Windows 主机只完成源码、
-> 类型、构建和合同测试；没有 Linux backend/Node payload、AppDir artifact 或
-> disposable Linux Electron 生命周期回执。因此 Linux distribution support、
-> AppImage/deb、签名、更新/回滚、独立 P3.4 Runner 隔离与生产就绪均保持
-> `not_proven`。
+> staging 与 Ubuntu Node 20/24 CI 合同已实现；新增 POSIX Python 3.12
+> backend builder、staged desktop build orchestrator 和 Ubuntu 22.04/24.04
+> 手动 artifact workflow。AppDir 构建强制消费同仓库 Actions run 中按
+> `run_id + artifact_name + bundle/tree SHA-256` 选择且通过身份校验的 P7.3 十包组件 artifact，
+> 缺失或漂移时在打包前 fail closed。当前 Windows 主机仍只完成源码、类型、构建和合同
+> 测试；没有经审核的 Ubuntu payload/AppDir 或 disposable Linux Electron
+> 生命周期回执。因此 Linux distribution support、AppImage/deb、签名、
+> 更新/回滚、独立 P3.4 Runner 隔离与生产就绪均保持 `not_proven`。
+> 当前仓库没有可在 CI 内重建该十包 artifact 的电子书源输入；必须先由
+> Owner 控制的 P7.3 release run 发布同仓库 artifact，再按四项输入 dispatch。
 >
 > **P7.1 当前授权（2026-08-29）**：Owner 已批准 Wave 1 只读本地文件合同；
 > 先读 `docs/architecture/p7-1-local-development-loop.md` 与 INV-086。本轮只
