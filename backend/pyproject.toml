@@ -43,7 +43,7 @@ dependencies = [
 
     # --- 认证 ---
     "python-jose[cryptography]>=3.3,<4",   # JWT
-    "cryptography>=43,<50",                # AES-GCM for user-owned provider credentials
+    "cryptography>=50.0.0,<51",                # AES-GCM for user-owned provider credentials
     "passlib[bcrypt]>=1.7.4,<2",           # 密码哈希
     "email-validator>=2.2,<3",             # Pydantic EmailStr
 
