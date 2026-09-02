@@ -54,7 +54,7 @@ dependencies = [
     "redis>=5.1,<6",
 
     # --- 文档解析（Phase 1: 全文提取 + 分块） ---
-    "pypdf>=5.1,<6",                       # PDF 文本 + 元数据
+    "pypdf>=5.1,<7",                       # PDF 文本 + 元数据
     "python-docx>=1.1,<2",                # DOCX 段落 + 标题层级
 
     # --- RAG / Embedding（Phase 1: AI RAG） ---
